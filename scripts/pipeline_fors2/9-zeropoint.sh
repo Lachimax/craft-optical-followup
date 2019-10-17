@@ -1,0 +1,109 @@
+#!/usr/bin/env bash
+
+# Code by Lachlan Marnoch, 2019
+
+# TODO: Turn this into a proper bash script.
+
+param_file=$1
+proj_param_file=$2
+origin=$3
+destination=$4
+write_paths=$5
+kron_radius=$6
+
+if [[ -z ${proj_param_file} ]]; then
+    proj_param_file=unicomp
+fi
+
+if [[ -z ${origin} ]]; then
+    origin=8-astrometry/
+fi
+
+if [[ -z ${destination} ]]; then
+    destination=9-zeropoint/
+fi
+
+if [[ -z ${write_paths} ]]; then
+    write_paths=true
+fi
+
+# Extract parameters from param json files using jq.
+
+proj_dir=$(jq -r .proj_dir param/project/${proj_param_file}.json)
+
+data_dir=$(jq -r .data_dir "param/epochs_fors2/${param_file}.json")
+data_title=$(jq -r .data_title "param/epochs_fors2/${param_file}.json")
+skip_esorex=$(jq -r .skip_esorex "param/epochs_fors2/${param_file}.json")
+do_dual_mode=$(jq -r .do_dual_mode "param/epochs_fors2/${param_file}.json")
+do_sextractor=$(jq -r .do_sextractor "param/epochs_fors2/${param_file}.json")
+
+
+if [[ -z ${kron_radius} ]]; then
+    kron_radius=$(jq -r .sextractor_kron_radius "param/epochs_fors2/${param_file}.json")
+fi
+deepest_filter=$(jq -r .deepest_filter "param/epochs_fors2/${param_file}.json")
+threshold=$(jq -r .threshold "param/epochs_fors2/${param_file}.json")
+df=${deepest_filter::1}
+
+if ${do_sextractor} ; then
+    # Copy final processed image to SExtractor directory
+    sextractor_destination_path=${data_dir}/analysis/sextractor/${destination}
+    mkdir "${sextractor_destination_path}"
+    cp "${data_dir}${origin}"*"astrometry_tweaked.fits" "${sextractor_destination_path}"
+    if cd "${sextractor_destination_path}" ; then
+        cp "${proj_dir}/param/psfex/"* .
+        cp "${proj_dir}/param/sextractor/default/"* .
+        pwd
+        for image in *astrometry_tweaked.fits ; do
+            cd "${sextractor_destination_path}" || exit
+            image_0=${image::1}
+            sextractor "${image}" -c pre-psfex.sex -CATALOG_NAME "${image_0}_psfex.fits"
+            # Run PSFEx to get PSF analysis
+            psfex "${image_0}_psfex.fits"
+            cd "${proj_dir}" || exit
+            # Use python to extract the FWHM from the PSFEx output.
+            python3 "${proj_dir}/scripts/pipeline_fors2/9-psf.py" --directory "${data_dir}" --psfex_file "${sextractor_destination_path}${image_0}_psfex.psf" --image_file "${sextractor_destination_path}${image}" --prefix "${image_0}"
+            cd "${sextractor_destination_path}" || exit
+            fwhm=$(jq -r ".${image_0}_fwhm_arcsec" "${data_dir}output_values.json")
+            echo "FWHM: ${fwhm} arcsecs"
+            echo "KRON RADIUS: ${kron_radius}"
+            sextractor "${image}" -c psf-fit.sex -CATALOG_NAME "${image_0}_psf-fit.cat" -PSF_NAME "${image_0}_psfex.psf" -SEEING_FWHM "${fwhm}" -PHOT_AUTOPARAMS ${kron_radius},1.0 -DETECT_THRESH "${threshold}" -ANALYSIS_THRESH "${threshold}"
+            # If this is not the deepest image, we run in dual mode, using the deepest image for finding.
+
+            if [[ ${image_0} != "${df}" ]] ; then
+                if ${do_dual_mode} ; then
+                    sextractor "${df}_astrometry_tweaked.fits,${image}" -c psf-fit.sex -CATALOG_NAME "${image_0}_dual-mode.cat" -PSF_NAME "${image_0}_psfex.psf" -SEEING_FWHM "${fwhm}" -PHOT_AUTOPARAMS ${kron_radius},1.0 -DETECT_THRESH "${threshold}" -ANALYSIS_THRESH "${threshold}"
+                    cd "${proj_dir}" || exit
+                    if ${write_paths} ; then
+                        python3 scripts/add_path.py --op "${data_title}" --key "${image_0}_cat_path" --path "${sextractor_destination_path}${image_0}_dual-mode.cat" --instrument FORS2
+                    fi
+                else
+                    cd "${proj_dir}" || exit
+                    if ${write_paths} ; then
+                        python3 scripts/add_path.py --op "${data_title}" --key "${image_0}_cat_path" --path "${sextractor_destination_path}${image_0}_psf-fit.cat" --instrument FORS2
+                    fi
+                fi
+            else
+                cd "${proj_dir}" || exit
+                if ${write_paths} ; then
+                    python3 scripts/add_path.py --op "${data_title}" --key "${image_0}_cat_path" --path "${sextractor_destination_path}${image_0}_psf-fit.cat" --instrument FORS2
+                fi
+            fi
+        done
+     fi
+fi
+
+cd "${proj_dir}" || exit
+echo 'Atmospheric extinction:'
+python3 "scripts/pipeline_fors2/9-extinction_atmospheric.py" --op "${data_title}" -write
+echo 'Science-field zeropoint:'
+python3 "scripts/zeropoint.py" --op "${data_title}" -write --instrument FORS2
+
+echo "Skip esorex ${skip_esorex}"
+if ! ${skip_esorex} ; then
+    ./scripts/pipeline_fors2/9-esorex_zeropoint.sh "${param_file}" "${proj_param_file}"
+fi
+
+echo 'Standard-field zeropoint:'
+python3 "scripts/pipeline_fors2/9-zeropoint_std.py" --op "${data_title}"
+

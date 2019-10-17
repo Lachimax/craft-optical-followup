@@ -1,0 +1,4 @@
+{eso_calib_dir: /home/user/ESO/install/calib/fors-5.3.32/cal/, esoreflex_input_dir: /home/user/ESO/data_wkf/reflex_input/fors/,
+esoreflex_output_dir: /home/reflex_data/reflex_end_products/, filter_dir: /home/user/Data/Filters/,
+photom_calib_dir: /home/user/Data/photometry_calib/, proj_dir: /home/user/Projects/PyCRAFT/,
+std_field_dir: /home/Data/std_fields/, top_data_dir: /home/user/Data/}

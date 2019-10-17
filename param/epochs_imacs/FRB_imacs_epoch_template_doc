@@ -1,0 +1,41 @@
+# I've left this here as documentation of what each of these parameters actually represent; because of the way the code
+# here is written, changing this to an actual .yaml file will result in comments being wiped out, which is not ideal.
+# f stands for filter, and stands in for whichever filters you have for this field. Any parameter here beginning with
+# an f_ will require a separate instance for each filter used.
+
+# ! = need to make the pipeline write this, instead of requiring input from user.
+# % = not currently used.
+# & = Requires adjustment in pipeline for clarity.
+
+f_cat_path: # ! % f_cat_sextractor; Path to the final, definitive SExtractor catalogue of the f-band FRB field image.
+f_ext_up:
+f_ext_up_err:
+f_zeropoint_up: 27.61280033
+f_zeropoint_up_err: 0.003051068009
+f_do_zeropoint_field: # & f_do_zeropoint_field; Whether to do a zeropoint - kX determination directly on the observed field. Requires a catalogue of that field with a psf-fit magnitude column.
+f_do_zeropoint_std: # & f_do_zeropoint_std; Whether to do a zeropoint - kX determination directly on a standard field, from calibration images. Requires both standard star observations with associatied calib images, and a catalogue of the standard field with a psf-fit magnitude column.
+cat_field_name: DES
+data_dir: /home/lachlan/Data/FRB190611/IMACS/
+data_title: FRB190611_1
+dec: # % Change to hg_dec
+des_cat: /home/lachlan/Data/FRB181112/DES/des_objects.csv
+des_mag_range_lower: 15.0
+des_mag_range_upper: 18.0
+des_sextractor: /home/lachlan/Data/FRB181112/DES/sextractor/cats/
+do_dual_mode: # ! Whether to SExtractor in dual-mode; leave as False when not all filters have the same number of exposures.
+do_sextractor: true
+filters: # ! A list of the filters in which the data has been taken.
+instrument: IMACS
+mjd:
+object:
+other_objects: {}
+ra: # % Change to hg_ra
+sextractor_zp: /home/lachlan/Data/FRB181112/FORS2/MJD58455/analysis/sextractor/combined_astrometry/
+sextractor_field_back_size: # Size of the background mesh to use in SExtractor background calculation. Really only here because, if your host is near other galaxies, it can affect whether or not the mag_auto estimate includes some light from those. If this is the case, it will take some fiddling to find the correct value.
+skip_astrometry: true
+sm_cat: /home/lachlan/Data/FRB181112/SkyMapper/skymapper_objects_dr2.csv
+sm_fits: /home/lachlan/Data/FRB181112/SkyMapper/SkyMapper_g_20140923113603-07_327.349-52.971_600x600.fits
+std_cat: /home/lachlan/Data/FRBxxxxxx/FORS2/MJDxxxxxx/calibration/std_star/sdss/SDSS.csv
+std_cat_name: SDSS
+threshold: # Number to pass to SExtractor's -DETECT_THRESH & -ANALYSIS_THRESH arguments when building the final catalogue: "<sigmas> or <threshold>,<ZP> in mag.arcsec-2"
+
