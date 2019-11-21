@@ -82,7 +82,7 @@ def main(output_dir: 'str', data_title: 'str'):
         param_dict[f_0 + '_airmass_err'] = float(max(np.nanmax(airmass_col) - airmass, airmass - np.nanmin(airmass_col)))
         param_dict[f_0 + '_n_frames'] = float(n_frames)
         param_dict[f_0 + '_n_exposures'] = float(n_exposures)
-        param_dict[f_0 + '_mjd_obs'] = float(np.nanmean(table['mjd-obs'][table[columns[i]] == f]))
+        param_dict[f_0 + '_mjd_obs'] = float(np.nanmean(table['mjd_obs'][table[columns[i]] == f]))
 
         std_filter_dir = f'{output_dir}calibration/std_star/{f}/'
         u.mkdir_check(std_filter_dir)
