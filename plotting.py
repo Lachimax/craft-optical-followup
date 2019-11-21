@@ -107,7 +107,7 @@ def plot_difference(fig: plt.figure, path: str, obj: str, instrument: str,
     titles = ['FORS2', instrument, f'FORS2 - {instrument}']
 
     difference_path = path + filter(lambda f: "difference.fits" in f, os.listdir(path)).__next__()
-    
+
     template = list(filter(lambda f: "template_tweaked.fits" in f, os.listdir(path)))
     if not template:
         template_file = filter(lambda f: "template_aligned.fits" in f, os.listdir(path)).__next__()
@@ -152,8 +152,6 @@ def plot_difference(fig: plt.figure, path: str, obj: str, instrument: str,
         else:
             title = None
 
-
-
         plot, hdu = plot_subimage(fig=fig, hdu=hdu, ra=ra, dec=dec, frame=frame, world_frame=world_frame,
                                   title=title,
                                   n=(n - 1) * 3 + n_x, n_x=3, n_y=n_y, cmap=cmap, show_cbar=show_cbar, stretch=stretch,
@@ -174,7 +172,7 @@ def plot_subimage(fig: plt.figure, hdu: str, ra: float, dec: float,
                   show_grid: bool = False,
                   ticks: int = None, interval: str = 'minmax',
                   show_coords: bool = True, ylabel: str = None,
-                  font_size: int =12):
+                  font_size: int = 12):
     print(hdu)
     hdu, path = ff.path_or_hdu(hdu=hdu)
 
@@ -536,15 +534,15 @@ def plot_gal_params(hdu: fits.HDUList, ras: Union[list, np.ndarray, float], decs
     theta = theta * np.pi / 180
 
     for i, x in enumerate(xs):
-        if world_axes:
-            ellipse = photutils.EllipticalAperture((x, ys[i]), a=a[i] / pix_scale, b=b[i] / pix_scale, theta=theta[i])
-        else:
-
-            ellipse = photutils.EllipticalAperture((x, ys[i]), a=a[i], b=b[i], theta=theta[i])
-        ellipse.plot(color=colour, label=label, ls=line_style)
-        if show_centre:
-            plt.plot((0.0, n_x), (ys[i], ys[i]), c=colour)
-            plt.plot((x, x), (0.0, n_y), c=colour)
+        if a[i] != 0 and b[i] != 0:
+            if world_axes:
+                ellipse = photutils.EllipticalAperture((x, ys[i]), a=a[i] / pix_scale, b=b[i] / pix_scale, theta=theta[i])
+            else:
+                ellipse = photutils.EllipticalAperture((x, ys[i]), a=a[i], b=b[i], theta=theta[i])
+            ellipse.plot(color=colour, label=label, ls=line_style)
+            if show_centre:
+                plt.plot((0.0, n_x), (ys[i], ys[i]), c=colour)
+                plt.plot((x, x), (0.0, n_y), c=colour)
 
 
 def plot_all_params(image: Union[str, fits.hdu.HDUList], cat: Union[str, Table, np.ndarray], show=True, cutout=False):
