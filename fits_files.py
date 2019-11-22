@@ -423,12 +423,19 @@ def detect_edges_area(file: Union['fits.hdu.hdulist.HDUList', 'str']):
     data = file[0].data
 
     keep_val = np.round(np.max(data), 13)
+    print(keep_val)
 
     height = data.shape[0]
     mid_y = int(height / 2)
     # Take a horizontal slice right across the middle of the image.
     slice_hor = np.round(data[mid_y], 13)
     slice_hor_keep = np.nonzero(slice_hor == keep_val)[0]
+    # This is here just in case mid_y finds a row that does not have maximum coverage.
+    while len(slice_hor_keep) == 0:
+        mid_y = int(mid_y / 2)
+        # Take a horizontal slice right across the middle of the image.
+        slice_hor = np.round(data[mid_y], 13)
+        slice_hor_keep = np.nonzero(slice_hor == keep_val)[0]
     left = slice_hor_keep[0]
     right = slice_hor_keep[-1]
 
