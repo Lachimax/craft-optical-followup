@@ -1,4 +1,3 @@
-# Code by Lachlan Marnoch, 2019
 from astropy import table
 from astropy.io import fits
 from astropy import wcs
@@ -304,7 +303,6 @@ def tweak_final(sextractor_path, destination, epoch, instrument, show, tolerance
                 star_ra = burst_properties['alignment_ra']
                 star_dec = burst_properties['alignment_dec']
 
-
             else:
                 star_ra = star_dec = None
 
@@ -320,6 +318,10 @@ def tweak_final(sextractor_path, destination, epoch, instrument, show, tolerance
                 param_dict[f + '_' + par] = param[par]
 
             p.add_output_path(obj=epoch, key=f + '_' + path_add,
-                              path=destination + f + '_' + output_suffix + '.fits', instrument=instrument)
+                              path=destination + f + '_' + output_suffix + '.fits',
+                              instrument=instrument)
 
         p.add_params(properties['data_dir'] + 'output_values.yaml', params=param_dict)
+
+    else:
+        print('No catalogue found for this alignment.')
