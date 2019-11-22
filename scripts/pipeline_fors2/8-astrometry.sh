@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Code by Lachlan Marnoch, 2019
 
 # Copy header from coadded image to astrometry image.
 
@@ -7,7 +6,6 @@ param_file=$1
 proj_param_file=$2
 origin=$3
 destination=$4
-sextractor_destination=$5
 
 if [[ -z ${proj_param_file} ]]; then
   proj_param_file=unicomp
@@ -30,13 +28,9 @@ data_dir=$(jq -r .data_dir "param/epochs_fors2/${param_file}.json")
 data_title=$(jq -r .data_title "param/epochs_fors2/${param_file}.json")
 
 data_dir=$(jq -r .data_dir "param/epochs_fors2/${param_file}.json")
-do_dual_mode=$(jq -r .do_dual_mode "param/epochs_fors2/${param_file}.json")
 do_sextractor=$(jq -r .do_sextractor "param/epochs_fors2/${param_file}.json")
-back_size=$(jq -r .sextractor_field_back_size "param/epochs_fors2/${param_file}.json")
 threshold=$(jq -r .threshold "param/epochs_fors2/${param_file}.json")
 deepest_filter=$(jq -r .deepest_filter "param/epochs_fors2/${param_file}.json")
-
-df=${deepest_filter::1}
 
 object=${data_title::-2}
 
@@ -63,7 +57,7 @@ cd "${proj_dir}" || exit
 # Use astrometry.net client to tweak astrometry of images.
 for image in ${coadded}; do
   if ! ${skip_astrometry}; then
-    python "${proj_dir}scripts/astrometry-client.py" --apikey "${key}" -u "${dir}/${image}" -w --newfits "${dir}/${image::1}_astrometry.fits" --ra "${ra}" --dec "${dec}" --radius 1 --private --no_commercial
+    python2 "${proj_dir}scripts/astrometry-client.py" --apikey "${key}" -u "${dir}/${image}" -w --newfits "${dir}/${image::1}_astrometry.fits" --ra "${ra}" --dec "${dec}" --radius 1 --private --no_commercial
   fi
 done
 cd "${dir}" || exit

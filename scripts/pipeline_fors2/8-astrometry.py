@@ -52,7 +52,6 @@ def main(obj, astrometry_path, sextractor_path, template, show):
                              comparison_output=astrometry_path + astrometry_file,
                              template_output=astrometry_path + template_file)
 
-
             else:
                 print(f'No astrometry file corresponding to {file} found.')
 
