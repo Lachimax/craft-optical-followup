@@ -171,9 +171,12 @@ def write_params(path: 'str', params: 'dict'):
 
 
 def write_log(path, action):
-    with open(path, 'a') as log:
-        log.writelines('\n' + dt.now().strftime('%Y-%m-%dT%H:%M:%S'))
-        log.writelines('\n' + action)
+    try:
+        with open(path, 'r') as log:
+            log.writelines('\n' + dt.now().strftime('%Y-%m-%dT%H:%M:%S'))
+            log.writelines('\n' + action)
+    except ValueError:
+        print('Log writing failed - skipping.')
 
 
 def first_file(path: "str", ext: 'str' = None):
