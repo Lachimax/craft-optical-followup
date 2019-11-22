@@ -1,5 +1,3 @@
-# Code by Lachlan Marnoch, 2019
-
 import numpy as np
 import matplotlib
 import matplotlib.pyplot as plt
@@ -85,8 +83,6 @@ def main(epoch, show, write):
     ext_poly_space = np.poly1d(np.polyfit(lambda_effs_known, extinctions_known, deg=3))
     lambda_eff_fit = np.linspace(300, 1000)
 
-    plotting.latex_setup()
-
     plot_params = p.plotting_params()
     size_font = plot_params['size_font']
     size_label = plot_params['size_label']
@@ -125,7 +121,7 @@ def main(epoch, show, write):
     plot.set_xlabel('Filter $\lambda_\mathrm{eff}$ (angstrom)', fontsize=size_font, fontweight='bold')
     plot.set_ylabel('Extinction coefficient $k$', fontsize=size_font, fontweight='bold')
     plt.legend(fontsize=size_legend)
-    fig.savefig(epoch_params['data_dir'] + '9-zeropoint/atmospheric_extinction.pdf', bbox_inches='tight')
+    fig.savefig(epoch_params['data_dir'] + '9-zeropoint/atmospheric_extinction.png', bbox_inches='tight')
     if show:
         plt.show()
 
