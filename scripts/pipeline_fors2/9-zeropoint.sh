@@ -1,7 +1,5 @@
 #!/usr/bin/env bash
 
-# Code by Lachlan Marnoch, 2019
-
 # TODO: Turn this into a proper bash script.
 
 param_file=$1
@@ -49,12 +47,17 @@ if ${do_sextractor} ; then
     # Copy final processed image to SExtractor directory
     sextractor_destination_path=${data_dir}/analysis/sextractor/${destination}
     mkdir "${sextractor_destination_path}"
-    cp "${data_dir}${origin}"*"astrometry_tweaked.fits" "${sextractor_destination_path}"
+    if cp "${data_dir}${origin}"*"astrometry_tweaked.fits" "${sextractor_destination_path}" ; then
+      suff="astrometry_tweaked.fits"
+    elif cp "${data_dir}${origin}"*"astrometry.fits" "${sextractor_destination_path}" ; then
+      suff="astrometry.fits"
+    fi
+
     if cd "${sextractor_destination_path}" ; then
         cp "${proj_dir}/param/psfex/"* .
         cp "${proj_dir}/param/sextractor/default/"* .
         pwd
-        for image in *astrometry_tweaked.fits ; do
+        for image in *"${suff}" ; do
             cd "${sextractor_destination_path}" || exit
             image_0=${image::1}
             sextractor "${image}" -c pre-psfex.sex -CATALOG_NAME "${image_0}_psfex.fits"
@@ -72,7 +75,7 @@ if ${do_sextractor} ; then
 
             if [[ ${image_0} != "${df}" ]] ; then
                 if ${do_dual_mode} ; then
-                    sextractor "${df}_astrometry_tweaked.fits,${image}" -c psf-fit.sex -CATALOG_NAME "${image_0}_dual-mode.cat" -PSF_NAME "${image_0}_psfex.psf" -SEEING_FWHM "${fwhm}" -PHOT_AUTOPARAMS ${kron_radius},1.0 -DETECT_THRESH "${threshold}" -ANALYSIS_THRESH "${threshold}"
+                    sextractor "${df}_${suff}.fits,${image}" -c psf-fit.sex -CATALOG_NAME "${image_0}_dual-mode.cat" -PSF_NAME "${image_0}_psfex.psf" -SEEING_FWHM "${fwhm}" -PHOT_AUTOPARAMS ${kron_radius},1.0 -DETECT_THRESH "${threshold}" -ANALYSIS_THRESH "${threshold}"
                     cd "${proj_dir}" || exit
                     if ${write_paths} ; then
                         python3 scripts/add_path.py --op "${data_title}" --key "${image_0}_cat_path" --path "${sextractor_destination_path}${image_0}_dual-mode.cat" --instrument FORS2
