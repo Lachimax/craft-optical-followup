@@ -15,7 +15,6 @@ def main(origin_dir, output_dir, data_title, sextractor_path):
             os.mkdir(sextractor_path)
         do_sextractor = True
         print(os.getcwd())
-        ap_diams_sex = p.load_params(f'param/aperture_diameters_fors2')
     else:
         do_sextractor = False
 
@@ -64,16 +63,27 @@ def main(origin_dir, output_dir, data_title, sextractor_path):
             edged = True
 
         for i, file in enumerate(files):
+            print(f'{i} {file}')
+
+        for i, file in enumerate(files):
             # Split the files into upper CCD and lower CCD, with even-numbered being upper and odd-numbered being lower
             new_path = output_dir + "backgrounds/" + fil + "/" + file.replace(".fits", "_trim.fits")
             # Add GAIN and SATURATE keywords to headers.
             path = wdir + fil + "/" + file
-            if i % 2 == 0:
+
+            print(f'{i} {file}')
+
+            if f.get_chip_num(path) == 1:
+                print('Upper Chip:')
                 f.trim_file(path, left=up_left, right=up_right, top=up_top, bottom=up_bottom,
                             new_path=new_path)
-            else:
+            elif f.get_chip_num(path) == 2:
+                print('Lower Chip:')
                 f.trim_file(path, left=dn_left, right=dn_right, top=dn_top, bottom=dn_bottom,
                             new_path=new_path)
+            else:
+                raise ValueError('Invalid chip ID; could not trim based on upper or lower chip.')
+
 
     # Repeat for science images
 
@@ -93,18 +103,24 @@ def main(origin_dir, output_dir, data_title, sextractor_path):
         files.sort()
 
         for i, file in enumerate(files):
+            print(f'{i} {file}')
+
+        for i, file in enumerate(files):
             # Split the files into upper CCD and lower CCD, with even-numbered being upper and odd-numbered being lower
             new_file = file.replace(".fits", "_trim.fits")
             new_path = output_dir + "science/" + fil + "/" + new_file
             path = wdir + fil + "/" + file
             f.change_header(file=path, name='GAIN', entry=0.8)
             f.change_header(file=path, name='SATURATE', entry=65535.)
-            if i % 2 == 0:
+            if f.get_chip_num(path) == 1:
+                print('Upper Chip:')
                 f.trim_file(path, left=up_left, right=up_right, top=up_top, bottom=up_bottom,
                             new_path=new_path)
                 if do_sextractor:
                     copyfile(new_path, sextractor_path + fil + "/" + new_file)
-            else:
+
+            elif f.get_chip_num(path) == 2:
+                print('Lower Chip:')
                 f.trim_file(path, left=dn_left, right=dn_right, top=dn_top, bottom=dn_bottom,
                             new_path=new_path)
 
