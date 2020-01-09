@@ -172,7 +172,8 @@ def plot_subimage(fig: plt.figure, hdu: str, ra: float, dec: float,
                   show_grid: bool = False,
                   ticks: int = None, interval: str = 'minmax',
                   show_coords: bool = True, ylabel: str = None,
-                  font_size: int = 12):
+                  font_size: int = 12,
+                  reverse_y=False):
     print(hdu)
     hdu, path = ff.path_or_hdu(hdu=hdu)
 
@@ -238,7 +239,9 @@ def plot_subimage(fig: plt.figure, hdu: str, ra: float, dec: float,
     if ylabel is not None:
         plot.set_ylabel(ylabel, size=12)
 
-    im = plt.imshow(hdu_cut[0].data, norm=norm, cmap=cmap, origin='lower')
+    im = plt.imshow(hdu_cut[0].data, norm=norm, cmap=cmap)
+    if reverse_y:
+        plot.invert_yaxis()
     c_ticks = np.linspace(norm.vmin, norm.vmax, 5, endpoint=True)
     if show_cbar:
         cbar = plt.colorbar(im)  # ticks=c_ticks)
@@ -255,9 +258,10 @@ def plot_galaxy(fig: plt.figure, data_title: str, instrument: str, f: str, ra: f
                 show_grid: bool = False,
                 image_name: str = 'astrometry_image',
                 object_name: str = None, ticks: int = None, interval: str = 'minmax',
-                show_coords=True):
+                show_coords=True,
+                reverse_y=False):
     instrument = instrument.lower()
-    instruments = {'fors2': 'FORS2', 'imacs': 'IMACS', 'xshooter': 'X-shooter'}
+    instruments = {'fors2': 'FORS2', 'imacs': 'IMACS', 'xshooter': 'X-shooter', 'gmos': 'GMOS'}
 
     if instrument == 'imacs':
         f_0 = f
@@ -274,6 +278,8 @@ def plot_galaxy(fig: plt.figure, data_title: str, instrument: str, f: str, ra: f
     else:
         instrument_formal = instruments[instrument]
 
+    print(f_0)
+    print(image_name)
     print(f_0 + '_' + image_name)
     if f_0 + '_' + image_name in paths:
         path = paths[f_0 + '_' + image_name]
@@ -309,7 +315,8 @@ def plot_galaxy(fig: plt.figure, data_title: str, instrument: str, f: str, ra: f
                                   vmax=vmax,
                                   show_grid=show_grid,
                                   ticks=ticks, interval=interval,
-                                  show_coords=show_coords)
+                                  show_coords=show_coords,
+                                  reverse_y=reverse_y)
 
     return plot, hdu_cut
 
@@ -327,9 +334,10 @@ def plot_hg(data_title: str, instrument: str, f: str, frame: int,
             ticks: int = None,
             show_distance: bool = True, bar_position: str = 'left',
             show_coords: bool = True,
-            show_name: bool = True):
+            show_name: bool = True,
+            reverse_y=False):
     instrument = instrument.lower()
-    instruments = {'fors2': 'FORS2', 'imacs': 'IMACS', 'xshooter': 'X-shooter'}
+    instruments = {'fors2': 'FORS2', 'imacs': 'IMACS', 'xshooter': 'X-shooter', 'gmos': 'GMOS'}
     if instrument not in instruments:
         raise ValueError('Instrument not recognised.')
 
@@ -356,22 +364,26 @@ def plot_hg(data_title: str, instrument: str, f: str, frame: int,
                                 vmax=vmax,
                                 show_grid=show_grid,
                                 show_filter=show_filter, image_name=image_name, show_instrument=show_instrument,
-                                object_name=object_name, ticks=ticks, show_coords=show_coords)
+                                object_name=object_name, ticks=ticks, show_coords=show_coords, reverse_y=reverse_y)
 
     if show_z:
-        plt.text(frame / 15, frame * 2 - frame / 5, f'z = {burst_properties["z"]}', color=z_colour)
+        if reverse_y:
+            plt.text(frame / 15, frame / 5, f'z = {burst_properties["z"]}', color=z_colour)
+        else:
+            plt.text(frame / 15, frame * 2 - frame / 5, f'z = {burst_properties["z"]}', color=z_colour)
 
     # cbar.set_label('ADU/s', rotation=270)
 
     if show_distance:
         if bar_position == 'left':
+
             distance_bar(hdu=hdu_cut, ang_size_distance=ang_size_distance, angle_length=1.0, x=frame / 15,
                          y=frame / 4.5,
-                         colour=bar_colour, spread=frame / 10)
+                         colour=bar_colour, spread=frame / 10, reverse_y=reverse_y, frame=frame)
         elif bar_position == 'right':
             distance_bar(hdu=hdu_cut, ang_size_distance=ang_size_distance, angle_length=1.0, x=frame * 2 - frame / 1.8,
                          y=frame / 4.5,
-                         colour=bar_colour, spread=frame / 10)
+                         colour=bar_colour, spread=frame / 10, reverse_y=reverse_y, frame=frame)
         else:
             raise ValueError('Bar position not recognised.')
 
@@ -411,8 +423,9 @@ def plot_hg(data_title: str, instrument: str, f: str, frame: int,
     return fig, hdu_cut
 
 
-def distance_bar(hdu: fits.hdu.HDUList, ang_size_distance: float, x: float, y: float,
-                 colour: str = 'white', length: float = None, angle_length: float = None, spread: float = 1.):
+def distance_bar(hdu: fits.hdu.HDUList, ang_size_distance: float, x: float, y: float, frame: int,
+                 colour: str = 'white', length: float = None, angle_length: float = None, spread: float = 1.,
+                 reverse_y=False):
     """
     Draw a projected distance bar on your plot.
     :param hdu:
@@ -454,9 +467,14 @@ def distance_bar(hdu: fits.hdu.HDUList, ang_size_distance: float, x: float, y: f
     print('Projected length:', length, 'pc')
     print('Angular size:', angle_length, 'arcsecs')
 
-    plt.plot((x, x + pix_length), (y, y), c=colour)
-    plt.text(x, y + spread, f'{np.round(length / 1000, 1)} kpc', color=colour)
-    plt.text(x, y - 1.7 * spread, f'{int(angle_length)} arcsec', color=colour)
+    if reverse_y:
+        plt.plot((x, x + pix_length), (2*frame-y, 2*frame-y), c=colour)
+        plt.text(x, 2*frame - y - spread, f'{np.round(length / 1000, 1)} kpc', color=colour)
+        plt.text(x, 2*frame - y + 1.7 * spread, f'{int(angle_length)} arcsec', color=colour)
+    else:
+        plt.plot((x, x + pix_length), (y, y), c=colour)
+        plt.text(x, y + spread, f'{np.round(length / 1000, 1)} kpc', color=colour)
+        plt.text(x, y - 1.7 * spread, f'{int(angle_length)} arcsec', color=colour)
 
 
 def nice_norm(image: np.ndarray):
