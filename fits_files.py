@@ -475,10 +475,7 @@ def get_filter(file: Union['fits.hdu.hdulist.HDUList', 'str']):
 
 
 def get_header_attribute(file: Union['fits.hdu.hdulist.HDUList', 'str'], attribute: 'str', ext: 'int' = 0):
-    path = False
-    if type(file) is str:
-        path = True
-        file = fits.open(file)
+    file, path = path_or_hdu(file)
 
     header = file[ext].header
     if attribute in header:
@@ -490,6 +487,16 @@ def get_header_attribute(file: Union['fits.hdu.hdulist.HDUList', 'str'], attribu
         file.close()
 
     return value
+
+
+def get_chip_num(file: Union['fits.hdu.hdulist.HDUList', 'str']):
+    chip_string = get_header_attribute(file=file, attribute='HIERARCH ESO DET CHIP1 ID')
+    chip = 0
+    if chip_string == 'CCID20-14-5-3':
+        chip = 1
+    elif chip_string == 'CCID20-14-5-6':
+        chip = 2
+    return chip
 
 
 def get_exp_time(file: Union['fits.hdu.hdulist.HDUList', 'str']):
@@ -716,7 +723,6 @@ def trim_file(path: 'str', left: 'int' = None, right: 'int' = None, bottom: 'int
     :return:
     """
 
-    print('left', left, 'right', right, 'bottom', bottom, 'top', top)
     path = u.sanitise_file_ext(filename=path, ext='.fits')
     if new_path is not None:
         new_path = u.sanitise_file_ext(filename=new_path, ext='.fits')
@@ -729,9 +735,11 @@ def trim_file(path: 'str', left: 'int' = None, right: 'int' = None, bottom: 'int
         new_path = path.replace(".fits", "_trim.fits")
 
     print('Trimming: \n' + str(path))
+    print('left', left, 'right', right, 'bottom', bottom, 'top', top)
     print('Moving to: \n' + str(new_path))
     add_log(file=file, action='Trimmed using PyCRAFT.fits_files.trim() with borders at x = ' + str(left) + ', ' + str(
         right) + '; y=' + str(bottom) + ', ' + str(top) + '; moved from ' + str(path) + ' to ' + str(new_path))
+    print()
 
     print(new_path)
     file.writeto(new_path, overwrite=True)
