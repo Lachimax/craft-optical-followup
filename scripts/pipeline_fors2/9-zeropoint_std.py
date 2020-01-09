@@ -72,11 +72,13 @@ def main(obj,
             for field in fields:
                 print(field)
                 if field in std_fields:
+                    print("If field in std_fields...")
                     field_path = fil_path + field + '/'
                     output_path = output_path_fil + field + '/'
 
                     std_cat_path = std_field_path + field + '/'
                     cats = os.listdir(std_cat_path)
+                    print(cats)
 
                     std_properties = p.load_params(field_path + 'params.yaml')
                     use_sex_star_class = std_properties['use_sex_star_class']
