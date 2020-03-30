@@ -1,4 +1,3 @@
-# Code by Lachlan Marnoch, 2019
 import ruamel.yaml as yaml
 import json
 from typing import Union

@@ -1,4 +1,3 @@
-# Code by Lachlan Marnoch, 2019
 import PyCRAFT.utils as u
 import numpy as np
 import numpy.random as rand

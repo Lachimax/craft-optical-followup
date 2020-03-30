@@ -246,7 +246,10 @@ def determine_zeropoint_sextractor(sextractor_cat_path: 'str',
     source_tbl['mag'], _, _ = magnitude_complete(flux=source_tbl[flux_column], exp_time=exp_time)
 
     # Plot all stars found by SExtractor.
+    source_tbl = source_tbl[source_tbl[sex_ra_col] != 0.0]
+    source_tbl = source_tbl[source_tbl[sex_dec_col] != 0.0]
     plt.scatter(source_tbl[sex_ra_col], source_tbl[sex_dec_col], label='SExtractor')
+    plt.xlim()
     plt.title('Objects found by SExtractor')
     plt.savefig(output_path + '1-sextracted-positions.png')
     if show:
@@ -1399,6 +1402,7 @@ def select_zeropoint(obj: str, filt: str, instrument: str, outputs: dict = None)
         airmass_err = outputs[f_output + '_airmass_err']
         extinction = outputs[f_output + '_extinction']
         extinction_err = outputs[f_output + '_extinction_err']
+        print('Using provided zeropoint.')
 
     elif f_output + '_zeropoint_derived' in outputs and outputs[f_output + '_zeropoint_derived'] is not None:
         # If not, defer to the zeropoint derived from the field. Extinction and airmass set to zero because extinction
@@ -1409,6 +1413,7 @@ def select_zeropoint(obj: str, filt: str, instrument: str, outputs: dict = None)
         airmass_err = 0.0
         extinction = 0.0
         extinction_err = 0.0
+        print('Using science-field zeropoint.')
 
     elif f_output + '_zeropoint_std' in outputs and outputs[f_output + '_zeropoint_std'] is not None:
         # If neither of those exist, use the zeropoint derived from provided standard fields and correct for the
@@ -1423,6 +1428,7 @@ def select_zeropoint(obj: str, filt: str, instrument: str, outputs: dict = None)
         airmass = airmass_field - airmass_std
         airmass_err = airmass_field_err + airmass_std_err
         print('Standard airmass:', airmass_std)
+        print('Science airmass:', airmass_field)
         print('Delta airmass:', airmass)
 
         extinction = outputs[f_output + '_extinction']

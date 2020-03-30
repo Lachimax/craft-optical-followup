@@ -1,4 +1,3 @@
-# Code by Lachlan Marnoch, 2019
 import sncosmo
 import numpy as np
 from matplotlib import pyplot as plt

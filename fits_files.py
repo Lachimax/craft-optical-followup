@@ -1202,3 +1202,10 @@ def find_coordinates(ra: float, dec: float, path: str):
             passed.append(file)
 
     return passed
+
+
+def swap_gmos_frames(path: str, output: str):
+    hdu = fits.open(path)
+    hdu[0].data = hdu[1].data
+    hdu.writeto(output)
+    return hdu
