@@ -4,8 +4,6 @@ I_cat_calib_zeropoint_err: 0.0
 I_colour_term: 0.0
 I_colour_term_err: 0.0
 I_des_fits: null
-I_des_mag_range_lower: 0.0
-I_des_mag_range_upper: 0.0
 I_des_sextractor_psf: /home/lachlan/Data/FRB181112/DES/psfex/f_psf-fit.cat
 I_do_zeropoint_field: false
 I_field_mag_range_lower: 20.0
@@ -30,8 +28,6 @@ g_cat_calib_zeropoint_err: 0.0
 g_colour_term: 0.0
 g_colour_term_err: 0.0
 g_des_fits: /home/lachlan/Data/FRB181112/DES/DESJ214923.6-525814.1_g.fits
-g_des_mag_range_lower: 0.0
-g_des_mag_range_upper: 0.0
 g_des_sextractor_psf: /home/lachlan/Data/FRB181112/DES/psfex/f_psf-fit.cat
 g_do_zeropoint_field: false
 g_field_mag_range_lower: 20.0

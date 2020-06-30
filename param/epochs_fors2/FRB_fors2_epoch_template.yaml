@@ -4,12 +4,9 @@ data_dir: /home/lachlan/Data/FRBxxxxxx/FORS2/MJDxxxxx/
 data_title: FRBxxxxxx_1
 deepest_filter: g_HIGH
 des_cat: /home/lachlan/Data/FRBxxxxxx/DES/des_objects.csv
-f_des_mag_range_lower: 15.0
-f_des_mag_range_upper: 18.0
 do_dual_mode: true
 do_sextractor: true
 filters: [g_HIGH, I_BESS]
-f_do_zeropoint_field: false
 f_cat_calib_path: null
 f_cat_calib_zeropoint: 0.0
 f_cat_calib_zeropoint_err: 0.0
@@ -17,6 +14,7 @@ f_colour_term: 0.0
 f_colour_term_err: 0.0
 f_des_fits: /home/lachlan/Data/FRBxxxxxx/DES/DES_f.fits
 f_des_sextractor_psf: /home/lachlan/Data/FRBxxxxxx/DES/psfex/f_psf-fit.cat
+f_do_zeropoint_field: false
 f_offset_x: null
 f_offset_y: null
 f_field_mag_range_lower: 20.0

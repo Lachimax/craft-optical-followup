@@ -28,8 +28,6 @@ u_cat_calib_zeropoint_err: 0.0
 u_colour_term: 0
 u_colour_term_err: 0
 u_des_fits: null
-u_des_mag_range_lower: 0.0
-u_des_mag_range_upper: 0.0
 u_des_sextractor_psf: null
 u_do_zeropoint_field: false
 u_field_mag_range_lower: 20.0
@@ -45,8 +43,6 @@ z_cat_calib_zeropoint_err: 0.0
 z_colour_term: 0
 z_colour_term_err: 0
 z_des_fits: null
-z_des_mag_range_lower: 0.0
-z_des_mag_range_upper: 0.0
 z_des_sextractor_psf: null
 z_do_zeropoint_field: false
 z_field_mag_range_lower: 20.0

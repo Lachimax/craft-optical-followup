@@ -13,8 +13,6 @@ g_cat_calib_zeropoint_err: 0.07
 g_colour_term: 0.0
 g_colour_term_err: 0.0
 g_des_fits: null
-g_des_mag_range_lower: 0.0
-g_des_mag_range_upper: 0.0
 g_des_sextractor_psf: /media/lachlan/73828fc7-33a9-4fcf-be55-d38ab92b5ed1/home/lachlan/Data/FRBxxxxxx/DES/psfex/f_psf-fit.cat
 g_do_zeropoint_field: false
 g_field_mag_range_lower: 19.6
