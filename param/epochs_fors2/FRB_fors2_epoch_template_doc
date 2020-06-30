@@ -1,7 +1,7 @@
 # I've left this here as documentation of what each of these parameters actually represent; because of the way the code
 # here is written, changing this to an actual .yaml file will result in comments being wiped out, which is not ideal.
 # f stands for filter, and stands in for whichever filters you have for this field. Any parameter here beginning with
-# an f_ will require a separate instance for each filter used.
+# an f_  requires a separate instance for each filter used. The pipeline should populate these automatically.
 
 # ! = need to make the pipeline write this, instead of requiring input from user.
 # % = not currently used.

@@ -1,5 +1,4 @@
 data_dir: /home/lachlan/Data/FRBxxxxxx/DES/
 filters: [g, i]
-sextractor_field_back_size: 32
 subtraction_image: subtraction_image
 threshold: 1.5
