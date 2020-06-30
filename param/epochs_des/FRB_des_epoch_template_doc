@@ -1,0 +1,14 @@
+# I've left this here as documentation of what each of these parameters actually represent; because of the way the code
+# here is written, changing this to an actual .yaml file will result in comments being wiped out, which is not ideal.
+# f stands for filter, and stands in for whichever filters you have for this field. Any parameter here beginning with
+# an f_  requires a separate instance for each filter used. The pipeline should populate these automatically.
+
+# ! = need to make the pipeline write this, instead of requiring input from user.
+# % = not currently used.
+# & = Requires adjustment in pipeline for clarity.
+
+data_dir: # Directory in which the epoch is stored.
+filters: # A list of the filters in which the data has been taken.
+subtraction_image: # Label of image to use for subtraction.
+threshold: # Threshold value to feed to SExtractor's DETECT_THRESH and ANALYSIS_THRESH arguments.
+
