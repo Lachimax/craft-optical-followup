@@ -16,6 +16,14 @@ from typing import Union
 
 
 def calculate_error_ellipse(frb: Union[str, dict], error: str = 'quadrature'):
+    """
+    Calculates the parameters of the uncertainty ellipse of an FRB, for use in plotting.
+    :param frb: Either a string specifying the FRB, which must have a corresponding .yaml file in /param/FRBs, or a
+        dictionary containing the same information.
+    :param error: String specifying the type of error calculation to use. Available options are 'quadrature', which
+        provides the quadrature sum of statistical and systematic uncertainty; 'systematic'; and 'statistical'.
+    :return: (a, b, theta) as floats in a tuple, in units of degrees.
+    """
     if error == 'quadrature':
 
         if type(frb) is str:
@@ -103,6 +111,14 @@ def calculate_error_ellipse(frb: Union[str, dict], error: str = 'quadrature'):
 
 
 def offset_astrometry(hdu: fits.hdu, offset_ra: float, offset_dec: float, output: str):
+    """
+    Offsets the astrometric solution of a fits HDU by the specified amounts.
+    :param hdu: Astropy HDU object to be offset.
+    :param offset_ra: Amount to offset Right Ascension by, in degrees.
+    :param offset_dec: Amount to offset Declination by, in degrees.
+    :param output: String specifying the output directory.
+    :return:
+    """
     hdu, path = ff.path_or_hdu(hdu)
     print(offset_ra, offset_dec)
     print('Writing tweaked file to:')
@@ -120,13 +136,35 @@ def offset_astrometry(hdu: fits.hdu, offset_ra: float, offset_dec: float, output
     return hdu
 
 
-def tweak(sextractor_path, destination, image_path, cat_path: str, cat_name: str, tolerance: float = 10.,
+def tweak(sextractor_path: str, destination: str, image_path: str, cat_path: str, cat_name: str, tolerance: float = 10.,
           show: bool = False,
           stars_only: bool = False,
           manual: bool = False, offset_x: float = None, offset_y: float = None, offsets_world: bool = False,
           psf: bool = True,
           specific_star: bool = False, star_ra: float = None, star_dec: float = None
           ):
+    """
+    For tweaking the astrometric solution of a fits image using a catalogue; either matches as many stars as possible
+    and uses the median offset, uses a single star at a specified position (specific_star=True) or a manual offset.
+    :param sextractor_path: Path to SExtractor-generated catalogue.
+    :param destination: Directory to write tweaked image to.
+    :param image_path: Path to image FITS file
+    :param cat_path: Path to file containing catalogue.
+    :param cat_name: Name of catalogue used.
+    :param tolerance: Tolerance, in pixels, within which matches will be accepted.
+    :param show: Plot matches onscreen?
+    :param stars_only: Only match using stars, determined using SExtractor's 'class_star' output.
+    :param manual: Use manual offset?
+    :param offset_x: Offset in x to use; only if 'manual' is set to True.
+    :param offset_y: Offset in y to use; only if 'manual' is set to True.
+    :param offsets_world: If True, interprets the offsets as being given in World Coordinates (RA and DEC)
+    :param psf: Use the PSF-fitting position?
+    :param specific_star: Use a specific star to tweak? This means, instead of finding the closest matches for many
+        stars, alignment is attempted with a single star nearest the given position.
+    :param star_ra: Right Ascension of star for single-star alignment.
+    :param star_dec: Declination of star for single-star alignment.
+    :return: None
+    """
     param_dict = {}
 
     print(image_path)
@@ -135,6 +173,7 @@ def tweak(sextractor_path, destination, image_path, cat_path: str, cat_name: str
     data = image[0].data
 
     wcs_info = wcs.WCS(header=header)
+    # Set the appropriate column names depending on the format of the catalogue to use.
     if cat_name == 'DES':
         ra_name = 'RA'
         dec_name = 'DEC'
@@ -267,9 +306,30 @@ def tweak(sextractor_path, destination, image_path, cat_path: str, cat_name: str
     return param_dict
 
 
-def tweak_final(sextractor_path, destination, epoch, instrument, show, tolerance=10., output_suffix='astrometry',
-                input_suffix='coadded', stars_only: bool = False, path_add: str = 'subtraction_image',
+def tweak_final(sextractor_path: str, destination: str,
+                epoch: int, instrument: str,
+                show: bool, tolerance: float = 10.,
+                output_suffix: str = 'astrometry', input_suffix='coadded',
+                stars_only: bool = False, path_add: str = 'subtraction_image',
                 manual: bool = False, specific_star: bool = False):
+    """
+    A wrapper for tweak, to interface with the .yaml param files and provide offsets to all filters used in an
+    observation.
+    :param sextractor_path: Path to SExtractor-generated catalogue.
+    :param destination: Directory to write tweaked image to.
+    :param epoch: The epoch number of the observation to be tweaked.
+    :param instrument: The instrument on which the observation was taken.
+    :param show: Plot matches onscreen?
+    :param tolerance: Tolerance, in pixels, within which matches will be accepted.
+    :param output_suffix: String to append to filename of output file.
+    :param input_suffix: Suffix appended to filenmae of input file.
+    :param stars_only: Only match using stars, determined using SExtractor's 'class_star' output.
+    :param path_add: Key under which to add the output path in the 'output_paths.yaml' file.
+    :param manual: Use manual offset?
+    :param specific_star: Use a specific star to tweak? This means, instead of finding the closest matches for many
+        stars, alignment is attempted with a single star nearest the given position.
+    :return: None
+    """
     u.mkdir_check(destination)
     properties = p.object_params_instrument(epoch, instrument)
     cat_name = properties['cat_field_name']
