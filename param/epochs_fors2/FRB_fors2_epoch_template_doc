@@ -3,56 +3,37 @@
 # f stands for filter, and stands in for whichever filters you have for this field. Any parameter here beginning with
 # an f_  requires a separate instance for each filter used. The pipeline should populate these automatically.
 
-# ! = need to make the pipeline write this, instead of requiring input from user.
-# % = not currently used.
-# & = Requires adjustment in pipeline for clarity.
-
-f_cat_calib_path: # Path to a SExtractor catalogue taken from another FORS2 epoch of the same image.
+astrometry_tweak: # Do a tweak of the astrometry solution of the image using the stars in the image against a catalogue.
+cat_field_name: # Name of the catalogue to use for comparison.
+data_dir: # Directory in which the epoch is stored.
+deepest_filter: # Filter to use for detection in SExtractor double image mode.
+des_cat: # Directory of DES catalogue for this field, in csv format.
+do_dual_mode: # Whether to do SExtractor in dual-mode; leave as False when not all filters have the same number of exposures.
+do_sextractor: # Whether to do SExtractor analysis
+filters: # A list of the filters in which the data has been taken.
+f_cat_calib_path: # Path to a SExtractor catalogue taken from another FORS2 epoch of the same image; only necessary if you wish to use the other epoch for calibration.
 f_cat_calib_zeropoint: # Zeropoint to apply to the above catalogue.
 f_cat_calib_zeropoint_err: # Error in the above quantity.
 f_colour_term: # % Colour term of the f-band FRB field image.
 f_colour_term_err: # % Uncertainty in the above.
 f_des_fits: # Path to DES cutout image.
-f_des_mag_range_lower: 15.0
-f_des_mag_range_upper: 18.0
-f_des_sextractor_psf: # ! Path to final psf-fit SExtractor catalogue of DES cutout.
+f_des_sextractor_psf: # Path to final psf-fit SExtractor catalogue of DES cutout.
 f_do_zeropoint_field: # & f_do_zeropoint_field; Whether to do a zeropoint - kX determination directly on the observed field. Requires a catalogue of that field with a psf-fit magnitude column.
-f_do_zeropoint_std: # & f_do_zeropoint_std; Whether to do a zeropoint - kX determination directly on a standard field, from calibration images. Requires both standard star observations with associatied calib images, and a catalogue of the standard field with a psf-fit magnitude column.
-f_ext_down: # % Extinction coefficient in the f-band FRB field image, lower chip.
-f_ext_down_err: # % Uncertainty in the above.
-f_ext_up: # Extinction coefficient in the f-band FRB field image, upper chip.
-f_ext_up_err: # Uncertainty in the above.
-f_field_mag_range_lower: 20.0
-f_field_mag_range_upper: 23.0
-f_std_mag_range_lower: 18.0
-f_std_mag_range_upper: 21.5
+f_field_mag_range_lower: # The lower magnitude limit of the objects to include in zeropoint determination.
+f_field_mag_range_upper: #  The upper magnitude limit of the objects to include in zeropoint determination.
+f_std_mag_range_lower: # The lower magnitude limit of the objects to include in zeropoint determination using standard field.
+f_std_mag_range_upper: # The upper magnitude limit of the objects to include in zeropoint determination using standard field.
 f_std_star_class_tol: # Tolerance on class_star parameter to allow when deriving zeropoint from standard image.
-f_std_zeropoint: # !
-f_std_zeropoint_err: # !
-f_zeropoint_down: 27.62621894
-f_zeropoint_down_err: 0.003457082345
-f_zeropoint_up: 27.61280033 # & Change to f_zeropoint
-f_zeropoint_up_err: 0.003051068009
-instrument: FORS2
-cat_field_name: DES
-data_dir: /home/lachlan/Data/FRB181112/FORS2/MJD58455/
-data_title: FRB181112_1
-deepest_filter: # Filter to use for detection in SExtractor double image mode.
-des_cat: /home/lachlan/Data/FRB181112/DES/des_objects.csv
-do_dual_mode: # ! Whether to SExtractor in dual-mode; leave as False when not all filters have the same number of exposures.
-do_sextractor: true
-filters: # ! A list of the filters in which the data has been taken.
-mjd: 58455
-object: FRB-181112--Host
-other_objects:
-  fg_181112: {dec: -52.969602, ra: 327.34973}
-sextractor_field_back_size: # Size of the background mesh to use in SExtractor background calculation. Really only here because, if your host is near other galaxies, it can affect whether or not the mag_auto estimate includes some light from those. If this is the case, it will take some fiddling to find the correct value.
-skip_astrometry: true
-skip_copy: true
-skip_download: true
-sm_cat: /home/lachlan/Data/FRB181112/SkyMapper/skymapper_objects_dr2.csv
-sm_fits: /home/lachlan/Data/FRB181112/SkyMapper/SkyMapper_g_20140923113603-07_327.349-52.971_600x600.fits
-std_cat: /home/lachlan/Data/FRBxxxxxx/FORS2/MJDxxxxxx/calibration/std_star/sdss/SDSS.csv
-std_cat_name: SDSS
+gaia_cat: # Directory of GAIA catalogue for this field, in csv format.
+mjd: # Modified Julian Day on which the observation occurred.
+object: # Name of object as given in the FITS files headers
+sextractor_kron_radius: # Kron radius to use for mag_auto determination in SExtractor (see SExtractor documentation)
+skip_astrometry: # Skip correction using astrometry.net; useful for re-running, as this step takes a while.
+skip_copy: # Skip copying the data to the esoreflex directory; useful for re-running, as this step takes a while.
+skip_download: # Skip downloading the data from the ESO server; use if you already have the data locally.
+sm_cat: # Directory of SkyMapper catalogue for this field, in csv format.
+sm_fits: # Directory to SkyMapper cutout
+std_cat: # Catalogue for use with standard field
+std_cat_name: # Name of catalogue for use with standard field.
 threshold: # Threshold value to feed to SExtractor's DETECT_THRESH and ANALYSIS_THRESH arguments.
 
