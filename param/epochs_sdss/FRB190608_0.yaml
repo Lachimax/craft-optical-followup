@@ -1,0 +1,5 @@
+data_dir: /home/lachlan/Data/FRB190608/SDSS/
+filters: [g, i]
+sextractor_field_back_size: 32
+subtraction_image: subtraction_image
+threshold: 1.5
