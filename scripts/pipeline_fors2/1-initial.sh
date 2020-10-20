@@ -72,8 +72,11 @@ fi
 
 for filter_path in "${data_dir}"calibration/std_star/*_*/; do
   for pointing_path in "${filter_path}"RA*_DEC*/; do
-    mkdir "${pointing_path}/0-data_with_raw_calibs/"
-    mv "${pointing_path}/"*.fits "${pointing_path}/0-data_with_raw_calibs/"
+    if mkdir "${pointing_path}/0-data_with_raw_calibs/"; then
+      mv "${pointing_path}/"*.fits "${pointing_path}/0-data_with_raw_calibs/"
+    else
+      echo "No standard star data provided for $(basename ${filter_path})."
+    fi
   done
 done
 
