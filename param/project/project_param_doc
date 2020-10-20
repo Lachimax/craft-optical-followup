@@ -1,0 +1,8 @@
+top_data_dir: Top-level data directory; all data outputs will be deposited somewhere in here.
+eso_calib_dir: This should point to the directory where ESO Reflex keeps its calibration data. It will look like ESO/install/calib/fors-5.4.3/
+esoreflex_input_dir: The directory which ESO Reflex reads for input; you can check this by opening ESO Reflex and looking for the variable RAW_DATA_DIR; this needs to be <RAW_DATA_DIR>/reflex_input/fors/
+esoreflex_output_dir: The directory in which ESO Reflex deposits its output; you can check this by opening ESO Reflex and looking for the variable ROOT_DATA_DIR; this needs to be <ROOT_DATA_DIR>/reflex_input/fors/
+filter_dir: Where you keep your filter profile tables; you probably won't need this.
+proj_dir: The directory to this code repository.
+photom_calib_dir: The directory in which you keep nightly calibration data retrieved from http://archive.eso.org/bin/qc1_cgi?action=qc1_browse_table&table=fors2_photometry; I suggest <top_data_dir>/photometry_calib/
+std_field_dir: The directory in which you wish standard calibration fields to be deposited; I suggest <top_data_dir>/std_fields/
