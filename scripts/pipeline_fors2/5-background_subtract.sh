@@ -2,29 +2,33 @@
 
 # Code by Lachlan Marnoch, 2019
 
-param_file=$1
-proj_param_file=$2
-origin=$3
-destination=$4
-normalise=$5
 
-if [[ -z ${proj_param_file} ]]; then
-    proj_param_file=unicomp
-fi
+param_file=$1
+origin=$2
 if [[ -z ${origin} ]]; then
     origin=4-divided_by_exp_time/
 fi
+
+destination=$3
 if [[ -z ${destination} ]]; then
     destination=5-background_subtracted_with_python/
 fi
+
+normalise=$4
 if [[ -z ${normalise} ]]; then
     normalise=true
 fi
 
-proj_dir=$(jq -r .proj_dir "param/project/${proj_param_file}.json")
+config_file="param/config.json"
+if ! proj_dir=$(jq -r .proj_dir ${config_file}); then
+  echo "Configuration file not found."
+  exit
+fi
 
-data_dir=$(jq -r .data_dir "param/epochs_fors2/${param_file}.json")
-data_title=$(jq -r .data_title "param/epochs_fors2/${param_file}.json")
+param_dir=$(jq -r .param_dir "${config_file}")
+
+data_dir=$(jq -r .data_dir "${proj_dir}/epochs_fors2/${param_file}.json")
+data_title=$(jq -r .data_title "${proj_dir}/epochs_fors2/${param_file}.json")
 
 #if ${do_sextractor} ; then
 #    python3 ${proj_dir}/scripts/pipeline_fors2/5-background_subtract.py --directory ${data_dir} -op ${data_title} --sextractor_directory ${data_dir}/analysis/sextractor/individuals_back_subtracted/

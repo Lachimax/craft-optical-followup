@@ -33,7 +33,7 @@ def main(obj,
     properties = p.object_params_fors2(obj)
     outputs = p.object_output_params(obj=obj, instrument='fors2')
 
-    proj_paths = p.project_params(project)
+    proj_paths = p.config
 
     output = properties['data_dir'] + '9-zeropoint/'
     mkdir_check(output)

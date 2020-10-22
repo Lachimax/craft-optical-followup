@@ -6,14 +6,18 @@
 #TODO: Make into a proper bash script
 
 param_file=$1
-proj_param_file=$2
-dir=$3
+dir=$2
 
-proj_dir=$(jq -r .proj_dir "param/project/${proj_param_file}.json")
-eso_calib_dir=$(jq -r .eso_calib_dir "param/project/${proj_param_file}.json")
+config_file="param/config.json"
+if ! proj_dir=$(jq -r .proj_dir ${config_file}); then
+  echo "Configuration file not found."
+  exit
+fi
+param_dir=$(jq -r .param_dir "${config_file}")
+eso_calib_dir=$(jq -r .eso_calib_dir "${config_file}")
 
-data_dir=$(jq -r .data_dir "param/epochs_fors2/${param_file}.json")
-data_title=$(jq -r .data_title "param/epochs_fors2/${param_file}.json")
+data_dir=$(jq -r .data_dir "${param_dir}/epochs_fors2/${param_file}.json")
+data_title=$(jq -r .data_title "${param_dir}/epochs_fors2/${param_file}.json")
 
 if [[ -z ${dir} ]]; then
   dir=${data_dir}calibration/std_star/

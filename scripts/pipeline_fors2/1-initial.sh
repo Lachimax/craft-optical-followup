@@ -4,21 +4,22 @@
 # Syntax: ./initial.sh param_file_name
 
 param_file=$1
-proj_param_file=$2
 
-if [[ -z ${proj_param_file} ]]; then
-  proj_param_file=unicomp
+config_file="param/config.json"
+
+if ! proj_dir=$(jq -r .proj_dir ${config_file}); then
+  echo "Configuration file not found."
+  exit
 fi
 
-# Read in parameters
-proj_dir=$(jq -r .proj_dir param/project/${proj_param_file}.json)
+param_dir=$(jq -r .param_dir "${config_file}")
 
-data_dir=$(jq -r .data_dir "param/epochs_fors2/${param_file}.json")
-data_title=$(jq -r .data_title "param/epochs_fors2/${param_file}.json")
-skip_download=$(jq -r .skip_download "param/epochs_fors2/${param_file}.json")
-skip_copy=$(jq -r .skip_copy "param/epochs_fors2/${param_file}.json")
+data_dir=$(jq -r .data_dir "${param_dir}/epochs_fors2/${param_file}.json")
+data_title=$(jq -r .data_title "${param_dir}/epochs_fors2/${param_file}.json")
+skip_download=$(jq -r .skip_download "${param_dir}/epochs_fors2/${param_file}.json")
+skip_copy=$(jq -r .skip_copy "${param_dir}/epochs_fors2/${param_file}.json")
 
-eso_destination=$(jq -r .esoreflex_input_dir "param/project/${proj_param_file}.json")
+eso_destination=$(jq -r .esoreflex_input_dir "${config_file}")
 
 cd "${proj_dir}" || exit
 
@@ -55,7 +56,7 @@ if ! ${skip_download}; then
     cd 0-data_with_raw_calibs/ || exit
 
   fi
-  date +%Y-%m-%dT%T >>${data_title}.log
+  date +%Y-%m-%dT%T >>"${data_title}.log"
   echo "Files downloaded from ESO archive." >>"${data_title}.log"
   echo "Decompressing files..."
   if uncompress ./*.Z; then
@@ -75,7 +76,7 @@ for filter_path in "${data_dir}"calibration/std_star/*_*/; do
     if mkdir "${pointing_path}/0-data_with_raw_calibs/"; then
       mv "${pointing_path}/"*.fits "${pointing_path}/0-data_with_raw_calibs/"
     else
-      echo "No standard star data provided for $(basename ${filter_path})."
+      echo "No standard star data provided for $(basename "${filter_path}")."
     fi
   done
 done

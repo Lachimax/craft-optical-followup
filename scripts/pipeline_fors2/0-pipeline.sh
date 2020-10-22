@@ -7,28 +7,27 @@ if [[ -z ${param_file} ]]; then
     exit
 fi
 
-proj_param_file=$2
-
-if [[ -z ${proj_param_file} ]]; then
-    proj_param_file=homecomp
-fi
-
-sub_back=$3
+sub_back=$2
 
 if [[ -z ${sub_back} ]]; then
     sub_back=false
 fi
 
-if ! python3 scripts/params.py -op "${param_file}" -pp "${proj_param_file}"; then
+if ! python3 scripts/params.py; then
   echo "Something went wrong with reading or writing the param files."
   exit
 fi
 
-if ! proj_dir=$(jq -r .proj_dir param/project/${proj_param_file}.json); then
-  echo "Project parameter file not found."
+config_file="param/config.json"
+
+if ! proj_dir=$(jq -r .proj_dir ${config_file}); then
+  echo "Configuration file not found."
   exit
 fi
-if ! data_dir=$(jq -r .data_dir param/epochs_fors2/${param_file}.json); then
+
+param_dir=$(jq -r .param_dir "${config_file}")
+
+if ! data_dir=$(jq -r .data_dir "${param_dir}/epochs_fors2/${param_file}.json"); then
   echo "Epoch parameter file not found."
   exit
 fi
@@ -43,7 +42,7 @@ run_script () {
     select yn in "Yes" "Skip" "Exit"; do
     case ${yn} in
         Yes )
-            if ${proj_dir}scripts/pipeline_fors2/${script}.sh ${param_file} ${proj_param_file}; then
+            if "${proj_dir}scripts/pipeline_fors2/${script}.sh" "${param_file}"; then
                 break;
             else
                 echo "Something went wrong. Try again?"
@@ -67,7 +66,7 @@ run_script_folders () {
     select yn in "Yes" "Skip" "Exit"; do
     case ${yn} in
         Yes )
-            if ${proj_dir}scripts/pipeline_fors2/${script}.sh ${param_file} ${proj_param_file} ${origin} ${destination}; then
+            if "${proj_dir}scripts/pipeline_fors2/${script}.sh" "${param_file}" "${origin}" "${destination}"; then
                 break;
             else
                 echo "Something went wrong. Try again?"
@@ -114,10 +113,10 @@ else
     folder=""
 fi
 
-mkdir ${data_dir}${folder}
+mkdir "${data_dir}${folder}"
 
 if ${sub_back} ; then
-    cp -r ${data_dir}4-divided_by_exp_time ${data_dir}${folder}4-divided_by_exp_time
+    cp -r "${data_dir}4-divided_by_exp_time" "${data_dir}${folder}4-divided_by_exp_time"
     run_script_folders 5-background_subtract '' ${folder}4-divided_by_exp_time/
     run_script_folders 6-montage '' ${folder}5-background_subtracted_with_python/ ${folder}6-combined_with_montage/
 else

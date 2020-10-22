@@ -3,20 +3,22 @@
 # For sorting the products of the FORS ESO pipeline.
 
 param_file=$1
-proj_param_file=$2
 
-if [[ -z ${proj_param_file} ]]; then
-    proj_param_file=unicomp
+config_file="param/config.json"
+
+if ! proj_dir=$(jq -r .proj_dir ${config_file}); then
+  echo "Configuration file not found."
+  exit
 fi
 
-proj_dir=$(jq -r .proj_dir param/project/${proj_param_file}.json)
-esoreflex_input_dir=$(jq -r .esoreflex_input_dir param/project/${proj_param_file}.json)
-esoreflex_output_dir=$(jq -r .esoreflex_output_dir param/project/${proj_param_file}.json)
+param_dir=$(jq -r .param_dir "${config_file}")
+esoreflex_input_dir=$(jq -r .esoreflex_input_dir "${config_file}")
+esoreflex_output_dir=$(jq -r .esoreflex_output_dir "${config_file}")
 
-data_dir=$(jq -r .data_dir "param/epochs_fors2/${param_file}.json")
-data_title=$(jq -r .data_title "param/epochs_fors2/${param_file}.json")
-skip_copy=$(jq -r .skip_copy "param/epochs_fors2/${param_file}.json")
-object=$(jq -r .object "param/epochs_fors2/${param_file}.json")
+data_dir=$(jq -r .data_dir "${param_dir}/epochs_fors2/${param_file}.json")
+data_title=$(jq -r .data_title "${param_dir}/epochs_fors2/${param_file}.json")
+skip_copy=$(jq -r .skip_copy "${param_dir}/epochs_fors2/${param_file}.json")
+object=$(jq -r .object "${param_dir}/epochs_fors2/${param_file}.json")
 
 destination=${data_dir}/1-reduced_with_esoreflex
 mkdir "${destination}"
@@ -25,7 +27,7 @@ if cd "${esoreflex_output_dir}" ; then
 
     # Copy the folder containing fits files with matching object names back from the esoreflex directory to the data directory.
     if ! ${skip_copy} ; then
-        if ! [[ -z $(find . -name "*${object}*" -print -quit) ]] ; then
+        if [[ -n $(find . -name "*${object}*" -print -quit) ]] ; then
             for name in **/ ; do
                 cd "${name}" || exit
                 if [[ -n $(find . -name "*${object}*" -print -quit) ]] ; then

@@ -3,43 +3,40 @@
 # Copy header from coadded image to astrometry image.
 
 param_file=$1
-proj_param_file=$2
-origin=$3
-destination=$4
-
-if [[ -z ${proj_param_file} ]]; then
-  proj_param_file=unicomp
-fi
-
+origin=$2
 if [[ -z ${origin} ]]; then
   origin=7-trimmed_again/
 fi
-
+destination=$3
 if [[ -z ${destination} ]]; then
   destination=8-astrometry/
 fi
 
-proj_dir=$(jq -r .proj_dir param/project/${proj_param_file}.json)
+config_file="param/config.json"
+if ! proj_dir=$(jq -r .proj_dir ${config_file}); then
+  echo "Configuration file not found."
+  exit
+fi
+param_dir=$(jq -r .param_dir "${config_file}")
 
-if ! key=$(jq -r .astrometry param/keys.json)
-then
+if ! key=$(jq -r .astrometry param/keys.json); then
   echo "Astrometry.net key required; keys.json not found."
   exit
 fi
 
-skip_astrometry=$(jq -r .skip_astrometry "param/epochs_fors2/${param_file}.json")
-data_dir=$(jq -r .data_dir "param/epochs_fors2/${param_file}.json")
-data_title=$(jq -r .data_title "param/epochs_fors2/${param_file}.json")
+skip_astrometry=$(jq -r .skip_astrometry "${param_dir}/epochs_fors2/${param_file}.json")
+data_dir=$(jq -r .data_dir "${param_dir}/epochs_fors2/${param_file}.json")
+data_title=$(jq -r .data_title "${param_dir}/epochs_fors2/${param_file}.json")
 
-data_dir=$(jq -r .data_dir "param/epochs_fors2/${param_file}.json")
-do_sextractor=$(jq -r .do_sextractor "param/epochs_fors2/${param_file}.json")
-threshold=$(jq -r .threshold "param/epochs_fors2/${param_file}.json")
-deepest_filter=$(jq -r .deepest_filter "param/epochs_fors2/${param_file}.json")
+data_dir=$(jq -r .data_dir "${param_dir}/epochs_fors2/${param_file}.json")
+do_sextractor=$(jq -r .do_sextractor "${param_dir}/epochs_fors2/${param_file}.json")
+threshold=$(jq -r .threshold "${param_dir}/epochs_fors2/${param_file}.json")
+deepest_filter=$(jq -r .deepest_filter "${param_dir}/epochs_fors2/${param_file}.json")
 
 object=${data_title::-2}
 
-ra=$(jq -r .hg_ra "param/FRBs/${object}.json")
-dec=$(jq -r .hg_dec "param/FRBs/${object}.json")
+ra=$(jq -r .hg_ra "${param_dir}/FRBs/${object}.json")
+dec=$(jq -r .hg_dec "${param_dir}/FRBs/${object}.json")
 
 dir=${data_dir}${destination}
 

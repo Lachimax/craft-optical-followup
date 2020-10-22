@@ -2,28 +2,26 @@
 # Code by Lachlan Marnoch, 2019
 
 param_file=$1
-proj_param_file=$2
-origin=$3
-destination=$4
-sextractor_destination=$5
-
-if [[ -z ${proj_param_file} ]]; then
-  proj_param_file=unicomp
-fi
-
-proj_dir=$(jq -r .proj_dir "param/project/${proj_param_file}.json")
-
-data_dir=$(jq -r .data_dir "param/epochs_fors2/${param_file}.json")
-data_title=$(jq -r .data_title "param/epochs_fors2/${param_file}.json")
-do_sextractor=$(jq -r .do_sextractor "param/epochs_fors2/${param_file}.json")
-
+origin=$2
 if [[ -z ${origin} ]]; then
   origin=6-combined_with_montage
 fi
-
+destination=$3
 if [[ -z ${destination} ]]; then
   destination=7-trimmed_again
 fi
+sextractor_destination=$4
+
+config_file="param/config.json"
+if ! proj_dir=$(jq -r .proj_dir ${config_file}); then
+  echo "Configuration file not found."
+  exit
+fi
+param_dir=$(jq -r .param_dir "${config_file}")
+
+data_dir=$(jq -r .data_dir "${param_dir}/epochs_fors2/${param_file}.json")
+data_title=$(jq -r .data_title "${param_dir}/epochs_fors2/${param_file}.json")
+do_sextractor=$(jq -r .do_sextractor "${param_dir}/epochs_fors2/${param_file}.json")
 
 mkdir "${data_dir}/${destination}/"
 
@@ -52,7 +50,6 @@ if ${do_sextractor}; then
 else
   python3 "${proj_dir}/scripts/pipeline_fors2/7-trim_combined.py" --directory "${data_dir}/${origin}/" --destination "${data_dir}/${destination}/" --object "${data_title}"
 fi
-
 
 if cd "${data_dir}/${destination}/"; then
   cp "${data_dir}/${origin}/${data_title}.log" "./${data_title}.log"

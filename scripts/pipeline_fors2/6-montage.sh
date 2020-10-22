@@ -2,30 +2,34 @@
 # Bruce Berriman, February, 2016
 # Adapted by Lachlan Marnoch, 2019
 
-param_file=$1
-proj_param_file=$2
-origin=$3
-destination=$4
-
-if [[ -z ${proj_param_file} ]]; then
-  proj_param_file=unicomp
-fi
-
 # TODO: Rewrite so that the files don't need to be copied to the Montage directory before combining, instead reading them from previous path.
 
-proj_dir=$(jq -r .proj_dir "param/project/${proj_param_file}.json")
+if ! command -v mProjExec
+then
+  echo "Montage does not appear to be installed properly. Please refer to documentation."
+fi
 
-data_dir=$(jq -r .data_dir "param/epochs_fors2/${param_file}.json")
-data_title=$(jq -r .data_title "param/epochs_fors2/${param_file}.json")
-object=$(jq -r .object "param/epochs_fors2/${param_file}.json")
-
+param_file=$1
+origin=$2
 if [[ -z ${origin} ]]; then
   origin=4-divided_by_exp_time
 fi
-
+destination=$3
 if [[ -z ${destination} ]]; then
   destination=6-combined_with_montage
 fi
+
+config_file="param/config.json"
+if ! proj_dir=$(jq -r .proj_dir ${config_file}); then
+  echo "Configuration file not found."
+  exit
+fi
+
+param_dir=$(jq -r .param_dir "${config_file}")
+
+data_dir=$(jq -r .data_dir "${param_dir}/epochs_fors2/${param_file}.json")
+data_title=$(jq -r .data_title "${param_dir}/epochs_fors2/${param_file}.json")
+object=$(jq -r .object "${param_dir}/epochs_fors2/${param_file}.json")
 
 cd "${data_dir}" || exit
 cd "${origin}" || exit
@@ -35,11 +39,6 @@ cd "${data_dir}" || exit
 echo "Copy science data to Montage folder..."
 
 pwd
-
-if ! command -v mProjExec
-then
-  echo "Montage does not appear to be installed properly. Please refer to documentation."
-fi
 
 mkdir ${destination}/
 

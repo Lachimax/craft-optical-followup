@@ -1,17 +1,19 @@
 #!/usr/bin/env bash
 
 param_file=$1
-proj_param_file=$2
+config_file="param/config.json"
 
-if [[ -z ${proj_param_file} ]]; then
-    proj_param_file=unicomp
+if ! proj_dir=$(jq -r .proj_dir ${config_file}); then
+  echo "Configuration file not found."
+  exit
 fi
 
-proj_dir=$(jq -r .proj_dir param/project/${proj_param_file}.json)
+param_dir=$(jq -r .param_dir "${config_file}")
+proj_dir=$(jq -r .proj_dir "${config_file}")
 
-data_dir=$(jq -r .data_dir param/epochs_fors2/${param_file}.json)
-data_title=$(jq -r .data_title param/epochs_fors2/${param_file}.json)
-do_sextractor=$(jq -r .do_sextractor param/epochs_fors2/${param_file}.json)
+data_dir=$(jq -r .data_dir "${param_dir}/epochs_fors2/${param_file}.json")
+data_title=$(jq -r .data_title "${param_dir}/epochs_fors2/${param_file}.json")
+do_sextractor=$(jq -r .do_sextractor "${param_dir}/epochs_fors2/${param_file}.json")
 
 #if ${do_sextractor} ; then
 #    python3 ${proj_dir}/scripts/pipeline_fors2/3-trim.py --origin ${data_dir}/2-sorted/ --destination ${data_dir}/3-trimmed_with_python/ -op ${data_title} --sextractor_directory ${data_dir}/analysis/sextractor/individuals_trimmed/
@@ -39,4 +41,4 @@ do_sextractor=$(jq -r .do_sextractor param/epochs_fors2/${param_file}.json)
 #    python3 ${proj_dir}/scripts/pipeline_fors2/3-trim.py --origin ${data_dir}/2-sorted/ --destination ${data_dir}/3-trimmed_with_python/ -op ${data_title}
 #fi
 
-python3 ${proj_dir}/scripts/pipeline_fors2/3-trim.py --origin ${data_dir}/2-sorted/ --destination ${data_dir}/3-trimmed_with_python/ -op ${data_title}
+python3 "${proj_dir}/scripts/pipeline_fors2/3-trim.py" --origin "${data_dir}/2-sorted/" --destination "${data_dir}/3-trimmed_with_python/" -op "${data_title}"

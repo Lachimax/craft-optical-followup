@@ -3,44 +3,39 @@
 # TODO: Turn this into a proper bash script.
 
 param_file=$1
-proj_param_file=$2
-origin=$3
-destination=$4
-write_paths=$5
-kron_radius=$6
-
-if [[ -z ${proj_param_file} ]]; then
-    proj_param_file=unicomp
-fi
-
+origin=$2
 if [[ -z ${origin} ]]; then
     origin=8-astrometry/
 fi
-
+destination=$3
 if [[ -z ${destination} ]]; then
     destination=9-zeropoint/
 fi
-
+write_paths=$4
 if [[ -z ${write_paths} ]]; then
     write_paths=true
 fi
+kron_radius=$5
 
-# Extract parameters from param json files using jq.
+config_file="param/config.json"
+if ! proj_dir=$(jq -r .proj_dir ${config_file}); then
+  echo "Configuration file not found."
+  exit
+fi
+param_dir=$(jq -r .param_dir "${config_file}")
 
-proj_dir=$(jq -r .proj_dir param/project/${proj_param_file}.json)
-
-data_dir=$(jq -r .data_dir "param/epochs_fors2/${param_file}.json")
-data_title=$(jq -r .data_title "param/epochs_fors2/${param_file}.json")
-skip_esorex=$(jq -r .skip_esorex "param/epochs_fors2/${param_file}.json")
-do_dual_mode=$(jq -r .do_dual_mode "param/epochs_fors2/${param_file}.json")
-do_sextractor=$(jq -r .do_sextractor "param/epochs_fors2/${param_file}.json")
+data_dir=$(jq -r .data_dir "${param_dir}/epochs_fors2/${param_file}.json")
+data_title=$(jq -r .data_title "${param_dir}/epochs_fors2/${param_file}.json")
+skip_esorex=$(jq -r .skip_esorex "${param_dir}/epochs_fors2/${param_file}.json")
+do_dual_mode=$(jq -r .do_dual_mode "${param_dir}/epochs_fors2/${param_file}.json")
+do_sextractor=$(jq -r .do_sextractor "${param_dir}/epochs_fors2/${param_file}.json")
 
 
 if [[ -z ${kron_radius} ]]; then
-    kron_radius=$(jq -r .sextractor_kron_radius "param/epochs_fors2/${param_file}.json")
+    kron_radius=$(jq -r .sextractor_kron_radius "${param_dir}/epochs_fors2/${param_file}.json")
 fi
-deepest_filter=$(jq -r .deepest_filter "param/epochs_fors2/${param_file}.json")
-threshold=$(jq -r .threshold "param/epochs_fors2/${param_file}.json")
+deepest_filter=$(jq -r .deepest_filter "${param_dir}/epochs_fors2/${param_file}.json")
+threshold=$(jq -r .threshold "${param_dir}/epochs_fors2/${param_file}.json")
 df=${deepest_filter::1}
 
 if ${do_sextractor} ; then
@@ -70,12 +65,12 @@ if ${do_sextractor} ; then
             fwhm=$(jq -r ".${image_0}_fwhm_arcsec" "${data_dir}output_values.json")
             echo "FWHM: ${fwhm} arcsecs"
             echo "KRON RADIUS: ${kron_radius}"
-            sextractor "${image}" -c psf-fit.sex -CATALOG_NAME "${image_0}_psf-fit.cat" -PSF_NAME "${image_0}_psfex.psf" -SEEING_FWHM "${fwhm}" -PHOT_AUTOPARAMS ${kron_radius},1.0 -DETECT_THRESH "${threshold}" -ANALYSIS_THRESH "${threshold}"
+            sextractor "${image}" -c psf-fit.sex -CATALOG_NAME "${image_0}_psf-fit.cat" -PSF_NAME "${image_0}_psfex.psf" -SEEING_FWHM "${fwhm}" -PHOT_AUTOPARAMS "${kron_radius},1.0" -DETECT_THRESH "${threshold}" -ANALYSIS_THRESH "${threshold}"
             # If this is not the deepest image, we run in dual mode, using the deepest image for finding.
 
             if [[ ${image_0} != "${df}" ]] ; then
                 if ${do_dual_mode} ; then
-                    sextractor "${df}_${suff}.fits,${image}" -c psf-fit.sex -CATALOG_NAME "${image_0}_dual-mode.cat" -PSF_NAME "${image_0}_psfex.psf" -SEEING_FWHM "${fwhm}" -PHOT_AUTOPARAMS ${kron_radius},1.0 -DETECT_THRESH "${threshold}" -ANALYSIS_THRESH "${threshold}"
+                    sextractor "${df}_${suff}.fits,${image}" -c psf-fit.sex -CATALOG_NAME "${image_0}_dual-mode.cat" -PSF_NAME "${image_0}_psfex.psf" -SEEING_FWHM "${fwhm}" -PHOT_AUTOPARAMS "${kron_radius},1.0" -DETECT_THRESH "${threshold}" -ANALYSIS_THRESH "${threshold}"
                     cd "${proj_dir}" || exit
                     if ${write_paths} ; then
                         python3 scripts/add_path.py --op "${data_title}" --key "${image_0}_cat_path" --path "${sextractor_destination_path}${image_0}_dual-mode.cat" --instrument FORS2
@@ -104,7 +99,7 @@ python3 "scripts/zeropoint.py" --op "${data_title}" -write --instrument FORS2
 
 echo "Skip esorex ${skip_esorex}"
 if ! ${skip_esorex} ; then
-    ./scripts/pipeline_fors2/9-esorex_zeropoint.sh "${param_file}" "${proj_param_file}"
+    ./scripts/pipeline_fors2/9-esorex_zeropoint.sh "${param_file}"
 fi
 
 echo 'Standard-field zeropoint:'

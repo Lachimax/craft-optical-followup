@@ -1,0 +1,10 @@
+{ eso_calib_dir: <esoreflex>/install/calib/fors-5.4.3/,
+  esoreflex_input_dir: <esoreflex>/data_wkf/reflex_input/fors/,
+  esoreflex_output_dir: <esoreflex>/reflex_data/reflex_end_products/,
+  filter_dir: <data_directory>/Filters/,
+  param_dir: param/,
+  photom_calib_dir: <data_directory>/photometry_calib/,
+  proj_dir: <some_directory>/craft-optical-followup/,
+  std_field_dir: <data_directory>/std_fields/,
+  top_data_dir: <data_directory>,
+}
