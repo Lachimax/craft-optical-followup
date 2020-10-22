@@ -51,14 +51,26 @@ def main(origin_dir, output_dir, data_title, sextractor_path):
         files.sort()
         if not edged:
             # Find borders of noise frame using backgrounds.
-            up_left, up_right, up_bottom, up_top = f.detect_edges(wdir + fil + "/" + files[0])
-            dn_left, dn_right, dn_bottom, dn_top = f.detect_edges(wdir + fil + "/" + files[1])
+            # First, make sure that the background we're using is for the top chip.
+            i = 0
+            while f.get_chip_num(wdir + fil + "/" + files[i]) != 1:
+                i += 1
+            up_left, up_right, up_bottom, up_top = f.detect_edges(wdir + fil + "/" + files[i])
+            # Ditto for the bottom chip.
+            i = 0
+            while f.get_chip_num(wdir + fil + "/" + files[i]) != 2:
+                i += 1
+            dn_left, dn_right, dn_bottom, dn_top = f.detect_edges(wdir + fil + "/" + files[i])
             up_left = up_left + 5
             up_right = up_right - 5
             up_top = up_top - 5
             dn_left = dn_left + 5
             dn_right = dn_right - 5
             dn_bottom = dn_bottom + 5
+            print('Upper chip:')
+            print(up_left, up_right, up_top, up_bottom)
+            print('Lower:')
+            print(dn_left, dn_right, dn_top, dn_bottom)
 
             edged = True
 
@@ -66,13 +78,13 @@ def main(origin_dir, output_dir, data_title, sextractor_path):
             print(f'{i} {file}')
 
         for i, file in enumerate(files):
-            # Split the files into upper CCD and lower CCD, with even-numbered being upper and odd-numbered being lower
             new_path = output_dir + "backgrounds/" + fil + "/" + file.replace(".fits", "_trim.fits")
             # Add GAIN and SATURATE keywords to headers.
             path = wdir + fil + "/" + file
 
             print(f'{i} {file}')
 
+            # Split the files into upper CCD and lower CCD
             if f.get_chip_num(path) == 1:
                 print('Upper Chip:')
                 f.trim_file(path, left=up_left, right=up_right, top=up_top, bottom=up_bottom,

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Code by Lachlan Marnoch, 2019
+
 param_file=$1
 proj_param_file=$2
 
@@ -8,12 +8,9 @@ if [[ -z ${proj_param_file} ]]; then
 fi
 
 proj_dir=$(jq -r .proj_dir param/project/${proj_param_file}.json)
-esoreflex_dir=$(jq -r .esoreflex_dir param/project/${proj_param_file}.json)
 
 data_dir=$(jq -r .data_dir param/epochs_fors2/${param_file}.json)
 data_title=$(jq -r .data_title param/epochs_fors2/${param_file}.json)
-skip_download=$(jq -r .skip_download param/epochs_fors2/${param_file}.json)
-object=$(jq -r .object param/epochs_fors2/${param_file}.json)
 do_sextractor=$(jq -r .do_sextractor param/epochs_fors2/${param_file}.json)
 
 #if ${do_sextractor} ; then
