@@ -119,4 +119,5 @@ pyraf/clcache\.v2
 *.DS_Store
 *.gitignore~
 
-/param/keys.json
+
+/param/config.yaml
