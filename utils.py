@@ -13,6 +13,18 @@ import matplotlib.pyplot as plt
 # TODO: Arrange these into some kind of logical order.
 # TODO: Also comment.
 
+def check_trailing_slash(path: str):
+    """
+    Adds a slash to the end of a string if it is missing.
+    :param path:
+    :return:
+    """
+
+    if path[-1] != "/" or len(path) == 0:
+        path += "/"
+    return path
+
+
 def size_from_ang_size_distance(theta: float, ang_size_distance: float):
     """
     Simply calculates the projected distance scale in an image from a given angular size distance (might I recommend
