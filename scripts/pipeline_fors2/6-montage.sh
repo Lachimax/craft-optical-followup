@@ -36,6 +36,11 @@ echo "Copy science data to Montage folder..."
 
 pwd
 
+if ! command -v mProjExec
+then
+  echo "Montage does not appear to be installed properly. Please refer to documentation."
+fi
+
 mkdir ${destination}/
 
 if cp -r ${origin}/* ${destination}/; then

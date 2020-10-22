@@ -21,7 +21,11 @@ fi
 
 proj_dir=$(jq -r .proj_dir param/project/${proj_param_file}.json)
 
-key=$(jq -r .astrometry param/keys.json)
+if ! key=$(jq -r .astrometry param/keys.json)
+then
+  echo "Astrometry.net key required; keys.json not found."
+  exit
+fi
 
 skip_astrometry=$(jq -r .skip_astrometry "param/epochs_fors2/${param_file}.json")
 data_dir=$(jq -r .data_dir "param/epochs_fors2/${param_file}.json")
