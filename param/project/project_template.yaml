@@ -1,8 +1,0 @@
-{ top_data_dir: /home/lachlan/Data/,
-  eso_calib_dir: /home/lachlan/ESO/install/calib/fors-5.4.3/,
-  esoreflex_input_dir: /home/lachlan/ESO/data_wkf/reflex_input/fors/,
-  esoreflex_output_dir: /home/reflex_data/reflex_end_products/,
-  filter_dir: /home/lachlan/Data/Filters/,
-  proj_dir: /home/lachlan/PycharmProjects/PyCRAFT/,
-  photom_calib_dir: /home/lachlan/Data/photometry_calib/,
-  std_field_dir: /home/lachlan/Data/std_fields/ }
