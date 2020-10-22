@@ -1,7 +1,5 @@
 #!/usr/bin/env bash
 
-# Code by Lachlan Marnoch, 2019
-
 param_file=$1
 
 if [[ -z ${param_file} ]]; then
@@ -12,7 +10,7 @@ fi
 proj_param_file=$2
 
 if [[ -z ${proj_param_file} ]]; then
-    proj_param_file=unicomp
+    proj_param_file=homecomp
 fi
 
 sub_back=$3
@@ -25,8 +23,14 @@ if ! python3 scripts/params.py -op "${param_file}" -pp "${proj_param_file}"; the
   echo "Something went wrong with reading or writing the param files."
 fi
 
-proj_dir=$(jq -r .proj_dir param/project/${proj_param_file}.json)
-data_dir=$(jq -r .data_dir param/epochs_fors2/${param_file}.json)
+if ! proj_dir=$(jq -r .proj_dir param/project/${proj_param_file}.json); then
+  echo "Project parameter file not found."
+  exit
+fi
+if ! data_dir=$(jq -r .data_dir param/epochs_fors2/${param_file}.json); then
+  echo "Epoch parameter file not found."
+  exit
+fi
 
 export PYTHONPATH=PYTHONPATH:${proj_dir}
 
