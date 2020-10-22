@@ -14,7 +14,6 @@ from matplotlib.patches import Ellipse
 from typing import Union
 
 from PyCRAFT import fits_files as ff
-from PyCRAFT import units
 from PyCRAFT import utils as u
 from PyCRAFT import params as p
 from PyCRAFT import astrometry as am
