@@ -10,6 +10,7 @@ import os
 
 
 def main(output_dir: 'str', data_title: 'str'):
+    output_dir = u.check_trailing_slash(output_dir)
     data_dir = output_dir + "/0-data_with_raw_calibs/"
 
     # Write tables of fits files to main directory; firstly, science images only:
