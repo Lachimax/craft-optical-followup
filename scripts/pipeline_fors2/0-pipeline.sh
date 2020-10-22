@@ -21,6 +21,7 @@ fi
 
 if ! python3 scripts/params.py -op "${param_file}" -pp "${proj_param_file}"; then
   echo "Something went wrong with reading or writing the param files."
+  exit
 fi
 
 if ! proj_dir=$(jq -r .proj_dir param/project/${proj_param_file}.json); then
