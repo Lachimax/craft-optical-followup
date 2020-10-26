@@ -13,13 +13,13 @@ if [[ -z ${destination} ]]; then
 fi
 
 config_file="param/config.json"
-if ! proj_dir=$(jq -r .proj_dir ${config_file}); then
+if ! proj_dir=$(jq -r .proj_dir "${config_file}"); then
   echo "Configuration file not found."
   exit
 fi
 param_dir=$(jq -r .param_dir "${config_file}")
 
-if ! key=$(jq -r .astrometry param/keys.json); then
+if ! key=$(jq -r .astrometry "${param_dir}/keys.json"); then
   echo "Astrometry.net key required; keys.json not found."
   exit
 fi
