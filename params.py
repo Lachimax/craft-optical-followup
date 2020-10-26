@@ -422,7 +422,9 @@ def refresh_params_all():
 def refresh_params_folder(folder: str, template: str):
     template = sanitise_file_ext(template, '.yaml')
     files = filter(lambda x: x[-5:] == '.yaml' and x != template, os.listdir(param_path + '' + folder + '/'))
-    template_params = load_params(param_path + folder + '/' + template)
+    # Get template file from within this project; use to update param files in param directory as specified in
+    # config.yaml
+    template_params = load_params('param/' + folder + '/' + template)
 
     per_filter = False
     if 'imacs' in folder:

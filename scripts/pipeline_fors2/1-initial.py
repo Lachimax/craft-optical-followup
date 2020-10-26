@@ -65,7 +65,7 @@ def main(output_dir: 'str', data_title: 'str'):
 
     param_dict['filters'] = filters
     param_dict['obs_name'] = table['obs_name'][0]
-    param_dict['mjd_obs'] = table['mjd_obs'][0]
+    param_dict['mjd_obs'] = float(table['mjd_obs'][0])
 
     for i, f in enumerate(filters):
         f_0 = f[0]

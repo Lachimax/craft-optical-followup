@@ -24,8 +24,6 @@ f_std_mag_range_upper: 21.5
 f_std_star_class_tol: 0.95
 gaia_cat: null
 manual_astrometry: False
-mjd: 0
-object: FRB-Host
 sextractor_kron_radius: 1.4
 skip_astrometry: false
 skip_esorex: false
@@ -37,3 +35,4 @@ std_cat: /home/lachlan/Data/FRBxxxxxx/FORS2/MJDxxxxx/calibration/std_star/sdss/S
 std_cat_name: SDSS
 subtraction_image: astrometry_image
 threshold: 1.5
+test: 0
