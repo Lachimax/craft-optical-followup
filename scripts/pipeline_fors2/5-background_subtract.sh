@@ -28,7 +28,7 @@ fi
 param_dir=$(jq -r .param_dir "${config_file}")
 
 data_dir=$(jq -r .data_dir "${proj_dir}/epochs_fors2/${param_file}.json")
-data_title=$(jq -r .data_title "${proj_dir}/epochs_fors2/${param_file}.json")
+data_title=${param_file}
 
 #if ${do_sextractor} ; then
 #    python3 ${proj_dir}/scripts/pipeline_fors2/5-background_subtract.py --directory ${data_dir} -op ${data_title} --sextractor_directory ${data_dir}/analysis/sextractor/individuals_back_subtracted/

@@ -1,7 +1,6 @@
 astrometry_tweak: True
 cat_field_name: DES
 data_dir: /home/lachlan/Data/FRBxxxxxx/FORS2/MJDxxxxx/
-data_title: FRBxxxxxx_1
 deepest_filter: g_HIGH
 des_cat: /home/lachlan/Data/FRBxxxxxx/DES/des_objects.csv
 do_dual_mode: true

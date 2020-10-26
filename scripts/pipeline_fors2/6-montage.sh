@@ -28,7 +28,7 @@ fi
 param_dir=$(jq -r .param_dir "${config_file}")
 
 data_dir=$(jq -r .data_dir "${param_dir}/epochs_fors2/${param_file}.json")
-data_title=$(jq -r .data_title "${param_dir}/epochs_fors2/${param_file}.json")
+data_title=${param_file}
 object=$(jq -r .object "${param_dir}/epochs_fors2/${param_file}.json")
 
 cd "${data_dir}" || exit

@@ -16,7 +16,7 @@ esoreflex_input_dir=$(jq -r .esoreflex_input_dir "${config_file}")
 esoreflex_output_dir=$(jq -r .esoreflex_output_dir "${config_file}")
 
 data_dir=$(jq -r .data_dir "${param_dir}/epochs_fors2/${param_file}.json")
-data_title=$(jq -r .data_title "${param_dir}/epochs_fors2/${param_file}.json")
+data_title=${param_file}
 skip_copy=$(jq -r .skip_copy "${param_dir}/epochs_fors2/${param_file}.json")
 
 object=$(jq -r .obs_name "${data_dir}/output_values.json")

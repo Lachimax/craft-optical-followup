@@ -17,7 +17,7 @@ param_dir=$(jq -r .param_dir "${config_file}")
 eso_calib_dir=$(jq -r .eso_calib_dir "${config_file}")
 
 data_dir=$(jq -r .data_dir "${param_dir}/epochs_fors2/${param_file}.json")
-data_title=$(jq -r .data_title "${param_dir}/epochs_fors2/${param_file}.json")
+data_title=${param_file}
 
 if [[ -z ${dir} ]]; then
   dir=${data_dir}calibration/std_star/

@@ -15,7 +15,7 @@ fi
 param_dir=$(jq -r .param_dir "${config_file}")
 
 data_dir=$(jq -r .data_dir "${param_dir}/epochs_fors2/${param_file}.json")
-data_title=$(jq -r .data_title "${param_dir}/epochs_fors2/${param_file}.json")
+data_title=${param_file}
 skip_download=$(jq -r .skip_download "${param_dir}/epochs_fors2/${param_file}.json")
 skip_copy=$(jq -r .skip_copy "${param_dir}/epochs_fors2/${param_file}.json")
 

@@ -401,11 +401,6 @@ def refresh_params_xshooter():
 def refresh_params_imacs():
     refresh_params_folder('epochs_imacs', template='FRB_imacs_epoch_template')
 
-
-def refresh_params_project():
-    refresh_params_folder('project', template='project_template')
-
-
 def refresh_params_filters():
     refresh_params_folder('filters', template='filter_template')
 
@@ -416,7 +411,6 @@ def refresh_params_all():
     refresh_params_imacs()
     refresh_params_des()
     refresh_params_frbs()
-    refresh_params_project()
 
 
 def refresh_params_folder(folder: str, template: str):
@@ -424,6 +418,7 @@ def refresh_params_folder(folder: str, template: str):
     files = filter(lambda x: x[-5:] == '.yaml' and x != template, os.listdir(param_path + '' + folder + '/'))
     # Get template file from within this project; use to update param files in param directory as specified in
     # config.yaml
+    print(f'Loading template from param/{folder}/{template}')
     template_params = load_params('param/' + folder + '/' + template)
 
     per_filter = False
