@@ -857,6 +857,8 @@ def fits_table(input_path: str, output_path: str = "", science_only: bool = True
             data['id'] = ids[i]
         if "OBJECT" in header:
             data['object'] = header["OBJECT"]
+        if "ESO OBS NAME" in header:
+            data['obs_name'] = header["ESO OBS NAME"]
         if "EXPTIME" in header:
             data['exp_time'] = header["EXPTIME"]
         if "AIRMASS" in header:
