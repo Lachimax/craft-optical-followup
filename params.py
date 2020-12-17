@@ -401,6 +401,7 @@ def refresh_params_xshooter():
 def refresh_params_imacs():
     refresh_params_folder('epochs_imacs', template='FRB_imacs_epoch_template')
 
+
 def refresh_params_filters():
     refresh_params_folder('filters', template='filter_template')
 
