@@ -34,6 +34,24 @@ mkdir "${data_dir}/analysis/photometry_tests/sextractor"
 mkdir "${data_dir}/calibration"
 mkdir "${data_dir}/calibration/std_star"
 
+echo $skip_download
+
+# If we're skipping the download but it hasn't actually been downloaded, that's a problem.
+if ${skip_download}; then
+  if ! [[ -d "${data_dir}/0-data_with_raw_calibs" ]] || [[ -d "${data_dir}/0-data_with_raw_calibs/*.fits" ]]; then
+    echo "There is no raw data present, however skip_download is set to 'true'. Would you like to override this, or cancel the procedure?"
+    select yn in "Override" "Exit"; do
+      case ${yn} in
+          Override ) skip_download=false
+            break;;
+          Exit ) exit;;
+      esac
+    done
+  fi
+fi
+
+echo $skip_download
+
 if ! ${skip_download}; then
 
   # Download files
