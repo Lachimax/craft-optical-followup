@@ -27,6 +27,8 @@ fi
 
 param_dir=$(jq -r .param_dir "${config_file}")
 
+echo "Loading epoch parameters from ${param_dir}/epochs_fors2/${param_file}.json"
+
 if ! data_dir=$(jq -r .data_dir "${param_dir}/epochs_fors2/${param_file}.json"); then
   echo "Epoch parameter file not found."
   exit
@@ -40,20 +42,20 @@ run_script () {
     echo ""
     echo "Run ${script}? ${extra_message}"
     select yn in "Yes" "Skip" "Exit"; do
-    case ${yn} in
-        Yes )
-            if "${proj_dir}scripts/pipeline_fors2/${script}.sh" "${param_file}"; then
-                break;
-            else
-                echo "Something went wrong. Try again?"
-                echo "1) Yes"
-                echo "2) Skip"
-                echo "3) Exit"
-            fi;;
-        Skip ) break;;
-        Exit ) exit;;
-    esac
-done
+      case ${yn} in
+          Yes )
+              if "${proj_dir}scripts/pipeline_fors2/${script}.sh" "${param_file}"; then
+                  break;
+              else
+                  echo "Something went wrong. Try again?"
+                  echo "1) Yes"
+                  echo "2) Skip"
+                  echo "3) Exit"
+              fi;;
+          Skip ) break;;
+          Exit ) exit;;
+      esac
+    done
 }
 
 run_script_folders () {
@@ -64,20 +66,20 @@ run_script_folders () {
     echo ""
     echo "Run ${script}? ${extra_message}"
     select yn in "Yes" "Skip" "Exit"; do
-    case ${yn} in
-        Yes )
-            if "${proj_dir}scripts/pipeline_fors2/${script}.sh" "${param_file}" "${origin}" "${destination}"; then
-                break;
-            else
-                echo "Something went wrong. Try again?"
-                echo "1) Yes"
-                echo "2) Skip"
-                echo "3) Exit"
-            fi;;
-        Skip ) break;;
-        Exit ) exit;;
-    esac
-done
+      case ${yn} in
+          Yes )
+              if "${proj_dir}scripts/pipeline_fors2/${script}.sh" "${param_file}" "${origin}" "${destination}"; then
+                  break;
+              else
+                  echo "Something went wrong. Try again?"
+                  echo "1) Yes"
+                  echo "2) Skip"
+                  echo "3) Exit"
+              fi;;
+          Skip ) break;;
+          Exit ) exit;;
+      esac
+    done
 }
 
 run_python () {
