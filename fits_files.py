@@ -626,7 +626,7 @@ def change_header(file: Union[fits.hdu.hdulist.HDUList, str], name: str, entry):
         path = file
         file = fits.open(path, mode='update')
     file[0].header[name] = entry
-    if path is not '':
+    if path != '':
         file.close(output_verify='ignore')
     return file
 
