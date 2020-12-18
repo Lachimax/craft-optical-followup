@@ -422,6 +422,7 @@ def detect_edges_area(file: Union['fits.hdu.hdulist.HDUList', 'str']):
 
     data = file[0].data
 
+    # We round to the 13th decimal place
     keep_val = np.round(np.max(data), 13)
     print(keep_val)
 
@@ -441,8 +442,17 @@ def detect_edges_area(file: Union['fits.hdu.hdulist.HDUList', 'str']):
 
     width = data.shape[1]
     mid_x = int(width / 2)
+    print(mid_x)
+    print(data[:, mid_x])
     slice_vert = np.round(data[:, mid_x], 13)
+    print(slice_vert.max())
     slice_vert_keep = np.nonzero(slice_vert == keep_val)[0]
+    while len(slice_hor_keep) == 0:
+        mid_x = int(mid_x / 2)
+        # Take a horizontal slice right across the middle of the image.
+        slice_hor = np.round(data[mid_x], 13)
+        slice_hor_keep = np.nonzero(slice_hor == keep_val)[0]
+    print(slice_vert_keep)
     bottom = slice_vert_keep[0]
     top = slice_vert_keep[-1]
 
