@@ -40,7 +40,7 @@ fi
 
 destination=$7
 
-#if ! python3 scripts/params.py -op "${param_file}" -pp "${proj_param_file}"; then
+#if ! python3 scripts/refresh_params.py -op "${param_file}" -pp "${proj_param_file}"; then
 #    echo "Something went wrong with reading or writing the param files."
 #fi
 
