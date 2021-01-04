@@ -34,8 +34,6 @@ mkdir "${data_dir}/analysis/photometry_tests/sextractor"
 mkdir "${data_dir}/calibration"
 mkdir "${data_dir}/calibration/std_star"
 
-echo $skip_download
-
 # If we're skipping the download but it hasn't actually been downloaded, that's a problem.
 if ${skip_download}; then
   if ! [[ -d "${data_dir}/0-data_with_raw_calibs" ]] || [[ -d "${data_dir}/0-data_with_raw_calibs/*.fits" ]]; then
@@ -49,8 +47,6 @@ if ${skip_download}; then
     done
   fi
 fi
-
-echo $skip_download
 
 if ! ${skip_download}; then
 

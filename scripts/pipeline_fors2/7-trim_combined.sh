@@ -31,11 +31,14 @@ if ${do_sextractor}; then
   fi
   sextractor_destination_path=${data_dir}/analysis/sextractor/${sextractor_destination}
   mkdir "${sextractor_destination_path}"
-  python3 "${proj_dir}/scripts/pipeline_fors2/7-trim_combined.py" --directory "${data_dir}/${origin}/" --destination "${data_dir}/${destination}/" --object "${data_title}" --sextractor_directory "${sextractor_destination_path}"
+  if ! python3 "${proj_dir}/scripts/pipeline_fors2/7-trim_combined.py" --directory "${data_dir}/${origin}/" --destination "${data_dir}/${destination}/" --object "${data_title}" --sextractor_directory "${sextractor_destination_path}" ; then
+    echo "There was an error with the Python script for trimming."
+    exit 1
+  fi
   if cd "${sextractor_destination_path}"; then
     cp "${proj_dir}/param/psfex/"* .
     for image in *_coadded.fits; do
-      sextractor "${image}" -c pre-psfex.sex -CATALOG_NAME "${image}_psfex.fits"
+      sex "${image}" -c pre-psfex.sex -CATALOG_NAME "${image}_psfex.fits"
       # Run PSFEx to get PSF analysis
       psfex "${image}_psfex.fits"
       cd "${proj_dir}" || exit
@@ -44,7 +47,7 @@ if ${do_sextractor}; then
       cd "${sextractor_destination_path}" || exit
       fwhm=$(jq -r "._fwhm_arcsec" "${sextractor_destination_path}${image}_output_values.json")
       echo "FWHM: ${fwhm} arcsecs"
-      sextractor "${image}" -c psf-fit.sex -CATALOG_NAME "${image}_psf-fit.cat" -PSF_NAME "${image}_psfex.psf" -SEEING_FWHM "${fwhm}"
+      sex "${image}" -c psf-fit.sex -CATALOG_NAME "${image}_psf-fit.cat" -PSF_NAME "${image}_psfex.psf" -SEEING_FWHM "${fwhm}"
     done
   fi
 else

@@ -103,4 +103,6 @@ if cd "${esoreflex_output_dir}"; then
   echo Files sorted using sort_after_esoreflex.sh >>"${destination}/${data_title}.log"
   echo "All done."
 
+else
+  echo "ESO Reflex end product directory not found."
 fi

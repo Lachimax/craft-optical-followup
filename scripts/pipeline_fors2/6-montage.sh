@@ -7,6 +7,7 @@
 if ! command -v mProjExec
 then
   echo "Montage does not appear to be installed properly. Please refer to documentation."
+  exit 1
 fi
 
 param_file=$1
@@ -22,7 +23,7 @@ fi
 config_file="param/config.json"
 if ! proj_dir=$(jq -r .proj_dir ${config_file}); then
   echo "Configuration file not found."
-  exit
+  exit 1
 fi
 
 param_dir=$(jq -r .param_dir "${config_file}")
