@@ -64,6 +64,7 @@ def main(output_dir: 'str', data_title: 'str'):
     ns_exposures = []
 
     param_dict['filters'] = filters
+    param_dict['object'] = table['object'][0]
     param_dict['obs_name'] = table['obs_name'][0]
     param_dict['mjd_obs'] = float(table['mjd_obs'][0])
 
