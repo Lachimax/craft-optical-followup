@@ -47,7 +47,7 @@ if cd "${sextractor_destination_path}"; then
     psfex "${image_f}_psfex.fits"
     cd "${proj_dir}" || exit
     # Use python to extract the FWHM from the PSFEx output.
-    python3 "${proj_dir}/scripts/pipeline_xshooter/7-psf.py" --directory "${data_dir}" --psfex_file "${sextractor_destination_path}${image_f}_psfex.psf" --image_file "${sextractor_destination_path}${image}" --prefix "${image_f}"
+    python3 "${proj_dir}/pipeline_xshooter/7-psf.py" --directory "${data_dir}" --psfex_file "${sextractor_destination_path}${image_f}_psfex.psf" --image_file "${sextractor_destination_path}${image}" --prefix "${image_f}"
     cd "${sextractor_destination_path}" || exit
     fwhm=$(jq -r ".${image_f}_fwhm_arcsec" "${data_dir}output_values.json")
     echo "FWHM: ${fwhm} arcsecs"

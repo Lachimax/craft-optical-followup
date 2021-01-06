@@ -85,7 +85,7 @@ if ${do_sextractor}; then
       psfex "${image_0}_psfex.fits"
       cd "${proj_dir}" || exit
       # Use python to extract the FWHM from the PSFEx output.
-      python3 "${proj_dir}/scripts/pipeline_fors2/9-psf.py" --directory "${data_dir}" --psfex_file "${sextractor_destination_path}${image_0}_psfex.psf" --image_file "${sextractor_destination_path}${image}" --prefix "${image_0}"
+      python3 "${proj_dir}/pipeline_fors2/9-psf.py" --directory "${data_dir}" --psfex_file "${sextractor_destination_path}${image_0}_psfex.psf" --image_file "${sextractor_destination_path}${image}" --prefix "${image_0}"
       cd "${sextractor_destination_path}" || exit
       fwhm=$(jq -r ".${image_0}_fwhm_arcsec" "${data_dir}output_values.json")
       echo "FWHM: ${fwhm} arcsecs"
@@ -96,4 +96,4 @@ fi
 
 # Copy important header items across and do tweak if necessary.
 cd "${proj_dir}" || exit
-python3 "${proj_dir}/scripts/pipeline_fors2/8-astrometry.py" --op "${data_title}" --astrometry_path "${dir}/" --sextractor_path "${sextractor_destination_path}" --template "${deepest_filter}"
+python3 "${proj_dir}/pipeline_fors2/8-astrometry.py" --op "${data_title}" --astrometry_path "${dir}/" --sextractor_path "${sextractor_destination_path}" --template "${deepest_filter}"

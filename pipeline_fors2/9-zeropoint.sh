@@ -60,7 +60,7 @@ if ${do_sextractor} ; then
             psfex "${image_0}_psfex.fits"
             cd "${proj_dir}" || exit
             # Use python to extract the FWHM from the PSFEx output.
-            python3 "${proj_dir}/scripts/pipeline_fors2/9-psf.py" --directory "${data_dir}" --psfex_file "${sextractor_destination_path}${image_0}_psfex.psf" --image_file "${sextractor_destination_path}${image}" --prefix "${image_0}"
+            python3 "${proj_dir}/pipeline_fors2/9-psf.py" --directory "${data_dir}" --psfex_file "${sextractor_destination_path}${image_0}_psfex.psf" --image_file "${sextractor_destination_path}${image}" --prefix "${image_0}"
             cd "${sextractor_destination_path}" || exit
             fwhm=$(jq -r ".${image_0}_fwhm_arcsec" "${data_dir}output_values.json")
             echo "FWHM: ${fwhm} arcsecs"
@@ -99,7 +99,7 @@ python3 "scripts/zeropoint.py" --op "${data_title}" -write --instrument FORS2
 
 echo "Skip esorex ${skip_esorex}"
 if ! ${skip_esorex} ; then
-    ./scripts/pipeline_fors2/9-esorex_zeropoint.sh "${param_file}"
+    ./pipeline_fors2/9-esorex_zeropoint.sh "${param_file}"
 fi
 
 echo 'Standard-field zeropoint:'

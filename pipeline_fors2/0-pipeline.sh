@@ -13,7 +13,7 @@ if [[ -z ${sub_back} ]]; then
     sub_back=false
 fi
 
-if ! python3 -m scripts.refresh_params; then
+if ! python3 "refresh_params.py"; then
   echo "Something went wrong with reading or writing the param files."
   exit
 fi

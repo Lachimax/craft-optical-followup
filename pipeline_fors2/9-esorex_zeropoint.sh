@@ -26,7 +26,7 @@ fi
 
 mkdir "${dir}"
 
-if python3 "${proj_dir}/scripts/pipeline_fors2/9-esorex_zeropoint_prep.py" --op "${data_title}" --directory "${dir}"; then
+if python3 "${proj_dir}/pipeline_fors2/9-esorex_zeropoint_prep.py" --op "${data_title}" --directory "${dir}"; then
   cd "${dir}" || exit
   for filter in **/; do
     f_0=${filter::1}
@@ -35,7 +35,7 @@ if python3 "${proj_dir}/scripts/pipeline_fors2/9-esorex_zeropoint_prep.py" --op 
       std_dir=${dir}${filter}${pointing}
       cd "${proj_dir}" || exit
       cp param/std_param_template.yaml "${std_dir}/params.yaml"
-      if python3 "${proj_dir}/scripts/pipeline_fors2/9-esorex_zeropoint.py" --directory "${std_dir}" --eso_calib_dir "${eso_calib_dir}"; then
+      if python3 "${proj_dir}/pipeline_fors2/9-esorex_zeropoint.py" --directory "${std_dir}" --eso_calib_dir "${eso_calib_dir}"; then
         cd "${std_dir}0-data_with_raw_calibs" || exit
         esorex fors_bias bias_up.sof
         mv master_bias.fits master_bias_up.fits
@@ -71,7 +71,7 @@ if python3 "${proj_dir}/scripts/pipeline_fors2/9-esorex_zeropoint_prep.py" --op 
         sextractor standard_trimmed_img_up.fits -c pre-psfex.sex -CATALOG_NAME standard_psfex.fits
         psfex standard_psfex.fits
         cd "${proj_dir}" || exit
-        if python3 "${proj_dir}/scripts/pipeline_fors2/9-psf.py" --directory "${std_dir}" --psfex_file "${std_dir}sextractor/standard_psfex.psf" --image_file "${std_dir}sextractor/standard_trimmed_img_up.fits" --prefix ""; then
+        if python3 "${proj_dir}/pipeline_fors2/9-psf.py" --directory "${std_dir}" --psfex_file "${std_dir}sextractor/standard_psfex.psf" --image_file "${std_dir}sextractor/standard_trimmed_img_up.fits" --prefix ""; then
           cd "${std_dir}sextractor" || exit
           fwhm=$(jq -r "._fwhm_arcsec" "${std_dir}output_values.json")
           echo "FWHM: ${fwhm}"

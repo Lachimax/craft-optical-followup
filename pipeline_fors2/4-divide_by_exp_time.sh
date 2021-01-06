@@ -27,7 +27,7 @@ do_sextractor=false # $(jq -r .do_sextractor "${param_dir}/epochs_fors2/${param_
 
 if ${do_sextractor}; then
   mkdir "${data_dir}/analysis/sextractor/${destination}/"
-  python3 "${proj_dir}/scripts/pipeline_fors2/4-divide_by_exp_time.py" --op "${data_title}" --origin "${origin}" --destination ${destination} --sextractor_directory "${data_dir}/analysis/sextractor/${destination}"
+  python3 "${proj_dir}/pipeline_fors2/4-divide_by_exp_time.py" --op "${data_title}" --origin "${origin}" --destination ${destination} --sextractor_directory "${data_dir}/analysis/sextractor/${destination}"
   if cd "${data_dir}/analysis/sextractor/${destination}/"; then
     for fil in **/; do
       if cd "${fil}"; then
@@ -39,7 +39,7 @@ if ${do_sextractor}; then
             psfex "${image}_psfex.fits"
             cd "${proj_dir}" || exit
             # Use python to extract the FWHM from the PSFEx output.
-            python3 "${proj_dir}/scripts/pipeline_fors2/9-psf.py" --directory "${sextractor_destination_path}" --output_file "${image}_output_values" --psfex_file "${sextractor_destination_path}${image}_psfex.psf" --image_file "${sextractor_destination_path}${image}"
+            python3 "${proj_dir}/pipeline_fors2/9-psf.py" --directory "${sextractor_destination_path}" --output_file "${image}_output_values" --psfex_file "${sextractor_destination_path}${image}_psfex.psf" --image_file "${sextractor_destination_path}${image}"
             cd "${sextractor_destination_path}" || exit
             fwhm=$(jq -r "._fwhm_arcsec" "${sextractor_destination_path}${image}_output_values.json")
             echo "FWHM: ${fwhm} arcsecs"
@@ -58,7 +58,7 @@ if ${do_sextractor}; then
   echo "All done."
 
 else
-  python3 "${proj_dir}/scripts/pipeline_fors2/4-divide_by_exp_time.py" --op "${data_title}" --origin "${origin}" --destination ${destination}
+  python3 "${proj_dir}/pipeline_fors2/4-divide_by_exp_time.py" --op "${data_title}" --origin "${origin}" --destination ${destination}
 fi
 
 date +%Y-%m-%dT%T >>"${data_dir}${destination}/${data_title}.log"

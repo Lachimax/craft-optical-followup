@@ -16,7 +16,7 @@ data_title=${param_file}
 do_sextractor=$(jq -r .do_sextractor "${param_dir}/epochs_fors2/${param_file}.json")
 
 #if ${do_sextractor} ; then
-#    python3 ${proj_dir}/scripts/pipeline_fors2/3-trim.py --origin ${data_dir}/2-sorted/ --destination ${data_dir}/3-trimmed_with_python/ -op ${data_title} --sextractor_directory ${data_dir}/analysis/sextractor/individuals_trimmed/
+#    python3 ${proj_dir}/pipeline_fors2/3-trim.py --origin ${data_dir}/2-sorted/ --destination ${data_dir}/3-trimmed_with_python/ -op ${data_title} --sextractor_directory ${data_dir}/analysis/sextractor/individuals_trimmed/
 #
 #    if cd ${data_dir}/analysis/sextractor/individuals_trimmed/ ; then
 #        pwd
@@ -38,7 +38,7 @@ do_sextractor=$(jq -r .do_sextractor "${param_dir}/epochs_fors2/${param_file}.js
 #    else echo 'Error'
 #    fi
 #else
-#    python3 ${proj_dir}/scripts/pipeline_fors2/3-trim.py --origin ${data_dir}/2-sorted/ --destination ${data_dir}/3-trimmed_with_python/ -op ${data_title}
+#    python3 ${proj_dir}/pipeline_fors2/3-trim.py --origin ${data_dir}/2-sorted/ --destination ${data_dir}/3-trimmed_with_python/ -op ${data_title}
 #fi
 
-python3 "${proj_dir}/scripts/pipeline_fors2/3-trim.py" --origin "${data_dir}/2-sorted/" --destination "${data_dir}/3-trimmed_with_python/" -op "${data_title}"
+python3 "${proj_dir}/pipeline_fors2/3-trim.py" --origin "${data_dir}/2-sorted/" --destination "${data_dir}/3-trimmed_with_python/" -op "${data_title}"

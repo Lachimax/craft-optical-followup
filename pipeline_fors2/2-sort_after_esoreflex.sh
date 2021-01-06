@@ -94,7 +94,7 @@ if cd "${esoreflex_output_dir}"; then
 
   cd "${proj_dir}" || exit
 
-  python3 "${proj_dir}/scripts/pipeline_fors2/2-sort_after_esoreflex.py" --directory "${data_dir}/2-sorted/"
+  python3 "${proj_dir}/pipeline_fors2/2-sort_after_esoreflex.py" --directory "${data_dir}/2-sorted/"
 
   pwd
 

@@ -12,10 +12,7 @@ import pandas
 import matplotlib.pyplot as plt
 import numpy as np
 
-
-# TODO: Scriptify
 # TODO: Integrate into pipeline
-# TODO: Write results to disk.
 
 def main(obj,
          plot,

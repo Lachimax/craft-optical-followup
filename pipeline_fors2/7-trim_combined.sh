@@ -31,7 +31,7 @@ if ${do_sextractor}; then
   fi
   sextractor_destination_path=${data_dir}/analysis/sextractor/${sextractor_destination}
   mkdir "${sextractor_destination_path}"
-  if ! python3 "${proj_dir}/scripts/pipeline_fors2/7-trim_combined.py" --directory "${data_dir}/${origin}/" --destination "${data_dir}/${destination}/" --object "${data_title}" --sextractor_directory "${sextractor_destination_path}" ; then
+  if ! python3 "${proj_dir}/pipeline_fors2/7-trim_combined.py" --directory "${data_dir}/${origin}/" --destination "${data_dir}/${destination}/" --object "${data_title}" --sextractor_directory "${sextractor_destination_path}" ; then
     echo "There was an error with the Python script for trimming."
     exit 1
   fi
@@ -43,7 +43,7 @@ if ${do_sextractor}; then
       psfex "${image}_psfex.fits"
       cd "${proj_dir}" || exit
       # Use python to extract the FWHM from the PSFEx output.
-      python3 "${proj_dir}/scripts/pipeline_fors2/9-psf.py" --directory "${sextractor_destination_path}" --output_file "${image}_output_values" --psfex_file "${sextractor_destination_path}${image}_psfex.psf" --image_file "${sextractor_destination_path}${image}"
+      python3 "${proj_dir}/pipeline_fors2/9-psf.py" --directory "${sextractor_destination_path}" --output_file "${image}_output_values" --psfex_file "${sextractor_destination_path}${image}_psfex.psf" --image_file "${sextractor_destination_path}${image}"
       cd "${sextractor_destination_path}" || exit
       fwhm=$(jq -r "._fwhm_arcsec" "${sextractor_destination_path}${image}_output_values.json")
       echo "FWHM: ${fwhm} arcsecs"
@@ -51,7 +51,7 @@ if ${do_sextractor}; then
     done
   fi
 else
-  python3 "${proj_dir}/scripts/pipeline_fors2/7-trim_combined.py" --directory "${data_dir}/${origin}/" --destination "${data_dir}/${destination}/" --object "${data_title}"
+  python3 "${proj_dir}/pipeline_fors2/7-trim_combined.py" --directory "${data_dir}/${origin}/" --destination "${data_dir}/${destination}/" --object "${data_title}"
 fi
 
 if cd "${data_dir}/${destination}/"; then

@@ -161,7 +161,7 @@ if cd "${sub_dir}" ; then
 
                     # cd ${proj_dir}
                     # Use python to extract the FWHM from the PSFEx output.
-                    # python3 ${proj_dir}/scripts/pipeline_fors2/9-psf.py --directory ${sextractor_destination_path} --psfex_file ${sextractor_destination_path}${filter}psfex.psf --image_file ${sextractor_destination_path}${filter}${image} --prefix ${f_0}
+                    # python3 ${proj_dir}/pipeline_fors2/9-psf.py --directory ${sextractor_destination_path} --psfex_file ${sextractor_destination_path}${filter}psfex.psf --image_file ${sextractor_destination_path}${filter}${image} --prefix ${f_0}
                     # cd ${sextractor_destination_path}${filter}
 
 

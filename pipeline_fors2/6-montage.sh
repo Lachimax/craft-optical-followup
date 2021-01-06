@@ -64,7 +64,7 @@ if cp -r ${origin}/* ${destination}/; then
 
     cd "${proj_dir}" || exit
     # Inject header changes.
-    python3 "${proj_dir}/scripts/pipeline_fors2/6-montage.py" --directory "${data_dir}" -op "${data_title}" --destination "${data_dir}/${destination}" --filter "${fil}" --object "${object}"
+    python3 "${proj_dir}/pipeline_fors2/6-montage.py" --directory "${data_dir}" -op "${data_title}" --destination "${data_dir}/${destination}" --filter "${fil}" --object "${object}"
     cd "${data_dir}/${destination}" || exit
 
     echo "Reproject the input images"
