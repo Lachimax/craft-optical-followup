@@ -13,7 +13,7 @@ if [[ -z ${proj_param_file} ]]; then
     proj_param_file=unicomp
 fi
 
-if ! python3 scripts/params.py -op "${param_file}" -pp "${proj_param_file}"; then
+if ! python3 /params.py -op "${param_file}" -pp "${proj_param_file}"; then
   echo "Something went wrong with reading or writing the param files."
 fi
 
@@ -29,7 +29,7 @@ run_bash () {
     select yn in "Yes" "Skip" "Exit"; do
     case ${yn} in
         Yes )
-            if "${proj_dir}scripts/pipeline_imacs/${script}.sh" "${param_file}" "${proj_param_file}"; then
+            if "${proj_dir}/pipeline_imacs/${script}.sh" "${param_file}" "${proj_param_file}"; then
                 break;
             else
                 echo "Something went wrong. Try again?"
@@ -51,7 +51,7 @@ run_python () {
     select yn in "Yes" "Skip" "Exit"; do
     case ${yn} in
         Yes )
-            if python3 "${proj_dir}scripts/pipeline_imacs/${script}.py" --op "${param_file}"; then
+            if python3 "${proj_dir}/pipeline_imacs/${script}.py" --op "${param_file}"; then
                 break;
             else
                 echo "Something went wrong. Try again?"

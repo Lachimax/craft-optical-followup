@@ -39,14 +39,14 @@ if [[ ${type::5} == multi ]] ; then
     cd ${data_dir}subtraction/${destination} || exit
     for test in **/ ; do
         cd ${proj_dir}
-        python3 scripts/subtraction/2-subtract.py --field "${param_file}" --destination "${destination}${test}/" --epoch "${epoch}" --instrument "${instrument}" --instrument_template "${template_instrument}" --type "${type}"
+        python3 /subtraction/2-subtract.py --field "${param_file}" --destination "${destination}${test}/" --epoch "${epoch}" --instrument "${instrument}" --instrument_template "${template_instrument}" --type "${type}"
     done
 else
     if ${force} ; then
-        echo "python3 scripts/subtraction/2-subtract.py --field ${param_file} --destination ${destination} --epoch ${epoch} --instrument ${instrument} --instrument_template ${template_instrument} --type ${type} -force_subtract_better_seeing"
-        python3 scripts/subtraction/2-subtract.py --field "${param_file}" --destination ${destination} --epoch ${epoch} --instrument ${instrument} --instrument_template "${template_instrument}" --type ${type} -force_subtract_better_seeing
+        echo "python3 /subtraction/2-subtract.py --field ${param_file} --destination ${destination} --epoch ${epoch} --instrument ${instrument} --instrument_template ${template_instrument} --type ${type} -force_subtract_better_seeing"
+        python3 /subtraction/2-subtract.py --field "${param_file}" --destination ${destination} --epoch ${epoch} --instrument ${instrument} --instrument_template "${template_instrument}" --type ${type} -force_subtract_better_seeing
     else
-        echo "python3 scripts/subtraction/2-subtract.py --field ${param_file} --destination ${destination} --epoch ${epoch} --instrument ${instrument} --instrument_template ${template_instrument} --type ${type}"
-        python3 scripts/subtraction/2-subtract.py --field "${param_file}" --destination ${destination} --epoch ${epoch} --instrument ${instrument} --instrument_template "${template_instrument}" --type ${type}
+        echo "python3 /subtraction/2-subtract.py --field ${param_file} --destination ${destination} --epoch ${epoch} --instrument ${instrument} --instrument_template ${template_instrument} --type ${type}"
+        python3 /subtraction/2-subtract.py --field "${param_file}" --destination ${destination} --epoch ${epoch} --instrument ${instrument} --instrument_template "${template_instrument}" --type ${type}
     fi
 fi

@@ -56,7 +56,7 @@ fi
 echo Manual
 echo ${manual}
 
-#if ! python3 scripts/refresh_params.py -op "${param_file}" -pp "${proj_param_file}"; then
+#if ! python3 /refresh_params.py -op "${param_file}" -pp "${proj_param_file}"; then
 #    echo "Something went wrong with reading or writing the param files."
 #fi
 
@@ -82,7 +82,7 @@ run_bash () {
     select yn in "Yes" "Skip" "Exit"; do
     case ${yn} in
         Yes )
-            if "${proj_dir}scripts/subtraction/${script}.sh" "${param_file}" "${destination}" "${proj_param_file}" "${type}" "${epoch}" "${instrument}" "${template_instrument}" "${extra_argument}" ; then
+            if "${proj_dir}/subtraction/${script}.sh" "${param_file}" "${destination}" "${proj_param_file}" "${type}" "${epoch}" "${instrument}" "${template_instrument}" "${extra_argument}" ; then
                 break;
             else
                 echo "Something went wrong. Try again?"
@@ -104,7 +104,7 @@ run_bash_lie () {
     select yn in "Yes" "Skip" "Exit"; do
     case ${yn} in
         Yes )
-            if "${proj_dir}scripts/subtraction/${script}.sh" "${param_file}" "${instrument}_${epoch}-${template_instrument}_${template_epoch}_normal/" "${proj_param_file}" "normal" "${epoch}" "${instrument}" ; then
+            if "${proj_dir}/subtraction/${script}.sh" "${param_file}" "${instrument}_${epoch}-${template_instrument}_${template_epoch}_normal/" "${proj_param_file}" "normal" "${epoch}" "${instrument}" ; then
                 break;
             else
                 echo "Something went wrong. Try again?"
@@ -126,7 +126,7 @@ run_python () {
     select yn in "Yes" "Skip" "Exit"; do
     case ${yn} in
         Yes )
-            if python3 "${proj_dir}scripts/subtraction/${script}.py" --field "${param_file}" --subtraction_path "${destination}" --epoch "${epoch}" --instrument "${instrument}" --instrument_template "${template_instrument}"; then
+            if python3 "${proj_dir}/subtraction/${script}.py" --field "${param_file}" --subtraction_path "${destination}" --epoch "${epoch}" --instrument "${instrument}" --instrument_template "${template_instrument}"; then
                 break;
             else
                 echo "Something went wrong. Try again?"
@@ -143,19 +143,19 @@ done
 
 if ${automate}; then
     if ${multi} ; then
-        ${proj_dir}scripts/subtraction/1-align.sh "${param_file}" "${instrument}_${epoch}-${template_instrument}_${template_epoch}_normal/" "${proj_param_file}" "normal" "${epoch}" "${instrument}" "${template_instrument}"
+        ${proj_dir}/subtraction/1-align.sh "${param_file}" "${instrument}_${epoch}-${template_instrument}_${template_epoch}_normal/" "${proj_param_file}" "normal" "${epoch}" "${instrument}" "${template_instrument}"
     fi
-    ${proj_dir}scripts/subtraction/1-align.sh "${param_file}" "${destination}" "${proj_param_file}" "${type}" "${epoch}" "${instrument}" "${template_instrument}"
-    ${proj_dir}scripts/subtraction/2-subtract.sh "${param_file}" "${destination}" "${proj_param_file}" "${type}" "${epoch}" "${instrument}" "${template_instrument}"
-    ${proj_dir}scripts/subtraction/3-sextractor.sh "${param_file}" "${destination}" "${proj_param_file}" "${type}" "${epoch}" "${instrument}" "${template_instrument}"
+    ${proj_dir}/subtraction/1-align.sh "${param_file}" "${destination}" "${proj_param_file}" "${type}" "${epoch}" "${instrument}" "${template_instrument}"
+    ${proj_dir}/subtraction/2-subtract.sh "${param_file}" "${destination}" "${proj_param_file}" "${type}" "${epoch}" "${instrument}" "${template_instrument}"
+    ${proj_dir}/subtraction/3-sextractor.sh "${param_file}" "${destination}" "${proj_param_file}" "${type}" "${epoch}" "${instrument}" "${template_instrument}"
     if [[ ${type} != normal ]] ; then
         if ${multi} ; then
-            python3 "${proj_dir}scripts/subtraction/4-recover_synthetics_multi.py" --field "${param_file}" --subtraction_path "${destination}" --epoch "${epoch}" --instrument "${instrument}" --instrument_template "${template_instrument}"
+            python3 "${proj_dir}/subtraction/4-recover_synthetics_multi.py" --field "${param_file}" --subtraction_path "${destination}" --epoch "${epoch}" --instrument "${instrument}" --instrument_template "${template_instrument}"
         else
-            python3 "${proj_dir}scripts/subtraction/4-recover_synthetics.py" --field "${param_file}" --subtraction_path "${destination}" --epoch "${epoch}" --instrument "${instrument}"
+            python3 "${proj_dir}/subtraction/4-recover_synthetics.py" --field "${param_file}" --subtraction_path "${destination}" --epoch "${epoch}" --instrument "${instrument}"
         fi
     else
-      python3 "${proj_dir}scripts/subtraction/4-find_transient.py" --field "${param_file}" --subtraction_path "${destination}" --epoch "${epoch}" --instrument "${instrument}"
+      python3 "${proj_dir}/subtraction/4-find_transient.py" --field "${param_file}" --subtraction_path "${destination}" --epoch "${epoch}" --instrument "${instrument}"
     fi
 
 else

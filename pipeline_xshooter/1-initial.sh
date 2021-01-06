@@ -63,7 +63,7 @@ fi
 cd "${proj_dir}" || exit
 
 echo "Writing FITS properties to file..."
-if python3 scripts/pipeline_xshooter/1-initial.py --output "${data_dir}" --op "${data_title}"; then
+if python3 /pipeline_xshooter/1-initial.py --output "${data_dir}" --op "${data_title}"; then
   echo "Done."
 fi
 

@@ -54,30 +54,30 @@ data_dir=$(jq -r .data_dir param/epochs_${instrument,,}/${param_file}.json)
 
 run_python () {
     script=$1
-    python3 "${proj_dir}scripts/pipeline_fors2/${script}.py" --op "${param_file}"
+    python3 "${proj_dir}/pipeline_fors2/${script}.py" --op "${param_file}"
 
 }
 
 echo ${case}
 if [[ ${case} == 1 ]] ; then
     run_python insert_synthetic_range_at_frb
-    ${proj_dir}scripts/subtraction/0-subtraction.sh ${burst} multi_frb_range ${proj_param_file} ${epoch} ${instrument} ${instrument_template} true
+    ${proj_dir}/subtraction/0-subtraction.sh ${burst} multi_frb_range ${proj_param_file} ${epoch} ${instrument} ${instrument_template} true
 elif [[ ${case} == 2 ]] ; then
-    python3 "${proj_dir}scripts/pipeline_fors2/insert_synthetic_sn_random_ia.py" --op "${param_file}" --n ${n} --instrument ${instrument}
-    ${proj_dir}scripts/subtraction/0-subtraction.sh ${burst} multi_sn_random_ia ${proj_param_file} ${epoch} ${instrument} ${instrument_template} true
+    python3 "${proj_dir}/pipeline_fors2/insert_synthetic_sn_random_ia.py" --op "${param_file}" --n ${n} --instrument ${instrument}
+    ${proj_dir}/subtraction/0-subtraction.sh ${burst} multi_sn_random_ia ${proj_param_file} ${epoch} ${instrument} ${instrument_template} true
 elif [[ ${case} == 3 ]] ; then
-    python3 "${proj_dir}scripts/pipeline_fors2/insert_synthetic_sn_random.py" --op "${param_file}" --sn_type ${sn_type} --n ${n}
-    ${proj_dir}scripts/subtraction/0-subtraction.sh ${burst} multi_sn_random_${sn_type} ${proj_param_file} ${epoch} ${instrument} ${instrument_template} true
+    python3 "${proj_dir}/pipeline_fors2/insert_synthetic_sn_random.py" --op "${param_file}" --sn_type ${sn_type} --n ${n}
+    ${proj_dir}/subtraction/0-subtraction.sh ${burst} multi_sn_random_${sn_type} ${proj_param_file} ${epoch} ${instrument} ${instrument_template} true
 elif [[ ${case} == 4 ]] ; then
-    python3 "${proj_dir}scripts/pipeline_fors2/insert_synthetic_sn_random_ia_fix_position.py" --op "${param_file}" --n ${n} --instrument ${instrument}
-    ${proj_dir}scripts/no_subtraction_synth_search.sh ${burst} multi_sn_random_ia ${proj_param_file} ${epoch} ${instrument}
+    python3 "${proj_dir}/pipeline_fors2/insert_synthetic_sn_random_ia_fix_position.py" --op "${param_file}" --n ${n} --instrument ${instrument}
+    ${proj_dir}/no_subtraction_synth_search.sh ${burst} multi_sn_random_ia ${proj_param_file} ${epoch} ${instrument}
 elif [[ ${case} == 5 ]] ; then
-    python3 "${proj_dir}scripts/pipeline_fors2/insert_synthetic_sn_random_fix_position.py" --op "${param_file}" --sn_type ${sn_type} --n ${n} --instrument ${instrument}
-    ${proj_dir}scripts/no_subtraction_synth_search.sh ${burst} multi_sn_random_${sn_type} ${proj_param_file} ${epoch} ${instrument}
+    python3 "${proj_dir}/pipeline_fors2/insert_synthetic_sn_random_fix_position.py" --op "${param_file}" --sn_type ${sn_type} --n ${n} --instrument ${instrument}
+    ${proj_dir}/no_subtraction_synth_search.sh ${burst} multi_sn_random_${sn_type} ${proj_param_file} ${epoch} ${instrument}
 elif [[ ${case} == 6 ]] ; then
-    python3 "${proj_dir}scripts/pipeline_fors2/insert_synthetic_sn_random_ia.py" --op "${param_file}" --n ${n} --instrument ${instrument}
-    ${proj_dir}scripts/no_subtraction_synth_search.sh ${burst} multi_sn_random_ia ${proj_param_file} ${epoch} ${instrument}
+    python3 "${proj_dir}/pipeline_fors2/insert_synthetic_sn_random_ia.py" --op "${param_file}" --n ${n} --instrument ${instrument}
+    ${proj_dir}/no_subtraction_synth_search.sh ${burst} multi_sn_random_ia ${proj_param_file} ${epoch} ${instrument}
 elif [[ ${case} == 7 ]] ; then
-    python3 "${proj_dir}scripts/pipeline_fors2/insert_synthetic_sn_random.py" --op "${param_file}" --sn_type ${sn_type} --n ${n} --instrument ${instrument}
-    ${proj_dir}scripts/no_subtraction_synth_search.sh ${burst} multi_sn_random_${sn_type} ${proj_param_file} ${epoch} ${instrument} ${instrument_template} true
+    python3 "${proj_dir}/pipeline_fors2/insert_synthetic_sn_random.py" --op "${param_file}" --sn_type ${sn_type} --n ${n} --instrument ${instrument}
+    ${proj_dir}/no_subtraction_synth_search.sh ${burst} multi_sn_random_${sn_type} ${proj_param_file} ${epoch} ${instrument} ${instrument_template} true
 fi

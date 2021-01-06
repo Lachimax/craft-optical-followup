@@ -58,14 +58,14 @@ if cd "${sextractor_destination_path}"; then
       if ${do_dual_mode}; then
         sex "${df}_coadded.fits,${image}" -c psf-fit.sex -CATALOG_NAME "${image_f}_dual-mode.cat" -PSF_NAME "${image_f}_psfex.psf" -SEEING_FWHM "${fwhm}" -BACK_SIZE "${back_size}" -DETECT_THRESH "${threshold}" -ANALYSIS_THRESH "${threshold}"
         cd "${proj_dir}" || exit
-        python3 scripts/add_path.py --op "${param_file}" --key "${image_f}_cat_path" --path "${sextractor_destination_path}${image_f}_dual-mode.cat" --instrument XSHOOTER
+        python3 /add_path.py --op "${param_file}" --key "${image_f}_cat_path" --path "${sextractor_destination_path}${image_f}_dual-mode.cat" --instrument XSHOOTER
       else
         cd "${proj_dir}" || exit
-        python3 scripts/add_path.py --op "${data_title}" --key "${image_f}_cat_path" --path "${sextractor_destination_path}${image_f}_psf-fit.cat" --instrument XSHOOTER
+        python3 /add_path.py --op "${data_title}" --key "${image_f}_cat_path" --path "${sextractor_destination_path}${image_f}_psf-fit.cat" --instrument XSHOOTER
       fi
     else
       cd "${proj_dir}" || exit
-      python3 scripts/add_path.py --op "${data_title}" --key "${image_f}_cat_path" --path "${sextractor_destination_path}${image_f}_psf-fit.cat" --instrument XSHOOTER
+      python3 /add_path.py --op "${data_title}" --key "${image_f}_cat_path" --path "${sextractor_destination_path}${image_f}_psf-fit.cat" --instrument XSHOOTER
     fi
     #cd "${proj_dir}" || return
     #python3 plots/draw_fitting_params.py --image "${sextractor_destination_path}${image}" --cat "${sextractor_destination_path}${image_f}_psf-fit.cat"

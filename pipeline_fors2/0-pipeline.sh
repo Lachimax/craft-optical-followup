@@ -44,7 +44,7 @@ run_script () {
     select yn in "Yes" "Skip" "Exit"; do
       case ${yn} in
           Yes )
-              if "${proj_dir}scripts/pipeline_fors2/${script}.sh" "${param_file}"; then
+              if "${proj_dir}/pipeline_fors2/${script}.sh" "${param_file}"; then
                   break;
               else
                   echo "Something went wrong. Try again?"
@@ -68,7 +68,7 @@ run_script_folders () {
     select yn in "Yes" "Skip" "Exit"; do
       case ${yn} in
           Yes )
-              if "${proj_dir}scripts/pipeline_fors2/${script}.sh" "${param_file}" "${origin}" "${destination}"; then
+              if "${proj_dir}/pipeline_fors2/${script}.sh" "${param_file}" "${origin}" "${destination}"; then
                   break;
               else
                   echo "Something went wrong. Try again?"
@@ -90,7 +90,7 @@ run_python () {
     select yn in "Yes" "Skip" "Exit"; do
     case ${yn} in
         Yes )
-            if python3 "${proj_dir}scripts/pipeline_fors2/${script}.py" --op "${param_file}"; then
+            if python3 "${proj_dir}/pipeline_fors2/${script}.py" --op "${param_file}"; then
                 break;
             else
                 echo "Something went wrong. Try again?"

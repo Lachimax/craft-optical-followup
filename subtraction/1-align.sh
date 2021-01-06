@@ -48,8 +48,8 @@ mkdir ${sub_dir}
 
 if [[ ${type::5} != multi ]] ; then
 
-        echo "python3 scripts/subtraction/1-prep.py --field ${param_file} --destination ${destination} --epoch ${epoch} --instrument ${instrument} --type ${type}"
-        python3 scripts/subtraction/1-prep.py --field "${param_file}" --destination ${destination} --epoch ${epoch} --instrument ${instrument} --instrument_template ${template_instrument} --type ${type}
+        echo "python3 /subtraction/1-prep.py --field ${param_file} --destination ${destination} --epoch ${epoch} --instrument ${instrument} --type ${type}"
+        python3 /subtraction/1-prep.py --field "${param_file}" --destination ${destination} --epoch ${epoch} --instrument ${instrument} --instrument_template ${template_instrument} --type ${type}
 
         cd ${sub_dir} || exit
         for filter in **/; do
@@ -95,15 +95,15 @@ if [[ ${type::5} != multi ]] ; then
         echo Manual
         echo ${manual}
         if ${manual} ; then
-            python3 scripts/subtraction/1-align.py --destination ${sub_dir}${filter} --field ${param_file} --epoch ${epoch} --instrument_template ${template_instrument} --filter ${filter::-1} -manual
+            python3 /subtraction/1-align.py --destination ${sub_dir}${filter} --field ${param_file} --epoch ${epoch} --instrument_template ${template_instrument} --filter ${filter::-1} -manual
         else
-            python3 scripts/subtraction/1-align.py --destination ${sub_dir}${filter} --field ${param_file} --epoch ${epoch} --instrument_template ${template_instrument}
+            python3 /subtraction/1-align.py --destination ${sub_dir}${filter} --field ${param_file} --epoch ${epoch} --instrument_template ${template_instrument}
         fi
     done
 
 else
-    echo "python3 scripts/subtraction/1-prep_many.py --field ${param_file} --destination ${destination} --epoch ${epoch} --instrument ${instrument} --type ${type}"
-    python3 scripts/subtraction/1-prep_many.py --field "${param_file}" --destination ${destination} --epoch ${epoch} --instrument ${instrument} --type ${type}
+    echo "python3 /subtraction/1-prep_many.py --field ${param_file} --destination ${destination} --epoch ${epoch} --instrument ${instrument} --type ${type}"
+    python3 /subtraction/1-prep_many.py --field "${param_file}" --destination ${destination} --epoch ${epoch} --instrument ${instrument} --type ${type}
 
     template_dir="${data_dir}subtraction/${instrument}_${epoch}-${template_instrument}_${template_epoch}_normal/"
     cd ${sub_dir} || exit
@@ -122,14 +122,14 @@ else
                 cp ${template} ${test_dir}${filter}/
                 echo ${template_yaml}
                 cp ${template_yaml} ${test_dir}${filter}/
-                python3 scripts/subtraction/1-align.py --destination ${test_dir}${filter}/ --field ${param_file} --epoch ${epoch} --offsets_yaml "${outputs_yaml}" -skip_reproject
+                python3 subtraction/1-align.py --destination ${test_dir}${filter}/ --field ${param_file} --epoch ${epoch} --offsets_yaml "${outputs_yaml}" -skip_reproject
             else
                 # Not so for the others, whose footprints do not match FORS2
                 template="${template_dir}${filter}${param_file}_${template_epoch}_template.fits"
                 cp ${template} ${test_dir}${filter}/
                 echo ${template_yaml}
                 cp ${template_yaml} ${test_dir}${filter}/
-                python3 scripts/subtraction/1-align.py --destination ${test_dir}${filter}/ --field ${param_file} --epoch ${epoch} --offsets_yaml "${outputs_yaml}"
+                python3 /subtraction/1-align.py --destination ${test_dir}${filter}/ --field ${param_file} --epoch ${epoch} --offsets_yaml "${outputs_yaml}"
             fi
             cd ${sub_dir}
         done
@@ -137,9 +137,9 @@ else
 fi
 
 #if [[ ${type::5} == multi ]] ; then
-#    echo "python3 scripts/subtraction/1-subtract_many.py --field ${param_file} --destination ${destination} --epoch ${epoch} --instrument ${instrument} --type ${type}"
-#    python3 scripts/subtraction/1-subtract_many.py --field "${param_file}" --destination ${destination} --epoch ${epoch} --instrument ${instrument} --type ${type}
+#    echo "python3 /subtraction/1-subtract_many.py --field ${param_file} --destination ${destination} --epoch ${epoch} --instrument ${instrument} --type ${type}"
+#    python3 /subtraction/1-subtract_many.py --field "${param_file}" --destination ${destination} --epoch ${epoch} --instrument ${instrument} --type ${type}
 #else
-#echo "python3 scripts/subtraction/1-subtract.py --field ${param_file} --destination ${destination} --epoch ${epoch} --instrument ${instrument} --type ${type}"
-#python3 scripts/subtraction/1-subtract.py --field "${param_file}" --destination ${destination} --epoch ${epoch} --instrument ${instrument} --type ${type}
+#echo "python3 /subtraction/1-subtract.py --field ${param_file} --destination ${destination} --epoch ${epoch} --instrument ${instrument} --type ${type}"
+#python3 /subtraction/1-subtract.py --field "${param_file}" --destination ${destination} --epoch ${epoch} --instrument ${instrument} --type ${type}
 #fi

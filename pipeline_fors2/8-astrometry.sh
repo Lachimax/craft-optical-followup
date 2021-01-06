@@ -58,7 +58,7 @@ cd "${proj_dir}" || exit
 # Use astrometry.net client to tweak astrometry of images.
 for image in ${coadded}; do
   if ! ${skip_astrometry}; then
-    python2 "${proj_dir}scripts/astrometry-client.py" --apikey "${key}" -u "${dir}/${image}" -w --newfits "${dir}/${image::1}_astrometry.fits" --ra "${ra}" --dec "${dec}" --radius 1 --private --no_commercial
+    python2 "${proj_dir}/astrometry-client.py" --apikey "${key}" -u "${dir}/${image}" -w --newfits "${dir}/${image::1}_astrometry.fits" --ra "${ra}" --dec "${dec}" --radius 1 --private --no_commercial
   fi
 done
 cd "${dir}" || exit

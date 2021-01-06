@@ -40,7 +40,7 @@ fi
 
 destination=$7
 
-#if ! python3 scripts/refresh_params.py -op "${param_file}" -pp "${proj_param_file}"; then
+#if ! python3 /refresh_params.py -op "${param_file}" -pp "${proj_param_file}"; then
 #    echo "Something went wrong with reading or writing the param files."
 #fi
 
@@ -68,7 +68,7 @@ run_bash () {
     select yn in "Yes" "Skip" "Exit"; do
     case ${yn} in
         Yes )
-            if "${proj_dir}scripts/subtraction/${script}.sh" "${param_file}" "${destination}" "${proj_param_file}" "${type}" "${epoch}" "${instrument}" "XSHOOTER" "${extra_argument}" ; then
+            if "${proj_dir}/subtraction/${script}.sh" "${param_file}" "${destination}" "${proj_param_file}" "${type}" "${epoch}" "${instrument}" "XSHOOTER" "${extra_argument}" ; then
                 break;
             else
                 echo "Something went wrong. Try again?"
@@ -90,7 +90,7 @@ run_python () {
     select yn in "Yes" "Skip" "Exit"; do
     case ${yn} in
         Yes )
-            if python3 "${proj_dir}scripts/subtraction/${script}.py" --field "${param_file}" --subtraction_path "${destination}" --epoch "${epoch}" --instrument "${instrument}" --instrument_template "XSHOOTER"; then
+            if python3 "${proj_dir}/subtraction/${script}.py" --field "${param_file}" --subtraction_path "${destination}" --epoch "${epoch}" --instrument "${instrument}" --instrument_template "XSHOOTER"; then
                 break;
             else
                 echo "Something went wrong. Try again?"
@@ -108,8 +108,8 @@ done
 
 sub_dir="${data_dir}subtraction/${destination}"
 
-echo "python3 scripts/subtraction/1-prep_many.py --field ${param_file} --destination ${destination} --epoch ${epoch} --instrument ${instrument} --type ${type} --instrument_template XSHOOTER"
-python3 scripts/subtraction/1-prep_many.py --field "${param_file}" --destination ${destination} --epoch ${epoch} --instrument ${instrument} --type ${type} --instrument_template "XSHOOTER"
+echo "python3 /subtraction/1-prep_many.py --field ${param_file} --destination ${destination} --epoch ${epoch} --instrument ${instrument} --type ${type} --instrument_template XSHOOTER"
+python3 /subtraction/1-prep_many.py --field "${param_file}" --destination ${destination} --epoch ${epoch} --instrument ${instrument} --type ${type} --instrument_template "XSHOOTER"
 
 # SExtractor
 
@@ -175,7 +175,7 @@ if cd "${sub_dir}" ; then
 
 cd ${proj_dir}
 if ${multi} ; then
-        python3 "${proj_dir}scripts/subtraction/4-recover_synthetics_multi.py" --field "${param_file}" --subtraction_path "${destination}" --epoch "${epoch}" --instrument "${instrument}" --instrument_template "XSHOOTER"
+        python3 "${proj_dir}/subtraction/4-recover_synthetics_multi.py" --field "${param_file}" --subtraction_path "${destination}" --epoch "${epoch}" --instrument "${instrument}" --instrument_template "XSHOOTER"
     else
-        python3 "${proj_dir}scripts/subtraction/4-recover_synthetics.py" --field "${param_file}" --subtraction_path "${destination}" --epoch "${epoch}" --instrument "${instrument}" --instrument_template "XSHOOTER"
+        python3 "${proj_dir}/subtraction/4-recover_synthetics.py" --field "${param_file}" --subtraction_path "${destination}" --epoch "${epoch}" --instrument "${instrument}" --instrument_template "XSHOOTER"
 fi

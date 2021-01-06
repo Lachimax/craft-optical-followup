@@ -57,7 +57,7 @@ if python3 "${proj_dir}/pipeline_fors2/9-esorex_zeropoint_prep.py" --op "${data_
 
         mkdir 3-trimmed
         cd "${proj_dir}" || exit
-        python3 "${proj_dir}scripts/pipeline_fors2/9-esorex_zeropoint_trim.py" --op "${data_title}" --input "${std_dir}2-std_reduced/standard_reduced_img_up.fits" --output "${std_dir}3-trimmed/standard_trimmed_img_up.fits" --path "${std_dir}"
+        python3 "${proj_dir}/pipeline_fors2/9-esorex_zeropoint_trim.py" --op "${data_title}" --input "${std_dir}2-std_reduced/standard_reduced_img_up.fits" --output "${std_dir}3-trimmed/standard_trimmed_img_up.fits" --path "${std_dir}"
         cd "${std_dir}" || exit
 
         cp 3-trimmed/* sextractor
@@ -77,7 +77,7 @@ if python3 "${proj_dir}/pipeline_fors2/9-esorex_zeropoint_prep.py" --op "${data_
           echo "FWHM: ${fwhm}"
           sextractor standard_trimmed_img_up.fits -c psf-fit.sex -CATALOG_NAME _psf-fit.cat -PSF_NAME standard_psfex.psf -SEEING_FWHM "${fwhm}"
           cd "${proj_dir}" || exit
-          python3 scripts/add_path.py --op "${data_title}" --instrument fors2 --key "${f_0}_std_cat_sextractor" --path "${std_dir}sextractor/_psf-fit.cat"
+          python3 /add_path.py --op "${data_title}" --instrument fors2 --key "${f_0}_std_cat_sextractor" --path "${std_dir}sextractor/_psf-fit.cat"
         else
           echo "Python failed to extract a FWHM from PSFEx output."
         fi

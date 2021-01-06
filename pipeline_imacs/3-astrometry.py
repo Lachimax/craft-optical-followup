@@ -46,7 +46,7 @@ def main(data_title: str, origin: str, destination: str, redo: bool = False):
             hdu.close()
             print('Sending to Astrometry.net:', file)
             os.system(
-                f'python scripts/astrometry-client.py '
+                f'python /astrometry-client.py '
                 f'--apikey {key} '
                 f'-u {reduced_path_filter}{file} '
                 f'-w '
