@@ -78,7 +78,7 @@ if [[ ${type::5} != multi ]] ; then
 
                 #      cd "${sextractor_destination_path}" || exit
 
-                #      sextractor "${image}" -c pre-psfex.sex -CATALOG_NAME "${image_0}_psfex.fits"
+                #      sex "${image}" -c pre-psfex.sex -CATALOG_NAME "${image_0}_psfex.fits"
                 #      # Run PSFEx to get PSF analysis
                 #      psfex "${image_0}_psfex.fits"
                 #      cd "${proj_dir}" || exit
@@ -87,7 +87,7 @@ if [[ ${type::5} != multi ]] ; then
                 #      cd "${sextractor_destination_path}" || exit
                 #      fwhm=$(jq -r ".${image_0}_fwhm_arcsec" "${sub_dir}output_values.json")
                 #      echo "FWHM: ${fwhm} arcsecs"
-                #      sextractor "${image}" -c psf-fit.sex -CATALOG_NAME "${image_0}_psf-fit.cat" -PSF_NAME "${image_0}_psfex.psf" -SEEING_FWHM "${fwhm}" -DETECT_THRESH "${threshold}" -ANALYSIS_THRESH "${threshold}"
+                #      sex "${image}" -c psf-fit.sex -CATALOG_NAME "${image_0}_psf-fit.cat" -PSF_NAME "${image_0}_psfex.psf" -SEEING_FWHM "${fwhm}" -DETECT_THRESH "${threshold}" -ANALYSIS_THRESH "${threshold}"
                 #   done
                 fi
             fi

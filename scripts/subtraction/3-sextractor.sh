@@ -42,7 +42,7 @@ if [[ ${type::5} != multi ]] ; then
                 echo "FWHM: ${fwhm_pix} pixels"
                 echo "FWHM: ${fwhm_arcsec} arcseconds"
                 echo "Aperture: ${aperture} pixels"
-                sextractor "${image}" -c im.sex -CATALOG_NAME difference.cat -PHOT_APERTURES "${aperture}" -SEEING_FWHM "${fwhm_arcsec}" -DETECT_THRESH "${threshold}" -ANALYSIS_THRESH "${threshold}"
+                sex "${image}" -c im.sex -CATALOG_NAME difference.cat -PHOT_APERTURES "${aperture}" -SEEING_FWHM "${fwhm_arcsec}" -DETECT_THRESH "${threshold}" -ANALYSIS_THRESH "${threshold}"
                 cd "${proj_dir}" || exit
                 cd "${sextractor_destination_path}${filter}" || exit
                 # Run PSFEx to get PSF analysis
@@ -79,7 +79,7 @@ else
                     #echo "FWHM: ${fwhm_pix} pixels"
                     #echo "FWHM: ${fwhm_arcsec} arcseconds"
                     #echo "Aperture: ${aperture} pixels"
-                    sextractor "${image}" -c im.sex -CATALOG_NAME difference.cat -PHOT_APERTURES "${aperture}" -DETECT_THRESH "${threshold}" -ANALYSIS_THRESH "${threshold}"
+                    sex "${image}" -c im.sex -CATALOG_NAME difference.cat -PHOT_APERTURES "${aperture}" -DETECT_THRESH "${threshold}" -ANALYSIS_THRESH "${threshold}"
                     # cd "${proj_dir}" || exit
                     # python3 plots/draw_fitting_params.py --image ${sextractor_destination_path}${path}${filter}${image} --cat ${sextractor_destination_path}${path}${filter}difference.cat
                     # cd "${sextractor_destination_path}${path}${filter}" || exit

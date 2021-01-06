@@ -55,7 +55,7 @@ if ${do_sextractor} ; then
         for image in *"${suff}" ; do
             cd "${sextractor_destination_path}" || exit
             image_0=${image::1}
-            sextractor "${image}" -c pre-psfex.sex -CATALOG_NAME "${image_0}_psfex.fits"
+            sex "${image}" -c pre-psfex.sex -CATALOG_NAME "${image_0}_psfex.fits"
             # Run PSFEx to get PSF analysis
             psfex "${image_0}_psfex.fits"
             cd "${proj_dir}" || exit
@@ -65,12 +65,12 @@ if ${do_sextractor} ; then
             fwhm=$(jq -r ".${image_0}_fwhm_arcsec" "${data_dir}output_values.json")
             echo "FWHM: ${fwhm} arcsecs"
             echo "KRON RADIUS: ${kron_radius}"
-            sextractor "${image}" -c psf-fit.sex -CATALOG_NAME "${image_0}_psf-fit.cat" -PSF_NAME "${image_0}_psfex.psf" -SEEING_FWHM "${fwhm}" -PHOT_AUTOPARAMS "${kron_radius},1.0" -DETECT_THRESH "${threshold}" -ANALYSIS_THRESH "${threshold}"
+            sex "${image}" -c psf-fit.sex -CATALOG_NAME "${image_0}_psf-fit.cat" -PSF_NAME "${image_0}_psfex.psf" -SEEING_FWHM "${fwhm}" -PHOT_AUTOPARAMS "${kron_radius},1.0" -DETECT_THRESH "${threshold}" -ANALYSIS_THRESH "${threshold}"
             # If this is not the deepest image, we run in dual mode, using the deepest image for finding.
 
             if [[ ${image_0} != "${df}" ]] ; then
                 if ${do_dual_mode} ; then
-                    sextractor "${df}_${suff}.fits,${image}" -c psf-fit.sex -CATALOG_NAME "${image_0}_dual-mode.cat" -PSF_NAME "${image_0}_psfex.psf" -SEEING_FWHM "${fwhm}" -PHOT_AUTOPARAMS "${kron_radius},1.0" -DETECT_THRESH "${threshold}" -ANALYSIS_THRESH "${threshold}"
+                    sex "${df}_${suff}.fits,${image}" -c psf-fit.sex -CATALOG_NAME "${image_0}_dual-mode.cat" -PSF_NAME "${image_0}_psfex.psf" -SEEING_FWHM "${fwhm}" -PHOT_AUTOPARAMS "${kron_radius},1.0" -DETECT_THRESH "${threshold}" -ANALYSIS_THRESH "${threshold}"
                     cd "${proj_dir}" || exit
                     if ${write_paths} ; then
                         python3 scripts/add_path.py --op "${data_title}" --key "${image_0}_cat_path" --path "${sextractor_destination_path}${image_0}_dual-mode.cat" --instrument FORS2

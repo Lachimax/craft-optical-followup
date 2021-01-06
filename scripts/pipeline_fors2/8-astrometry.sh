@@ -80,7 +80,7 @@ if ${do_sextractor}; then
     for image in *astrometry.fits; do
       cd "${sextractor_destination_path}" || exit
       image_0=${image::1}
-      sextractor "${image}" -c pre-psfex.sex -CATALOG_NAME "${image_0}_psfex.fits"
+      sex "${image}" -c pre-psfex.sex -CATALOG_NAME "${image_0}_psfex.fits"
       # Run PSFEx to get PSF analysis
       psfex "${image_0}_psfex.fits"
       cd "${proj_dir}" || exit
@@ -89,7 +89,7 @@ if ${do_sextractor}; then
       cd "${sextractor_destination_path}" || exit
       fwhm=$(jq -r ".${image_0}_fwhm_arcsec" "${data_dir}output_values.json")
       echo "FWHM: ${fwhm} arcsecs"
-      sextractor "${image}" -c psf-fit.sex -CATALOG_NAME "${image_0}_psf-fit.cat" -PSF_NAME "${image_0}_psfex.psf" -SEEING_FWHM "${fwhm}" -DETECT_THRESH "${threshold}" -ANALYSIS_THRESH "${threshold}"
+      sex "${image}" -c psf-fit.sex -CATALOG_NAME "${image_0}_psf-fit.cat" -PSF_NAME "${image_0}_psfex.psf" -SEEING_FWHM "${fwhm}" -DETECT_THRESH "${threshold}" -ANALYSIS_THRESH "${threshold}"
     done
   fi
 fi

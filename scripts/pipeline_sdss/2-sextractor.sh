@@ -37,7 +37,7 @@ if cd "${sextractor_destination_path}" ; then
     pwd
     for image in $(ls *cutout.fits) ; do
         image_f=${image::1}
-        sextractor "${image}" -c "pre-psfex.sex" -CATALOG_NAME "${image_f}_psfex.fits"
+        sex "${image}" -c "pre-psfex.sex" -CATALOG_NAME "${image_f}_psfex.fits"
         # Run PSFEx to get PSF analysis
         psfex "${image_f}_psfex.fits"
         cd "${proj_dir}" || exit
@@ -48,6 +48,6 @@ if cd "${sextractor_destination_path}" ; then
         echo "FWHM: ${fwhm} arcsecs"
         echo "BACKSIZE: ${back_size}"
         echo "THRESHOLD: ${threshold}"
-        sextractor "${image}" -c psf-fit.sex -CATALOG_NAME "${image_f}_psf-fit.cat" -PSF_NAME "${image_f}_psfex.psf" -SEEING_FWHM "${fwhm}" -BACK_SIZE "${back_size}" -DETECT_THRESH "${threshold}" -ANALYSIS_THRESH "${threshold}"
+        sex "${image}" -c psf-fit.sex -CATALOG_NAME "${image_f}_psf-fit.cat" -PSF_NAME "${image_f}_psfex.psf" -SEEING_FWHM "${fwhm}" -BACK_SIZE "${back_size}" -DETECT_THRESH "${threshold}" -ANALYSIS_THRESH "${threshold}"
     done
 fi

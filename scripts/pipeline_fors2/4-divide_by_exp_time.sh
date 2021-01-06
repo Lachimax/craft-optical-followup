@@ -34,7 +34,7 @@ if ${do_sextractor}; then
         sextractor_destination_path="${data_dir}/analysis/sextractor/${destination}/${fil}"
         if cp "${proj_dir}/param/psfex/"* .; then
           for image in *_norm.fits; do
-            sextractor "${image}" -c pre-psfex.sex -CATALOG_NAME "${image}_psfex.fits"
+            sex "${image}" -c pre-psfex.sex -CATALOG_NAME "${image}_psfex.fits"
             # Run PSFEx to get PSF analysis
             psfex "${image}_psfex.fits"
             cd "${proj_dir}" || exit
@@ -43,7 +43,7 @@ if ${do_sextractor}; then
             cd "${sextractor_destination_path}" || exit
             fwhm=$(jq -r "._fwhm_arcsec" "${sextractor_destination_path}${image}_output_values.json")
             echo "FWHM: ${fwhm} arcsecs"
-            sextractor "${image}" -c psf-fit.sex -CATALOG_NAME "${image}_psf-fit.cat" -PSF_NAME "${image}_psfex.psf" -SEEING_FWHM "${fwhm}"
+            sex "${image}" -c psf-fit.sex -CATALOG_NAME "${image}_psf-fit.cat" -PSF_NAME "${image}_psfex.psf" -SEEING_FWHM "${fwhm}"
           done
         fi
         cd ..

@@ -42,7 +42,7 @@ if cd "${sextractor_destination_path}"; then
   cp "${proj_dir}/param/sextractor/default/"* .
   for image in *coadded.fits; do
     image_f=${image::1}
-    sextractor "${image}" -c "pre-psfex.sex" -CATALOG_NAME "${image_f}_psfex.fits"
+    sex "${image}" -c "pre-psfex.sex" -CATALOG_NAME "${image_f}_psfex.fits"
     # Run PSFEx to get PSF analysis
     psfex "${image_f}_psfex.fits"
     cd "${proj_dir}" || exit
@@ -53,10 +53,10 @@ if cd "${sextractor_destination_path}"; then
     echo "FWHM: ${fwhm} arcsecs"
     echo "BACKSIZE: ${back_size}"
     echo "THRESHOLD: ${threshold}"
-    sextractor "${image}" -c psf-fit.sex -CATALOG_NAME "${image_f}_psf-fit.cat" -PSF_NAME "${image_f}_psfex.psf" -SEEING_FWHM "${fwhm}" -BACK_SIZE "${back_size}" -DETECT_THRESH "${threshold}" -ANALYSIS_THRESH "${threshold}"
+    sex "${image}" -c psf-fit.sex -CATALOG_NAME "${image_f}_psf-fit.cat" -PSF_NAME "${image_f}_psfex.psf" -SEEING_FWHM "${fwhm}" -BACK_SIZE "${back_size}" -DETECT_THRESH "${threshold}" -ANALYSIS_THRESH "${threshold}"
     if [[ ${image_f} != "${df}" ]]; then
       if ${do_dual_mode}; then
-        sextractor "${df}_coadded.fits,${image}" -c psf-fit.sex -CATALOG_NAME "${image_f}_dual-mode.cat" -PSF_NAME "${image_f}_psfex.psf" -SEEING_FWHM "${fwhm}" -BACK_SIZE "${back_size}" -DETECT_THRESH "${threshold}" -ANALYSIS_THRESH "${threshold}"
+        sex "${df}_coadded.fits,${image}" -c psf-fit.sex -CATALOG_NAME "${image_f}_dual-mode.cat" -PSF_NAME "${image_f}_psfex.psf" -SEEING_FWHM "${fwhm}" -BACK_SIZE "${back_size}" -DETECT_THRESH "${threshold}" -ANALYSIS_THRESH "${threshold}"
         cd "${proj_dir}" || exit
         python3 scripts/add_path.py --op "${param_file}" --key "${image_f}_cat_path" --path "${sextractor_destination_path}${image_f}_dual-mode.cat" --instrument XSHOOTER
       else

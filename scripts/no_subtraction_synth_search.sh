@@ -144,7 +144,7 @@ if cd "${sub_dir}" ; then
                 # cp ${proj_dir}/param/psfex/* .
                 pwd
                 for image in *difference.fits ; do
-                    # sextractor ${image} -c im.sex -CATALOG_NAME difference.cat -DETECT_THRESH 2.0
+                    # sex ${image} -c im.sex -CATALOG_NAME difference.cat -DETECT_THRESH 2.0
                     echo "${sub_dir}${path}${filter}output_values.json"
                     fwhm_pix=$(jq -r .max_fwhm_pix "${sub_dir}${path}${filter}output_values.json")
                     fwhm_arcsec=$(jq -r .max_fwhm_arcsec "${sub_dir}${path}${filter}output_values.json")
@@ -152,7 +152,7 @@ if cd "${sub_dir}" ; then
                     #echo "FWHM: ${fwhm_pix} pixels"
                     #echo "FWHM: ${fwhm_arcsec} arcseconds"
                     #echo "Aperture: ${aperture} pixels"
-                    sextractor "${image}" -c im.sex -CATALOG_NAME difference.cat -PHOT_APERTURES "${aperture}" -DETECT_THRESH "${threshold}" -ANALYSIS_THRESH "${threshold}" -BACK_SIZE 5
+                    sex "${image}" -c im.sex -CATALOG_NAME difference.cat -PHOT_APERTURES "${aperture}" -DETECT_THRESH "${threshold}" -ANALYSIS_THRESH "${threshold}" -BACK_SIZE 5
                     # cd "${proj_dir}" || exit
                     # python3 plots/draw_fitting_params.py --image ${sextractor_destination_path}${path}${filter}${image} --cat ${sextractor_destination_path}${path}${filter}difference.cat
                     # cd "${sextractor_destination_path}${path}${filter}" || exit
@@ -165,7 +165,7 @@ if cd "${sub_dir}" ; then
                     # cd ${sextractor_destination_path}${filter}
 
 
-                    #sextractor ${image} -c psf-fit.sex -CATALOG_NAME difference_psf-fit.cat -PSF_NAME psfex.psf -PHOT_APERTURES 10 #-SEEING_FWHM ${fwhm} -DETECT_THRESH ${threshold} -ANALYSIS_THRESH ${threshold}
+                    #sex ${image} -c psf-fit.sex -CATALOG_NAME difference_psf-fit.cat -PSF_NAME psfex.psf -PHOT_APERTURES 10 #-SEEING_FWHM ${fwhm} -DETECT_THRESH ${threshold} -ANALYSIS_THRESH ${threshold}
                 done
                 cd ..
             done
