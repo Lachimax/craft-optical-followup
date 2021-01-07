@@ -6,7 +6,6 @@ from scipy.optimize import curve_fit
 from craftutils import params as p
 from craftutils import utils as u
 from craftutils import stats
-from craftutils import plotting
 
 matplotlib.rcParams.update({'errorbar.capsize': 3})
 
@@ -14,13 +13,14 @@ matplotlib.rcParams.update({'errorbar.capsize': 3})
 def main(epoch, show, write):
     filters = p.instrument_all_filters('FORS2')
     epoch_params = p.object_params_fors2(obj=epoch)
+    output_values = p.object_output_params(obj=epoch, instrument='FORS2')
 
     filters_known = np.array(['b_HIGH', 'v_HIGH', 'R_SPECIAL', 'I_BESS'])
     filters_find = np.array(['u_HIGH', 'g_HIGH', 'z_GUNN'])
 
     output = {}
 
-    mjd = epoch_params['mjd']
+    mjd = output_values['mjd_obs']
     print()
     print('EPOCH:', epoch)
     print('MJD:', mjd)
