@@ -14,7 +14,10 @@ if ! proj_dir=$(jq -r .proj_dir ${config_file}); then
   exit
 fi
 param_dir=$(jq -r .param_dir "${config_file}")
-eso_calib_dir=$(jq -r .eso_calib_dir "${config_file}")
+eso_install_dir=$(jq -r .eso_install_dir "${config_file}")
+
+eso_calib_dir=$(ls -d "${eso_install_dir}calib/fors-"*)
+eso_bin_dir="${eso_install_dir}bin/"
 
 data_dir=$(jq -r .data_dir "${param_dir}/epochs_fors2/${param_file}.json")
 data_title=${param_file}
@@ -37,11 +40,11 @@ if python3 "${proj_dir}/pipeline_fors2/9-esorex_zeropoint_prep.py" --op "${data_
       cp param/std_param_template.yaml "${std_dir}/params.yaml"
       if python3 "${proj_dir}/pipeline_fors2/9-esorex_zeropoint.py" --directory "${std_dir}" --eso_calib_dir "${eso_calib_dir}"; then
         cd "${std_dir}0-data_with_raw_calibs" || exit
-        esorex fors_bias bias_up.sof
+        "${eso_bin_dir}esorex" fors_bias bias_up.sof
         mv master_bias.fits master_bias_up.fits
-        esorex fors_img_sky_flat flats_up.sof
+        "${eso_bin_dir}esorex" fors_img_sky_flat flats_up.sof
         mv master_sky_flat_img.fits master_sky_flat_img_up.fits
-        esorex fors_zeropoint zp_up.sof
+        "${eso_bin_dir}esorex" fors_zeropoint zp_up.sof
         mv standard_reduced_img.fits standard_reduced_img_up.fits
 
         cd ..
@@ -68,14 +71,14 @@ if python3 "${proj_dir}/pipeline_fors2/9-esorex_zeropoint_prep.py" --op "${data_
 
         cp "${proj_dir}param/psfex/"* .
 
-        sextractor standard_trimmed_img_up.fits -c pre-psfex.sex -CATALOG_NAME standard_psfex.fits
+        sex standard_trimmed_img_up.fits -c pre-psfex.sex -CATALOG_NAME standard_psfex.fits
         psfex standard_psfex.fits
         cd "${proj_dir}" || exit
         if python3 "${proj_dir}/pipeline_fors2/9-psf.py" --directory "${std_dir}" --psfex_file "${std_dir}sextractor/standard_psfex.psf" --image_file "${std_dir}sextractor/standard_trimmed_img_up.fits" --prefix ""; then
           cd "${std_dir}sextractor" || exit
           fwhm=$(jq -r "._fwhm_arcsec" "${std_dir}output_values.json")
           echo "FWHM: ${fwhm}"
-          sextractor standard_trimmed_img_up.fits -c psf-fit.sex -CATALOG_NAME _psf-fit.cat -PSF_NAME standard_psfex.psf -SEEING_FWHM "${fwhm}"
+          sex standard_trimmed_img_up.fits -c psf-fit.sex -CATALOG_NAME _psf-fit.cat -PSF_NAME standard_psfex.psf -SEEING_FWHM "${fwhm}"
           cd "${proj_dir}" || exit
           python3 /add_path.py --op "${data_title}" --instrument fors2 --key "${f_0}_std_cat_sextractor" --path "${std_dir}sextractor/_psf-fit.cat"
         else
