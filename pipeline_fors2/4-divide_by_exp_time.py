@@ -66,7 +66,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(
         description="Divide fits files by their exposure times.")
     parser.add_argument('--op',
-                        help='Name of object parameter file without .yaml, eg FRB180924_1',
+                        help='Name of epoch parameter file without .yaml, eg FRB180924_1',
                         type=str)
     parser.add_argument('--sextractor_directory', default=None,
                         help='Directory for sextractor scripts to be moved to. If you don\'t want to run sextractor, '
