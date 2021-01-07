@@ -113,7 +113,7 @@ def main(epoch, show, write):
     plot.plot(lambda_eff_fit, stats.exponential(lambda_eff_fit, *exp), label='Exponential fit', c='green',
               lw=weight_line, zorder=2)
     plot.scatter(lambda_effs_find, ext_poly_space(lambda_effs_find), c='violet', zorder=3)
-    plot.scatter(lambda_effs_find, scipy.interp(lambda_effs_find, lambda_effs_known, extinctions_known),
+    plot.scatter(lambda_effs_find, np.interp(lambda_effs_find, lambda_effs_known, extinctions_known),
                  label='Interpolated', c='cyan', zorder=4)
     plot.scatter(lambda_effs_find, stats.exponential(np.array(lambda_effs_find), *exp), c='green', zorder=5)
     # plt.title(epoch + ' Extinction Interpolation')
