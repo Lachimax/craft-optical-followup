@@ -15,13 +15,13 @@ fi
 config_file="param/config.json"
 if ! proj_dir=$(jq -r .proj_dir "${config_file}"); then
   echo "Configuration file not found."
-  exit
+  exit 1
 fi
 param_dir=$(jq -r .param_dir "${config_file}")
 
 if ! key=$(jq -r .astrometry "${param_dir}/keys.json"); then
   echo "Astrometry.net key required; keys.json not found."
-  exit
+  exit 1
 fi
 
 skip_astrometry=$(jq -r .skip_astrometry "${param_dir}/epochs_fors2/${param_file}.json")
