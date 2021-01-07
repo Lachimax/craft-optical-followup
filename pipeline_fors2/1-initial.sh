@@ -12,6 +12,10 @@ if ! proj_dir=$(jq -r .proj_dir ${config_file}); then
   exit
 fi
 
+echo
+echo "Executing pipeline_fors2/1-initial.sh, with epoch ${param_file}"
+echo
+
 param_dir=$(jq -r .param_dir "${config_file}")
 
 data_dir=$(jq -r .data_dir "${param_dir}/epochs_fors2/${param_file}.json")

@@ -13,6 +13,10 @@ if [[ -z ${sub_back} ]]; then
     sub_back=false
 fi
 
+echo
+echo "Executing pipeline_fors2/0-pipeline.sh, with epoch ${param_file} and sub_back=${sub_back}"
+echo
+
 if ! python3 "refresh_params.py"; then
   echo "Something went wrong with reading or writing the param files."
   exit

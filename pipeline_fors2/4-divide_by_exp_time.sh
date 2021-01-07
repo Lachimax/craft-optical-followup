@@ -13,6 +13,12 @@ if [[ -z ${destination} ]]; then
   destination=4-divided_by_exp_time/
 fi
 
+echo
+echo "Executing pipeline_fors2/4-divide_by_exp_time.sh, with:"
+echo "   epoch directory ${param_file}"
+echo "   destination directory ${destination}"
+echo
+
 config_file="param/config.json"
 if ! proj_dir=$(jq -r .proj_dir ${config_file}); then
   echo "Configuration file not found."

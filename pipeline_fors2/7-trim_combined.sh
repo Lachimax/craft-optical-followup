@@ -12,6 +12,14 @@ if [[ -z ${destination} ]]; then
 fi
 sextractor_destination=$4
 
+echo
+echo "Executing pipeline_fors2/7-trim_combined.sh, with:"
+echo "   epoch ${param_file}"
+echo "   origin directory ${origin}"
+echo "   destination directory ${destination}"
+echo "   sextractor_destination ${sextractor_destination}"
+echo
+
 config_file="param/config.json"
 if ! proj_dir=$(jq -r .proj_dir ${config_file}); then
   echo "Configuration file not found."
@@ -31,7 +39,7 @@ if ${do_sextractor}; then
   fi
   sextractor_destination_path=${data_dir}/analysis/sextractor/${sextractor_destination}
   mkdir "${sextractor_destination_path}"
-  if ! python3 "${proj_dir}/pipeline_fors2/7-trim_combined.py" --directory "${data_dir}/${origin}/" --destination "${data_dir}/${destination}/" --object "${data_title}" --sextractor_directory "${sextractor_destination_path}" ; then
+  if ! python3 "${proj_dir}/pipeline_fors2/7-trim_combined.py" --directory "${data_dir}/${origin}/" --destination "${data_dir}/${destination}/" --object "${data_title}" --sextractor_directory "${sextractor_destination_path}"; then
     echo "There was an error with the Python script for trimming."
     exit 1
   fi

@@ -4,6 +4,10 @@
 
 param_file=$1
 
+echo
+echo "Executing pipeline_fors2/2-sort_after_esoreflex.sh, with epoch ${param_file}"
+echo
+
 config_file="param/config.json"
 
 if ! proj_dir=$(jq -r .proj_dir ${config_file}); then

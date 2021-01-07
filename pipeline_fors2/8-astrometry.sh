@@ -12,6 +12,13 @@ if [[ -z ${destination} ]]; then
   destination=8-astrometry/
 fi
 
+echo
+echo "Executing pipeline_fors2/8-astrometry.sh, with:"
+echo "   epoch ${param_file}"
+echo "   origin directory ${origin}"
+echo "   destination directory ${destination}"
+echo
+
 config_file="param/config.json"
 if ! proj_dir=$(jq -r .proj_dir "${config_file}"); then
   echo "Configuration file not found."

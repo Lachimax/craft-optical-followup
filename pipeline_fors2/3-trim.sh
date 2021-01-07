@@ -3,6 +3,10 @@
 param_file=$1
 config_file="param/config.json"
 
+echo
+echo "Executing pipeline_fors2/3-trim.sh, with epoch ${param_file}"
+echo
+
 if ! proj_dir=$(jq -r .proj_dir ${config_file}); then
   echo "Configuration file not found."
   exit

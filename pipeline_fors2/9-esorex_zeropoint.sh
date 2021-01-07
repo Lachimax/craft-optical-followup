@@ -8,6 +8,12 @@
 param_file=$1
 dir=$2
 
+echo
+echo "Executing pipeline_fors2/9-esorex_zeropoint.sh, with:"
+echo "   epoch ${param_file}"
+echo "   directory ${dir}"
+echo
+
 config_file="param/config.json"
 if ! proj_dir=$(jq -r .proj_dir ${config_file}); then
   echo "Configuration file not found."
