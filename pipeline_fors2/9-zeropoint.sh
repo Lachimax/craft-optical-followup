@@ -25,7 +25,7 @@ fi
 param_dir=$(jq -r .param_dir "${config_file}")
 
 data_dir=$(jq -r .data_dir "${param_dir}/epochs_fors2/${param_file}.json")
-data_title=param_file
+data_title=${param_file}
 skip_esorex=$(jq -r .skip_esorex "${param_dir}/epochs_fors2/${param_file}.json")
 do_dual_mode=$(jq -r .do_dual_mode "${param_dir}/epochs_fors2/${param_file}.json")
 do_sextractor=$(jq -r .do_sextractor "${param_dir}/epochs_fors2/${param_file}.json")
@@ -70,21 +70,21 @@ if ${do_sextractor} ; then
 
             if [[ ${image_0} != "${df}" ]] ; then
                 if ${do_dual_mode} ; then
-                    sex "${df}_${suff}.fits,${image}" -c psf-fit.sex -CATALOG_NAME "${image_0}_dual-mode.cat" -PSF_NAME "${image_0}_psfex.psf" -SEEING_FWHM "${fwhm}" -PHOT_AUTOPARAMS "${kron_radius},1.0" -DETECT_THRESH "${threshold}" -ANALYSIS_THRESH "${threshold}"
+                    sex "${df}_${suff},${image}" -c psf-fit.sex -CATALOG_NAME "${image_0}_dual-mode.cat" -PSF_NAME "${image_0}_psfex.psf" -SEEING_FWHM "${fwhm}" -PHOT_AUTOPARAMS "${kron_radius},1.0" -DETECT_THRESH "${threshold}" -ANALYSIS_THRESH "${threshold}"
                     cd "${proj_dir}" || exit
                     if ${write_paths} ; then
-                        python3 /add_path.py --op "${data_title}" --key "${image_0}_cat_path" --path "${sextractor_destination_path}${image_0}_dual-mode.cat" --instrument FORS2
+                        python3 add_path.py --op "${data_title}" --key "${image_0}_cat_path" --path "${sextractor_destination_path}${image_0}_dual-mode.cat" --instrument FORS2
                     fi
                 else
                     cd "${proj_dir}" || exit
                     if ${write_paths} ; then
-                        python3 /add_path.py --op "${data_title}" --key "${image_0}_cat_path" --path "${sextractor_destination_path}${image_0}_psf-fit.cat" --instrument FORS2
+                        python3 add_path.py --op "${data_title}" --key "${image_0}_cat_path" --path "${sextractor_destination_path}${image_0}_psf-fit.cat" --instrument FORS2
                     fi
                 fi
             else
                 cd "${proj_dir}" || exit
                 if ${write_paths} ; then
-                    python3 /add_path.py --op "${data_title}" --key "${image_0}_cat_path" --path "${sextractor_destination_path}${image_0}_psf-fit.cat" --instrument FORS2
+                    python3 add_path.py --op "${data_title}" --key "${image_0}_cat_path" --path "${sextractor_destination_path}${image_0}_psf-fit.cat" --instrument FORS2
                 fi
             fi
         done
@@ -93,9 +93,9 @@ fi
 
 cd "${proj_dir}" || exit
 echo 'Atmospheric extinction:'
-python3 "/pipeline_fors2/9-extinction_atmospheric.py" --op "${data_title}" -write
+python3 "pipeline_fors2/9-extinction_atmospheric.py" --op "${data_title}" -write
 echo 'Science-field zeropoint:'
-python3 "/zeropoint.py" --op "${data_title}" -write --instrument FORS2
+python3 "zeropoint.py" --op "${data_title}" -write --instrument FORS2
 
 echo "Skip esorex ${skip_esorex}"
 if ! ${skip_esorex} ; then
@@ -103,5 +103,5 @@ if ! ${skip_esorex} ; then
 fi
 
 echo 'Standard-field zeropoint:'
-python3 "/pipeline_fors2/9-zeropoint_std.py" --op "${data_title}"
+python3 "pipeline_fors2/9-zeropoint_std.py" --op "${data_title}"
 
