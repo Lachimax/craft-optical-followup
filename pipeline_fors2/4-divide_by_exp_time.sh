@@ -14,7 +14,7 @@ if [[ -z ${destination} ]]; then
 fi
 
 echo
-echo "Executing pipeline_fors2/4-divide_by_exp_time.sh, with:"
+echo "Executing bash script pipeline_fors2/4-divide_by_exp_time.sh, with:"
 echo "   epoch directory ${param_file}"
 echo "   destination directory ${destination}"
 echo

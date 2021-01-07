@@ -13,7 +13,7 @@ if ! proj_dir=$(jq -r .proj_dir ${config_file}); then
 fi
 
 echo
-echo "Executing pipeline_fors2/1-initial.sh, with epoch ${param_file}"
+echo "Executing bash script pipeline_fors2/1-initial.sh, with epoch ${param_file}"
 echo
 
 param_dir=$(jq -r .param_dir "${config_file}")

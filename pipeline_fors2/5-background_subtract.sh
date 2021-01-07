@@ -20,7 +20,7 @@ if [[ -z ${normalise} ]]; then
 fi
 
 echo
-echo "Executing pipeline_fors2/5-background_subtract.sh, with:"
+echo "Executing bash script pipeline_fors2/5-background_subtract.sh, with:"
 echo "   epoch ${param_file}"
 echo "   origin directory ${origin}"
 echo "   destination directory ${destination}"

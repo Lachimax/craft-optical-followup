@@ -18,7 +18,7 @@ fi
 kron_radius=$5
 
 echo
-echo "Executing pipeline_fors2/9-zeropoint.sh, with:"
+echo "Executing bash script pipeline_fors2/9-zeropoint.sh, with:"
 echo "   epoch ${param_file}"
 echo "   origin directory ${origin}"
 echo "   destination directory ${destination}"

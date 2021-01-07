@@ -5,7 +5,7 @@
 param_file=$1
 
 echo
-echo "Executing pipeline_fors2/2-sort_after_esoreflex.sh, with epoch ${param_file}"
+echo "Executing bash script pipeline_fors2/2-sort_after_esoreflex.sh, with epoch ${param_file}"
 echo
 
 config_file="param/config.json"

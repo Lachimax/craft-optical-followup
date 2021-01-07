@@ -13,7 +13,7 @@ if [[ -z ${destination} ]]; then
 fi
 
 echo
-echo "Executing pipeline_fors2/8-astrometry.sh, with:"
+echo "Executing bash script pipeline_fors2/8-astrometry.sh, with:"
 echo "   epoch ${param_file}"
 echo "   origin directory ${origin}"
 echo "   destination directory ${destination}"

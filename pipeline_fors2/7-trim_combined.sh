@@ -13,7 +13,7 @@ fi
 sextractor_destination=$4
 
 echo
-echo "Executing pipeline_fors2/7-trim_combined.sh, with:"
+echo "Executing bash script pipeline_fors2/7-trim_combined.sh, with:"
 echo "   epoch ${param_file}"
 echo "   origin directory ${origin}"
 echo "   destination directory ${destination}"

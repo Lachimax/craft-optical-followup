@@ -10,6 +10,10 @@ import craftutils.utils as u
 
 
 def main(data_title: 'str'):
+
+    print("\nExecuting refresh_params.py, with:")
+    print(f"\tepoch {data_title}")
+
     eso_dir = p.config['esoreflex_output_dir']
     if os.path.isdir(eso_dir):
         obj_params = p.object_params_fors2(data_title)
