@@ -43,7 +43,7 @@ if [ "${param_file}" == "new" ] ; then
   done
 
   frb_dir="${top_data_dir}${frb_name}/"
-  if [[ -d ${frb_dir} ]]; then
+  if ! [[ -d ${frb_dir} ]]; then
     echo "This seems to be the first epoch processed for this FRB. Setting up directory at ${frb_dir}:"
     mkdir "${frb_dir}"
     epoch_number=1
@@ -64,8 +64,8 @@ if [ "${param_file}" == "new" ] ; then
     read -r script_path
   done
 
-  mv "${script_path}" "${frb_dir}download${frb_name}script.sh"
   param_file="${frb_name}_${epoch_number}"
+  cp "${script_path}" "${frb_dir}download${param_file}script.sh"
   cp "${proj_dir}param/epochs_fors2/FRB_fors2_epoch_template.yaml" "${param_dir}epochs_fors2/${param_file}.yaml"
 fi
 
