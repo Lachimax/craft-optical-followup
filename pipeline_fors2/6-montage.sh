@@ -37,7 +37,6 @@ param_dir=$(jq -r .param_dir "${config_file}")
 
 data_dir=$(jq -r .data_dir "${param_dir}/epochs_fors2/${param_file}.json")
 data_title=${param_file}
-object=$(jq -r .object "${param_dir}/epochs_fors2/${param_file}.json")
 
 cd "${data_dir}" || exit
 cd "${origin}" || exit
@@ -50,52 +49,49 @@ pwd
 
 mkdir ${destination}/
 
-if cp -r ${origin}/* ${destination}/; then
+cd "${data_dir}${destination}" || exit
 
+for fil in ${fils}; do
+
+  echo "Processing ${fil}"
+
+  fil_0=${fil::1}
+
+  echo "Create directories to hold processed images"
+  mkdir "${fil_0}_projdir" "${fil_0}_diffdir" "${fil_0}_corrdir" | tee -a "${fil_0}_montage.log"
+
+  echo "Create metadata tables of the input images"
+  mImgtbl "${data_dir}${origin}${fil}" "${fil_0}.tbl" | tee -a "${fil_0}_montage.log"
+
+  echo "Create FITS headers describing the footprint of the mosaic"
+  mMakeHdr "${fil_0}.tbl" "${fil_0}_template.hdr" | tee -a "${fil_0}_montage.log"
+
+  cd "${proj_dir}" || exit
+  # Inject header changes.
+  python3 "${proj_dir}/pipeline_fors2/6-montage.py" --directory "${data_dir}" -op "${data_title}" --origin "${data_dir}/${origin}" --destination "${data_dir}/${destination}" --filter "${fil}"
   cd "${data_dir}/${destination}" || exit
 
-  for fil in ${fils}; do
+  echo "Reproject the input images"
+  mProjExec -p "${data_dir}${origin}${fil}" "${fil_0}.tbl" "${fil_0}_template.hdr" "${fil_0}_projdir" "${fil_0}_stats.tbl" | tee -a "${fil_0}_montage.log"
 
-    echo "Processing ${fil}"
+  echo "Create a metadata table of the reprojected images"
+  mImgtbl "${fil_0}_projdir/" "${fil_0}.tbl" | tee -a "${fil_0}_montage.log"
 
-    fil_0=${fil::1}
+  echo "Analyze the overlaps between images"
+  mOverlaps "${fil_0}.tbl" "${fil_0}_diffs.tbl" | tee -a "${fil_0}_montage.log"
+  mDiffExec -p "${fil_0}_projdir/" "${fil_0}_diffs.tbl" "${fil_0}_template.hdr" "${fil_0}_diffdir" | tee -a "${fil_0}_montage.log"
+  mFitExec "${fil_0}_diffs.tbl" "${fil_0}_fits.tbl" "${fil_0}_diffdir" | tee -a "${fil_0}_montage.log"
 
-    echo "Create directories to hold processed images"
-    mkdir "${fil_0}_projdir" "${fil_0}_diffdir" "${fil_0}_corrdir" | tee -a "${fil_0}_montage.log"
+  echo "Perform background modeling and compute corrections for each image"
+  mBgModel "${fil_0}.tbl" "${fil_0}_fits.tbl" "${fil_0}_corrections.tbl" | tee -a "${fil_0}_montage.log"
 
-    echo "Create metadata tables of the input images"
-    mImgtbl "${fil}" "${fil_0}.tbl" | tee -a "${fil_0}_montage.log"
+  echo "Apply corrections to each image"
+  mBgExec -p "${fil_0}_projdir/" "${fil_0}.tbl" "${fil_0}_corrections.tbl" "${fil_0}_corrdir" | tee -a "${fil_0}_montage.log"
 
-    echo "Create FITS headers describing the footprint of the mosaic"
-    mMakeHdr "${fil_0}.tbl" "${fil_0}_template.hdr" | tee -a "${fil_0}_montage.log"
+  echo "Coadd the images to create mosaics with background corrections"
+  mAdd -p "${fil_0}_corrdir/" -a median "${fil_0}.tbl" "${fil_0}_template.hdr" "${fil_0}_coadded.fits" | tee -a "${fil_0}_montage.log"
 
-    cd "${proj_dir}" || exit
-    # Inject header changes.
-    python3 "${proj_dir}/pipeline_fors2/6-montage.py" --directory "${data_dir}" -op "${data_title}" --destination "${data_dir}/${destination}" --filter "${fil}"
-    cd "${data_dir}/${destination}" || exit
+done
 
-    echo "Reproject the input images"
-    mProjExec -p "${fil}" "${fil_0}.tbl" "${fil_0}_template.hdr" "${fil_0}_projdir" "${fil_0}_stats.tbl" | tee -a "${fil_0}_montage.log"
-
-    echo "Create a metadata table of the reprojected images"
-    mImgtbl "${fil_0}_projdir/" "${fil_0}.tbl" | tee -a "${fil_0}_montage.log"
-
-    echo "Analyze the overlaps between images"
-    mOverlaps "${fil_0}.tbl" "${fil_0}_diffs.tbl" | tee -a "${fil_0}_montage.log"
-    mDiffExec -p "${fil_0}_projdir/" "${fil_0}_diffs.tbl" "${fil_0}_template.hdr" "${fil_0}_diffdir" | tee -a "${fil_0}_montage.log"
-    mFitExec "${fil_0}_diffs.tbl" "${fil_0}_fits.tbl" "${fil_0}_diffdir" | tee -a "${fil_0}_montage.log"
-
-    echo "Perform background modeling and compute corrections for each image"
-    mBgModel "${fil_0}.tbl" "${fil_0}_fits.tbl" "${fil_0}_corrections.tbl" | tee -a "${fil_0}_montage.log"
-
-    echo "Apply corrections to each image"
-    mBgExec -p "${fil_0}_projdir/" "${fil_0}.tbl" "${fil_0}_corrections.tbl" "${fil_0}_corrdir" | tee -a "${fil_0}_montage.log"
-
-    echo "Coadd the images to create mosaics with background corrections"
-    mAdd -p "${fil_0}_corrdir/" -a median "${fil_0}.tbl" "${fil_0}_template.hdr" "${fil_0}_coadded.fits" | tee -a "${fil_0}_montage.log"
-
-  done
-
-  date +%Y-%m-%dT%T >>"${data_title}.log"
-  echo Combined with 6-montage.sh >>"${data_title}.log"
-fi
+date +%Y-%m-%dT%T >>"${data_title}.log"
+echo Combined with 6-montage.sh >>"${data_title}.log"

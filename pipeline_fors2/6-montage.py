@@ -8,16 +8,17 @@ from craftutils.photometry import gain_median_combine
 import craftutils.fits_files as ff
 
 
-def main(data_dir, data_title, destination, fil):
+def main(data_dir, data_title, origin, destination, fil):
 
     print("\nExecuting Python script pipeline_fors2/6-montage.py, with:")
     print(f"\tepoch {data_title}")
     print(f"\tdata directory {data_dir}")
+    print(f"\torigin directory {destination}")
     print(f"\tdestination directory {destination}")
     print(f"\tfilter {fil}")
     print()
 
-    table = ff.fits_table(destination + '/' + fil, science_only=False)
+    table = ff.fits_table(origin + '/' + fil, science_only=False)
 
     fil = fil.replace('/', '')
 
@@ -57,6 +58,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Inject header information while doing Montage combine.")
     parser.add_argument('--directory', help='Main data directory(probably starts with "MJD"')
     parser.add_argument('-op', help='Name of object parameter file without .yaml, eg FRB180924_1')
+    parser.add_argument('--origin', help='Path to the directory containing images to be co-added.')
     parser.add_argument('--destination', help='Path to the Montage coaddition folder')
     parser.add_argument('--filter', help='Filter name, eg g_HIGH')
     parser.add_argument('--object', help='Object name, eg FRB-181112--Host')
@@ -65,4 +67,4 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
 
-    main(data_dir=args.directory, data_title=args.op, destination=args.destination, fil=args.filter)
+    main(data_dir=args.directory, data_title=args.op, origin=args.origin, destination=args.destination, fil=args.filter)
