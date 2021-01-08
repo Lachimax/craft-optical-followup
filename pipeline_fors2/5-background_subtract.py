@@ -1,6 +1,5 @@
-# Code by Lachlan Marnoch, 2019
+# Code by Lachlan Marnoch, 2019 - 2020
 
-import sys
 import os
 from shutil import copyfile
 import craftutils.utils as u

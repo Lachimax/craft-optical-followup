@@ -30,15 +30,51 @@ if ! proj_dir=$(jq -r .proj_dir ${config_file}); then
 fi
 
 param_dir=$(jq -r .param_dir "${config_file}")
+top_data_dir=$(jq -r .top_data_dir "${config_file}")
 
-echo "Loading epoch parameters from ${param_dir}/epochs_fors2/${param_file}.json"
+# For a new epoch, we can set up the directory.
+if [ "${param_file}" == "new" ] ; then
+  echo "You are initialising a new epoch dataset."
+  echo "Which FRB is this an observation of?"
+  read -r frb_name
+  while ! [[ ${frb_name} =~ ^FRB[0-9]{6}$ ]] ; do
+    echo "Please format response as FRBXXXXXX; eg FRB180924."
+    read -r frb_name
+  done
 
-if ! data_dir=$(jq -r .data_dir "${param_dir}/epochs_fors2/${param_file}.json"); then
+  frb_dir="${top_data_dir}${frb_name}/"
+  if [[ -d ${frb_dir} ]]; then
+    echo "This seems to be the first epoch processed for this FRB. Setting up directory at ${frb_dir}:"
+    mkdir "${frb_dir}"
+    epoch_number=1
+  fi
+
+  echo "Please enter the path to the ESO download script:"
+  read -r script_path
+  echo ${script_path}
+
+  while [[ ${script_path} != *download*.sh ]] ; do
+    echo "This is not a valid script file. Try again:"
+    read -r script_path
+  done
+
+  while [[ ! -f ${script_path} ]]
+  do
+    echo "Path does not exist. Try again:"
+    read -r script_path
+  done
+
+  mv "${script_path}" "${frb_dir}download${frb_name}script.sh"
+  param_file="${frb_name}_${epoch_number}"
+  cp "${proj_dir}param/epochs_fors2/FRB_fors2_epoch_template.yaml" "${param_dir}epochs_fors2/${param_file}.yaml"
+fi
+
+echo "Loading epoch parameters from ${param_dir}epochs_fors2/${param_file}.json"
+
+if ! data_dir=$(jq -r .data_dir "${param_dir}epochs_fors2/${param_file}.json"); then
   echo "Epoch parameter file not found."
   exit
 fi
-
-export PYTHONPATH=PYTHONPATH:${proj_dir}
 
 run_script () {
     script=$1

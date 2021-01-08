@@ -56,7 +56,7 @@ if ! ${skip_download}; then
 
   # Download files
   echo "Enter ESO password:"
-  chmod u+x download*script.sh
+  chmod u+x download*.sh
   for dl_script in download*.sh; do
     chmod u+x "${dl_script}"
     ./"${dl_script}"
