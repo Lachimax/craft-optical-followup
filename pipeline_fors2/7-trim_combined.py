@@ -4,8 +4,6 @@
 
 import craftutils.fits_files as f
 import craftutils.params as p
-import sys
-import shutil
 import os
 import craftutils.utils as u
 from shutil import copyfile
@@ -14,6 +12,13 @@ from shutil import copyfile
 # TODO: Refactor all script inputs to match argparse inputs, for readability.
 
 def main(comb_path, output_dir, obj, sextractor_path):
+
+    print("\nExecuting Python script pipeline_fors2/7-trim_combined.py, with:")
+    print(f"\tepoch {obj}")
+    print(f"\toutput directory {output_dir}")
+    print(f"\tsextractor directory {sextractor_path}")
+    print()
+
     if sextractor_path is not None:
         if not os.path.isdir(sextractor_path):
             os.mkdir(sextractor_path)
@@ -56,7 +61,7 @@ if __name__ == '__main__':
     import argparse
 
     parser = argparse.ArgumentParser(description="Trim the edges off combined image.")
-    parser.add_argument('--directory', help='Main data directory(probably starts with "MJD"')
+    parser.add_argument('--directory', help='Directory containing co-added images.')
     parser.add_argument('--destination', help='Output directory.')
     parser.add_argument('--object', help='Object name, eg FRB-181112--Host')
     parser.add_argument('--sextractor_directory', default=None,

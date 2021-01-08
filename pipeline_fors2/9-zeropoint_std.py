@@ -27,8 +27,12 @@ def main(obj,
          show_plots,
          mag_range_sex_lower,
          mag_range_sex_upper,
-         pix_tol,
-         project):
+         pix_tol):
+
+    print("\nExecuting Python script pipeline_fors2/9-zeropoint_std.py, with:")
+    print(f"\tepoch {obj}")
+    print()
+
     sextractor_names = p.sextractor_names_psf()  # None to auto-detect
     properties = p.object_params_fors2(obj)
     outputs = p.object_output_params(obj=obj, instrument='fors2')
@@ -261,10 +265,6 @@ if __name__ == '__main__':
                         help='Search tolerance for matching objects, in FORS2 (g) pixels.',
                         default=10.,
                         type=float)
-    parser.add_argument('-project',
-                        type=str,
-                        default='unicomp',
-                        help='Name of project parameter .yaml file.')
     parser.add_argument('--star_class_column',
                         help='Name of SExtractor column containing star classification parameter.',
                         default='class_star',
@@ -286,6 +286,4 @@ if __name__ == '__main__':
          mag_range_sex_lower=args.sextractor_mag_range_lower,
          mag_range_sex_upper=args.sextractor_mag_range_upper,
          pix_tol=args.pixel_tolerance,
-         project=args.project,
-
          )

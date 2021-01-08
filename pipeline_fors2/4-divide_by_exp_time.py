@@ -10,6 +10,14 @@ import craftutils.params as p
 
 
 def main(data_title, sextractor_path, origin, destination):
+
+    print("\nExecuting Python script pipeline_fors2/4-divide_by_exp_time.py, with:")
+    print(f"\tepoch {data_title}")
+    print(f"\tsextractor path {sextractor_path}")
+    print(f"\torigin directory {origin}")
+    print(f"\tdestination directory {destination}")
+    print()
+
     properties = p.object_params_fors2(data_title)
     outputs = p.object_output_params(obj=data_title, instrument='FORS2')
 

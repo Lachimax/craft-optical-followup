@@ -11,6 +11,15 @@ import astropy.io.fits as fits
 # TODO: Refactor all script inputs to match argparse inputs, for readability.
 
 def main(directory, psfex_file, image, prefix, output_file):
+
+    print("\nExecuting Python script pipeline_fors2/9-psf.py, with:")
+    print(f"\tmain data directory {directory}")
+    print(f"\tPSFEx file {psfex_file}")
+    print(f"\timage file {image}")
+    print(f"\toutput file {output_file}")
+    print(f"\tfilter prefix {prefix}")
+    print()
+
     _, pix_scale = ff.get_pixel_scale(image)
     pix_scale = float(pix_scale)
     fwhm_pix = float(ff.get_header_attribute(file=psfex_file, attribute='PSF_FWHM', ext=1))
@@ -45,4 +54,5 @@ if __name__ == '__main__':
                         default='output_values')
 
     args = parser.parse_args()
-    main(directory=args.directory, psfex_file=args.psfex_file, image=args.image_file, prefix=args.prefix, output_file=args.output_file)
+    main(directory=args.directory, psfex_file=args.psfex_file, image=args.image_file, prefix=args.prefix,
+         output_file=args.output_file)

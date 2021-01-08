@@ -9,6 +9,13 @@ import sys
 
 
 def main(origin_dir, output_dir, data_title, sextractor_path):
+
+    print("\nExecuting Python script pipeline_fors2/3-trim.py, with:")
+    print(f"\tepoch {data_title}")
+    print(f"\torigin directory {origin_dir}")
+    print(f"\toutput directory {output_dir}")
+    print()
+
     # If this is None, we don't want the SExtractor components to be performed.
     if sextractor_path is not None:
         if not os.path.isdir(sextractor_path):

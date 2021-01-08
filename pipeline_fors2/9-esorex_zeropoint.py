@@ -5,6 +5,12 @@ from craftutils import params
 
 
 def main(path, cat_path):
+
+    print("\nExecuting Python script pipeline_fors2/9-esorex_zeropoint.py, with:")
+    print(f"\tcalibration data path {path}")
+    print(f"\tESO calibration path {cat_path}")
+    print()
+
     print('ESO CALIB DIR:', cat_path)
     raw_path = path + '/0-data_with_raw_calibs/'
     table_path = raw_path + 'fits_table.csv'

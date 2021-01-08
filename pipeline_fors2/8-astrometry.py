@@ -12,6 +12,15 @@ from craftutils.astrometry import tweak_final
 # TODO: Refactor all script inputs to match argparse inputs, for readability.
 
 def main(obj, astrometry_path, sextractor_path, template, show):
+
+    print("\nExecuting Python script pipeline_fors2/8-astrometry.py, with:")
+    print(f"\tepoch {obj}")
+    print(f"\tastrometry path {astrometry_path}")
+    print(f"\tsextractor path {sextractor_path}")
+    print(f"\ttemplate {template}")
+    print(f"\tshow {show}")
+    print()
+
     files = os.listdir(astrometry_path)
     template_file = template[0] + '_astrometry.fits'
 

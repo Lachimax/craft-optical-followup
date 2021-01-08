@@ -3,13 +3,20 @@
 import os
 import numpy as np
 
-import craftutils.utils as u
 import craftutils.params as p
 from craftutils.photometry import gain_median_combine
 import craftutils.fits_files as ff
 
 
-def main(data_dir, data_title, destination, fil, object):
+def main(data_dir, data_title, destination, fil):
+
+    print("\nExecuting Python script pipeline_fors2/6-montage.py, with:")
+    print(f"\tepoch {data_title}")
+    print(f"\tdata directory {data_dir}")
+    print(f"\tdestination directory {destination}")
+    print(f"\tfilter {fil}")
+    print()
+
     table = ff.fits_table(destination + '/' + fil, science_only=False)
 
     fil = fil.replace('/', '')
@@ -25,13 +32,14 @@ def main(data_dir, data_title, destination, fil, object):
     params = p.load_params(data_dir + '/output_values')
     airmass = table['airmass'].mean()
     saturate = table['saturate'].mean()
+    obj = table['object'][0]
     old_gain = table['gain'].mean()
     n_frames = params[fil[0] + '_n_exposures']
     gain = gain_median_combine(old_gain=old_gain, n_frames=n_frames)
 
     header.insert(-1, f'AIRMASS = {airmass}\n')
     header.insert(-1, f'FILTER  = {fil}\n')
-    header.insert(-1, f'OBJECT  = {object}\n')
+    header.insert(-1, f'OBJECT  = {obj}\n')
     header.insert(-1, f'EXPTIME = 1.\n')
     header.insert(-1, f'GAIN    = {gain}\n')
     header.insert(-1, f'SATURATE= {saturate}\n')
@@ -57,5 +65,4 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
 
-    main(data_dir=args.directory, data_title=args.op, destination=args.destination, fil=args.filter,
-         object=args.object)
+    main(data_dir=args.directory, data_title=args.op, destination=args.destination, fil=args.filter)

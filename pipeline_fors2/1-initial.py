@@ -10,6 +10,12 @@ import os
 
 
 def main(output_dir: 'str', data_title: 'str'):
+
+    print("\nExecuting Python script pipeline_fors2/1-initial.py, with:")
+    print(f"\tepoch {data_title}")
+    print(f"\toutput directory {output_dir}")
+    print()
+
     output_dir = u.check_trailing_slash(output_dir)
     data_dir = output_dir + "/0-data_with_raw_calibs/"
 

@@ -11,8 +11,9 @@ import craftutils.utils as u
 
 def main(data_title: 'str'):
 
-    print("\nExecuting refresh_params.py, with:")
+    print("\nExecuting Python script pipeline_fors2/2-sort_after_esoreflex.py, with:")
     print(f"\tepoch {data_title}")
+    print()
 
     eso_dir = p.config['esoreflex_output_dir']
     if os.path.isdir(eso_dir):

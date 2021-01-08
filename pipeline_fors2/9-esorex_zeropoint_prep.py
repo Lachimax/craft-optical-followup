@@ -5,6 +5,12 @@ from craftutils.utils import mkdir_check
 
 
 def main(ob, path):
+
+    print("\nExecuting Python script pipeline_fors2/9-esorex_zeropoint_prep.py, with:")
+    print(f"\tepoch {ob}")
+    print(f"\tcalibration data path {path}")
+    print()
+
     output = object_output_params(obj=ob, instrument='FORS2')
     filters = output['filters']
     for f in filters:

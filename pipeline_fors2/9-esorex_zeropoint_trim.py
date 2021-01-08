@@ -4,10 +4,19 @@ import craftutils.fits_files as ff
 from craftutils import params as p
 
 
-def main(obj, input, output, path, prefix):
-    ff.trim_file(path=input, bottom=0, top=950, left=195, right=1825, new_path=output)
-    airmass = ff.get_airmass(input)
-    exptime = ff.get_exp_time(input)
+def main(obj, input_path, output, path, prefix):
+
+    print("\nExecuting Python script pipeline_fors2/9-esorex_zeropoint_trim.py, with:")
+    print(f"\tepoch {obj}")
+    print(f"\tinput path {input_path}")
+    print(f"\toutput path {output}")
+    print(f"\tstandard star data path {path}")
+    print(f"\tfilter prefix {prefix}")
+    print()
+
+    ff.trim_file(path=input_path, bottom=0, top=950, left=195, right=1825, new_path=output)
+    airmass = ff.get_airmass(input_path)
+    exptime = ff.get_exp_time(input_path)
 
     p.add_params(path + '/output_values',
                  {prefix + '_airmass': airmass, prefix + '_airmass_err': 0, prefix + '_exptime': exptime})
@@ -32,4 +41,4 @@ if __name__ == '__main__':
                         default='')
 
     args = parser.parse_args()
-    main(obj=args.op, input=args.input, output=args.output, path=args.path, prefix=args.prefix)
+    main(obj=args.op, input_path=args.input, output=args.output, path=args.path, prefix=args.prefix)

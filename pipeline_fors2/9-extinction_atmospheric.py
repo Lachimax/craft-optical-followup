@@ -11,6 +11,13 @@ matplotlib.rcParams.update({'errorbar.capsize': 3})
 
 
 def main(epoch, show, write):
+
+    print("\nExecuting Python script pipeline_fors2/9-extinction_atmospheric.py, with:")
+    print(f"\tepoch {epoch}")
+    print(f"\tshow {show}")
+    print(f"\twrite {write}")
+    print()
+
     filters = p.instrument_all_filters('FORS2')
     epoch_params = p.object_params_fors2(obj=epoch)
     output_values = p.object_output_params(obj=epoch, instrument='FORS2')

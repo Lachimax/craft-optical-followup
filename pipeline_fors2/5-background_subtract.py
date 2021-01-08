@@ -8,10 +8,15 @@ import craftutils.fits_files as f
 import craftutils.params as p
 
 
-# TODO: Split normalise into its own step.
-
-
 def main(data_dir, data_title, sextractor_path, origin, destination):
+
+    print("\nExecuting Python script pipeline_fors2/5-background_subtract.py, with:")
+    print(f"\tepoch {data_title}")
+    print(f"\tsextractor path {sextractor_path}")
+    print(f"\torigin directory {origin}")
+    print(f"\tdestination directory {destination}")
+    print()
+
     if sextractor_path is not None:
         if not os.path.isdir(sextractor_path):
             os.mkdir(sextractor_path)
@@ -19,7 +24,7 @@ def main(data_dir, data_title, sextractor_path, origin, destination):
         ap_diams_sex = p.load_params(f'param/aperture_diameters_fors2')
     else:
         do_sextractor = False
-        
+
     outputs = p.object_output_params(data_title, instrument='FORS2')
 
     destination = data_dir + "/" + destination + "/"
