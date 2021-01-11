@@ -1,24 +1,27 @@
 import numpy as np
 import matplotlib
 import matplotlib.pyplot as plt
-import scipy
 from scipy.optimize import curve_fit
+
 from craftutils import params as p
 from craftutils import utils as u
 from craftutils import stats
+from craftutils.retrieve import update_fors2_calib
 
 matplotlib.rcParams.update({'errorbar.capsize': 3})
 
 
 def main(epoch, show, write):
-
     print("\nExecuting Python script pipeline_fors2/9-extinction_atmospheric.py, with:")
     print(f"\tepoch {epoch}")
     print(f"\tshow {show}")
     print(f"\twrite {write}")
     print()
-
+    update_fors2_calib()
+    print()
     filters = p.instrument_all_filters('FORS2')
+    print()
+
     epoch_params = p.object_params_fors2(obj=epoch)
     output_values = p.object_output_params(obj=epoch, instrument='FORS2')
 
@@ -41,7 +44,7 @@ def main(epoch, show, write):
         f_params = filters[f]
         lambda_effs_known.append(f_params['lambda_eff'])
         i, nrst = u.find_nearest(f_params['mjd'], mjd)
-        print('Nearest MJD in table:', nrst)
+        print(f'Nearest MJD in table is {nrst}, with a difference of {mjd - nrst} days.')
         extinctions_known.append(f_params['extinction'][i])
         extinctions_known_err.append(f_params['extinction_err'][i])
         zeropoints.append(f_params['zeropoint'][i])
@@ -128,6 +131,7 @@ def main(epoch, show, write):
     plot.set_xlabel('Filter $\lambda_\mathrm{eff}$ (angstrom)', fontsize=size_font, fontweight='bold')
     plot.set_ylabel('Extinction coefficient $k$', fontsize=size_font, fontweight='bold')
     plt.legend(fontsize=size_legend)
+    u.mkdir_check(epoch_params['data_dir'] + '9-zeropoint/')
     fig.savefig(epoch_params['data_dir'] + '9-zeropoint/atmospheric_extinction.png', bbox_inches='tight')
     if show:
         plt.show()
