@@ -1,1 +1,5 @@
-{"astrometry": "xxxxxxxxxxxxx"}
+{
+  "astrometry": "xxxxxxxxxxxxx",
+  "sciserver_user": "xxxxxxxxxxxx",
+  "sciserver_pwd": "xxxxxxxxxxxx"
+}
