@@ -46,6 +46,8 @@ if [ "${param_file}" == "new" ]; then
   if ! [[ -d ${frb_dir} ]]; then
     echo "This seems to be the first epoch processed for this FRB. Setting up directory at ${frb_dir}:"
     mkdir "${frb_dir}"
+    cp "${proj_dir}param/FRBs/FRB_template.yaml" "${param_dir}FRBs/${param_file}.yaml"
+    echo "I have created a new FRB parameter file at ${param_dir}FRBs/${param_file}.yaml, with some default values. Please check this file before proceeding."
     epoch_number=1
   fi
 
