@@ -1,9 +1,10 @@
-# Code by Lachlan Marnoch, 2019
+# Code by Lachlan Marnoch, 2019-2020
 
 from craftutils import photometry
 from craftutils import params as p
 from craftutils import fits_files as ff
 from craftutils.utils import mkdir_check
+from craftutils.retrieve import update_frb_sdss_photometry
 
 import os
 import matplotlib
@@ -33,7 +34,6 @@ def main(obj,
          pix_tol,
          separate_chips,
          write):
-
     sextractor_names = p.sextractor_names_psf()  # None to auto-detect
 
     properties = p.object_params_instrument(obj=obj, instrument=instrument)
@@ -82,9 +82,11 @@ def main(obj,
             output_path = output_path + '/' + test_name + '/'
             mkdir_check(output_path)
 
+            # TODO: Cycle through preferred catalogues, like in the standard-star script
+
             if cat_name == 'DES':
-                cat_path = properties['des_cat']
-                if cat_path is None:
+                cat_path = properties['data_dir'] + "/DES/des_objects.csv"
+                if not os.path.isfile(cat_path):
                     raise ValueError(
                         'No DES catalogue available at the position of ' + obj + '.')
                 cat_ra_col = 'RA'
@@ -110,10 +112,10 @@ def main(obj,
                 cat_name = 'other'
 
             elif cat_name == 'SDSS':
-                cat_path = properties['sdss_cat']
-                if cat_path is None:
-                    raise ValueError(
-                        'No SDSS catalogue available at the position of ' + obj + '.')
+                cat_path = properties['data_dir'] + "/SDSS/SDSS.csv"
+                if not os.path.isfile(cat_path):
+                    print('No SDSS catalogue found on-disk for the position of ' + obj + '. Attempting retrieval...')
+                    update_frb_sdss_photometry(frb=obj)
                 cat_ra_col = 'ra'
                 cat_dec_col = 'dec'
                 cat_mag_col = 'psfMag_' + f_low
