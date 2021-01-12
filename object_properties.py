@@ -1,4 +1,4 @@
-# Code by Lachlan Marnoch, 2019
+# Code by Lachlan Marnoch, 2019-2020
 from craftutils import params
 from craftutils import utils as u, photometry as ph, plotting as p, fits_files as ff
 
@@ -11,6 +11,8 @@ import pandas
 
 import matplotlib.pyplot as plt
 import numpy as np
+from os.path import isfile
+
 
 # TODO: Integrate into pipeline
 
@@ -39,6 +41,8 @@ def main(obj,
     now.format = 'isot'
 
     des_cat_path = epoch_properties[f'des_cat']
+    if not isfile(des_cat_path):
+        des_cat_path = None
 
     output_path = epoch_properties['data_dir'] + '/analysis/object_properties/'
     u.mkdir_check(output_path)
@@ -60,7 +64,7 @@ def main(obj,
             raise ValueError('Invalid instrument.')
         f_up = f_0.upper()
 
-        image_path = paths[f_output + '_' + epoch_properties['subtraction_image'] ]
+        image_path = paths[f_output + '_' + epoch_properties['subtraction_image']]
         if cat_name is None:
             cat_path = paths[f'{f_output}_cat_path']
         else:
@@ -72,6 +76,8 @@ def main(obj,
         print('Catalogue:', cat_path)
 
         des_path = epoch_properties[f'{f_0}_des_fits']
+        if not isfile(des_path):
+            des_path = None
 
         print(f)
 
@@ -146,18 +152,21 @@ def main(obj,
             mag_ins = mag_ins[0]
             mag_ins_err = max(abs(mag_ins_err_1[0]), abs(mag_ins_err_2[0]))
 
-            output_catalogue_this = {'id': o, 'ra': this['ra'], 'dec': this['dec'], 'ra_given': ra,
-                                     'dec_given': dec, 'matching_distance_sex': dist * 3600,
-                                     'kron_radius': this['kron_radius'],
-                                     'a': this['a'] * 3600, 'a_err': this['a_err'] * 3600,
-                                     'b': this['b'] * 3600, 'b_err': this['b_err'] * 3600,
-                                     'theta': this['theta'], 'theta_err': this['theta_err'],
-                                     'mag_auto': mag_auto_true[index], 'mag_auto_err': mag_err, 'mag_ins': mag_ins,
-                                     'mag_ins_err': mag_ins_err, 'flux': this['flux_auto'],
-                                     'flux_err': this['fluxerr_auto'], 'mag_psf': mag_psf[index],
-                                     'mag_psf_err': mag_psf_err,
-                                     'flux_psf': this['flux_psf'], 'fluxerr_psf': this['fluxerr_psf'],
-                                     'x_err': this['x_deg_err'], 'y_err': this['y_deg_err']}
+            output_catalogue_this = {'id': o,
+                                     'ra': float(this['ra']), 'dec': float(this['dec']),
+                                     'ra_given': float(ra), 'dec_given': float(dec),
+                                     'matching_distance_sex': float(dist * 3600),
+                                     'kron_radius': float(this['kron_radius']),
+                                     'a': float(this['a'] * 3600), 'a_err': float(this['a_err'] * 3600),
+                                     'b': float(this['b'] * 3600), 'b_err': float(this['b_err'] * 3600),
+                                     'theta': float(this['theta']), 'theta_err': float(this['theta_err']),
+                                     'mag_auto': float(mag_auto_true[index]),
+                                     'mag_auto_err': float(mag_err), 'mag_ins': float(mag_ins),
+                                     'mag_ins_err': float(mag_ins_err), 'flux': float(this['flux_auto']),
+                                     'flux_err': float(this['fluxerr_auto']), 'mag_psf': float(mag_psf[index]),
+                                     'mag_psf_err': float(mag_psf_err),
+                                     'flux_psf': float(this['flux_psf']), 'fluxerr_psf': float(this['fluxerr_psf']),
+                                     'x_err': float(this['x_deg_err']), 'y_err': float(this['y_deg_err'])}
 
             print('RA (deg):', output_catalogue_this['ra'])
             print('DEC (deg):', output_catalogue_this['dec'])
@@ -324,6 +333,7 @@ def main(obj,
                     plt.show()
 
             output_catalogue[o] = output_catalogue_this
+            params.add_params(output_path + o + "_" + f + '_object_properties', params=output_catalogue_this)
 
         ind_depth = np.nanargmax(mag_auto_true)
         depth = mag_auto_true[ind_depth]
