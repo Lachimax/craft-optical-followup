@@ -4,8 +4,7 @@ import matplotlib
 import matplotlib.pyplot as plt
 from os.path import isfile
 
-from astropy.table import QTable, Table
-from astropy import units
+from astropy.table import Table
 
 from craftutils import params as p
 from craftutils.retrieve import update_frb_irsa_extinction
