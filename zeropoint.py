@@ -115,7 +115,10 @@ def main(obj,
                 cat_path = properties['data_dir'] + "/SDSS/SDSS.csv"
                 if not os.path.isfile(cat_path):
                     print('No SDSS catalogue found on-disk for the position of ' + obj + '. Attempting retrieval...')
-                    update_frb_sdss_photometry(frb=obj)
+                    sdss = update_frb_sdss_photometry(frb=obj)
+                    if sdss is None:
+                        raise ValueError(
+                            'No SDSS catalogue available at the position of ' + obj + '.')
                 cat_ra_col = 'ra'
                 cat_dec_col = 'dec'
                 cat_mag_col = 'psfMag_' + f_low
