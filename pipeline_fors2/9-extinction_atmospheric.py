@@ -155,7 +155,9 @@ def main(epoch, show, write):
 if __name__ == '__main__':
     import argparse
 
-    parser = argparse.ArgumentParser(description='Write ')
+    parser = argparse.ArgumentParser(description='Calculate the atmospheric extinction for g, u and z FORS2 filters '
+                                                 'using the values for the other filters, retrieved from the FORS2 QC1 '
+                                                 'archive')
 
     parser.add_argument('--op',
                         help='Name of object parameter file without .yaml, eg FRB180924_1',
