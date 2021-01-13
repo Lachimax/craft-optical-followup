@@ -1,151 +1,68 @@
-# Code by Lachlan Marnoch, 2019
+# Code by Lachlan Marnoch, 2019-2020
 import numpy as np
 import matplotlib
 import matplotlib.pyplot as plt
-import scipy
-from astropy.table import Table
+from os.path import isfile
 
-matplotlib.rcParams.update({'errorbar.capsize': 3})
+from astropy.table import QTable, Table
+from astropy import units
 
-# TODO: Write something that gets these numbers automatically
-# TODO: Scriptify
-
-# Effective wavelengths
-lambda_u = 0.361  # u_HIGH
-lambda_b = 0.440  # b_HIGH
-lambda_g = 0.470  # g_HIGH
-lambda_v = 0.557  # v_HIGH
-lambda_R = 0.655  # R_SPECIAL
-lambda_I = 0.768  # I_BESS
-lambda_z = 0.910  # z_GUNN
-
-filters_interp = ['u', 'b', 'g', 'v', 'R', 'I', 'z']
-lambda_eff_int = np.array([lambda_u, lambda_b, lambda_g, lambda_v, lambda_R, lambda_I, lambda_z])
-
-# FRB190102
-print('FRB190102')
-
-ext_190102 = Table.read('/home/lachlan/Data/FRB190102/galactic_extinction.txt', format='ascii')
-
-ext_190102.sort('LamEff')
-lambda_eff_tbl = ext_190102['LamEff']
-extinctions_tbl = ext_190102['A_SandF']
-
-extinctions_interp = np.interp(lambda_eff_int, lambda_eff_tbl, extinctions_tbl)
-
-print(lambda_eff_tbl, extinctions_tbl)
-
-print(filters_interp)
-print(lambda_eff_int)
-print(extinctions_interp)
-
-plt.errorbar(lambda_eff_tbl, extinctions_tbl, label='Calculated by IRSA', fmt='o')
-plt.errorbar(lambda_eff_int, extinctions_interp, label='Numpy Interpolated', fmt='o')
-plt.title('Extinction Interpolation for FRB190102')
-plt.xlabel(r'Filter $\lambda_\mathrm{eff}}$ (nm)')
-plt.ylabel(r'Extinction (magnitude)')
-plt.legend()
-plt.show()
-
-# FRB180924
-print('FRB180924')
-
-ext_180924 = Table.read('/home/lachlan/Data/FRB180924/galactic_extinction.txt', format='ascii')
-
-ext_180924.sort('LamEff')
-lambda_eff_tbl = ext_180924['LamEff']
-extinctions_tbl = ext_180924['A_SandF']
-
-extinctions_interp = np.interp(lambda_eff_int, lambda_eff_tbl, extinctions_tbl)
-
-print(lambda_eff_tbl, extinctions_tbl)
-
-print(filters_interp)
-print(lambda_eff_int)
-print(extinctions_interp)
-
-plt.errorbar(lambda_eff_tbl, extinctions_tbl, label='Calculated by IRSA', fmt='o')
-plt.errorbar(lambda_eff_int, extinctions_interp, label='Numpy Interpolated', fmt='o')
-plt.title('Extinction Interpolation for FRB180924')
-plt.xlabel(r'Filter $\lambda_\mathrm{eff}}$ (nm)')
-plt.ylabel(r'Extinction (magnitude)')
-plt.legend()
-plt.show()
-
-# FRB181112
-print('FRB181112')
-
-ext_181112 = Table.read('/home/lachlan/Data/FRB181112/galactic_extinction.txt', format='ascii')
-
-ext_181112.sort('LamEff')
-lambda_eff_tbl = ext_181112['LamEff']
-extinctions_tbl = ext_181112['A_SandF']
-
-extinctions_interp = np.interp(lambda_eff_int, lambda_eff_tbl, extinctions_tbl)
-
-print(lambda_eff_tbl, extinctions_tbl)
-
-print(filters_interp)
-print(lambda_eff_int)
-print(extinctions_interp)
-
-plt.errorbar(lambda_eff_tbl, extinctions_tbl, label='Calculated by IRSA', fmt='o')
-plt.errorbar(lambda_eff_int, extinctions_interp, label='Numpy Interpolated', fmt='o')
-plt.title('Extinction Interpolation for FRB181112')
-plt.xlabel(r'Filter $\lambda_\mathrm{eff}}$ (nm)')
-plt.ylabel(r'Extinction (magnitude)')
-plt.legend()
-plt.show()
+from craftutils import params as p
+from craftutils.retrieve import update_frb_irsa_extinction
 
 
-# FRB190608
-print('FRB190608')
+def main(obj: str):
+    matplotlib.rcParams.update({'errorbar.capsize': 3})
 
-ext_190608 = Table.read('/home/lachlan/Data/FRB190608/galactic_extinction.txt', format='ascii')
+    frb_params = p.object_params_frb(obj=obj)
 
-ext_190608.sort('LamEff')
-lambda_eff_tbl = ext_190608['LamEff']
-extinctions_tbl = ext_190608['A_SandF']
+    print("\nExecuting Python script extinction_galactic.py, with:")
+    print(f"\tobj {obj}")
 
-extinctions_interp = np.interp(lambda_eff_int, lambda_eff_tbl, extinctions_tbl)
+    # TODO: Write something that gets these numbers automatically
+    # TODO: Scriptify
 
-print(lambda_eff_tbl, extinctions_tbl)
+    lambda_eff_interp = p.instrument_filters_single_param(param="lambda_eff", instrument='FORS2', sort_value=True)
+    filters_interp = list(lambda_eff_interp.keys())
+    lambda_eff_interp = list(lambda_eff_interp.values())
 
-print(filters_interp)
-print(lambda_eff_int)
-print(extinctions_interp)
+    extinction_path = frb_params['data_dir'] + 'galactic_extinction.txt'
+    if not isfile(extinction_path):
+        print("Extinction bandpass data not found. Attempting retrieval from IRSA Dust Tool...")
+        update_frb_irsa_extinction(frb=obj)
 
-plt.errorbar(lambda_eff_tbl, extinctions_tbl, label='Calculated by IRSA', fmt='o')
-plt.errorbar(lambda_eff_int, extinctions_interp, label='Numpy Interpolated', fmt='o')
-plt.title('Extinction Interpolation for FRB190608')
-plt.xlabel(r'Filter $\lambda_\mathrm{eff}}$ (nm)')
-plt.ylabel(r'Extinction (magnitude)')
-plt.legend()
-plt.show()
+    tbl = Table.read(frb_params['data_dir'] + 'galactic_extinction.txt', format='ascii')
+    tbl.sort('LamEff')
+    lambda_eff_tbl = tbl['LamEff'] * 1000
+    extinctions = tbl['A_SandF']
 
-# FRB191001
-print('FRB191001')
+    extinctions_interp = np.interp(lambda_eff_interp, lambda_eff_tbl, extinctions)
 
-ext_191001 = Table.read('/home/lachlan/Data/FRB191001/galactic_extinction.txt', format='ascii')
+    plt.errorbar(lambda_eff_tbl, extinctions, label='Calculated by IRSA', fmt='o')
+    plt.errorbar(lambda_eff_interp, extinctions_interp, label='Numpy Interpolated', fmt='o')
+    plt.title('Extinction Interpolation for FRB190102')
+    plt.xlabel(r'Filter $\lambda_\mathrm{eff}}$ (nm)')
+    plt.ylabel(r'Extinction (magnitude)')
+    plt.legend()
+    plt.show()
 
-ext_191001.sort('LamEff')
-lambda_eff_tbl = ext_191001['LamEff']
-extinctions_tbl = ext_191001['A_SandF']
-
-extinctions_interp = np.interp(lambda_eff_int, lambda_eff_tbl, extinctions_tbl)
-
-print(lambda_eff_tbl, extinctions_tbl)
-
-print(filters_interp)
-print(lambda_eff_int)
-print(extinctions_interp)
-
-plt.errorbar(lambda_eff_tbl, extinctions_tbl, label='Calculated by IRSA', fmt='o')
-plt.errorbar(lambda_eff_int, extinctions_interp, label='Numpy Interpolated', fmt='o')
-plt.title('Extinction Interpolation for FRB191001')
-plt.xlabel(r'Filter $\lambda_\mathrm{eff}}$ (nm)')
-plt.ylabel(r'Extinction (magnitude)')
-plt.legend()
-plt.show()
+    to_write = {}
+    for i, f in enumerate(filters_interp):
+        print(to_write)
+        value = float(extinctions_interp[i])
+        to_write[f"{f}_ext_gal"] = value
+        print(value, type(value))
+    p.add_output_values_frb(obj=obj, params=to_write)
 
 
+if __name__ == '__main__':
+    import argparse
+
+    parser = argparse.ArgumentParser(description='Retrieve galactic extinction values from the IRSA dust tool and use '
+                                                 'to interpolate the value at a given effective wavelength.')
+    parser.add_argument('--op',
+                        help='Name of object parameter file without .yaml, eg FRB180924_1',
+                        type=str)
+
+    args = parser.parse_args()
+    main(obj=args.op)
