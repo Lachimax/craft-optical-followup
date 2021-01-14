@@ -58,6 +58,8 @@ def main(obj,
         print(fil)
 
         zeropoints = []
+        field_names = []
+        cat_names_proc = []
         zeropoints_err = []
         airmasses = []
 
@@ -201,6 +203,8 @@ def main(obj,
                     zeropoints.append(float(params['zeropoint_sub_outliers']))
                     zeropoints_err.append(float(params['zeropoint_err']))
                     airmasses.append(float(params['airmass']))
+                    cat_names_proc.append(cat_name)
+                    field_names.append(field)
 
         if len(zeropoints) == 0:
             print('No zeropoint could be determined for this observation.')
@@ -208,6 +212,8 @@ def main(obj,
             best_arg = int(np.argmin(zeropoints_err))
             output_dict = {f + '_zeropoint_std': zeropoints[best_arg],
                            f + '_zeropoint_std_err': zeropoints_err[best_arg],
+                           f + '_zeropoint_std_cat': cat_names[best_arg],
+                           f + '_zeropoint_std_field': field_names[best_arg],
                            f + '_airmass_std': airmasses[best_arg]}
             p.add_output_values(obj=obj, instrument='FORS2', params=output_dict)
 
