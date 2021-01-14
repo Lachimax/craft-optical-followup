@@ -47,10 +47,8 @@ def main(obj: str):
 
     to_write = {}
     for i, f in enumerate(filters_interp):
-        print(to_write)
         value = float(extinctions_interp[i])
         to_write[f"{f}_ext_gal"] = value
-        print(value, type(value))
     p.add_output_values_frb(obj=obj, params=to_write)
 
 
