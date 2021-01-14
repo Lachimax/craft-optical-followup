@@ -25,10 +25,17 @@ def main(obj,
 
     epoch_properties = params.object_params_instrument(obj=obj, instrument=instrument)
     burst_properties = params.object_params_frb(obj=obj[:-2])
-    outputs = params.object_output_params(obj=obj, instrument=instrument)
+    burst_outputs = params.frb_output_params(obj=obj[:-2])
     paths = params.object_output_paths(obj=obj, instrument=instrument)
 
     filters = epoch_properties['filters']
+
+    for f in filters:
+        if f"{f}_ext_gal" not in burst_outputs:
+            print(f"\nGalactic extinction missing for {f}; calculating now.")
+            import extinction_galactic
+            extinction_galactic.main(obj=obj[:-2])
+            burst_properties = params.object_params_frb(obj=obj[:-2])
 
     galaxies = burst_properties['other_objects']
     if galaxies is None:
@@ -95,16 +102,18 @@ def main(obj,
         exp_time_err = 0.
         print(f"{f} exposure time:", exp_time, 's')
 
+        ext_gal = burst_outputs[f"{f}_ext_gal"]
+
         output_params = {"zeropoint": zeropoint, "zeropoint_err": zeropoint_err, "airmass": airmass,
                          "airmass_err": airmass_err, "extinction": extinction, "extinction_err": extinction_err,
                          "kX": extinction * airmass,
                          "kX_err": float(u.error_product(extinction * airmass, measurements=[airmass, extinction],
                                                          errors=[airmass_err, extinction_err])),
                          "colour_term": colour_term, "colour_term_err": colour_term_err,
-                         "exp_time": exp_time, "exp_time_err": exp_time_err}
+                         "exp_time": exp_time, "exp_time_err": exp_time_err, "ext_gal": ext_gal}
         output_catalogue = {}
 
-        # g analysis
+        # Analysis
         cat = np.genfromtxt(cat_path, names=params.sextractor_names_psf())
         mag_auto_true, mag_auto_err_plus, mag_auto_err_minus = ph.magnitude_complete(flux=cat['flux_auto'],
                                                                                      flux_err=cat['fluxerr_auto'],
@@ -162,6 +171,7 @@ def main(obj,
                                      'theta': float(this['theta']), 'theta_err': float(this['theta_err']),
                                      'mag_auto': float(mag_auto_true[index]),
                                      'mag_auto_err': float(mag_err), 'mag_ins': float(mag_ins),
+                                     'mag_auto_gal_correct': float(mag_auto_true[index]) - ext_gal,
                                      'mag_ins_err': float(mag_ins_err), 'flux': float(this['flux_auto']),
                                      'flux_err': float(this['fluxerr_auto']), 'mag_psf': float(mag_psf[index]),
                                      'mag_psf_err': float(mag_psf_err),
@@ -177,6 +187,7 @@ def main(obj,
             print('theta (degrees):', output_catalogue_this['theta'], '+/-', output_catalogue_this['theta_err'])
             print(f'{o} {f} mag auto:', output_catalogue_this['mag_auto'], '+/-',
                   output_catalogue_this['mag_auto_err'])
+            print(f'{o} {f} mag auto corrected for Galactic extinction:', output_catalogue_this['mag_auto_gal_correct'])
             print(f'{o} {f} mag psf:', output_catalogue_this['mag_psf'], '+/-',
                   output_catalogue_this['mag_psf_err'])
             print()
@@ -333,7 +344,7 @@ def main(obj,
                     plt.show()
 
             output_catalogue[o] = output_catalogue_this
-            params.add_params(output_path + o + "_" + f + '_object_properties', params=output_catalogue_this)
+            # params.add_params(output_path + o + "_" + f + '_object_properties', params=output_catalogue_this)
 
         ind_depth = np.nanargmax(mag_auto_true)
         depth = mag_auto_true[ind_depth]
