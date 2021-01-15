@@ -4,8 +4,7 @@
 
 # TODO: Rewrite so that the files don't need to be copied to the Montage directory before combining, instead reading them from previous path.
 
-if ! command -v mProjExec
-then
+if ! command -v mProjExec; then
   echo "Montage does not appear to be installed properly. Please refer to documentation."
   exit 1
 fi
@@ -40,7 +39,8 @@ data_title=${param_file}
 
 cd "${data_dir}" || exit
 cd "${origin}" || exit
-fils=$(ls -d **/)
+shopt -s nullglob
+fils=(**/)
 cd "${data_dir}" || exit
 
 echo "Copy science data to Montage folder..."
@@ -51,7 +51,7 @@ mkdir ${destination}/
 
 cd "${data_dir}${destination}" || exit
 
-for fil in ${fils}; do
+for fil in "${fils[@]}"; do
 
   echo "Processing ${fil}"
 
