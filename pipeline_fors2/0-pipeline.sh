@@ -42,33 +42,74 @@ if [ "${param_file}" == "new" ]; then
     read -r frb_name
   done
 
+  echo "Assign this epoch a unique number:"
+  read -r epoch_number
+  while ! [[ ${epoch_number} =~ ^[0-9]+$ ]]; do
+    echo "${epoch_number} is not a number. Please try again."
+    read -r epoch_number
+  done
+  while [[ -f ${param_dir}epochs_fors2/${param_file}.yaml ]]; do
+    echo "${frb_name}_${epoch_number} already exists. Please try again."
+    read -r epoch_number
+  done
+
   frb_dir="${top_data_dir}${frb_name}/"
   if ! [[ -d ${frb_dir} ]]; then
-    echo "This seems to be the first epoch processed for this FRB. Setting up directory at ${frb_dir}:"
+    echo "This seems to be the first epoch processed for this FRB. Setting up directories at ${frb_dir}:"
     mkdir "${frb_dir}"
-    cp "${proj_dir}param/FRBs/FRB_template.yaml" "${param_dir}FRBs/${param_file}.yaml"
-    echo "I have created a new FRB parameter file at ${param_dir}FRBs/${param_file}.yaml, with some default values. Please check this file before proceeding."
+    mkdir "${frb_dir}FORS2"
+    mkdir "${frb_dir}FORS2/new_epoch"
+    if ! [[ -f "${frb_dir}${frb_name}" ]]; then
+      cp "${proj_dir}param/FRBs/FRB_template.yaml" "${param_dir}FRBs/${frb_name}.yaml"
+      echo "No FRB param file found; I have created a new one at ${param_dir}FRBs/${frb_name}.yaml, with some default values. Please check this file before proceeding."
+    fi
     epoch_number=1
   fi
+  shopt -s nullglob
+  echo "Looking for download scripts..."
+  options=("Quit" "Enter path manually")
+  options+=(~/Downloads/*download*.sh)
+  options+=("${top_data_dir}"/*download*.sh)
+  options+=("${top_data_dir}${frb_name}"/*download*.sh)
 
-  echo "Please enter the path to the ESO download script:"
-  read -r script_path
-  echo ${script_path}
+  echo "Select an option:"
+  select script_path in "${options[@]}"; do
+    if ((REPLY == 1)); then
+      exit
+    elif ((REPLY == 2)); then
+      echo "Please enter the path to the ESO download script:"
+      read -r script_path
+      while [[ ${script_path} != *download*.sh ]]; do
+        echo "This is not a valid script file. Try again:"
+        read -r script_path
+      done
 
-  while [[ ${script_path} != *download*.sh ]]; do
-    echo "This is not a valid script file. Try again:"
-    read -r script_path
+      while [[ ! -f ${script_path} ]]; do
+        echo "Path does not exist. Try again:"
+        read -r script_path
+      done
+      break
+
+    elif ((REPLY > 0 && REPLY <= ${#options[@]})); then
+      break
+
+    else
+      echo "Invalid option. Try another one."
+    fi
   done
 
-  while [[ ! -f ${script_path} ]]; do
-    echo "Path does not exist. Try again:"
-    read -r script_path
-  done
+  echo "You have selected ${script_path}"
 
   param_file="${frb_name}_${epoch_number}"
-  cp "${script_path}" "${frb_dir}download${param_file}script.sh"
   cp "${proj_dir}param/epochs_fors2/FRB_fors2_epoch_template.yaml" "${param_dir}epochs_fors2/${param_file}.yaml"
   echo "I have created a new epoch parameter file at ${param_dir}epochs_fors2/${param_file}.yaml, with some default values. Please check this file before proceeding."
+  python pipeline_fors2/0-new_epoch.py --op "${param_file}"
+  cp "${script_path}" "${frb_dir}FORS2/new_epoch/download${param_file}script.sh"
+fi
+
+if ! python3 "refresh_params.py"; then
+  echo "Something went wrong with reading or writing the param files."
+  exit
 fi
 
 echo "Checking for epoch parameters at ${param_dir}epochs_fors2/${param_file}.json"
@@ -77,10 +118,11 @@ echo "Checking for epoch parameters at ${param_dir}epochs_fors2/${param_file}.js
 
 if ! [[ -f "${param_dir}epochs_fors2/${param_file}.json" ]]; then
   echo "Epoch parameter file not found; checking for FRB parameter file."
-  if [[ -f "${param_dir}FRBs/${param_file}.json" ]]; then
+  frb_name=${param_file::-2}
+  if [[ -f "${param_dir}FRBs/${frb_name}.json" ]]; then
     echo
     echo "Specify epoch parameter file:"
-    options=$(ls -f "${param_dir}epochs_fors2/${param_file}_"?".json")
+    options=("${param_dir}epochs_fors2/${frb_name}_"?".json")
     select opt in "${options[@]}" "Quit"; do
       if ((REPLY == 1 + ${#options[@]})); then
         exit
