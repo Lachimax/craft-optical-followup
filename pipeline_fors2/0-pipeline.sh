@@ -233,19 +233,21 @@ else
   folder=""
 fi
 
-mkdir "${data_dir}${folder}"
+if ! [[ -d "${data_dir}${folder}" ]]; then
+  mkdir "${data_dir}${folder}"
+fi
 
 if ${sub_back}; then
   cp -r "${data_dir}4-divided_by_exp_time" "${data_dir}${folder}4-divided_by_exp_time"
-  run_script_folders 5-background_subtract '' ${folder}4-divided_by_exp_time/
-  run_script_folders 6-montage '' ${folder}5-background_subtracted_with_python/ ${folder}6-combined_with_montage/
+  run_script_folders 5-background_subtract '' "${folder}4-divided_by_exp_time/"
+  run_script_folders 6-montage '' "${folder}5-background_subtracted_with_python/" "${folder}6-combined_with_montage/"
 else
-  run_script_folders 6-montage '' ${folder}4-divided_by_exp_time/science/ ${folder}6-combined_with_montage/
+  run_script_folders 6-montage '' "${folder}4-divided_by_exp_time/science/" "${folder}6-combined_with_montage/"
 fi
 
-run_script_folders 7-trim_combined '' ${folder}6-combined_with_montage/ ${folder}7-trimmed_again/
-run_script_folders 8-astrometry '' ${folder}7-trimmed_again/ ${folder}8-astrometry/
-run_script_folders 9-zeropoint '' ${folder}8-astrometry/ ${folder}
+run_script_folders 7-trim_combined '' "${folder}6-combined_with_montage/" "${folder}7-trimmed_again/"
+run_script_folders 8-astrometry '' "${folder}7-trimmed_again/" "${folder}8-astrometry/"
+run_script_folders 9-zeropoint '' "${folder}8-astrometry/" "${folder}"
 
 if ! ${sub_back}; then
   run_python insert_synthetic_range_at_frb
