@@ -2,16 +2,15 @@
 
 # Code by Lachlan Marnoch, 2019
 
-
 param_file=$1
 origin=$2
 if [[ -z ${origin} ]]; then
-    origin=4-divided_by_exp_time/
+  origin=4-divided_by_exp_time/
 fi
 
 destination=$3
 if [[ -z ${destination} ]]; then
-    destination=5-background_subtracted_with_python/
+  destination=B-back_subtract/5-background_subtracted_with_python/
 fi
 
 echo
