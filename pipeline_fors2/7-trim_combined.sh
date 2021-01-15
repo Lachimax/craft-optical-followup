@@ -67,14 +67,3 @@ if cd "${data_dir}/${destination}/"; then
   date +%Y-%m-%dT%T >>"${data_title}.log"
   echo Coadded files trimmed with 7-trim_combined.sh >>"${data_title}.log"
 fi
-
-# Do Sextractor
-#if ${do_sextractor} ; then
-#    if cd ${sextractor_destination_path} ; then
-#        cp ${proj_dir}/param/sextractor/default/* .
-#        for sextract in $(ls sextract*.sh) ; do
-#            chmod u+x ${sextract}
-#            ./${sextract}
-#         done
-#     fi
-#fi
