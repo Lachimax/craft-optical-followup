@@ -9,8 +9,7 @@ import craftutils.params as p
 import craftutils.utils as u
 
 
-def main(data_title: 'str'):
-
+def main(data_title: 'str', delete_output: bool = True):
     print("\nExecuting Python script pipeline_fors2/2-sort_after_esoreflex.py, with:")
     print(f"\tepoch {data_title}")
     print()
@@ -77,6 +76,8 @@ def main(data_title: 'str'):
                         # Copy file to new location.
                         print(f"Copying: {file_path} to \n\t {file_destination}")
                         file.writeto(file_destination, overwrite=True)
+                        if delete_output and os.path.isfile(file_destination):
+                            os.remove(file_path)
 
         if not os.path.isfile(f"{destination}/{data_title}.log"):
             sh.copy(f"{data_dir}0-data_with_raw_calibs/{data_title}.log", f"{destination}/{data_title}.log")
@@ -95,5 +96,9 @@ if __name__ == '__main__':
     parser.add_argument('--op',
                         help='Name of epoch parameter file without .yaml, eg FRB180924_1',
                         type=str)
+    parser.add_argument('-d',
+                        help='Delete output data from ESO Reflex directory?',
+                        action='store_true')
+
     args = parser.parse_args()
-    main(data_title=args.op)
+    main(data_title=args.op, delete_output=args.d)
