@@ -37,10 +37,13 @@ if [ "${param_file}" == "new" ]; then
   echo "You are initialising a new epoch dataset."
   echo "Which FRB is this an observation of?"
   read -r frb_name
-  while ! [[ ${frb_name} =~ ^FRB[0-9]{6}$ ]]; do
-    echo "Please format response as FRBXXXXXX; eg FRB180924."
+  while ! { [[ ${frb_name} =~ ^FRB[0-9]{6}$ ]] || [[ ${frb_name} =~ ^[0-9]{6}$ ]]; }; do
+    echo "Please format response as FRBXXXXXX or as XXXXXX; eg FRB180924, or 180924."
     read -r frb_name
   done
+  if [[ ${frb_name} =~ ^[0-9]{6} ]]; then
+    frb_name="FRB${frb_name}"
+  fi
 
   echo "Assign this epoch a unique number:"
   read -r epoch_number
@@ -58,13 +61,13 @@ if [ "${param_file}" == "new" ]; then
     echo "This seems to be the first epoch processed for this FRB. Setting up directories at ${frb_dir}:"
     mkdir "${frb_dir}"
     mkdir "${frb_dir}FORS2"
-    mkdir "${frb_dir}FORS2/new_epoch"
-    if ! [[ -f "${frb_dir}${frb_name}" ]]; then
+    if ! [[ -f "${param_dir}FRBs/${frb_name}.yaml" ]]; then
       cp "${proj_dir}param/FRBs/FRB_template.yaml" "${param_dir}FRBs/${frb_name}.yaml"
       echo "No FRB param file found; I have created a new one at ${param_dir}FRBs/${frb_name}.yaml, with some default values. Please check this file before proceeding."
     fi
     epoch_number=1
   fi
+  mkdir "${frb_dir}FORS2/new_epoch"
   shopt -s nullglob
   echo "Looking for download scripts..."
   options=("Quit" "Enter path manually")
@@ -102,9 +105,12 @@ if [ "${param_file}" == "new" ]; then
 
   param_file="${frb_name}_${epoch_number}"
   cp "${proj_dir}param/epochs_fors2/FRB_fors2_epoch_template.yaml" "${param_dir}epochs_fors2/${param_file}.yaml"
-  echo "I have created a new epoch parameter file at ${param_dir}epochs_fors2/${param_file}.yaml, with some default values. Please check this file before proceeding."
   python pipeline_fors2/0-new_epoch.py --op "${param_file}"
-  cp "${script_path}" "${frb_dir}FORS2/new_epoch/download${param_file}script.sh"
+  if ! [[ -d "${frb_dir}FORS2/new_epoch/0-data_with_raw_calibs/" ]]; then
+    mkdir "${frb_dir}FORS2/new_epoch/0-data_with_raw_calibs/"
+  fi
+  cp "${script_path}" "${frb_dir}FORS2/new_epoch/0-data_with_raw_calibs/download${param_file}script.sh"
+  echo "I have created a new epoch parameter file at ${param_dir}epochs_fors2/${param_file}.yaml, with some default values. Please check this file before proceeding."
 fi
 
 if ! python3 "refresh_params.py"; then

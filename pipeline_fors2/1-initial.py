@@ -6,31 +6,34 @@ import craftutils.utils as u
 
 import shutil
 import numpy as np
-import os
 
 
-def main(output_dir: 'str', data_title: 'str'):
-
+def main(data_title: 'str'):
     print("\nExecuting Python script pipeline_fors2/1-initial.py, with:")
     print(f"\tepoch {data_title}")
-    print(f"\toutput directory {output_dir}")
     print()
 
-    output_dir = u.check_trailing_slash(output_dir)
-    data_dir = output_dir + "/0-data_with_raw_calibs/"
+    epoch_params = p.object_params_fors2(obj=data_title)
+
+    data_dir = epoch_params['data_dir']
+    output_dir = data_dir + "/0-data_with_raw_calibs/"
 
     # Write tables of fits files to main directory; firstly, science images only:
-    table = ff.fits_table(input_path=data_dir,
-                          output_path=output_dir + data_title + "_fits_table_science.csv",
+    table = ff.fits_table(input_path=output_dir,
+                          output_path=data_dir + data_title + "_fits_table_science.csv",
                           science_only=True)
     # Then including all calibration files
-    table_full = ff.fits_table(input_path=data_dir,
-                               output_path=output_dir + data_title + "_fits_table_all.csv",
+    table_full = ff.fits_table(input_path=output_dir,
+                               output_path=data_dir + data_title + "_fits_table_all.csv",
                                science_only=False)
 
+    ff.fits_table_all(input_path=output_dir,
+                      output_path=data_dir + data_title + "_fits_table_detailled.csv",
+                      science_only=False)
+
     # Clear output files for fresh start.
-    u.rm_check(output_dir + '/output_values.yaml')
-    u.rm_check(output_dir + '/output_values.json')
+    u.rm_check(data_dir + '/output_values.yaml')
+    u.rm_check(data_dir + '/output_values.json')
 
     # Collect list of filters used:
     filters = []
@@ -72,7 +75,7 @@ def main(output_dir: 'str', data_title: 'str'):
     param_dict['filters'] = filters
     param_dict['object'] = table['object'][0]
     param_dict['obs_name'] = table['obs_name'][0]
-    param_dict['mjd_obs'] = float(table['mjd_obs'][0])
+    mjd = param_dict['mjd_obs'] = float(table['mjd_obs'][0])
 
     for i, f in enumerate(filters):
         f_0 = f[0]
@@ -89,12 +92,13 @@ def main(output_dir: 'str', data_title: 'str'):
         param_dict[f_0 + '_exp_time_mean'] = float(np.nanmean(exp_time))
         param_dict[f_0 + '_exp_time_err'] = float(2 * np.nanstd(exp_time))
         param_dict[f_0 + '_airmass_mean'] = airmass
-        param_dict[f_0 + '_airmass_err'] = float(max(np.nanmax(airmass_col) - airmass, airmass - np.nanmin(airmass_col)))
+        param_dict[f_0 + '_airmass_err'] = float(
+            max(np.nanmax(airmass_col) - airmass, airmass - np.nanmin(airmass_col)))
         param_dict[f_0 + '_n_frames'] = float(n_frames)
         param_dict[f_0 + '_n_exposures'] = float(n_exposures)
         param_dict[f_0 + '_mjd_obs'] = float(np.nanmean(table['mjd_obs'][table[columns[i]] == f]))
 
-        std_filter_dir = f'{output_dir}calibration/std_star/{f}/'
+        std_filter_dir = f'{data_dir}calibration/std_star/{f}/'
         u.mkdir_check(std_filter_dir)
         print(f'Copying {f} calibration data to std_star folder...')
 
@@ -110,24 +114,25 @@ def main(output_dir: 'str', data_title: 'str'):
                         (table_full[columns[i]] == f)]['identifier']:
                 at_pointing = True
                 u.mkdir_check(pointing_dir)
-                shutil.copyfile(data_dir + file, pointing_dir + file)
+                shutil.copyfile(output_dir + file, pointing_dir + file)
             if at_pointing:
                 for file in table_full[table_full['object'] == 'BIAS']['identifier']:
-                    shutil.copyfile(data_dir + file, pointing_dir + file)
+                    shutil.copyfile(output_dir + file, pointing_dir + file)
                 for file in table_full[(table_full['object'] == 'FLAT,SKY') & (table_full[columns[i]] == f)][
                     'identifier']:
-                    shutil.copyfile(data_dir + file, pointing_dir + file)
+                    shutil.copyfile(output_dir + file, pointing_dir + file)
 
-    p.add_params(output_dir + '/output_values', param_dict)
-
-    # Copy calibration data (including standard-field images) to calibration folder
+    p.add_output_values(obj=data_title, params=param_dict)
+    if "new_epoch" in data_dir:
+        mjd = f"MJD{int(float(mjd))}"
+        new_data_dir = data_dir.replace("new_epoch", mjd)
+        p.add_epoch_param(obj=data_title, params={"data_dir": new_data_dir})
 
 
 if __name__ == '__main__':
     import argparse
 
     parser = argparse.ArgumentParser(description='Perform some initial setup on data directory.')
-    parser.add_argument('--output', help='High-level data path to operate on, probably starting with "MJD"')
     parser.add_argument('-op', help='Name of object parameter file without .yaml, eg FRB180924_1')
     args = parser.parse_args()
-    main(output_dir=args.output, data_title=args.op)
+    main(data_title=args.op)

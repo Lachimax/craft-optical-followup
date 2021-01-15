@@ -44,9 +44,11 @@ if ${skip_download}; then
     echo "There is no raw data present, however skip_download is set to 'true'. Would you like to override this, or cancel the procedure?"
     select yn in "Override" "Exit"; do
       case ${yn} in
-          Override ) skip_download=false
-            break;;
-          Exit ) exit;;
+      Override)
+        skip_download=false
+        break
+        ;;
+      Exit) exit ;;
       esac
     done
   fi
@@ -54,26 +56,25 @@ fi
 
 if ! ${skip_download}; then
 
+  if ! [[ -d "0-data_with_raw_calibs/" ]]; then
+    mkdir 0-data_with_raw_calibs/
+  fi
+
+  mv ./*download*.sh 0-data_with_raw_calibs/ 2>/dev/null
+
+  cd 0-data_with_raw_calibs/ || exit
+
   # Download files
   echo "Enter ESO password:"
-  chmod u+x download*.sh
   for dl_script in download*.sh; do
-    chmod u+x "${dl_script}"
-    ./"${dl_script}"
+    bash ./"${dl_script}"
   done
 
   # Rename folder
-  if mv data_with_raw_calibs/ 0-data_with_raw_calibs/; then
-
-    # Decompress any .Z files
-    cd 0-data_with_raw_calibs/ || exit
-
-  else
-    mkdir 0-data_with_raw_calibs/
-    mv FORS2* 0-data_with_raw_calibs/
-    cd 0-data_with_raw_calibs/ || exit
-
+  if [[ -d data_with_raw_calibs/ ]]; then
+    mv data_with_raw_calibs/ .
   fi
+
   date +%Y-%m-%dT%T >>"${data_title}.log"
   echo "Files downloaded from ESO archive." >>"${data_title}.log"
   echo "Decompressing files..."
@@ -85,8 +86,13 @@ fi
 cd "${proj_dir}" || exit
 
 echo "Writing FITS properties to file..."
-if python3 pipeline_fors2/1-initial.py --output "${data_dir}" -op "${data_title}"; then
+if python3 pipeline_fors2/1-initial.py -op "${data_title}"; then
   echo "Done."
+  if [[ "${data_dir}" == *"new_epoch"* ]]; then
+    new_data_dir=$(jq -r .data_dir "${param_dir}/epochs_fors2/${param_file}.json")
+    mv "${data_dir}" "${new_data_dir}"
+    data_dir=${new_data_dir}
+  fi
 fi
 
 for filter_path in "${data_dir}"calibration/std_star/*_*/; do
