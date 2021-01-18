@@ -23,6 +23,7 @@ data_title=${param_file}
 skip_download=$(jq -r .skip_download "${param_dir}/epochs_fors2/${param_file}.json")
 skip_copy=$(jq -r .skip_copy "${param_dir}/epochs_fors2/${param_file}.json")
 
+
 eso_destination=$(jq -r .esoreflex_input_dir "${config_file}")
 
 cd "${proj_dir}" || exit
@@ -72,11 +73,15 @@ if ! ${skip_download}; then
 
   # Rename folder
   if [[ -d data_with_raw_calibs/ ]]; then
-    mv data_with_raw_calibs/ .
+    mv data_with_raw_calibs/* .
+    rm data_with_raw_calibs
   fi
 
+  echo
+  echo "Download complete."
   date +%Y-%m-%dT%T >>"${data_title}.log"
   echo "Files downloaded from ESO archive." >>"${data_title}.log"
+  pwd
   echo "Decompressing files..."
   if uncompress ./*.Z; then
     echo "Done."
@@ -107,7 +112,7 @@ done
 
 if ! ${skip_copy}; then
   mkdir "${eso_destination}${data_title}"
-  echo "Copying to ESOReflex input directory"
+  echo "Copying to ESOReflex input directory..."
   cp "${data_dir}"/0-data_with_raw_calibs/* "${eso_destination}${data_title}"
   echo "Done."
 fi
