@@ -43,7 +43,6 @@ def main(data_title: 'str'):
         column = 'filter' + str(j)
         for name in table[column]:
             if name != 'free':
-
                 if name not in filters:
                     filters.append(name)
                     columns.append(column)

@@ -238,8 +238,8 @@ if ! [[ -d "${data_dir}${folder}" ]]; then
 fi
 
 if ${sub_back}; then
-  cp -r "${data_dir}4-divided_by_exp_time" "${data_dir}${folder}4-divided_by_exp_time"
-  run_script_folders 5-background_subtract '' "${folder}4-divided_by_exp_time/"
+  echo "Copying"
+  run_script_folders 5-background_subtract '' "4-divided_by_exp_time/"
   run_script_folders 6-montage '' "${folder}5-background_subtracted_with_python/" "${folder}6-combined_with_montage/"
 else
   run_script_folders 6-montage '' "${folder}4-divided_by_exp_time/science/" "${folder}6-combined_with_montage/"
