@@ -2,6 +2,7 @@ astrometry_tweak: false
 cat_field_name: DES
 data_dir: /home/lachlan/Data/FRBxxxxxx/FORS2/MJDxxxxx/
 deepest_filter: g_HIGH
+delete_esoreflex: true
 des_cat: /home/lachlan/Data/FRBxxxxxx/DES/des_objects.csv
 do_dual_mode: true
 do_sextractor: true
