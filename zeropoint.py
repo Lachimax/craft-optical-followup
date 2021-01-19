@@ -3,8 +3,8 @@
 from craftutils import photometry
 from craftutils import params as p
 from craftutils import fits_files as ff
-from craftutils.utils import mkdir_check
-from craftutils.retrieve import update_frb_sdss_photometry
+from craftutils.utils import mkdir_check, mkdir_check_nested
+from craftutils.retrieve import update_frb_sdss_photometry, update_frb_des_photometry
 
 import os
 import matplotlib
@@ -37,6 +37,7 @@ def main(obj,
     sextractor_names = p.sextractor_names_psf()  # None to auto-detect
 
     properties = p.object_params_instrument(obj=obj, instrument=instrument)
+    frb_properties = p.object_params_frb(obj=obj[:-2])
     outputs = p.object_output_params(obj=obj, instrument=instrument)
     paths = p.object_output_paths(obj=obj, instrument=instrument)
 
@@ -47,7 +48,9 @@ def main(obj,
     output = output + 'field/'
     mkdir_check(output)
 
-    if instrument not in ['FORS2', 'fors2']:
+    instrument = instrument.upper()
+
+    if instrument != "FORS2":
         separate_chips = False
 
     for fil in properties['filters']:
@@ -55,16 +58,22 @@ def main(obj,
         print('Doing filter', fil)
 
         f_0 = fil[0]
-        do_zeropoint = properties[f_0 + '_do_zeropoint_field']
+        # do_zeropoint = properties[f_0 + '_do_zeropoint_field']
 
-        if f_0 + '_zeropoint_provided' not in outputs and do_zeropoint:
+        if f_0 + '_zeropoint_provided' not in outputs:  # and do_zeropoint:
 
-            print('Zeropoint not found, calculating zeropoint...')
+            print('Zeropoint not found, attempting to calculate zeropoint...')
 
             f_up = f_0.upper()
             f_low = f_0.lower()
 
-            output_path = output + f_0
+            if test_name in ['', None]:
+                now = time.Time.now()
+                now.format = 'isot'
+                test_name = str(now) + '_' + test_name
+
+            output_path = output + f_0 + test_name + "/"
+            mkdir_check_nested(output_path)
 
             chip_1_bottom = 740
             chip_2_top = 600
@@ -72,23 +81,18 @@ def main(obj,
             cat_zeropoint = 0.
             cat_zeropoint_err = 0.
 
-            now = time.Time.now()
-            now.format = 'isot'
-            test_name = str(now) + '_' + test_name
 
-            mkdir_check(output_path)
-            output_path = output_path + '/' + f_0 + '/'
-            mkdir_check(output_path)
-            output_path = output_path + '/' + test_name + '/'
-            mkdir_check(output_path)
 
             # TODO: Cycle through preferred catalogues, like in the standard-star script
 
             if cat_name == 'DES':
-                cat_path = properties['data_dir'] + "/DES/des_objects.csv"
+                cat_path = frb_properties['data_dir'] + "/DES/DES.csv"
                 if not os.path.isfile(cat_path):
-                    raise ValueError(
-                        'No DES catalogue available at the position of ' + obj + '.')
+                    print('No DES catalogue found on-disk for the position of ' + obj + '. Attempting retrieval...')
+                    des = update_frb_des_photometry(frb=obj[:-2])
+                    if des is None:
+                        raise ValueError(
+                            'No DES catalogue available at the position of ' + obj + '.')
                 cat_ra_col = 'RA'
                 cat_dec_col = 'DEC'
                 cat_mag_col = 'WAVG_MAG_PSF_' + f_up
@@ -112,10 +116,10 @@ def main(obj,
                 cat_name = 'other'
 
             elif cat_name == 'SDSS':
-                cat_path = properties['data_dir'] + "/SDSS/SDSS.csv"
+                cat_path = frb_properties['data_dir'] + "/SDSS/SDSS.csv"
                 if not os.path.isfile(cat_path):
                     print('No SDSS catalogue found on-disk for the position of ' + obj + '. Attempting retrieval...')
-                    sdss = update_frb_sdss_photometry(frb=obj)
+                    sdss = update_frb_sdss_photometry(frb=obj[:-2])
                     if sdss is None:
                         raise ValueError(
                             'No SDSS catalogue available at the position of ' + obj + '.')
@@ -135,14 +139,6 @@ def main(obj,
                 cat_mag_col = 'mag_psf'
                 # star_class_col = 'class_star_SkyMapper'
                 cat_type = 'csv'
-
-            if not os.path.isdir(output_path):
-                os.mkdir(output_path)
-
-            output_path = output_path + test_name + '/'
-
-            if not os.path.isdir(output_path):
-                os.mkdir(output_path)
 
             image_path = paths[f_0 + '_' + properties['subtraction_image']]
             sextractor_path = paths[f_0 + '_cat_path']

@@ -25,29 +25,33 @@ def main(obj,
 
     epoch_properties = params.object_params_instrument(obj=obj, instrument=instrument)
     burst_properties = params.object_params_frb(obj=obj[:-2])
+    print()
     burst_outputs = params.frb_output_params(obj=obj[:-2])
     paths = params.object_output_paths(obj=obj, instrument=instrument)
 
     filters = epoch_properties['filters']
 
     for f in filters:
-        if f"{f}_ext_gal" not in burst_outputs:
+        if burst_outputs is None or f"{f}_ext_gal" not in burst_outputs:
             print(f"\nGalactic extinction missing for {f}; calculating now.")
             import extinction_galactic
             extinction_galactic.main(obj=obj[:-2])
-            burst_properties = params.object_params_frb(obj=obj[:-2])
+            burst_outputs = params.frb_output_params(obj=obj[:-2])
 
     galaxies = burst_properties['other_objects']
     if galaxies is None:
         galaxies = {}
     hg_ra = burst_properties['hg_ra']
     hg_dec = burst_properties['hg_dec']
+    if hg_ra == 0.0 or hg_dec == 0.0:
+        hg_ra = burst_properties['burst_ra']
+        hg_dec = burst_properties['burst_dec']
     galaxies[obj + ' Host'] = {'ra': hg_ra, 'dec': hg_dec}
 
     now = time.Time.now()
     now.format = 'isot'
 
-    des_cat_path = epoch_properties[f'des_cat']
+    des_cat_path = burst_properties[f'data_dir'] + "DES/DES.csv"
     if not isfile(des_cat_path):
         des_cat_path = None
 
@@ -83,7 +87,7 @@ def main(obj,
         print('Catalogue:', cat_path)
 
         des_path = epoch_properties[f'{f_0}_des_fits']
-        if not isfile(des_path):
+        if des_path is not None and not isfile(des_path):
             des_path = None
 
         print(f)
@@ -180,6 +184,8 @@ def main(obj,
 
             print('RA (deg):', output_catalogue_this['ra'])
             print('DEC (deg):', output_catalogue_this['dec'])
+            print('RA burst (deg):', ra)
+            print('DEC burst (deg):', dec)
             print(f'{o} Matching distance (arcsec):', output_catalogue_this['matching_distance_sex'])
             print('Kron radius (a, b):', output_catalogue_this['kron_radius'])
             print('a (arcsec):', output_catalogue_this['a'], '+/-', output_catalogue_this['a_err'])
@@ -238,6 +244,14 @@ def main(obj,
                                   show_centre=True,
                                   colour='blue',
                                   label=f'SExtractor ellipse')
+                p.plot_gal_params(hdu=image_cut,
+                                  ras=[burst_properties['burst_ra']],
+                                  decs=[burst_properties['burst_dec']],
+                                  a=[1.0 / 3600],
+                                  b=[1.0 / 3600],
+                                  theta=[1.0 / 3600],
+                                  colour='red',
+                                  label='frb')
 
                 plt.legend()
                 plt.title(f"{output_catalogue_this['id']}, {f_0}-band image")

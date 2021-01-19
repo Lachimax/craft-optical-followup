@@ -4,7 +4,7 @@ from craftutils import photometry
 from craftutils import params as p
 from craftutils import fits_files as ff
 from craftutils.utils import mkdir_check
-from craftutils.retrieve import update_std_sdss_photometry
+from craftutils.retrieve import update_std_sdss_photometry, update_std_des_photometry
 
 import os
 import matplotlib
@@ -103,9 +103,11 @@ def main(obj,
                     if cat_name == 'DES':
                         if not (os.path.isdir(std_field_path + "DES") or os.path.isdir(
                                 std_field_path + "DES/DES.csv")):
-                            print("None found on disk.")
-                            cat_i += 1
-                            continue
+                            print("None found on disk. Attempting retrieval from archive...")
+                            if update_std_des_photometry(ra=ra, dec=dec) is None:
+                                print("\t\tNo data found in archive.")
+                                cat_i += 1
+                                continue
                         cat_ra_col = 'RA'
                         cat_dec_col = 'DEC'
                         cat_mag_col = 'WAVG_MAG_PSF_' + filter_up
@@ -118,9 +120,9 @@ def main(obj,
                         if not (os.path.isdir(std_field_path + "SDSS") or os.path.isdir(
                                 std_field_path + "SDSS/SDSS.csv")):
                             print("None found on disk. Attempting retrieval from archive...")
-                            df = update_std_sdss_photometry(ra=ra, dec=dec)
-                            if df is None:
+                            if update_std_sdss_photometry(ra=ra, dec=dec) is None:
                                 print("\t\tNo data found in archive.")
+                                cat_i += 1
                                 continue
                         cat_ra_col = 'ra'
                         cat_dec_col = 'dec'
@@ -129,6 +131,11 @@ def main(obj,
                             star_class_col = 'probPSF_' + f
                         cat_type = 'csv'
                     else:  # elif cat_name == 'SkyMapper':
+                        if not (os.path.isdir(std_field_path + "SkyMapper") or os.path.isdir(
+                                std_field_path + "SkyMapper/SkyMapper.csv")):
+                            print("None found on disk.")
+                            cat_i += 1
+                            continue
                         cat_name = 'SkyMapper'
                         cat_ra_col = 'raj2000'
                         cat_dec_col = 'dej2000'
@@ -207,7 +214,7 @@ def main(obj,
                     field_names.append(field)
 
         if len(zeropoints) == 0:
-            print('No zeropoint could be determined for this observation.')
+            print('No standard-field zeropoint could be determined for this observation.')
         else:
             best_arg = int(np.argmin(zeropoints_err))
             output_dict = {f + '_zeropoint_std': zeropoints[best_arg],

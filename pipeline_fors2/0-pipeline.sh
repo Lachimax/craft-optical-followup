@@ -57,15 +57,16 @@ if [ "${param_file}" == "new" ]; then
   done
 
   frb_dir="${top_data_dir}${frb_name}/"
-  if ! [[ -d ${frb_dir} ]]; then
+  if ! [[ -d ${frb_dir} ]] ; then
     echo "This seems to be the first epoch processed for this FRB. Setting up directories at ${frb_dir}:"
     mkdir "${frb_dir}"
     mkdir "${frb_dir}FORS2"
-    if ! [[ -f "${param_dir}FRBs/${frb_name}.yaml" ]]; then
-      cp "${proj_dir}param/FRBs/FRB_template.yaml" "${param_dir}FRBs/${frb_name}.yaml"
-      echo "No FRB param file found; I have created a new one at ${param_dir}FRBs/${frb_name}.yaml, with some default values. Please check this file before proceeding."
-    fi
     epoch_number=1
+  fi
+  if ! [[ -f "${param_dir}FRBs/${frb_name}.yaml" ]]; then
+    cp "${proj_dir}param/FRBs/FRB_template.yaml" "${param_dir}FRBs/${frb_name}.yaml"
+    python3 pipeline_fors2/0-new_frb.py --op "${frb_name}"
+    echo "No FRB param file found; I have created a new one at ${param_dir}FRBs/${frb_name}.yaml, with some default values. Please check this file before proceeding."
   fi
   mkdir "${frb_dir}FORS2/new_epoch"
   shopt -s nullglob
@@ -105,7 +106,7 @@ if [ "${param_file}" == "new" ]; then
 
   param_file="${frb_name}_${epoch_number}"
   cp "${proj_dir}param/epochs_fors2/FRB_fors2_epoch_template.yaml" "${param_dir}epochs_fors2/${param_file}.yaml"
-  python pipeline_fors2/0-new_epoch.py --op "${param_file}"
+  python3 pipeline_fors2/0-new_epoch.py --op "${param_file}"
   if ! [[ -d "${frb_dir}FORS2/new_epoch/0-data_with_raw_calibs/" ]]; then
     mkdir "${frb_dir}FORS2/new_epoch/0-data_with_raw_calibs/"
   fi

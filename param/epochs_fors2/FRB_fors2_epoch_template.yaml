@@ -3,7 +3,6 @@ cat_field_name: DES
 data_dir: /home/lachlan/Data/FRBxxxxxx/FORS2/MJDxxxxx/
 deepest_filter: g_HIGH
 delete_esoreflex: true
-des_cat: /home/lachlan/Data/FRBxxxxxx/DES/des_objects.csv
 do_dual_mode: true
 do_sextractor: true
 filters: [g_HIGH, I_BESS]
@@ -14,7 +13,6 @@ f_colour_term: 0.0
 f_colour_term_err: 0.0
 f_des_fits: /home/lachlan/Data/FRBxxxxxx/DES/DES_f.fits
 f_des_sextractor_psf: /home/lachlan/Data/FRBxxxxxx/DES/psfex/f_psf-fit.cat
-f_do_zeropoint_field: false
 f_offset_x: null
 f_offset_y: null
 f_field_mag_range_lower: 20.0

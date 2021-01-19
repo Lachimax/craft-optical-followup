@@ -3,9 +3,10 @@
 import craftutils.params as p
 
 
-def main(epoch: str):
+def main(frb: str):
     data_dir = p.config['top_data_dir']
-    p.add_epoch_param(obj=epoch, params={"data_dir": data_dir + epoch[:-2] + "/FORS2/new_epoch/"})
+    p.add_frb_param(obj=frb, params={"data_dir": data_dir + frb + "/"})
+
 
 if __name__ == '__main__':
     import argparse
@@ -17,4 +18,4 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
 
-    main(epoch=args.op)
+    main(frb=args.op)
