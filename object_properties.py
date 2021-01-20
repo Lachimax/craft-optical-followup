@@ -1,6 +1,8 @@
 # Code by Lachlan Marnoch, 2019-2020
 from craftutils import params
 from craftutils import utils as u, photometry as ph, plotting as p, fits_files as ff
+from craftutils.astrometry import calculate_error_ellipse
+from craftutils.retrieve import update_frb_des_cutout
 
 from astropy import wcs
 from astropy.io import fits
@@ -23,10 +25,12 @@ def main(obj,
          cat_name):
     print(obj)
 
+    frb = obj[:-2]
+
     epoch_properties = params.object_params_instrument(obj=obj, instrument=instrument)
-    burst_properties = params.object_params_frb(obj=obj[:-2])
+    burst_properties = params.object_params_frb(obj=frb)
     print()
-    burst_outputs = params.frb_output_params(obj=obj[:-2])
+    burst_outputs = params.frb_output_params(obj=frb)
     paths = params.object_output_paths(obj=obj, instrument=instrument)
 
     filters = epoch_properties['filters']
@@ -35,8 +39,8 @@ def main(obj,
         if burst_outputs is None or f"{f}_ext_gal" not in burst_outputs:
             print(f"\nGalactic extinction missing for {f}; calculating now.")
             import extinction_galactic
-            extinction_galactic.main(obj=obj[:-2])
-            burst_outputs = params.frb_output_params(obj=obj[:-2])
+            extinction_galactic.main(obj=frb)
+            burst_outputs = params.frb_output_params(obj=frb)
 
     galaxies = burst_properties['other_objects']
     if galaxies is None:
@@ -47,6 +51,15 @@ def main(obj,
         hg_ra = burst_properties['burst_ra']
         hg_dec = burst_properties['burst_dec']
     galaxies[obj + ' Host'] = {'ra': hg_ra, 'dec': hg_dec}
+
+    a, b, theta = calculate_error_ellipse(frb=frb)
+    line_style = '-'
+    if a == 0.0:
+        a = 0.5 / 3600
+        line_style = ":"
+    if b == 0.0:
+        a = 0.5 / 3600
+        line_style = ":"
 
     now = time.Time.now()
     now.format = 'isot'
@@ -86,9 +99,10 @@ def main(obj,
                 cat_path = epoch_properties['data_dir'] + 'analysis/sextractor/' + cat_name + '/' + f_0 + '_psf-fit.cat'
         print('Catalogue:', cat_path)
 
-        des_path = epoch_properties[f'{f_0}_des_fits']
-        if des_path is not None and not isfile(des_path):
-            des_path = None
+        des_path = f"{burst_properties['data_dir']}/DES/0-data/{f_0.lower()}_cutout.fits"
+        if not isfile(des_path):
+            if not update_frb_des_cutout(frb=frb):
+                des_path = None
 
         print(f)
 
@@ -176,6 +190,7 @@ def main(obj,
                                      'mag_auto': float(mag_auto_true[index]),
                                      'mag_auto_err': float(mag_err), 'mag_ins': float(mag_ins),
                                      'mag_auto_gal_correct': float(mag_auto_true[index]) - ext_gal,
+                                     'ext_gal': float(ext_gal),
                                      'mag_ins_err': float(mag_ins_err), 'flux': float(this['flux_auto']),
                                      'flux_err': float(this['fluxerr_auto']), 'mag_psf': float(mag_psf[index]),
                                      'mag_psf_err': float(mag_psf_err),
@@ -194,6 +209,7 @@ def main(obj,
             print(f'{o} {f} mag auto:', output_catalogue_this['mag_auto'], '+/-',
                   output_catalogue_this['mag_auto_err'])
             print(f'{o} {f} mag auto corrected for Galactic extinction:', output_catalogue_this['mag_auto_gal_correct'])
+            print(f'Galactic extinction used:', ext_gal)
             print(f'{o} {f} mag psf:', output_catalogue_this['mag_psf'], '+/-',
                   output_catalogue_this['mag_psf_err'])
             print()
@@ -244,21 +260,23 @@ def main(obj,
                                   show_centre=True,
                                   colour='blue',
                                   label=f'SExtractor ellipse')
+
                 p.plot_gal_params(hdu=image_cut,
                                   ras=[burst_properties['burst_ra']],
                                   decs=[burst_properties['burst_dec']],
-                                  a=[1.0 / 3600],
-                                  b=[1.0 / 3600],
-                                  theta=[1.0 / 3600],
-                                  colour='red',
-                                  label='frb')
+                                  a=[a],
+                                  b=[b],
+                                  theta=[theta],
+                                  colour="orange",
+                                  label='frb',
+                                  line_style=line_style)
 
                 plt.legend()
                 plt.title(f"{output_catalogue_this['id']}, {f_0}-band image")
                 plt.savefig(output_path + f + '_' + output_catalogue_this['id'])
                 plt.show()
 
-            if des_path is not None:
+            if des_cat_path is not None and des_path is not None:
                 des = np.genfromtxt(des_cat_path, names=True, delimiter=',')
                 _, des_pix_scale = ff.get_pixel_scale(des_path)
 
@@ -289,7 +307,7 @@ def main(obj,
                 print('Kron radius (pixels):', output_catalogue_this['kron_radius_des'])
                 print('a (arcsec):', output_catalogue_this['a_des'], '+/-',
                       output_catalogue_this['a_des_err'])
-                print('b: (arcsec)', output_catalogue_this['b_des'], '+/-',
+                print('b (arcsec):', output_catalogue_this['b_des'], '+/-',
                       output_catalogue_this['b_des_err'])
                 print('theta (degrees):', output_catalogue_this['theta_des'], '+/-', )
                 print(o + f' DES {f_0} mag auto:', output_catalogue_this['mag_auto_des'], '+/-',
@@ -303,6 +321,7 @@ def main(obj,
                 # TODO: Generalise this to other catalogues.
 
                 # Plotting
+
 
                 if plot:
                     print('Loading FITS file...')
