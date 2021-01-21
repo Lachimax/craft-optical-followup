@@ -1,12 +1,9 @@
-# Code by Lachlan Marnoch, 2020
+import craftutils.retrieve as r
 
-import craftutils.params as p
-
-
-def main(frb: str):
-    data_dir = p.config['top_data_dir']
-    p.add_frb_param(obj=frb, params={"data_dir": data_dir + frb + "/"})
-
+def main(frb:str):
+    r.update_frb_des_photometry(frb=frb)
+    r.update_frb_sdss_photometry(frb=frb)
+    r.update_frb_irsa_extinction(frb=frb)
 
 if __name__ == '__main__':
     import argparse

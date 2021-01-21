@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
+# Code by Lachlan Marnoch, 2019 - 2021
 
 param_file=$1
 
 if [[ -z ${param_file} ]]; then
-  echo "No object specified."
+  echo "No epoch specified."
   exit
 fi
 
@@ -60,12 +61,14 @@ if [ "${param_file}" == "new" ]; then
   if ! [[ -d ${frb_dir} ]] ; then
     echo "This seems to be the first epoch processed for this FRB. Setting up directories at ${frb_dir}:"
     mkdir "${frb_dir}"
-    mkdir "${frb_dir}FORS2"
     epoch_number=1
+  fi
+  if ! [[ -d "${frb_dir}FORS2" ]] ; then
+    mkdir "${frb_dir}FORS2"
   fi
   if ! [[ -f "${param_dir}FRBs/${frb_name}.yaml" ]]; then
     cp "${proj_dir}param/FRBs/FRB_template.yaml" "${param_dir}FRBs/${frb_name}.yaml"
-    python3 pipeline_fors2/0-new_frb.py --op "${frb_name}"
+    python3 pipeline_frb/0-new_frb.py --op "${frb_name}"
     echo "No FRB param file found; I have created a new one at ${param_dir}FRBs/${frb_name}.yaml, with some default values. Please check this file before proceeding."
   fi
   mkdir "${frb_dir}FORS2/new_epoch"
