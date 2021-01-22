@@ -4,7 +4,7 @@ from craftutils import photometry
 from craftutils import params as p
 from craftutils import fits_files as ff
 from craftutils.utils import mkdir_check
-from craftutils.retrieve import update_std_sdss_photometry, update_std_des_photometry
+from craftutils.retrieve import update_std_sdss_photometry, update_std_des_photometry, update_std_skymapper_photometry
 
 import os
 import matplotlib
@@ -134,7 +134,7 @@ def main(obj,
                         if not (os.path.isdir(std_field_path + "SkyMapper") or os.path.isdir(
                                 std_field_path + "SkyMapper/SkyMapper.csv")):
                             print("None found on disk. Attempting retrieval from archive...")
-                            if update_std_sdss_photometry(ra=ra, dec=dec) is None:
+                            if update_std_skymapper_photometry(ra=ra, dec=dec) is None:
                                 print("\t\tNo data found in archive.")
                                 cat_i += 1
                                 continue
