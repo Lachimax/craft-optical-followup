@@ -133,9 +133,11 @@ def main(obj,
                     else:  # elif cat_name == 'SkyMapper':
                         if not (os.path.isdir(std_field_path + "SkyMapper") or os.path.isdir(
                                 std_field_path + "SkyMapper/SkyMapper.csv")):
-                            print("None found on disk.")
-                            cat_i += 1
-                            continue
+                            print("None found on disk. Attempting retrieval from archive...")
+                            if update_std_sdss_photometry(ra=ra, dec=dec) is None:
+                                print("\t\tNo data found in archive.")
+                                cat_i += 1
+                                continue
                         cat_name = 'SkyMapper'
                         cat_ra_col = 'raj2000'
                         cat_dec_col = 'dej2000'

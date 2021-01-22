@@ -5,6 +5,7 @@ import craftutils.params as p
 def main(frb: str):
     r.update_frb_des_photometry(frb=frb)
     r.update_frb_sdss_photometry(frb=frb)
+    r.update_frb_skymapper_photometry(frb=frb)
     r.update_frb_irsa_extinction(frb=frb)
 
     r.update_frb_des_cutout(frb=frb)

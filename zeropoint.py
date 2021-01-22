@@ -130,7 +130,7 @@ def main(obj,
 
             else:  # elif cat_name == 'SkyMapper'
                 cat_fits_path = properties['sm_fits']
-                cat_path = properties['sm_cat']
+                cat_path = frb_properties['data_dir'] + "/SkyMapper/SkyMapper.csv"
                 if cat_fits_path is None:
                     raise ValueError(
                         'No SkyMapper catalogue available at the position of ' + obj + '.')
