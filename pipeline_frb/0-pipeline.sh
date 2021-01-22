@@ -95,4 +95,5 @@ run_python() {
   done
 }
 
-run_python 1-check_catalogues "Check for catalogue data?"
+run_python 1-check_catalogues "Check for catalogue data at the FRB position?"
+run_python 2-look_for_host "Attempt to identify host galaxy?"
