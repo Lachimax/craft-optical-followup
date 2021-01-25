@@ -17,14 +17,6 @@ if [[ -z ${write_paths} ]]; then
 fi
 kron_radius=$5
 
-echo
-echo "Executing bash script pipeline_fors2/9-zeropoint.sh, with:"
-echo "   epoch ${param_file}"
-echo "   origin directory ${origin}"
-echo "   destination directory ${destination}"
-echo "   write_paths ${write_paths}"
-echo "   kron_radius ${kron_radius}"
-echo
 
 config_file="param/config.json"
 if ! proj_dir=$(jq -r .proj_dir ${config_file}); then
@@ -47,14 +39,29 @@ deepest_filter=$(jq -r .deepest_filter "${param_dir}/epochs_fors2/${param_file}.
 threshold=$(jq -r .threshold "${param_dir}/epochs_fors2/${param_file}.json")
 df=${deepest_filter::1}
 
+echo
+echo "Executing bash script pipeline_fors2/9-zeropoint.sh, with:"
+echo "   epoch ${param_file}"
+echo "   origin directory ${origin}"
+echo "   destination directory ${destination}"
+echo "   write_paths ${write_paths}"
+echo "   kron_radius ${kron_radius}"
+echo
+
 if ${do_sextractor} ; then
     # Copy final processed image to SExtractor directory
     sextractor_destination_path=${data_dir}/analysis/sextractor/${destination}
+    echo "SExtractor destination path: ${sextractor_destination_path}"
     mkdir "${sextractor_destination_path}"
     if cp "${data_dir}${origin}"*"astrometry_tweaked.fits" "${sextractor_destination_path}" ; then
       suff="astrometry_tweaked.fits"
     elif cp "${data_dir}${origin}"*"astrometry.fits" "${sextractor_destination_path}" ; then
       suff="astrometry.fits"
+    elif cp "${data_dir}${origin}"*"coadded.fits" "${sextractor_destination_path}" ; then
+      suff="coadded.fits"
+    else
+      echo "Could not find any processed image in ${data_dir}${origin} to SExtract."
+      exit
     fi
 
     if cd "${sextractor_destination_path}" ; then
