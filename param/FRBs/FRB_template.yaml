@@ -2,7 +2,6 @@ alignment_dec: 0.0
 alignment_ra: 0.0
 instruments: [FORS2]
 data_dir:
-dust_ebv: 0.0
 filters: []
 mjd_burst: 58000
 z: 0.3
@@ -20,7 +19,9 @@ burst_err_sys_dec: 0.0
 burst_err_sys_ra: 0.0
 burst_err_theta: 0.0
 burst_ra: 0.0
+burst_ra_str: null
 burst_dec: 0.0
+burst_dec_str: null
 other_objects: null
 skip_reproject: false
 threshold: 1.5
