@@ -46,8 +46,12 @@ fi
 if ! [[ -f "${param_dir}FRBs/${frb_name}.yaml" ]]; then
   cp "${proj_dir}param/FRBs/FRB_template.yaml" "${param_dir}FRBs/${frb_name}.yaml"
   echo "No FRB param file found; I have created a new one at ${param_dir}FRBs/${frb_name}.yaml, with some default values. Please check this file before proceeding."
-  python3 pipeline_fors2/0-new_frb.py --op "${frb_name}"
+  python3 pipeline_frb/0-new_frb.py --op "${frb_name}" --new
+else
+  python3 pipeline_frb/0-new_frb.py --op "${frb_name}"
 fi
+
+
 
 run_script() {
   script=$1
@@ -57,7 +61,7 @@ run_script() {
   select yn in "Yes" "Skip" "Exit"; do
     case ${yn} in
     Yes)
-      if bash "${proj_dir}/pipeline_fors2/${script}.sh" "${frb_name}"; then
+      if bash "${proj_dir}/pipeline_frb/${script}.sh" "${frb_name}"; then
         break
       else
         echo "Something went wrong. Try again?"
