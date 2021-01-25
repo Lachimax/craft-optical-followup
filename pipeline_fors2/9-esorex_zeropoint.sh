@@ -40,6 +40,7 @@ if python3 "${proj_dir}/pipeline_fors2/9-esorex_zeropoint_prep.py" --op "${data_
   for filter in **/; do
     f_0=${filter::1}
     cd "${filter}" || exit
+    shopt -s nullglob
     for pointing in RA*_DEC*/; do
       std_dir=${dir}${filter}${pointing}
       cd "${proj_dir}" || exit
