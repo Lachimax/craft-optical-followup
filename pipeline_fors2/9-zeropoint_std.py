@@ -48,7 +48,7 @@ def main(obj,
 
     filters = list(filter(lambda d: os.path.isdir(std_path + d), os.listdir(std_path)))
 
-    std_field_path = proj_paths['top_data_dir'] + "/std_fields/"
+    std_field_path = proj_paths['top_data_dir'] + "std_fields/"
     std_fields = list(os.listdir(std_field_path))
     print('Standard fields with available catalogues:')
     print(std_fields)
@@ -99,10 +99,10 @@ def main(obj,
 
                 while params is None and cat_i < len(cat_names):
                     cat_name = cat_names[cat_i]
-                    print("In " + cat_name + ":")
+                    print(f"In {cat_name}:")
                     if cat_name == 'DES':
-                        if not (os.path.isdir(std_field_path + "DES") or os.path.isdir(
-                                std_field_path + "DES/DES.csv")):
+                        if not (os.path.isdir(std_cat_path + "DES") or os.path.isfile(
+                                std_cat_path + "DES/DES.csv")):
                             print("None found on disk. Attempting retrieval from archive...")
                             if update_std_des_photometry(ra=ra, dec=dec) is None:
                                 print("\t\tNo data found in archive.")
@@ -117,8 +117,8 @@ def main(obj,
                     elif cat_name == 'SDSS':
                         # Check for SDSS photometry on-disk for this field; if none present, attempt to retrieve from
                         # SDSS DR16 archive
-                        if not (os.path.isdir(std_field_path + "SDSS") or os.path.isdir(
-                                std_field_path + "SDSS/SDSS.csv")):
+                        if not (os.path.isdir(std_cat_path + "SDSS") or os.path.isfile(
+                                std_cat_path + "SDSS/SDSS.csv")):
                             print("None found on disk. Attempting retrieval from archive...")
                             if update_std_sdss_photometry(ra=ra, dec=dec) is None:
                                 print("\t\tNo data found in archive.")
@@ -131,8 +131,8 @@ def main(obj,
                             star_class_col = 'probPSF_' + f
                         cat_type = 'csv'
                     else:  # elif cat_name == 'SkyMapper':
-                        if not (os.path.isdir(std_field_path + "SkyMapper") or os.path.isdir(
-                                std_field_path + "SkyMapper/SkyMapper.csv")):
+                        if not (os.path.isdir(std_cat_path + "SkyMapper") or os.path.isfile(
+                                std_cat_path + "SkyMapper/SkyMapper.csv")):
                             print("None found on disk. Attempting retrieval from archive...")
                             if update_std_skymapper_photometry(ra=ra, dec=dec) is None:
                                 print("\t\tNo data found in archive.")
@@ -143,7 +143,9 @@ def main(obj,
                         cat_dec_col = 'dej2000'
                         cat_mag_col = f + '_psf'
                         if not use_sex_star_class:
-                            star_class_col = 'class_star_sm'
+                            star_class_col = 'class_star_SkyMapper'
+                        else:
+                            star_class_col = 'class_star_fors'
                         cat_type = 'csv'
 
                     cat_path = std_cat_path + cat_name + '/' + cat_name + '.csv'
@@ -166,15 +168,18 @@ def main(obj,
 
                     print('SExtractor catalogue path:', sextractor_path)
                     print('Image path:', image_path)
+                    print('Catalogue name:', cat_name)
                     print('Catalogue path:', cat_path)
+                    print('Class star column:', star_class_col)
                     print('Output:', output_path + test_name)
                     print('Exposure time:', exp_time)
+                    print("Use sextractor class star:", use_sex_star_class)
 
                     params = photometry.determine_zeropoint_sextractor(sextractor_cat_path=sextractor_path,
                                                                        image=image_path,
                                                                        cat_path=cat_path,
                                                                        cat_name=cat_name,
-                                                                       output_path=output_path + "/",
+                                                                       output_path=output_path,
                                                                        show=show_plots,
                                                                        cat_ra_col=cat_ra_col,
                                                                        cat_dec_col=cat_dec_col,
