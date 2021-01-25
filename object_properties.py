@@ -128,7 +128,8 @@ def main(obj,
                          "kX_err": float(u.error_product(extinction * airmass, measurements=[airmass, extinction],
                                                          errors=[airmass_err, extinction_err])),
                          "colour_term": colour_term, "colour_term_err": colour_term_err,
-                         "exp_time": exp_time, "exp_time_err": exp_time_err, "ext_gal": ext_gal}
+                         "exp_time": exp_time, "exp_time_err": exp_time_err, "ext_gal": ext_gal,
+                         "sextractor_catalogue": cat_path}
         output_catalogue = {}
 
         # Analysis
@@ -260,7 +261,6 @@ def main(obj,
                                   show_centre=True,
                                   colour='blue',
                                   label=f'SExtractor ellipse')
-
                 p.plot_gal_params(hdu=image_cut,
                                   ras=[burst_properties['burst_ra']],
                                   decs=[burst_properties['burst_dec']],
@@ -269,7 +269,8 @@ def main(obj,
                                   theta=[theta],
                                   colour="orange",
                                   label='frb',
-                                  line_style=line_style)
+                                  line_style=line_style,
+                                  show_centre=True)
 
                 plt.legend()
                 plt.title(f"{output_catalogue_this['id']}, {f_0}-band image")
