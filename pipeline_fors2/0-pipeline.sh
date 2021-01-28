@@ -2,20 +2,36 @@
 # Code by Lachlan Marnoch, 2019 - 2021
 
 param_file=$1
-
 if [[ -z ${param_file} ]]; then
   echo "No epoch specified."
   exit
 fi
 
-sub_back=$2
-
+sub_back=$3
 if [[ -z ${sub_back} ]]; then
   sub_back=false
 fi
 
+folder=$2
+if [[ -z ${folder} ]]; then
+  if ${sub_back} ; then
+    folder="B-back_subtract/"
+  else
+    folder=""
+  fi
+fi
+
+if ! [[ -d "${data_dir}${folder}" ]]; then
+  mkdir "${data_dir}${folder}"
+fi
+
+
+
 echo
-echo "Executing pipeline_fors2/0-pipeline.sh, with epoch ${param_file} and sub_back=${sub_back}"
+echo "Executing pipeline_fors2/0-pipeline.sh, with:"
+echo "   epoch ${param_file}"
+echo "   folder ${folder}"
+echo "   sub_back ${sub_back}"
 echo
 
 if ! python3 "refresh_params.py"; then
@@ -183,12 +199,13 @@ run_script_folders() {
   extra_message=$2
   origin=$3
   destination=$4
+  other_arguments=$5
   echo ""
   echo "Run ${script}? ${extra_message}"
   select yn in "Yes" "Skip" "Exit"; do
     case ${yn} in
     Yes)
-      if "${proj_dir}/pipeline_fors2/${script}.sh" "${param_file}" "${origin}" "${destination}"; then
+      if "${proj_dir}/pipeline_fors2/${script}.sh" "${param_file}" "${origin}" "${destination}" "${other_arguments}"; then
         break
       else
         echo "Something went wrong. Try again?"
@@ -226,36 +243,26 @@ run_python() {
   done
 }
 
-run_script 1-initial
-run_script 2-sort_after_esoreflex 'Requires reducing data with ESOReflex first.'
-run_script 3-trim
-run_script 4-divide_by_exp_time
+run_script_folders 1-initial ''
+run_script_folders 2-sort_after_esoreflex 'Requires reducing data with ESOReflex first.'
+run_script_folders 3-trim ''
+run_script_folders 4-divide_by_exp_time ''
 
 if ${sub_back}; then
-  folder=B-back_subtract/
-else
-  folder=""
-fi
-
-if ! [[ -d "${data_dir}${folder}" ]]; then
-  mkdir "${data_dir}${folder}"
-fi
-
-if ${sub_back}; then
-  run_script_folders 5-background_subtract '' "4-divided_by_exp_time/"
+  run_script_folders 5-background_subtract '' "4-divided_by_exp_time/" "${folder}5-background_subtracted_with_python/"
   run_script_folders 6-montage '' "${folder}5-background_subtracted_with_python/" "${folder}6-combined_with_montage/"
 else
   run_script_folders 6-montage '' "${folder}4-divided_by_exp_time/science/" "${folder}6-combined_with_montage/"
 fi
 
-run_script_folders 7-trim_combined '' "${folder}6-combined_with_montage/" "${folder}7-trimmed_again/"
+run_script_folders 7-trim_combined '' "${folder}6-combined_with_montage/" "${folder}7-trimmed_again/" "${folder}"
 run_script_folders 8-astrometry '' "${folder}7-trimmed_again/" "${folder}8-astrometry/"
 if compgen -G "${data_dir}${folder}8-astrometry/*_astrometry.fits" > /dev/null ; then
   zp_origin="${folder}8-astrometry/"
 else
   zp_origin="${folder}7-trimmed_again/"
 fi
-run_script_folders 9-zeropoint '' "${zp_origin}" "${folder}"
+run_script_folders 9-zeropoint '' "${zp_origin}" "${folder}9-zeropoint/" "${folder}"
 
 if ! ${sub_back}; then
   run_python insert_synthetic_range_at_frb
