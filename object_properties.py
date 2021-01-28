@@ -22,7 +22,8 @@ def main(obj,
          plot,
          frame,
          instrument,
-         cat_name):
+         cat_name,
+         image_spec):
     print(obj)
 
     frb = obj[:-2]
@@ -88,7 +89,11 @@ def main(obj,
             raise ValueError('Invalid instrument.')
         f_up = f_0.upper()
 
-        image_path = paths[f_output + '_' + epoch_properties['subtraction_image']]
+        if image_spec is None:
+            image_path = paths[f_output + '_' + epoch_properties['subtraction_image']]
+        else:
+            image_path = paths[f_output + '_' + image_spec]
+
         if cat_name is None:
             cat_path = paths[f'{f_output}_cat_path']
         else:
@@ -416,6 +421,10 @@ if __name__ == '__main__':
                         help='Name of Sextractor subdirectory.',
                         type=str,
                         default=None)
+    parser.add_argument('--image',
+                        help='Name of image.',
+                        type=str,
+                        default=None)
     parser.add_argument('--output',
                         help='Path to directory in which to save information and plots.',
                         type=str,
@@ -426,6 +435,7 @@ if __name__ == '__main__':
          plot=not args.no_show,
          frame=args.frame,
          instrument=args.instrument,
-         cat_name=args.cat)
+         cat_name=args.cat,
+         image_spec=args.image)
 
 # TODO: Turn this script into a function.
