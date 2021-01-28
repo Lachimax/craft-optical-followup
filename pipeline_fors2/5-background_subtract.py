@@ -2,9 +2,13 @@
 
 import os
 from shutil import copyfile
+
 import craftutils.utils as u
 import craftutils.fits_files as f
 import craftutils.params as p
+from craftutils.photometry import fit_background_fits
+
+from astropy.io import fits
 
 
 def main(data_dir, data_title, origin, destination):
@@ -14,33 +18,52 @@ def main(data_dir, data_title, origin, destination):
     print(f"\tdestination directory {destination}")
     print()
 
+    methods = ["eso_backs", "polynomial", "gaussian"]
+
+    method = u.select_option(message="Please select the background subtraction method.", options=methods)
+    degree = None
+    if method == "polynomial":
+        degree = u.user_input(message=f"Please enter the degree of {method} to use:", typ=int)
+
     outputs = p.object_output_params(data_title, instrument='FORS2')
 
     destination = data_dir + "/" + destination + "/"
-    if not os.path.isdir(destination):
-        os.mkdir(destination)
+    u.mkdir_check_nested(destination)
 
     science_origin = data_dir + "/" + origin + "/science/"
-    background_origin = data_dir + "/" + origin + "/backgrounds/"
     print(science_origin)
+
     filters = outputs['filters']
 
+    if method == "eso_backs":
+        background_origin = data_dir + "/" + origin + "/backgrounds/"
+    else:
+        background_origin = data_dir + "/" + origin + f"/backgrounds_{method}_degree_{degree}/"
+
     for fil in filters:
-        if not os.path.isdir(destination + fil):
-            os.mkdir(destination + fil)
+        fil_dir = background_origin + fil + "/"
+        u.mkdir_check_nested(fil_dir)
+        u.mkdir_check(destination + fil)
         files = os.listdir(science_origin + fil + "/")
         for file_name in files:
             if file_name[-5:] == '.fits':
                 new_file = file_name.replace("norm", "bg_sub")
                 new_path = destination + fil + "/" + new_file
                 science = science_origin + fil + "/" + file_name
-                background = background_origin + fil + "/" + file_name.replace("SCIENCE_REDUCED", "PHOT_BACKGROUND_SCI")
-                # Divide by exposure time to get an image in counts/second.
+                if method == 'eso_backs':
+                    background = background_origin + fil + "/" + file_name.replace("SCIENCE_REDUCED",
+                                                                                   "PHOT_BACKGROUND_SCI")
+                else:
+                    background = fit_background_fits(image=science, model_type=method, deg=degree)
+                    background_path = background_origin + fil + "/" + file_name.replace("SCIENCE_REDUCED",
+                                                                                        "PHOT_BACKGROUND_SCI")
+                    background.writeto(background_path, overwrite=True)
+
                 f.subtract_file(file=science, sub_file=background, output=new_path)
 
     copyfile(data_dir + "/" + origin + "/" + data_title + ".log", destination + data_title + ".log")
     u.write_log(path=destination + data_title + ".log",
-                action='Backgrounds subtracted using 4-background_subtract.py\n')
+                action=f'Backgrounds subtracted using 4-background_subtract.py with method {method}\n')
 
 
 if __name__ == '__main__':
@@ -59,6 +82,7 @@ if __name__ == '__main__':
                         help='Folder within data_dir to copy processed files to.',
                         type=str,
                         default="5-background_subtracted_with_python")
+
     # Load arguments
 
     args = parser.parse_args()

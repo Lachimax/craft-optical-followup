@@ -11,11 +11,12 @@ destination=$3
 if [[ -z ${destination} ]]; then
     destination=9-zeropoint/
 fi
-write_paths=$4
+folder=$4
+write_paths=$5
 if [[ -z ${write_paths} ]]; then
     write_paths=true
 fi
-kron_radius=$5
+kron_radius=$6
 
 
 config_file="param/config.json"
@@ -89,18 +90,18 @@ if ${do_sextractor} ; then
                     sex "${df}_${suff},${image}" -c psf-fit.sex -CATALOG_NAME "${image_0}_dual-mode.cat" -PSF_NAME "${image_0}_psfex.psf" -SEEING_FWHM "${fwhm}" -PHOT_AUTOPARAMS "${kron_radius},1.0" -DETECT_THRESH "${threshold}" -ANALYSIS_THRESH "${threshold}"
                     cd "${proj_dir}" || exit
                     if ${write_paths} ; then
-                        python3 add_path.py --op "${data_title}" --key "${image_0}_cat_path" --path "${sextractor_destination_path}${image_0}_dual-mode.cat" --instrument FORS2
+                        python3 add_path.py --op "${data_title}" --key "${image_0}_cat_path${folder}" --path "${sextractor_destination_path}${image_0}_dual-mode.cat" --instrument FORS2
                     fi
                 else
                     cd "${proj_dir}" || exit
                     if ${write_paths} ; then
-                        python3 add_path.py --op "${data_title}" --key "${image_0}_cat_path" --path "${sextractor_destination_path}${image_0}_psf-fit.cat" --instrument FORS2
+                        python3 add_path.py --op "${data_title}" --key "${image_0}_cat_path${folder}" --path "${sextractor_destination_path}${image_0}_psf-fit.cat" --instrument FORS2
                     fi
                 fi
             else
                 cd "${proj_dir}" || exit
                 if ${write_paths} ; then
-                    python3 add_path.py --op "${data_title}" --key "${image_0}_cat_path" --path "${sextractor_destination_path}${image_0}_psf-fit.cat" --instrument FORS2
+                    python3 add_path.py --op "${data_title}" --key "${image_0}_cat_path${folder}" --path "${sextractor_destination_path}${image_0}_psf-fit.cat" --instrument FORS2
                 fi
             fi
         done

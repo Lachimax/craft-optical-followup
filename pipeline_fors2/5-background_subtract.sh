@@ -13,6 +13,7 @@ if [[ -z ${destination} ]]; then
   destination=B-back_subtract/5-background_subtracted_with_python/
 fi
 
+
 echo
 echo "Executing bash script pipeline_fors2/5-background_subtract.sh, with:"
 echo "   epoch ${param_file}"
@@ -32,3 +33,4 @@ data_dir=$(jq -r .data_dir "${param_dir}/epochs_fors2/${param_file}.json")
 data_title=${param_file}
 
 python3 "${proj_dir}/pipeline_fors2/5-background_subtract.py" --directory "${data_dir}" --op "${data_title}" --origin "${origin}" --destination "${destination}"
+

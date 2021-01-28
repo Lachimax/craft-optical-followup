@@ -11,8 +11,7 @@ from shutil import copyfile
 
 # TODO: Refactor all script inputs to match argparse inputs, for readability.
 
-def main(comb_path, output_dir, obj, sextractor_path):
-
+def main(comb_path, output_dir, obj, sextractor_path, path_suffix):
     print("\nExecuting Python script pipeline_fors2/7-trim_combined.py, with:")
     print(f"\tepoch {obj}")
     print(f"\toutput directory {output_dir}")
@@ -20,8 +19,7 @@ def main(comb_path, output_dir, obj, sextractor_path):
     print()
 
     if sextractor_path is not None:
-        if not os.path.isdir(sextractor_path):
-            os.mkdir(sextractor_path)
+        u.mkdir_check_nested(sextractor_path)
         do_sextractor = True
     else:
         do_sextractor = False
@@ -54,7 +52,8 @@ def main(comb_path, output_dir, obj, sextractor_path):
         if do_sextractor:
             copyfile(output_dir + "/" + comb_file, sextractor_path + comb_file)
 
-        p.add_output_path(obj=obj, instrument='fors2', key=fil[0] + '_trimmed_image', path=output_dir + "/" + comb_file)
+        p.add_output_path(obj=obj, instrument='fors2', key=fil[0] + '_trimmed_image' + path_suffix,
+                          path=output_dir + "/" + comb_file)
 
 
 if __name__ == '__main__':
@@ -66,8 +65,10 @@ if __name__ == '__main__':
     parser.add_argument('--object', help='Object name, eg FRB-181112--Host')
     parser.add_argument('--sextractor_directory', default=None,
                         help='Directory for sextractor scripts to be moved to.')
+    parser.add_argument('--path_suffix', default="",
+                        help='String to tack on the end of the path key in output_paths.yaml')
 
     args = parser.parse_args()
 
     main(comb_path=args.directory, output_dir=args.destination, obj=args.object,
-         sextractor_path=args.sextractor_directory)
+         sextractor_path=args.sextractor_directory, path_suffix=args.path_suffix)
