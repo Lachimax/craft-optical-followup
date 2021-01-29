@@ -69,9 +69,9 @@ def main(obj,
     if not isfile(des_cat_path):
         des_cat_path = None
 
-    output_path = epoch_properties['data_dir'] + '/analysis/object_properties/'
+    output_path = f"{epoch_properties['data_dir']}/analysis/object_properties/"
     u.mkdir_check(output_path)
-    output_path = epoch_properties['data_dir'] + '/analysis/object_properties/' + str(now) + '/'
+    output_path = f"{epoch_properties['data_dir']}/analysis/object_properties/{str(now)}_{cat_name}_{image_spec}/'"
     u.mkdir_check(output_path)
 
     instrument = instrument.upper()
