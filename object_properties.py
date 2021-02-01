@@ -71,7 +71,7 @@ def main(obj,
 
     output_path = f"{epoch_properties['data_dir']}/analysis/object_properties/"
     u.mkdir_check(output_path)
-    output_path = f"{epoch_properties['data_dir']}/analysis/object_properties/{str(now)}_{cat_name}_{image_spec}/'"
+    output_path = f"{epoch_properties['data_dir']}/analysis/object_properties/{str(now)}_{cat_name}_{image_spec}/"
     u.mkdir_check(output_path)
 
     instrument = instrument.upper()
