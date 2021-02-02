@@ -11,7 +11,7 @@ from craftutils.photometry import fit_background_fits
 from astropy.io import fits
 
 
-def main(data_dir, data_title, origin, destination):
+def main(data_dir, data_title, origin, destination, local):
     print("\nExecuting Python script pipeline_fors2/5-background_subtract.py, with:")
     print(f"\tepoch {data_title}")
     print(f"\torigin directory {origin}")
@@ -24,6 +24,7 @@ def main(data_dir, data_title, origin, destination):
     degree = None
     if method == "polynomial":
         degree = u.user_input(message=f"Please enter the degree of {method} to use:", typ=int)
+    local = u.select_yn(message="Use a local fit?")
 
     outputs = p.object_output_params(data_title, instrument='FORS2')
 
@@ -54,7 +55,8 @@ def main(data_dir, data_title, origin, destination):
                     background = background_origin + fil + "/" + file_name.replace("SCIENCE_REDUCED",
                                                                                    "PHOT_BACKGROUND_SCI")
                 else:
-                    background = fit_background_fits(image=science, model_type=method, deg=degree)
+                    background = fit_background_fits(image=science, model_type=method, deg=degree, local=local)
+
                     background_path = background_origin + fil + "/" + file_name.replace("SCIENCE_REDUCED",
                                                                                         "PHOT_BACKGROUND_SCI")
                     background.writeto(background_path, overwrite=True)
