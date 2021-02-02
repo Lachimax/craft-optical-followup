@@ -11,7 +11,7 @@ from craftutils.photometry import fit_background_fits
 from astropy.io import fits
 
 
-def main(data_dir, data_title, origin, destination, local):
+def main(data_dir, data_title, origin, destination):
     print("\nExecuting Python script pipeline_fors2/5-background_subtract.py, with:")
     print(f"\tepoch {data_title}")
     print(f"\torigin directory {origin}")
