@@ -8,7 +8,7 @@ import craftutils.fits_files as f
 import craftutils.params as p
 from craftutils.photometry import fit_background_fits
 
-from astropy.io import fits
+from astropy.wcs import WCS
 
 
 def main(data_dir, data_title, origin, destination):
@@ -36,10 +36,16 @@ def main(data_dir, data_title, origin, destination):
 
     filters = outputs['filters']
 
+    ra = None
+    dec = None
+
     if method == "eso_backs":
         background_origin = data_dir + "/" + origin + "/backgrounds/"
     else:
         background_origin = data_dir + "/" + origin + f"/backgrounds_{method}_degree_{degree}/"
+        frb_params = p.object_params_frb(obj=data_title)
+        ra = frb_params["burst_ra"]
+        dec = frb_params["burst_dec"]
 
     for fil in filters:
         fil_dir = background_origin + fil + "/"
@@ -55,8 +61,11 @@ def main(data_dir, data_title, origin, destination):
                     background = background_origin + fil + "/" + file_name.replace("SCIENCE_REDUCED",
                                                                                    "PHOT_BACKGROUND_SCI")
                 else:
-                    background = fit_background_fits(image=science, model_type=method, deg=degree, local=local)
+                    wcs_this = WCS(header=science[0].header)
+                    x, y = wcs_this.all_world2pix(ra, dec, 0)
 
+                    background = fit_background_fits(image=science, model_type=method, deg=degree, local=local,
+                                                     centre_x=x, centre_y=y)
                     background_path = background_origin + fil + "/" + file_name.replace("SCIENCE_REDUCED",
                                                                                         "PHOT_BACKGROUND_SCI")
                     background.writeto(background_path, overwrite=True)
