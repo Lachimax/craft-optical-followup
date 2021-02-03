@@ -1,7 +1,6 @@
 # Code by Lachlan Marnoch, 2019
 from craftutils import params as p
 
-
 def main(obj, key, path, instrument):
     p.add_output_path(obj=obj, key=key, path=path, instrument=instrument)
 
