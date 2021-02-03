@@ -53,7 +53,7 @@ if ${do_sextractor} ; then
     # Copy final processed image to SExtractor directory
     sextractor_destination_path=${data_dir}/analysis/sextractor/${destination}
     echo "SExtractor destination path: ${sextractor_destination_path}"
-    mkdir "${sextractor_destination_path}"
+    mkdir -p "${sextractor_destination_path}"
     if cp "${data_dir}${origin}"*"astrometry_tweaked.fits" "${sextractor_destination_path}" ; then
       suff="astrometry_tweaked.fits"
     elif cp "${data_dir}${origin}"*"astrometry.fits" "${sextractor_destination_path}" ; then

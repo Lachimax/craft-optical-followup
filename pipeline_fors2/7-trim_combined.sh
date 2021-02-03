@@ -60,7 +60,13 @@ mkdir "${data_dir}/${destination}/"
 #    done
 #  fi
 #else
-python3 "${proj_dir}/pipeline_fors2/7-trim_combined.py" --directory "${data_dir}/${origin}/" --destination "${data_dir}/${destination}/" --object "${data_title}" --path_suffix "$(${folder::-1} || ${folder})"
+if [[ ${folder} == "" ]]; then
+  path_suffix=""
+else
+  path_suffix=${folder::-1}
+fi
+
+python3 "${proj_dir}/pipeline_fors2/7-trim_combined.py" --directory "${data_dir}/${origin}/" --destination "${data_dir}/${destination}/" --object "${data_title}" --path_suffix "${path_suffix}"
 #fi
 
 if cd "${data_dir}/${destination}/"; then

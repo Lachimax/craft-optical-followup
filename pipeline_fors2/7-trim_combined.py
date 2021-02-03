@@ -52,6 +52,11 @@ def main(comb_path, output_dir, obj, sextractor_path, path_suffix):
         if do_sextractor:
             copyfile(output_dir + "/" + comb_file, sextractor_path + comb_file)
 
+        if path_suffix is None:
+            path_suffix = output_dir.split("/")[-2]
+
+        path_suffix = u.remove_trailing_slash(path_suffix)
+
         p.add_output_path(obj=obj, instrument='fors2', key=fil[0] + '_trimmed_image' + path_suffix,
                           path=output_dir + "/" + comb_file)
 
@@ -69,6 +74,9 @@ if __name__ == '__main__':
                         help='String to tack on the end of the path key in output_paths.yaml')
 
     args = parser.parse_args()
+
+    print("PATH SUFFIX::")
+    print(args.path_suffix)
 
     main(comb_path=args.directory, output_dir=args.destination, obj=args.object,
          sextractor_path=args.sextractor_directory, path_suffix=args.path_suffix)
