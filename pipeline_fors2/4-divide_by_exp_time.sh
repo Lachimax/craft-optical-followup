@@ -29,7 +29,9 @@ param_dir=$(jq -r .param_dir "${config_file}")
 
 data_dir=$(jq -r .data_dir "${param_dir}/epochs_fors2/${param_file}.json")
 data_title=${param_file}
-do_sextractor=false # $(jq -r .do_sextractor "${param_dir}/epochs_fors2/${param_file}.json")
+do_sextractor=$(jq -r .do_sextractor "${param_dir}/epochs_fors2/${param_file}.json")
+
+mkdir -p "${data_dir}/${destination}/backgrounds_sextractor/"
 
 if ${do_sextractor}; then
   mkdir "${data_dir}/analysis/sextractor/${destination}/"
@@ -49,9 +51,11 @@ if ${do_sextractor}; then
             cd "${sextractor_destination_path}" || exit
             fwhm=$(jq -r "._fwhm_arcsec" "${sextractor_destination_path}${image}_output_values.json")
             echo "FWHM: ${fwhm} arcsecs"
-            sex "${image}" -c psf-fit.sex -CATALOG_NAME "${image}_psf-fit.cat" -PSF_NAME "${image}_psfex.psf" -SEEING_FWHM "${fwhm}"
+            sex "${image}" -c psf-fit.sex -CATALOG_NAME "${image}_psf-fit.cat" -PSF_NAME "${image}_psfex.psf" -SEEING_FWHM "${fwhm}" -CHECKIMAGE_TYPE BACKGROUND -CHECKIMAGE_NAME "${image}_back.fits"
           done
         fi
+        mkdir -p "${data_dir}/${destination}/backgrounds_sextractor/${fil}/"
+        cp ./*_back.fits "${data_dir}/${destination}/backgrounds_sextractor/${fil}/"
         cd ..
       fi
     done
