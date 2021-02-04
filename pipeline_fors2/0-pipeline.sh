@@ -21,12 +21,6 @@ if [[ -z ${folder} ]]; then
   fi
 fi
 
-if ! [[ -d "${data_dir}${folder}" ]]; then
-  mkdir "${data_dir}${folder}"
-fi
-
-
-
 echo
 echo "Executing pipeline_fors2/0-pipeline.sh, with:"
 echo "   epoch ${param_file}"
