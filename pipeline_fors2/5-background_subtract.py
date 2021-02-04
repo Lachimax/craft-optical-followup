@@ -2,6 +2,7 @@
 
 import os
 from shutil import copyfile
+from matplotlib import pyplot as plt
 
 import craftutils.utils as u
 import craftutils.fits_files as f
@@ -19,7 +20,9 @@ def main(data_dir, data_title, origin, destination):
     print(f"\tdestination directory {destination}")
     print()
 
-    methods = ["ESO backgrounds only", "polynomial", "gaussian"]
+    frame = 50
+
+    methods = ["ESO backgrounds only", "SExtractor backgrounds only", "polynomial", "gaussian"]
 
     eso_back = False
 
@@ -29,12 +32,15 @@ def main(data_dir, data_title, origin, destination):
         degree = u.user_input(message=f"Please enter the degree of {method} to use:", typ=int)
     elif method == "ESO backgrounds only":
         eso_back = True
-    local = u.select_yn(message="Use a local fit?")
+    if method not in ["ESO backgrounds only", "SExtractor backgrounds only"]:
+        local = u.select_yn(message="Use a local fit?")
+    else:
+        local = False
     global_sub = False
     if local:
         global_sub = u.select_yn(message="Subtract local fit from entire image?")
 
-    if not eso_back:
+    if not eso_back and method != "SExtractor backgrounds only":
         eso_back = u.select_yn(message="Subtract ESO Reflex fitted backgrounds first?")
 
     outputs = p.object_output_params(data_title, instrument='FORS2')
@@ -47,15 +53,16 @@ def main(data_dir, data_title, origin, destination):
 
     filters = outputs['filters']
 
-    ra = None
-    dec = None
-
     background_origin_eso = ""
     if eso_back:
         background_origin_eso = data_dir + "/" + origin + "/backgrounds/"
 
-    background_origin = destination + f"/backgrounds_{method}_degree_{degree}_local_{local}_globalsub_{global_sub}/"
+    if method == "SExtractor backgrounds only":
+        background_origin = data_dir + "/" + origin + "/backgrounds_sextractor/"
+    else:
+        background_origin = destination + f"/backgrounds_{method}_degree_{degree}_local_{local}_globalsub_{global_sub}/"
     frb_params = p.object_params_frb(obj=data_title[:-2])
+
     ra = frb_params["burst_ra"]
     dec = frb_params["burst_dec"]
 
@@ -76,21 +83,32 @@ def main(data_dir, data_title, origin, destination):
 
                     f.subtract_file(file=science, sub_file=background_eso, output=new_path)
                     science = new_path
-                # Next do background fitting.
+
                 if method != "ESO backgrounds only":
+                    print("Science image:", science)
                     science = fits.open(science)
                     wcs_this = WCS(header=science[0].header)
                     x, y = wcs_this.all_world2pix(ra, dec, 0)
+                    if method == "SExtractor backgrounds only":
+                        background = background_origin + fil + "/" + file_name + "_back.fits"
+                        print("Background image:", background)
+                    # Next do background fitting.
+                    else:
+                        background = fit_background_fits(image=science, model_type=method, deg=degree, local=local,
+                                                         global_sub=global_sub,
+                                                         centre_x=x, centre_y=y, frame=frame)
+                        background_path = background_origin + fil + "/" + file_name.replace("SCIENCE_REDUCED",
+                                                                                            "PHOT_BACKGROUND_FITTED")
+                        print("Writing fitted background to:")
+                        print(background_path)
+                        background.writeto(background_path, overwrite=True)
 
-                    background = fit_background_fits(image=science, model_type=method, deg=degree, local=local,
-                                                     global_sub=global_sub,
-                                                     centre_x=x, centre_y=y)
-                    background_path = background_origin + fil + "/" + file_name.replace("SCIENCE_REDUCED",
-                                                                                        "PHOT_BACKGROUND_FITTED")
-                    print("Writing fitted background to:")
-                    print(background_path)
-                    background.writeto(background_path, overwrite=True)
-                    f.subtract_file(file=science, sub_file=background, output=new_path)
+                    subbed = f.subtract_file(file=science, sub_file=background, output=new_path)
+
+                    plt.hist(subbed[0].data[int(y - frame):int(y + frame), int(x - frame):int(x + frame)].flatten(),
+                             bins=100)
+                    plt.savefig(new_path[:new_path.find("bg_sub")] + "histplot.png")
+                    plt.close()
 
     copyfile(data_dir + "/" + origin + "/" + data_title + ".log", destination + data_title + ".log")
     u.write_log(path=destination + data_title + ".log",
