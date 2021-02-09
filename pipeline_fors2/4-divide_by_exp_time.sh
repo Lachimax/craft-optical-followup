@@ -29,7 +29,7 @@ param_dir=$(jq -r .param_dir "${config_file}")
 
 data_dir=$(jq -r .data_dir "${param_dir}/epochs_fors2/${param_file}.json")
 data_title=${param_file}
-do_sextractor=$(jq -r .do_sextractor "${param_dir}/epochs_fors2/${param_file}.json")
+do_sextractor_individual=$(jq -r .do_sextractor_individual "${param_dir}/epochs_fors2/${param_file}.json")
 
 mkdir -p "${data_dir}/${destination}/backgrounds_sextractor/"
 
