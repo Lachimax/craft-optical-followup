@@ -9,6 +9,9 @@ def main(path):
     path = check_trailing_slash(path)
     outputs = p.tabulate_output_values(path=path, output=path + "output_values.csv")
     plt.plot(outputs["_fwhm_arcsec"], range(len(outputs)))
+    plt.ylabel("FWHM")
+    plt.xlabel("Frame")
+    plt.title(f"FWHM in {path}")
     plt.savefig(path + "fwhm.png")
 
 
