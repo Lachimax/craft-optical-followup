@@ -5,6 +5,7 @@ deepest_filter: g_HIGH
 delete_esoreflex: true
 do_dual_mode: true
 do_sextractor: true
+do_sextractor_individual: false
 filters: [g_HIGH, I_BESS]
 f_cat_calib_path: null
 f_cat_calib_zeropoint: 0.0

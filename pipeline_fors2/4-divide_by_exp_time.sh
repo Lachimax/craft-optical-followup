@@ -33,7 +33,7 @@ do_sextractor=$(jq -r .do_sextractor "${param_dir}/epochs_fors2/${param_file}.js
 
 mkdir -p "${data_dir}/${destination}/backgrounds_sextractor/"
 
-if ${do_sextractor}; then
+if ${do_sextractor_individual}; then
   mkdir "${data_dir}/analysis/sextractor/${destination}/"
   python3 "${proj_dir}/pipeline_fors2/4-divide_by_exp_time.py" --op "${data_title}" --origin "${origin}" --destination ${destination} --sextractor_directory "${data_dir}/analysis/sextractor/${destination}"
   if cd "${data_dir}/analysis/sextractor/${destination}/"; then
@@ -42,18 +42,19 @@ if ${do_sextractor}; then
         sextractor_destination_path="${data_dir}/analysis/sextractor/${destination}/${fil}"
         if cp "${proj_dir}/param/psfex/"* .; then
           for image in *_norm.fits; do
-            sex "${image}" -c pre-psfex.sex -CATALOG_NAME "${image}_psfex.fits"
+            sex "${image}" -c pre-psfex.sex -CATALOG_NAME "${image::-5}_psfex.fits"
             # Run PSFEx to get PSF analysis
-            psfex "${image}_psfex.fits"
+            psfex "${image::-5}_psfex.fits"
             cd "${proj_dir}" || exit
             # Use python to extract the FWHM from the PSFEx output.
-            python3 "${proj_dir}/pipeline_fors2/9-psf.py" --directory "${sextractor_destination_path}" --output_file "${image}_output_values" --psfex_file "${sextractor_destination_path}${image}_psfex.psf" --image_file "${sextractor_destination_path}${image}"
+            python3 "${proj_dir}/pipeline_fors2/9-psf.py" --directory "${sextractor_destination_path}" --output_file "${image::-5}_output_values" --psfex_file "${sextractor_destination_path}${image::-5}_psfex.psf" --image_file "${sextractor_destination_path}${image}"
             cd "${sextractor_destination_path}" || exit
-            fwhm=$(jq -r "._fwhm_arcsec" "${sextractor_destination_path}${image}_output_values.json")
+            fwhm=$(jq -r "._fwhm_arcsec" "${sextractor_destination_path}${image::-5}_output_values.json")
             echo "FWHM: ${fwhm} arcsecs"
-            sex "${image}" -c psf-fit.sex -CATALOG_NAME "${image}_psf-fit.cat" -PSF_NAME "${image}_psfex.psf" -SEEING_FWHM "${fwhm}" -CHECKIMAGE_TYPE BACKGROUND -CHECKIMAGE_NAME "${image}_back.fits"
+            sex "${image}" -c psf-fit.sex -CATALOG_NAME "${image::-5}_psf-fit.cat" -PSF_NAME "${image::-5}_psfex.psf" -SEEING_FWHM "${fwhm}" -CHECKIMAGE_TYPE BACKGROUND -CHECKIMAGE_NAME "${image::-5}_back.fits"
           done
         fi
+        python3 "${proj_dir}/plot_fwhms.py" --path "${data_dir}/analysis/sextractor/${destination}/${fil}"
         mkdir -p "${data_dir}/${destination}/backgrounds_sextractor/${fil}/"
         cp ./*_back.fits "${data_dir}/${destination}/backgrounds_sextractor/${fil}/"
         cd ..
