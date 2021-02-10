@@ -39,21 +39,21 @@ if ${do_sextractor_individual}; then
   if cd "${data_dir}/analysis/sextractor/${destination}/"; then
     for fil in **/; do
       if cd "${fil}"; then
-#        sextractor_destination_path="${data_dir}/analysis/sextractor/${destination}/${fil}"
-#        if cp "${proj_dir}/param/psfex/"* .; then
-#          for image in *_norm.fits; do
-#            sex "${image}" -c pre-psfex.sex -CATALOG_NAME "${image::-5}_psfex.fits"
-#            # Run PSFEx to get PSF analysis
-#            psfex "${image::-5}_psfex.fits"
-#            cd "${proj_dir}" || exit
-#            # Use python to extract the FWHM from the PSFEx output.
-#            python3 "${proj_dir}/pipeline_fors2/9-psf.py" --directory "${sextractor_destination_path}" --output_file "${image::-5}_output_values" --psfex_file "${sextractor_destination_path}${image::-5}_psfex.psf" --image_file "${sextractor_destination_path}${image}"
-#            cd "${sextractor_destination_path}" || exit
-#            fwhm=$(jq -r "._fwhm_arcsec" "${sextractor_destination_path}${image::-5}_output_values.json")
-#            echo "FWHM: ${fwhm} arcsecs"
-#            sex "${image}" -c psf-fit.sex -CATALOG_NAME "${image::-5}_psf-fit.cat" -PSF_NAME "${image::-5}_psfex.psf" -SEEING_FWHM "${fwhm}" -CHECKIMAGE_TYPE BACKGROUND -CHECKIMAGE_NAME "${image::-5}_back.fits"
-#          done
-#        fi
+        sextractor_destination_path="${data_dir}/analysis/sextractor/${destination}/${fil}"
+        if cp "${proj_dir}/param/psfex/"* .; then
+          for image in *_norm.fits; do
+            sex "${image}" -c pre-psfex.sex -CATALOG_NAME "${image::-5}_psfex.fits"
+            # Run PSFEx to get PSF analysis
+            psfex "${image::-5}_psfex.fits"
+            cd "${proj_dir}" || exit
+            # Use python to extract the FWHM from the PSFEx output.
+            python3 "${proj_dir}/pipeline_fors2/9-psf.py" --directory "${sextractor_destination_path}" --output_file "${image::-5}_output_values" --psfex_file "${sextractor_destination_path}${image::-5}_psfex.psf" --image_file "${sextractor_destination_path}${image}"
+            cd "${sextractor_destination_path}" || exit
+            fwhm=$(jq -r "._fwhm_arcsec" "${sextractor_destination_path}${image::-5}_output_values.json")
+            echo "FWHM: ${fwhm} arcsecs"
+            sex "${image}" -c psf-fit.sex -CATALOG_NAME "${image::-5}_psf-fit.cat" -PSF_NAME "${image::-5}_psfex.psf" -SEEING_FWHM "${fwhm}" -CHECKIMAGE_TYPE BACKGROUND -CHECKIMAGE_NAME "${image::-5}_back.fits"
+          done
+        fi
         cd "${proj_dir}" || exit
         python3 "${proj_dir}/plot_fwhms.py" --path "${data_dir}/analysis/sextractor/${destination}/${fil}"
         cd "${data_dir}/analysis/sextractor/${destination}/${fil}" || exit
