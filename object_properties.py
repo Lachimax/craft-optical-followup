@@ -69,9 +69,14 @@ def main(obj,
     if not isfile(des_cat_path):
         des_cat_path = None
 
+    cat_name_for_path = cat_name
+    if type(cat_name_for_path) is str:
+        cat_name_for_path = cat_name_for_path.replace('/', '')
+
     output_path = f"{epoch_properties['data_dir']}/analysis/object_properties/"
     u.mkdir_check(output_path)
-    output_path = f"{epoch_properties['data_dir']}/analysis/object_properties/{str(now)}_{cat_name.replace('/', '')}_{image_spec}/"
+    output_path = f"{epoch_properties['data_dir']}/analysis/object_properties/" \
+                  f"{str(now)}_{cat_name_for_path}_{image_spec}/"
     u.mkdir_check(output_path)
 
     instrument = instrument.upper()
