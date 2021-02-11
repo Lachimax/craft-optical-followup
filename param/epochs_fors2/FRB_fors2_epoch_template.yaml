@@ -23,7 +23,8 @@ f_std_mag_range_upper: 21.5
 f_std_star_class_tol: 0.95
 gaia_cat: null
 manual_astrometry: false
-sextractor_kron_radius: 2.5
+sextractor_kron_radius: 3.5
+sextractor_local_back: false
 skip_astrometry: false
 skip_esorex: false
 skip_copy: false

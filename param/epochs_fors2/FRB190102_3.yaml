@@ -10,6 +10,7 @@ filters: [u_HIGH, z_GUNN]
 gaia_cat: null
 manual_astrometry: false
 sextractor_kron_radius: 2.5
+sextractor_local_back: false
 skip_astrometry: true
 skip_copy: true
 skip_download: true
