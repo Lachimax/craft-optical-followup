@@ -30,6 +30,13 @@ data_title=${param_file}
 skip_esorex=$(jq -r .skip_esorex "${param_dir}/epochs_fors2/${param_file}.json")
 do_dual_mode=$(jq -r .do_dual_mode "${param_dir}/epochs_fors2/${param_file}.json")
 do_sextractor=$(jq -r .do_sextractor "${param_dir}/epochs_fors2/${param_file}.json")
+sextractor_local_back=$(jq -r .sextractor_local_back "${param_dir}/epochs_fors2/${param_file}.json")
+
+if ${sextractor_local_back}; then
+  backphoto_type=LOCAL
+else
+  backphoto_type=GLOBAL
+fi
 
 if [[ -z ${kron_radius} ]]; then
   kron_radius=$(jq -r .sextractor_kron_radius "${param_dir}/epochs_fors2/${param_file}.json")
@@ -85,9 +92,9 @@ if ${do_sextractor}; then
 
       if [[ ${image_0} != "${df}" ]]; then
         if ${do_dual_mode}; then
-          echo sex "${df}_${suff},${image}" -c "psf-fit.sex" -CATALOG_NAME "${image_0}_dual-mode.cat" -PSF_NAME "${image_0}_psfex.psf" -SEEING_FWHM "${fwhm}" -PHOT_AUTOPARAMS "${kron_radius},1.0" -DETECT_THRESH "${threshold}" -ANALYSIS_THRESH "${threshold}" -CHECKIMAGE_TYPE BACKGROUND -CHECKIMAGE_NAME "${image_0}_check.fits"
+          echo sex "${df}_${suff},${image}" -c "psf-fit.sex" -CATALOG_NAME "${image_0}_dual-mode.cat" -PSF_NAME "${image_0}_psfex.psf" -SEEING_FWHM "${fwhm}" -PHOT_AUTOPARAMS "${kron_radius},1.0" -DETECT_THRESH "${threshold}" -ANALYSIS_THRESH "${threshold}" -CHECKIMAGE_TYPE BACKGROUND -CHECKIMAGE_NAME "${image_0}_check.fits" -BACKPHOTO_TYPE ${backphoto_type}
 
-          sex "${df}_${suff},${image}" -c "psf-fit.sex" -CATALOG_NAME "${image_0}_dual-mode.cat" -PSF_NAME "${image_0}_psfex.psf" -SEEING_FWHM "${fwhm}" -PHOT_AUTOPARAMS "${kron_radius},1.0" -DETECT_THRESH "${threshold}" -ANALYSIS_THRESH "${threshold}" -CHECKIMAGE_TYPE BACKGROUND -CHECKIMAGE_NAME "${image_0}_check.fits"
+          sex "${df}_${suff},${image}" -c "psf-fit.sex" -CATALOG_NAME "${image_0}_dual-mode.cat" -PSF_NAME "${image_0}_psfex.psf" -SEEING_FWHM "${fwhm}" -PHOT_AUTOPARAMS "${kron_radius},1.0" -DETECT_THRESH "${threshold}" -ANALYSIS_THRESH "${threshold}" -CHECKIMAGE_TYPE BACKGROUND -CHECKIMAGE_NAME "${image_0}_check.fits" -BACKPHOTO_TYPE ${backphoto_type}
           cd "${proj_dir}" || exit
           if ${write_paths}; then
             python3 add_path.py --op "${data_title}" --key "${image_0}_cat_path${folder}" --path "${sextractor_destination_path}${image_0}_dual-mode.cat" --instrument FORS2

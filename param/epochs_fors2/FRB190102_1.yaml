@@ -38,6 +38,7 @@ g_std_star_class_tol: 0.95
 gaia_cat: /home/lachlan/Data/FRB190102/GAIA/FRB190102_gaia_field.csv
 manual_astrometry: true
 sextractor_kron_radius: 2.5
+sextractor_local_back: false
 skip_astrometry: true
 skip_copy: true
 skip_download: true
