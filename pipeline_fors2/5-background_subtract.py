@@ -3,6 +3,8 @@
 import os
 from shutil import copyfile
 from matplotlib import pyplot as plt
+import numpy as np
+from copy import deepcopy
 
 import craftutils.utils as u
 import craftutils.fits_files as f
@@ -20,28 +22,29 @@ def main(data_dir, data_title, origin, destination):
     print(f"\tdestination directory {destination}")
     print()
 
-    frame = 50
+    frame = 100
 
-    methods = ["ESO backgrounds only", "SExtractor backgrounds only", "polynomial", "gaussian"]
+    methods = ["ESO backgrounds only", "SExtractor backgrounds only", "polynomial fit", "Gaussian fit", "median value"]
 
     eso_back = False
 
-    method = u.select_option(message="Please select the background subtraction method.", options=methods)
+    method = u.select_option(message="Please select the background subtraction method.", options=methods,
+                             default="polynomial fit")
     degree = None
-    if method == "polynomial":
-        degree = u.user_input(message=f"Please enter the degree of {method} to use:", typ=int)
+    if method == "polynomial fit":
+        degree = u.user_input(message=f"Please enter the degree of {method} to use:", typ=int, default=3)
     elif method == "ESO backgrounds only":
         eso_back = True
     if method not in ["ESO backgrounds only", "SExtractor backgrounds only"]:
-        local = u.select_yn(message="Use a local fit?")
+        local = u.select_yn(message="Use a local fit?", default=True)
     else:
         local = False
     global_sub = False
     if local:
-        global_sub = u.select_yn(message="Subtract local fit from entire image?")
+        global_sub = u.select_yn(message="Subtract local fit from entire image?", default="n")
 
-    if not eso_back and method != "SExtractor backgrounds only":
-        eso_back = u.select_yn(message="Subtract ESO Reflex fitted backgrounds first?")
+    # if not eso_back and method != "SExtractor backgrounds only":
+    #     eso_back = u.select_yn(message="Subtract ESO Reflex fitted backgrounds first?", default=False)
 
     outputs = p.object_output_params(data_title, instrument='FORS2')
 
@@ -59,8 +62,10 @@ def main(data_dir, data_title, origin, destination):
 
     if method == "SExtractor backgrounds only":
         background_origin = data_dir + "/" + origin + "/backgrounds_sextractor/"
-    else:
+    elif method == "polynomial fit":
         background_origin = destination + f"/backgrounds_{method}_degree_{degree}_local_{local}_globalsub_{global_sub}/"
+    else:
+        background_origin = destination + f"/backgrounds_{method}_local_{local}_globalsub_{global_sub}/"
     frb_params = p.object_params_frb(obj=data_title[:-2])
 
     ra = frb_params["burst_ra"]
@@ -92,14 +97,23 @@ def main(data_dir, data_title, origin, destination):
                     if method == "SExtractor backgrounds only":
                         background = background_origin + fil + "/" + file_name + "_back.fits"
                         print("Background image:", background)
-                    # Next do background fitting.
                     else:
-                        background = fit_background_fits(image=science, model_type=method, deg=degree, local=local,
-                                                         global_sub=global_sub,
-                                                         centre_x=x, centre_y=y, frame=frame)
-                        background_path = background_origin + fil + "/" + file_name.replace("SCIENCE_REDUCED",
-                                                                                            "PHOT_BACKGROUND_FITTED")
-                        print("Writing fitted background to:")
+                        if method == "median value":
+                            background_value = np.nanmedian(science[0].data)
+                            background = deepcopy(science)
+                            background[0].data = np.array(science[0].data.shape)
+                            background_path = background_origin + fil + "/" + file_name.replace("SCIENCE_REDUCED",
+                                                                                                "PHOT_BACKGROUND_MEDIAN")
+
+                        # Next do background fitting.
+                        else:
+                            background = fit_background_fits(image=science, model_type=method[:method.find(" ")],
+                                                             deg=degree, local=local,
+                                                             global_sub=global_sub,
+                                                             centre_x=x, centre_y=y, frame=frame)
+                            background_path = background_origin + fil + "/" + file_name.replace("SCIENCE_REDUCED",
+                                                                                                "PHOT_BACKGROUND_FITTED")
+                        print("Writing background to:")
                         print(background_path)
                         background.writeto(background_path, overwrite=True)
 

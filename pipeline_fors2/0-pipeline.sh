@@ -237,6 +237,10 @@ run_python() {
   done
 }
 
+if [[ ${folder: -1} != "/" ]]; then
+  folder="${folder}/"
+fi
+
 run_script_folders 1-initial ''
 run_script_folders 2-sort_after_esoreflex 'Requires reducing data with ESOReflex first.'
 run_script_folders 3-trim ''
