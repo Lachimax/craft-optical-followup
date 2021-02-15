@@ -32,5 +32,8 @@ param_dir=$(jq -r .param_dir "${config_file}")
 data_dir=$(jq -r .data_dir "${param_dir}/epochs_fors2/${param_file}.json")
 data_title=${param_file}
 
+mkdir "${data_dir}${destination}"
+mkdir "${data_dir}${destination}science"
+
 python3 "${proj_dir}/pipeline_fors2/5-background_subtract.py" --directory "${data_dir}" --op "${data_title}" --origin "${origin}" --destination "${destination}"
 

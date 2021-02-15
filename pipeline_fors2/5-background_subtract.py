@@ -40,18 +40,25 @@ def main(data_dir, data_title, origin, destination):
     else:
         local = False
     global_sub = False
+    trim_image = False
     if local:
         global_sub = u.select_yn(message="Subtract local fit from entire image?", default="n")
+        if not global_sub:
+            trim_image = u.select_yn(message="Trim images to subtracted region?", default="y")
 
     # if not eso_back and method != "SExtractor backgrounds only":
     #     eso_back = u.select_yn(message="Subtract ESO Reflex fitted backgrounds first?", default=False)
 
     outputs = p.object_output_params(data_title, instrument='FORS2')
 
-    destination = data_dir + "/" + destination + "/"
+    data_dir = u.check_trailing_slash(data_dir)
+
+    destination = u.check_trailing_slash(destination)
+    destination = data_dir + destination
     u.mkdir_check_nested(destination)
 
-    science_origin = data_dir + "/" + origin + "/science/"
+    origin = u.check_trailing_slash(origin)
+    science_origin = data_dir + origin + "science/"
     print(science_origin)
 
     filters = outputs['filters']
@@ -61,25 +68,36 @@ def main(data_dir, data_title, origin, destination):
         background_origin_eso = data_dir + "/" + origin + "/backgrounds/"
 
     if method == "SExtractor backgrounds only":
-        background_origin = data_dir + "/" + origin + "/backgrounds_sextractor/"
+        background_origin = f"{data_dir}{origin}backgrounds_sextractor/"
     elif method == "polynomial fit":
-        background_origin = destination + f"/backgrounds_{method}_degree_{degree}_local_{local}_globalsub_{global_sub}/"
+        background_origin = f"{destination}backgrounds_{method.replace(' ', '')}_degree_{degree}_local_{local}_globalsub_{global_sub}/"
     else:
-        background_origin = destination + f"/backgrounds_{method}_local_{local}_globalsub_{global_sub}/"
+        background_origin = f"{destination}backgrounds_{method.replace(' ', '')}_local_{local}_globalsub_{global_sub}/"
     frb_params = p.object_params_frb(obj=data_title[:-2])
+
+    trimmed_path = ""
+    if trim_image:
+        trimmed_path = f"{data_dir}{origin}trimmed_to_background/"
+        u.mkdir_check_nested(trimmed_path)
 
     ra = frb_params["burst_ra"]
     dec = frb_params["burst_dec"]
 
     for fil in filters:
-        fil_dir = background_origin + fil + "/"
-        u.mkdir_check_nested(fil_dir)
-        u.mkdir_check(destination + fil)
+        trimmed_path_fil = ""
+        if trim_image:
+            trimmed_path_fil = f"{trimmed_path}{fil}/"
+            u.mkdir_check(trimmed_path_fil)
+        background_fil_dir = f"{background_origin}{fil}/"
+        u.mkdir_check_nested(background_fil_dir)
+        science_destination_fil = f"{destination}science/{fil}/"
+        u.mkdir_check_nested(science_destination_fil)
         files = os.listdir(science_origin + fil + "/")
         for file_name in files:
             if file_name.endswith('.fits'):
                 new_file = file_name.replace("norm", "bg_sub")
-                new_path = destination + fil + "/" + new_file
+                new_path = f"{science_destination_fil}/{new_file}"
+                print("NEW_PATH:", new_path)
                 science = science_origin + fil + "/" + file_name
                 # First subtract ESO Reflex background images
                 if eso_back:
@@ -92,6 +110,7 @@ def main(data_dir, data_title, origin, destination):
                 if method != "ESO backgrounds only":
                     print("Science image:", science)
                     science = fits.open(science)
+                    print("Science file:", science)
                     wcs_this = WCS(header=science[0].header)
                     x, y = wcs_this.all_world2pix(ra, dec, 0)
                     if method == "SExtractor backgrounds only":
@@ -101,7 +120,7 @@ def main(data_dir, data_title, origin, destination):
                         if method == "median value":
                             background_value = np.nanmedian(science[0].data)
                             background = deepcopy(science)
-                            background[0].data = np.array(science[0].data.shape)
+                            background[0].data = np.array(background_value, shape=science[0].data.shape)
                             background_path = background_origin + fil + "/" + file_name.replace("SCIENCE_REDUCED",
                                                                                                 "PHOT_BACKGROUND_MEDIAN")
 
@@ -117,10 +136,26 @@ def main(data_dir, data_title, origin, destination):
                         print(background_path)
                         background.writeto(background_path, overwrite=True)
 
+                        if trim_image:
+                            left = int(x - frame)
+                            right = int(x + frame)
+                            bottom = int(y - frame)
+                            top = int(y + frame)
+                            print("TRIMMED_PATH_FIL:", trimmed_path_fil)
+
+                            science = f.trim_file(path=science, left=left, right=right, top=top, bottom=bottom,
+                                                  new_path=trimmed_path_fil + file_name.replace("norm.fits",
+                                                                                                "trimmed_to_back.fits"))
+                            print("Science after trim:", science)
+                            background = f.trim_file(path=background, left=left, right=right, top=top, bottom=bottom,
+                                                     new_path=background_path)
+
+                    print("SCIENCE:", science)
+                    print("BACKGROUND:", background)
                     subbed = f.subtract_file(file=science, sub_file=background, output=new_path)
 
                     plt.hist(subbed[0].data[int(y - frame):int(y + frame), int(x - frame):int(x + frame)].flatten(),
-                             bins=100)
+                             bins=10)
                     plt.savefig(new_path[:new_path.find("bg_sub")] + "histplot.png")
                     plt.close()
 

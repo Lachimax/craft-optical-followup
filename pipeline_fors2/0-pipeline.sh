@@ -14,7 +14,7 @@ fi
 
 folder=$2
 if [[ -z ${folder} ]]; then
-  if ${sub_back} ; then
+  if ${sub_back}; then
     folder="B-back_subtract/"
   else
     folder=""
@@ -68,12 +68,12 @@ if [ "${param_file}" == "new" ]; then
   done
 
   frb_dir="${top_data_dir}${frb_name}/"
-  if ! [[ -d ${frb_dir} ]] ; then
+  if ! [[ -d ${frb_dir} ]]; then
     echo "This seems to be the first epoch processed for this FRB. Setting up directories at ${frb_dir}:"
     mkdir "${frb_dir}"
     epoch_number=1
   fi
-  if ! [[ -d "${frb_dir}FORS2" ]] ; then
+  if ! [[ -d "${frb_dir}FORS2" ]]; then
     mkdir "${frb_dir}FORS2"
   fi
   if ! [[ -f "${param_dir}FRBs/${frb_name}.yaml" ]]; then
@@ -237,8 +237,11 @@ run_python() {
   done
 }
 
-if [[ ${folder: -1} != "/" ]]; then
-  folder="${folder}/"
+if [[ ${folder} != "" ]]; then
+  if [[ ${folder: -1} != "/" ]]; then
+    folder="${folder}/"
+  fi
+  mkdir "${data_dir}${folder}"
 fi
 
 run_script_folders 1-initial ''
@@ -248,14 +251,14 @@ run_script_folders 4-divide_by_exp_time ''
 
 if ${sub_back}; then
   run_script_folders 5-background_subtract '' "4-divided_by_exp_time/" "${folder}5-background_subtracted_with_python/"
-  run_script_folders 6-montage '' "${folder}5-background_subtracted_with_python/" "${folder}6-combined_with_montage/"
+  run_script_folders 6-montage '' "${folder}5-background_subtracted_with_python/science/" "${folder}6-combined_with_montage/"
 else
   run_script_folders 6-montage '' "${folder}4-divided_by_exp_time/science/" "${folder}6-combined_with_montage/"
 fi
 
 run_script_folders 7-trim_combined '' "${folder}6-combined_with_montage/" "${folder}7-trimmed_again/" "${folder}"
 run_script_folders 8-astrometry '' "${folder}7-trimmed_again/" "${folder}8-astrometry/"
-if compgen -G "${data_dir}${folder}8-astrometry/*_astrometry.fits" > /dev/null ; then
+if compgen -G "${data_dir}${folder}8-astrometry/*_astrometry.fits" >/dev/null; then
   zp_origin="${folder}8-astrometry/"
 else
   zp_origin="${folder}7-trimmed_again/"
