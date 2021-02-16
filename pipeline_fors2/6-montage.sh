@@ -47,7 +47,7 @@ echo "Copy science data to Montage folder..."
 
 pwd
 
-mkdir ${destination}/
+mkdir -p ${destination}/
 
 cd "${data_dir}${destination}" || exit
 
