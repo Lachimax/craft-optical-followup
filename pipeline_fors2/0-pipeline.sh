@@ -259,7 +259,7 @@ else
   run_script_folders 6-montage '' "${folder}4-divided_by_exp_time/science/" "${folder}6-combined_with_montage/science/"
 fi
 
-run_script_folders 7-trim_combined '' "${folder}6-combined_with_montage/" "${folder}7-trimmed_again/" "${folder}"
+run_script_folders 7-trim_combined '' "${folder}6-combined_with_montage/science/" "${folder}7-trimmed_again/" "${folder}"
 run_script_folders 8-astrometry '' "${folder}7-trimmed_again/" "${folder}8-astrometry/"
 if compgen -G "${data_dir}${folder}8-astrometry/*_astrometry.fits" >/dev/null; then
   zp_origin="${folder}8-astrometry/"
