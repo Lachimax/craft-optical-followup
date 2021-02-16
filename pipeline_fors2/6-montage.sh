@@ -16,7 +16,7 @@ if [[ -z ${origin} ]]; then
 fi
 destination=$3
 if [[ -z ${destination} ]]; then
-  destination=6-combined_with_montage
+  destination=6-combined_with_montage/science/
 fi
 
 echo
