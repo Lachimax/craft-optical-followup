@@ -4,7 +4,7 @@
 param_file=$1
 origin=$2
 if [[ -z ${origin} ]]; then
-  origin=6-combined_with_montage
+  origin=6-combined_with_montage/science
 fi
 destination=$3
 if [[ -z ${destination} ]]; then
