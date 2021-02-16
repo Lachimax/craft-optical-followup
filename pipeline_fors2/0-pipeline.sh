@@ -194,12 +194,13 @@ run_script_folders() {
   origin=$3
   destination=$4
   other_arguments=$5
+  logfile="${data_dir}${folder}${script}$(date +%Y-%m-%dT%T).log"
   echo ""
   echo "Run ${script}? ${extra_message}"
   select yn in "Yes" "Skip" "Exit"; do
     case ${yn} in
     Yes)
-      if "${proj_dir}/pipeline_fors2/${script}.sh" "${param_file}" "${origin}" "${destination}" "${other_arguments}"; then
+      if "${proj_dir}/pipeline_fors2/${script}.sh" "${param_file}" "${origin}" "${destination}" "${other_arguments}" | tee "${logfile}" ; then
         break
       else
         echo "Something went wrong. Try again?"
@@ -217,6 +218,7 @@ run_script_folders() {
 run_python() {
   script=$1
   extra_message=$2
+  logfile="${data_dir}${folder}${script}$(date +%Y-%m-%dT%T).log"
   echo ""
   echo "Run ${script}? ${extra_message}"
   select yn in "Yes" "Skip" "Exit"; do
@@ -251,9 +253,10 @@ run_script_folders 4-divide_by_exp_time ''
 
 if ${sub_back}; then
   run_script_folders 5-background_subtract '' "4-divided_by_exp_time/" "${folder}5-background_subtracted_with_python/"
-  run_script_folders 6-montage '' "${folder}5-background_subtracted_with_python/science/" "${folder}6-combined_with_montage/"
+  run_script_folders 6-montage '(Science images)' "${folder}5-background_subtracted_with_python/science/" "${folder}6-combined_with_montage/science/"
+  run_script_folders 6-montage '(Background images)' "${folder}5-background_subtracted_with_python/backgrounds/" "${folder}6-combined_with_montage/backgrounds/"
 else
-  run_script_folders 6-montage '' "${folder}4-divided_by_exp_time/science/" "${folder}6-combined_with_montage/"
+  run_script_folders 6-montage '' "${folder}4-divided_by_exp_time/science/" "${folder}6-combined_with_montage/science/"
 fi
 
 run_script_folders 7-trim_combined '' "${folder}6-combined_with_montage/" "${folder}7-trimmed_again/" "${folder}"

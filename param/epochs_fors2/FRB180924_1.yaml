@@ -38,7 +38,6 @@ g_std_star_class_tol: 0.95
 gaia_cat: null
 manual_astrometry: true
 sextractor_kron_radius: 1.4
-sextractor_local_back: false
 skip_astrometry: true
 skip_copy: true
 skip_download: true

@@ -35,5 +35,5 @@ data_title=${param_file}
 mkdir "${data_dir}${destination}"
 mkdir "${data_dir}${destination}science"
 
-python3 "${proj_dir}/pipeline_fors2/5-background_subtract.py" --directory "${data_dir}" --op "${data_title}" --origin "${origin}" --destination "${destination}"
+python3 "${proj_dir}/pipeline_fors2/5-background_subtract.py" --directory "${data_dir}" --op "${data_title}" --origin "${origin}" --destination "${destination}" || exit 1
 

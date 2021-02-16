@@ -5,9 +5,11 @@ from craftutils.astrometry import calculate_error_ellipse
 from craftutils.retrieve import update_frb_des_cutout
 
 from astropy import wcs
+from astropy.coordinates import SkyCoord
 from astropy.io import fits
 from astropy import time
 from astropy.visualization import (ImageNormalize, SquaredStretch, SqrtStretch, ZScaleInterval, MinMaxInterval)
+from astropy import units
 
 import pandas
 
@@ -105,8 +107,12 @@ def main(obj,
             if epoch_properties['do_dual_mode'] and f != epoch_properties['deepest_filter']:
                 cat_path = epoch_properties[
                                'data_dir'] + 'analysis/sextractor/' + cat_name + '/' + f_0 + '_dual-mode.cat'
+
             else:
                 cat_path = epoch_properties['data_dir'] + 'analysis/sextractor/' + cat_name + '/' + f_0 + '_psf-fit.cat'
+
+        cat_path_local = cat_path.replace(".cat", "_back_local.cat")
+
         print('Catalogue:', cat_path)
 
         des_path = f"{burst_properties['data_dir']}/DES/0-data/{f_0.lower()}_cutout.fits"
@@ -142,6 +148,10 @@ def main(obj,
                          "sextractor_catalogue": cat_path}
         output_catalogue = {}
 
+        print('Loading FITS file...')
+        image = fits.open(image_path)
+        wcs_main = wcs.WCS(header=image[0].header)
+
         # Analysis
         cat = np.genfromtxt(cat_path, names=params.sextractor_names_psf())
         mag_auto_true, mag_auto_err_plus, mag_auto_err_minus = ph.magnitude_complete(flux=cat['flux_auto'],
@@ -172,9 +182,13 @@ def main(obj,
                                                                              )
 
         # Find index of other galaxy
+
         for o in galaxies:
             ra = galaxies[o]['ra']
             dec = galaxies[o]['dec']
+            if not SkyCoord(ra * units.deg,
+                            dec * units.deg).contained_by(wcs_main):
+                continue
             print('Matching...')
             index, dist = u.find_object(ra, dec, cat['ra'], cat['dec'])
             this = cat[index]
@@ -226,10 +240,8 @@ def main(obj,
             print()
 
             if plot:
-                print('Loading FITS file...')
-                image = fits.open(image_path)
                 print('Plotting...')
-                wcs_main = wcs.WCS(header=image[0].header)
+
                 # p.plot_all_params(image=image, cat=cat)
 
                 mid_x, mid_y = wcs_main.all_world2pix(output_catalogue_this['ra'], output_catalogue_this['dec'], 0)
@@ -243,8 +255,8 @@ def main(obj,
 
                 image_cut = ff.trim(hdu=image, left=left, right=right, bottom=bottom, top=top)
 
-                plt.imshow(image_cut[0].data, origin='lower',
-                           norm=ImageNormalize(image_cut[0].data, stretch=SqrtStretch(), interval=ZScaleInterval()))
+                plt.imshow(image_cut[0].data, origin='lower')
+                # , norm=ImageNormalize(image_cut[0].data, stretch=SqrtStretch(), interval=ZScaleInterval()))
                 p.plot_gal_params(hdu=image_cut,
                                   ras=[output_catalogue_this['ra_given']],
                                   decs=[output_catalogue_this['dec_given']],
@@ -271,16 +283,19 @@ def main(obj,
                                   show_centre=True,
                                   colour='blue',
                                   label=f'SExtractor ellipse')
-                p.plot_gal_params(hdu=image_cut,
-                                  ras=[burst_properties['burst_ra']],
-                                  decs=[burst_properties['burst_dec']],
-                                  a=[a],
-                                  b=[b],
-                                  theta=[theta],
-                                  colour="orange",
-                                  label='frb',
-                                  line_style=line_style,
-                                  show_centre=True)
+                if SkyCoord(burst_properties['burst_ra'] * units.deg,
+                            burst_properties['burst_dec'] * units.deg).contained_by(
+                    wcs.WCS(header=image_cut[0].header)):
+                    p.plot_gal_params(hdu=image_cut,
+                                      ras=[burst_properties['burst_ra']],
+                                      decs=[burst_properties['burst_dec']],
+                                      a=[a],
+                                      b=[b],
+                                      theta=[theta],
+                                      colour="orange",
+                                      label='frb',
+                                      line_style=line_style,
+                                      show_centre=True)
 
                 plt.legend()
                 plt.title(f"{output_catalogue_this['id']}, {f_0}-band image")

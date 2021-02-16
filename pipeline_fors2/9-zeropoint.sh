@@ -88,13 +88,14 @@ if ${do_sextractor}; then
       echo "FWHM: ${fwhm} arcsecs"
       echo "KRON RADIUS: ${kron_radius}"
       sex "${image}" -c "psf-fit.sex" -CATALOG_NAME "${image_0}_psf-fit.cat" -PSF_NAME "${image_0}_psfex.psf" -SEEING_FWHM "${fwhm}" -PHOT_AUTOPARAMS "${kron_radius},1.0" -DETECT_THRESH "${threshold}" -ANALYSIS_THRESH "${threshold}" -CHECKIMAGE_TYPE BACKGROUND -CHECKIMAGE_NAME "${image_0}_check.fits"
+      # Run Sextractor again in local background mode.
+      sex "${image}" -c "psf-fit.sex" -CATALOG_NAME "${image_0}_psf-fit_back_local.cat" -PSF_NAME "${image_0}_psfex.psf" -SEEING_FWHM "${fwhm}" -PHOT_AUTOPARAMS "${kron_radius},1.0" -DETECT_THRESH "${threshold}" -ANALYSIS_THRESH "${threshold}" -CHECKIMAGE_TYPE BACKGROUND -BACKPHOTO_TYPE LOCAL
       # If this is not the deepest image, we run in dual mode, using the deepest image for finding.
-
       if [[ ${image_0} != "${df}" ]]; then
         if ${do_dual_mode}; then
-          echo sex "${df}_${suff},${image}" -c "psf-fit.sex" -CATALOG_NAME "${image_0}_dual-mode.cat" -PSF_NAME "${image_0}_psfex.psf" -SEEING_FWHM "${fwhm}" -PHOT_AUTOPARAMS "${kron_radius},1.0" -DETECT_THRESH "${threshold}" -ANALYSIS_THRESH "${threshold}" -CHECKIMAGE_TYPE BACKGROUND -CHECKIMAGE_NAME "${image_0}_check.fits" -BACKPHOTO_TYPE ${backphoto_type}
-
-          sex "${df}_${suff},${image}" -c "psf-fit.sex" -CATALOG_NAME "${image_0}_dual-mode.cat" -PSF_NAME "${image_0}_psfex.psf" -SEEING_FWHM "${fwhm}" -PHOT_AUTOPARAMS "${kron_radius},1.0" -DETECT_THRESH "${threshold}" -ANALYSIS_THRESH "${threshold}" -CHECKIMAGE_TYPE BACKGROUND -CHECKIMAGE_NAME "${image_0}_check.fits" -BACKPHOTO_TYPE ${backphoto_type}
+          sex "${df}_${suff},${image}" -c "psf-fit.sex" -CATALOG_NAME "${image_0}_dual-mode.cat" -PSF_NAME "${image_0}_psfex.psf" -SEEING_FWHM "${fwhm}" -PHOT_AUTOPARAMS "${kron_radius},1.0" -DETECT_THRESH "${threshold}" -ANALYSIS_THRESH "${threshold}" -CHECKIMAGE_TYPE BACKGROUND -CHECKIMAGE_NAME "${image_0}_check.fits"
+          # Run Sextractor again in local background mode.
+          sex "${df}_${suff},${image}" -c "psf-fit.sex" -CATALOG_NAME "${image_0}_dual-mode_back_local.cat" -PSF_NAME "${image_0}_psfex.psf" -SEEING_FWHM "${fwhm}" -PHOT_AUTOPARAMS "${kron_radius},1.0" -DETECT_THRESH "${threshold}" -ANALYSIS_THRESH "${threshold}" -BACKPHOTO_TYPE LOCAL
           cd "${proj_dir}" || exit
           if ${write_paths}; then
             python3 add_path.py --op "${data_title}" --key "${image_0}_cat_path${folder}" --path "${sextractor_destination_path}${image_0}_dual-mode.cat" --instrument FORS2

@@ -13,6 +13,7 @@ from craftutils.photometry import fit_background_fits
 
 from astropy.wcs import WCS
 from astropy.io import fits
+from astropy import units
 
 
 def main(data_dir, data_title, origin, destination):
@@ -23,6 +24,8 @@ def main(data_dir, data_title, origin, destination):
     print()
 
     frame = 100
+    # frame_arcsec = 30 * units.arcsec
+    # frame_deg = frame_arcsec.to(units.deg)
 
     methods = ["ESO backgrounds only", "SExtractor backgrounds only", "polynomial fit", "Gaussian fit", "median value"]
 
@@ -70,9 +73,9 @@ def main(data_dir, data_title, origin, destination):
     if method == "SExtractor backgrounds only":
         background_origin = f"{data_dir}{origin}backgrounds_sextractor/"
     elif method == "polynomial fit":
-        background_origin = f"{destination}backgrounds_{method.replace(' ', '')}_degree_{degree}_local_{local}_globalsub_{global_sub}/"
+        background_origin = f"{destination}backgrounds/"  # f"{destination}backgrounds_{method.replace(' ', '')}_degree_{degree}_local_{local}_globalsub_{global_sub}/"
     else:
-        background_origin = f"{destination}backgrounds_{method.replace(' ', '')}_local_{local}_globalsub_{global_sub}/"
+        background_origin = f"{destination}backgrounds/"  # f"{destination}backgrounds_{method.replace(' ', '')}_local_{local}_globalsub_{global_sub}/"
     frb_params = p.object_params_frb(obj=data_title[:-2])
 
     trimmed_path = ""
@@ -100,6 +103,7 @@ def main(data_dir, data_title, origin, destination):
                 print("NEW_PATH:", new_path)
                 science = science_origin + fil + "/" + file_name
                 # First subtract ESO Reflex background images
+                # frame = (frame_deg / f.get_pixel_scale(file=science, astropy_units=True)[1]).to(f.pix).value
                 if eso_back:
                     background_eso = background_origin_eso + fil + "/" + file_name.replace("SCIENCE_REDUCED",
                                                                                            "PHOT_BACKGROUND_SCI")
