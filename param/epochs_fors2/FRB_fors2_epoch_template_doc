@@ -24,6 +24,8 @@ f_std_mag_range_lower: # The lower magnitude limit of the objects to include in 
 f_std_mag_range_upper: # The upper magnitude limit of the objects to include in zeropoint determination using standard field.
 f_std_star_class_tol: # Tolerance on class_star parameter to allow when deriving zeropoint from standard image.
 gaia_cat: # Directory of GAIA catalogue for this field, in csv format.
+renormalise_centre_dec: # The centre of the patch to use for renormalising a background-subtracted patch; only used if a local fit is used.
+renormalise_centre_ra: # Ditto
 sextractor_kron_radius: # Kron radius to use for mag_auto determination in SExtractor (see SExtractor documentation)
 skip_astrometry: # Skip correction using astrometry.net; useful for re-running, as this step takes a while.
 skip_copy: # Skip copying the data to the esoreflex directory; useful for re-running, as this step takes a while.

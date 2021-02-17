@@ -44,10 +44,12 @@ def main(data_dir, data_title, origin, destination):
         local = False
     global_sub = False
     trim_image = False
+    recorrect_subbed = False
     if local:
         global_sub = u.select_yn(message="Subtract local fit from entire image?", default="n")
         if not global_sub:
             trim_image = u.select_yn(message="Trim images to subtracted region?", default="y")
+        recorrect_subbed = u.select_yn(message="Re-normalise background of subtracted region?", default="y")
 
     # if not eso_back and method != "SExtractor backgrounds only":
     #     eso_back = u.select_yn(message="Subtract ESO Reflex fitted backgrounds first?", default=False)
@@ -157,6 +159,10 @@ def main(data_dir, data_title, origin, destination):
                     print("SCIENCE:", science)
                     print("BACKGROUND:", background)
                     subbed = f.subtract_file(file=science, sub_file=background, output=new_path)
+
+                    if recorrect_subbed:
+                        ""
+                        #median = np.median
 
                     plt.hist(subbed[0].data[int(y - frame):int(y + frame), int(x - frame):int(x + frame)].flatten(),
                              bins=10)
