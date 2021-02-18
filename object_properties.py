@@ -10,6 +10,8 @@ from astropy.io import fits
 from astropy import time
 from astropy.visualization import (ImageNormalize, SquaredStretch, SqrtStretch, ZScaleInterval, MinMaxInterval)
 from astropy import units
+from astropy.stats import sigma_clipped_stats
+import photutils as pu
 
 import pandas
 
@@ -19,9 +21,10 @@ from os.path import isfile
 
 
 # TODO: Integrate into pipeline
+# TODO: Switch to astropy tables
 
 def main(obj,
-         plot,
+         show,
          frame,
          instrument,
          cat_name,
@@ -150,7 +153,11 @@ def main(obj,
 
         print('Loading FITS file...')
         image = fits.open(image_path)
-        wcs_main = wcs.WCS(header=image[0].header)
+        data = image[0].data
+        header = image[0].header
+        _, pix_scale = ff.get_pixel_scale(image, astropy_units=True)
+        wcs_main = wcs.WCS(header=header)
+        norm = ImageNormalize(data, interval=ZScaleInterval(), stretch=SqrtStretch())
 
         # Analysis
         cat = np.genfromtxt(cat_path, names=params.sextractor_names_psf())
@@ -181,28 +188,100 @@ def main(obj,
                                                                              airmass_err=airmass_err
                                                                              )
 
-        # Find index of other galaxy
+        cat_local = np.genfromtxt(cat_path_local, names=params.sextractor_names_psf())
+        mag_auto_local, mag_auto_local_err_plus, mag_auto_local_err_minus = ph.magnitude_complete(
+            flux=cat_local['flux_auto'],
+            flux_err=cat_local['fluxerr_auto'],
+            exp_time=exp_time,
+            exp_time_err=exp_time_err,
+            zeropoint=zeropoint,
+            zeropoint_err=zeropoint_err,
+            colour_term=colour_term,
+            colour_term_err=colour_term_err,
+            ext=extinction,
+            ext_err=extinction_err,
+            airmass=airmass,
+            airmass_err=airmass_err
+        )
 
         for o in galaxies:
             ra = galaxies[o]['ra']
             dec = galaxies[o]['dec']
-            if not SkyCoord(ra * units.deg,
-                            dec * units.deg).contained_by(wcs_main):
+            coord = SkyCoord(ra * units.deg, dec * units.deg)
+            if not coord.contained_by(wcs_main):
+                print(f"{o} is not in this image's footprint; skipping.")
                 continue
             print('Matching...')
             index, dist = u.find_object(ra, dec, cat['ra'], cat['dec'])
+            index_local, dist_local = u.find_object(ra, dec, cat_local['ra'], cat_local['dec'])
             this = cat[index]
             print(f'{o} SExtractor {f}')
             print()
 
             mag_err = max(abs(mag_auto_err_plus[index]), abs(mag_auto_err_minus[index]))
             mag_psf_err = max(abs(mag_psf_err_plus[index]), abs(mag_psf_err_minus[index]))
+            mag_auto_local_err = max(abs(mag_auto_local_err_minus[index_local]),
+                                     abs(mag_auto_local_err_plus[index_local]))
 
             mag_ins, mag_ins_err_1, mag_ins_err_2 = ph.magnitude_error(flux=np.array([this['flux_auto']]),
                                                                        flux_err=np.array([this['fluxerr_auto']]),
                                                                        exp_time=exp_time, exp_time_err=exp_time_err)
             mag_ins = mag_ins[0]
             mag_ins_err = max(abs(mag_ins_err_1[0]), abs(mag_ins_err_2[0]))
+
+            # Do photutils photometry
+            # Define aperture using mag_auto kron_aperture:
+            kron_a = this['kron_radius'] * this['a']
+            kron_b = this['kron_radius'] * this['b']
+            # Convert theta to the units and frame photutils likes
+            kron_theta = this['theta'] * units.deg
+            kron_theta = -kron_theta + ff.get_rotation_angle(header=header, astropy_units=True)
+            kron_theta = kron_theta.to(units.rad)
+            mag_photutils = np.nan
+            flux_photutils = np.nan
+            if kron_a > 0 and kron_b > 0:
+                aperture = pu.EllipticalAperture(positions=(this['x'], this['y']),
+                                                 a=(kron_a * units.deg).to(units.pixel, pix_scale).value,
+                                                 b=(kron_b * units.deg).to(units.pixel, pix_scale).value,
+                                                 theta=kron_theta.value)
+                # Define background annulus:
+                annulus = pu.EllipticalAnnulus(positions=(this['x'], this['y']),
+                                               a_in=2 * (kron_a * units.deg).to(units.pixel, pix_scale).value,
+                                               a_out=3 * (kron_a * units.deg).to(units.pixel, pix_scale).value,
+                                               b_out=3 * (kron_b * units.deg).to(units.pixel, pix_scale).value,
+                                               theta=kron_theta.value
+                                               )
+                # Use background annulus to obtain a median sky background
+                mask = annulus.to_mask()
+                annulus_data = mask.multiply(data)[mask.data > 0]
+                _, median, _ = sigma_clipped_stats(annulus_data)
+                print('BACKGROUND MEDIAN:', median)
+                # Get the photometry of the aperture
+                cat_photutils = pu.aperture_photometry(data=data, apertures=aperture)
+                # Multiply the median by the aperture area, so that we subtract the right amount for the aperture:
+                subtract = median * aperture.area
+                # Correct:
+                flux_photutils = cat_photutils['aperture_sum'] - subtract
+                # Convert to magnitude, with uncertainty propagation:
+                mag_photutils, _, _ = ph.magnitude_complete(flux=flux_photutils,  # flux_err=cat_photutils['aperture_sum_err'],
+                                                            exp_time=exp_time,  # exp_time_err=exp_time_err,
+                                                            zeropoint=zeropoint,  # zeropoint_err=zeropoint_err,
+                                                            ext=extinction,  # ext_err=extinction_err,
+                                                            airmass=airmass,  # airmass_err=airmass_err
+                                                            )
+                # Unpack tuple
+                # mag_photutils, mag_photutils_err_plus, mag_photutils_err_minus = mag_photutils
+                # mag_photutils_err = max(abs(mag_photutils_err_minus), abs(mag_photutils_err_plus))
+
+                plt.imshow(data, origin='lower', norm=norm)
+                aperture.plot(color='violet', label='Photutils aperture')
+                annulus.plot(color='blue', label='Background annulus')
+                plt.legend()
+                plt.title(f"{o} (photutils), {f_0}-band image")
+                plt.savefig(output_path + f + '_' + output_catalogue_this['id'] + "_photutils")
+                if show:
+                    plt.show()
+                plt.close()
 
             output_catalogue_this = {'id': o,
                                      'ra': float(this['ra']), 'dec': float(this['dec']),
@@ -215,12 +294,21 @@ def main(obj,
                                      'mag_auto': float(mag_auto_true[index]),
                                      'mag_auto_err': float(mag_err), 'mag_ins': float(mag_ins),
                                      'mag_auto_gal_correct': float(mag_auto_true[index]) - ext_gal,
+                                     'mag_auto_local': float(mag_auto_local[index_local]),
+                                     'mag_auto_local_err': float(mag_auto_local_err),
+                                     'matching_distance_local': float(dist_local * 3600),
+                                     'mag_photutils': float(mag_photutils),
+                                     # 'mag_photutils_err': float(mag_photutils_err),
                                      'ext_gal': float(ext_gal),
                                      'mag_ins_err': float(mag_ins_err), 'flux': float(this['flux_auto']),
-                                     'flux_err': float(this['fluxerr_auto']), 'mag_psf': float(mag_psf[index]),
+                                     'flux_err': float(this['fluxerr_auto']),
+                                     'flux_photutils': flux_photutils,
+                                     'mag_psf': float(mag_psf[index]),
                                      'mag_psf_err': float(mag_psf_err),
                                      'flux_psf': float(this['flux_psf']), 'fluxerr_psf': float(this['fluxerr_psf']),
-                                     'x_err': float(this['x_deg_err']), 'y_err': float(this['y_deg_err'])}
+                                     'x': float(this['x']),
+                                     'x_err': float(this['x_deg_err']), 'y': float(this['y']),
+                                     'y_err': float(this['y_deg_err'])}
 
             print('RA (deg):', output_catalogue_this['ra'])
             print('DEC (deg):', output_catalogue_this['dec'])
@@ -233,73 +321,79 @@ def main(obj,
             print('theta (degrees):', output_catalogue_this['theta'], '+/-', output_catalogue_this['theta_err'])
             print(f'{o} {f} mag auto:', output_catalogue_this['mag_auto'], '+/-',
                   output_catalogue_this['mag_auto_err'])
+            print(f'{o} {f} mag auto local back:', output_catalogue_this['mag_auto_local'], '+/-',
+                  output_catalogue_this['mag_auto_local_err'])
+            print(f'{o} {f} mag photutils:', output_catalogue_this['mag_photutils'])
             print(f'{o} {f} mag auto corrected for Galactic extinction:', output_catalogue_this['mag_auto_gal_correct'])
             print(f'Galactic extinction used:', ext_gal)
             print(f'{o} {f} mag psf:', output_catalogue_this['mag_psf'], '+/-',
                   output_catalogue_this['mag_psf_err'])
+            print(f'{o} {f} flux auto:', output_catalogue_this['flux'], '+/-', output_catalogue_this['flux_err'])
+            print(f'{o} {f} flux auto:', output_catalogue_this['flux_photutils'])
+            print()
             print()
 
-            if plot:
-                print('Plotting...')
+            print('Plotting...')
 
-                # p.plot_all_params(image=image, cat=cat)
+            # p.plot_all_params(image=image, cat=cat)
 
-                mid_x, mid_y = wcs_main.all_world2pix(output_catalogue_this['ra'], output_catalogue_this['dec'], 0)
-                mid_x = int(mid_x)
-                mid_y = int(mid_y)
+            mid_x, mid_y = wcs_main.all_world2pix(output_catalogue_this['ra'], output_catalogue_this['dec'], 0)
+            mid_x = int(mid_x)
+            mid_y = int(mid_y)
 
-                left = mid_x - frame
-                right = mid_x + frame
-                bottom = mid_y - frame
-                top = mid_y + frame
+            left = mid_x - frame
+            right = mid_x + frame
+            bottom = mid_y - frame
+            top = mid_y + frame
 
-                image_cut = ff.trim(hdu=image, left=left, right=right, bottom=bottom, top=top)
+            image_cut = ff.trim(hdu=image, left=left, right=right, bottom=bottom, top=top)
 
-                plt.imshow(image_cut[0].data, origin='lower')
-                # , norm=ImageNormalize(image_cut[0].data, stretch=SqrtStretch(), interval=ZScaleInterval()))
+            plt.imshow(image_cut[0].data, origin='lower')
+            # , norm=ImageNormalize(image_cut[0].data, stretch=SqrtStretch(), interval=ZScaleInterval()))
+            p.plot_gal_params(hdu=image_cut,
+                              ras=[output_catalogue_this['ra_given']],
+                              decs=[output_catalogue_this['dec_given']],
+                              a=[0],
+                              b=[0],
+                              theta=[0],
+                              show_centre=True,
+                              colour='red',
+                              label='Given coordinates')
+            p.plot_gal_params(hdu=image_cut,
+                              ras=[this['ra']],
+                              decs=[this['dec']],
+                              a=[kron_a],
+                              b=[kron_b],
+                              theta=[output_catalogue_this['theta']],
+                              colour='violet',
+                              label='Kron aperture')
+            p.plot_gal_params(hdu=image_cut,
+                              ras=[output_catalogue_this['ra']],
+                              decs=[output_catalogue_this['dec']],
+                              a=[this['a']],
+                              b=[this['b']],
+                              theta=[output_catalogue_this['theta']],
+                              show_centre=True,
+                              colour='blue',
+                              label=f'SExtractor ellipse')
+            if SkyCoord(burst_properties['burst_ra'] * units.deg,
+                        burst_properties['burst_dec'] * units.deg).contained_by(
+                wcs.WCS(header=image_cut[0].header)):
                 p.plot_gal_params(hdu=image_cut,
-                                  ras=[output_catalogue_this['ra_given']],
-                                  decs=[output_catalogue_this['dec_given']],
-                                  a=[0],
-                                  b=[0],
-                                  theta=[0],
-                                  show_centre=True,
-                                  colour='red',
-                                  label='Given coordinates')
-                p.plot_gal_params(hdu=image_cut,
-                                  ras=[this['ra']],
-                                  decs=[this['dec']],
-                                  a=[this['kron_radius'] * this['a']],
-                                  b=[this['kron_radius'] * this['b']],
-                                  theta=[output_catalogue_this['theta']],
-                                  colour='violet',
-                                  label='Kron aperture')
-                p.plot_gal_params(hdu=image_cut,
-                                  ras=[output_catalogue_this['ra']],
-                                  decs=[output_catalogue_this['dec']],
-                                  a=[this['a']],
-                                  b=[this['b']],
-                                  theta=[output_catalogue_this['theta']],
-                                  show_centre=True,
-                                  colour='blue',
-                                  label=f'SExtractor ellipse')
-                if SkyCoord(burst_properties['burst_ra'] * units.deg,
-                            burst_properties['burst_dec'] * units.deg).contained_by(
-                    wcs.WCS(header=image_cut[0].header)):
-                    p.plot_gal_params(hdu=image_cut,
-                                      ras=[burst_properties['burst_ra']],
-                                      decs=[burst_properties['burst_dec']],
-                                      a=[a],
-                                      b=[b],
-                                      theta=[theta],
-                                      colour="orange",
-                                      label='frb',
-                                      line_style=line_style,
-                                      show_centre=True)
+                                  ras=[burst_properties['burst_ra']],
+                                  decs=[burst_properties['burst_dec']],
+                                  a=[a],
+                                  b=[b],
+                                  theta=[theta],
+                                  colour="orange",
+                                  label='frb',
+                                  line_style=line_style,
+                                  show_centre=True)
 
-                plt.legend()
-                plt.title(f"{output_catalogue_this['id']}, {f_0}-band image")
-                plt.savefig(output_path + f + '_' + output_catalogue_this['id'])
+            plt.legend()
+            plt.title(f"{output_catalogue_this['id']}, {f_0}-band image")
+            plt.savefig(output_path + f + '_' + output_catalogue_this['id'])
+            if show:
                 plt.show()
 
             if des_cat_path is not None and des_path is not None:
@@ -348,57 +442,58 @@ def main(obj,
 
                 # Plotting
 
-                if plot:
-                    print('Loading FITS file...')
-                    des_image = fits.open(des_path)
-                    print('Plotting...')
-                    wcs_des = wcs.WCS(header=des_image[0].header)
-                    mid_x, mid_y = wcs_des.all_world2pix(output_catalogue_this['ra_des'],
-                                                         output_catalogue_this['dec_des'], 0)
-                    mid_x = int(mid_x)
-                    mid_y = int(mid_y)
 
-                    left = mid_x - frame
-                    right = mid_x + frame
-                    bottom = mid_y - frame
-                    top = mid_y + frame
+                print('Loading FITS file...')
+                des_image = fits.open(des_path)
+                print('Plotting...')
+                wcs_des = wcs.WCS(header=des_image[0].header)
+                mid_x, mid_y = wcs_des.all_world2pix(output_catalogue_this['ra_des'],
+                                                     output_catalogue_this['dec_des'], 0)
+                mid_x = int(mid_x)
+                mid_y = int(mid_y)
 
-                    des_image_cut = ff.trim(hdu=des_image, left=left, right=right, bottom=bottom, top=top)
+                left = mid_x - frame
+                right = mid_x + frame
+                bottom = mid_y - frame
+                top = mid_y + frame
 
-                    plt.imshow(des_image_cut[0].data, origin='lower',
-                               norm=ImageNormalize(des_image_cut[0].data, stretch=SqrtStretch(),
-                                                   interval=MinMaxInterval()), )
+                des_image_cut = ff.trim(hdu=des_image, left=left, right=right, bottom=bottom, top=top)
 
-                    p.plot_gal_params(hdu=des_image_cut, ras=[output_catalogue_this['ra_given']],
-                                      decs=[output_catalogue_this['dec_given']],
-                                      a=[0],
-                                      b=[0],
-                                      theta=[0], show_centre=True, colour='red',
-                                      label='Given coordinates', world_axes=True)
-                    p.plot_gal_params(hdu=des_image_cut,
-                                      ras=[output_catalogue_this['ra_des']],
-                                      decs=[output_catalogue_this['dec_des']],
-                                      a=[output_catalogue_this['kron_radius_des']],
-                                      b=[output_catalogue_this['kron_radius_des']
-                                         * output_catalogue_this['b_des'] / output_catalogue_this['a_des']],
-                                      theta=[output_catalogue_this['theta_des']],
-                                      show_centre=True,
-                                      colour='violet',
-                                      label='Kron aperture',
-                                      world_axes=False)
-                    p.plot_gal_params(hdu=des_image_cut, ras=[output_catalogue_this['ra_des']],
-                                      decs=[output_catalogue_this['dec_des']],
-                                      a=[output_catalogue_this['a_des'] / 3600],
-                                      b=[output_catalogue_this['b_des'] / 3600],
-                                      theta=[output_catalogue_this['theta_des']],
-                                      show_centre=True,
-                                      colour='blue',
-                                      label='DES ellipse',
-                                      world_axes=True)
+                plt.imshow(des_image_cut[0].data, origin='lower',
+                           norm=ImageNormalize(des_image_cut[0].data, stretch=SqrtStretch(),
+                                               interval=MinMaxInterval()), )
 
-                    plt.title(f"{output_catalogue_this['id']}, DES {f_0}-band image")
-                    plt.legend()
-                    plt.savefig(output_path + f + '_des_' + output_catalogue_this['id'])
+                p.plot_gal_params(hdu=des_image_cut, ras=[output_catalogue_this['ra_given']],
+                                  decs=[output_catalogue_this['dec_given']],
+                                  a=[0],
+                                  b=[0],
+                                  theta=[0], show_centre=True, colour='red',
+                                  label='Given coordinates', world_axes=True)
+                p.plot_gal_params(hdu=des_image_cut,
+                                  ras=[output_catalogue_this['ra_des']],
+                                  decs=[output_catalogue_this['dec_des']],
+                                  a=[output_catalogue_this['kron_radius_des']],
+                                  b=[output_catalogue_this['kron_radius_des']
+                                     * output_catalogue_this['b_des'] / output_catalogue_this['a_des']],
+                                  theta=[output_catalogue_this['theta_des']],
+                                  show_centre=True,
+                                  colour='violet',
+                                  label='Kron aperture',
+                                  world_axes=False)
+                p.plot_gal_params(hdu=des_image_cut, ras=[output_catalogue_this['ra_des']],
+                                  decs=[output_catalogue_this['dec_des']],
+                                  a=[output_catalogue_this['a_des'] / 3600],
+                                  b=[output_catalogue_this['b_des'] / 3600],
+                                  theta=[output_catalogue_this['theta_des']],
+                                  show_centre=True,
+                                  colour='blue',
+                                  label='DES ellipse',
+                                  world_axes=True)
+
+                plt.title(f"{output_catalogue_this['id']}, DES {f_0}-band image")
+                plt.legend()
+                plt.savefig(output_path + f + '_des_' + output_catalogue_this['id'])
+                if show:
                     plt.show()
 
             output_catalogue[o] = output_catalogue_this
@@ -427,7 +522,7 @@ if __name__ == '__main__':
                         type=str)
     parser.add_argument('-no_show',
                         help='Don\'t show plots onscreen.',
-                        action='store_true')
+                        action='store_false')
     parser.add_argument('--frame',
                         help='Padding from object coordinates to plot.',
                         type=int,
@@ -451,7 +546,7 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
     main(obj=args.op,
-         plot=not args.no_show,
+         show=args.no_show,
          frame=args.frame,
          instrument=args.instrument,
          cat_name=args.cat,
