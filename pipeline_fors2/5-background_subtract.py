@@ -9,7 +9,7 @@ from copy import deepcopy
 import craftutils.utils as u
 import craftutils.fits_files as f
 import craftutils.params as p
-from craftutils.photometry import fit_background_fits
+from craftutils.photometry import fit_background_fits, get_median_background
 
 from astropy.wcs import WCS
 from astropy.io import fits
@@ -49,7 +49,8 @@ def main(data_dir, data_title, origin, destination):
         global_sub = u.select_yn(message="Subtract local fit from entire image?", default="n")
         if not global_sub:
             trim_image = u.select_yn(message="Trim images to subtracted region?", default="y")
-        recorrect_subbed = u.select_yn(message="Re-normalise background of subtracted region?", default="y")
+            if not trim_image:
+                recorrect_subbed = u.select_yn(message="Re-normalise background of subtracted region?", default="y")
 
     # if not eso_back and method != "SExtractor backgrounds only":
     #     eso_back = u.select_yn(message="Subtract ESO Reflex fitted backgrounds first?", default=False)
@@ -67,6 +68,8 @@ def main(data_dir, data_title, origin, destination):
     print(science_origin)
 
     filters = outputs['filters']
+    frb_params = p.object_params_frb(obj=data_title[:-2])
+    epoch_params = p.object_params_fors2(obj=data_title)
 
     background_origin_eso = ""
     if eso_back:
@@ -78,7 +81,6 @@ def main(data_dir, data_title, origin, destination):
         background_origin = f"{destination}backgrounds/"  # f"{destination}backgrounds_{method.replace(' ', '')}_degree_{degree}_local_{local}_globalsub_{global_sub}/"
     else:
         background_origin = f"{destination}backgrounds/"  # f"{destination}backgrounds_{method.replace(' ', '')}_local_{local}_globalsub_{global_sub}/"
-    frb_params = p.object_params_frb(obj=data_title[:-2])
 
     trimmed_path = ""
     if trim_image:
@@ -119,6 +121,20 @@ def main(data_dir, data_title, origin, destination):
                     print("Science file:", science)
                     wcs_this = WCS(header=science[0].header)
                     x, y = wcs_this.all_world2pix(ra, dec, 0)
+
+                    left = int(x - frame)
+                    if left < 0:
+                        left = 0
+                    right = int(x + frame)
+                    if right > science[0].data.shape[1]:
+                        right = science[0].data.shape[1]
+                    bottom = int(y - frame)
+                    if bottom < 0:
+                        bottom = 0
+                    top = int(y + frame)
+                    if top > science[0].data.shape[0]:
+                        top = science[0].data.shape[0]
+
                     if method == "SExtractor backgrounds only":
                         background = background_origin + fil + "/" + file_name + "_back.fits"
                         print("Background image:", background)
@@ -138,33 +154,45 @@ def main(data_dir, data_title, origin, destination):
                                                              centre_x=x, centre_y=y, frame=frame)
                             background_path = background_origin + fil + "/" + file_name.replace("SCIENCE_REDUCED",
                                                                                                 "PHOT_BACKGROUND_FITTED")
+
+                        if recorrect_subbed:
+                            offset = get_median_background(image=new_path, ra=epoch_params["renormalise_centre_ra"],
+                                                           dec=epoch_params["renormalise_centre_dec"], frame=50,
+                                                           show=False,
+                                                           output=new_path[
+                                                                  :new_path.find("bg_sub")] + "renorm_patch_")
+                            print("RECORRECT_SUBBED:", recorrect_subbed)
+                            print("SUBTRACTING FROM BACKGROUND:", offset)
+                            print(bottom, top, left, right)
+                            print(background[0].data[bottom:top, left:right].shape)
+                            print(np.median(background[0].data[bottom:top, left:right]))
+                            background[0].data[bottom:top, left:right] -= offset
+                            print(np.median(background[0].data[bottom:top, left:right]))
+
                         print("Writing background to:")
                         print(background_path)
                         background.writeto(background_path, overwrite=True)
 
                         if trim_image:
-                            left = int(x - frame)
-                            right = int(x + frame)
-                            bottom = int(y - frame)
-                            top = int(y + frame)
                             print("TRIMMED_PATH_FIL:", trimmed_path_fil)
 
                             science = f.trim_file(path=science, left=left, right=right, top=top, bottom=bottom,
                                                   new_path=trimmed_path_fil + file_name.replace("norm.fits",
                                                                                                 "trimmed_to_back.fits"))
                             print("Science after trim:", science)
+
                             background = f.trim_file(path=background, left=left, right=right, top=top, bottom=bottom,
                                                      new_path=background_path)
 
                     print("SCIENCE:", science)
                     print("BACKGROUND:", background)
+
                     subbed = f.subtract_file(file=science, sub_file=background, output=new_path)
 
-                    if recorrect_subbed:
-                        ""
-                        #median = np.median
+                    # TODO: check if regions overlap
 
-                    plt.hist(subbed[0].data[int(y - frame):int(y + frame), int(x - frame):int(x + frame)].flatten(),
+                    plt.hist(subbed[0].data[int(y - frame + 1):int(y + frame - 1),
+                             int(x - frame + 1):int(x + frame - 1)].flatten(),
                              bins=10)
                     plt.savefig(new_path[:new_path.find("bg_sub")] + "histplot.png")
                     plt.close()
