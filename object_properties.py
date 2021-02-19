@@ -11,6 +11,7 @@ from astropy import time
 from astropy.visualization import (ImageNormalize, SquaredStretch, SqrtStretch, ZScaleInterval, MinMaxInterval)
 from astropy import units
 from astropy.stats import sigma_clipped_stats
+from astropy.table import Table
 import photutils as pu
 
 import pandas
@@ -160,9 +161,11 @@ def main(obj,
         norm = ImageNormalize(data, interval=ZScaleInterval(), stretch=SqrtStretch())
 
         # Analysis
-        cat = np.genfromtxt(cat_path, names=params.sextractor_names_psf())
-        mag_auto_true, mag_auto_err_plus, mag_auto_err_minus = ph.magnitude_complete(flux=cat['flux_auto'],
-                                                                                     flux_err=cat['fluxerr_auto'],
+        cat = Table.read(cat_path, format="ascii.sextractor")
+        # print(cat.colnames)
+        # np.genfromtxt(cat_path, names=params.sextractor_names_psf())
+        mag_auto_true, mag_auto_err_plus, mag_auto_err_minus = ph.magnitude_complete(flux=cat['FLUX_AUTO'],
+                                                                                     flux_err=cat['FLUXERR_AUTO'],
                                                                                      exp_time=exp_time,
                                                                                      exp_time_err=exp_time_err,
                                                                                      zeropoint=zeropoint,
@@ -174,8 +177,8 @@ def main(obj,
                                                                                      airmass=airmass,
                                                                                      airmass_err=airmass_err
                                                                                      )
-        mag_psf, mag_psf_err_plus, mag_psf_err_minus = ph.magnitude_complete(flux=cat['flux_psf'],
-                                                                             flux_err=cat['fluxerr_psf'],
+        mag_psf, mag_psf_err_plus, mag_psf_err_minus = ph.magnitude_complete(flux=cat['FLUX_PSF'],
+                                                                             flux_err=cat['FLUXERR_PSF'],
                                                                              exp_time=exp_time,
                                                                              exp_time_err=exp_time_err,
                                                                              zeropoint=zeropoint,
@@ -188,10 +191,10 @@ def main(obj,
                                                                              airmass_err=airmass_err
                                                                              )
 
-        cat_local = np.genfromtxt(cat_path_local, names=params.sextractor_names_psf())
+        cat_local = Table.read(cat_path_local, format="ascii.sextractor")
         mag_auto_local, mag_auto_local_err_plus, mag_auto_local_err_minus = ph.magnitude_complete(
-            flux=cat_local['flux_auto'],
-            flux_err=cat_local['fluxerr_auto'],
+            flux=cat_local['FLUX_AUTO'],
+            flux_err=cat_local['FLUXERR_AUTO'],
             exp_time=exp_time,
             exp_time_err=exp_time_err,
             zeropoint=zeropoint,
@@ -212,8 +215,8 @@ def main(obj,
                 print(f"{o} is not in this image's footprint; skipping.")
                 continue
             print('Matching...')
-            index, dist = u.find_object(ra, dec, cat['ra'], cat['dec'])
-            index_local, dist_local = u.find_object(ra, dec, cat_local['ra'], cat_local['dec'])
+            index, dist = u.find_object(ra, dec, cat['ALPHA_SKY'], cat['DELTA_SKY'])
+            index_local, dist_local = u.find_object(ra, dec, cat_local['ALPHA_SKY'], cat_local['DELTA_SKY'])
             this = cat[index]
             print(f'{o} SExtractor {f}')
             print()
@@ -223,29 +226,32 @@ def main(obj,
             mag_auto_local_err = max(abs(mag_auto_local_err_minus[index_local]),
                                      abs(mag_auto_local_err_plus[index_local]))
 
-            mag_ins, mag_ins_err_1, mag_ins_err_2 = ph.magnitude_error(flux=np.array([this['flux_auto']]),
-                                                                       flux_err=np.array([this['fluxerr_auto']]),
+            mag_ins, mag_ins_err_1, mag_ins_err_2 = ph.magnitude_error(flux=np.array([this['FLUX_AUTO']]),
+                                                                       flux_err=np.array([this['FLUXERR_AUTO']]),
                                                                        exp_time=exp_time, exp_time_err=exp_time_err)
             mag_ins = mag_ins[0]
             mag_ins_err = max(abs(mag_ins_err_1[0]), abs(mag_ins_err_2[0]))
 
             # Do photutils photometry
             # Define aperture using mag_auto kron_aperture:
-            kron_a = this['kron_radius'] * this['a']
-            kron_b = this['kron_radius'] * this['b']
+            kron_a = this['KRON_RADIUS'] * this['A_WORLD']
+            kron_b = this['KRON_RADIUS'] * this['B_WORLD']
             # Convert theta to the units and frame photutils likes
-            kron_theta = this['theta'] * units.deg
+            kron_theta = this['THETA_WORLD'] * units.deg
             kron_theta = -kron_theta + ff.get_rotation_angle(header=header, astropy_units=True)
             kron_theta = kron_theta.to(units.rad)
+            # Establish initial values so that Python doesn't barf
             mag_photutils = np.nan
             flux_photutils = np.nan
+            subtract = np.nan
+            median = np.nan
             if kron_a > 0 and kron_b > 0:
-                aperture = pu.EllipticalAperture(positions=(this['x'], this['y']),
+                aperture = pu.EllipticalAperture(positions=(this['X_IMAGE'], this['Y_IMAGE']),
                                                  a=(kron_a * units.deg).to(units.pixel, pix_scale).value,
                                                  b=(kron_b * units.deg).to(units.pixel, pix_scale).value,
                                                  theta=kron_theta.value)
                 # Define background annulus:
-                annulus = pu.EllipticalAnnulus(positions=(this['x'], this['y']),
+                annulus = pu.EllipticalAnnulus(positions=(this['X_IMAGE'], this['Y_IMAGE']),
                                                a_in=2 * (kron_a * units.deg).to(units.pixel, pix_scale).value,
                                                a_out=3 * (kron_a * units.deg).to(units.pixel, pix_scale).value,
                                                b_out=3 * (kron_b * units.deg).to(units.pixel, pix_scale).value,
@@ -263,7 +269,8 @@ def main(obj,
                 # Correct:
                 flux_photutils = cat_photutils['aperture_sum'] - subtract
                 # Convert to magnitude, with uncertainty propagation:
-                mag_photutils, _, _ = ph.magnitude_complete(flux=flux_photutils,  # flux_err=cat_photutils['aperture_sum_err'],
+                mag_photutils, _, _ = ph.magnitude_complete(flux=flux_photutils,
+                                                            # flux_err=cat_photutils['aperture_sum_err'],
                                                             exp_time=exp_time,  # exp_time_err=exp_time_err,
                                                             zeropoint=zeropoint,  # zeropoint_err=zeropoint_err,
                                                             ext=extinction,  # ext_err=extinction_err,
@@ -284,13 +291,14 @@ def main(obj,
                 plt.close()
 
             output_catalogue_this = {'id': o,
-                                     'ra': float(this['ra']), 'dec': float(this['dec']),
+                                     'ra': float(this['ALPHA_SKY']), 'ra_err_2': float(this['ERRX2_WORLD']),
+                                     'dec': float(this['DELTA_SKY']), 'dec_err_2': float(this['ERRY2_WORLD']),
                                      'ra_given': float(ra), 'dec_given': float(dec),
                                      'matching_distance_sex': float(dist * 3600),
-                                     'kron_radius': float(this['kron_radius']),
-                                     'a': float(this['a'] * 3600), 'a_err': float(this['a_err'] * 3600),
-                                     'b': float(this['b'] * 3600), 'b_err': float(this['b_err'] * 3600),
-                                     'theta': float(this['theta']), 'theta_err': float(this['theta_err']),
+                                     'kron_radius': float(this['KRON_RADIUS']),
+                                     'a': float(this['A_WORLD'] * 3600), 'a_err': float(this['ERRA_WORLD'] * 3600),
+                                     'b': float(this['B_WORLD'] * 3600), 'b_err': float(this['ERRB_WORLD'] * 3600),
+                                     'theta': float(this['THETA_WORLD']), 'theta_err': float(this['ERRTHETA_WORLD']),
                                      'mag_auto': float(mag_auto_true[index]),
                                      'mag_auto_err': float(mag_err), 'mag_ins': float(mag_ins),
                                      'mag_auto_gal_correct': float(mag_auto_true[index]) - ext_gal,
@@ -300,15 +308,16 @@ def main(obj,
                                      'mag_photutils': float(mag_photutils),
                                      # 'mag_photutils_err': float(mag_photutils_err),
                                      'ext_gal': float(ext_gal),
-                                     'mag_ins_err': float(mag_ins_err), 'flux': float(this['flux_auto']),
-                                     'flux_err': float(this['fluxerr_auto']),
-                                     'flux_photutils': flux_photutils,
+                                     'mag_ins_err': float(mag_ins_err), 'flux': float(this['FLUX_AUTO']),
+                                     'flux_err': float(this['FLUXERR_AUTO']),
+                                     'flux_photutils': float(flux_photutils),
+                                     'flux_offset_photutils': float(subtract),
+                                     'median_background_photutils': float(median),
                                      'mag_psf': float(mag_psf[index]),
                                      'mag_psf_err': float(mag_psf_err),
-                                     'flux_psf': float(this['flux_psf']), 'fluxerr_psf': float(this['fluxerr_psf']),
-                                     'x': float(this['x']),
-                                     'x_err': float(this['x_deg_err']), 'y': float(this['y']),
-                                     'y_err': float(this['y_deg_err'])}
+                                     'flux_psf': float(this['FLUX_PSF']), 'fluxerr_psf': float(this['FLUXERR_PSF']),
+                                     'x': float(this['X_IMAGE']), 'y': float(this['Y_IMAGE']),
+                                     }
 
             print('RA (deg):', output_catalogue_this['ra'])
             print('DEC (deg):', output_catalogue_this['dec'])
@@ -360,8 +369,8 @@ def main(obj,
                               colour='red',
                               label='Given coordinates')
             p.plot_gal_params(hdu=image_cut,
-                              ras=[this['ra']],
-                              decs=[this['dec']],
+                              ras=[output_catalogue_this['ra']],
+                              decs=[output_catalogue_this['dec']],
                               a=[kron_a],
                               b=[kron_b],
                               theta=[output_catalogue_this['theta']],
@@ -370,8 +379,8 @@ def main(obj,
             p.plot_gal_params(hdu=image_cut,
                               ras=[output_catalogue_this['ra']],
                               decs=[output_catalogue_this['dec']],
-                              a=[this['a']],
-                              b=[this['b']],
+                              a=[output_catalogue_this['a']],
+                              b=[output_catalogue_this['b']],
                               theta=[output_catalogue_this['theta']],
                               show_centre=True,
                               colour='blue',
@@ -441,7 +450,6 @@ def main(obj,
                 # TODO: Generalise this to other catalogues.
 
                 # Plotting
-
 
                 print('Loading FITS file...')
                 des_image = fits.open(des_path)

@@ -30,13 +30,6 @@ data_title=${param_file}
 skip_esorex=$(jq -r .skip_esorex "${param_dir}/epochs_fors2/${param_file}.json")
 do_dual_mode=$(jq -r .do_dual_mode "${param_dir}/epochs_fors2/${param_file}.json")
 do_sextractor=$(jq -r .do_sextractor "${param_dir}/epochs_fors2/${param_file}.json")
-sextractor_local_back=$(jq -r .sextractor_local_back "${param_dir}/epochs_fors2/${param_file}.json")
-
-if ${sextractor_local_back}; then
-  backphoto_type=LOCAL
-else
-  backphoto_type=GLOBAL
-fi
 
 if [[ -z ${kron_radius} ]]; then
   kron_radius=$(jq -r .sextractor_kron_radius "${param_dir}/epochs_fors2/${param_file}.json")
@@ -120,6 +113,7 @@ cd "${proj_dir}" || exit
 echo 'Atmospheric extinction:'
 python3 "pipeline_fors2/9-extinction_atmospheric.py" --op "${data_title}" -write
 echo 'Science-field zeropoint:'
+
 python3 "zeropoint.py" --op "${data_title}" -write --instrument FORS2
 
 echo "Skip esorex ${skip_esorex}"
