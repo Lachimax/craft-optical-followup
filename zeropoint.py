@@ -1,4 +1,4 @@
-# Code by Lachlan Marnoch, 2019-2020
+# Code by Lachlan Marnoch, 2019-2021
 
 from craftutils import photometry
 from craftutils import params as p
@@ -23,7 +23,6 @@ def main(obj,
          sex_ra_col,
          sex_dec_col,
          sex_flux_col,
-         get_sextractor_names,
          mag_tol,
          stars_only,
          star_class_col,
@@ -34,7 +33,6 @@ def main(obj,
          pix_tol,
          separate_chips,
          write):
-    sextractor_names = p.sextractor_names_psf()  # None to auto-detect
 
     properties = p.object_params_instrument(obj=obj, instrument=instrument)
     frb_properties = p.object_params_frb(obj=obj[:-2])
@@ -72,7 +70,7 @@ def main(obj,
                 now.format = 'isot'
                 test_name = str(now) + '_' + test_name
 
-            output_path = output + f_0 + test_name + "/"
+            output_path = output + f_0 + "/" + test_name + "/"
             mkdir_check_nested(output_path)
 
             chip_1_bottom = 740
@@ -80,8 +78,6 @@ def main(obj,
 
             cat_zeropoint = 0.
             cat_zeropoint_err = 0.
-
-
 
             # TODO: Cycle through preferred catalogues, like in the standard-star script
 
@@ -188,8 +184,6 @@ def main(obj,
                                                                star_class_col=star_class_col,
                                                                exp_time=exp_time,
                                                                y_lower=chip_1_bottom,
-                                                               get_sextractor_names=get_sextractor_names,
-                                                               sextractor_names=sextractor_names,
                                                                cat_type=cat_type,
                                                                cat_zeropoint=cat_zeropoint,
                                                                cat_zeropoint_err=cat_zeropoint_err
@@ -221,8 +215,6 @@ def main(obj,
                                                                  star_class_col=star_class_col,
                                                                  exp_time=exp_time,
                                                                  y_upper=chip_2_top,
-                                                                 get_sextractor_names=get_sextractor_names,
-                                                                 sextractor_names=sextractor_names,
                                                                  cat_type=cat_type,
                                                                  cat_zeropoint=cat_zeropoint,
                                                                  cat_zeropoint_err=cat_zeropoint_err
@@ -259,8 +251,6 @@ def main(obj,
                                                                  star_class_col=star_class_col,
                                                                  exp_time=exp_time,
                                                                  y_lower=0,
-                                                                 get_sextractor_names=get_sextractor_names,
-                                                                 sextractor_names=sextractor_names,
                                                                  cat_type=cat_type,
                                                                  cat_zeropoint=cat_zeropoint,
                                                                  cat_zeropoint_err=cat_zeropoint_err
@@ -290,27 +280,24 @@ if __name__ == '__main__':
                         default='')
     parser.add_argument('--sextractor_x_column',
                         help='Name of SExtractor column containing x pixel coordinate.',
-                        default='x_psf',
+                        default='X_PSF',
                         type=str)
     parser.add_argument('--sextractor_y_column',
                         help='Name of SExtractor column containing y pixel coordinate.',
-                        default='y_psf',
+                        default='Y_PSF',
                         type=str)
     parser.add_argument('--sextractor_ra_column',
                         help='Name of SExtractor column containing RA coordinate.',
-                        default='ra_psf',
+                        default='ALPHAPSF_SKY',
                         type=str)
     parser.add_argument('--sextractor_dec_column',
                         help='Name of SExtractor column containing DEC coordinate.',
-                        default='dec_psf',
+                        default='DELTAPSF_SKY',
                         type=str)
     parser.add_argument('--sextractor_flux_column',
                         help='Name of SExtractor column containing flux.',
-                        default='flux_psf',
+                        default='FLUX_PSF',
                         type=str)
-    parser.add_argument('--get_sextractor_names',
-                        help='Read column headers from SExtractor file.',
-                        action='store_true')
     parser.add_argument('-not_stars_only',
                         help='Don\'t only use stars for zeropoint appraisal.',
                         action='store_false')
@@ -356,7 +343,6 @@ if __name__ == '__main__':
          sex_ra_col=args.sextractor_ra_column,
          sex_dec_col=args.sextractor_dec_column,
          sex_flux_col=args.sextractor_flux_column,
-         get_sextractor_names=args.get_sextractor_names,
          mag_tol=args.mag_tolerance,
          stars_only=args.not_stars_only,
          star_class_col=args.star_class_column,
