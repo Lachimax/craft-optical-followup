@@ -143,7 +143,7 @@ def main(obj,
                         if not use_sex_star_class:
                             star_class_col = 'class_star_SkyMapper'
                         else:
-                            star_class_col = 'class_star_fors'
+                            star_class_col = 'class_star'
                         cat_type = 'csv'
 
                     cat_path = std_cat_path + cat_name + '/' + cat_name + '.csv'
