@@ -285,7 +285,7 @@ def main(obj,
                 annulus.plot(color='blue', label='Background annulus')
                 plt.legend()
                 plt.title(f"{o} (photutils), {f_0}-band image")
-                plt.savefig(output_path + f + '_' + output_catalogue_this['id'] + "_photutils")
+                plt.savefig(output_path + f + '_' + o + "_photutils")
                 if show:
                     plt.show()
                 plt.close()
@@ -525,7 +525,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(
         description='Print out photometric properties of host galaxy and other listed '
                     'field objects.')
-    parser.add_argument('--op',
+    parser.add_argument('-e',
                         help='Name of object parameter file without .yaml, eg FRB180924_1',
                         type=str)
     parser.add_argument('-no_show',
@@ -553,7 +553,7 @@ if __name__ == '__main__':
                         default=None)
 
     args = parser.parse_args()
-    main(obj=args.op,
+    main(obj=args.e,
          show=args.no_show,
          frame=args.frame,
          instrument=args.instrument,
