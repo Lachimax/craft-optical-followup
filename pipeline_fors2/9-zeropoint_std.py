@@ -21,7 +21,6 @@ def main(obj,
          sex_ra_col,
          sex_dec_col,
          sex_flux_col,
-         get_sextractor_names,
          mag_tol,
          star_class_col,
          stars_only,
@@ -33,7 +32,6 @@ def main(obj,
     print(f"\tepoch {obj}")
     print()
 
-    sextractor_names = p.sextractor_names_psf()  # None to auto-detect
     properties = p.object_params_fors2(obj)
     outputs = p.object_output_params(obj=obj, instrument='fors2')
 
@@ -200,8 +198,6 @@ def main(obj,
                                                                        star_class_col=star_class_col,
                                                                        exp_time=exp_time,
                                                                        y_lower=0,
-                                                                       get_sextractor_names=get_sextractor_names,
-                                                                       sextractor_names=sextractor_names,
                                                                        cat_type=cat_type,
                                                                        )
                     cat_i += 1
@@ -247,34 +243,27 @@ if __name__ == '__main__':
                         type=str)
     parser.add_argument('--sextractor_x_column',
                         help='Name of SExtractor column containing x pixel coordinate.',
-                        default='x_psf',
+                        default='XPSF_IMAGE',
                         type=str)
     parser.add_argument('--sextractor_y_column',
                         help='Name of SExtractor column containing y pixel coordinate.',
-                        default='y_psf',
+                        default='YPSF_IMAGE',
                         type=str)
     parser.add_argument('--sextractor_ra_column',
                         help='Name of SExtractor column containing RA coordinate.',
-                        default='ra_psf',
+                        default='ALPHAPSF_SKY',
                         type=str)
     parser.add_argument('--sextractor_dec_column',
                         help='Name of SExtractor column containing DEC coordinate.',
-                        default='dec_psf',
+                        default='DELTAPSF_SKY',
                         type=str)
     parser.add_argument('--sextractor_flux_column',
                         help='Name of SExtractor column containing flux.',
-                        default='flux_psf',
+                        default='FLUX_PSF',
                         type=str)
-    parser.add_argument('--get_sextractor_names',
-                        help='Read column headers from SExtractor file.',
-                        default=False,
-                        type=bool)
     parser.add_argument('--catalogue_path',
                         help='Path to catalogue for comparison.',
                         type=str)
-    parser.add_argument('--catalogue_name',
-                        help='Name of catalogue type used, allowed values are SDSS, DES, SExtractor.',
-                        default='DES')
     parser.add_argument('-not_stars_only',
                         help='Only use stars for zeropoint appraisal.',
                         action='store_false')
@@ -299,7 +288,7 @@ if __name__ == '__main__':
                         type=float)
     parser.add_argument('--star_class_column',
                         help='Name of SExtractor column containing star classification parameter.',
-                        default='class_star',
+                        default='CLASS_STAR',
                         type=str)
 
     args = parser.parse_args()
@@ -310,7 +299,6 @@ if __name__ == '__main__':
          sex_ra_col=args.sextractor_ra_column,
          sex_dec_col=args.sextractor_dec_column,
          sex_flux_col=args.sextractor_flux_column,
-         get_sextractor_names=args.get_sextractor_names,
          mag_tol=args.mag_tolerance,
          star_class_col=args.star_class_column,
          stars_only=args.not_stars_only,

@@ -280,11 +280,11 @@ if __name__ == '__main__':
                         default='')
     parser.add_argument('--sextractor_x_column',
                         help='Name of SExtractor column containing x pixel coordinate.',
-                        default='X_PSF',
+                        default='XPSF_IMAGE',
                         type=str)
     parser.add_argument('--sextractor_y_column',
                         help='Name of SExtractor column containing y pixel coordinate.',
-                        default='Y_PSF',
+                        default='YPSF_IMAGE',
                         type=str)
     parser.add_argument('--sextractor_ra_column',
                         help='Name of SExtractor column containing RA coordinate.',
@@ -303,7 +303,7 @@ if __name__ == '__main__':
                         action='store_false')
     parser.add_argument('--star_class_column',
                         help='Name of SExtractor column containing star classification parameter.',
-                        default='class_star',
+                        default='CLASS_STAR',
                         type=str)
     parser.add_argument('--star_class_tolerance',
                         help='Minimum value of star_class to be included in appraisal.',
