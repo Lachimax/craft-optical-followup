@@ -1,6 +1,13 @@
+calib_last_updated: '2019-10-17'
+colour_term: []
+colour_term_err: []
+date: []
+extinction: []
+extinction_err: []
 fwhm: 0.0
 instrument: SDSS
 lambda_eff: 0.0
+mjd: []
 name: g
 plotting_colour: cyan
 source: SVO Filter Profile Service
@@ -499,3 +506,5 @@ wavelengths_filter_only: [3798.0, 3799.0, 3800.0, 3801.0, 3802.0, 3803.0, 3804.0
   6005.0, 6006.0, 6007.0, 6008.0, 6009.0, 6010.0, 6011.0, 6012.0, 6013.0, 6014.0,
   6015.0, 6016.0, 6017.0, 6018.0, 6019.0, 6020.0, 6021.0, 6022.0, 6023.0, 6024.0,
   6025.0, 6026.0]
+zeropoint: []
+zeropoint_err: []

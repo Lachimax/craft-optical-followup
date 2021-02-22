@@ -1,6 +1,13 @@
+calib_last_updated: '2019-10-17'
+colour_term: []
+colour_term_err: []
+date: []
+extinction: []
+extinction_err: []
 fwhm: 0.0
 instrument: SkyMapper
 lambda_eff: 0.0
+mjd: []
 name: z
 plotting_colour: null
 source: null
@@ -18,3 +25,5 @@ wavelengths_filter_only: [8100.0, 8150.0, 8200.0, 8250.0, 8300.0, 8350.0, 8400.0
   9450.0, 9500.0, 9550.0, 9600.0, 9650.0, 9700.0, 9750.0, 9800.0, 9850.0, 9900.0,
   9950.0, 10000.0, 10050.0, 10100.0, 10150.0, 10200.0, 10250.0, 10300.0, 10350.0,
   10400.0, 10450.0, 10500.0, 10600.0, 10700.0]
+zeropoint: []
+zeropoint_err: []

@@ -6,6 +6,7 @@ extinction_err: []
 fwhm: 0.0
 instrument: FORS2
 lambda_eff: 0.0
+calib_last_updated: '2019-10-17'
 mjd: []
 name: null
 plotting_colour: null

@@ -1,6 +1,13 @@
+calib_last_updated: '2019-10-17'
+colour_term: []
+colour_term_err: []
+date: []
+extinction: []
+extinction_err: []
 fwhm: 0.0
 instrument: SDSS
 lambda_eff: 0.0
+mjd: []
 name: i
 plotting_colour: darkred
 source: SVO Filter Profile Service
@@ -32,3 +39,5 @@ wavelengths_filter_only: [6800.0, 6850.0, 6900.0, 6950.0, 7000.0, 7050.0, 7100.0
   7650.0, 7700.0, 7750.0, 7800.0, 7850.0, 7900.0, 7950.0, 8000.0, 8050.0, 8100.0,
   8150.0, 8200.0, 8250.0, 8300.0, 8350.0, 8400.0, 8450.0, 8500.0, 8550.0, 8600.0,
   8650.0, 8700.0, 8750.0, 8800.0]
+zeropoint: []
+zeropoint_err: []
