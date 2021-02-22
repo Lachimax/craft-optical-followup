@@ -1,18 +1,35 @@
 #!/usr/bin/env bash
 # Code by Lachlan Marnoch, 2019 - 2021
 
-param_file=$1
+usage() {
+  echo "Usage: $0 [-e epoch] [-d subdirectory] [-b]" 1>&2
+  exit 1
+}
+
+sub_back=false
+
+while getopts "e:d:b" option; do
+  case "${option}" in
+  e)
+    param_file=${OPTARG}
+    ;;
+  d)
+    folder=${OPTARG}
+    ;;
+  b)
+    sub_back=true
+    ;;
+  *)
+    usage
+    ;;
+  esac
+done
+
 if [[ -z ${param_file} ]]; then
   echo "No epoch specified."
   exit
 fi
 
-sub_back=$3
-if [[ -z ${sub_back} ]]; then
-  sub_back=false
-fi
-
-folder=$2
 if [[ -z ${folder} ]]; then
   if ${sub_back}; then
     folder="B-back_subtract/"
@@ -22,7 +39,7 @@ if [[ -z ${folder} ]]; then
 fi
 
 echo
-echo "Executing pipeline_fors2/0-pipeline.sh, with:"
+echo "Executing $0, with:"
 echo "   epoch ${param_file}"
 echo "   folder ${folder}"
 echo "   sub_back ${sub_back}"
@@ -200,7 +217,7 @@ run_script_folders() {
   select yn in "Yes" "Skip" "Exit"; do
     case ${yn} in
     Yes)
-      if "${proj_dir}/pipeline_fors2/${script}.sh" "${param_file}" "${origin}" "${destination}" "${other_arguments}" | tee "${logfile}" ; then
+      if "${proj_dir}/pipeline_fors2/${script}.sh" "${param_file}" "${origin}" "${destination}" "${other_arguments}" | tee "${logfile}"; then
         break
       else
         echo "Something went wrong. Try again?"
