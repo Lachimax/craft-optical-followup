@@ -19,6 +19,7 @@ import pandas
 import matplotlib.pyplot as plt
 import numpy as np
 from os.path import isfile
+from math import cos, sin
 
 
 # TODO: Integrate into pipeline
@@ -31,6 +32,8 @@ def main(obj,
          cat_name,
          image_spec):
     print(obj)
+
+    frame *= units.pixel
 
     frb = obj[:-2]
 
@@ -234,8 +237,8 @@ def main(obj,
 
             # Do photutils photometry
             # Define aperture using mag_auto kron_aperture:
-            kron_a = this['KRON_RADIUS'] * this['A_WORLD']
-            kron_b = this['KRON_RADIUS'] * this['B_WORLD']
+            kron_a = this['KRON_RADIUS'] * this['A_WORLD'] * units.deg
+            kron_b = this['KRON_RADIUS'] * this['B_WORLD'] * units.deg
             # Convert theta to the units and frame photutils likes
             kron_theta = this['THETA_WORLD'] * units.deg
             kron_theta = -kron_theta + ff.get_rotation_angle(header=header, astropy_units=True)
@@ -245,16 +248,16 @@ def main(obj,
             flux_photutils = np.nan
             subtract = np.nan
             median = np.nan
-            if kron_a > 0 and kron_b > 0:
+            if kron_a >= kron_b > 0:
                 aperture = pu.EllipticalAperture(positions=(this['X_IMAGE'], this['Y_IMAGE']),
-                                                 a=(kron_a * units.deg).to(units.pixel, pix_scale).value,
-                                                 b=(kron_b * units.deg).to(units.pixel, pix_scale).value,
+                                                 a=kron_a.to(units.pixel, pix_scale).value,
+                                                 b=kron_b.to(units.pixel, pix_scale).value,
                                                  theta=kron_theta.value)
                 # Define background annulus:
                 annulus = pu.EllipticalAnnulus(positions=(this['X_IMAGE'], this['Y_IMAGE']),
-                                               a_in=2 * (kron_a * units.deg).to(units.pixel, pix_scale).value,
-                                               a_out=3 * (kron_a * units.deg).to(units.pixel, pix_scale).value,
-                                               b_out=3 * (kron_b * units.deg).to(units.pixel, pix_scale).value,
+                                               a_in=2 * kron_a.to(units.pixel, pix_scale).value,
+                                               a_out=3 * kron_a.to(units.pixel, pix_scale).value,
+                                               b_out=3 * kron_b.to(units.pixel, pix_scale).value,
                                                theta=kron_theta.value
                                                )
                 # Use background annulus to obtain a median sky background
@@ -280,9 +283,9 @@ def main(obj,
                 # mag_photutils, mag_photutils_err_plus, mag_photutils_err_minus = mag_photutils
                 # mag_photutils_err = max(abs(mag_photutils_err_minus), abs(mag_photutils_err_plus))
 
-                plt.imshow(data, origin='lower', norm=norm)
+                plt.imshow(data, origin='lower', norm=norm, )
                 aperture.plot(color='violet', label='Photutils aperture')
-                annulus.plot(color='blue', label='Background annulus')
+                annulus.plot(color='cyan', label='Background annulus')
                 plt.legend()
                 plt.title(f"{o} (photutils), {f_0}-band image")
                 plt.savefig(output_path + f + '_' + o + "_photutils")
@@ -312,13 +315,15 @@ def main(obj,
                                      'flux_auto_err': float(this['FLUXERR_AUTO']),
                                      'flux_photutils': float(flux_photutils),
                                      'flux_offset_photutils': float(subtract),
+                                     # flux_offset_photutils is the total background flux subtracted from the aperture flux.
                                      'median_background_photutils': float(median),
                                      'flux_offset_auto': float(this['FLUX_BACKOFFSET']),
-                                     'flux_offset_auto_arr': float(this['FLUXERR_BACKOFFSET']),
+                                     'flux_offset_auto_err': float(this['FLUXERR_BACKOFFSET']),
                                      'mag_psf': float(mag_psf[index]),
                                      'mag_psf_err': float(mag_psf_err),
                                      'flux_psf': float(this['FLUX_PSF']), 'fluxerr_psf': float(this['FLUXERR_PSF']),
                                      'x': float(this['X_IMAGE']), 'y': float(this['Y_IMAGE']),
+                                     'background': float(this['BACKGROUND'])
                                      }
 
             print('RA (deg):', output_catalogue_this['ra'])
@@ -339,7 +344,8 @@ def main(obj,
             print(f'Galactic extinction used:', ext_gal)
             print(f'{o} {f} mag psf:', output_catalogue_this['mag_psf'], '+/-',
                   output_catalogue_this['mag_psf_err'])
-            print(f'{o} {f} flux auto:', output_catalogue_this['flux'], '+/-', output_catalogue_this['flux_err'])
+            print(f'{o} {f} flux auto:', output_catalogue_this['flux_auto'], '+/-',
+                  output_catalogue_this['flux_auto_err'])
             print(f'{o} {f} flux auto:', output_catalogue_this['flux_photutils'])
             print()
             print()
@@ -348,14 +354,23 @@ def main(obj,
 
             # p.plot_all_params(image=image, cat=cat)
 
-            mid_x, mid_y = wcs_main.all_world2pix(output_catalogue_this['ra'], output_catalogue_this['dec'], 0)
-            mid_x = int(mid_x)
-            mid_y = int(mid_y)
+            mid_x = output_catalogue_this['x'] * units.pix
+            mid_y = output_catalogue_this['y'] * units.pix
 
-            left = mid_x - frame
-            right = mid_x + frame
-            bottom = mid_y - frame
-            top = mid_y + frame
+            print(f"{kron_a} * cos({kron_theta})")
+
+            # Set the frame using the extent of the ellipse.
+
+            this_frame = max(kron_a.to(units.pixel, pix_scale) * np.cos(kron_theta) + 10 * units.pix,
+                             kron_a.to(units.pixel, pix_scale) * np.sin(kron_theta) + 10 * units.pix,
+                             frame)
+
+            print(f"{mid_x} - {this_frame}")
+
+            left = mid_x - this_frame
+            right = mid_x + this_frame
+            bottom = mid_y - this_frame
+            top = mid_y + this_frame
 
             image_cut = ff.trim(hdu=image, left=left, right=right, bottom=bottom, top=top)
 
@@ -373,20 +388,37 @@ def main(obj,
             p.plot_gal_params(hdu=image_cut,
                               ras=[output_catalogue_this['ra']],
                               decs=[output_catalogue_this['dec']],
-                              a=[kron_a],
-                              b=[kron_b],
-                              theta=[output_catalogue_this['theta']],
-                              colour='violet',
-                              label='Kron aperture')
-            p.plot_gal_params(hdu=image_cut,
-                              ras=[output_catalogue_this['ra']],
-                              decs=[output_catalogue_this['dec']],
-                              a=[output_catalogue_this['a']],
-                              b=[output_catalogue_this['b']],
+                              a=[output_catalogue_this['a'] / 3600],
+                              b=[output_catalogue_this['b'] / 3600],
                               theta=[output_catalogue_this['theta']],
                               show_centre=True,
                               colour='blue',
                               label=f'SExtractor ellipse')
+            p.plot_gal_params(hdu=image_cut,
+                              ras=[output_catalogue_this['ra']],
+                              decs=[output_catalogue_this['dec']],
+                              a=[kron_a.value],
+                              b=[kron_b.value],
+                              theta=[output_catalogue_this['theta']],
+                              colour='violet',
+                              label='Kron aperture', line_style='-')
+            print(mid_x, output_catalogue_this['x'])
+            print(mid_y, output_catalogue_this['y'])
+
+            ellipse_extent_x = (this['A_WORLD'] * units.deg).to(units.pixel, pix_scale) * np.cos(kron_theta)
+            ellipse_extent_y = (this['B_WORLD'] * units.deg).to(units.pixel, pix_scale) * np.cos(kron_theta)
+
+            # plt.plot([(mid_x + ellipse_extent_x - left).value,
+            #           (mid_x + ellipse_extent_x - left).value,
+            #           (mid_x - ellipse_extent_x - left).value,
+            #           (mid_x - ellipse_extent_x - left).value,
+            #           (mid_x + ellipse_extent_x - left).value],
+            #          [(mid_y + ellipse_extent_y - bottom).value,
+            #           (mid_y - ellipse_extent_y - bottom).value,
+            #           (mid_y - ellipse_extent_y - bottom).value,
+            #           (mid_y + ellipse_extent_y - bottom).value,
+            #           (mid_y + ellipse_extent_y - bottom).value], c='cyan',
+            #          label='Sextractor local annulus')
             if SkyCoord(burst_properties['burst_ra'] * units.deg,
                         burst_properties['burst_dec'] * units.deg).contained_by(
                 wcs.WCS(header=image_cut[0].header)):

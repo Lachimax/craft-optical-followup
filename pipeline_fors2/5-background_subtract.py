@@ -23,7 +23,7 @@ def main(data_dir, data_title, origin, destination):
     print(f"\tdestination directory {destination}")
     print()
 
-    frame = 100
+    frame = 200
     # frame_arcsec = 30 * units.arcsec
     # frame_deg = frame_arcsec.to(units.deg)
 
