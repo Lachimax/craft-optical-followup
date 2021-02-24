@@ -13,6 +13,7 @@ from craftutils.photometry import fit_background_fits, get_median_background
 
 from astropy.wcs import WCS
 from astropy.io import fits
+from astropy.table import Table
 from astropy import units
 
 
@@ -39,6 +40,8 @@ def main(data_dir, data_title, origin, destination):
     elif method == "ESO backgrounds only":
         eso_back = True
     if method not in ["ESO backgrounds only", "SExtractor backgrounds only"]:
+        do_mask = u.select_yn(message="Mask sources using SExtractor catalogue?", default=True)
+    if method in ["polynomial fit", "Gaussian fit"]:
         local = u.select_yn(message="Use a local fit?", default=True)
     else:
         local = False
@@ -49,8 +52,7 @@ def main(data_dir, data_title, origin, destination):
         global_sub = u.select_yn(message="Subtract local fit from entire image?", default="n")
         if not global_sub:
             trim_image = u.select_yn(message="Trim images to subtracted region?", default="y")
-            if not trim_image:
-                recorrect_subbed = u.select_yn(message="Re-normalise background of subtracted region?", default="y")
+            recorrect_subbed = u.select_yn(message="Re-normalise background of subtracted region?", default="y")
 
     # if not eso_back and method != "SExtractor backgrounds only":
     #     eso_back = u.select_yn(message="Subtract ESO Reflex fitted backgrounds first?", default=False)
@@ -113,50 +115,66 @@ def main(data_dir, data_title, origin, destination):
                                                                                            "PHOT_BACKGROUND_SCI")
 
                     f.subtract_file(file=science, sub_file=background_eso, output=new_path)
-                    science = new_path
+                    science_image = new_path
 
                 if method != "ESO backgrounds only":
                     print("Science image:", science)
-                    science = fits.open(science)
-                    print("Science file:", science)
-                    wcs_this = WCS(header=science[0].header)
+                    science_image = fits.open(science)
+                    print("Science file:", science_image)
+                    wcs_this = WCS(header=science_image[0].header)
                     x, y = wcs_this.all_world2pix(ra, dec, 0)
 
-                    left = int(x - frame)
-                    if left < 0:
-                        left = 0
-                    right = int(x + frame)
-                    if right > science[0].data.shape[1]:
-                        right = science[0].data.shape[1]
-                    bottom = int(y - frame)
-                    if bottom < 0:
-                        bottom = 0
-                    top = int(y + frame)
-                    if top > science[0].data.shape[0]:
-                        top = science[0].data.shape[0]
+                    left = max(int(x - frame), 0)
+                    right = min(int(x + frame), science_image[0].data.shape[1])
+                    bottom = max(int(y - frame), 0)
+                    top = min(int(y + frame), science_image[0].data.shape[0])
 
                     if method == "SExtractor backgrounds only":
                         background = background_origin + fil + "/" + file_name + "_back.fits"
                         print("Background image:", background)
                     else:
                         if method == "median value":
-                            background_value = np.nanmedian(science[0].data)
-                            background = deepcopy(science)
-                            background[0].data = np.array(background_value, shape=science[0].data.shape)
+                            background_value = np.nanmedian(science_image[0].data)
+                            background = deepcopy(science_image)
+                            background[0].data = np.array(background_value, shape=science_image[0].data.shape)
                             background_path = background_origin + fil + "/" + file_name.replace("SCIENCE_REDUCED",
                                                                                                 "PHOT_BACKGROUND_MEDIAN")
 
                         # Next do background fitting.
                         else:
-                            background = fit_background_fits(image=science, model_type=method[:method.find(" ")],
+
+                            if do_mask:
+                                # Produce a pixel mask that roughly masks out the true sources in the image so that
+                                # they don't get fitted.
+                                mask_max = 10
+                                p_, pixel_scale = f.get_pixel_scale(science_image)
+                                sextractor = Table.read(
+                                    f"{data_dir}analysis/sextractor/4-divided_by_exp_time/{fil}/{file_name}_psf-fit.cat",
+                                    format='ascii.sextractor')
+                                weights = np.ones(shape=science_image[0].data.shape)
+
+                                for obj in filter(lambda o: left < o["X_IMAGE"] < right and bottom < o["Y_IMAGE"] < top,
+                                                  sextractor):
+                                    mask_rad = min(int(obj["A_WORLD"] * obj["KRON_RADIUS"] / pixel_scale), mask_max)
+                                    x_prime = int(np.round(obj["X_IMAGE"]))
+                                    y_prime = int(np.round(obj["Y_IMAGE"]))
+                                    weights[y_prime - mask_rad:y_prime + mask_rad,
+                                    x_prime - mask_rad:x_prime + mask_rad] = 0.0
+
+                                plt.imshow(weights, origin="lower")
+                                plt.savefig(background_origin + fil + "/" + file_name.replace("norm.fits", "mask.png"))
+                            else:
+                                weights = None
+
+                            background = fit_background_fits(image=science_image, model_type=method[:method.find(" ")],
                                                              deg=degree, local=local,
                                                              global_sub=global_sub,
-                                                             centre_x=x, centre_y=y, frame=frame)
+                                                             centre_x=x, centre_y=y, frame=frame, weights=weights)
                             background_path = background_origin + fil + "/" + file_name.replace("SCIENCE_REDUCED",
                                                                                                 "PHOT_BACKGROUND_FITTED")
 
                         if recorrect_subbed:
-                            offset = get_median_background(image=new_path, ra=epoch_params["renormalise_centre_ra"],
+                            offset = get_median_background(image=science, ra=epoch_params["renormalise_centre_ra"],
                                                            dec=epoch_params["renormalise_centre_dec"], frame=50,
                                                            show=False,
                                                            output=new_path[
@@ -176,18 +194,18 @@ def main(data_dir, data_title, origin, destination):
                         if trim_image:
                             print("TRIMMED_PATH_FIL:", trimmed_path_fil)
 
-                            science = f.trim_file(path=science, left=left, right=right, top=top, bottom=bottom,
+                            science_image = f.trim_file(path=science_image, left=left, right=right, top=top, bottom=bottom,
                                                   new_path=trimmed_path_fil + file_name.replace("norm.fits",
                                                                                                 "trimmed_to_back.fits"))
-                            print("Science after trim:", science)
+                            print("Science after trim:", science_image)
 
                             background = f.trim_file(path=background, left=left, right=right, top=top, bottom=bottom,
                                                      new_path=background_path)
 
-                    print("SCIENCE:", science)
+                    print("SCIENCE:", science_image)
                     print("BACKGROUND:", background)
 
-                    subbed = f.subtract_file(file=science, sub_file=background, output=new_path)
+                    subbed = f.subtract_file(file=science_image, sub_file=background, output=new_path)
 
                     # TODO: check if regions overlap
 
