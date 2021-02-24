@@ -155,7 +155,7 @@ def main(obj,
                          "sextractor_catalogue": cat_path}
         output_catalogue = {}
 
-        print('Loading FITS file...')
+        print('Loading FITS file from', image_path)
         image = fits.open(image_path)
         data = image[0].data
         header = image[0].header
@@ -209,6 +209,8 @@ def main(obj,
             airmass=airmass,
             airmass_err=airmass_err
         )
+
+        p.plot_all_params(image=image, cat=cat, kron=True, show=show)
 
         for o in galaxies:
             ra = galaxies[o]['ra']
@@ -346,7 +348,7 @@ def main(obj,
                   output_catalogue_this['mag_psf_err'])
             print(f'{o} {f} flux auto:', output_catalogue_this['flux_auto'], '+/-',
                   output_catalogue_this['flux_auto_err'])
-            print(f'{o} {f} flux auto:', output_catalogue_this['flux_photutils'])
+            print(f'{o} {f} flux photutils:', output_catalogue_this['flux_photutils'])
             print()
             print()
 
