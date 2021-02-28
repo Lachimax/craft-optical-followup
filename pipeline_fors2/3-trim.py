@@ -34,7 +34,10 @@ def main(origin_dir, output_dir, data_title, sextractor_path):
 
     wdir = origin_dir + "backgrounds/"
 
-    dirs = next(os.walk(wdir))[1]
+    epoch_params = p.object_params_fors2(obj=data_title)
+    outputs = p.object_output_params(obj=data_title)
+
+    fils = outputs["filters"]
 
     edged = False
 
@@ -48,7 +51,7 @@ def main(origin_dir, output_dir, data_title, sextractor_path):
     dn_bottom = 0
     dn_top = 0
 
-    for fil in dirs:
+    for fil in fils:
         print(output_dir + "backgrounds/" + fil)
         if not os.path.isdir(output_dir + "backgrounds/" + fil):
             os.mkdir(output_dir + "backgrounds/" + fil)
@@ -108,9 +111,9 @@ def main(origin_dir, output_dir, data_title, sextractor_path):
 
     wdir = origin_dir + "science/"
 
-    dirs = os.listdir(wdir)
+    fils = os.listdir(wdir)
 
-    for fil in dirs:
+    for fil in fils:
         print(output_dir + "science/" + fil)
         if do_sextractor:
             if not os.path.isdir(sextractor_path + fil):
