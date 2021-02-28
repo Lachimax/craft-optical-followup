@@ -2,7 +2,7 @@
 # Code by Lachlan Marnoch, 2019 - 2021
 
 usage() {
-  echo "Usage: $0 [-e epoch] [-d subdirectory] [-b]" 1>&2
+  echo "Usage: $0 -e epoch [-d subdirectory] [-b]" 1>&2
   exit 1
 }
 
@@ -27,6 +27,7 @@ done
 
 if [[ -z ${param_file} ]]; then
   echo "No epoch specified."
+  usage
   exit
 fi
 
