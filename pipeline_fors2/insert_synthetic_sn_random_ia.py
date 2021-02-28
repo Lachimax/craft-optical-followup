@@ -2,9 +2,6 @@
 from astropy.io import fits
 import shutil
 import astropy.time as time
-from astropy import table
-import numpy as np
-import sncosmo
 
 from craftutils import params as p
 from craftutils import utils as u
