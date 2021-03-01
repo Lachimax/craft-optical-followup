@@ -2,7 +2,7 @@
 # Code by Lachlan Marnoch, 2019 - 2021
 
 usage() {
-  echo "Usage: $0 -e epoch [-d subdirectory] [-b]" 1>&2
+  echo "Usage: $0 -e FRBXXXXXX_X [-d subdirectory] [-b]" 1>&2
   exit 1
 }
 
