@@ -496,10 +496,10 @@ def main(obj,
                 mid_x = int(mid_x)
                 mid_y = int(mid_y)
 
-                left = mid_x - frame
-                right = mid_x + frame
-                bottom = mid_y - frame
-                top = mid_y + frame
+                left = mid_x - frame.value
+                right = mid_x + frame.value
+                bottom = mid_y - frame.value
+                top = mid_y + frame.value
 
                 des_image_cut = ff.trim(hdu=des_image, left=left, right=right, bottom=bottom, top=top)
 
@@ -559,7 +559,7 @@ if __name__ == '__main__':
     import argparse
 
     parser = argparse.ArgumentParser(
-        description='Print out photometric properties of host galaxy and other listed '
+        description='Print out and write photometric properties of host galaxy and other listed '
                     'field objects.')
     parser.add_argument('-e',
                         help='Name of object parameter file without .yaml, eg FRB180924_1',
