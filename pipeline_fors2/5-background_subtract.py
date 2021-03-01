@@ -39,6 +39,7 @@ def main(data_dir, data_title, origin, destination):
         degree = u.user_input(message=f"Please enter the degree of {method} to use:", typ=int, default=3)
     elif method == "ESO backgrounds only":
         eso_back = True
+    do_mask = False
     if method not in ["ESO backgrounds only", "SExtractor backgrounds only"]:
         do_mask = u.select_yn(message="Mask sources using SExtractor catalogue?", default=True)
     if method in ["polynomial fit", "Gaussian fit"]:
@@ -149,7 +150,7 @@ def main(data_dir, data_title, origin, destination):
                                 mask_max = 10
                                 p_, pixel_scale = f.get_pixel_scale(science_image)
                                 sextractor = Table.read(
-                                    f"{data_dir}analysis/sextractor/4-divided_by_exp_time/{fil}/{file_name}_psf-fit.cat",
+                                    f"{data_dir}analysis/sextractor/4-divided_by_exp_time/{fil}/{file_name.replace('.fits', '_psf-fit.cat')}",
                                     format='ascii.sextractor')
                                 weights = np.ones(shape=science_image[0].data.shape)
 
@@ -194,9 +195,10 @@ def main(data_dir, data_title, origin, destination):
                         if trim_image:
                             print("TRIMMED_PATH_FIL:", trimmed_path_fil)
 
-                            science_image = f.trim_file(path=science_image, left=left, right=right, top=top, bottom=bottom,
-                                                  new_path=trimmed_path_fil + file_name.replace("norm.fits",
-                                                                                                "trimmed_to_back.fits"))
+                            science_image = f.trim_file(path=science_image, left=left, right=right, top=top,
+                                                        bottom=bottom,
+                                                        new_path=trimmed_path_fil + file_name.replace("norm.fits",
+                                                                                                      "trimmed_to_back.fits"))
                             print("Science after trim:", science_image)
 
                             background = f.trim_file(path=background, left=left, right=right, top=top, bottom=bottom,
