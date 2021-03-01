@@ -9,7 +9,6 @@ import sys
 
 
 def main(origin_dir, output_dir, data_title, sextractor_path):
-
     print("\nExecuting Python script pipeline_fors2/3-trim.py, with:")
     print(f"\tepoch {data_title}")
     print(f"\torigin directory {origin_dir}")
@@ -106,7 +105,6 @@ def main(origin_dir, output_dir, data_title, sextractor_path):
             else:
                 raise ValueError('Invalid chip ID; could not trim based on upper or lower chip.')
 
-
     # Repeat for science images
 
     wdir = origin_dir + "science/"
@@ -149,7 +147,10 @@ def main(origin_dir, output_dir, data_title, sextractor_path):
         exp_time, _ = f.mean_exp_time(path=output_dir + "science/" + fil)
         gain = 0.8
 
-    copyfile(origin_dir + data_title + ".log", output_dir + data_title + ".log")
+    try:
+        copyfile(origin_dir + data_title + ".log", output_dir + data_title + ".log")
+    except FileNotFoundError:
+        print("Previous log not found.")
     u.write_log(path=output_dir + data_title + ".log", action='Edges trimmed using 3-trim.py\n')
 
 
