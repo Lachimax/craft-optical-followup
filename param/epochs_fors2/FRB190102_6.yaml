@@ -9,9 +9,11 @@ do_sextractor_individual: false
 filters: [u_HIGH]
 gaia_cat: null
 manual_astrometry: false
+photometry_apertures: []
 renormalise_centre_dec: 0.0
 renormalise_centre_ra: 0.0
 sextractor_kron_radius: 2.5
+sextractor_min_radius: 1.0
 skip_astrometry: true
 skip_copy: false
 skip_download: true

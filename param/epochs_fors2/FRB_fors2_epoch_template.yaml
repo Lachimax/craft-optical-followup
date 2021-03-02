@@ -6,7 +6,7 @@ delete_esoreflex: true
 do_dual_mode: true
 do_sextractor: true
 do_sextractor_individual: false
-filters: [g_HIGH, I_BESS]
+filters: [ g_HIGH, I_BESS ]
 f_cat_calib_path: null
 f_cat_calib_zeropoint: 0.0
 f_cat_calib_zeropoint_err: 0.0
@@ -37,3 +37,5 @@ std_cat_name: SDSS
 subtraction_image: astrometry_image
 threshold: 1.5
 test: 0
+sextractor_min_radius: 1.0
+photometry_apertures: [ 7.72 ]

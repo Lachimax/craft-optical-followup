@@ -37,9 +37,11 @@ g_std_mag_range_upper: 21.1
 g_std_star_class_tol: 0.95
 gaia_cat: null
 manual_astrometry: false
+photometry_apertures: []
 renormalise_centre_dec: 0.0
 renormalise_centre_ra: 0.0
 sextractor_kron_radius: 2.5
+sextractor_min_radius: 1.0
 skip_astrometry: true
 skip_copy: true
 skip_download: true
