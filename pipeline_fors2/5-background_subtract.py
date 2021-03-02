@@ -7,7 +7,7 @@ import numpy as np
 from copy import deepcopy
 
 import craftutils.utils as u
-import craftutils.fits_files as f
+import craftutils.fits_files as ff
 import craftutils.params as p
 from craftutils.photometry import fit_background_fits, get_median_background
 
@@ -115,7 +115,7 @@ def main(data_dir, data_title, origin, destination):
                     background_eso = background_origin_eso + fil + "/" + file_name.replace("SCIENCE_REDUCED",
                                                                                            "PHOT_BACKGROUND_SCI")
 
-                    f.subtract_file(file=science, sub_file=background_eso, output=new_path)
+                    ff.subtract_file(file=science, sub_file=background_eso, output=new_path)
                     science_image = new_path
 
                 if method != "ESO backgrounds only":
@@ -125,10 +125,7 @@ def main(data_dir, data_title, origin, destination):
                     wcs_this = WCS(header=science_image[0].header)
                     x, y = wcs_this.all_world2pix(ra, dec, 0)
 
-                    left = max(int(x - frame), 0)
-                    right = min(int(x + frame), science_image[0].data.shape[1])
-                    bottom = max(int(y - frame), 0)
-                    top = min(int(y + frame), science_image[0].data.shape[0])
+                    bottom, top, left, right = ff.subimage_edges(data=science_image[0].data, x=x, y=y, frame=frame)
 
                     if method == "SExtractor backgrounds only":
                         background = background_origin + fil + "/" + file_name + "_back.fits"
@@ -148,7 +145,7 @@ def main(data_dir, data_title, origin, destination):
                                 # Produce a pixel mask that roughly masks out the true sources in the image so that
                                 # they don't get fitted.
                                 mask_max = 10
-                                p_, pixel_scale = f.get_pixel_scale(science_image)
+                                p_, pixel_scale = ff.get_pixel_scale(science_image)
                                 sextractor = Table.read(
                                     f"{data_dir}analysis/sextractor/4-divided_by_exp_time/{fil}/{file_name.replace('.fits', '_psf-fit.cat')}",
                                     format='ascii.sextractor')
@@ -195,19 +192,19 @@ def main(data_dir, data_title, origin, destination):
                         if trim_image:
                             print("TRIMMED_PATH_FIL:", trimmed_path_fil)
 
-                            science_image = f.trim_file(path=science_image, left=left, right=right, top=top,
-                                                        bottom=bottom,
-                                                        new_path=trimmed_path_fil + file_name.replace("norm.fits",
+                            science_image = ff.trim_file(path=science_image, left=left, right=right, top=top,
+                                                         bottom=bottom,
+                                                         new_path=trimmed_path_fil + file_name.replace("norm.fits",
                                                                                                       "trimmed_to_back.fits"))
                             print("Science after trim:", science_image)
 
-                            background = f.trim_file(path=background, left=left, right=right, top=top, bottom=bottom,
-                                                     new_path=background_path)
+                            background = ff.trim_file(path=background, left=left, right=right, top=top, bottom=bottom,
+                                                      new_path=background_path)
 
                     print("SCIENCE:", science_image)
                     print("BACKGROUND:", background)
 
-                    subbed = f.subtract_file(file=science_image, sub_file=background, output=new_path)
+                    subbed = ff.subtract_file(file=science_image, sub_file=background, output=new_path)
 
                     # TODO: check if regions overlap
 
