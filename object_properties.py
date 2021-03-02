@@ -44,6 +44,7 @@ def main(obj,
     paths = params.object_output_paths(obj=obj, instrument=instrument)
 
     filters = epoch_properties['filters']
+    fixed_aperture = epoch_properties['photometry_apertures'][0]
 
     for f in filters:
         if burst_outputs is None or f"{f}_ext_gal" not in burst_outputs:
@@ -194,6 +195,20 @@ def main(obj,
                                                                              airmass_err=airmass_err
                                                                              )
 
+        mag_aper, mag_aper_err_plus, mag_aper_err_minus = ph.magnitude_complete(flux=cat['FLUX_APER'],
+                                                                                flux_err=cat['FLUXERR_APER'],
+                                                                                exp_time=exp_time,
+                                                                                exp_time_err=exp_time_err,
+                                                                                zeropoint=zeropoint,
+                                                                                zeropoint_err=zeropoint_err,
+                                                                                colour_term=colour_term,
+                                                                                colour_term_err=colour_term_err,
+                                                                                ext=extinction,
+                                                                                ext_err=extinction_err,
+                                                                                airmass=airmass,
+                                                                                airmass_err=airmass_err
+                                                                                )
+
         cat_local = Table.read(cat_path_local, format="ascii.sextractor")
         mag_auto_local, mag_auto_local_err_plus, mag_auto_local_err_minus = ph.magnitude_complete(
             flux=cat_local['FLUX_AUTO'],
@@ -230,6 +245,8 @@ def main(obj,
             mag_psf_err = max(abs(mag_psf_err_plus[index]), abs(mag_psf_err_minus[index]))
             mag_auto_local_err = max(abs(mag_auto_local_err_minus[index_local]),
                                      abs(mag_auto_local_err_plus[index_local]))
+            mag_aper_err = max(abs(mag_aper_err_minus[index_local]),
+                               abs(mag_aper_err_plus[index_local]))
 
             mag_ins, mag_ins_err_1, mag_ins_err_2 = ph.magnitude_error(flux=np.array([this['FLUX_AUTO']]),
                                                                        flux_err=np.array([this['FLUXERR_AUTO']]),
@@ -250,50 +267,65 @@ def main(obj,
             flux_photutils = np.nan
             subtract = np.nan
             median = np.nan
+            # Convert from SExtractor origin (1,1) to numpy origin (0,0)
+            x_image_mod = this['X_IMAGE'] - 1
+            y_image_mod = this['Y_IMAGE'] - 1
             if kron_a >= kron_b > 0:
-                aperture = pu.EllipticalAperture(positions=(this['X_IMAGE'], this['Y_IMAGE']),
+
+                aperture = pu.EllipticalAperture(positions=(x_image_mod, y_image_mod),
                                                  a=kron_a.to(units.pixel, pix_scale).value,
                                                  b=kron_b.to(units.pixel, pix_scale).value,
                                                  theta=kron_theta.value)
                 # Define background annulus:
-                annulus = pu.EllipticalAnnulus(positions=(this['X_IMAGE'], this['Y_IMAGE']),
+                annulus = pu.EllipticalAnnulus(positions=(x_image_mod, y_image_mod),
                                                a_in=2 * kron_a.to(units.pixel, pix_scale).value,
                                                a_out=3 * kron_a.to(units.pixel, pix_scale).value,
                                                b_out=3 * kron_b.to(units.pixel, pix_scale).value,
                                                theta=kron_theta.value
                                                )
-                # Use background annulus to obtain a median sky background
-                mask = annulus.to_mask()
-                annulus_data = mask.multiply(data)[mask.data > 0]
-                _, median, _ = sigma_clipped_stats(annulus_data)
-                print('BACKGROUND MEDIAN:', median)
-                # Get the photometry of the aperture
-                cat_photutils = pu.aperture_photometry(data=data, apertures=aperture)
-                # Multiply the median by the aperture area, so that we subtract the right amount for the aperture:
-                subtract = median * aperture.area
-                # Correct:
-                flux_photutils = cat_photutils['aperture_sum'] - subtract
-                # Convert to magnitude, with uncertainty propagation:
-                mag_photutils, _, _ = ph.magnitude_complete(flux=flux_photutils,
-                                                            # flux_err=cat_photutils['aperture_sum_err'],
-                                                            exp_time=exp_time,  # exp_time_err=exp_time_err,
-                                                            zeropoint=zeropoint,  # zeropoint_err=zeropoint_err,
-                                                            ext=extinction,  # ext_err=extinction_err,
-                                                            airmass=airmass,  # airmass_err=airmass_err
-                                                            )
-                # Unpack tuple
-                # mag_photutils, mag_photutils_err_plus, mag_photutils_err_minus = mag_photutils
-                # mag_photutils_err = max(abs(mag_photutils_err_minus), abs(mag_photutils_err_plus))
+                mag_photutils, flux_photutils, subtract_photutils, median_photutils = ph.single_aperture_photometry(
+                    data=data, aperture=aperture, annulus=annulus,
+                    exp_time=exp_time, zeropoint=zeropoint,
+                    extinction=extinction,
+                    airmass=airmass)
 
                 plt.imshow(data, origin='lower', norm=norm, )
-                aperture.plot(color='violet', label='Photutils aperture')
+                aperture.plot(color='violet', label='Fixed aperture')
                 annulus.plot(color='cyan', label='Background annulus')
+                print(this['X_IMAGE'], this['Y_IMAGE'])
                 plt.legend()
                 plt.title(f"{o} (photutils), {f_0}-band image")
                 plt.savefig(output_path + f + '_' + o + "_photutils")
                 if show:
                     plt.show()
                 plt.close()
+
+            # Do the above for the fixed aperture.
+
+            aperture_radius = fixed_aperture / 2.
+            aperture = pu.CircularAperture(positions=(x_image_mod, y_image_mod), r=aperture_radius)
+            # Define background annulus:
+            annulus = pu.CircularAnnulus(positions=(x_image_mod, y_image_mod),
+                                         r_in=2 * aperture_radius,
+                                         r_out=3 * aperture_radius,
+                                         )
+            # Use background annulus to obtain a median sky background
+            mag_photutils_fixed, flux_photutils_fixed, subtract_photutils_fixed, median_photutils_fixed = \
+                ph.single_aperture_photometry(
+                    data=data, aperture=aperture, annulus=annulus,
+                    exp_time=exp_time, zeropoint=zeropoint,
+                    extinction=extinction,
+                    airmass=airmass)
+
+            # plt.imshow(data, origin='lower', norm=norm, )
+            # aperture.plot(color='violet', label='Photutils aperture')
+            # annulus.plot(color='cyan', label='Background annulus')
+            # plt.legend()
+            # plt.title(f"{o} (fixed aperture), {f_0}-band image")
+            # plt.savefig(output_path + f + '_' + o + "_fixed_aperture")
+            # if show:
+            #     plt.show()
+            # plt.close()
 
             output_catalogue_this = {'id': o,
                                      'ra': float(this['ALPHA_SKY']), 'ra_err_2': float(this['ERRX2_WORLD']),
@@ -311,6 +343,9 @@ def main(obj,
                                      'mag_auto_local_err': float(mag_auto_local_err),
                                      'matching_distance_local': float(dist_local * 3600),
                                      'mag_photutils': float(mag_photutils),
+                                     'mag_aper': float(mag_aper[index_local]),
+                                     'mag_aper_err': float(mag_aper_err),
+                                     'mag_photutils_aper': float(mag_photutils_fixed),
                                      # 'mag_photutils_err': float(mag_photutils_err),
                                      'ext_gal': float(ext_gal),
                                      'mag_ins_err': float(mag_ins_err), 'flux_auto': float(this['FLUX_AUTO']),
@@ -342,6 +377,8 @@ def main(obj,
             print(f'{o} {f} mag auto local back:', output_catalogue_this['mag_auto_local'], '+/-',
                   output_catalogue_this['mag_auto_local_err'])
             print(f'{o} {f} mag photutils:', output_catalogue_this['mag_photutils'])
+            print(f'{o} {f} mag aper:', output_catalogue_this['mag_aper'], '+/-', output_catalogue_this['mag_aper_err'])
+            print(f'{o} {f} mag photutils fixed:', output_catalogue_this['mag_photutils_aper'])
             print(f'{o} {f} mag auto corrected for Galactic extinction:', output_catalogue_this['mag_auto_gal_correct'])
             print(f'Galactic extinction used:', ext_gal)
             print(f'{o} {f} mag psf:', output_catalogue_this['mag_psf'], '+/-',
@@ -362,6 +399,78 @@ def main(obj,
             print(f"{kron_a} * cos({kron_theta})")
 
             # Set the frame using the extent of the ellipse.
+
+            this_frame = (aperture_radius * 3 + 1) * units.pix
+
+            print(f"{mid_x} - {this_frame}")
+
+            left = mid_x - this_frame
+            right = mid_x + this_frame
+            bottom = mid_y - this_frame
+            top = mid_y + this_frame
+
+            image_cut = ff.trim(hdu=image, left=left, right=right, bottom=bottom, top=top)
+
+            rad_deg = ((aperture_radius * units.pix).to(units.deg, pix_scale)).value
+
+            plt.imshow(image_cut[0].data, origin='lower')
+            # , norm=ImageNormalize(image_cut[0].data, stretch=SqrtStretch(), interval=ZScaleInterval()))
+            p.plot_gal_params(hdu=image_cut,
+                              ras=[output_catalogue_this['ra_given']],
+                              decs=[output_catalogue_this['dec_given']],
+                              a=[0],
+                              b=[0],
+                              theta=[0],
+                              show_centre=True,
+                              colour='red',
+                              label='Given coordinates')
+            p.plot_gal_params(hdu=image_cut,
+                              ras=[output_catalogue_this['ra']],
+                              decs=[output_catalogue_this['dec']],
+                              a=[rad_deg],
+                              b=[rad_deg],
+                              theta=[0],
+                              show_centre=True,
+                              colour='blue',
+                              label=f'SExtractor ellipse')
+            p.plot_gal_params(hdu=image_cut,
+                              ras=[output_catalogue_this['ra']],
+                              decs=[output_catalogue_this['dec']],
+                              a=[rad_deg * 2],
+                              b=[rad_deg * 2],
+                              theta=[0],
+                              show_centre=True,
+                              colour='violet',
+                              label=f'Photutils annulus')
+            p.plot_gal_params(hdu=image_cut,
+                              ras=[output_catalogue_this['ra']],
+                              decs=[output_catalogue_this['dec']],
+                              a=[rad_deg * 3],
+                              b=[rad_deg * 3],
+                              theta=[0],
+                              show_centre=True,
+                              colour='violet')
+
+            if SkyCoord(burst_properties['burst_ra'] * units.deg,
+                        burst_properties['burst_dec'] * units.deg).contained_by(
+                wcs.WCS(header=image_cut[0].header)):
+                p.plot_gal_params(hdu=image_cut,
+                                  ras=[burst_properties['burst_ra']],
+                                  decs=[burst_properties['burst_dec']],
+                                  a=[a],
+                                  b=[b],
+                                  theta=[theta],
+                                  colour="orange",
+                                  label='frb',
+                                  line_style=line_style,
+                                  show_centre=True)
+
+            plt.legend()
+            plt.title(f"{output_catalogue_this['id']}, {f_0}-band image, fixed aperture")
+            plt.savefig(output_path + f + '_' + output_catalogue_this['id'] + "_fixed_aperture")
+            if show:
+                plt.show()
+            plt.close()
 
             this_frame = max(kron_a.to(units.pixel, pix_scale) * np.cos(kron_theta) + 10 * units.pix,
                              kron_a.to(units.pixel, pix_scale) * np.sin(kron_theta) + 10 * units.pix,
@@ -407,20 +516,6 @@ def main(obj,
             print(mid_x, output_catalogue_this['x'])
             print(mid_y, output_catalogue_this['y'])
 
-            ellipse_extent_x = (this['A_WORLD'] * units.deg).to(units.pixel, pix_scale) * np.cos(kron_theta)
-            ellipse_extent_y = (this['B_WORLD'] * units.deg).to(units.pixel, pix_scale) * np.cos(kron_theta)
-
-            # plt.plot([(mid_x + ellipse_extent_x - left).value,
-            #           (mid_x + ellipse_extent_x - left).value,
-            #           (mid_x - ellipse_extent_x - left).value,
-            #           (mid_x - ellipse_extent_x - left).value,
-            #           (mid_x + ellipse_extent_x - left).value],
-            #          [(mid_y + ellipse_extent_y - bottom).value,
-            #           (mid_y - ellipse_extent_y - bottom).value,
-            #           (mid_y - ellipse_extent_y - bottom).value,
-            #           (mid_y + ellipse_extent_y - bottom).value,
-            #           (mid_y + ellipse_extent_y - bottom).value], c='cyan',
-            #          label='Sextractor local annulus')
             if SkyCoord(burst_properties['burst_ra'] * units.deg,
                         burst_properties['burst_dec'] * units.deg).contained_by(
                 wcs.WCS(header=image_cut[0].header)):
@@ -440,6 +535,7 @@ def main(obj,
             plt.savefig(output_path + f + '_' + output_catalogue_this['id'])
             if show:
                 plt.show()
+            plt.close()
 
             if des_cat_path is not None and des_path is not None:
                 des = np.genfromtxt(des_cat_path, names=True, delimiter=',')
