@@ -5,7 +5,7 @@ import os
 from shutil import copyfile
 
 import craftutils.utils as u
-import craftutils.fits_files as f
+import craftutils.fits_files as ff
 import craftutils.params as p
 
 
@@ -58,8 +58,8 @@ def main(data_title, sextractor_path, origin, destination):
 
                 print(science_origin)
                 # Divide by exposure time to get an image in counts/second.
-                f.divide_by_exp_time(file=science_origin, output=science_destination)
-                f.divide_by_exp_time(file=background_origin, output=background_destination)
+                ff.divide_by_exp_time(file=science_origin, output=science_destination)
+                ff.divide_by_exp_time(file=background_origin, output=background_destination)
                 if do_sextractor:
                     copyfile(science_destination, sextractor_path + fil + "/" + file_name.replace("trim", "norm"))
 
