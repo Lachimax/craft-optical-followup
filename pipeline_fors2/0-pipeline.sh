@@ -8,7 +8,7 @@ usage() {
 
 sub_back=false
 
-while getopts "e:d:b" option; do
+while getopts "e:d:bs" option; do
   case "${option}" in
   e)
     param_file=${OPTARG}
@@ -18,6 +18,9 @@ while getopts "e:d:b" option; do
     ;;
   b)
     sub_back=true
+    ;;
+  s)
+    insert_test_synth=${OPTARG}
     ;;
   *)
     usage
@@ -268,6 +271,10 @@ run_script_folders 1-initial ''
 run_script_folders 2-sort_after_esoreflex 'Requires reducing data with ESOReflex first.'
 run_script_folders 3-trim ''
 run_script_folders 4-divide_by_exp_time ''
+
+if ${insert_test_synth}; then
+  run_python 4.1-insert_test_synth
+fi
 
 if ${sub_back}; then
   run_script_folders 5-background_subtract '' "4-divided_by_exp_time/" "${folder}5-background_subtracted_with_python/"

@@ -38,4 +38,8 @@ std_cat: /media/lachlan/73828fc7-33a9-4fcf-be55-d38ab92b5ed1/home/lachlan/Data/F
 std_cat_name: SDSS
 subtraction_image: astrometry_image
 test: 0
+test_synths:
+  dec: []
+  mag: []
+  ra: []
 threshold: 1.5

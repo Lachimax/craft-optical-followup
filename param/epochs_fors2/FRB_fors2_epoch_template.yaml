@@ -35,6 +35,10 @@ sm_fits: /home/lachlan/Data/FRBxxxxxx/SkyMapper/SkyMapper.fits
 std_cat: /home/lachlan/Data/FRBxxxxxx/FORS2/MJDxxxxx/calibration/std_star/sdss/SDSS.csv
 std_cat_name: SDSS
 subtraction_image: astrometry_image
+test_synths:
+  ra: [ ]
+  dec: [ ]
+  mag: [ ]
 threshold: 1.5
 test: 0
 sextractor_min_radius: 1.0
