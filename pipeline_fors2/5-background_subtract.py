@@ -15,6 +15,7 @@ from astropy.wcs import WCS
 from astropy.io import fits
 from astropy.table import Table
 from astropy import units
+from astropy.stats import sigma_clipped_stats
 
 
 def main(data_dir, data_title, origin, destination):
@@ -40,7 +41,7 @@ def main(data_dir, data_title, origin, destination):
     elif method == "ESO backgrounds only":
         eso_back = True
     do_mask = False
-    if method not in ["ESO backgrounds only", "SExtractor backgrounds only"]:
+    if method not in ["ESO backgrounds only", "SExtractor backgrounds only", "median value"]:
         do_mask = u.select_yn(message="Mask sources using SExtractor catalogue?", default=True)
     if method in ["polynomial fit", "Gaussian fit"]:
         local = u.select_yn(message="Use a local fit?", default=True)
@@ -132,9 +133,11 @@ def main(data_dir, data_title, origin, destination):
                         print("Background image:", background)
                     else:
                         if method == "median value":
-                            background_value = np.nanmedian(science_image[0].data)
+                            print(science_image[0].data.shape)
+                            _, background_value, _ = sigma_clipped_stats(science_image[0].data)
                             background = deepcopy(science_image)
-                            background[0].data = np.array(background_value, shape=science_image[0].data.shape)
+
+                            background[0].data = np.full(shape=science_image[0].data.shape, fill_value=background_value)
                             background_path = background_origin + fil + "/" + file_name.replace("SCIENCE_REDUCED",
                                                                                                 "PHOT_BACKGROUND_MEDIAN")
 
