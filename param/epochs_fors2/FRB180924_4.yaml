@@ -52,4 +52,8 @@ std_cat: /home/lachlan/Data/FRB180924/FORS2/MJD58718/calibration/std_star/des/de
 std_cat_name: DES
 subtraction_image: tweaked_image
 test: 0
+test_synths:
+  dec: []
+  mag: []
+  ra: []
 threshold: 1.5

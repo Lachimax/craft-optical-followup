@@ -52,4 +52,8 @@ std_cat: /home/lachlan/Data/FRB181112/FORS2/MJD58718//calibration/std_star_0/sds
 std_cat_name: SDSS
 subtraction_image: astrometry_image
 test: 0
+test_synths:
+  dec: []
+  mag: []
+  ra: []
 threshold: 1.5
