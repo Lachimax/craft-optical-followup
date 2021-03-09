@@ -51,7 +51,6 @@ sm_fits: null
 std_cat: /home/lachlan/Data/FRB190102/FORS2/MJD58495/calibration/std_star/sdss/SDSS.csv
 std_cat_name: SDSS
 subtraction_image: tweaked_image
-test: 0
 test_synths:
   dec: []
   mag: []

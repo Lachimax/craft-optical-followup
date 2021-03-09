@@ -51,7 +51,6 @@ sm_fits: null
 std_cat: /media/lachlan/73828fc7-33a9-4fcf-be55-d38ab92b5ed1/home/lachlan/Data/FRB180924/FORS2/MJD58662/calibration/std_star/des/des_objects.csv
 std_cat_name: DES
 subtraction_image: astrometry_image
-test: 0
 test_synths:
   dec: []
   mag: []

@@ -3,6 +3,7 @@
 import sys
 import os
 from shutil import copyfile
+from numpy import array
 
 import craftutils.utils as u
 import craftutils.fits_files as ff
@@ -10,10 +11,9 @@ import craftutils.params as p
 import craftutils.photometry as ph
 
 
-def main(epoch, sextractor_path, origin, destination):
+def main(epoch, origin, destination):
     print("\nExecuting Python script pipeline_fors2/4.1-insert_test_synth.py, with:")
     print(f"\tepoch {epoch}")
-    print(f"\tsextractor path {sextractor_path}")
     print(f"\torigin directory {origin}")
     print(f"\tdestination directory {destination}")
     print()
@@ -25,7 +25,7 @@ def main(epoch, sextractor_path, origin, destination):
 
     insert = epoch_params['test_synths']
 
-    origin_path = data_dir + origin
+    origin_path = data_dir + "analysis/sextractor/" + origin
     destination_path = data_dir + destination
 
     u.mkdir_check(destination_path)
@@ -35,23 +35,31 @@ def main(epoch, sextractor_path, origin, destination):
     filters = outputs['filters']
 
     for fil in filters:
-        path_fil_output = destination_path + "science/" + fil
-        path_fil_input = origin_path + "science/"
+        path_fil_output = destination_path + "science/" + fil + "/"
+        path_fil_input = origin_path + fil + "/"
         u.mkdir_check(path_fil_output)
         u.mkdir_check(destination_path + "backgrounds/" + fil)
         zeropoint, _, airmass, _, extinction, _ = ph.select_zeropoint(obj=epoch,
-                                                                      f=fil,
+                                                                      filt=fil,
                                                                       instrument='fors2',
                                                                       outputs=outputs)
 
+        print(path_fil_input)
+        # print(os.listdir(path_fil_input))
+
         for fits_file in filter(lambda f: f.endswith("_norm.fits"), os.listdir(path_fil_input)):
+            print(fits_file)
             path_fits_file_input = path_fil_input + fits_file
             path_fits_file_output = path_fil_output + fits_file
             path_psf_model = path_fits_file_input.replace(".fits", "_psfex.psf")
 
+            print(insert["ra"])
+            print(array(insert["ra"]))
+            print(type(array(insert["ra"])))
+
             ph.insert_point_sources_to_file(file=path_fits_file_input,
-                                            x=insert["ra"],
-                                            y=insert["dec"],
+                                            x=array(insert["ra"]),
+                                            y=array(insert["dec"]),
                                             mag=insert["mag"],
                                             output=path_fits_file_output,
                                             zeropoint=zeropoint,
@@ -74,10 +82,6 @@ if __name__ == '__main__':
     parser.add_argument('--op',
                         help='Name of epoch parameter file without .yaml, eg FRB180924_1',
                         type=str)
-    parser.add_argument('--sextractor_directory', default=None,
-                        help='Directory for sextractor scripts to be moved to. If you don\'t want to run sextractor, '
-                             'leave this parameter empty.',
-                        type=str)
     parser.add_argument('--origin',
                         help='Path to the destination folder.',
                         type=str,
@@ -91,5 +95,5 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
 
-    main(epoch=args.op, sextractor_path=args.sextractor_directory, origin=args.origin,
+    main(epoch=args.op, origin=args.origin,
          destination=args.destination)

@@ -56,6 +56,9 @@ def main(obj,
     galaxies = burst_properties['other_objects']
     if galaxies is None:
         galaxies = {}
+    for i, mag in enumerate(epoch_properties['test_synths']['mag']):
+        galaxies[f"fake_star_{str(mag).replace('.', '_')}"] = {"ra": epoch_properties['test_synths']['ra'][i],
+                                                               "dec": epoch_properties['test_synths']['dec'][i]}
     hg_ra = burst_properties['hg_ra']
     hg_dec = burst_properties['hg_dec']
     if hg_ra == 0.0 or hg_dec == 0.0:

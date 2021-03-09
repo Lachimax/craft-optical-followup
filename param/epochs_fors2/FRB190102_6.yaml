@@ -23,7 +23,6 @@ sm_fits: null
 std_cat: /media/lachlan/73828fc7-33a9-4fcf-be55-d38ab92b5ed1/home/lachlan/Data/FRB190102/FORS2/MJD58807/calibration/std_star/SkyMapper/SkyMapper.csv
 std_cat_name: SkyMapper
 subtraction_image: astrometry_image
-test: 0
 test_synths:
   dec: []
   mag: []

@@ -10,7 +10,6 @@ import craftutils.params as p
 
 
 def main(data_title, sextractor_path, origin, destination):
-
     print("\nExecuting Python script pipeline_fors2/4-divide_by_exp_time.py, with:")
     print(f"\tepoch {data_title}")
     print(f"\tsextractor path {sextractor_path}")

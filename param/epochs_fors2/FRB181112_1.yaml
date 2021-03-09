@@ -51,7 +51,6 @@ sm_fits: /home/lachlan/Data/FRB181112/SkyMapper/SkyMapper_g_20140923113603-07_32
 std_cat: /home/lachlan/Data/FRB181112/FORS2/MJD58455//calibration/std_star_0/sdss/SDSS.csv
 std_cat_name: SDSS
 subtraction_image: astrometry_image
-test: 0
 test_synths:
   dec: []
   mag: []

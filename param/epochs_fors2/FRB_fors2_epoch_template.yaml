@@ -40,6 +40,5 @@ test_synths:
   dec: [ ]
   mag: [ ]
 threshold: 1.5
-test: 0
 sextractor_min_radius: 1.0
 photometry_apertures: [ 7.72 ]

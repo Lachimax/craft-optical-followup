@@ -2,7 +2,7 @@
 # Code by Lachlan Marnoch, 2019 - 2021
 
 usage() {
-  echo "Usage: $0 -e FRBXXXXXX_X [-d subdirectory] [-b]" 1>&2
+  echo "Usage: $0 -e FRBXXXXXX_X [-d subdirectory] [-b] [-s]" 1>&2
   exit 1
 }
 
@@ -239,13 +239,15 @@ run_script_folders() {
 run_python() {
   script=$1
   extra_message=$2
+  origin=$3
+  destination=$4
   logfile="${data_dir}${folder}${script}$(date +%Y-%m-%dT%T).log"
   echo ""
   echo "Run ${script}? ${extra_message}"
   select yn in "Yes" "Skip" "Exit"; do
     case ${yn} in
     Yes)
-      if python3 "${proj_dir}/pipeline_fors2/${script}.py" --op "${param_file}"; then
+      if python3 "${proj_dir}/pipeline_fors2/${script}.py" --op "${param_file}" --origin "${origin}" --destination "${destination}"; then
         break
       else
         echo "Something went wrong. Try again?"
@@ -272,12 +274,15 @@ run_script_folders 2-sort_after_esoreflex 'Requires reducing data with ESOReflex
 run_script_folders 3-trim ''
 run_script_folders 4-divide_by_exp_time ''
 
+individuals="4-divided_by_exp_time/"
+
 if ${insert_test_synth}; then
-  run_python 4.1-insert_test_synth
+  individuals="${folder}4.1-test_synth_inserted/"
+  run_python 4.1-insert_test_synth '' "4-divided_by_exp_time/" "${individuals}"
 fi
 
 if ${sub_back}; then
-  run_script_folders 5-background_subtract '' "4-divided_by_exp_time/" "${folder}5-background_subtracted_with_python/"
+  run_script_folders 5-background_subtract '' "${individuals}" "${folder}5-background_subtracted_with_python/"
   run_script_folders 6-montage '(Science images)' "${folder}5-background_subtracted_with_python/science/" "${folder}6-combined_with_montage/science/"
   run_script_folders 6-montage '(Background images)' "${folder}5-background_subtracted_with_python/backgrounds/" "${folder}6-combined_with_montage/backgrounds/"
 else
