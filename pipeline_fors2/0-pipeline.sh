@@ -7,6 +7,7 @@ usage() {
 }
 
 sub_back=false
+insert_test_synth=false
 
 while getopts "e:d:bs" option; do
   case "${option}" in
@@ -20,7 +21,7 @@ while getopts "e:d:bs" option; do
     sub_back=true
     ;;
   s)
-    insert_test_synth=${OPTARG}
+    insert_test_synth=true
     ;;
   *)
     usage
@@ -47,7 +48,7 @@ echo "Executing $0, with:"
 echo "   epoch ${param_file}"
 echo "   folder ${folder}"
 echo "   sub_back ${sub_back}"
-echo
+echo "   insert_test_synth ${insert_test_synth}"
 
 if ! python3 "refresh_params.py"; then
   echo "Something went wrong with reading or writing the param files."
@@ -285,6 +286,8 @@ if ${sub_back}; then
   run_script_folders 5-background_subtract '' "${individuals}" "${folder}5-background_subtracted_with_python/"
   run_script_folders 6-montage '(Science images)' "${folder}5-background_subtracted_with_python/science/" "${folder}6-combined_with_montage/science/"
   run_script_folders 6-montage '(Background images)' "${folder}5-background_subtracted_with_python/backgrounds/" "${folder}6-combined_with_montage/backgrounds/"
+elif ${insert_test_synth}; then
+  run_script_folders 6-montage '' "${individuals}" "${folder}6-combined_with_montage/science/"
 else
   run_script_folders 6-montage '' "${folder}4-divided_by_exp_time/science/" "${folder}6-combined_with_montage/science/"
 fi
