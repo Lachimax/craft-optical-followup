@@ -228,6 +228,21 @@ def main(obj,
             airmass_err=airmass_err
         )
 
+        mag_aper_local, mag_aper_local_err_plus, mag_aper_local_err_minus = ph.magnitude_complete(
+            flux=cat_local['FLUX_APER'],
+            flux_err=cat_local['FLUXERR_APER'],
+            exp_time=exp_time,
+            exp_time_err=exp_time_err,
+            zeropoint=zeropoint,
+            zeropoint_err=zeropoint_err,
+            colour_term=colour_term,
+            colour_term_err=colour_term_err,
+            ext=extinction,
+            ext_err=extinction_err,
+            airmass=airmass,
+            airmass_err=airmass_err
+        )
+
         p.plot_all_params(image=image, cat=cat, kron=True, show=show)
 
         for o in galaxies:
@@ -250,6 +265,8 @@ def main(obj,
                                      abs(mag_auto_local_err_plus[index_local]))
             mag_aper_err = max(abs(mag_aper_err_minus[index_local]),
                                abs(mag_aper_err_plus[index_local]))
+            mag_aper_local_err = max(abs(mag_aper_local_err_minus[index_local]),
+                                     abs(mag_aper_err_plus[index_local]))
 
             mag_ins, mag_ins_err_1, mag_ins_err_2 = ph.magnitude_error(flux=np.array([this['FLUX_AUTO']]),
                                                                        flux_err=np.array([this['FLUXERR_AUTO']]),
@@ -348,6 +365,8 @@ def main(obj,
                                      'mag_photutils': float(mag_photutils),
                                      'mag_aper': float(mag_aper[index_local]),
                                      'mag_aper_err': float(mag_aper_err),
+                                     'mag_aper_local': float(mag_aper_local[index_local]),
+                                     'mag_aper_local_err': float(mag_aper_local_err),
                                      'mag_photutils_aper': float(mag_photutils_fixed),
                                      # 'mag_photutils_err': float(mag_photutils_err),
                                      'ext_gal': float(ext_gal),
@@ -381,6 +400,8 @@ def main(obj,
                   output_catalogue_this['mag_auto_local_err'])
             print(f'{o} {f} mag photutils:', output_catalogue_this['mag_photutils'])
             print(f'{o} {f} mag aper:', output_catalogue_this['mag_aper'], '+/-', output_catalogue_this['mag_aper_err'])
+            print(f'{o} {f} mag aper local:', output_catalogue_this['mag_aper_local'], '+/-',
+                  output_catalogue_this['mag_aper_local_err'])
             print(f'{o} {f} mag photutils fixed:', output_catalogue_this['mag_photutils_aper'])
             print(f'{o} {f} mag auto corrected for Galactic extinction:', output_catalogue_this['mag_auto_gal_correct'])
             print(f'Galactic extinction used:', ext_gal)
