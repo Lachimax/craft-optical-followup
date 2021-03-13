@@ -179,8 +179,8 @@ FLAGS                    #Extraction flags
 #NIMAFLAGS_ISO            Number of flagged pixels entering IMAFLAGS_ISO           
 #NLOWWEIGHT_ISO           Nb of pixels with low weight over the iso. profile       
 #NLOWDWEIGHT_ISO          Nb of pixels with low det. weight over the iso. profile  
-#FWHM_IMAGE               FWHM assuming a gaussian core                             [pixel]
-#FWHM_WORLD               FWHM assuming a gaussian core                             [deg]
+FWHM_IMAGE               FWHM assuming a gaussian core                             [pixel]
+FWHM_WORLD               FWHM assuming a gaussian core                             [deg]
 ELONGATION               #A_IMAGE/B_IMAGE
 #ELLIPTICITY              1 - B_IMAGE/A_IMAGE                                      
 #POLAR_IMAGE              (A_IMAGE^2 - B_IMAGE^2)/(A_IMAGE^2 + B_IMAGE^2)          
