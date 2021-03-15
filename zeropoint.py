@@ -153,10 +153,8 @@ def main(obj,
 
             if separate_chips:
                 # Split based on which CCD chip the object falls upon.
-                if not os.path.isdir(output_path + "chip_1"):
-                    os.mkdir(output_path + "chip_1")
-                if not os.path.isdir(output_path + "chip_2"):
-                    os.mkdir(output_path + "chip_2")
+                mkdir_check(output_path + "chip_1")
+                mkdir_check(output_path + "chip_2")
 
                 print('Chip 1:')
                 up = photometry.determine_zeropoint_sextractor(sextractor_cat_path=sextractor_path,
