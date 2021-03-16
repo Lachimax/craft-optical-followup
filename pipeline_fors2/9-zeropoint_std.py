@@ -21,7 +21,6 @@ def main(obj,
          sex_ra_col,
          sex_dec_col,
          sex_flux_col,
-         mag_tol,
          star_class_col,
          stars_only,
          show_plots,
@@ -187,7 +186,6 @@ def main(obj,
                                                                        sex_x_col=sex_x_col,
                                                                        sex_y_col=sex_y_col,
                                                                        pix_tol=pix_tol,
-                                                                       mag_tol=mag_tol,
                                                                        flux_column=sex_flux_col,
                                                                        mag_range_cat_upper=mag_range_upper,
                                                                        mag_range_cat_lower=mag_range_lower,
@@ -205,12 +203,12 @@ def main(obj,
                 if params is None:
                     print(f'No {f} zeropoint could be determined from data for {field}')
                 else:
-                    update_dict = {'zeropoint_derived': float(params['zeropoint_sub_outliers']),
+                    update_dict = {'zeropoint_derived': float(params['zeropoint_clipped']),
                                    'zeropoint_derived_err': float(params['zeropoint_err'])}
 
                     p.add_params(file=field_path + 'output_values.yaml', params=update_dict)
 
-                    zeropoints.append(float(params['zeropoint_sub_outliers']))
+                    zeropoints.append(float(params['zeropoint_clipped']))
                     zeropoints_err.append(float(params['zeropoint_err']))
                     airmasses.append(float(params['airmass']))
                     cat_names_proc.append(cat_name)
@@ -270,10 +268,6 @@ if __name__ == '__main__':
     parser.add_argument('-show',
                         help='Show plots onscreen? (Warning: may be tedious)',
                         action='store_true', )
-    parser.add_argument('--mag_tolerance',
-                        help='Tolerance for magnitude scatter for removing outliers from linear fit.',
-                        default=0.1,
-                        type=float)
     parser.add_argument('--sextractor_mag_range_upper',
                         help='Upper SExtractor magnitude cutoff for zeropoint determination',
                         default=100.,
@@ -299,7 +293,6 @@ if __name__ == '__main__':
          sex_ra_col=args.sextractor_ra_column,
          sex_dec_col=args.sextractor_dec_column,
          sex_flux_col=args.sextractor_flux_column,
-         mag_tol=args.mag_tolerance,
          star_class_col=args.star_class_column,
          stars_only=args.not_stars_only,
          show_plots=args.show,

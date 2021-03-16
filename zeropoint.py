@@ -23,7 +23,6 @@ def main(obj,
          sex_ra_col,
          sex_dec_col,
          sex_flux_col,
-         mag_tol,
          stars_only,
          star_class_col,
          star_class_tol,
@@ -171,7 +170,6 @@ def main(obj,
                                                                sex_x_col=sex_x_col,
                                                                sex_y_col=sex_y_col,
                                                                pix_tol=pix_tol,
-                                                               mag_tol=mag_tol,
                                                                flux_column=sex_flux_col,
                                                                mag_range_cat_upper=mag_range_upper,
                                                                mag_range_cat_lower=mag_range_lower,
@@ -202,7 +200,6 @@ def main(obj,
                                                                  sex_x_col=sex_x_col,
                                                                  sex_y_col=sex_y_col,
                                                                  pix_tol=pix_tol,
-                                                                 mag_tol=mag_tol,
                                                                  flux_column=sex_flux_col,
                                                                  mag_range_cat_upper=mag_range_upper,
                                                                  mag_range_cat_lower=mag_range_lower,
@@ -218,7 +215,7 @@ def main(obj,
                                                                  cat_zeropoint_err=cat_zeropoint_err
                                                                  )
                 if write and up is not None:
-                    update_dict = {f_0 + '_zeropoint_derived': float(up['zeropoint_sub_outliers']),
+                    update_dict = {f_0 + '_zeropoint_derived': float(up['zeropoint_clipped']),
                                    f_0 + '_zeropoint_derived_err': float(up['zeropoint_err'])}
 
                     p.add_output_values(obj=obj, params=update_dict, instrument=instrument)
@@ -238,7 +235,6 @@ def main(obj,
                                                                  sex_x_col=sex_x_col,
                                                                  sex_y_col=sex_y_col,
                                                                  pix_tol=pix_tol,
-                                                                 mag_tol=mag_tol,
                                                                  flux_column=sex_flux_col,
                                                                  mag_range_cat_upper=mag_range_upper,
                                                                  mag_range_cat_lower=mag_range_lower,
@@ -254,7 +250,7 @@ def main(obj,
                                                                  cat_zeropoint_err=cat_zeropoint_err
                                                                  )
                 if write and chip is not None:
-                    update_dict = {f_0 + '_zeropoint_derived': float(chip['zeropoint_sub_outliers']),
+                    update_dict = {f_0 + '_zeropoint_derived': float(chip['zeropoint_clipped']),
                                    f_0 + '_zeropoint_derived_err': float(chip['zeropoint_err'])}
 
                     p.add_output_values(obj=obj, params=update_dict, instrument=instrument)
@@ -310,10 +306,6 @@ if __name__ == '__main__':
     parser.add_argument('-show_plots',
                         help='Show plots onscreen? (Warning: may be tedious)',
                         action='store_true')
-    parser.add_argument('--mag_tolerance',
-                        help='Tolerance for magnitude scatter for removing outliers from linear fit.',
-                        default=0.1,
-                        type=float)
     parser.add_argument('--sextractor_mag_range_upper',
                         help='Upper SExtractor magnitude cutoff for zeropoint determination',
                         default=100.,
@@ -341,7 +333,6 @@ if __name__ == '__main__':
          sex_ra_col=args.sextractor_ra_column,
          sex_dec_col=args.sextractor_dec_column,
          sex_flux_col=args.sextractor_flux_column,
-         mag_tol=args.mag_tolerance,
          stars_only=args.not_stars_only,
          star_class_col=args.star_class_column,
          star_class_tol=args.star_class_tolerance,
