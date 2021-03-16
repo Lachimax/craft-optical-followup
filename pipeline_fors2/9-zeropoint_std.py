@@ -4,7 +4,7 @@ from craftutils import photometry
 from craftutils import params as p
 from craftutils import fits_files as ff
 from craftutils.utils import mkdir_check
-from craftutils.retrieve import update_std_sdss_photometry, update_std_des_photometry, update_std_skymapper_photometry
+from craftutils.retrieve import update_std_photometry, cat_columns
 
 import os
 import matplotlib
@@ -38,15 +38,17 @@ def main(obj,
 
     output = properties['data_dir'] + '9-zeropoint/'
     mkdir_check(output)
-    output = output + 'std/'
-    mkdir_check(output)
+    output_std = output + 'std/'
+    mkdir_check(output_std)
+    output_std = output + 'field/'
+    mkdir_check(output_std)
 
     std_path = properties['data_dir'] + 'calibration/std_star/'
 
-    filters = list(filter(lambda d: os.path.isdir(std_path + d), os.listdir(std_path)))
+    filters = outputs['filters']
 
     std_field_path = proj_paths['top_data_dir'] + "std_fields/"
-    std_fields = list(os.listdir(std_field_path))
+    std_fields = list(filter(lambda path: os.path.isdir(path), os.listdir(std_field_path)))
     print('Standard fields with available catalogues:')
     print(std_fields)
     print()
@@ -54,165 +56,127 @@ def main(obj,
     for fil in filters:
         print(fil)
 
-        zeropoints = []
+        zeropoints = {}
         field_names = []
-        cat_names_proc = []
         zeropoints_err = []
         airmasses = []
 
         f = fil[0]
-        filter_up = f.upper()
 
-        if f + '_zeropoint_provided' not in outputs:
+        fil_path = std_path + fil + '/'
 
-            fil_path = std_path + fil + '/'
+        fields = filter(lambda d: os.path.isdir(fil_path + d), os.listdir(fil_path))
 
-            fields = filter(lambda d: os.path.isdir(fil_path + d), os.listdir(fil_path))
+        output_path_fil_std = output_std + '/' + fil + '/'
+        mkdir_check(output_path_fil_std)
 
-            output_path_fil = output + '/' + fil + '/'
-            mkdir_check(output_path_fil)
+        # Obtain zeropoints from FRB field, if data is available.
 
-            for field in fields:
+        # Obtain zeropoints from available standard fields and available data.
 
-                ra = float(field[field.find("RA") + 2:field.find("_")])
-                dec = float(field[field.find("DEC") + 3:])
+        zeropoints["standard_field"] = {}
 
-                print("Looking for photometry data in field " + field + ":")
-                mkdir_check(std_field_path + field)
-                field_path = fil_path + field + '/'
-                output_path = output_path_fil + field + '/'
+        for field in fields:
 
-                std_cat_path = std_field_path + field + '/'
+            zeropoints["standard_field"][field] = {}
 
-                std_properties = p.load_params(field_path + 'params.yaml')
-                use_sex_star_class = std_properties['use_sex_star_class']
+            ra = float(field[field.find("RA") + 2:field.find("_")])
+            dec = float(field[field.find("DEC") + 3:])
 
-                # star_class_col = 'class_star'
+            print("Looking for photometry data in field " + field + ":")
+            mkdir_check(std_field_path + field)
+            field_path = fil_path + field + '/'
+            output_path = output_path_fil_std + field + '/'
 
-                params = None
-                # Cycle through the three catalogues used to determine zeropoint, in order of preference.
-                cat_names = ['DES', 'SDSS', 'SkyMapper']
-                cat_i = 0
+            std_cat_path = std_field_path + field + '/'
 
-                while params is None and cat_i < len(cat_names):
-                    cat_name = cat_names[cat_i]
-                    print(f"In {cat_name}:")
-                    if cat_name == 'DES':
-                        if not (os.path.isdir(std_cat_path + "DES") or os.path.isfile(
-                                std_cat_path + "DES/DES.csv")):
-                            print("None found on disk. Attempting retrieval from archive...")
-                            if update_std_des_photometry(ra=ra, dec=dec) is None:
-                                print("\t\tNo data found in archive.")
-                                cat_i += 1
-                                continue
-                        cat_ra_col = 'RA'
-                        cat_dec_col = 'DEC'
-                        cat_mag_col = 'WAVG_MAG_PSF_' + filter_up
-                        if not use_sex_star_class:
-                            star_class_col = 'CLASS_STAR_' + filter_up
-                        cat_type = 'csv'
-                    elif cat_name == 'SDSS':
-                        # Check for SDSS photometry on-disk for this field; if none present, attempt to retrieve from
-                        # SDSS DR16 archive
-                        if not (os.path.isdir(std_cat_path + "SDSS") or os.path.isfile(
-                                std_cat_path + "SDSS/SDSS.csv")):
-                            print("None found on disk. Attempting retrieval from archive...")
-                            if update_std_sdss_photometry(ra=ra, dec=dec) is None:
-                                print("\t\tNo data found in archive.")
-                                cat_i += 1
-                                continue
-                        cat_ra_col = 'ra'
-                        cat_dec_col = 'dec'
-                        cat_mag_col = 'psfMag_' + f
-                        if not use_sex_star_class:
-                            star_class_col = 'probPSF_' + f
-                        cat_type = 'csv'
-                    else:  # elif cat_name == 'SkyMapper':
-                        if not (os.path.isdir(std_cat_path + "SkyMapper") or os.path.isfile(
-                                std_cat_path + "SkyMapper/SkyMapper.csv")):
-                            print("None found on disk. Attempting retrieval from archive...")
-                            if update_std_skymapper_photometry(ra=ra, dec=dec) is None:
-                                print("\t\tNo data found in archive.")
-                                cat_i += 1
-                                continue
-                        cat_name = 'SkyMapper'
-                        cat_ra_col = 'raj2000'
-                        cat_dec_col = 'dej2000'
-                        cat_mag_col = f + '_psf'
-                        if not use_sex_star_class:
-                            star_class_col = 'class_star_SkyMapper'
-                        else:
-                            star_class_col = 'class_star'
-                        cat_type = 'csv'
+            std_properties = p.load_params(field_path + 'params.yaml')
+            use_sex_star_class = std_properties['use_sex_star_class']
 
-                    cat_path = std_cat_path + cat_name + '/' + cat_name + '.csv'
-                    mag_range_upper = std_properties['mag_range_upper']
-                    mag_range_lower = std_properties['mag_range_lower']
-                    sextractor_path = field_path + 'sextractor/_psf-fit.cat'
-                    image_path = field_path + '3-trimmed/standard_trimmed_img_up.fits'
-                    star_class_tol = std_properties['star_class_tol']
+            # star_class_col = 'class_star'
 
-                    now = time.Time.now()
-                    now.format = 'isot'
-                    test_name = str(now) + '_' + test_name
+            # Cycle through the three catalogues used to determine zeropoint, in order of preference.
+            cat_names = ['DES', 'SDSS', 'SkyMapper']
 
-                    if not os.path.isdir(properties['data_dir'] + '/analysis/zeropoint-psf/'):
-                        os.mkdir(properties['data_dir'] + '/analysis/zeropoint-psf/')
-                    if not os.path.isdir(output_path):
-                        os.mkdir(output_path)
+            for cat_i, cat_name in cat_names:
 
-                    exp_time = ff.get_exp_time(image_path)
+                # Check for photometry on-disk in the relevant catalogue; if none present, attempt to retrieve from
+                # online archive.
+                print(f"In {cat_name}:")
 
-                    print('SExtractor catalogue path:', sextractor_path)
-                    print('Image path:', image_path)
-                    print('Catalogue name:', cat_name)
-                    print('Catalogue path:', cat_path)
-                    print('Class star column:', star_class_col)
-                    print('Output:', output_path + test_name)
-                    print('Exposure time:', exp_time)
-                    print("Use sextractor class star:", use_sex_star_class)
+                cat_path = f"{std_cat_path}{cat_name}/{cat_name}.csv"
 
-                    params = photometry.determine_zeropoint_sextractor(sextractor_cat_path=sextractor_path,
-                                                                       image=image_path,
-                                                                       cat_path=cat_path,
-                                                                       cat_name=cat_name,
-                                                                       output_path=output_path,
-                                                                       show=show_plots,
-                                                                       cat_ra_col=cat_ra_col,
-                                                                       cat_dec_col=cat_dec_col,
-                                                                       cat_mag_col=cat_mag_col,
-                                                                       sex_ra_col=sex_ra_col,
-                                                                       sex_dec_col=sex_dec_col,
-                                                                       sex_x_col=sex_x_col,
-                                                                       sex_y_col=sex_y_col,
-                                                                       pix_tol=pix_tol,
-                                                                       flux_column=sex_flux_col,
-                                                                       mag_range_cat_upper=mag_range_upper,
-                                                                       mag_range_cat_lower=mag_range_lower,
-                                                                       mag_range_sex_upper=mag_range_sex_upper,
-                                                                       mag_range_sex_lower=mag_range_sex_lower,
-                                                                       stars_only=stars_only,
-                                                                       star_class_tol=star_class_tol,
-                                                                       star_class_col=star_class_col,
-                                                                       exp_time=exp_time,
-                                                                       y_lower=0,
-                                                                       cat_type=cat_type,
-                                                                       )
-                    cat_i += 1
+                if not (os.path.isdir(std_cat_path + cat_name)) or os.path.isfile(cat_path):
+                    print("None found on disk. Attempting retrieval from archive...")
+                    if update_std_photometry(ra=ra, dec=dec, cat=cat_name) is None:
+                        print("\t\tNo data found in archive.")
+                        zeropoints["standard_field"][field][cat_name] = None
+                        continue
 
-                if params is None:
-                    print(f'No {f} zeropoint could be determined from data for {field}')
+                column_names = cat_columns(cat=cat_name, f=f)
+                cat_ra_col = column_names['ra']
+                cat_dec_col = column_names['dec']
+                cat_mag_col = column_names['mag_psf']
+                if not use_sex_star_class:
+                    star_class_col = column_names['class_star']
                 else:
-                    update_dict = {'zeropoint_derived': float(params['zeropoint_clipped']),
-                                   'zeropoint_derived_err': float(params['zeropoint_err'])}
+                    star_class_col = 'class_star'
 
-                    p.add_params(file=field_path + 'output_values.yaml', params=update_dict)
+                cat_type = 'csv'
 
-                    zeropoints.append(float(params['zeropoint_clipped']))
-                    zeropoints_err.append(float(params['zeropoint_err']))
-                    airmasses.append(float(params['airmass']))
-                    cat_names_proc.append(cat_name)
-                    field_names.append(field)
+                sextractor_path = field_path + 'sextractor/_psf-fit.cat'
+                image_path = field_path + '3-trimmed/standard_trimmed_img_up.fits'
+                star_class_tol = std_properties['star_class_tol']
+
+                now = time.Time.now()
+                now.format = 'isot'
+                test_name = str(now) + '_' + test_name
+
+                mkdir_check(properties['data_dir'] + '/analysis/zeropoint/')
+                mkdir_check(output_path)
+
+                exp_time = ff.get_exp_time(image_path)
+
+                print('SExtractor catalogue path:', sextractor_path)
+                print('Image path:', image_path)
+                print('Catalogue name:', cat_name)
+                print('Catalogue path:', cat_path)
+                print('Class star column:', star_class_col)
+                print('Output:', output_path + test_name)
+                print('Exposure time:', exp_time)
+                print("Use sextractor class star:", use_sex_star_class)
+
+                params = photometry.determine_zeropoint_sextractor(
+                    sextractor_cat_path=sextractor_path,
+                    image=image_path,
+                    cat_path=cat_path,
+                    cat_name=cat_name,
+                    output_path=output_path,
+                    show=show_plots,
+                    cat_ra_col=cat_ra_col,
+                    cat_dec_col=cat_dec_col,
+                    cat_mag_col=cat_mag_col,
+                    sex_ra_col=sex_ra_col,
+                    sex_dec_col=sex_dec_col,
+                    sex_x_col=sex_x_col,
+                    sex_y_col=sex_y_col,
+                    pix_tol=pix_tol,
+                    flux_column=sex_flux_col,
+                    mag_range_sex_upper=mag_range_sex_upper,
+                    mag_range_sex_lower=mag_range_sex_lower,
+                    stars_only=stars_only,
+                    star_class_tol=star_class_tol,
+                    star_class_col=star_class_col,
+                    exp_time=exp_time,
+                    y_lower=0,
+                    cat_type=cat_type,
+                )
+
+                zeropoints["standard_field"][field][cat_name] = params
+
+            update_dict = {'zeropoints': zeropoints["standard_field"][field]}
+
+            p.add_params(file=field_path + 'output_values.yaml', params=update_dict)
 
         if len(zeropoints) == 0:
             print('No standard-field zeropoint could be determined for this observation.')

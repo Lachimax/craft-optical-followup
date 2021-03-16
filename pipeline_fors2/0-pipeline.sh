@@ -222,7 +222,7 @@ run_script_folders() {
   select yn in "Yes" "Skip" "Exit"; do
     case ${yn} in
     Yes)
-      if "${proj_dir}/pipeline_fors2/${script}.sh" "${param_file}" "${origin}" "${destination}" "${other_arguments}" | tee "${logfile}"; then
+      if "${proj_dir}/pipeline_fors2/${script}.sh" "${param_file}" "${origin}" "${destination}" "${other_arguments}"; then # | tee "${logfile}"; then
         break
       else
         echo "Something went wrong. Try again?"

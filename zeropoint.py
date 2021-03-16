@@ -33,6 +33,11 @@ def main(obj,
          separate_chips,
          write):
 
+    print()
+    print(f"Running script zeropoint.py, with obj {obj}")
+    print(f"\ttest_name {test_name}")
+    print()
+
     properties = p.object_params_instrument(obj=obj, instrument=instrument)
     frb_properties = p.object_params_frb(obj=obj[:-2])
     outputs = p.object_output_params(obj=obj, instrument=instrument)
