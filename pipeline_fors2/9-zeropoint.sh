@@ -126,14 +126,10 @@ fi
 cd "${proj_dir}" || exit
 echo 'Atmospheric extinction:'
 python3 "pipeline_fors2/9-extinction_atmospheric.py" --op "${data_title}" -write
-echo 'Science-field zeropoint:'
-
-python3 "zeropoint.py" --op "${data_title}" -write --instrument FORS2
 
 echo "Skip esorex ${skip_esorex}"
 if ! ${skip_esorex}; then
   bash pipeline_fors2/9-esorex_zeropoint.sh "${param_file}"
 fi
 
-echo 'Standard-field zeropoint:'
-python3 "pipeline_fors2/9-zeropoint_std.py" --op "${data_title}"
+python3 "pipeline_fors2/9-zeropoint.py" --op "${data_title}" --instrument "fors2"

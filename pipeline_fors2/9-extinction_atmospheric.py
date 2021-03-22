@@ -39,11 +39,15 @@ def main(epoch, show, write):
     extinctions_known_err = []
     zeropoints = []
     zeropoints_err = []
+    mjd_measured = []
+    time_since_measured = []
     for f in filters_known:
         print(f)
         f_params = filters[f]
         lambda_effs_known.append(f_params['lambda_eff'])
         i, nrst = u.find_nearest(f_params['mjd'], mjd)
+        mjd_measured.append(nrst)
+        time_since_measured.append(mjd - nrst)
         print(f'Nearest MJD in table is {nrst}, with a difference of {mjd - nrst} days.')
         extinctions_known.append(f_params['extinction'][i])
         extinctions_known_err.append(f_params['extinction_err'][i])
@@ -146,8 +150,15 @@ def main(epoch, show, write):
             if f in epoch_params['filters']:
                 update_dict[f[0] + '_extinction'] = float(extinctions_known[i])
                 update_dict[f[0] + '_extinction_err'] = float(extinctions_known_err[i])
-                update_dict[f[0] + '_zeropoint_provided'] = float(zeropoints[i])
-                update_dict[f[0] + '_zeropoint_provided_err'] = float(zeropoints_err[i])
+                if f[0] + '_zeropoints' in output_values:
+                    update_dict[f[0] + '_zeropoints'] = output_values[f[0] + '_zeropoints']
+                update_dict[f[0] + '_zeropoints']['provided'] = {}
+                update_dict[f[0] + '_zeropoints']['provided']['zeropoint'] = float(zeropoints[i])
+                update_dict[f[0] + '_zeropoints']['provided']['zeropoint_err'] = float(zeropoints_err[i])
+                update_dict[f[0] + '_zeropoints']['provided'][
+                    'source'] = "http://archive.eso.org/bin/qc1_cgi?action=qc1_browse_table&table=fors2_photometry"
+                update_dict[f[0] + '_zeropoints']['provided']['mjd_measurement'] = float(mjd_measured[i])
+                update_dict[f[0] + '_zeropoints']['provided']['days_since_measurement'] = float(time_since_measured[i])
         p.add_output_values(obj=epoch, params=update_dict, instrument='fors2')
     p.add_params(file=epoch_params['data_dir'] + '9-zeropoint/calibrations.yaml', params=output)
 

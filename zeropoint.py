@@ -32,233 +32,29 @@ def main(obj,
          pix_tol,
          separate_chips,
          write):
-
     print()
     print(f"Running script zeropoint.py, with obj {obj}")
     print(f"\ttest_name {test_name}")
     print()
 
-    properties = p.object_params_instrument(obj=obj, instrument=instrument)
-    frb_properties = p.object_params_frb(obj=obj[:-2])
-    outputs = p.object_output_params(obj=obj, instrument=instrument)
-    paths = p.object_output_paths(obj=obj, instrument=instrument)
-
-    cat_name = properties['cat_field_name']
-
-    output = properties['data_dir'] + '/9-zeropoint/'
-    mkdir_check(output)
-    output = output + 'field/'
-    mkdir_check(output)
-
-    instrument = instrument.upper()
-
-    if instrument != "FORS2":
-        separate_chips = False
-
-    for fil in properties['filters']:
-
-        print('Doing filter', fil)
-
-        f_0 = fil[0]
-        # do_zeropoint = properties[f_0 + '_do_zeropoint_field']
-
-        if f_0 + '_zeropoint_provided' not in outputs:  # and do_zeropoint:
-
-            print('Zeropoint not found, attempting to calculate zeropoint...')
-
-            f_up = f_0.upper()
-            f_low = f_0.lower()
-
-            if test_name in ['', None]:
-                now = time.Time.now()
-                now.format = 'isot'
-                test_name = str(now) + '_' + test_name
-
-            output_path = output + f_0 + "/" + test_name + "/"
-            mkdir_check_nested(output_path)
-
-            chip_1_bottom = 740
-            chip_2_top = 600
-
-            cat_zeropoint = 0.
-            cat_zeropoint_err = 0.
-
-            # TODO: Cycle through preferred catalogues, like in the standard-star script
-
-            if cat_name == 'DES':
-                cat_path = frb_properties['data_dir'] + "/DES/DES.csv"
-                if not os.path.isfile(cat_path):
-                    print('No DES catalogue found on-disk for the position of ' + obj + '. Attempting retrieval...')
-                    des = update_frb_des_photometry(frb=obj[:-2])
-                    if des is None:
-                        raise ValueError(
-                            'No DES catalogue available at the position of ' + obj + '.')
-                cat_ra_col = 'RA'
-                cat_dec_col = 'DEC'
-                cat_mag_col = 'WAVG_MAG_PSF_' + f_up
-                # star_class_col = 'CLASS_STAR_G'
-                cat_type = 'csv'
-
-            elif cat_name == 'SExtractor':
-                cat_path = properties[f_0 + '_cat_calib_path']
-                cat_zeropoint = properties[f_0 + '_cat_calib_zeropoint']
-                cat_zeropoint_err = properties[f_0 + '_cat_calib_zeropoint_err']
-                if cat_path is None:
-                    raise ValueError(
-                        'No other epoch catalogue available at the position of ' + obj + '.')
-                cat_ra_col = 'ra_cat'
-                cat_dec_col = 'dec_cat'
-                cat_mag_col = 'mag_psf_other'
-                cat_type = 'sextractor'
-                star_class_col = star_class_col + '_fors'
-                sex_x_col = sex_x_col + '_fors'
-                sex_y_col = sex_y_col + '_fors'
-                cat_name = 'other'
-
-            elif cat_name == 'SDSS':
-                cat_path = frb_properties['data_dir'] + "/SDSS/SDSS.csv"
-                if not os.path.isfile(cat_path):
-                    print('No SDSS catalogue found on-disk for the position of ' + obj + '. Attempting retrieval...')
-                    sdss = update_frb_sdss_photometry(frb=obj[:-2])
-                    if sdss is None:
-                        raise ValueError(
-                            'No SDSS catalogue available at the position of ' + obj + '.')
-                cat_ra_col = 'ra'
-                cat_dec_col = 'dec'
-                cat_mag_col = 'psfMag_' + f_low
-                cat_type = 'csv'
-
-            else:  # elif cat_name == 'SkyMapper'
-                cat_fits_path = properties['sm_fits']
-                cat_path = frb_properties['data_dir'] + "/SkyMapper/SkyMapper.csv"
-                if cat_fits_path is None:
-                    raise ValueError(
-                        'No SkyMapper catalogue available at the position of ' + obj + '.')
-                cat_ra_col = 'ra_img'
-                cat_dec_col = 'decl_img'
-                cat_mag_col = 'mag_psf'
-                # star_class_col = 'class_star_SkyMapper'
-                cat_type = 'csv'
-
-            image_path = paths[f_0 + '_' + properties['subtraction_image']]
-            sextractor_path = paths[f_0 + '_cat_path']
-            mag_range_lower = properties[f_0 + '_field_mag_range_lower']
-            mag_range_upper = properties[f_0 + '_field_mag_range_upper']
-
-            exp_time = ff.get_exp_time(image_path)
-
-            print('SExtractor catalogue path:', sextractor_path)
-            print('Image path:', image_path)
-            print('Catalogue path:', cat_path)
-            print('Output:', output_path + test_name)
-            print()
-
-            print(cat_zeropoint)
-
-            if separate_chips:
-                # Split based on which CCD chip the object falls upon.
-                mkdir_check(output_path + "chip_1")
-                mkdir_check(output_path + "chip_2")
-
-                print('Chip 1:')
-                up = photometry.determine_zeropoint_sextractor(sextractor_cat_path=sextractor_path,
-                                                               image=image_path,
-                                                               cat_path=cat_path,
-                                                               cat_name=cat_name,
-                                                               output_path=output_path + "/chip_1/",
-                                                               show=show_plots,
-                                                               cat_ra_col=cat_ra_col,
-                                                               cat_dec_col=cat_dec_col,
-                                                               cat_mag_col=cat_mag_col,
-                                                               sex_ra_col=sex_ra_col,
-                                                               sex_dec_col=sex_dec_col,
-                                                               sex_x_col=sex_x_col,
-                                                               sex_y_col=sex_y_col,
-                                                               pix_tol=pix_tol,
-                                                               flux_column=sex_flux_col,
-                                                               mag_range_cat_upper=mag_range_upper,
-                                                               mag_range_cat_lower=mag_range_lower,
-                                                               mag_range_sex_upper=mag_range_sex_upper,
-                                                               mag_range_sex_lower=mag_range_sex_lower,
-                                                               stars_only=stars_only,
-                                                               star_class_tol=star_class_tol,
-                                                               star_class_col=star_class_col,
-                                                               exp_time=exp_time,
-                                                               y_lower=chip_1_bottom,
-                                                               cat_type=cat_type,
-                                                               cat_zeropoint=cat_zeropoint,
-                                                               cat_zeropoint_err=cat_zeropoint_err
-                                                               )
-
-                print('Chip 2:')
-                down = photometry.determine_zeropoint_sextractor(sextractor_cat_path=sextractor_path,
-                                                                 image=image_path,
-                                                                 cat_path=cat_path,
-                                                                 cat_name=cat_name,
-                                                                 output_path=output_path + "/chip_2/",
-                                                                 show=show_plots,
-                                                                 cat_ra_col=cat_ra_col,
-                                                                 cat_dec_col=cat_dec_col,
-                                                                 cat_mag_col=cat_mag_col,
-                                                                 sex_ra_col=sex_ra_col,
-                                                                 sex_dec_col=sex_dec_col,
-                                                                 sex_x_col=sex_x_col,
-                                                                 sex_y_col=sex_y_col,
-                                                                 pix_tol=pix_tol,
-                                                                 flux_column=sex_flux_col,
-                                                                 mag_range_cat_upper=mag_range_upper,
-                                                                 mag_range_cat_lower=mag_range_lower,
-                                                                 mag_range_sex_upper=mag_range_sex_upper,
-                                                                 mag_range_sex_lower=mag_range_sex_lower,
-                                                                 stars_only=stars_only,
-                                                                 star_class_tol=star_class_tol,
-                                                                 star_class_col=star_class_col,
-                                                                 exp_time=exp_time,
-                                                                 y_upper=chip_2_top,
-                                                                 cat_type=cat_type,
-                                                                 cat_zeropoint=cat_zeropoint,
-                                                                 cat_zeropoint_err=cat_zeropoint_err
-                                                                 )
-                if write and up is not None:
-                    update_dict = {f_0 + '_zeropoint_derived': float(up['zeropoint_clipped']),
-                                   f_0 + '_zeropoint_derived_err': float(up['zeropoint_err'])}
-
-                    p.add_output_values(obj=obj, params=update_dict, instrument=instrument)
-
-            else:
-                chip = photometry.determine_zeropoint_sextractor(sextractor_cat_path=sextractor_path,
-                                                                 image=image_path,
-                                                                 cat_path=cat_path,
-                                                                 cat_name=cat_name,
-                                                                 output_path=output_path + "/",
-                                                                 show=show_plots,
-                                                                 cat_ra_col=cat_ra_col,
-                                                                 cat_dec_col=cat_dec_col,
-                                                                 cat_mag_col=cat_mag_col,
-                                                                 sex_ra_col=sex_ra_col,
-                                                                 sex_dec_col=sex_dec_col,
-                                                                 sex_x_col=sex_x_col,
-                                                                 sex_y_col=sex_y_col,
-                                                                 pix_tol=pix_tol,
-                                                                 flux_column=sex_flux_col,
-                                                                 mag_range_cat_upper=mag_range_upper,
-                                                                 mag_range_cat_lower=mag_range_lower,
-                                                                 mag_range_sex_upper=mag_range_sex_upper,
-                                                                 mag_range_sex_lower=mag_range_sex_lower,
-                                                                 stars_only=stars_only,
-                                                                 star_class_tol=star_class_tol,
-                                                                 star_class_col=star_class_col,
-                                                                 exp_time=exp_time,
-                                                                 y_lower=0,
-                                                                 cat_type=cat_type,
-                                                                 cat_zeropoint=cat_zeropoint,
-                                                                 cat_zeropoint_err=cat_zeropoint_err
-                                                                 )
-                if write and chip is not None:
-                    update_dict = {f_0 + '_zeropoint_derived': float(chip['zeropoint_clipped']),
-                                   f_0 + '_zeropoint_derived_err': float(chip['zeropoint_err'])}
-
-                    p.add_output_values(obj=obj, params=update_dict, instrument=instrument)
+    photometry.zeropoint_science_field(epoch=obj,
+                                       instrument=instrument,
+                                       test_name=test_name,
+                                       sex_x_col=sex_x_col,
+                                       sex_y_col=sex_y_col,
+                                       sex_ra_col=sex_ra_col,
+                                       sex_dec_col=sex_dec_col,
+                                       sex_flux_col=sex_flux_col,
+                                       stars_only=stars_only,
+                                       star_class_col=star_class_col,
+                                       star_class_tol=star_class_tol,
+                                       show_plots=show_plots,
+                                       mag_range_sex_lower=mag_range_sex_lower,
+                                       mag_range_sex_upper=mag_range_sex_upper,
+                                       pix_tol=pix_tol,
+                                       separate_chips=separate_chips,
+                                       write=write,
+                                       )
 
 
 if __name__ == '__main__':
