@@ -5,6 +5,8 @@ import os
 from shutil import copyfile
 from numpy import array
 
+from astropy.io import fits
+
 import craftutils.utils as u
 import craftutils.fits_files as ff
 import craftutils.params as p
@@ -35,6 +37,7 @@ def main(epoch, origin, destination):
     filters = outputs['filters']
 
     for fil in filters:
+        f = fil[0]
         path_fil_output = destination_path + "science/" + fil + "/"
         path_fil_input = origin_path + fil + "/"
         u.mkdir_check(path_fil_output)
@@ -53,14 +56,11 @@ def main(epoch, origin, destination):
             path_fits_file_output = path_fil_output + fits_file
             path_psf_model = path_fits_file_input.replace(".fits", "_psfex.psf")
 
-            print(insert["ra"])
-            print(array(insert["ra"]))
-            print(type(array(insert["ra"])))
-
-            ph.insert_point_sources_to_file(file=path_fits_file_input,
+            try:
+                ph.insert_point_sources_to_file(file=path_fits_file_input,
                                             x=array(insert["ra"]),
                                             y=array(insert["dec"]),
-                                            mag=insert["mag"],
+                                            mag=insert[f"{f}_mag"],
                                             output=path_fits_file_output,
                                             zeropoint=zeropoint,
                                             extinction=extinction,
@@ -68,6 +68,18 @@ def main(epoch, origin, destination):
                                             world_coordinates=True,
                                             psf_model=path_psf_model
                                             )
+            except ValueError:
+                ph.insert_point_sources_to_file(file=path_fits_file_input,
+                                                x=array(insert["ra"]),
+                                                y=array(insert["dec"]),
+                                                mag=insert[f"{f}_mag"],
+                                                output=path_fits_file_output,
+                                                zeropoint=zeropoint,
+                                                extinction=extinction,
+                                                airmass=airmass,
+                                                world_coordinates=True,
+                                                fwhm=fits.open(path_psf_model)[1].header['PSF_FWHM']
+                                                )
 
     if os.path.isfile(origin_path + epoch + '.log'):
         copyfile(origin_path + epoch + '.log', destination_path + epoch + ".log")

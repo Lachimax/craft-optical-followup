@@ -38,7 +38,8 @@ subtraction_image: astrometry_image
 test_synths:
   ra: [ ]
   dec: [ ]
-  mag: [ ]
+  g_mag: [ ]
+  I_mag: [ ]
 threshold: 1.5
 sextractor_min_radius: 1.0
 photometry_apertures: [ 7.72 ]

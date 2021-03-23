@@ -13,6 +13,10 @@ if [[ -z ${destination} ]]; then
   destination=B-back_subtract/5-background_subtracted_with_python/
 fi
 
+all_synths=$4
+if [[ -z ${all_synths} ]]; then
+  all_synths=false
+fi
 
 echo
 echo "Executing bash script pipeline_fors2/5-background_subtract.sh, with:"
@@ -35,5 +39,8 @@ data_title=${param_file}
 mkdir "${data_dir}${destination}"
 mkdir "${data_dir}${destination}science"
 
-python3 "${proj_dir}/pipeline_fors2/5-background_subtract.py" --directory "${data_dir}" --op "${data_title}" --origin "${origin}" --destination "${destination}" || exit 1
-
+if ${all_synths}; then
+  python3 "${proj_dir}/pipeline_fors2/5-background_subtract.py" --directory "${data_dir}" --op "${data_title}" --origin "${origin}" --destination "${destination}" --all_synths || exit 1
+else
+  python3 "${proj_dir}/pipeline_fors2/5-background_subtract.py" --directory "${data_dir}" --op "${data_title}" --origin "${origin}" --destination "${destination}" || exit 1
+fi

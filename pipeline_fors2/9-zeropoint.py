@@ -62,18 +62,14 @@ def main(epoch,
 
         f = fil[0]
 
-        fil_path = std_path + fil + '/'
-
-        fields = filter(lambda d: os.path.isdir(fil_path + d), os.listdir(fil_path))
-
-        output_path_fil_std = output_std + '/' + fil + '/'
-        mkdir_check(output_path_fil_std)
-
         # Obtain zeropoints from FRB field, if data is available.
 
         print(f"\nDetermining science-field zeropoints for {epoch}, filter {fil}:\n")
 
-        zeropoints = outputs[f"{f}_zeropoints"]
+        if f"{f}_zeropoints" in outputs:
+            zeropoints = outputs[f"{f}_zeropoints"]
+        else:
+            zeropoints = {}
         zeropoints["science_field"] = {}
 
         for cat_name in cat_names:
@@ -101,100 +97,108 @@ def main(epoch,
 
         zeropoints["standard_field"] = {}
 
-        for field in fields:
+        fil_path = std_path + fil + '/'
 
-            zeropoints["standard_field"][field] = {}
+        if os.path.isdir(fil_path):
+            fields = filter(lambda d: os.path.isdir(fil_path + d), os.listdir(fil_path))
 
-            ra = float(field[field.find("RA") + 2:field.find("_")])
-            dec = float(field[field.find("DEC") + 3:])
+            output_path_fil_std = output_std + '/' + fil + '/'
+            mkdir_check(output_path_fil_std)
 
-            print("Looking for photometry data in field " + field + ":")
-            mkdir_check(std_field_path + field)
-            field_path = fil_path + field + '/'
-            output_path = output_path_fil_std + field + '/'
+            for field in fields:
 
-            std_cat_path = std_field_path + field + '/'
+                zeropoints["standard_field"][field] = {}
 
-            std_properties = p.load_params(field_path + 'params.yaml')
-            use_sex_star_class = std_properties['use_sex_star_class']
+                ra = float(field[field.find("RA") + 2:field.find("_")])
+                dec = float(field[field.find("DEC") + 3:])
 
-            # Cycle through the three catalogues used to determine zeropoint, in order of preference.
+                print("Looking for photometry data in field " + field + ":")
+                mkdir_check(std_field_path + field)
+                field_path = fil_path + field + '/'
+                output_path = output_path_fil_std + field + '/'
 
-            for cat_name in cat_names:
+                std_cat_path = std_field_path + field + '/'
 
-                # Check for photometry on-disk in the relevant catalogue; if none present, attempt to retrieve from
-                # online archive.
-                print(f"In {cat_name}:")
+                std_properties = p.load_params(field_path + 'params.yaml')
+                use_sex_star_class = std_properties['use_sex_star_class']
 
-                output_path_cat = output_path + cat_name
+                # Cycle through the three catalogues used to determine zeropoint, in order of preference.
 
-                cat_path = f"{std_cat_path}{cat_name}/{cat_name}.csv"
+                for cat_name in cat_names:
 
-                if not (os.path.isdir(std_cat_path + cat_name)) or os.path.isfile(cat_path):
-                    print("None found on disk. Attempting retrieval from archive...")
-                    if update_std_photometry(ra=ra, dec=dec, cat=cat_name) is None:
-                        print("\t\tNo data found in archive.")
-                        zeropoints["standard_field"][field][cat_name] = None
-                        continue
+                    # Check for photometry on-disk in the relevant catalogue; if none present, attempt to retrieve from
+                    # online archive.
+                    print(f"In {cat_name}:")
 
-                column_names = cat_columns(cat=cat_name, f=f)
-                cat_ra_col = column_names['ra']
-                cat_dec_col = column_names['dec']
-                cat_mag_col = column_names['mag_psf']
-                if not use_sex_star_class:
-                    star_class_col = column_names['class_star']
-                else:
-                    star_class_col = 'CLASS_STAR'
+                    output_path_cat = output_path + cat_name
 
-                cat_type = 'csv'
+                    cat_path = f"{std_cat_path}{cat_name}/{cat_name}.csv"
 
-                sextractor_path = field_path + 'sextractor/_psf-fit.cat'
-                image_path = field_path + '3-trimmed/standard_trimmed_img_up.fits'
-                star_class_tol = std_properties['star_class_tol']
+                    if not (os.path.isdir(std_cat_path + cat_name)) or os.path.isfile(cat_path):
+                        print("None found on disk. Attempting retrieval from archive...")
+                        if update_std_photometry(ra=ra, dec=dec, cat=cat_name) is None:
+                            print("\t\tNo data found in archive.")
+                            zeropoints["standard_field"][field][cat_name] = None
+                            continue
 
-                now = time.Time.now()
-                now.format = 'isot'
-                test_name = str(now) + '_' + test_name
+                    column_names = cat_columns(cat=cat_name, f=f)
+                    cat_ra_col = column_names['ra']
+                    cat_dec_col = column_names['dec']
+                    cat_mag_col = column_names['mag_psf']
+                    if not use_sex_star_class:
+                        star_class_col = column_names['class_star']
+                    else:
+                        star_class_col = 'CLASS_STAR'
 
-                mkdir_check(properties['data_dir'] + '/analysis/zeropoint/')
-                mkdir_check(output_path)
+                    cat_type = 'csv'
 
-                exp_time = ff.get_exp_time(image_path)
+                    sextractor_path = field_path + 'sextractor/_psf-fit.cat'
+                    image_path = field_path + '3-trimmed/standard_trimmed_img_up.fits'
+                    star_class_tol = std_properties['star_class_tol']
 
-                print('SExtractor catalogue path:', sextractor_path)
-                print('Image path:', image_path)
-                print('Catalogue name:', cat_name)
-                print('Catalogue path:', cat_path)
-                print('Class star column:', star_class_col)
-                print('Output:', output_path_cat)
-                print('Exposure time:', exp_time)
-                print("Use sextractor class star:", use_sex_star_class)
+                    now = time.Time.now()
+                    now.format = 'isot'
+                    test_name = str(now) + '_' + test_name
 
-                zeropoints["standard_field"][field][cat_name] = photometry.determine_zeropoint_sextractor(
-                    sextractor_cat_path=sextractor_path,
-                    image=image_path,
-                    cat_path=cat_path,
-                    cat_name=cat_name,
-                    output_path=output_path_cat,
-                    show=show_plots,
-                    cat_ra_col=cat_ra_col,
-                    cat_dec_col=cat_dec_col,
-                    cat_mag_col=cat_mag_col,
-                    sex_ra_col=sex_ra_col,
-                    sex_dec_col=sex_dec_col,
-                    sex_x_col=sex_x_col,
-                    sex_y_col=sex_y_col,
-                    pix_tol=pix_tol,
-                    flux_column=sex_flux_col,
-                    mag_range_sex_upper=mag_range_sex_upper,
-                    mag_range_sex_lower=mag_range_sex_lower,
-                    stars_only=stars_only,
-                    star_class_tol=star_class_tol,
-                    star_class_col=star_class_col,
-                    exp_time=exp_time,
-                    y_lower=0,
-                    cat_type=cat_type,
-                )
+                    mkdir_check(properties['data_dir'] + '/analysis/zeropoint/')
+                    mkdir_check(output_path)
+
+                    exp_time = ff.get_exp_time(image_path)
+
+                    print('SExtractor catalogue path:', sextractor_path)
+                    print('Image path:', image_path)
+                    print('Catalogue name:', cat_name)
+                    print('Catalogue path:', cat_path)
+                    print('Class star column:', star_class_col)
+                    print('Output:', output_path_cat)
+                    print('Exposure time:', exp_time)
+                    print("Use sextractor class star:", use_sex_star_class)
+
+                    zeropoints["standard_field"][field][cat_name] = photometry.determine_zeropoint_sextractor(
+                        sextractor_cat_path=sextractor_path,
+                        image=image_path,
+                        cat_path=cat_path,
+                        cat_name=cat_name,
+                        output_path=output_path_cat,
+                        show=show_plots,
+                        cat_ra_col=cat_ra_col,
+                        cat_dec_col=cat_dec_col,
+                        cat_mag_col=cat_mag_col,
+                        sex_ra_col=sex_ra_col,
+                        sex_dec_col=sex_dec_col,
+                        sex_x_col=sex_x_col,
+                        sex_y_col=sex_y_col,
+                        pix_tol=pix_tol,
+                        flux_column=sex_flux_col,
+                        mag_range_sex_upper=mag_range_sex_upper,
+                        mag_range_sex_lower=mag_range_sex_lower,
+                        stars_only=stars_only,
+                        star_class_tol=star_class_tol,
+                        star_class_col=star_class_col,
+                        exp_time=exp_time,
+                        y_lower=0,
+                        cat_type=cat_type,
+                    )
 
         output_dict = {f + '_zeropoints': zeropoints}
         p.add_output_values(obj=epoch, instrument='FORS2', params=output_dict)
@@ -330,7 +334,8 @@ def main(epoch,
                     plt.show()
                     plt.close()
 
-        best_arg = np.argmin(zeropoint_tbl["zeropoint_ext_corr_err"])
+        zeropoint_tbl["selection_index"] = zeropoint_tbl["n_matches"] / zeropoint_tbl["zeropoint_ext_corr_err"]
+        best_arg = np.argmax(zeropoint_tbl["selection_index"])
         print("Best zeropoint:")
         print(zeropoint_tbl[best_arg])
 

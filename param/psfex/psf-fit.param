@@ -5,9 +5,7 @@ FLUXERR_BEST             #RMS error for BEST flux                               
 FLUX_AUTO
 FLUXERR_AUTO
 FLUX_APER
-FLUX_APER(1)
 FLUXERR_APER
-FLUXERR_APER(1)
 MAG_BEST                 #Best of MAG_AUTO and MAG_ISOCOR                           [mag]
 MAGERR_BEST              #RMS error for MAG_BEST                                    [mag]
 MAG_AUTO

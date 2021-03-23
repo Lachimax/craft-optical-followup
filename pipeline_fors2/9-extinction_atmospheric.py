@@ -152,6 +152,8 @@ def main(epoch, show, write):
                 update_dict[f[0] + '_extinction_err'] = float(extinctions_known_err[i])
                 if f[0] + '_zeropoints' in output_values:
                     update_dict[f[0] + '_zeropoints'] = output_values[f[0] + '_zeropoints']
+                else:
+                    update_dict[f[0] + '_zeropoints'] = {}
                 update_dict[f[0] + '_zeropoints']['provided'] = {}
                 update_dict[f[0] + '_zeropoints']['provided']['zeropoint'] = float(zeropoints[i])
                 update_dict[f[0] + '_zeropoints']['provided']['zeropoint_err'] = float(zeropoints_err[i])

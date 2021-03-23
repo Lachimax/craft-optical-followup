@@ -8,8 +8,9 @@ usage() {
 
 sub_back=false
 insert_test_synth=false
+mass_synth_test=false
 
-while getopts "e:d:bs" option; do
+while getopts "e:d:bsm" option; do
   case "${option}" in
   e)
     param_file=${OPTARG}
@@ -22,6 +23,9 @@ while getopts "e:d:bs" option; do
     ;;
   s)
     insert_test_synth=true
+    ;;
+  m)
+    mass_synth_test=true
     ;;
   *)
     usage
@@ -283,7 +287,11 @@ if ${insert_test_synth}; then
 fi
 
 if ${sub_back}; then
-  run_script_folders 5-background_subtract '' "${individuals}" "${folder}5-background_subtracted_with_python/"
+  if ${mass_synth_test}; then
+    run_script_folders 5-background_subtract '' "${individuals}" "${folder}5-background_subtracted_with_python/" true
+  else
+    run_script_folders 5-background_subtract '' "${individuals}" "${folder}5-background_subtracted_with_python/"
+  fi
   run_script_folders 6-montage '(Science images)' "${folder}5-background_subtracted_with_python/science/" "${folder}6-combined_with_montage/science/"
   run_script_folders 6-montage '(Background images)' "${folder}5-background_subtracted_with_python/backgrounds/" "${folder}6-combined_with_montage/backgrounds/"
 elif ${insert_test_synth}; then
