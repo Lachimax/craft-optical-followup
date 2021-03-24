@@ -58,16 +58,16 @@ def main(epoch, origin, destination):
 
             try:
                 ph.insert_point_sources_to_file(file=path_fits_file_input,
-                                            x=array(insert["ra"]),
-                                            y=array(insert["dec"]),
-                                            mag=insert[f"{f}_mag"],
-                                            output=path_fits_file_output,
-                                            zeropoint=zeropoint,
-                                            extinction=extinction,
-                                            airmass=airmass,
-                                            world_coordinates=True,
-                                            psf_model=path_psf_model
-                                            )
+                                                x=array(insert["ra"]),
+                                                y=array(insert["dec"]),
+                                                mag=insert[f"{f}_mag"],
+                                                output=path_fits_file_output,
+                                                zeropoint=zeropoint,
+                                                extinction=extinction,
+                                                airmass=airmass,
+                                                world_coordinates=True,
+                                                psf_model=path_psf_model
+                                                )
             except ValueError:
                 ph.insert_point_sources_to_file(file=path_fits_file_input,
                                                 x=array(insert["ra"]),
