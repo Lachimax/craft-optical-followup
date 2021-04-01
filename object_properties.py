@@ -30,7 +30,8 @@ def main(obj,
          frame,
          instrument,
          cat_name,
-         image_spec):
+         image_spec,
+         cone):
     print(obj)
 
     frame *= units.pixel
@@ -46,6 +47,8 @@ def main(obj,
     filters = epoch_properties['filters']
     fixed_aperture = epoch_properties['photometry_apertures'][0]
 
+    burst_coord = SkyCoord(burst_properties["burst_ra"]*units.degree, burst_properties["burst_dec"]*units.degree)
+
     for f in filters:
         if burst_outputs is None or f"{f}_ext_gal" not in burst_outputs:
             print(f"\nGalactic extinction missing for {f}; calculating now.")
@@ -57,8 +60,7 @@ def main(obj,
     if galaxies is None:
         galaxies = {}
     for i, ra in enumerate(epoch_properties['test_synths']['ra']):
-        galaxies[f"fake_star_{i}"] = {"ra": ra,
-                                                               "dec": epoch_properties['test_synths']['dec'][i]}
+        galaxies[f"fake_star_{i}"] = {"ra": ra, "dec": epoch_properties['test_synths']['dec'][i]}
     hg_ra = burst_properties['hg_ra']
     hg_dec = burst_properties['hg_dec']
     if hg_ra == 0.0 or hg_dec == 0.0:
@@ -169,6 +171,7 @@ def main(obj,
 
         # Analysis
         cat = Table.read(cat_path, format="ascii.sextractor")
+
         # print(cat.colnames)
         # np.genfromtxt(cat_path, names=params.sextractor_names_psf())
         mag_auto_true, mag_auto_err_plus, mag_auto_err_minus = ph.magnitude_complete(flux=cat['FLUX_AUTO'],
@@ -244,6 +247,12 @@ def main(obj,
         )
 
         p.plot_all_params(image=image, cat=cat, kron=True, show=show)
+
+        if cone is not None:
+            cat['dist_from_burst'] = SkyCoord(cat['ALPHA_SKY'], cat['DELTA_SKY']).separation(burst_coord).arcsec
+            cat_cone = cat[cat['dist_from_burst'] < cone]
+            for i, thing in enumerate(cat_cone):
+                galaxies[f'cone_{i}'] = {"ra": thing['ALPHA_SKY'], "dec": thing['DELTA_SKY']}
 
         for o in galaxies:
             ra = galaxies[o]['ra']
@@ -707,6 +716,10 @@ if __name__ == '__main__':
                         help='Path to directory in which to save information and plots.',
                         type=str,
                         default=None)
+    parser.add_argument('--cone',
+                        help='Radius within which to extract all magnitudes. If not given, only the "other_objects" list is used.',
+                        type=float,
+                        default=None)
 
     args = parser.parse_args()
     main(obj=args.e,
@@ -714,6 +727,7 @@ if __name__ == '__main__':
          frame=args.frame,
          instrument=args.instrument,
          cat_name=args.cat,
-         image_spec=args.image)
+         image_spec=args.image,
+         cone=args.cone)
 
 # TODO: Turn this script into a function.
