@@ -47,7 +47,7 @@ def main(obj,
     filters = epoch_properties['filters']
     fixed_aperture = epoch_properties['photometry_apertures'][0]
 
-    burst_coord = SkyCoord(burst_properties["burst_ra"]*units.degree, burst_properties["burst_dec"]*units.degree)
+    burst_coord = SkyCoord(burst_properties["burst_ra"] * units.degree, burst_properties["burst_dec"] * units.degree)
 
     for f in filters:
         if burst_outputs is None or f"{f}_ext_gal" not in burst_outputs:

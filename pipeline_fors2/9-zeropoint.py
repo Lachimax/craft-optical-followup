@@ -1,18 +1,17 @@
 # Code by Lachlan Marnoch, 2019
 
-from craftutils import plotting
-from craftutils import photometry
-from craftutils import params as p
-from craftutils import fits_files as ff
-from craftutils.utils import mkdir_check, error_product
-from craftutils.retrieve import update_std_photometry, cat_columns, photometry_catalogues
-
 import os
-import matplotlib
-from matplotlib import pyplot as plt
+
 import astropy.time as time
-from astropy import table
+import matplotlib
 import numpy as np
+from astropy import table
+from craftutils import fits_files as ff
+from craftutils import params as p
+from craftutils import photometry
+from craftutils.retrieve import update_std_photometry, cat_columns, photometry_catalogues
+from craftutils.utils import mkdir_check, error_product
+from matplotlib import pyplot as plt
 
 matplotlib.rcParams.update({'errorbar.capsize': 3})
 
@@ -337,7 +336,17 @@ def main(epoch,
         zeropoint_tbl["selection_index"] = zeropoint_tbl["n_matches"] / zeropoint_tbl["zeropoint_ext_corr_err"]
         best_arg = np.argmax(zeropoint_tbl["selection_index"])
         print("Best zeropoint:")
-        print(zeropoint_tbl[best_arg])
+        best_zeropoint = zeropoint_tbl[best_arg]
+        print(best_zeropoint)
+
+        zeropoints = outputs[f + '_zeropoints']
+        zeropoints['best'] = {"zeropoint": float(best_zeropoint['zeropoint']),
+                              "zeropoint_err": float(best_zeropoint["zeropoint_err"]),
+                              "airmass": float(best_zeropoint["airmass"]),
+                              "airmass_err": float(best_zeropoint["airmass_err"]),
+                              "type": str(best_zeropoint["type"])}
+        output_dict = {f + '_zeropoints': zeropoints}
+        p.add_output_values(obj=epoch, instrument='FORS2', params=output_dict)
 
         zeropoint_tbl.write(output_path_final_f + "zeropoints.csv", format="ascii.csv", overwrite=True)
 
