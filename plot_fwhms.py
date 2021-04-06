@@ -1,4 +1,4 @@
-# Code by Lachlan Marnoch, 2019
+# Code by Lachlan Marnoch, 2021
 from craftutils import params as p
 from craftutils.utils import check_trailing_slash
 

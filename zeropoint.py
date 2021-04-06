@@ -1,6 +1,6 @@
 # Code by Lachlan Marnoch, 2019-2021
 
-from craftutils import photometry
+from craft_optical_followup import photometry
 from craftutils import params as p
 from craftutils import fits_files as ff
 from craftutils.utils import mkdir_check, mkdir_check_nested
