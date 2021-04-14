@@ -1,6 +1,7 @@
 # Code by Lachlan Marnoch, 2019-2021
 
 from astropy.io.misc import yaml
+# import yaml
 import csv
 import json
 from typing import Union
@@ -11,6 +12,12 @@ from datetime import date
 import astropy.table as tbl
 
 from craftutils import utils as u
+
+
+def serialise_attributes(dumper, data):
+    dict_representation = data.__dict__
+    node = dumper.represent_dict(dict_representation)
+    return node
 
 
 def tabulate_output_values(path: str, output: str = None):
@@ -68,6 +75,24 @@ def save_params(file: str, dictionary: dict, quiet: bool = False):
 
     with open(file, 'w') as f:
         yaml.dump(dictionary, f)
+
+
+def select_coords(dictionary):
+    if "str_ra" in dictionary and dictionary["str_ra"] not in [None, 0]:
+        ra = dictionary["str_ra"]
+    elif "decimal_ra" in dictionary and dictionary["str_ra"] not in [None, 0]:
+        ra = f"{dictionary['decimal_ra']}d"
+    else:
+        raise ValueError("No valid Right Ascension found in dictionary.")
+
+    if "str_dec" in dictionary and dictionary["str_dec"] not in [None, 0]:
+        dec = dictionary["str_dec"]
+    elif "decimal_dec" in dictionary and dictionary["str_dec"] not in [None, 0]:
+        dec = f"{dictionary['decimal_dec']}d"
+    else:
+        raise ValueError("No valid Declination found in dictionary.")
+
+    return ra, dec
 
 
 def yaml_to_json(yaml_file: str, output: str = None, quiet: bool = False):
