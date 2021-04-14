@@ -1,6 +1,6 @@
 # Code by Lachlan Marnoch, 2019-2021
 
-import ruamel.yaml as yaml
+from astropy.io.misc import yaml
 import csv
 import json
 from typing import Union
@@ -51,7 +51,7 @@ def load_params(file: str, quiet: bool = False):
 
     if os.path.isfile(file):
         with open(file) as f:
-            p = yaml.safe_load(f)
+            p = yaml.load(f)
     else:
         p = None
         if not quiet:
