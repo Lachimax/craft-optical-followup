@@ -1,4 +1,4 @@
-# Code by Lachlan Marnoch, 2019
+# Code by Lachlan Marnoch, 2019 - 2021
 
 from astropy import table
 from astropy.io import fits
@@ -13,7 +13,18 @@ from craftutils import params as p
 from craftutils import utils as u
 from craftutils import plotting as pl
 
-from typing import Union
+from typing import Union, Iterable
+
+
+def attempt_skycoord(coord: Union[SkyCoord, str, tuple, list, np.ndarray]):
+    if type(coord) is SkyCoord:
+        return coord
+    elif type(coord) is str:
+        return SkyCoord(coord)
+    elif type(coord) in [tuple, list, np.ndarray]:
+        return SkyCoord(coord[0], coord[1])
+    else:
+        raise TypeError(f"coord is {type(coord)}; must be of type SkyCoord, str, tuple, list, or numpy array")
 
 
 def calculate_error_ellipse(frb: Union[str, dict], error: str = 'quadrature'):
