@@ -13,3 +13,4 @@ class Object:
 
 class FRB(Object):
     def __init__(self):
+        super(FRB, self).__init__()
