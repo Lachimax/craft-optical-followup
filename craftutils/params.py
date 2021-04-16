@@ -13,6 +13,8 @@ import astropy.table as tbl
 
 from craftutils import utils as u
 
+yaml.AstropyDumper.ignore_aliases = lambda *args: True
+
 
 def serialise_attributes(dumper, data):
     dict_representation = data.__dict__
@@ -78,19 +80,23 @@ def save_params(file: str, dictionary: dict, quiet: bool = False):
 
 
 def select_coords(dictionary):
-    if "str_ra" in dictionary and dictionary["str_ra"] not in [None, 0]:
-        ra = dictionary["str_ra"]
-    elif "decimal_ra" in dictionary and dictionary["str_ra"] not in [None, 0]:
-        ra = f"{dictionary['decimal_ra']}d"
-    else:
-        raise ValueError("No valid Right Ascension found in dictionary.")
+    ra = None
+    if "ra" in dictionary:
+        if "hms" in dictionary["ra"] and dictionary["ra"]["hms"] not in [None, 0]:
+            ra = dictionary["ra"]["hms"]
+        elif "decimal" in dictionary["ra"] and dictionary["ra"]["decimal"] not in [None, 0]:
+            ra = f"{dictionary['ra']['decimal']}d"
+        else:
+            raise ValueError("No valid Right Ascension found in dictionary.")
 
-    if "str_dec" in dictionary and dictionary["str_dec"] not in [None, 0]:
-        dec = dictionary["str_dec"]
-    elif "decimal_dec" in dictionary and dictionary["str_dec"] not in [None, 0]:
-        dec = f"{dictionary['decimal_dec']}d"
-    else:
-        raise ValueError("No valid Declination found in dictionary.")
+    dec = None
+    if "dec" in dictionary:
+        if "dms" in dictionary["dec"] and dictionary["dec"]["hms"] not in [None, 0]:
+            dec = dictionary["dec"]["dms"]
+        elif "decimal" in dictionary["dec"] and dictionary["dec"]["decimal"] not in [None, 0]:
+            dec = f"{dictionary['dec']['decimal']}d"
+        else:
+            raise ValueError("No valid Declination found in dictionary.")
 
     return ra, dec
 
