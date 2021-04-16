@@ -15,7 +15,15 @@ from astropy import units
 # TODO: Arrange these into some kind of logical order.
 # TODO: Also comment.
 
-def dequantify(number):
+def check_quantity(number: Union[float, int, units.Quantity], unit: units.Unit):
+    if type(number) is not units.Quantity:
+        number *= unit
+    elif number.unit != unit:
+        raise ValueError(f"This is already a Quantity, but with units {number.unit}; units {unit} were specified.")
+    return number
+
+
+def dequantify(number: Union[float, int, units.Quantity]):
     if type(number) is units.Quantity:
         return number.value
     else:
