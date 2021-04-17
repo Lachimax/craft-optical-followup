@@ -15,11 +15,15 @@ from astropy import units
 # TODO: Arrange these into some kind of logical order.
 # TODO: Also comment.
 
-def check_quantity(number: Union[float, int, units.Quantity], unit: units.Unit):
+def check_quantity(number: Union[float, int, units.Quantity], unit: units.Unit, allow_mismatch: bool = True):
     if type(number) is not units.Quantity:
         number *= unit
     elif number.unit != unit:
-        raise ValueError(f"This is already a Quantity, but with units {number.unit}; units {unit} were specified.")
+        if not allow_mismatch:
+            raise ValueError(f"This is already a Quantity, but with units {number.unit}; units {unit} were specified.")
+        elif not (number.unit.is_equivalent(unit)):
+            raise ValueError(
+                f"This number is already a Quantity, but with incompatible units ({number.unit}); units {unit} were specified.")
     return number
 
 
