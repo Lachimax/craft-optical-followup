@@ -15,7 +15,6 @@ from craftutils import plotting as pl
 
 from typing import Union, Iterable
 
-
 def attempt_skycoord(coord: Union[SkyCoord, str, tuple, list, np.ndarray]):
     if type(coord) is SkyCoord:
         return coord
