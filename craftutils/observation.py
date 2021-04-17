@@ -10,30 +10,21 @@ from craftutils import astronobjects
 
 config = p.config
 
+position_dictionary = {"ra": {"decimal": 0.0,
+                              "hms": "00h00m00s",
+                              "err": 0.0},
+                       "dec": {"decimal": 0.0,
+                               "dms": "00d00m00s",
+                               "err": 0.0}
+                       }
+
 
 class Field:
-    default_params = {"centre": {"decimal_ra": 0.0,
-                                 "decimal_dec": 0.0,
-                                 "str_ra": "0h0m0s",
-                                 "str_dec": "0d0m0s"},
-                      "data_path": ""
+    default_params = {"type": "Field",
+                      "centre": position_dictionary.copy(),
+                      "objects": {"name": position_dictionary.copy()
+                                  }
                       }
-
-    def from_file(self, path):
-
-        u.sanitise_file_ext(filename=path, ext="yaml")
-        param_dict = p.load_params(file=path)
-        # Check data_dir path for relevant .yamls (output_values, etc.)
-
-        name = os.path.splitext(os.path.split(path)[-1])[0]
-        centre_ra, centre_dec = p.select_coords(param_dict["centre"])
-
-        return self.__init__(name=name,
-                             centre_coords=f"{centre_ra} {centre_dec}",
-                             param_path=path,
-                             data_path=param_dict["data_path"],
-                             objects=None
-                             )
 
     def __init__(self,
                  name: str = None,
@@ -69,6 +60,7 @@ class Field:
         param_dict = cls.default_params
         param_dict["data_path"] = os.path.join(config["top_data_dir"], name, "")
         if path is not None:
+            path = os.path.join(path, name)
             p.save_params(file=path, dictionary=param_dict, quiet=quiet)
         return param_dict
 
@@ -80,13 +72,70 @@ class Field:
 
 
 class FRBField(Field):
+    default_params = {
+        "type": "FRBField",
+        "frb": {"position": position_dictionary.copy(),
+                "position_err": astronobjects.position_uncertainty_dict.copy(),
+                "host_galaxy": {"position": position_dictionary.copy(),
+                                "z": 0.0
+                                },
+                "mjd": 58000
+                },
+        "subtraction": {"template_epochs": {"des": None,
+                                            "fors2": None,
+                                            "xshooter": None,
+                                            "sdss": None
+                                            }
+                        }
+    }
+
     def __init__(self,
-                 burst_coords: Union[SkyCoord, str],
-                 centre_coords: Union[SkyCoord, str] = None, ):
+                 name: str = None,
+                 centre_coords: Union[SkyCoord, str] = None,
+                 param_path: str = None,
+                 data_path: str = None,
+                 objects: List[astronobjects.Object] = None,
+                 burst_coords: Union[SkyCoord, str] = None):
         if centre_coords is None:
             centre_coords = burst_coords
 
-        super(FRBField, self).__init__(centre_coords=centre_coords)
+        super(FRBField, self).__init__(name=name,
+                                       centre_coords=centre_coords,
+                                       param_path=param_path,
+                                       data_path=data_path,
+                                       objects=objects
+                                       )
+
+    @classmethod
+    def from_file(cls, path):
+
+        u.sanitise_file_ext(filename=path, ext="yaml")
+        param_dict = p.load_params(file=path)
+        # Check data_dir path for relevant .yamls (output_values, etc.)
+
+        name = os.path.splitext(os.path.split(path)[-1])[0]
+        field_type = param_dict["type"]
+        centre_ra, centre_dec = p.select_coords(param_dict["centre"])
+
+        if field_type == "Field":
+            return cls(name=name,
+                       centre_coords=f"{centre_ra} {centre_dec}",
+                       param_path=path,
+                       data_path=param_dict["data_path"],
+                       objects=None
+                       )
+        elif field_type == "FRBField":
+            return FRBField()
+
+    @classmethod
+    def new_yaml(cls, name: str, path: str = None, quiet: bool = False):
+        param_dict = super(FRBField, cls).new_yaml(name=name, path=None)
+        param_dict = param_dict.copy()
+        param_dict.update(cls.default_params)
+        if path is not None:
+            path = os.path.join(path, name)
+            p.save_params(file=path, dictionary=param_dict, quiet=quiet)
+        return param_dict
 
 
 class Epoch:
