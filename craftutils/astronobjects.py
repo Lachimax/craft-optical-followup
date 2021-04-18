@@ -9,17 +9,16 @@ from craftutils import utils as u
 uncertainty_dict = {"sys": 0.0,
                     "stat": 0.0}
 
-position_uncertainty_equatorial_dict = {"ra": uncertainty_dict.copy(),
-                                        "dec": uncertainty_dict.copy()}
-
-position_uncertainty_ellipse_dict = {"a": uncertainty_dict.copy(),
-                                     "b": uncertainty_dict.copy(),
-                                     "theta": 0.0}
+position_uncertainty_dict = {"ra": uncertainty_dict.copy(),
+                             "dec": uncertainty_dict.copy(),
+                             "a": uncertainty_dict.copy(),
+                             "b": uncertainty_dict.copy(),
+                             "theta": 0.0}
 
 
 class PositionUncertainty:
     def __init__(self,
-                 uncertainty: Union[float, un.Quantity, dict, Tuple[2]] = None,
+                 uncertainty: Union[float, un.Quantity, dict, tuple] = None,
                  position: SkyCoord = None,
                  ra_err_sys: Union[float, un.Quantity] = None,
                  ra_err_stat: Union[float, un.Quantity] = None,
@@ -43,26 +42,27 @@ class PositionUncertainty:
         """
         # Assign values from dictionary, if provided.
         if type(uncertainty) is dict:
-            if "ra" in uncertainty:
-                if "sys" in uncertainty["ra"]:
+            if "ra" in uncertainty and uncertainty["ra"] is not None:
+                if "sys" in uncertainty["ra"] and uncertainty["ra"]["sys"] is not None:
                     ra_err_sys = uncertainty["ra"]["sys"]
-                if "stat" in uncertainty["ra"]:
+                if "stat" in uncertainty["ra"] and uncertainty["ra"]["stat"] is not None:
                     ra_err_stat = uncertainty["ra"]["stat"]
-            if "dec" in uncertainty:
-                if "sys" in uncertainty["dec"]:
+            if "dec" in uncertainty and uncertainty["dec"] is not None:
+                if "sys" in uncertainty["dec"] and uncertainty["dec"]["sys"] is not None:
                     dec_err_sys = uncertainty["dec"]["sys"]
-                if "stat" in uncertainty["dec"]:
+                if "stat" in uncertainty["dec"] and uncertainty["dec"]["stat"] is not None:
                     dec_err_stat = uncertainty["dec"]["stat"]
-            if "a" in uncertainty:
-                if "sys" in uncertainty["a"]:
-                    ra_err_sys = uncertainty["a"]["sys"]
-                if "stat" in uncertainty["a"]:
-                    ra_err_stat = uncertainty["a"]["stat"]
-            if "b" in uncertainty:
-                if "sys" in uncertainty["b"]:
-                    ra_err_sys = uncertainty["b"]["sys"]
-                if "stat" in uncertainty["b"]:
-                    ra_err_stat = uncertainty["b"]["stat"]
+            if "a" in uncertainty and uncertainty["a"] is not None:
+                if "sys" in uncertainty["a"] and uncertainty["a"]["sys"] is not None:
+                    a_sys = uncertainty["a"]["sys"]
+                if "stat" in uncertainty["a"] and uncertainty["a"]["stat"] is not None:
+                    a_stat = uncertainty["a"]["stat"]
+            if "b" in uncertainty and uncertainty["b"] is not None:
+                if "sys" in uncertainty["b"] and uncertainty["b"]["sys"] is not None:
+                    b_sys = uncertainty["b"]["sys"]
+                if "stat" in uncertainty["b"] and uncertainty["a"]["stat"] is not None:
+                    b_stat = uncertainty["b"]["stat"]
+
         # If uncertainty is a single value, assume a circular uncertainty region without distinction between systematic
         # and statistical.
         elif uncertainty is not None:
@@ -70,6 +70,7 @@ class PositionUncertainty:
             a_sys = 0.0
             b_stat = uncertainty
             b_sys = 0.0
+            theta = 0.0
 
         # Check whether we're specifying uncertainty using equatorial coordinates or ellipse parameters.
         if a_stat is not None and a_sys is not None and b_stat is not None and b_sys is not None and theta is not None and position is not None:
@@ -120,7 +121,7 @@ class Object:
 class FRB(Object):
     def __init__(self,
                  position: Union[SkyCoord, str] = None,
-                 position_err: Union[float, un.Quantity, dict, PositionUncertainty, Tuple[2]] = 0.0 * un.arcsec,
+                 position_err: Union[float, un.Quantity, dict, PositionUncertainty, tuple] = 0.0 * un.arcsec,
                  ):
         """
         Any angular values provided without units will be assumed to be in degrees.
