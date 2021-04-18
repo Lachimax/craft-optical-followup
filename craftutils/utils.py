@@ -15,6 +15,30 @@ from astropy import units
 # TODO: Arrange these into some kind of logical order.
 # TODO: Also comment.
 
+def check_key(key: str, dictionary: dict, na_values: Union[tuple, list] = (None)):
+    """
+    Returns true if a key is present in a dictionary AND the value of the key is not in na_values (just None by default)
+    :param key: The key to check for.
+    :param dictionary: The dictionary to check the key for.
+    :param na_values: Values not allowed.
+    :return: bool
+    """
+    return key in dictionary and dictionary[key] not in na_values
+
+
+def check_dict(key: str, dictionary: dict, na_values: Union[tuple, list] = (None), fail_val=None):
+    """
+
+    :param key:
+    :param dictionary:
+    :param na_values:
+    :param fail_val: The value to return if the key is not
+    :return:
+    """
+    if check_key(key=key, dictionary=dictionary, na_values=na_values):
+        return dictionary[key]
+
+
 def check_quantity(number: Union[float, int, units.Quantity], unit: units.Unit, allow_mismatch: bool = True):
     if type(number) is not units.Quantity:
         number *= unit
