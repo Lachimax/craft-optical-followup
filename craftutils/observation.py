@@ -56,6 +56,33 @@ class Field:
         self.output_path = data_path
 
     @classmethod
+    def from_params(cls, name):
+        path = os.path.join(p.param_path, "fields", name)
+        return cls.from_file(path=path)
+
+
+    @classmethod
+    def from_file(cls, path):
+
+        u.sanitise_file_ext(filename=path, ext="yaml")
+        param_dict = p.load_params(file=path)
+        # Check data_dir path for relevant .yamls (output_values, etc.)
+
+        name = os.path.splitext(os.path.split(path)[-1])[0]
+        field_type = param_dict["type"]
+        centre_ra, centre_dec = p.select_coords(param_dict["centre"])
+
+        if field_type == "Field":
+            return cls(name=name,
+                       centre_coords=f"{centre_ra} {centre_dec}",
+                       param_path=path,
+                       data_path=param_dict["data_path"],
+                       objects=None
+                       )
+        elif field_type == "FRBField":
+            return FRBField()
+
+    @classmethod
     def new_yaml(cls, name: str, path: str = None, quiet: bool = False):
         param_dict = cls.default_params
         param_dict["data_path"] = os.path.join(config["top_data_dir"], name, "")
@@ -105,27 +132,6 @@ class FRBField(Field):
                                        data_path=data_path,
                                        objects=objects
                                        )
-
-    @classmethod
-    def from_file(cls, path):
-
-        u.sanitise_file_ext(filename=path, ext="yaml")
-        param_dict = p.load_params(file=path)
-        # Check data_dir path for relevant .yamls (output_values, etc.)
-
-        name = os.path.splitext(os.path.split(path)[-1])[0]
-        field_type = param_dict["type"]
-        centre_ra, centre_dec = p.select_coords(param_dict["centre"])
-
-        if field_type == "Field":
-            return cls(name=name,
-                       centre_coords=f"{centre_ra} {centre_dec}",
-                       param_path=path,
-                       data_path=param_dict["data_path"],
-                       objects=None
-                       )
-        elif field_type == "FRBField":
-            return FRBField()
 
     @classmethod
     def new_yaml(cls, name: str, path: str = None, quiet: bool = False):
