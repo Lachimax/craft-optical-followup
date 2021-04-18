@@ -11,7 +11,7 @@ if __name__ == '__main__':
     import argparse
 
     parser = argparse.ArgumentParser(description="Set up a new epoch.")
-    parser.add_argument('--op', help='Name of frb, eg FRB180924')
+    parser.add_argument('--op', help='Name of frb, eg FRB180924', type=str)
 
     # Load arguments
 
