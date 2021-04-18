@@ -396,7 +396,7 @@ def instrument_filters_single_param(param: str, instrument: str = 'FORS2', sort_
 
 def object_params_instrument(obj: str, instrument: str, quiet: bool = False):
     instrument = instrument.lower()
-    return load_params(param_path + f'epochs_{instrument}/{obj}', quiet=quiet)
+    return load_params(os.path.join(param_path, f'epochs_{instrument}', obj), quiet=quiet)
 
 
 def object_params_fors2(obj: str, quiet: bool = False):
