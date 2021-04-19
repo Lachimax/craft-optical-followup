@@ -465,7 +465,7 @@ def frb_output_params(obj: str, quiet: bool = False):
     if p is None:
         return None
     else:
-        return load_params(p['data_dir'] + 'output_values', quiet=quiet)
+        return load_params(os.path.join(p['data_dir'], 'output_values'), quiet=quiet)
 
 
 # TODO: Object should be epoch, almost everywhere.
