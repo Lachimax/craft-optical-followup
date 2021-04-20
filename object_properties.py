@@ -319,8 +319,8 @@ def main(obj,
                     airmass=airmass)
 
                 plt.imshow(data, origin='lower', norm=norm, )
-                aperture.plot(color='violet', label='Fixed aperture')
-                annulus.plot(color='cyan', label='Background annulus')
+                aperture.plot(color='violet', label='Kron aperture')
+                annulus.plot(color='cyan', label='Photutils background annulus')
                 print(this['X_IMAGE'], this['Y_IMAGE'])
                 plt.legend()
                 plt.title(f"{o} (photutils), {f_0}-band image")
@@ -340,6 +340,24 @@ def main(obj,
                                          )
             # Use background annulus to obtain a median sky background
             mag_photutils_fixed, flux_photutils_fixed, subtract_photutils_fixed, median_photutils_fixed = \
+                ph.single_aperture_photometry(
+                    data=data, aperture=aperture, annulus=annulus,
+                    exp_time=exp_time, zeropoint=zeropoint,
+                    extinction=extinction,
+                    airmass=airmass)
+
+            # Again, but with the aperture forced to the given coordinates.
+
+            x_given, y_given = coord.to_pixel(wcs=wcs_main)
+
+            aperture = pu.CircularAperture(positions=(x_given, y_given), r=aperture_radius)
+            # Define background annulus:
+            annulus = pu.CircularAnnulus(positions=(x_image_mod, y_image_mod),
+                                         r_in=2 * aperture_radius,
+                                         r_out=3 * aperture_radius,
+                                         )
+            # Use background annulus to obtain a median sky background
+            mag_photutils_forced, flux_photutils_forced, subtract_photutils_forced, median_photutils_forced = \
                 ph.single_aperture_photometry(
                     data=data, aperture=aperture, annulus=annulus,
                     exp_time=exp_time, zeropoint=zeropoint,
@@ -377,6 +395,7 @@ def main(obj,
                                      'mag_aper_local': float(mag_aper_local[index_local]),
                                      'mag_aper_local_err': float(mag_aper_local_err),
                                      'mag_photutils_aper': float(mag_photutils_fixed),
+                                     'mag_photutils_forced': float(mag_photutils_forced),
                                      # 'mag_photutils_err': float(mag_photutils_err),
                                      'ext_gal': float(ext_gal),
                                      'mag_ins_err': float(mag_ins_err), 'flux_auto': float(this['FLUX_AUTO']),
@@ -412,6 +431,7 @@ def main(obj,
             print(f'{o} {f} mag aper local:', output_catalogue_this['mag_aper_local'], '+/-',
                   output_catalogue_this['mag_aper_local_err'])
             print(f'{o} {f} mag photutils fixed:', output_catalogue_this['mag_photutils_aper'])
+            print(f'{o} {f} mag photutils forced:', output_catalogue_this['mag_photutils_forced'])
             print(f'{o} {f} mag auto corrected for Galactic extinction:', output_catalogue_this['mag_auto_gal_correct'])
             print(f'Galactic extinction used:', ext_gal)
             print(f'{o} {f} mag psf:', output_catalogue_this['mag_psf'], '+/-',
@@ -425,6 +445,8 @@ def main(obj,
             print('Plotting...')
 
             # p.plot_all_params(image=image, cat=cat)
+
+            # Plot fixed aperture
 
             mid_x = output_catalogue_this['x'] * units.pix
             mid_y = output_catalogue_this['y'] * units.pix
@@ -500,6 +522,150 @@ def main(obj,
 
             plt.legend()
             plt.title(f"{output_catalogue_this['id']}, {f_0}-band image, fixed aperture")
+            plt.savefig(output_path + f + '_' + output_catalogue_this['id'] + "_fixed_aperture")
+            if show:
+                plt.show()
+            plt.close()
+
+            this_frame = max(kron_a.to(units.pixel, pix_scale) * np.cos(kron_theta) + 10 * units.pix,
+                             kron_a.to(units.pixel, pix_scale) * np.sin(kron_theta) + 10 * units.pix,
+                             frame)
+
+            print(f"{mid_x} - {this_frame}")
+
+            left = mid_x - this_frame
+            right = mid_x + this_frame
+            bottom = mid_y - this_frame
+            top = mid_y + this_frame
+
+            image_cut = ff.trim(hdu=image, left=left, right=right, bottom=bottom, top=top)
+
+            plt.imshow(image_cut[0].data, origin='lower')
+            # , norm=ImageNormalize(image_cut[0].data, stretch=SqrtStretch(), interval=ZScaleInterval()))
+            p.plot_gal_params(hdu=image_cut,
+                              ras=[output_catalogue_this['ra_given']],
+                              decs=[output_catalogue_this['dec_given']],
+                              a=[0],
+                              b=[0],
+                              theta=[0],
+                              show_centre=True,
+                              colour='red',
+                              label='Given coordinates')
+            p.plot_gal_params(hdu=image_cut,
+                              ras=[output_catalogue_this['ra']],
+                              decs=[output_catalogue_this['dec']],
+                              a=[output_catalogue_this['a'] / 3600],
+                              b=[output_catalogue_this['b'] / 3600],
+                              theta=[output_catalogue_this['theta']],
+                              show_centre=True,
+                              colour='blue',
+                              label=f'SExtractor ellipse')
+            p.plot_gal_params(hdu=image_cut,
+                              ras=[output_catalogue_this['ra']],
+                              decs=[output_catalogue_this['dec']],
+                              a=[kron_a.value],
+                              b=[kron_b.value],
+                              theta=[output_catalogue_this['theta']],
+                              colour='violet',
+                              label='Kron aperture', line_style='-')
+            print(mid_x, output_catalogue_this['x'])
+            print(mid_y, output_catalogue_this['y'])
+
+            if SkyCoord(burst_properties['burst_ra'] * units.deg,
+                        burst_properties['burst_dec'] * units.deg).contained_by(
+                wcs.WCS(header=image_cut[0].header)):
+                p.plot_gal_params(hdu=image_cut,
+                                  ras=[burst_properties['burst_ra']],
+                                  decs=[burst_properties['burst_dec']],
+                                  a=[a],
+                                  b=[b],
+                                  theta=[theta],
+                                  colour="orange",
+                                  label='frb',
+                                  line_style=line_style,
+                                  show_centre=True)
+
+            plt.legend()
+            plt.title(f"{output_catalogue_this['id']}, {f_0}-band image")
+            plt.savefig(output_path + f + '_' + output_catalogue_this['id'])
+            if show:
+                plt.show()
+            plt.close()
+
+            # Plot forced aperture
+
+            mid_x = x_given * units.pix
+            mid_y = y_given * units.pix
+
+            # Set the frame using the extent of the ellipse.
+
+            this_frame = (aperture_radius * 3 + 5) * units.pix
+
+            print(f"{mid_x} - {this_frame}")
+
+            left = mid_x - this_frame
+            right = mid_x + this_frame
+            bottom = mid_y - this_frame
+            top = mid_y + this_frame
+
+            image_cut = ff.trim(hdu=image, left=left, right=right, bottom=bottom, top=top)
+
+            rad_deg = ((aperture_radius * units.pix).to(units.deg, pix_scale)).value
+
+            plt.imshow(image_cut[0].data, origin='lower')
+            # , norm=ImageNormalize(image_cut[0].data, stretch=SqrtStretch(), interval=ZScaleInterval()))
+            p.plot_gal_params(hdu=image_cut,
+                              ras=[ ],
+                              decs=[output_catalogue_this['dec_given']],
+                              a=[0],
+                              b=[0],
+                              theta=[0],
+                              show_centre=True,
+                              colour='red',
+                              label='Given coordinates')
+            p.plot_gal_params(hdu=image_cut,
+                              ras=[output_catalogue_this['ra_given']],
+                              decs=[output_catalogue_this['dec_given']],
+                              a=[rad_deg],
+                              b=[rad_deg],
+                              theta=[0],
+                              show_centre=True,
+                              colour='blue',
+                              label=f'Forced ellipse')
+            p.plot_gal_params(hdu=image_cut,
+                              ras=[output_catalogue_this['ra_given']],
+                              decs=[output_catalogue_this['dec_given']],
+                              a=[rad_deg * 2],
+                              b=[rad_deg * 2],
+                              theta=[0],
+                              show_centre=True,
+                              colour='violet',
+                              label=f'Photutils annulus')
+            p.plot_gal_params(hdu=image_cut,
+                              ras=[output_catalogue_this['ra_given']],
+                              decs=[output_catalogue_this['dec_given']],
+                              a=[rad_deg * 3],
+                              b=[rad_deg * 3],
+                              theta=[0],
+                              show_centre=True,
+                              colour='violet')
+
+            if SkyCoord(burst_properties['burst_ra'] * units.deg,
+                        burst_properties['burst_dec'] * units.deg).contained_by(
+                wcs.WCS(header=image_cut[0].header)):
+                p.plot_gal_params(hdu=image_cut,
+                                  ras=[burst_properties['burst_ra']],
+                                  decs=[burst_properties['burst_dec']],
+                                  a=[a],
+                                  b=[b],
+                                  theta=[theta],
+                                  colour="orange",
+                                  label='frb',
+                                  line_style=line_style,
+                                  show_centre=True)
+
+            plt.legend()
+            plt.title(f"{output_catalogue_this['id']}, {f_0}-band image, forced-position aperture")
             plt.savefig(output_path + f + '_' + output_catalogue_this['id'] + "_fixed_aperture")
             if show:
                 plt.show()
