@@ -879,7 +879,11 @@ def retrieve_mast_photometry(ra: float, dec: float, cat: str = "panstarrs", rele
     url = f"{mast_url}{cat}/{release}/{table}.csv"
     request = {'ra': ra, 'dec': dec, 'radius': 0.1, 'columns': construct_columns(cat=cat)}
     response = requests.get(url, params=request)
-    return response.text
+    text = response.text
+    if text == '':
+        return None
+    else:
+        return text
 
 
 def save_mast_photometry(ra: float, dec: float, output: str, cat: str = "panstarrs"):
@@ -900,6 +904,7 @@ def update_std_mast_photometry(ra: float, dec: float, cat: str = "panstarrs", fo
     cat = cat.lower()
     data_dir = p.config['top_data_dir']
     field_path = f"{data_dir}/std_fields/RA{ra}_DEC{dec}/"
+    u.mkdir_check_nested(field_path)
     outputs = p.load_params(field_path + "output_values")
     path = f"{field_path}{cat.upper()}/{cat.upper()}.csv"
     if outputs is None or f"in_{cat}" not in outputs or force:
