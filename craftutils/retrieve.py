@@ -12,7 +12,8 @@ from craftutils import utils as u
 
 keys = p.keys()
 fors2_filters_retrievable = ["I_BESS", "R_SPEC", "b_HIGH", "v_HIGH"]
-photometry_catalogues = ['DES', 'SDSS', 'SkyMapper']
+photometry_catalogues = ['DES', 'SDSS', 'SkyMapper', 'PANSTARRS']
+mast_catalogues = ['panstarrs']
 
 
 def cat_columns(cat, f: str = None):
@@ -32,17 +33,24 @@ def cat_columns(cat, f: str = None):
     elif cat == 'sdss':
         f = f.lower()
         return {'mag_psf': f"psfMag_{f}",
-                'mag_psf_err': f"WAVG_MAGERR_PSF_{f}",
+                'mag_psf_err': f"psfMagErr_{f}",
                 'ra': f"ra",
                 'dec': f"dec",
                 'class_star': f"probPSF_{f}"}
     elif cat == 'skymapper':
         f = f.lower()
         return {'mag_psf': f"{f}_psf",
-                'mag_psf_err': f"WAVG_MAGERR_PSF_{f}",
+                'mag_psf_err': f"e_{f}_psf",
                 'ra': f"raj2000",
                 'dec': f"dej2000",
                 'class_star': f"class_star_SkyMapper"}
+    elif cat == 'panstarrs':
+        f = f.lower()
+        return {'mag_psf': f"{f}PSFMag",
+                'mag_psf_err': f"{f}PSFMagErr",
+                'ra': f"raStack",
+                'dec': f"decStack",
+                'class_star': f"psfLikelihood"}
     else:
         raise ValueError(f"Catalogue {cat} not recognised.")
 
@@ -60,6 +68,8 @@ def update_std_photometry(ra: float, dec: float, cat: str):
         return update_std_sdss_photometry(ra=ra, dec=dec)
     elif cat == 'skymapper':
         return update_std_skymapper_photometry(ra=ra, dec=dec)
+    elif cat == 'panstarrs':
+        return update_std_mast_photometry(ra=ra, dec=dec, cat="panstarrs")
     else:
         raise ValueError("Catalogue name not recognised.")
 
@@ -72,6 +82,8 @@ def update_frb_photometry(frb: str, cat: str):
         return update_frb_sdss_photometry(frb=frb)
     elif cat == 'skymapper':
         return update_frb_skymapper_photometry(frb=frb)
+    elif cat in mast_cats:
+        return update_frb_mast_photometry(frb=frb, cat=cat)
     else:
         raise ValueError("Catalogue name not recognised.")
 
@@ -784,8 +796,8 @@ def update_std_skymapper_photometry(ra: float, dec: float, force: bool = False):
     data_dir = p.config['top_data_dir']
     field_path = f"{data_dir}/std_fields/RA{ra}_DEC{dec}/"
     outputs = p.load_params(field_path + "output_values")
+    path = field_path + "SkyMapper/SkyMapper.csv"
     if outputs is None or "in_skymapper" not in outputs or force:
-        path = field_path + "SkyMapper/SkyMapper.csv"
         response = save_skymapper_photometry(ra=ra, dec=dec, output=path)
         params = {}
         if response != "ERROR":
@@ -798,15 +810,18 @@ def update_std_skymapper_photometry(ra: float, dec: float, force: bool = False):
         else:
             return None
     elif outputs["in_skymapper"] is True:
-        print("There is already SkyMapper data present for this field.")
-        return True
+        if os.path.isfile(path):
+            print("There is already SkyMapper data present for this field.")
+            return True
+        else:
+            raise FileNotFoundError(f"Catalogue expected at {path}, but not found; something has gone wrong.")
     else:
         print("This field is not present in SkyMapper.")
 
 
 def update_frb_skymapper_photometry(frb: str, force: bool = False):
     """
-    Retrieve DES photometry for the field of an FRB (with a valid param file in param_dir), in a 0.2 deg radius cone
+    Retrieve SkyMapper photometry for the field of an FRB (with a valid param file in param_dir), in a 0.2 deg radius cone
     centred on the FRB coordinates, and download it to the appropriate data directory.
     (Note - the width of the box is in RA degrees, not corrected for spherical distortion)
     :param frb: FRB name, FRBXXXXXX. Must match title of param file.
@@ -837,14 +852,103 @@ def retrieve_skymapper_cutout(ra: float, dec: float):
 
 
 mast_url = "https://catalogs.mast.stsci.edu/api/v0.1/"
+catalogue_filters = {"panstarrs": ["g", "r", "i", "z", "y"]}
+catalogue_columns = {"panstarrs": ["objID", "qualityFlag", "raStack", "decStack", "raStackErr", "decStackErr",
+                                   "{:s}PSFMag", "{:s}PSFMagErr", "{:s}ApMag", "{:s}ApMagErr",
+                                   "{:s}KronMag", "{:s}KronMagErr", "{:s}psfLikelihood"]}
 
 
-def retrieve_skymapper_photometry(ra: float, dec: float, cat: str = "PANSTARRS", release="dr2", table="stack"):
+def construct_columns(cat="panstarrs"):
     cat = cat.lower()
-    cat_url = mast_url + cat + "/" + release + ".csv"
-    send = {}
-    send['ra'] = ra
-    send['dec'] = dec
-    send['radius'] = 0.1
-    send['columns']
+    columns = catalogue_columns[cat]
+    filters = catalogue_filters[cat]
+    columns_build = []
+    for column in columns:
+        if "{:s}" not in column:
+            columns_build.append(column)
+        else:
+            for f in filters:
+                columns_build.append(column.format(f))
 
+    return columns_build
+
+
+def retrieve_mast_photometry(ra: float, dec: float, cat: str = "panstarrs", release="dr2", table="stack"):
+    print(f"\nQuerying {cat} {release} archive for field centring on RA={ra}, DEC={dec}")
+    cat = cat.lower()
+    url = f"{mast_url}{cat}/{release}/{table}.csv"
+    request = {'ra': ra, 'dec': dec, 'radius': 0.1, 'columns': construct_columns(cat=cat)}
+    response = requests.get(url, params=request)
+    return response.text
+
+
+def save_mast_photometry(ra: float, dec: float, output: str, cat: str = "panstarrs"):
+    response = retrieve_mast_photometry(ra=ra, dec=dec, cat=cat)
+    if response == "ERROR":
+        return response
+    elif response is not None:
+        u.mkdir_check_nested(path=output)
+        print(f"Saving {cat} photometry to {output}")
+        with open(output, "w") as file:
+            file.write(response)
+    else:
+        print(f'No data retrieved from {cat}.')
+    return response
+
+
+def update_std_mast_photometry(ra: float, dec: float, cat: str = "panstarrs", force: bool = False):
+    cat = cat.lower()
+    data_dir = p.config['top_data_dir']
+    field_path = f"{data_dir}/std_fields/RA{ra}_DEC{dec}/"
+    outputs = p.load_params(field_path + "output_values")
+    path = f"{field_path}{cat}/{cat}.csv"
+    if outputs is None or f"in_{cat}" not in outputs or force:
+        response = save_mast_photometry(ra=ra, dec=dec, output=path, cat=cat)
+        params = {}
+        if response != "ERROR":
+            if response is not None:
+                params[f"in_{cat}"] = True
+            else:
+                params[f"in_{cat}"] = False
+            p.add_params(file=field_path + "output_values", params=params)
+            return response
+        else:
+            return None
+    elif outputs[f"in_{cat}"] is True:
+        if os.path.isfile(path):
+            print(f"There is already {cat} data present for this field.")
+            return True
+        else:
+            raise FileNotFoundError(f"Catalogue expected at {path}, but not found; something has gone wrong.")
+    else:
+        print(f"This field is not present in {cat}.")
+
+
+# TODO: A lot of basically repeated code here. Might be good to consolidate it somehow.
+
+def update_frb_mast_photometry(frb: str, cat: str = "panstarrs", force: bool = False):
+    """
+    Retrieve MAST photometry for the field of an FRB (with a valid param file in param_dir), in a 0.2 deg radius cone
+    centred on the FRB coordinates, and download it to the appropriate data directory.
+    (Note - the width of the box is in RA degrees, not corrected for spherical distortion)
+    :param frb: FRB name, FRBXXXXXX. Must match title of param file.
+    :return: True if successful, False if not.
+    """
+    params = p.object_params_frb(frb)
+    path = f"{params['data_dir']}{cat}/{cat}.csv"
+    outputs = p.frb_output_params(obj=frb)
+    if outputs is None or f"in_{cat}" not in outputs or force:
+        response = save_mast_photometry(ra=params['burst_ra'], dec=params['burst_dec'], output=path, cat=cat)
+        params = {}
+        if response != "ERROR":
+            if response is not None:
+                params[f"in_{cat}"] = True
+            else:
+                params[f"in_{cat}"] = False
+            p.add_output_values_frb(obj=frb, params=params)
+        return response
+    elif outputs[f"in_{cat}"] is True:
+        print(f"There is already {cat} data present for this field.")
+        return True
+    else:
+        print(f"This field is not present in {cat}.")
