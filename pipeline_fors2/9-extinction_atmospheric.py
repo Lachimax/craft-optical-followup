@@ -158,7 +158,7 @@ def main(epoch, show, write):
                 update_dict[f[0] + '_zeropoints']['provided']['zeropoint'] = float(zeropoints[i])
                 update_dict[f[0] + '_zeropoints']['provided']['zeropoint_err'] = float(zeropoints_err[i])
                 update_dict[f[0] + '_zeropoints']['provided'][
-                    'source'] = "http://archive.eso.org/bin/qc1_cgi?action=qc1_browse_table&table=fors2_photometry"
+                    'source'] = '"http://archive.eso.org/bin/qc1_cgi?action=qc1_browse_table&table=fors2_photometry"'
                 update_dict[f[0] + '_zeropoints']['provided']['mjd_measurement'] = float(mjd_measured[i])
                 update_dict[f[0] + '_zeropoints']['provided']['days_since_measurement'] = float(time_since_measured[i])
         p.add_output_values(obj=epoch, params=update_dict, instrument='fors2')
