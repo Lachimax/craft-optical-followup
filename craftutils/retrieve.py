@@ -834,3 +834,17 @@ def update_frb_skymapper_photometry(frb: str, force: bool = False):
 
 def retrieve_skymapper_cutout(ra: float, dec: float):
     url = "http://api.skymapper.nci.org.au/aus/siap/dr3/query?"
+
+
+mast_url = "https://catalogs.mast.stsci.edu/api/v0.1/"
+
+
+def retrieve_skymapper_photometry(ra: float, dec: float, cat: str = "PANSTARRS", release="dr2", table="stack"):
+    cat = cat.lower()
+    cat_url = mast_url + cat + "/" + release + ".csv"
+    send = {}
+    send['ra'] = ra
+    send['dec'] = dec
+    send['radius'] = 0.1
+    send['columns']
+
