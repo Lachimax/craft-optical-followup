@@ -502,7 +502,7 @@ def latex_setup():
     plt.rc('font', weight='bold')
     plt.rc('text', usetex=True)
     plt.rc('xtick', labelsize=8)
-    plt.rcParams['text.latex.preamble'] = [r'\usepackage{amsmath} ']  # \usepackage{sfmath} \boldmath
+    plt.rcParams['text.latex.preamble'] = r'\usepackage{amsmath} '  # \usepackage{sfmath} \boldmath
 
     plt.rcParams['font.serif'] = ['Times']
     plt.rcParams['axes.linewidth'] = 2.
