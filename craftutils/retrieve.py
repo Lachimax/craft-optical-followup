@@ -1,5 +1,5 @@
 # Code by Lachlan Marnoch, 2021
-
+from json.decoder import JSONDecodeError
 import urllib
 from datetime import date
 from typing import Union
@@ -537,7 +537,10 @@ def retrieve_des_photometry(ra: float, dec: float):
     :return: Retrieved photometry table, as a Bytes object, if successful; None if not.
     """
     print(f"Querying DES DR2 archive for field centring on RA={ra}, DEC={dec}")
-    login_des()
+    try:
+        login_des()
+    except JSONDecodeError:
+        return "ERROR"
     query = f"SELECT * " \
             f"FROM DR2_MAIN " \
             f"WHERE " \
@@ -566,7 +569,9 @@ def save_des_photometry(ra: float, dec: float, output: str):
     :return: Retrieved photometry table, as a Bytes object, if successful; None if not.
     """
     data = retrieve_des_photometry(ra=ra, dec=dec)
-    if data is not None:
+    if data == "ERROR":
+        print("A connection error occurred.")
+    elif data is not None:
         u.mkdir_check_nested(path=output)
         print("Saving DES photometry to" + output)
         with open(output, "wb") as file:

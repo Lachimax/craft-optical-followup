@@ -1,4 +1,4 @@
-# Code by Lachlan Marnoch, 2019-2020
+# Code by Lachlan Marnoch, 2019-2021
 from craftutils import params
 from craftutils import utils as u, photometry as ph, plotting as p, fits_files as ff
 from craftutils.astrometry import calculate_error_ellipse
@@ -8,7 +8,7 @@ from astropy import wcs
 from astropy.coordinates import SkyCoord
 from astropy.io import fits
 from astropy import time
-from astropy.visualization import (ImageNormalize, SquaredStretch, SqrtStretch, ZScaleInterval, MinMaxInterval)
+from astropy.visualization import ImageNormalize, SquaredStretch, SqrtStretch, ZScaleInterval, MinMaxInterval
 from astropy import units
 from astropy.stats import sigma_clipped_stats
 from astropy.table import Table
