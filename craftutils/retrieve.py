@@ -901,7 +901,7 @@ def update_std_mast_photometry(ra: float, dec: float, cat: str = "panstarrs", fo
     data_dir = p.config['top_data_dir']
     field_path = f"{data_dir}/std_fields/RA{ra}_DEC{dec}/"
     outputs = p.load_params(field_path + "output_values")
-    path = f"{field_path}{cat}/{cat}.csv"
+    path = f"{field_path}{cat.upper()}/{cat.upper()}.csv"
     if outputs is None or f"in_{cat}" not in outputs or force:
         response = save_mast_photometry(ra=ra, dec=dec, output=path, cat=cat)
         params = {}
@@ -935,7 +935,7 @@ def update_frb_mast_photometry(frb: str, cat: str = "panstarrs", force: bool = F
     :return: True if successful, False if not.
     """
     params = p.object_params_frb(frb)
-    path = f"{params['data_dir']}{cat}/{cat}.csv"
+    path = f"{params['data_dir']}{cat.upper()}/{cat.upper()}.csv"
     outputs = p.frb_output_params(obj=frb)
     if outputs is None or f"in_{cat}" not in outputs or force:
         response = save_mast_photometry(ra=params['burst_ra'], dec=params['burst_dec'], output=path, cat=cat)
