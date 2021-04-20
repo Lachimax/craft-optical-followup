@@ -82,7 +82,7 @@ def update_frb_photometry(frb: str, cat: str):
         return update_frb_sdss_photometry(frb=frb)
     elif cat == 'skymapper':
         return update_frb_skymapper_photometry(frb=frb)
-    elif cat in mast_cats:
+    elif cat in mast_catalogues:
         return update_frb_mast_photometry(frb=frb, cat=cat)
     else:
         raise ValueError("Catalogue name not recognised.")
