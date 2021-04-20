@@ -236,7 +236,7 @@ def update_frb_irsa_extinction(frb: str):
     params = p.object_params_frb(obj=frb)
     outputs = p.frb_output_params(obj=frb)
     data_dir = params['data_dir']
-    if 'dust_ebv' not in outputs and not os.path.isfile(data_dir + "galactic_extinction.txt"):
+    if 'dust_ebv' not in outputs and not os.path.isfile(os.path.join(data_dir, "galactic_extinction.txt")):
         values, ext_str = save_irsa_extinction(ra=params['burst_ra'], dec=params['burst_dec'],
                                                output=data_dir + "galactic_extinction.txt")
         p.add_output_values_frb(obj=frb, params=values)
@@ -753,7 +753,9 @@ def retrieve_skymapper_photometry(ra: float, dec: float):
         response = requests.get(url).content
     except requests.exceptions.SSLError:
         print('An SSL error occurred when retrieving SkyMapper data. Skipping.')
-        return None
+        return "ERROR"
+    if b"ERROR" in response:
+        return "ERROR"
     if response.count(b"\n") <= 1:
         return None
     else:
@@ -762,7 +764,9 @@ def retrieve_skymapper_photometry(ra: float, dec: float):
 
 def save_skymapper_photometry(ra: float, dec: float, output: str):
     response = retrieve_skymapper_photometry(ra=ra, dec=dec)
-    if response is not None:
+    if response == "ERROR":
+        return response
+    elif response is not None:
         u.mkdir_check_nested(path=output)
         print("Saving SkyMapper photometry to" + output)
         with open(output, "wb") as file:
@@ -780,12 +784,15 @@ def update_std_skymapper_photometry(ra: float, dec: float, force: bool = False):
         path = field_path + "SkyMapper/SkyMapper.csv"
         response = save_skymapper_photometry(ra=ra, dec=dec, output=path)
         params = {}
-        if response is not None:
-            params["in_skymapper"] = True
+        if response != "ERROR":
+            if response is not None:
+                params["in_skymapper"] = True
+            else:
+                params["in_skymapper"] = False
+            p.add_params(file=field_path + "output_values", params=params)
+            return response
         else:
-            params["in_skymapper"] = False
-        p.add_params(file=field_path + "output_values", params=params)
-        return response
+            return None
     elif outputs["in_skymapper"] is True:
         print("There is already SkyMapper data present for this field.")
         return True

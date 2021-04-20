@@ -15,7 +15,6 @@ burst_err_theta: 30
 burst_ra: 327.34845833
 burst_ra_str: null
 data_dir: /home/lachlan/Data/FRB181112/
-filters: [g_HIGH, I_BESS]
 hg_dec: -52.9709323
 hg_err_x: 7.76e-12
 hg_err_y: 7.48e-12

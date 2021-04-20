@@ -1,6 +1,7 @@
 # Code by Lachlan Marnoch, 2019-2021
 
-import ruamel.yaml as yaml
+from astropy.io.misc import yaml
+# import yaml
 import csv
 import json
 from typing import Union
@@ -11,6 +12,14 @@ from datetime import date
 import astropy.table as tbl
 
 from craftutils import utils as u
+
+yaml.AstropyDumper.ignore_aliases = lambda *args: True
+
+
+def serialise_attributes(dumper, data):
+    dict_representation = data.__dict__
+    node = dumper.represent_dict(dict_representation)
+    return node
 
 
 def tabulate_output_values(path: str, output: str = None):
@@ -51,7 +60,7 @@ def load_params(file: str, quiet: bool = False):
 
     if os.path.isfile(file):
         with open(file) as f:
-            p = yaml.safe_load(f)
+            p = yaml.load(f)
     else:
         p = None
         if not quiet:
@@ -68,6 +77,28 @@ def save_params(file: str, dictionary: dict, quiet: bool = False):
 
     with open(file, 'w') as f:
         yaml.dump(dictionary, f)
+
+
+def select_coords(dictionary):
+    ra = None
+    if "ra" in dictionary:
+        if "hms" in dictionary["ra"] and dictionary["ra"]["hms"] not in [None, 0]:
+            ra = dictionary["ra"]["hms"]
+        elif "decimal" in dictionary["ra"] and dictionary["ra"]["decimal"] not in [None, 0]:
+            ra = f"{dictionary['ra']['decimal']}d"
+        else:
+            raise ValueError("No valid Right Ascension found in dictionary.")
+
+    dec = None
+    if "dec" in dictionary:
+        if "dms" in dictionary["dec"] and dictionary["dec"]["hms"] not in [None, 0]:
+            dec = dictionary["dec"]["dms"]
+        elif "decimal" in dictionary["dec"] and dictionary["dec"]["decimal"] not in [None, 0]:
+            dec = f"{dictionary['dec']['decimal']}d"
+        else:
+            raise ValueError("No valid Declination found in dictionary.")
+
+    return ra, dec
 
 
 def yaml_to_json(yaml_file: str, output: str = None, quiet: bool = False):
@@ -365,7 +396,7 @@ def instrument_filters_single_param(param: str, instrument: str = 'FORS2', sort_
 
 def object_params_instrument(obj: str, instrument: str, quiet: bool = False):
     instrument = instrument.lower()
-    return load_params(param_path + f'epochs_{instrument}/{obj}', quiet=quiet)
+    return load_params(os.path.join(param_path, f'epochs_{instrument}', obj), quiet=quiet)
 
 
 def object_params_fors2(obj: str, quiet: bool = False):
@@ -434,7 +465,7 @@ def frb_output_params(obj: str, quiet: bool = False):
     if p is None:
         return None
     else:
-        return load_params(p['data_dir'] + 'output_values', quiet=quiet)
+        return load_params(os.path.join(p['data_dir'], 'output_values'), quiet=quiet)
 
 
 # TODO: Object should be epoch, almost everywhere.
