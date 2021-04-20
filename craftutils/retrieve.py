@@ -383,7 +383,11 @@ def login_des():
         }
     )
     # Store the JWT auth token
-    keys['des_auth_token'] = r.json()['token']
+    try:
+        keys['des_auth_token'] = r.json()['token']
+    except JSONDecodeError:
+        print("There was a server-side error; skipping DES tasks.")
+        return 'ERROR'
     return keys['des_auth_token']
 
 
@@ -537,10 +541,9 @@ def retrieve_des_photometry(ra: float, dec: float):
     :return: Retrieved photometry table, as a Bytes object, if successful; None if not.
     """
     print(f"Querying DES DR2 archive for field centring on RA={ra}, DEC={dec}")
-    try:
-        login_des()
-    except JSONDecodeError:
-        return "ERROR"
+    error = login_des()
+    if error == "ERROR":
+        return error
     query = f"SELECT * " \
             f"FROM DR2_MAIN " \
             f"WHERE " \
@@ -569,9 +572,7 @@ def save_des_photometry(ra: float, dec: float, output: str):
     :return: Retrieved photometry table, as a Bytes object, if successful; None if not.
     """
     data = retrieve_des_photometry(ra=ra, dec=dec)
-    if data == "ERROR":
-        print("A connection error occurred.")
-    elif data is not None:
+    if data is not None and data != "ERROR":
         u.mkdir_check_nested(path=output)
         print("Saving DES photometry to" + output)
         with open(output, "wb") as file:
@@ -606,11 +607,12 @@ def update_std_des_photometry(ra: float, dec: float, force: bool = False):
         path = field_path + "DES/DES.csv"
         response = save_des_photometry(ra=ra, dec=dec, output=path)
         params = {}
-        if response is not None:
-            params["in_des"] = True
-        else:
-            params["in_des"] = False
-        p.add_params(file=field_path + "output_values", params=params)
+        if response != "ERROR":
+            if response is not None:
+                params["in_des"] = True
+            else:
+                params["in_des"] = False
+            p.add_params(file=field_path + "output_values", params=params)
         return response
     elif outputs["in_des"] is True:
         print("There is already DES data present for this field.")
@@ -640,11 +642,12 @@ def update_frb_des_photometry(frb: str, force: bool = False):
     if outputs is None or "in_des" not in outputs or force:
         response = save_des_photometry(ra=params['burst_ra'], dec=params['burst_dec'], output=path)
         params = {}
-        if response is not None:
-            params["in_des"] = True
-        else:
-            params["in_des"] = False
-        p.add_output_values_frb(obj=frb, params=params)
+        if response != "ERROR":
+            if response is not None:
+                params["in_des"] = True
+            else:
+                params["in_des"] = False
+            p.add_output_values_frb(obj=frb, params=params)
         return response
     elif outputs["in_des"] is True:
         print("There is already DES data present for this field.")
@@ -728,10 +731,11 @@ def update_frb_des_cutout(frb: str, force: bool = False):
     """
     params = p.object_params_frb(obj=frb)
     outputs = p.frb_output_params(obj=frb)
+    error = ""
     if "in_des" not in outputs:
-        update_frb_des_photometry(frb=frb)
+        error = update_frb_des_photometry(frb=frb)
         outputs = p.frb_output_params(obj=frb)
-    if force or outputs["in_des"]:
+    if error != "ERROR" and (force or outputs["in_des"]):
         path = params['data_dir'] + "DES/0-data/"
         files = os.listdir(path)
         condition = False
@@ -814,11 +818,12 @@ def update_frb_skymapper_photometry(frb: str, force: bool = False):
     if outputs is None or "in_skymapper" not in outputs or force:
         response = save_skymapper_photometry(ra=params['burst_ra'], dec=params['burst_dec'], output=path)
         params = {}
-        if response is not None:
-            params["in_skymapper"] = True
-        else:
-            params["in_skymapper"] = False
-        p.add_output_values_frb(obj=frb, params=params)
+        if response != "ERROR":
+            if response is not None:
+                params["in_skymapper"] = True
+            else:
+                params["in_skymapper"] = False
+            p.add_output_values_frb(obj=frb, params=params)
         return response
     elif outputs["in_skymapper"] is True:
         print("There is already SkyMapper data present for this field.")
