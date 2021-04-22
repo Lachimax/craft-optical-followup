@@ -320,6 +320,7 @@ def find_object(x, y, x_search, y_search, world=False):
     :return: id (int), distance (float)
     """
 
+    # TODO: This could be done better with SkyCoord
     if world:
         distances = np.sqrt(((x_search - x) * np.cos(y)) ** 2 + (y_search - y) ** 2)
     else:
