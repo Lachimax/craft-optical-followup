@@ -7,6 +7,10 @@ import requests
 import os
 import time
 
+from astroquery.gaia import Gaia
+from astropy import units as un
+from astropy.coordinates import SkyCoord
+
 from craftutils import params as p
 from craftutils import utils as u
 
@@ -51,6 +55,9 @@ def cat_columns(cat, f: str = None):
                 'ra': f"raStack",
                 'dec': f"decStack",
                 'class_star': f"psfLikelihood"}
+    elif cat == 'gaia':
+        return {'ra': f"ra",
+                'dec': f"dec"}
     else:
         raise ValueError(f"Catalogue {cat} not recognised.")
 
@@ -852,10 +859,21 @@ def retrieve_skymapper_cutout(ra: float, dec: float):
 
 
 mast_url = "https://catalogs.mast.stsci.edu/api/v0.1/"
-catalogue_filters = {"panstarrs": ["g", "r", "i", "z", "y"]}
+catalogue_filters = {"panstarrs": ["g", "r", "i", "z", "y"],
+                     "gaia": []}
 catalogue_columns = {"panstarrs": ["objID", "qualityFlag", "raStack", "decStack", "raStackErr", "decStackErr",
                                    "{:s}PSFMag", "{:s}PSFMagErr", "{:s}ApMag", "{:s}ApMagErr",
-                                   "{:s}KronMag", "{:s}KronMagErr", "{:s}psfLikelihood"]}
+                                   "{:s}KronMag", "{:s}KronMagErr", "{:s}psfLikelihood"],
+                     "gaia": ["astrometric_primary_flag",
+                              "ra", "ra_error", "dec", "dec_error",
+                              "b",
+                              "duplicated_source", "hip", "l", "matched_observations",
+                              "parallax", "parallax_error",
+                              "pmdec", "pmdec_error", "pmra", "pmra_error",
+                              "phot_g_mean_flux", "phot_g_mean_flux_error", "phot_g_mean_mag", "phot_g_n_obs",
+                              "phot_variable_flag",
+                              "random_index", "ref_epoch", "solution_id", "source_id", "tycho2_id"
+                              ]}
 
 
 def construct_columns(cat="panstarrs"):
@@ -957,3 +975,44 @@ def update_frb_mast_photometry(frb: str, cat: str = "panstarrs", force: bool = F
         return True
     else:
         print(f"This field is not present in {cat}.")
+
+
+def retrieve_gaia(ra: float, dec: float):
+    print(f"\nQuerying Gaia DR2 archive for field centring on RA={ra}, DEC={dec}")
+    coord = SkyCoord(ra=ra, dec=dec, unit=(un.degree, un.degree), frame='icrs')
+    radius = un.Quantity(0.1, un.deg)
+    j = Gaia.cone_search_async(coordinate=coord, radius=radius)
+    r = j.get_results()
+    return r
+
+
+def save_gaia(ra: float, dec: float, output: str):
+    table = retrieve_gaia(ra=ra, dec=dec)
+    if len(table) > 0:
+        u.mkdir_check_nested(path=output)
+        print(f"Saving GAIA catalogue to {output}")
+        table.write(output, format="ascii.csv")
+        return table
+    else:
+        print("No data retrieved from Gaia DR2")
+        return None
+
+
+def update_frb_gaia(frb: str, force: bool = False):
+    params = p.object_params_frb(frb)
+    path = f"{params['data_dir']}Gaia/Gaia.csv"
+    outputs = p.frb_output_params(obj=frb)
+    if outputs is None or f"in_gaia" not in outputs or force:
+        response = save_gaia(ra=params['burst_ra'], dec=params['burst_dec'], output=path)
+        params = {}
+        if response is not None:
+            params[f"in_gaia"] = True
+        else:
+            params[f"in_gaia"] = False
+        p.add_output_values_frb(obj=frb, params=params)
+        return response
+    elif outputs[f"in_gaia"] is True:
+        print(f"There is already Gaia data present for this field.")
+        return True
+    else:
+        print(f"This field is not present in Gaia.")
