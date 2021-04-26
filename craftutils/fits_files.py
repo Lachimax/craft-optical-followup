@@ -520,7 +520,7 @@ def get_header_attribute(file: Union['fits.hdu.hdulist.HDUList', 'str'], attribu
 def get_chip_num(file: Union['fits.hdu.hdulist.HDUList', 'str']):
     """
     For use with FORS2 images only. Returns 1 if image is from upper CCD, 2 if lower, and 0 if the necessary information
-    is not present in the FITS file (likely indicating a non-FORS2 image).
+    is not present in the FITS file (likely indicating a stacked or non-FORS2 image).
     :param file: May be a string containing the path to the file, or the file itself as an astropy.fits HDUList object.
     :return:
     """
