@@ -1,5 +1,5 @@
 # Code by Lachlan Marnoch, 2019-2021
-
+import copy
 import os
 import math
 from typing import Union, Tuple, List
@@ -24,6 +24,7 @@ from astropy import convolution
 from astropy.coordinates import SkyCoord
 from astropy.stats import sigma_clip
 import astropy.time as time
+from astropy import units as units
 
 from craftutils import fits_files as ff
 import craftutils.params as p
@@ -34,6 +35,108 @@ from craftutils import retrieve as r
 
 # TODO: End-to-end pipeline script?
 # TODO: Change expected types to Union
+
+def image_psf_diagnostics(hdu: Union[str, fits.HDUList], cat: str, star_class_tol: float = 0.9,
+                          mag_max: float = 0.0, mag_min: float = -7.0,
+                          match_to: table.Table = None, frame: float = 15):
+    hdu, path = ff.path_or_hdu(hdu=hdu)
+
+    hdu = copy.deepcopy(hdu)
+
+    cat = table.Table.read(cat, format="ascii.sextractor")
+    stars = cat[cat["CLASS_STAR"] > star_class_tol]
+    stars = stars[stars["MAG_PSF"] < mag_max]
+    stars = stars[stars["MAG_PSF"] > mag_min]
+
+    print(f"Initial num stars:", len(stars))
+
+    if match_to is not None:
+        match_ids, match_ids_cat = u.match_cat(x_match=stars["ALPHA_SKY"],
+                                               y_match=stars["DELTA_SKY"],
+                                               x_cat=match_to["ALPHA_SKY"],
+                                               y_cat=match_to["DELTA_SKY"],
+                                               tolerance=2. / 3600.,
+                                               world=True)
+
+        stars = stars[match_ids]
+        print(f"Num stars after match to other sextractor cat:", len(stars))
+
+    stars.add_column(np.zeros(len(stars)), name="FWHM_FITTED")
+
+    for j, star in enumerate(stars):
+        ra = star["ALPHA_SKY"]
+        dec = star["DELTA_SKY"]
+
+        window = ff.trim_frame_point(hdu=hdu, ra=ra, dec=dec, frame=frame, quiet=True)
+        data = window[0].data
+        _, scale = ff.get_pixel_scale(hdu, astropy_units=True)
+
+        mean, median, stddev = stats.sigma_clipped_stats(data)
+        data -= median
+
+        y, x = np.mgrid[:data.shape[0], :data.shape[1]]
+
+        # Fit the data using astropy.modeling
+
+        model_init = models.Moffat2D(x_0=frame, y_0=frame)  # , theta=-2.4)
+        fitter = fitting.LevMarLSQFitter()
+        model = fitter(model_init, x, y, data)
+        fwhm = (model.fwhm * units.pixel).to(units.degree, scale).value
+
+        star["FWHM_FITTED"] = fwhm
+        stars[j] = star
+
+    clipped = sigma_clip(stars["FWHM_FITTED"], masked=True)
+    stars_clip = stars[~clipped.mask]
+    print(f"Num stars after sigma clipping w. astropy PSF:", len(stars))
+
+    clipped = sigma_clip(stars["FWHM_WORLD"], masked=True)
+    stars_clip_sex = stars[~clipped.mask]
+    print(f"Num stars after sigma clipping w. Sextractor PSF:", len(stars))
+
+    return stars_clip, stars_clip_sex
+
+
+def image_depth_diagnostics(hdu: Union[str, fits.HDUList], fil: str, sextractor: str, cat_path: str, cat_name: str,
+                            output_path: str, star_class_tol: float = 0.9):
+    file = ff.path_or_hdu(hdu=hdu)
+    sextractor_cat = table.Table.read(sextractor, format="ascii.sextractor")
+    sextractor_3sigma = sextractor_cat[sextractor_cat["SNR_WIN"] > 3.0]
+    # TODO: Calculate SNR properly
+    exp_time = ff.get_exp_time(file)
+
+    column_names = r.cat_columns(cat=cat_name, f=fil[0])
+    cat_ra_col = column_names['ra']
+    cat_dec_col = column_names['dec']
+    cat_mag_col = column_names['mag_psf']
+
+    zp = determine_zeropoint_sextractor(sextractor_cat_path=sextractor,
+                                        image=file,
+                                        cat_path=cat_path,
+                                        cat_name=cat_name,
+                                        output_path=output_path,
+                                        show=False,
+                                        cat_ra_col=cat_ra_col,
+                                        cat_dec_col=cat_dec_col,
+                                        cat_mag_col=cat_mag_col,
+                                        sex_ra_col="ALPHAPSF_SKY",
+                                        sex_dec_col="DELTAPSF_SKY",
+                                        sex_x_col='XPSF_IMAGE',
+                                        sex_y_col='YPSF_IMAGE',
+                                        pix_tol=5.0,
+                                        flux_column="FLUX_PSF",
+                                        stars_only=True,
+                                        star_class_tol=star_class_tol,
+                                        exp_time=exp_time,
+                                        )
+
+    zeropoint = zp["zeropoint"]
+    depth = np.max(sextractor_3sigma["MAG_WIN"]) + zeropoint
+    print("OBJECTS SNR > 3:", len(sextractor_3sigma))
+    print("DEPTH:", depth)
+
+    return depth
+
 
 def get_median_background(image: Union[str, fits.HDUList], ra: float = None, dec: float = None, frame: int = 100,
                           show: bool = False, output: str = None):
@@ -213,6 +316,8 @@ def magnitude_error(flux: 'float', flux_err: 'float' = 0.0,
 
     return np.array([mag, error_plus, error_minus])
 
+
+# TODO: Use calculated SNR in magnitude cuts (SNR>3.0, or higher?)
 
 def determine_zeropoint_sextractor(sextractor_cat_path: str,
                                    cat_path: str,
