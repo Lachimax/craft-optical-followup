@@ -130,6 +130,7 @@ class FRBField(Field):
     @classmethod
     def new_yaml(cls, name: str, path: str = None, quiet: bool = False):
         param_dict = super(FRBField, cls).new_yaml(name=name, path=None)
+        param_dict["name"] = name
         param_dict["frb"]["name"] = name
         param_dict["frb"]["host_galaxy"]["name"] = name.replace("FRB", "HG")
         if path is not None:
@@ -140,6 +141,7 @@ class FRBField(Field):
     @classmethod
     def default_params(cls):
         default_params = super(FRBField, cls).default_params()
+
         default_params.update({
             "type": "FRBField",
             "frb": astronobjects.FRB.default_params(),
@@ -178,6 +180,62 @@ class FRBField(Field):
                    frb=frb
                    )
 
+    @classmethod
+    def convert_old_param(cls, frb):
+        new_params = cls.new_yaml(name=frb, path=None)
+        old_params = p.object_params_frb(frb)
+
+        new_params["centre"]["dec"]["decimal"] = old_params["burst_dec"]
+        new_params["centre"]["dec"]["dms"] = old_params["burst_dec_str"]
+
+        new_params["centre"]["ra"]["decimal"] = old_params["burst_ra"]
+        new_params["centre"]["ra"]["hms"] = old_params["burst_ra_str"]
+
+        new_params["data_path"] = old_params["data_dir"]
+
+        new_params["frb"]["host_galaxy"]["position"]["dec"]["decimal"] = old_params["hg_dec"]
+        new_params["frb"]["host_galaxy"]["position"]["ra"]["decimal"] = old_params["hg_ra"]
+
+        new_params["frb"]["host_galaxy"]["position_err"]["dec"]["stat"] = old_params["hg_err_y"]
+        new_params["frb"]["host_galaxy"]["position_err"]["ra"]["stat"] = old_params["hg_err_x"]
+
+        new_params["frb"]["host_galaxy"]["z"] = old_params["z"]
+
+        new_params["frb"]["mjd"] = old_params["mjd_burst"]
+
+        new_params["frb"]["position"]["dec"]["decimal"] = old_params["burst_dec"]
+        new_params["frb"]["position"]["dec"]["dms"] = old_params["burst_dec_str"]
+
+        new_params["frb"]["position"]["ra"]["decimal"] = old_params["burst_ra"]
+        new_params["frb"]["position"]["ra"]["hms"] = old_params["burst_ra_str"]
+
+        new_params["frb"]["position_err"]["a"]["stat"] = old_params["burst_err_stat_a"]
+        new_params["frb"]["position_err"]["a"]["sys"] = old_params["burst_err_sys_a"]
+
+        new_params["frb"]["position_err"]["b"]["stat"] = old_params["burst_err_stat_b"]
+        new_params["frb"]["position_err"]["b"]["sys"] = old_params["burst_err_sys_b"]
+
+        new_params["frb"]["position_err"]["dec"]["stat"] = old_params["burst_err_stat_dec"]
+        new_params["frb"]["position_err"]["dec"]["sys"] = old_params["burst_err_sys_dec"]
+
+        new_params["frb"]["position_err"]["ra"]["stat"] = old_params["burst_err_stat_ra"]
+        new_params["frb"]["position_err"]["ra"]["sys"] = old_params["burst_err_sys_ra"]
+
+        new_params["frb"]["position_err"]["theta"] = old_params["burst_err_theta"]
+
+        for obj in old_params["other_objects"]:
+            new_params["objects"][obj] = astronobjects.position_dictionary
+            new_params["objects"][obj]["dec"]["decimal"] = old_params["other_objects"][obj]["dec"]
+            new_params["objects"][obj]["ra"]["decimal"] = old_params["other_objects"][obj]["ra"]
+        del new_params["objects"]["<name>"]
+
+        new_params["subtraction"]["template_epochs"]["des"] = old_params["template_epoch_des"]
+        new_params["subtraction"]["template_epochs"]["fors2"] = old_params["template_epoch_fors2"]
+        new_params["subtraction"]["template_epochs"]["sdss"] = old_params["template_epoch_sdss"]
+        new_params["subtraction"]["template_epochs"]["xshooter"] = old_params["template_epoch_xshooter"]
+
+        p.save_params(file=f"{p.param_path}/fields/{frb}.yaml", dictionary=new_params, quiet=False)
+
 
 class Epoch:
     mjd = 0.0
@@ -186,7 +244,6 @@ class Epoch:
 class Image:
     frame_type = "stacked"
 
-
-def test_frbfield_from_params():
-    frb_field = FRBField.from_file("FRB181112")
-    assert frb_field.frb.position_err.a_stat
+# def test_frbfield_from_params():
+#     frb_field = FRBField.from_file("FRB181112")
+#     assert frb_field.frb.position_err.a_stat ==
