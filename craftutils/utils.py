@@ -596,7 +596,6 @@ def select_yn(message: str, default: Union[str, bool] = None):
         message += f"[default: n]"
     elif default is not None:
         print("Warning: default not recognised. No default value will be used.")
-    print()
     print(message)
     inp = None
     while inp is None:
