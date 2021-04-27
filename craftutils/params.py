@@ -91,7 +91,7 @@ def select_coords(dictionary):
 
     dec = None
     if "dec" in dictionary:
-        if "dms" in dictionary["dec"] and dictionary["dec"]["hms"] not in [None, 0]:
+        if "dms" in dictionary["dec"] and dictionary["dec"]["dms"] not in [None, 0]:
             dec = dictionary["dec"]["dms"]
         elif "decimal" in dictionary["dec"] and dictionary["dec"]["decimal"] not in [None, 0]:
             dec = f"{dictionary['dec']['decimal']}d"

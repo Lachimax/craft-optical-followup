@@ -7,9 +7,11 @@ import craftutils.params as p
 config = p.config
 
 
-def main(field):
-
-    field = obs.Field.from_params(name=field)
+def main(field_name):
+    field = obs.Field.from_params(name=field_name)
+    if field is None:
+        print("No field of that name found in the param directory. Creating new .yaml file...")
+        obs.FRBField.new_yaml(name=field_name, path="/home/lachlan/Projects/PyCRAFT/param/fields")
 
 
 if __name__ == '__main__':
@@ -22,4 +24,4 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
 
-    main(field=args.field)
+    main(field_name=args.field)

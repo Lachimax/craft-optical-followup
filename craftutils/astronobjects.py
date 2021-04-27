@@ -3,17 +3,18 @@ from typing import Union, Tuple
 from astropy.coordinates import SkyCoord
 from astropy import units as un
 
+from craftutils import params as p
 from craftutils import astrometry as a
 from craftutils import utils as u
 
+position_dictionary = {"ra": {"decimal": 0.0,
+                              "hms": "00h00m00s"},
+                       "dec": {"decimal": 0.0,
+                               "dms": "00d00m00s"}
+                       }
+
 uncertainty_dict = {"sys": 0.0,
                     "stat": 0.0}
-
-position_uncertainty_dict = {"ra": uncertainty_dict.copy(),
-                             "dec": uncertainty_dict.copy(),
-                             "a": uncertainty_dict.copy(),
-                             "b": uncertainty_dict.copy(),
-                             "theta": 0.0}
 
 
 class PositionUncertainty:
@@ -111,26 +112,74 @@ class PositionUncertainty:
         self.b_stat = b_stat
         self.theta = theta
 
+    @classmethod
+    def default_params(cls):
+        return {"ra": uncertainty_dict.copy(),
+                "dec": uncertainty_dict.copy(),
+                "a": uncertainty_dict.copy(),
+                "b": uncertainty_dict.copy(),
+                "theta": 0.0}
+
 
 class Object:
     def __init__(self,
-                 position: Union[SkyCoord, str] = None):
-        self.position = a.attempt_skycoord(position)
-
-
-class FRB(Object):
-    def __init__(self,
+                 name: str = None,
                  position: Union[SkyCoord, str] = None,
-                 position_err: Union[float, un.Quantity, dict, PositionUncertainty, tuple] = 0.0 * un.arcsec,
-                 ):
-        """
-        Any angular values provided without units will be assumed to be in degrees.
-        :param position:
-        :param position_err:
-        """
-
+                 position_err: Union[float, un.Quantity, dict, PositionUncertainty, tuple] = 0.0 * un.arcsec):
+        self.name = name
+        self.position = a.attempt_skycoord(position)
         if type(position_err) is not PositionUncertainty:
             self.position_err = PositionUncertainty(uncertainty=position_err)
 
-        super(FRB, self).__init__(position=position
-                                  )
+    @classmethod
+    def default_params(cls):
+        default_params = {
+            "name": None,
+            "position": position_dictionary.copy(),
+            "position_err": PositionUncertainty.default_params(),
+        }
+        return default_params
+
+    @classmethod
+    def from_dict(cls, dictionary: dict):
+        ra, dec = p.select_coords(dictionary["position"])
+        return cls(name=dictionary["name"],
+                   position=f"{ra} {dec}",
+                   position_err=dictionary["position_err"])
+
+
+class Galaxy(Object):
+    def __init__(self,
+                 name: str = None,
+                 position: Union[SkyCoord, str] = None,
+                 position_err: Union[float, un.Quantity, dict, PositionUncertainty, tuple] = 0.0 * un.arcsec,
+                 z: float = 0.0):
+        super(Galaxy, self).__init__(name=name,
+                                     position=position,
+                                     position_err=position_err)
+        self.z = z
+
+    @classmethod
+    def default_params(cls):
+        default_params = super(Galaxy, cls).default_params()
+        default_params.update({
+            "z": 0.0
+        })
+        return default_params
+
+
+class FRB(Object):
+
+    @classmethod
+    def from_dict(cls, dictionary: dict, name: str = None):
+        frb = super(FRB, cls).from_dict(dictionary=dictionary)
+        return frb
+
+    @classmethod
+    def default_params(cls):
+        default_params = super(FRB, cls).default_params()
+        default_params.update({
+            "host_galaxy": Galaxy.default_params(),
+            "mjd": 58000
+        })
+        return default_params
