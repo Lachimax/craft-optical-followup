@@ -25,7 +25,8 @@ if not os.path.isfile("param/config.yaml"):
 
     config_path = os.path.join(os.getcwd(), "param", "config.yaml")
     print(f"A fresh config file has been created at '{config_path}'")
-    print("In this file, please set 'top_data_dir' to a valid path in which to store all data products of this package.")
+    print(
+        "In this file, please set 'top_data_dir' to a valid path in which to store all data products of this package.")
     print("WARNING: This may require a large amount of space.")
 
     input("\nOnce you have done this, press any key to proceed.")
