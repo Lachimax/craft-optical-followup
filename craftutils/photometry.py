@@ -915,7 +915,7 @@ def zeropoint_science_field(epoch: str,
                 test_name = ""
             test_name = str(now) + '_' + test_name
 
-            output_path = output + f_0 + "/" + test_name + "/"
+            output_path = os.path.join(output, f_0, test_name)
             u.mkdir_check_nested(output_path)
 
             chip_1_bottom = 740

@@ -137,6 +137,7 @@ def mkdir_check(path: str):
         os.mkdir(path)
 
 
+# TODO: Make this system independent.
 def mkdir_check_nested(path: str):
     """
     Does mkdir_check, but for all parent directories of the given path.
