@@ -1,5 +1,7 @@
 # Code by Lachlan Marnoch, 2021
 
+import os
+
 import craftutils.astronobjects as objects
 import craftutils.observation as obs
 import craftutils.params as p
@@ -14,14 +16,19 @@ def main(field_name):
     field = obs.Field.from_params(name=field_name)
     # If this field has no parameter file, ask to create one.
     if field is None:
-        param_path = f"{p.param_path}fields/"
+        param_path = os.path.join(p.param_path, "fields", "")
+        # Check for old format param file, and ask to convert if found.
         old_params = p.object_params_frb(obj=field_name)
         print()
+        field_param_path = os.path.join(param_path, field_name)
+        print(field_param_path)
+        u.mkdir_check(field_param_path)
+        field_param_path_yaml = os.path.join(field_param_path, f"{field_name}.yaml")
         if old_params is None:
             print(f"{field_name} not found in the param directory.")
-            if u.select_yn(f"Create a new param file at '{param_path}{field_name}.yaml'?"):
-                obs.FRBField.new_yaml(name=field_name, path=param_path)
-                print(f"Template parameter file created at '{param_path}{field_name}.yaml'")
+            if u.select_yn(f"Create a new param file at '{field_param_path_yaml}'?"):
+                obs.FRBField.new_yaml(name=field_name, path=field_param_path)
+                print(f"Template parameter file created at '{field_param_path_yaml}'")
                 print("Please edit this file before proceeding.")
             else:
                 print("Exiting.")
@@ -30,8 +37,6 @@ def main(field_name):
             print("Old format param file detected.")
             if u.select_yn("Convert to new format?"):
                 obs.FRBField.convert_old_param(frb=field_name)
-
-    
 
 
 if __name__ == '__main__':

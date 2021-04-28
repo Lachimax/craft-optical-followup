@@ -60,7 +60,7 @@ class Field:
 
     @classmethod
     def from_params(cls, name):
-        path = os.path.join(p.param_path, "fields", name)
+        path = os.path.join(p.param_path, "fields", name, name)
         return cls.from_file(param_file=path)
 
     @classmethod
@@ -234,7 +234,7 @@ class FRBField(Field):
         new_params["subtraction"]["template_epochs"]["sdss"] = old_params["template_epoch_sdss"]
         new_params["subtraction"]["template_epochs"]["xshooter"] = old_params["template_epoch_xshooter"]
 
-        p.save_params(file=f"{p.param_path}/fields/{frb}.yaml", dictionary=new_params, quiet=False)
+        p.save_params(file=os.path.join(p.param_path, "fields", frb, f"{frb}.yaml"), dictionary=new_params, quiet=False)
 
 
 class Epoch:

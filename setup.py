@@ -1,6 +1,7 @@
+import os
+
 import setuptools
 from shutil import copy
-from os import getcwd
 
 packages = setuptools.find_packages()
 
@@ -19,17 +20,21 @@ setuptools.setup(
     license='Attribution-NonCommercial-ShareAlike 4.0 International'
 )
 
-# copy("param/config_template.yaml", "param/config.yaml")
-#
-# input("A fresh config.yaml file has been created in the param/ directory. Please ensure top_data_dir points to "
-#       "the valid path in which to store all data products of this package."
-#       "\nOnce you have done this, press any key to proceed.")
-#
-# import craftutils.params as p
-#
-# p.add_config_param(params={"proj_dir": getcwd() + "/"})
-#
-# import craftutils.utils as u
-#
-# data_dir = p.config["top_data_dir"]
-# u.mkdir_check_nested(data_dir)
+if not os.path.isfile("param/config.yaml"):
+    copy("param/config_template.yaml", "param/config.yaml")
+
+    config_path = os.path.join(os.getcwd(), "param", "config.yaml")
+    print(f"A fresh config file has been created at '{config_path}'")
+    print("In this file, please set 'top_data_dir' to a valid path in which to store all data products of this package.")
+    print("WARNING: This may require a large amount of space.")
+
+    input("\nOnce you have done this, press any key to proceed.")
+
+    import craftutils.params as p
+
+    p.add_config_param(params={"proj_dir": os.getcwd() + "/"})
+
+import craftutils.utils as u
+
+data_dir = p.config["top_data_dir"]
+u.mkdir_check_nested(data_dir)
