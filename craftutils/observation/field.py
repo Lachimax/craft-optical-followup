@@ -126,7 +126,7 @@ class FRBField(Field):
             if frb is not None:
                 centre_coords = frb.position
 
-        super(FRBField, self).__init__(name=name,
+        super().__init__(name=name,
                                        centre_coords=centre_coords,
                                        param_path=param_path,
                                        data_path=data_path,
@@ -136,7 +136,7 @@ class FRBField(Field):
 
     @classmethod
     def default_params(cls):
-        default_params = super(FRBField, cls).default_params()
+        default_params = super().default_params()
 
         default_params.update({
             "type": "FRBField",
@@ -153,7 +153,7 @@ class FRBField(Field):
 
     @classmethod
     def new_yaml(cls, name: str, path: str = None, quiet: bool = False):
-        param_dict = super(FRBField, cls).new_yaml(name=name, path=None)
+        param_dict = super().new_yaml(name=name, path=None)
         param_dict["frb"]["name"] = name
         param_dict["frb"]["host_galaxy"]["name"] = name.replace("FRB", "HG")
         if path is not None:

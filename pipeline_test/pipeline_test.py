@@ -2,8 +2,8 @@
 
 import os
 
-import craftutils.astronobjects as objects
-import craftutils.observation as obs
+import craftutils.observation.objects as obj
+import craftutils.observation.field as fld
 import craftutils.params as p
 import craftutils.utils as u
 
@@ -13,7 +13,7 @@ config = p.config
 def main(field_name):
     print("Refreshing parameter files from templates...")
     p.refresh_params_all(quiet=True)
-    field = obs.Field.from_params(name=field_name)
+    field = fld.Field.from_params(name=field_name)
     # If this field has no parameter file, ask to create one.
     if field is None:
         param_path = os.path.join(p.param_path, "fields", "")
@@ -27,7 +27,7 @@ def main(field_name):
         if old_params is None:
             print(f"{field_name} not found in the param directory.")
             if u.select_yn(f"Create a new param file at '{field_param_path_yaml}'?"):
-                obs.FRBField.new_yaml(name=field_name, path=field_param_path)
+                fld.FRBField.new_yaml(name=field_name, path=field_param_path)
                 print(f"Template parameter file created at '{field_param_path_yaml}'")
                 print("Please edit this file before proceeding.")
             else:
@@ -36,7 +36,7 @@ def main(field_name):
         else:
             print("Old format param file detected.")
             if u.select_yn("Convert to new format?"):
-                obs.FRBField.convert_old_param(frb=field_name)
+                fld.FRBField.convert_old_param(frb=field_name)
 
 
 if __name__ == '__main__':

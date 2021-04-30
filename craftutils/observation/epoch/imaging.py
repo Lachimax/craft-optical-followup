@@ -1,25 +1,23 @@
 import os
 
-from craftutils.observation import field as f
+import craftutils.observation.epoch.epoch as epoch
+from craftutils.observation import field as fld
 from craftutils.observation import objects
 from craftutils import params as p
 
 
-class Epoch:
-    types = ["imaging", "spectroscopy"]
-
+class ImagingEpoch(epoch.Epoch):
     def __init__(self,
                  name: str = None,
-                 field: f.Field = None,
+                 field: fld.Field = None,
                  data_path: str = None,
-                 standards: list = None):
-        self.name = name
-        self.field = field
-        self.data_path = data_path
+                 standard_epochs: list = None):
+        super().__init__(name=name, field=field, data_path=data_path)
 
     @classmethod
     def default_params(cls):
-        default_params = {
+        default_params = super().default_params()
+        default_params.update({
             "name": None,
             "instrument": None,
             "data_path": None,
@@ -48,7 +46,7 @@ class Epoch:
                  "sextractor": False,
                  "esorex": False,
                  },
-        }
+        })
         return default_params
 
     @classmethod
@@ -61,7 +59,7 @@ class Epoch:
         return param_dict
 
 
-class FORS2Epoch(Epoch):
+class FORS2ImagingEpoch(ImagingEpoch):
 
     @classmethod
     def convert_old_params(cls, epoch: str):
