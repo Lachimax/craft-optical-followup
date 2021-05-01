@@ -6,8 +6,10 @@ from typing import Union
 import requests
 import os
 import time
+import cgi
 
 from astroquery.gaia import Gaia
+from astroquery.eso import Eso
 from astropy import units as un
 from astropy.coordinates import SkyCoord
 
@@ -93,6 +95,17 @@ def update_frb_photometry(frb: str, cat: str):
         return update_frb_mast_photometry(frb=frb, cat=cat)
     else:
         raise ValueError("Catalogue name not recognised.")
+
+
+def login_eso():
+    eso = Eso()
+    eso.login(keys["eso_user"], store_password=True)
+    return Eso()
+
+
+def retrieve_eso_data(instrument: str = "fors2"):
+    instrument = instrument.lower()
+        
 
 
 def retrieve_fors2_calib(fil: str = 'I_BESS', date_from: str = '2017-01-01', date_to: str = None):
