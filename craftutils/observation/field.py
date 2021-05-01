@@ -127,11 +127,11 @@ class FRBField(Field):
                 centre_coords = frb.position
 
         super().__init__(name=name,
-                                       centre_coords=centre_coords,
-                                       param_path=param_path,
-                                       data_path=data_path,
-                                       objs=objs
-                                       )
+                         centre_coords=centre_coords,
+                         param_path=param_path,
+                         data_path=data_path,
+                         objs=objs
+                         )
         self.frb = frb
 
     @classmethod
