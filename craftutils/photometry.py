@@ -2,29 +2,25 @@
 import copy
 import os
 import math
-from typing import Union, Tuple, List
+from typing import Union, List
 from copy import deepcopy
-
-import numpy as np
-import pandas as pd
-import photutils as ph
-from photutils import datasets
-import pylab as pl
-
-from matplotlib import pyplot as plt
 from datetime import datetime as dt
 
-from astropy import stats
-from astropy import wcs
+import numpy as np
+import photutils as ph
+from matplotlib import pyplot as plt
+
+import astropy.stats as stats
+import astropy.wcs as wcs
+import astropy.table as table
+import astropy.io.fits as fits
+import astropy.convolution as convolution
+import astropy.time as time
+import astropy.units as units
+from astropy.coordinates import SkyCoord
 from astropy.modeling import models, fitting
 from astropy.modeling.functional_models import Sersic1D
-import astropy.table as table
-from astropy.io import fits as fits
-from astropy import convolution
-from astropy.coordinates import SkyCoord
 from astropy.stats import sigma_clip
-import astropy.time as time
-from astropy import units as units
 
 from craftutils import fits_files as ff
 import craftutils.params as p
@@ -1482,8 +1478,8 @@ def match_sources_filters(file_1: 'str', file_2: 'str', path: 'str' = "", tolera
         plt.legend()
         plt.show()
 
-    to_csv = pd.DataFrame(data)
-    to_csv.to_csv(output + ".csv", index=False)
+    to_csv = table.Table(data)
+    to_csv.write(output + ".csv", format="ascii.csv")
 
     return data
 
@@ -1533,7 +1529,7 @@ def match_coordinates_filters_multi(prime, match_tables, ra_tolerance, dec_toler
     ras_1 = prime[ra_name]
     decs_1 = prime[dec_name]
 
-    data = pd.DataFrame()
+    data = table.Table()
     data['ra'] = ras_1
     data['dec'] = decs_1
     data['mag_prime'] = prime['mag_diff']
@@ -1586,7 +1582,7 @@ def match_coordinates_multi(prime, match_tables, ra_tolerance: 'float', dec_tole
     decs_1 = prime[dec_name]
     mags_1 = prime[mag_name]
 
-    data = pd.DataFrame()
+    data = table.Table()
     data[ra_name] = ras_1
     data[dec_name] = decs_1
     data['x'] = prime[x_name]
@@ -1666,7 +1662,7 @@ def insert_synthetic_point_sources_gauss(image: np.ndarray, x: np.float, y: np.f
     sources['flux'] = mag_to_flux(mag=mag, exp_time=exp_time, zeropoint=zeropoint, extinction=extinction,
                                   airmass=airmass)
     print('Generating additive image...')
-    add = datasets.make_model_sources_image(shape=image.shape, model=gaussian_model, source_table=sources)
+    add = ph.datasets.make_model_sources_image(shape=image.shape, model=gaussian_model, source_table=sources)
 
     # plt.imshow(add)
 
@@ -1723,7 +1719,7 @@ def insert_synthetic_point_sources_psfex(image: np.ndarray, x: np.float, y: np.f
         row = (x[i], y[i], flux)
         source = table.Table(rows=[row], names=('x_0', 'y_0', 'flux'))
         print('Convolving...')
-        add = datasets.make_model_sources_image(shape=image.shape, model=gaussian_model, source_table=source)
+        add = ph.datasets.make_model_sources_image(shape=image.shape, model=gaussian_model, source_table=source)
         kernel = convolution.CustomKernel(psfex(model=model, x=source['x_0'], y=source['y_0']))
         add = convolution.convolve(add, kernel)
 
@@ -1813,10 +1809,7 @@ def insert_point_sources_to_file(file: Union[fits.hdu.HDUList, str],
     :return:
     """
     output = u.sanitise_file_ext(output, '.fits')
-    path = False
-    if type(file) is str:
-        path = True
-        file = fits.open(file)
+    file, path = ff.path_or_hdu(file)
 
     if saturate is None and 'SATURATE' in file[0].header:
         saturate = file[0].header['SATURATE']
@@ -1886,8 +1879,7 @@ def insert_random_point_sources_to_file(file: Union[fits.hdu.HDUList, str], fwhm
                                         saturate: float = None):
     # TODO: For these methods, make it read from file header if None for some of the arguments.
 
-    if type(file) is str:
-        file = fits.open(file)
+    file, path = ff.path_or_hdu(file)
 
     print('Generating objects...')
     n_x, n_y = file[0].data.shape

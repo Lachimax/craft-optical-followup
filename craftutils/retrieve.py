@@ -1,17 +1,17 @@
 # Code by Lachlan Marnoch, 2021
-from json.decoder import JSONDecodeError
 import urllib
-from datetime import date
-from typing import Union
-import requests
 import os
 import time
-import cgi
+from datetime import date
+from json.decoder import JSONDecodeError
+
+import requests
+
+import astropy.units as units
+from astropy.coordinates import SkyCoord
 
 from astroquery.gaia import Gaia
 from astroquery.eso import Eso
-from astropy import units as un
-from astropy.coordinates import SkyCoord
 
 from craftutils import params as p
 from craftutils import utils as u
@@ -100,12 +100,11 @@ def update_frb_photometry(frb: str, cat: str):
 def login_eso():
     eso = Eso()
     eso.login(keys["eso_user"], store_password=True)
-    return Eso()
+    return eso
 
 
 def retrieve_eso_data(instrument: str = "fors2"):
     instrument = instrument.lower()
-        
 
 
 def retrieve_fors2_calib(fil: str = 'I_BESS', date_from: str = '2017-01-01', date_to: str = None):
@@ -992,8 +991,8 @@ def update_frb_mast_photometry(frb: str, cat: str = "panstarrs", force: bool = F
 
 def retrieve_gaia(ra: float, dec: float):
     print(f"\nQuerying Gaia DR2 archive for field centring on RA={ra}, DEC={dec}")
-    coord = SkyCoord(ra=ra, dec=dec, unit=(un.degree, un.degree), frame='icrs')
-    radius = un.Quantity(0.1, un.deg)
+    coord = SkyCoord(ra=ra, dec=dec, unit=(units.degree, units.degree), frame='icrs')
+    radius = units.Quantity(0.1, units.deg)
     j = Gaia.cone_search_async(coordinate=coord, radius=radius)
     r = j.get_results()
     return r

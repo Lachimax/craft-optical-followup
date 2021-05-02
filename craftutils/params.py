@@ -1,15 +1,14 @@
 # Code by Lachlan Marnoch, 2019-2021
 
-from astropy.io.misc import yaml
-# import yaml
-import csv
 import json
-from typing import Union
 import os
-import numpy as np
+from typing import Union
 from datetime import date
 
-import astropy.table as tbl
+import numpy as np
+
+import astropy.io.misc.yaml as yaml
+from astropy.table import Table
 
 from craftutils import utils as u
 
@@ -30,7 +29,7 @@ def tabulate_output_values(path: str, output: str = None):
         output_values["filename"] = file
         outputs.append(output_values)
 
-    outputs = tbl.Table(outputs)
+    outputs = Table(outputs)
 
     if output is not None:
         output = u.sanitise_file_ext(filename=output, ext='.csv')
@@ -243,7 +242,7 @@ def ingest_filter_properties(path: str, instrument: str, update: bool = False, q
     :param instrument:
     :return:
     """
-    data = tbl.Table.read(path, format='ascii')
+    data = Table.read(path, format='ascii')
     name = data['filter_name'][0]
     if sum(data['filter_name'] != name) > 0:
         raise ValueError('This file contains data for more than one filter.')
@@ -325,7 +324,7 @@ def ingest_filter_set(path: str, instrument: str, filter_only: bool = True, sour
     if unit not in units:
         raise ValueError('Units must be one of ', units)
 
-    data = tbl.Table.read(path, format='ascii')
+    data = Table.read(path, format='ascii')
     wavelengths = data[lambda_name]
     if unit == 'nm':
         wavelengths *= 10

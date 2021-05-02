@@ -1,15 +1,16 @@
 # Code by Lachlan Marnoch, 2019-2021
 
-from datetime import datetime as dt
-import numpy as np
 import math
 import os
 from typing import List, Union
+from datetime import datetime as dt
 
+import numpy as np
+
+import astropy.table as table
+import astropy.io.fits as fits
+import astropy.units as units
 from astropy.coordinates import SkyCoord
-import astropy.table as tbl
-from astropy.io import fits
-from astropy import units
 
 
 # TODO: Arrange these into some kind of logical order.
@@ -413,8 +414,8 @@ def match_both(table_1, table_2, cat, table_name_1: 'str' = '1', table_name_2: '
 
     # Consolidate tables.
 
-    return tbl.hstack([matches_both_cat, matches_both_1, matches_both_2],
-                      table_names=[cat_name, table_name_1, table_name_2])
+    return table.hstack([matches_both_cat, matches_both_1, matches_both_2],
+                        table_names=[cat_name, table_name_1, table_name_2])
 
 
 def in_all(item, list_of_lists: 'list'):
@@ -507,13 +508,13 @@ def join_csv(filenames: [str], output: str):
     tables = []
     for file in filenames:
         if file[-4:] == '.csv':
-            tables.append(tbl.Table.read(file, format='ascii.csv'))
+            tables.append(table.Table.read(file, format='ascii.csv'))
         elif file[-5:] == '.fits':
-            tables.append(tbl.Table(fits.open(file)[1].data))
+            tables.append(table.Table(fits.open(file)[1].data))
         else:
             raise ValueError('File format not recognised.')
 
-    output_tbl = tbl.hstack(tables)
+    output_tbl = table.hstack(tables)
     for col in output_tbl.colnames:
         if col[-2:] == '_1':
             col_new = col[:-2]
