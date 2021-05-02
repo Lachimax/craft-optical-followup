@@ -8,12 +8,12 @@ from astropy import wcs
 from astropy.nddata import CCDData
 from astropy.io import fits
 from astropy import units
+from astropy.table import Table
 
 from datetime import datetime as dt
 from typing import Union
 from numbers import Number
 import string
-import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 
@@ -1018,7 +1018,7 @@ def fits_table(input_path: str, output_path: str = "", science_only: bool = True
 
     output.sort(key=lambda a: a['identifier'])
 
-    out_file = pd.DataFrame(output)
+    out_file = astropy.tab(output)
     out_file.to_csv(output_path)
 
     return out_file
@@ -1078,13 +1078,13 @@ def fits_table_all(input_path: str, output_path: str = "", science_only: bool = 
 
     output.sort(key=lambda a: a['ARCFILE'])
 
-    out_file = pd.DataFrame(output)
-    out_file.to_csv(output_path)
+    out_file = Table(output)
+    out_file.write(output_path, format="ascii.csv")
 
     return out_file
 
 
-def write_sextractor_script(table: Union['str', pd.DataFrame], output_path: 'str' = 'sextract_multi.sh',
+def write_sextractor_script(table: Union['str', Table], output_path: 'str' = 'sextract_multi.sh',
                             criterion: 'str' = None,
                             value: 'str' = None, sex_params: 'list' = None, sex_param_values: 'list' = None,
                             cat_name='sextracted', cats_dir='cats'):
@@ -1102,7 +1102,7 @@ def write_sextractor_script(table: Union['str', pd.DataFrame], output_path: 'str
     print('Writing SExtractor script to: \n', output_path)
 
     if type(table) is str:
-        table = pd.read_csv(table)
+        table = Table.read(table, format="ascii.csv")
 
     if criterion is not None:
         table = table[table[criterion] == value]
@@ -1174,7 +1174,7 @@ def write_sof(table_path: str, output_path: str = 'bias.sof', sof_type: str = 'f
     if os.path.isfile(output_path):
         os.remove(output_path)
 
-    files = pd.read_csv(table_path)
+    files = Table.read(table_path, format="ascii.csv")
     files = files[files['chip'] == chip]
 
     # Bias
