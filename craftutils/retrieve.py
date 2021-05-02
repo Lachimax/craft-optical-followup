@@ -5,6 +5,7 @@ import time
 from datetime import date
 from json.decoder import JSONDecodeError
 
+import cgi
 import requests
 
 import astropy.units as units
@@ -97,10 +98,44 @@ def update_frb_photometry(frb: str, cat: str):
         raise ValueError("Catalogue name not recognised.")
 
 
+
 def login_eso():
-    eso = Eso()
-    eso.login(keys["eso_user"], store_password=True)
-    return eso
+    token_url = "https://www.eso.org/sso/oidc/token"
+    r = requests.get(token_url,
+                     params={"response_type": "id_token token", "grant_type": "password",
+                             "client_id": "clientid",
+                             "username": keys["eso_user"], "password": keys["eso_pwd"]})
+    token_response = r.json()
+    token = token_response['id_token'] + '=='
+    keys["eso_token"] = token
+    return token
+
+
+def save_eso_asset(file_url, filename=None, token=None):
+    headers = None
+    if keys["eso_token"] != None:
+        headers = {"Authorization": "Bearer " + token}
+        response = requests.get(file_url, headers=headers)
+    else:
+        # Trying to download anonymously
+        response = requests.get(file_url, stream=True, headers=headers)
+
+    if filename == None:
+        contentdisposition = response.headers.get('Content-Disposition')
+        if contentdisposition != None:
+            value, params = cgi.parse_header(contentdisposition)
+            filename = params["filename"]
+
+        if filename == None:
+            # last chance: get anything after the last '/'
+            filename = url[url.rindex('/') + 1:]
+
+    if response.status_code == 200:
+        with open(filename, 'wb') as f:
+            for chunk in response.iter_content(chunk_size=50000):
+                f.write(chunk)
+
+    return (response.status_code, filename)
 
 
 def retrieve_eso_data(instrument: str = "fors2"):
