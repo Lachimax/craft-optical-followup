@@ -2,20 +2,20 @@
 
 import os
 import shutil as sh
+import string
 from copy import deepcopy
-
-from astropy import wcs
-from astropy.nddata import CCDData
-from astropy.io import fits
-from astropy import units
-from astropy.table import Table
-
 from datetime import datetime as dt
 from typing import Union
-from numbers import Number
-import string
+
 import numpy as np
 import matplotlib.pyplot as plt
+import reproject as rp
+
+import astropy.wcs as wcs
+import astropy.io.fits as fits
+import astropy.units as units
+from astropy.nddata import CCDData
+from astropy.table import Table
 
 from craftutils import utils as u
 from craftutils import plotting as pl
@@ -141,7 +141,6 @@ def reproject(image_1: Union[fits.HDUList, str], image_2: Union[fits.HDUList, st
     :param show:
     :return:
     """
-    import reproject as rp
     image_1, path_1 = path_or_hdu(image_1)
     image_2, path_2 = path_or_hdu(image_2)
     pix_scale_1 = get_pixel_scale(image_1)
@@ -1018,8 +1017,8 @@ def fits_table(input_path: str, output_path: str = "", science_only: bool = True
 
     output.sort(key=lambda a: a['identifier'])
 
-    out_file = astropy.tab(output)
-    out_file.to_csv(output_path)
+    out_file = Table.read(output, format="ascii.csv")
+    out_file.write(output_path, format="ascii.csv")
 
     return out_file
 

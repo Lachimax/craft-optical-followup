@@ -1,16 +1,17 @@
 # Code by Lachlan Marnoch, 2019
 
-import astropy.io.fits as fits
+import os
+from typing import Union
+
 import matplotlib.pyplot as plt
 import numpy as np
 import photutils
-import os
 
-from astropy import wcs as wcs
+import astropy.io.fits as fits
+import astropy.wcs as wcs
+from astropy.table import Table
 from astropy.visualization import (ImageNormalize, LogStretch, SqrtStretch, ZScaleInterval, MinMaxInterval,
                                    PowerStretch, wcsaxes)
-from astropy.table import Table
-from typing import Union
 
 from craftutils import fits_files as ff
 from craftutils import params as p

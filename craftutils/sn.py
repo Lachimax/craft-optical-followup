@@ -1,16 +1,17 @@
 # Code by Lachlan Marnoch, 2019
 
-import sncosmo
+import matplotlib.pyplot as plt
+import scipy.stats as stats
 import numpy as np
-from matplotlib import pyplot as plt
+import sncosmo
 from typing import Union
-from scipy import stats
-from astropy import table
-from astropy.io import fits
-from astropy import wcs
+
+import astropy.table as table
+import astropy.io.fits as fits
+import astropy.wcs as wcs
 
 import craftutils.utils as u
-from craftutils import stats as st
+import craftutils.stats as st
 import craftutils.params as p
 import craftutils.fits_files as ff
 

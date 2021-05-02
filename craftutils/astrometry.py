@@ -1,19 +1,19 @@
 # Code by Lachlan Marnoch, 2019 - 2021
 
-from astropy import table
-from astropy.io import fits
-from astropy import wcs
-from astropy.coordinates import SkyCoord
+from typing import Union, Iterable
 
 import matplotlib.pyplot as plt
 import numpy as np
 
-from craftutils import fits_files as ff
-from craftutils import params as p
-from craftutils import utils as u
-from craftutils import plotting as pl
+import astropy.table as table
+import astropy.io.fits as fits
+import astropy.wcs as wcs
+from astropy.coordinates import SkyCoord
 
-from typing import Union, Iterable
+import craftutils.fits_files as ff
+import craftutils.params as p
+import craftutils.utils as u
+import craftutils.plotting as pl
 
 
 def attempt_skycoord(coord: Union[SkyCoord, str, tuple, list, np.ndarray]):
