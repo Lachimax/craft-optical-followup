@@ -10,6 +10,8 @@ import craftutils.params as p
 import craftutils.retrieve as retrieve
 import craftutils.utils as u
 
+epoch_stage_dirs = ["0-data_with_raw_calibs"]
+
 
 class ImagingEpoch(epoch.Epoch):
     def __init__(self,
@@ -80,9 +82,12 @@ class ESOImagingEpoch(ImagingEpoch):
         Check ESO archive for the epoch raw frames, and download those frames and associated files.
         :return:
         """
-        u.mkdir_check(self.data_path)
-        retrieve.save_eso_raw_data_and_calibs(output=self.data_path, date_obs=self.date, obj=self.obj,
-                                              program_id=self.program_id, instrument=self.instrument)
+        raw_path = os.path.join(self.data_path, epoch_stage_dirs[0])
+        u.mkdir_check(raw_path)
+        r = retrieve.save_eso_raw_data_and_calibs(output=raw_path, date_obs=self.date, obj=self.obj,
+                                                  program_id=self.program_id, instrument=self.instrument)
+        os.system(f"uncompress {raw_path}/*.Z")
+        return r
 
 
 class FORS2ImagingEpoch(ESOImagingEpoch):
