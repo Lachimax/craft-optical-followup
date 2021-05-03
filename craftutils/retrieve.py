@@ -2,7 +2,7 @@
 import urllib
 import os
 import time
-from datetime import date
+from datetime import date, datetime
 from json.decoder import JSONDecodeError
 from typing import Union
 
@@ -13,6 +13,7 @@ import re
 import astropy.units as units
 from astropy.coordinates import SkyCoord
 from astropy.table import Table
+from astropy.time import Time
 
 from astroquery.gaia import Gaia
 from pyvo import dal
@@ -109,8 +110,8 @@ eso_tap_url = "http://archive.eso.org/tap_obs"
 
 
 def login_eso():
-    print("Attempting login to ESO archive.")
     if "eso_auth_token" not in keys:
+        print("Attempting login to ESO archive.")
         token_url = "https://www.eso.org/sso/oidc/token"
         r = requests.get(token_url,
                          params={"response_type": "id_token token", "grant_type": "password",
@@ -219,12 +220,14 @@ def print_eso_calselector_info(description: str, mode_requested: str):
     return alert, mode_warning, certified_warning
 
 
-def save_eso_raw_data_and_calibs(output: str, program_id: str, mjd: float, obj: str, instrument: str = "fors2"):
+def save_eso_raw_data_and_calibs(output: str, program_id: str, date_obs: Union[str, Time], obj: str,
+                                 instrument: str = "fors2"):
     u.mkdir_check(output)
     instrument = instrument.lower()
     login_eso()
     print(f"Querying the ESO TAP service at {eso_tap_url}")
-    query = query_eso_raw(program_id=program_id, mjd=mjd, obj=obj, instrument=instrument)
+    query = query_eso_raw(program_id=program_id, date_obs=date_obs, obj=obj, instrument=instrument)
+    print(query)
     raw_frames = get_eso_raw_frame_list(query=query)
     calib_urls = get_eso_calib_associations_all(raw_frames=raw_frames)
     urls = list(raw_frames['url']) + calib_urls
@@ -242,16 +245,17 @@ def get_eso_raw_frame_list(query: str):
     return raw_frames
 
 
-def query_eso_raw(program_id: str, mjd: Union[float, int], obj: str = None, instrument: str = "fors2"):
-    mjd = int(mjd)
+def query_eso_raw(program_id: str, date_obs: Union[str, Time], obj: str = None, instrument: str = "fors2"):
+    if type(date_obs) is str:
+        date_obs = Time(date_obs)
     query = \
         f"""SELECT dp_id
 FROM dbo.raw
 WHERE prog_id='{program_id}'
 AND dp_cat='SCIENCE'
 AND instrument='{instrument}'
-AND mjd_obs>'{mjd}'
-AND mjd_obs<'{mjd + 1}'
+AND date_obs>'{date_obs.isot}'
+AND date_obs<'{(date_obs + 1).isot}'
 """
     if obj is not None:
         query += f"AND target='{obj}'"
@@ -269,6 +273,7 @@ def get_eso_calib_associations_all(raw_frames: Table, mode_requested: str = "raw
 
 
 def get_eso_associations(raw_frame: str, mode_requested: str = "raw2raw"):
+    print(f"Searching for associated calibration frames for {raw_frame}...")
     # Get list of calibration files associated with the raw frame.
     calselector_url = f"http://archive.eso.org/calselector/v1/associations?dp_id={raw_frame}&mode={mode_requested}&responseformat=votable"
     datalink = dal.adhoc.DatalinkResults.from_result_url(calselector_url)
@@ -278,6 +283,7 @@ def get_eso_associations(raw_frame: str, mode_requested: str = "raw2raw"):
     # create and use a mask to get only the #calibration entries:
     calibrators = datalink['semantics'] == '#calibration'
     calib_urls = datalink.to_table()[calibrators]['access_url']
+    print("Done.")
     return calib_urls
 
 
