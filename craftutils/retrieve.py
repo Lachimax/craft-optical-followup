@@ -4,15 +4,18 @@ import os
 import time
 from datetime import date
 from json.decoder import JSONDecodeError
+from typing import Union
 
 import cgi
 import requests
+import re
 
 import astropy.units as units
 from astropy.coordinates import SkyCoord
+from astropy.table import Table
 
 from astroquery.gaia import Gaia
-from astroquery.eso import Eso
+from pyvo import dal
 
 from craftutils import params as p
 from craftutils import utils as u
@@ -98,48 +101,184 @@ def update_frb_photometry(frb: str, cat: str):
         raise ValueError("Catalogue name not recognised.")
 
 
+# ESO retrieval code based on the script at
+# http://archive.eso.org/programmatic/scripts/eso_authenticated_download_raw_and_calibs.py
+# authored by A.Micol, Archive Science Group, ESO
+
+eso_tap_url = "http://archive.eso.org/tap_obs"
+
 
 def login_eso():
-    token_url = "https://www.eso.org/sso/oidc/token"
-    r = requests.get(token_url,
-                     params={"response_type": "id_token token", "grant_type": "password",
-                             "client_id": "clientid",
-                             "username": keys["eso_user"], "password": keys["eso_pwd"]})
-    token_response = r.json()
-    token = token_response['id_token'] + '=='
-    keys["eso_token"] = token
-    return token
+    print("Attempting login to ESO archive.")
+    if "eso_auth_token" not in keys:
+        token_url = "https://www.eso.org/sso/oidc/token"
+        r = requests.get(token_url,
+                         params={"response_type": "id_token token", "grant_type": "password",
+                                 "client_id": "clientid",
+                                 "username": keys["eso_user"], "password": keys["eso_pwd"]})
+        try:
+            token_response = r.json()
+            token = token_response['id_token'] + '=='
+            keys["eso_auth_token"] = token
+            print("Login successful.")
+        except JSONDecodeError:
+            print("Login failed; either credentials are invalid, or there was a server-side error; skipping ESO tasks.")
+            keys["eso_auth_token"] = None
+    return keys["eso_auth_token"]
 
 
-def save_eso_asset(file_url, filename=None, token=None):
+def save_eso_asset(file_url: str, output: str, filename: str = None):
+    print("Downloading asset from:")
+    print(file_url)
     headers = None
-    if keys["eso_token"] != None:
-        headers = {"Authorization": "Bearer " + token}
+    token = login_eso()
+    if token is not None:
+        headers = {"Authorization": "Bearer " + keys["eso_auth_token"]}
         response = requests.get(file_url, headers=headers)
     else:
         # Trying to download anonymously
         response = requests.get(file_url, stream=True, headers=headers)
 
-    if filename == None:
-        contentdisposition = response.headers.get('Content-Disposition')
-        if contentdisposition != None:
-            value, params = cgi.parse_header(contentdisposition)
+    if filename is None:
+        content_disposition = response.headers.get('Content-Disposition')
+        if content_disposition is not None:
+            value, params = cgi.parse_header(content_disposition)
             filename = params["filename"]
 
-        if filename == None:
+        if filename is None:
             # last chance: get anything after the last '/'
-            filename = url[url.rindex('/') + 1:]
+            filename = file_url[file_url.rindex('/') + 1:]
 
     if response.status_code == 200:
-        with open(filename, 'wb') as f:
+        path = os.path.join(output, filename)
+        print(f"Writing asset to {path}...")
+        with open(path, 'wb') as f:
             for chunk in response.iter_content(chunk_size=50000):
                 f.write(chunk)
+        print("Done")
+    else:
+        response = None
 
-    return (response.status_code, filename)
+    return response
 
 
-def retrieve_eso_data(instrument: str = "fors2"):
+def eso_calselector_info(description: str):
+    """Parse the main calSelector description, and fetch: category, complete, certified, mode, and messages."""
+
+    category = ""
+    complete = ""
+    certified = ""
+    mode = ""
+    messages = ""
+
+    m = re.search('category="([^"]+)"', description)
+    if m:
+        category = m.group(1)
+    m = re.search('complete="([^"]+)"', description)
+    if m:
+        complete = m.group(1).lower()
+    m = re.search('certified="([^"]+)"', description)
+    if m:
+        certified = m.group(1).lower()
+    m = re.search('mode="([^"]+)"', description)
+    if m:
+        mode = m.group(1).lower()
+    m = re.search('messages="([^"]+)"', description)
+    if m:
+        messages = m.group(1)
+
+    return category, complete, certified, mode, messages
+
+
+def print_eso_calselector_info(description: str, mode_requested: str):
+    """Print the most relevant params contained in the main calselector description."""
+
+    category, complete, certified, mode_executed, messages = eso_calselector_info(description)
+
+    alert = ""
+    if complete != "true":
+        alert = "ALERT: incomplete calibration cascade"
+
+    mode_warning = ""
+    if mode_executed != mode_requested:
+        mode_warning = "WARNING: requested mode (%s) could not be executed" % (mode_requested)
+
+    certified_warning = ""
+    if certified != "true":
+        certified_warning = "WARNING: certified=\"%s\"" % (certified)
+
+    print("    calibration info:")
+    print("    ------------------------------------")
+    print(f"    science category={category}")
+    print(f"    cascade complete={complete}")
+    print(f"    cascade messages={messages}")
+    print(f"    cascade certified={certified}")
+    print(f"    cascade executed mode={mode_executed}")
+    print(f"    full description: {description}")
+
+    return alert, mode_warning, certified_warning
+
+
+def save_eso_raw_data_and_calibs(output: str, program_id: str, mjd: float, obj: str, instrument: str = "fors2"):
+    u.mkdir_check(output)
     instrument = instrument.lower()
+    login_eso()
+    print(f"Querying the ESO TAP service at {eso_tap_url}")
+    query = query_eso_raw(program_id=program_id, mjd=mjd, obj=obj, instrument=instrument)
+    raw_frames = get_eso_raw_frame_list(query=query)
+    calib_urls = get_eso_calib_associations_all(raw_frames=raw_frames)
+    urls = list(raw_frames['url']) + calib_urls
+    for url in urls:
+        save_eso_asset(file_url=url, output=output)
+    return urls
+
+
+def get_eso_raw_frame_list(query: str):
+    login_eso()
+    tap_obs = dal.tap.TAPService(eso_tap_url)
+    raw_frames = tap_obs.search(query=query)
+    raw_frames = raw_frames.to_table()
+    raw_frames['url'] = list(map(lambda r: f"https://dataportal.eso.org/dataportal_new/file/{r}", raw_frames['dp_id']))
+    return raw_frames
+
+
+def query_eso_raw(program_id: str, mjd: Union[float, int], obj: str = None, instrument: str = "fors2"):
+    mjd = int(mjd)
+    query = \
+        f"""SELECT dp_id
+FROM dbo.raw
+WHERE prog_id='{program_id}'
+AND dp_cat='SCIENCE'
+AND instrument='{instrument}'
+AND mjd_obs>'{mjd}'
+AND mjd_obs<'{mjd + 1}'
+"""
+    if obj is not None:
+        query += f"AND target='{obj}'"
+    return query
+
+
+def get_eso_calib_associations_all(raw_frames: Table, mode_requested: str = "raw2raw"):
+    calib_urls = []
+    for frame in raw_frames:
+        calib_urls_this = get_eso_associations(raw_frame=frame['dp_id'], mode_requested=mode_requested)
+        for url in calib_urls_this:
+            if url not in calib_urls:
+                calib_urls.append(url)
+    return calib_urls
+
+
+def get_eso_associations(raw_frame: str, mode_requested: str = "raw2raw"):
+    # Get list of calibration files associated with the raw frame.
+    calselector_url = f"http://archive.eso.org/calselector/v1/associations?dp_id={raw_frame}&mode={mode_requested}&responseformat=votable"
+    datalink = dal.adhoc.DatalinkResults.from_result_url(calselector_url)
+    # this_description = next(datalink.bysemantics('#this')).description
+    # Print cascade information and main description
+    # alert, mode_warning, certified_warning = print_eso_calselector_info(this_description, mode_requested)
+    # create and use a mask to get only the #calibration entries:
+    calibrators = datalink['semantics'] == '#calibration'
+    calib_urls = datalink.to_table()[calibrators]['access_url']
+    return calib_urls
 
 
 def retrieve_fors2_calib(fil: str = 'I_BESS', date_from: str = '2017-01-01', date_to: str = None):
@@ -452,7 +591,7 @@ def login_des():
     try:
         keys['des_auth_token'] = r.json()['token']
     except JSONDecodeError:
-        print("There was a server-side error; skipping DES tasks.")
+        print("Login failed; either credentials are invalid, or there was a server-side error; skipping DES tasks.")
         return 'ERROR'
     return keys['des_auth_token']
 
