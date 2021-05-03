@@ -1,9 +1,14 @@
 import os
+from typing import Union
+
+from astropy.time import Time
 
 import craftutils.observation.epoch.epoch as epoch
-from craftutils.observation import field as fld
-from craftutils.observation import objects
-from craftutils import params as p
+import craftutils.observation.field as fld
+import craftutils.observation.objects as objects
+import craftutils.params as p
+import craftutils.retrieve as retrieve
+import craftutils.utils as u
 
 
 class ImagingEpoch(epoch.Epoch):
@@ -11,16 +16,15 @@ class ImagingEpoch(epoch.Epoch):
                  name: str = None,
                  field: fld.Field = None,
                  data_path: str = None,
+                 instrument: str = None,
+                 date: Union[str, Time] = None,
                  standard_epochs: list = None):
-        super().__init__(name=name, field=field, data_path=data_path)
+        super().__init__(name=name, field=field, data_path=data_path, instrument=instrument, date=date)
 
     @classmethod
     def default_params(cls):
         default_params = super().default_params()
         default_params.update({
-            "name": None,
-            "instrument": None,
-            "data_path": None,
             "sextractor":
                 {"aperture_diameters": [7.72],
                  "dual_mode": True,
@@ -59,15 +63,37 @@ class ImagingEpoch(epoch.Epoch):
         return param_dict
 
 
-class FORS2ImagingEpoch(ImagingEpoch):
+class ESOImagingEpoch(ImagingEpoch):
 
+    def __init__(self,
+                 name: str = None,
+                 field: fld.Field = None,
+                 data_path: str = None,
+                 instrument: str = None,
+                 date: Union[str, Time] = None,
+                 standard_epochs: list = None):
+        super().__init__(name=name, field=field, data_path=data_path, instrument=instrument, date=date,
+                         standard_epochs=standard_epochs)
+
+    def retrieve(self):
+        """
+        Check ESO archive for the epoch raw frames, and download those frames and associated files.
+        :return:
+        """
+        u.mkdir_check(self.data_path)
+        retrieve.save_eso_raw_data_and_calibs(output=self.data_path, date_obs=self.date, obj=self.obj,
+                                              program_id=self.program_id, instrument=self.instrument)
+
+
+class FORS2ImagingEpoch(ESOImagingEpoch):
     @classmethod
-    def convert_old_params(cls, epoch: str):
-        new_params = cls.new_yaml(name=epoch, path=None)
-        old_params = p.object_params_fors2(epoch)
+    def convert_old_params(cls, epoch_name: str):
+        new_params = cls.new_yaml(name=epoch_name, path=None)
+        old_params = p.object_params_fors2(epoch_name)
 
         new_params["instrument"] = "FORS2"
         new_params["data_path"] = old_params["data_dir"]
+        new_params["field"] = epoch_name[:epoch_name.find("_")]
 
         new_params["sextractor"]["aperture_diameters"] = old_params["photometry_apertures"]
         new_params["sextractor"]["dual_mode"] = old_params["do_dual_mode"]
