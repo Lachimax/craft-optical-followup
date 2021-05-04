@@ -45,7 +45,7 @@ def main(data_dir, data_title, origin, destination, all_synths):
 
         eso_back = False
 
-        method = u.select_option(message="Please select the background subtraction method.", options=methods,
+        _, method = u.select_option(message="Please select the background subtraction method.", options=methods,
                                  default="polynomial fit")
         degree = None
         if method == "polynomial fit":

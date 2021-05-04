@@ -93,8 +93,8 @@ class PositionUncertainty:
             dec = position.dec
             a_sys = SkyCoord(0.0 * un.degree, dec).separation(SkyCoord(ra_err_sys, dec))
             a_stat = SkyCoord(0.0 * un.degree, dec).separation(SkyCoord(ra_err_stat, dec))
-            b_sys = SkyCoord(f'{ra}d {dec}d').separation(SkyCoord(f'{ra}d {dec + dec_err_sys}d')).value
-            b_stat = SkyCoord(f'{ra}d {dec}d').separation(SkyCoord(f'{ra}d {dec + dec_err_stat}d')).value
+            b_sys = SkyCoord(ra, dec).separation(SkyCoord(ra, dec + dec_err_sys))
+            b_stat = SkyCoord(ra, dec).separation(SkyCoord(ra, dec + dec_err_stat))
             a_sys, b_sys = max(a_sys, b_sys), min(a_sys, b_sys)
             a_stat, b_stat = max(a_stat, b_stat), min(a_stat, b_stat)
             theta = 0.0 * un.degree
@@ -129,7 +129,7 @@ class Object:
         self.name = name
         self.position = a.attempt_skycoord(position)
         if type(position_err) is not PositionUncertainty:
-            self.position_err = PositionUncertainty(uncertainty=position_err)
+            self.position_err = PositionUncertainty(uncertainty=position_err, position=self.position)
 
     @classmethod
     def default_params(cls):

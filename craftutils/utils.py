@@ -16,6 +16,15 @@ from astropy.coordinates import SkyCoord
 # TODO: Arrange these into some kind of logical order.
 # TODO: Also comment.
 
+def get_filename(path: str, include_ext: True):
+    # Split the path into file and path.
+    filename = os.path.split(path)[-1]
+    if not include_ext:
+        # Remove file extension.
+        filename = os.path.splitext(filename)[0]
+    return filename
+
+
 def check_key(key: str, dictionary: dict, na_values: Union[tuple, list] = (None)):
     """
     Returns true if a key is present in a dictionary AND the value of the key is not in na_values (just None by default)
@@ -583,7 +592,7 @@ def select_option(message: str, options: List[str], default: Union[str, int] = N
         except IndexError:
             print(f"Response is not in provided options. Please pick an integer between 0 and {len(options) - 1}")
     print(f"You have selected {selection}: {picked}")
-    return picked
+    return selection, picked
 
 
 def select_yn(message: str, default: Union[str, bool] = None):

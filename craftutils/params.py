@@ -675,9 +675,15 @@ def trim_transmission_curves(f: str, instrument: str, lambda_min: float, lambda_
 
 
 def keys():
-    with open(param_path + "keys.json") as fp:
-        file = json.load(fp)
-    return file
+    key_path = os.path.join(param_path, "keys.json")
+    if os.path.isfile(key_path):
+        with open(param_path + "keys.json") as fp:
+            file = json.load(fp)
+        return file
+    else:
+        raise FileNotFoundError(f"keys.json does not exist at param_path={param_path}. "
+                                f"Please make a copy from {os.path.join(config['proj_dir'], 'param', 'keys.json')}")
+
 
 
 # def change_param_name(folder):

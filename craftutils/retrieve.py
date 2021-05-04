@@ -15,7 +15,6 @@ from astropy.coordinates import SkyCoord
 from astropy.table import Table
 from astropy.time import Time
 
-from astroquery.gaia import Gaia
 from pyvo import dal
 
 from craftutils import params as p
@@ -1170,6 +1169,7 @@ def update_frb_mast_photometry(frb: str, cat: str = "panstarrs", force: bool = F
 
 
 def retrieve_gaia(ra: float, dec: float):
+    from astroquery.gaia import Gaia
     print(f"\nQuerying Gaia DR2 archive for field centring on RA={ra}, DEC={dec}")
     coord = SkyCoord(ra=ra, dec=dec, unit=(units.degree, units.degree), frame='icrs')
     radius = units.Quantity(0.1, units.deg)

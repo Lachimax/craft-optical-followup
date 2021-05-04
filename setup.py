@@ -32,14 +32,16 @@ setuptools.setup(
 
 import craftutils.params as p
 
-if not os.path.isfile("param/config.yaml"):
-    copy("param/config_template.yaml", "param/config.yaml")
+param_path = os.path.join(os.getcwd(), "param")
+config_path = os.path.join(param_path, "config.yaml")
+if not os.path.isfile(config_path):
+    copy(os.path.join(param_path, "config_template.yaml"), config_path)
 
-    config_path = os.path.join(os.getcwd(), "param", "config.yaml")
     print(f"A fresh config file has been created at '{config_path}'")
     print(
         "In this file, please set 'top_data_dir' to a valid path in which to store all data products of this package.")
     print("WARNING: This may require a large amount of space.")
+    print("You may also like to specify an alternate param_dir")
 
     input("\nOnce you have done this, press any key to proceed.")
 
@@ -49,3 +51,6 @@ import craftutils.utils as u
 
 data_dir = p.config["top_data_dir"]
 u.mkdir_check_nested(data_dir)
+key_path = os.path.join(p.config["param_dir"], 'keys.json')
+if not os.path.isfile(key_path):
+    copy(os.path.join(param_path, "keys.json"), key_path)
