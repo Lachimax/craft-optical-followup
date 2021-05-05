@@ -230,6 +230,8 @@ def save_eso_raw_data_and_calibs(output: str, program_id: str, date_obs: Union[s
     raw_frames = get_eso_raw_frame_list(query=query)
     calib_urls = get_eso_calib_associations_all(raw_frames=raw_frames)
     urls = list(raw_frames['url']) + calib_urls
+    if not urls:
+        print("No data was found in the raw ESO archive for the given parameters.")
     for url in urls:
         save_eso_asset(file_url=url, output=output)
     return urls
@@ -238,8 +240,15 @@ def save_eso_raw_data_and_calibs(output: str, program_id: str, date_obs: Union[s
 def get_eso_raw_frame_list(query: str):
     login_eso()
     tap_obs = dal.tap.TAPService(eso_tap_url)
-    raw_frames = tap_obs.search(query=query)
-    raw_frames = raw_frames.to_table()
+    again = True
+    raw_frames = Table()
+    while again:
+        try:
+            raw_frames = tap_obs.search(query=query)
+            raw_frames = raw_frames.to_table()
+            again = False
+        except dal.exceptions.DALQueryError:
+            again = u.select_yn("The request timed out. Try again?")
     raw_frames['url'] = list(map(lambda r: f"https://dataportal.eso.org/dataportal_new/file/{r}", raw_frames['dp_id']))
     return raw_frames
 
