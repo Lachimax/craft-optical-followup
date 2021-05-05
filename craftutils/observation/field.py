@@ -420,9 +420,10 @@ class ImagingEpoch(Epoch):
                  data_path: str = None,
                  instrument: str = None,
                  date: Union[str, Time] = None,
+                 program_id: str = None,
                  standard_epochs: list = None):
         super().__init__(name=name, field=field, param_path=param_path, data_path=data_path, instrument=instrument,
-                         date=date)
+                         date=date, program_id=program_id)
         self.stages = {"1-initial"}
 
     @classmethod
@@ -448,7 +449,8 @@ class ImagingEpoch(Epoch):
                        param_path=param_file,
                        data_path=param_dict['data_path'],
                        instrument=instrument,
-                       date=param_dict['date']
+                       date=param_dict['date'],
+                       program_id=param_dict["program_id"]
                        )
 
     @classmethod
@@ -498,10 +500,11 @@ class ESOImagingEpoch(ImagingEpoch):
                  param_path: str = None,
                  data_path: str = None,
                  instrument: str = None,
+                 program_id: str = None,
                  date: Union[str, Time] = None,
                  standard_epochs: list = None):
         super().__init__(name=name, field=field, param_path=param_path, data_path=data_path, instrument=instrument,
-                         date=date,
+                         date=date, program_id=program_id,
                          standard_epochs=standard_epochs)
 
     def retrieve(self):
@@ -519,7 +522,8 @@ class ESOImagingEpoch(ImagingEpoch):
         u.mkdir_check(raw_path)
         r = retrieve.save_eso_raw_data_and_calibs(output=raw_path, date_obs=self.date, obj=self.obj,
                                                   program_id=self.program_id, instrument=self.instrument)
-        os.system(f"uncompress {raw_path}/*.Z")
+        if r:
+            os.system(f"uncompress {raw_path}/*.Z")
         return r
 
 
@@ -538,6 +542,7 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
                    param_path=param_file,
                    data_path=param_dict['data_path'],
                    instrument='vlt-fors2',
+                   program_id=param_dict['program_id'],
                    date=param_dict['date'])
 
     @classmethod
