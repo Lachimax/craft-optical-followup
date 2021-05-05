@@ -70,6 +70,8 @@ class Field:
         the list.
         """
 
+        # Input attributes
+
         if objs is dict:
             obj_list = []
             for name in objs:
@@ -91,6 +93,9 @@ class Field:
         if self.param_path is not None:
             self.param_dir = os.path.split(self.param_path)[0]
         self.data_path = data_path
+
+        # Derived attributes
+
         self.epochs_spectroscopy = []
         self.epochs_imaging = []
 
@@ -223,6 +228,8 @@ class FRBField(Field):
             if frb is not None:
                 centre_coords = frb.position
 
+        # Input attributes
+
         super().__init__(name=name,
                          centre_coords=centre_coords,
                          param_path=param_path,
@@ -319,10 +326,11 @@ class FRBField(Field):
 
         new_params["frb"]["position_err"]["theta"] = old_params["burst_err_theta"]
 
-        for obj in old_params["other_objects"]:
-            new_params["objects"][obj] = objects.position_dictionary
-            new_params["objects"][obj]["dec"]["decimal"] = old_params["other_objects"][obj]["dec"]
-            new_params["objects"][obj]["ra"]["decimal"] = old_params["other_objects"][obj]["ra"]
+        if "other_objects" in old_params and type(old_params["other_objects"]) is dict:
+            for obj in old_params["other_objects"]:
+                new_params["objects"][obj] = objects.position_dictionary
+                new_params["objects"][obj]["dec"]["decimal"] = old_params["other_objects"][obj]["dec"]
+                new_params["objects"][obj]["ra"]["decimal"] = old_params["other_objects"][obj]["ra"]
         del new_params["objects"]["<name>"]
 
         new_params["subtraction"]["template_epochs"]["des"] = old_params["template_epoch_des"]
@@ -365,6 +373,7 @@ class Epoch:
                  obj: str = None,
                  program_id: str = None
                  ):
+        # Input attributes
         self.param_path = param_path
         self.name = name
         self.field = field
@@ -377,6 +386,37 @@ class Epoch:
             self.date = Time(date)
         self.obj = obj
         self.program_id = program_id
+
+        # Written attributes
+        self.output_file = None
+        self.check_output_file_path()
+        self.stages = {}
+
+    def check_output_file_path(self):
+        if self.output_file is None:
+            if self.data_path is not None and self.name is not None:
+                self.output_file = os.path.join(self.data_path, f"{self.name}_outputs.yaml")
+                return True
+            else:
+                return False
+
+    def query_stage(self, message, stage):
+        done = self.check_done(stage=stage)
+        if done:
+            message += " (performed previously)"
+        options = ["Yes", "Skip", "Exit"]
+        opt, _ = u.select_option(message=message, options=options)
+        if opt == 0:
+            return True
+        if opt == 1:
+            return False
+        if opt == 2:
+            exit(0)
+
+    def check_done(self, stage: str):
+        if stage not in self.stages:
+            raise ValueError(f"{stage} is not a valid stage for this Epoch.")
+        return self.stages[stage]
 
     def set_program_id(self, program_id: str):
         self.program_id = program_id
@@ -397,6 +437,17 @@ class Epoch:
             params = p.load_params(self.param_path)
         params[param] = p_dict[param]
         p.save_params(file=self.param_path, dictionary=params)
+
+    def update_output_file(self):
+        proceed = self.check_output_file_path()
+        if proceed:
+            params = p.load_params(file=self.output_file)
+            params.update({
+                "stages": self.stages
+            })
+            p.save_params(dictionary=params, file=self.output_file)
+        else:
+            warnings.warn("Output could not be saved to file due to lack of valid output path.")
 
     @classmethod
     def default_params(cls):
@@ -424,7 +475,9 @@ class ImagingEpoch(Epoch):
                  standard_epochs: list = None):
         super().__init__(name=name, field=field, param_path=param_path, data_path=data_path, instrument=instrument,
                          date=date, program_id=program_id)
-        self.stages = {"1-initial"}
+
+        # Written attributes
+        self.stages = {"download": False}
 
     @classmethod
     def from_params(cls, field: str, name: str):
@@ -516,14 +569,16 @@ class ESOImagingEpoch(ImagingEpoch):
             self.set_program_id(input("A program ID is required to retrieve ESO data. Enter here:\n"))
         if self.date is None:
             self.set_date(Time(
-                input("An observation date is required to retrieve ESO data. Enter here, in isot or isot format:\n")))
+                input("An observation date is required to retrieve ESO data. Enter here, in iso or isot format:\n")))
 
         raw_path = os.path.join(self.data_path, epoch_stage_dirs[0])
         u.mkdir_check(raw_path)
+        instrument = self.instrument.split('-')[-1]
         r = retrieve.save_eso_raw_data_and_calibs(output=raw_path, date_obs=self.date, obj=self.obj,
-                                                  program_id=self.program_id, instrument=self.instrument)
+                                                  program_id=self.program_id, instrument=instrument)
         if r:
             os.system(f"uncompress {raw_path}/*.Z")
+            self.stages['download'] = True
         return r
 
 

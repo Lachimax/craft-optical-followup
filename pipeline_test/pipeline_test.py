@@ -10,17 +10,6 @@ import craftutils.utils as u
 config = p.config
 
 
-def query_stage(message: str):
-    options = ["Run", "Skip", "Exit"]
-    opt, _ = u.select_option(message=message, options=options)
-    if opt == 0:
-        return True
-    if opt == 1:
-        return False
-    if opt == 2:
-        exit(0)
-
-
 def main(field_name):
     new_field = False
     print("Refreshing parameter files from templates...")
@@ -66,6 +55,8 @@ def main(field_name):
             print("Old format param file detected.")
             if u.select_yn("Convert to new format?"):
                 fld.FRBField.convert_old_param(frb=field_name)
+            else:
+                exit(0)
         field = fld.Field.from_params(name=field_name)
     field.mkdir_params()
     field.mkdir()
@@ -84,7 +75,7 @@ def main(field_name):
 
         # Data retrieval
         if isinstance(epoch, fld.ESOImagingEpoch):
-            if query_stage("Download raw data from ESO archive?"):
+            if epoch.query_stage("Download raw data from ESO archive?", stage='download'):
                 epoch.retrieve()
 
 
