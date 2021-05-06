@@ -9,8 +9,15 @@ import craftutils.utils as u
 
 config = p.config
 
+instruments = ["vlt-fors2", "vlt-xshooter", "mg-imacs"]
 
-def main(field_name):
+
+def main(field_name: str,
+         epoch_name: str,
+         imaging: bool,
+         spectroscopy: bool,
+         instrument: str,
+         old_format: bool):
     new_field = False
     print("Refreshing parameter files from templates...")
     p.refresh_params_all(quiet=True)
@@ -60,20 +67,39 @@ def main(field_name):
         field = fld.Field.from_params(name=field_name)
     field.mkdir_params()
     field.mkdir()
-    _, mode = u.select_option(message="Please select a mode.", options=["Imaging", "Spectroscopy"])
+    if spectroscopy:
+        mode = "Spectroscopy"
+    elif imaging:
+        mode = "Imaging"
+    else:
+        _, mode = u.select_option(message="Please select a mode.", options=["Imaging", "Spectroscopy"])
+
     if mode == "Spectroscopy":
         field.gather_epochs_spectroscopy()
         print("This doesn't do anything yet.")
         print("Exiting.")
         exit(0)
     else:
-        # Build a list of imaging epochs from that field.
-        field.gather_epochs_imaging()
-        if type(field) is fld.FRBField:
-            field.gather_epochs_old()
-        epoch = field.select_epoch_imaging()
-
+        if epoch_name is None:
+            # Build a list of imaging epochs from that field.
+            if type(field) is fld.FRBField:
+                field.gather_epochs_old()
+            field.gather_epochs_imaging()
+            # Let the user select an epoch.
+            epoch = field.select_epoch_imaging()
+        else:
+            if instrument is None:
+                _, instrument = u.select_option("Select an instrument:", options=instruments)
+            epoch = field.epoch_from_params(epoch_name=epoch_name, instrument=instrument, old_format=old_format)
         # Data retrieval
+        print()
+        print(epoch)
+        epoch.load_output_file()
+        print("data_path:", epoch.data_path)
+        print("name:", epoch.name)
+        print("output_file:", epoch.output_file)
+        epoch.update_output_file()
+        print()
         if isinstance(epoch, fld.ESOImagingEpoch):
             if epoch.query_stage("Download raw data from ESO archive?", stage='download'):
                 epoch.retrieve()
@@ -83,10 +109,21 @@ if __name__ == '__main__':
     import argparse
 
     parser = argparse.ArgumentParser(description="Test general pipeline.")
-    parser.add_argument("--field", help='Name of field, eg FRB180924', type=str)
+    parser.add_argument("--field", help='Name of field, eg FRB180924', type=str, default=None)
+    parser.add_argument("--epoch", help='Name of epoch, eg FRB181112_1', type=str, default=None)
+    parser.add_argument("--instrument", help="Name of instrument on which epoch was observed, eg 'vlt-fors2'", type=str,
+                        default=None)
+    parser.add_argument("-i", help="Imaging pipeline", action="store_true")
+    parser.add_argument("-s", help="Spectroscopy pipeline. Overrides -i.", action="store_true")
+    parser.add_argument("-o", help="Load old-format param file.")
 
     # Load arguments
 
     args = parser.parse_args()
 
-    main(field_name=args.field)
+    main(field_name=args.field,
+         epoch_name=args.epoch,
+         imaging=args.i,
+         spectroscopy=args.s,
+         instrument=args.instrument,
+         old_format=args.o)

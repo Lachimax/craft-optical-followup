@@ -96,8 +96,8 @@ class Field:
 
         # Derived attributes
 
-        self.epochs_spectroscopy = []
-        self.epochs_imaging = []
+        self.epochs_spectroscopy = {}
+        self.epochs_imaging = {}
 
     def __str__(self):
         return ""
@@ -122,7 +122,7 @@ class Field:
 
     def gather_epochs(self, mode: str = "imaging"):
         print(f"Searching for {mode} epoch param files...")
-        epochs = []
+        epochs = {}
         if self.param_dir is not None:
             mode_path = os.path.join(self.param_dir, mode)
             print(f"Looking in {mode_path}")
@@ -130,39 +130,49 @@ class Field:
                 instrument_path = os.path.join(mode_path, instrument)
                 print(f"Looking in {instrument_path}")
                 for epoch_param in filter(lambda f: f.endswith(".yaml"), os.listdir(instrument_path)):
-                    epochs.append({
-                        "name": epoch_param[:epoch_param.find(".yaml")],
+                    name = epoch_param[:epoch_param.find(".yaml")]
+                    epochs[name] = {
+                        "name": name,
                         "instrument": instrument,
                         "path": os.path.join(instrument_path, epoch_param),
                         "format": "current"
-                    })
+                    }
         return epochs
 
     def gather_epochs_spectroscopy(self):
         epochs = self.gather_epochs(mode="spectroscopy")
-        self.epochs_spectroscopy += epochs
+        self.epochs_spectroscopy.update(epochs)
         return epochs
 
     def gather_epochs_imaging(self):
         epochs = self.gather_epochs(mode="imaging")
-        self.epochs_imaging += epochs
+        self.epochs_imaging.update(epochs)
         return epochs
 
+    def epoch_from_params(self, epoch_name: str, instrument: str, old_format: bool = False):
+        epoch = ImagingEpoch.from_params(name=epoch_name, field=self, instrument=instrument, old_format=old_format)
+        self.epochs_imaging[epoch_name] = epoch
+        return epoch
+
     def select_epoch_imaging(self):
-        self.epochs_imaging.sort(key=lambda e: e["name"])
         options = []
+        epochs = []
         for i, epoch in enumerate(self.epochs_imaging):
+            epoch = self.epochs_imaging[epoch]
             old_string = ""
             if epoch["format"] == 'old':
                 old_string = " (old format)"
-            options.append(f'{epoch["name"]}{old_string} {epoch["instrument"]}')
-        j, _ = u.select_option(message="Select epoch.", options=options)
-        to_load = self.epochs_imaging.pop(j)
+            options.append(f'{epoch["name"]}\t{epoch["instrument"]}\t{old_string}')
+            epochs.append(epoch["name"])
+        options.sort()
+        epochs.sort()
+        j, epoch = u.select_option(message="Select epoch.", options=options)
+        to_load = self.epochs_imaging[epochs[j]]
         old_format = False
         if to_load["format"] == "old":
             old_format = True
-        epoch = ImagingEpoch.from_file(to_load['path'], old_format=old_format)
-        self.epochs_imaging.append(epoch)
+        epoch = ImagingEpoch.from_file(to_load['path'], old_format=old_format, field=self)
+        self.epochs_imaging[epoch.name] = epoch
         return epoch
 
     @classmethod
@@ -342,20 +352,21 @@ class FRBField(Field):
 
     def gather_epochs_old(self):
         print("Searching for old-format imaging epoch param files...")
-        epochs = []
+        epochs = {}
         param_dir = p.param_path
         for instrument_path in filter(lambda d: d.startswith("epochs_"), os.listdir(param_dir)):
             instrument = instrument_path.split("_")[-1]
             instrument_path = os.path.join(param_dir, instrument_path)
             for epoch_param in filter(lambda f: f.startswith(self.name) and f.endswith(".yaml"),
                                       os.listdir(instrument_path)):
-                epochs.append({
-                    "name": epoch_param[:epoch_param.find('.yaml')],
+                epoch_name = epoch_param[:epoch_param.find('.yaml')]
+                epochs[epoch_name] = {
+                    "name": epoch_name,
                     "instrument": instrument,
                     "path": os.path.join(instrument_path, epoch_param),
                     "format": "old"
-                })
-        self.epochs_imaging += epochs
+                }
+        self.epochs_imaging.update(epochs)
         return epochs
 
 
@@ -389,16 +400,34 @@ class Epoch:
 
         # Written attributes
         self.output_file = None
-        self.check_output_file_path()
         self.stages = {}
+        self.load_output_file()
 
-    def check_output_file_path(self):
+    def load_output_file(self):
         if self.output_file is None:
             if self.data_path is not None and self.name is not None:
                 self.output_file = os.path.join(self.data_path, f"{self.name}_outputs.yaml")
-                return True
+                outputs = p.load_params(file=self.output_file)
+                if outputs is not None:
+                    self.stages = outputs["stages"]
+                return outputs
             else:
                 return False
+        else:
+            return True
+
+    def update_output_file(self):
+        if self.output_file is not None:
+            param_dict = p.load_params(self.output_file)
+            if param_dict is None:
+                param_dict = {}
+            # For each of these, check if None first.
+            param_dict.update({
+                "stages": self.stages
+            })
+            p.save_params(dictionary=param_dict, file=self.output_file)
+        else:
+            raise ValueError("Output could not be saved to file due to lack of valid output path.")
 
     def query_stage(self, message, stage):
         done = self.check_done(stage=stage)
@@ -438,17 +467,6 @@ class Epoch:
         params[param] = p_dict[param]
         p.save_params(file=self.param_path, dictionary=params)
 
-    def update_output_file(self):
-        proceed = self.check_output_file_path()
-        if proceed:
-            params = p.load_params(file=self.output_file)
-            params.update({
-                "stages": self.stages
-            })
-            p.save_params(dictionary=params, file=self.output_file)
-        else:
-            warnings.warn("Output could not be saved to file due to lack of valid output path.")
-
     @classmethod
     def default_params(cls):
         default_params = {
@@ -480,12 +498,27 @@ class ImagingEpoch(Epoch):
         self.stages = {"download": False}
 
     @classmethod
-    def from_params(cls, field: str, name: str):
-        path = os.path.join(p.param_path, "fields", field, name)
-        return cls.from_file(param_file=path)
+    def from_params(cls, name: str, field: Union[Field, str] = None, instrument: str = None, old_format: bool = False):
+        field_name = None
+        if isinstance(field, Field):
+            field_name = field.name
+        elif isinstance(field, str):
+            field_name = field
+            field = None
+        elif field is not None:
+            raise TypeError(f"field must be str or Field, not {type(field)}")
+        instrument = instrument.lower()
+        if field_name is None:
+            field_name = name.split("_")[0]
+        if old_format:
+            instrument = instrument.split("-")[-1]
+            path = os.path.join(p.param_path, f"epochs_{instrument}", name)
+        else:
+            path = os.path.join(p.param_path, "fields", field_name, "imaging", instrument, name)
+        return cls.from_file(param_file=path, field=field)
 
     @classmethod
-    def from_file(cls, param_file: Union[str, dict], old_format: bool = False):
+    def from_file(cls, param_file: Union[str, dict], old_format: bool = False, field: Field = None):
 
         name, param_file, param_dict = params_init(param_file)
 
@@ -494,11 +527,14 @@ class ImagingEpoch(Epoch):
         else:
             instrument = param_dict["instrument"].lower()
 
+        if field is None:
+            field = param_dict["field"]
+
         if instrument == "vlt-fors2":
-            return FORS2ImagingEpoch().from_file(param_dict, name=name, old_format=old_format)
+            return FORS2ImagingEpoch().from_file(param_dict, name=name, old_format=old_format, field=field)
         else:
             return cls(name=name,
-                       field=param_dict["field"],
+                       field=field,
                        param_path=param_file,
                        data_path=param_dict['data_path'],
                        instrument=instrument,
@@ -577,23 +613,28 @@ class ESOImagingEpoch(ImagingEpoch):
         r = retrieve.save_eso_raw_data_and_calibs(output=raw_path, date_obs=self.date, obj=self.obj,
                                                   program_id=self.program_id, instrument=instrument)
         if r:
-            os.system(f"uncompress {raw_path}/*.Z")
+            os.system(f"uncompress {raw_path}/*.Z -f")
             self.stages['download'] = True
+            self.update_output_file()
         return r
 
 
 class FORS2ImagingEpoch(ESOImagingEpoch):
 
     @classmethod
-    def from_file(cls, param_file: Union[str, dict], name: str = None, old_format: bool = False):
+    def from_file(cls, param_file: Union[str, dict], name: str = None, old_format: bool = False, field: Field = None):
+
         if old_format:
             if name is None:
                 raise ValueError("name must be provided for old_format=True.")
             param_file = cls.convert_old_params(epoch_name=name)
         name, param_file, param_dict = params_init(param_file)
 
+        if field is None:
+            field = param_dict["field"]
+
         return cls(name=name,
-                   field=param_dict["field"],
+                   field=field,
                    param_path=param_file,
                    data_path=param_dict['data_path'],
                    instrument='vlt-fors2',
