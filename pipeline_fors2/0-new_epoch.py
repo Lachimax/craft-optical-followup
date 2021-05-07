@@ -7,6 +7,7 @@ def main(epoch: str):
     data_dir = p.config['top_data_dir']
     p.add_epoch_param(obj=epoch, params={"data_dir": data_dir + epoch[:-2] + "/FORS2/new_epoch/"})
 
+
 if __name__ == '__main__':
     import argparse
 

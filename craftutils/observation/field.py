@@ -14,6 +14,7 @@ import craftutils.observation.epoch.epoch as ep
 
 config = p.config
 
+instruments_imaging = ["vlt-fors2", "vlt-xshooter", "mgb-imacs"]
 
 def list_fields():
     print("Searching for field param files...")
@@ -105,11 +106,6 @@ class Field:
     def __repr__(self):
         return self.__str__()
 
-    def list_epochs(self):
-
-        for epoch in self.epochs:
-            a = 0
-
     def mkdir(self):
         u.mkdir_check(self.data_path)
 
@@ -165,14 +161,26 @@ class Field:
             options.append(f'{epoch["name"]}\t{epoch["instrument"]}\t{old_string}')
             epochs.append(epoch["name"])
         options.sort()
+        options.insert(0, "New epoch")
         epochs.sort()
+        epochs.insert(0, "new")
         j, epoch = u.select_option(message="Select epoch.", options=options)
-        to_load = self.epochs_imaging[epochs[j]]
-        old_format = False
-        if to_load["format"] == "old":
-            old_format = True
-        epoch = ImagingEpoch.from_file(to_load['path'], old_format=old_format, field=self)
-        self.epochs_imaging[epoch.name] = epoch
+        if epoch == "new":
+            epoch = self.new_epoch_imaging()
+        else:
+            to_load = self.epochs_imaging[epochs[j]]
+            old_format = False
+            if to_load["format"] == "old":
+                old_format = True
+            epoch = ImagingEpoch.from_file(to_load['path'], old_format=old_format, field=self)
+            self.epochs_imaging[epoch.name] = epoch
+        return epoch
+
+    def new_epoch_imaging(self):
+        epoch_name = input("Please enter a name for the epoch.")
+        instrument = u.select_option("Select an instrument:", options=instruments_imaging)
+        epoch = Epoch(name=epoch_name)
+        self.epochs_imaging[epoch_name] = epoch
         return epoch
 
     @classmethod
@@ -400,7 +408,7 @@ class Epoch:
 
         # Written attributes
         self.output_file = None
-        self.stages = {}
+        self.stages_complete = self.stages()
         self.load_output_file()
 
     def load_output_file(self):
@@ -409,7 +417,7 @@ class Epoch:
                 self.output_file = os.path.join(self.data_path, f"{self.name}_outputs.yaml")
                 outputs = p.load_params(file=self.output_file)
                 if outputs is not None:
-                    self.stages = outputs["stages"]
+                    self.stages_complete.update(outputs["stages"])
                 return outputs
             else:
                 return False
@@ -423,7 +431,7 @@ class Epoch:
                 param_dict = {}
             # For each of these, check if None first.
             param_dict.update({
-                "stages": self.stages
+                "stages": self.stages_complete
             })
             p.save_params(dictionary=param_dict, file=self.output_file)
         else:
@@ -431,8 +439,8 @@ class Epoch:
 
     def query_stage(self, message, stage):
         done = self.check_done(stage=stage)
-        if done:
-            message += " (performed previously)"
+        if done is not None:
+            message += f" (performed at {done.isot})"
         options = ["Yes", "Skip", "Exit"]
         opt, _ = u.select_option(message=message, options=options)
         if opt == 0:
@@ -443,9 +451,9 @@ class Epoch:
             exit(0)
 
     def check_done(self, stage: str):
-        if stage not in self.stages:
+        if stage not in self.stages_complete:
             raise ValueError(f"{stage} is not a valid stage for this Epoch.")
-        return self.stages[stage]
+        return self.stages_complete[stage]
 
     def set_program_id(self, program_id: str):
         self.program_id = program_id
@@ -466,6 +474,10 @@ class Epoch:
             params = p.load_params(self.param_path)
         params[param] = p_dict[param]
         p.save_params(file=self.param_path, dictionary=params)
+
+    @classmethod
+    def stages(cls):
+        return {}
 
     @classmethod
     def default_params(cls):
@@ -494,8 +506,11 @@ class ImagingEpoch(Epoch):
         super().__init__(name=name, field=field, param_path=param_path, data_path=data_path, instrument=instrument,
                          date=date, program_id=program_id)
 
-        # Written attributes
-        self.stages = {"download": False}
+    @classmethod
+    def stages(cls):
+        stages = super().stages()
+        stages.update({"initial_setup": None})
+        return stages
 
     @classmethod
     def from_params(cls, name: str, field: Union[Field, str] = None, instrument: str = None, old_format: bool = False):
@@ -614,9 +629,15 @@ class ESOImagingEpoch(ImagingEpoch):
                                                   program_id=self.program_id, instrument=instrument)
         if r:
             os.system(f"uncompress {raw_path}/*.Z -f")
-            self.stages['download'] = True
+            self.stages['download'] = Time.now()
             self.update_output_file()
         return r
+
+    @classmethod
+    def stages(cls):
+        param_dict = super().stages()
+        param_dict.update({"download": None})
+        return param_dict
 
 
 class FORS2ImagingEpoch(ESOImagingEpoch):

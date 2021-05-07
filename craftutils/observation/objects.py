@@ -1,7 +1,9 @@
 from typing import Union, Tuple
 
+from scipy.special import erf
+
 from astropy.coordinates import SkyCoord
-from astropy import units as un
+import astropy.units as un
 
 from craftutils import params as p
 from craftutils import astrometry as a
@@ -10,7 +12,7 @@ from craftutils import utils as u
 position_dictionary = {"ra": {"decimal": 0.0,
                               "hms": "00h00m00s"},
                        "dec": {"decimal": 0.0,
-                               "dms": "00d00m00s"}
+                               "dms": "00d00m00s"},
                        }
 
 uncertainty_dict = {"sys": 0.0,
@@ -29,18 +31,27 @@ class PositionUncertainty:
                  a_sys: Union[float, un.Quantity] = None,
                  b_stat: Union[float, un.Quantity] = None,
                  b_sys: Union[float, un.Quantity] = None,
-                 theta: Union[float, un.Quantity] = None
+                 theta: Union[float, un.Quantity] = None,
+                 sigma: float = None
                  ):
         """
         If a single value is provided for uncertainty, the uncertainty ellipse will be assumed to be circular.
         Any angular values provided without units are assumed to be in degrees.
         Values in dictionary, if provided, override values given as arguments.
         :param uncertainty:
+        :param position:
         :param ra_err_sys:
         :param ra_err_stat:
         :param dec_err_sys:
         :param dec_err_stat:
+        :param a_stat:
+        :param a_sys:
+        :param b_stat:
+        :param b_sys:
+        :param theta:
+        :param sigma: The confidence interval (expressed in multiples of sigma) of the uncertainty ellipse.
         """
+        self.sigma = sigma
         # Assign values from dictionary, if provided.
         if type(uncertainty) is dict:
             if "ra" in uncertainty and uncertainty["ra"] is not None:
@@ -118,7 +129,8 @@ class PositionUncertainty:
                 "dec": uncertainty_dict.copy(),
                 "a": uncertainty_dict.copy(),
                 "b": uncertainty_dict.copy(),
-                "theta": 0.0}
+                "theta": 0.0,
+                "sigma": None}
 
 
 class Object:

@@ -9,8 +9,6 @@ import craftutils.utils as u
 
 config = p.config
 
-instruments = ["vlt-fors2", "vlt-xshooter", "mg-imacs"]
-
 
 def main(field_name: str,
          epoch_name: str,
@@ -89,21 +87,13 @@ def main(field_name: str,
             epoch = field.select_epoch_imaging()
         else:
             if instrument is None:
-                _, instrument = u.select_option("Select an instrument:", options=instruments)
+                _, instrument = u.select_option("Select an instrument:", options=fld.instruments_imaging)
             epoch = field.epoch_from_params(epoch_name=epoch_name, instrument=instrument, old_format=old_format)
         # Data retrieval
-        print()
-        print(epoch)
-        epoch.load_output_file()
-        print("data_path:", epoch.data_path)
-        print("name:", epoch.name)
-        print("output_file:", epoch.output_file)
-        epoch.update_output_file()
-        print()
         if isinstance(epoch, fld.ESOImagingEpoch):
             if epoch.query_stage("Download raw data from ESO archive?", stage='download'):
                 epoch.retrieve()
-        if epoch.query_stage("Do initial sorting of files?"):
+        if epoch.query_stage("Do initial setup?", stage='initial'):
             epoch.initial()
 
 
