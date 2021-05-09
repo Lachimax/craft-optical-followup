@@ -1,3 +1,4 @@
+import datetime
 import os.path
 import warnings
 from typing import Union, List
@@ -15,6 +16,7 @@ import craftutils.observation.epoch.epoch as ep
 config = p.config
 
 instruments_imaging = ["vlt-fors2", "vlt-xshooter", "mgb-imacs"]
+
 
 def list_fields():
     print("Searching for field param files...")
@@ -99,6 +101,7 @@ class Field:
 
         self.epochs_spectroscopy = {}
         self.epochs_imaging = {}
+        self.epochs_imaging_loaded = {}
 
     def __str__(self):
         return ""
@@ -126,13 +129,13 @@ class Field:
                 instrument_path = os.path.join(mode_path, instrument)
                 print(f"Looking in {instrument_path}")
                 for epoch_param in filter(lambda f: f.endswith(".yaml"), os.listdir(instrument_path)):
-                    name = epoch_param[:epoch_param.find(".yaml")]
-                    epochs[name] = {
-                        "name": name,
-                        "instrument": instrument,
-                        "path": os.path.join(instrument_path, epoch_param),
-                        "format": "current"
-                    }
+                    epoch_name = epoch_param[:epoch_param.find(".yaml")]
+                    param_path = os.path.join(instrument_path, epoch_param)
+                    epoch = p.load_params(file=param_path)
+                    epoch["format"] = "current"
+                    epoch["param_path"] = param_path
+                    epochs[epoch_name] = epoch
+
         return epochs
 
     def gather_epochs_spectroscopy(self):
@@ -151,36 +154,60 @@ class Field:
         return epoch
 
     def select_epoch_imaging(self):
-        options = []
-        epochs = []
+        options = {}
         for i, epoch in enumerate(self.epochs_imaging):
             epoch = self.epochs_imaging[epoch]
-            old_string = ""
+            date_string = ""
             if epoch["format"] == 'old':
-                old_string = " (old format)"
-            options.append(f'{epoch["name"]}\t{epoch["instrument"]}\t{old_string}')
-            epochs.append(epoch["name"])
-        options.sort()
-        options.insert(0, "New epoch")
-        epochs.sort()
-        epochs.insert(0, "new")
+                date_string = " (old format)           "
+            elif "date" in epoch and epoch["date"] is not None:
+                date_string = f" {epoch['date']}"
+            options[f'{epoch["name"]}\t{date_string}\t{epoch["instrument"]}'] = epoch
+        for i, epoch in enumerate(self.epochs_imaging_loaded):
+            # If epoch is already instantiated.
+            options[f'*{epoch.name}\t{epoch.date.isot}\t{epoch.instrument}'] = epoch
+        options["New epoch"] = "new"
         j, epoch = u.select_option(message="Select epoch.", options=options)
         if epoch == "new":
             epoch = self.new_epoch_imaging()
+        elif isinstance(epoch, Epoch):
+            return epoch
         else:
-            to_load = self.epochs_imaging[epochs[j]]
+            to_load = epoch
             old_format = False
             if to_load["format"] == "old":
                 old_format = True
-            epoch = ImagingEpoch.from_file(to_load['path'], old_format=old_format, field=self)
-            self.epochs_imaging[epoch.name] = epoch
+            epoch = ImagingEpoch.from_file(to_load, old_format=old_format, field=self)
+            self.epochs_imaging_loaded[epoch.name] = epoch
         return epoch
 
     def new_epoch_imaging(self):
-        epoch_name = input("Please enter a name for the epoch.")
-        instrument = u.select_option("Select an instrument:", options=instruments_imaging)
-        epoch = Epoch(name=epoch_name)
-        self.epochs_imaging[epoch_name] = epoch
+
+        _, instrument = u.select_option("Select an instrument:", options=instruments_imaging)
+        if instrument == "vlt-fors2":
+            new_params = FORS2ImagingEpoch.default_params()
+        else:
+            new_params = ImagingEpoch.default_params()
+        date = None
+        while date is None:
+            date = input("Enter UTC observation date, in iso or isot format:\n")
+            try:
+                date = Time(date)
+            except ValueError:
+                print("Date format not recognised. Try again:")
+        new_params["date"] = date
+        new_params["program_id"] = input("Enter the programmme ID for the observation:\n")
+        new_params["instrument"] = instrument
+        epoch_name = u.user_input("Please enter a name for the epoch.")
+
+        param_path = os.path.join(self.param_dir, "imaging", instrument, f"{epoch_name}.yaml")
+        p.save_params(file=param_path,
+                      dictionary=new_params)
+
+        epoch = ImagingEpoch.from_file(param_file=param_path)
+        epoch.field = self
+
+        self.epochs_imaging_loaded[epoch_name] = epoch
         return epoch
 
     @classmethod
@@ -368,12 +395,13 @@ class FRBField(Field):
             for epoch_param in filter(lambda f: f.startswith(self.name) and f.endswith(".yaml"),
                                       os.listdir(instrument_path)):
                 epoch_name = epoch_param[:epoch_param.find('.yaml')]
-                epochs[epoch_name] = {
-                    "name": epoch_name,
-                    "instrument": instrument,
-                    "path": os.path.join(instrument_path, epoch_param),
-                    "format": "old"
-                }
+                param_path = os.path.join(instrument_path, epoch_param)
+                epoch = p.load_params(file=param_path)
+                epoch["format"] = "old"
+                epoch["name"] = epoch_name
+                epoch["instrument"] = instrument
+                epoch["param_path"] = param_path
+                epochs[epoch_name] = epoch
         self.epochs_imaging.update(epochs)
         return epochs
 
@@ -392,6 +420,7 @@ class Epoch:
                  obj: str = None,
                  program_id: str = None
                  ):
+
         # Input attributes
         self.param_path = param_path
         self.name = name
@@ -505,6 +534,13 @@ class ImagingEpoch(Epoch):
                  standard_epochs: list = None):
         super().__init__(name=name, field=field, param_path=param_path, data_path=data_path, instrument=instrument,
                          date=date, program_id=program_id)
+        self.guess_data_path()
+
+    def guess_data_path(self):
+        if self.data_path is None and self.field is not None and self.field.data_path is not None and \
+                self.instrument is not None and self.date is not None:
+            self.data_path = os.path.join(self.field.data_path, "Imaging", self.instrument.upper(), self.date.isot)
+        return self.data_path
 
     @classmethod
     def stages(cls):

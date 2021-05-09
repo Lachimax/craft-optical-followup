@@ -85,6 +85,8 @@ def main(field_name: str,
             field.gather_epochs_imaging()
             # Let the user select an epoch.
             epoch = field.select_epoch_imaging()
+        elif epoch_name == "new":
+            epoch = field.new_epoch_imaging()
         else:
             if instrument is None:
                 _, instrument = u.select_option("Select an instrument:", options=fld.instruments_imaging)

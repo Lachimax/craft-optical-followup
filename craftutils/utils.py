@@ -565,16 +565,10 @@ def unit_str_to_float(string: str):
     return value, units
 
 
-def select_option(message: str, options: List[str], default: Union[str, int] = None):
-    if type(default) is str:
-        default = options.index(default)
-    if default is not None:
-        message += f" [default: {default} {options[default]}]"
-    print()
-    print(message)
-
+def option(options: list, default: str = None):
     for i, opt in enumerate(options):
         print(i, opt)
+
     selection = None
     picked = None
 
@@ -593,6 +587,43 @@ def select_option(message: str, options: List[str], default: Union[str, int] = N
             print(f"Response is not in provided options. Please pick an integer between 0 and {len(options) - 1}")
     print(f"You have selected {selection}: {picked}")
     return selection, picked
+
+
+def select_option(message: str, options: Union[List[str], dict], default: Union[str, int] = None, sort: bool = True):
+    """
+    Options can be a list of strings, or a dict in which the keys are the options to be printed and the values are the
+    represented options; that is, the returned object will be the value represented by the selected key.
+    :param message:
+    :param options:
+    :param default:
+    :param sort:
+    :return:
+    """
+    if type(default) is str:
+        default = options.index(default)
+    if default is not None:
+        message += f" [default: {default} {options[default]}]"
+    print()
+    print(message)
+
+    dictionary = False
+    if type(options) is dict:
+        dictionary = True
+        options_list = []
+        for opt in options:
+            options_list.append(opt)
+        if sort:
+            options_list.sort()
+    else:
+        options_list = options
+
+    if sort:
+        options_list.sort()
+    selection, picked = option(options=options_list, default=default)
+    if dictionary:
+        return selection, options[picked]
+    else:
+        return selection, picked
 
 
 def select_yn(message: str, default: Union[str, bool] = None):
