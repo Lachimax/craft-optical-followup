@@ -16,6 +16,7 @@ import craftutils.observation.epoch.epoch as ep
 config = p.config
 
 instruments_imaging = ["vlt-fors2", "vlt-xshooter", "mgb-imacs"]
+instruments_spectroscopy = ["vlt-fors2", "vlt-xshooter"]
 
 
 def list_fields():
@@ -100,6 +101,7 @@ class Field:
         # Derived attributes
 
         self.epochs_spectroscopy = {}
+        self.epochs_spectroscopy_loaded = {}
         self.epochs_imaging = {}
         self.epochs_imaging_loaded = {}
 
@@ -155,7 +157,7 @@ class Field:
 
     def select_epoch_imaging(self):
         options = {}
-        for i, epoch in enumerate(self.epochs_imaging):
+        for epoch in self.epochs_imaging:
             epoch = self.epochs_imaging[epoch]
             date_string = ""
             if epoch["format"] == 'old':
@@ -163,38 +165,44 @@ class Field:
             elif "date" in epoch and epoch["date"] is not None:
                 date_string = f" {epoch['date']}"
             options[f'{epoch["name"]}\t{date_string}\t{epoch["instrument"]}'] = epoch
-        for i, epoch in enumerate(self.epochs_imaging_loaded):
+        for epoch in self.epochs_imaging_loaded:
             # If epoch is already instantiated.
+            epoch = self.epochs_spectroscopy_loaded[epoch]
             options[f'*{epoch.name}\t{epoch.date.isot}\t{epoch.instrument}'] = epoch
         options["New epoch"] = "new"
         j, epoch = u.select_option(message="Select epoch.", options=options)
         if epoch == "new":
             epoch = self.new_epoch_imaging()
-        elif isinstance(epoch, Epoch):
-            return epoch
-        else:
-            to_load = epoch
+        elif not isinstance(epoch, Epoch):
             old_format = False
-            if to_load["format"] == "old":
+            if epoch["format"] == "old":
                 old_format = True
-            epoch = ImagingEpoch.from_file(to_load, old_format=old_format, field=self)
+            epoch = ImagingEpoch.from_file(epoch, old_format=old_format, field=self)
             self.epochs_imaging_loaded[epoch.name] = epoch
+        return epoch
+
+    def select_epoch_spectroscopy(self):
+        options = {}
+        for epoch in self.epochs_spectroscopy:
+            epoch = self.epochs_spectroscopy[epoch]
+            options[f"{epoch['name']}\t{epoch['date']}\tepoch['instrument']"] = epoch
+        for epoch in self.epochs_spectroscopy_loaded:
+            epoch = self.epochs_spectroscopy_loaded[epoch]
+            options[f'*{epoch.name}\t{epoch.date.isot}\t{epoch.instrument}'] = epoch
+        options["New epoch"] = "new"
+        j, epoch = u.select_option(message="Select epoch.", options=options)
+        if epoch == "new":
+            epoch = self.new_epoch_spectroscopy()
+        elif not isinstance(epoch, Epoch):
+            epoch = SpectroscopyEpoch.from_file(epoch, field=self)
+            self.epochs_spectroscopy_loaded[epoch.name] = epoch
         return epoch
 
     def new_epoch_imaging(self):
 
         _, instrument = u.select_option("Select an instrument:", options=instruments_imaging)
-        if instrument == "vlt-fors2":
-            new_params = FORS2ImagingEpoch.default_params()
-        else:
-            new_params = ImagingEpoch.default_params()
-        date = None
-        while date is None:
-            date = input("Enter UTC observation date, in iso or isot format:\n")
-            try:
-                date = Time(date)
-            except ValueError:
-                print("Date format not recognised. Try again:")
+        new_params = ImagingEpoch.select_child_class(instrument=instrument).default_params()
+        date = u.enter_time(message="Enter UTC observation date, in iso or isot format:")
         new_params["date"] = date
         new_params["program_id"] = input("Enter the programmme ID for the observation:\n")
         new_params["instrument"] = instrument
@@ -209,6 +217,14 @@ class Field:
 
         self.epochs_imaging_loaded[epoch_name] = epoch
         return epoch
+
+    def new_epoch_spectroscopy(self):
+
+        _, instrument = u.select_option("Select an instrument:", options=instruments_spectroscopy)
+        if instrument == "vlt-fors2":
+            new_params = FORS2SpectroscopyEpoch.default_params()
+        else:
+            new_params = SpectroscopyEpoch.default_params()
 
     @classmethod
     def default_params(cls):
@@ -631,6 +647,16 @@ class ImagingEpoch(Epoch):
             p.save_params(file=path, dictionary=param_dict, quiet=quiet)
         return param_dict
 
+    @classmethod
+    def select_child_class(cls, instrument: str):
+        instrument = instrument.lower()
+        if instrument == "vlt-fors2":
+            return FORS2ImagingEpoch
+        elif instrument in instruments_imaging:
+            return ImagingEpoch
+        else:
+            raise ValueError(f"Unrecognised instrument {instrument}")
+
 
 class ESOImagingEpoch(ImagingEpoch):
 
@@ -747,15 +773,63 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
 
 class SpectroscopyEpoch:
     def __init__(self,
+                 param_path: str = None,
                  name: str = None,
                  field: Field = None,
-                 param_path: str = None,
                  data_path: str = None,
+                 instrument: str = None,
+                 date: str = None,
+                 program_id: str = None
                  ):
         self.name = name
         self.field = field
         self.param_path = param_path
         self.data_path = data_path
+        self.instrument = instrument
+        self.date = date
+        self.program_id = program_id
+
+    @classmethod
+    def default_params(cls):
+        return {"name": None,
+                "field": None,
+                "data_path": None,
+                "date": None,
+                "program_id": None}
+
+    @classmethod
+    def new_yaml(cls, name: str, path: str = None, quiet: bool = False):
+        param_dict = cls.default_params()
+        param_dict["name"] = name
+        if path is not None:
+            path = os.path.join(path, name)
+            p.save_params(file=path, dictionary=param_dict, quiet=quiet)
+        return param_dict
+
+    @classmethod
+    def select_child_class(cls, instrument: str):
+        instrument = instrument.lower()
+        if instrument == "vlt-fors2":
+            return FORS2SpectroscopyEpoch
+        elif instrument == "vlt-xshooter":
+            return XShooterSpectroscopyEpoch
+        elif instrument in instruments_spectroscopy:
+            return SpectroscopyEpoch
+        else:
+            raise ValueError(f"Unrecognised instrument {instrument}")
+
+
+class ESOSpectroscopyEpoch(SpectroscopyEpoch):
+    def retrieve(self):
+        a = 0
+
+
+class FORS2SpectroscopyEpoch(ESOSpectroscopyEpoch):
+    a = 0
+
+
+class XShooterSpectroscopyEpoch(ESOSpectroscopyEpoch):
+    a = 0
 
 # def test_frbfield_from_params():
 #     frb_field = FRBField.from_file("FRB181112")

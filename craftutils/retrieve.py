@@ -253,7 +253,24 @@ def get_eso_raw_frame_list(query: str):
     return raw_frames
 
 
-def query_eso_raw(program_id: str, date_obs: Union[str, Time], obj: str = None, instrument: str = "fors2"):
+def query_eso_raw(program_id: str, date_obs: Union[str, Time], obj: str = None, instrument: str = "fors2",
+                  mode="imaging"):
+    instrument = instrument.lower()
+    mode = mode.lower()
+    if mode not in ["imaging", "spectroscopy"]:
+        raise ValueError("Mode must be 'imaging' or 'spectroscopy'")
+    mode_str = ""
+    if instrument == "fors2":
+        if mode == "imaging":
+            mode_str = "dp_tech like 'IMA%'"
+        elif mode == "spectroscopy":
+            mode_str = "(dp_tech like 'SPECTRUM%' OR dp_tech like 'ECHELLE%' OR dp_tech like 'MOS%' OR dp_tech like 'MXU%' OR dp_tech like 'HIT%' OR dp_tech like 'IMAGE_SPECTRUM%')"
+    if instrument == "xshooter":
+        if mode == "imaging":
+            mode_str = "dp_tech like 'IMA%'"
+        elif mode == "spectroscopy":
+            mode_str = "dp_tech like 'ECHELLE%'"
+
     if type(date_obs) is str:
         date_obs = Time(date_obs)
     query = \
@@ -262,6 +279,7 @@ FROM dbo.raw
 WHERE prog_id='{program_id}'
 AND dp_cat='SCIENCE'
 AND instrument='{instrument}'
+AND {mode_str}
 AND date_obs>'{date_obs.isot}'
 AND date_obs<'{(date_obs + 1).isot}'
 """

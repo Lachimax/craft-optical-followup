@@ -95,7 +95,7 @@ def main(field_name: str,
         if isinstance(epoch, fld.ESOImagingEpoch):
             if epoch.query_stage("Download raw data from ESO archive?", stage='download'):
                 epoch.retrieve()
-        if epoch.query_stage("Do initial setup?", stage='initial'):
+        if epoch.query_stage("Do initial setup?", stage='initial_setup'):
             epoch.initial()
 
 

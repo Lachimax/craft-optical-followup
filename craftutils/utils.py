@@ -11,6 +11,7 @@ import astropy.table as table
 import astropy.io.fits as fits
 import astropy.units as units
 from astropy.coordinates import SkyCoord
+from astropy.time import Time
 
 
 # TODO: Arrange these into some kind of logical order.
@@ -564,7 +565,6 @@ def unit_str_to_float(string: str):
     print("Value:", value)
     return value, units
 
-
 def option(options: list, default: str = None):
     for i, opt in enumerate(options):
         print(i, opt)
@@ -587,6 +587,18 @@ def option(options: list, default: str = None):
             print(f"Response is not in provided options. Please pick an integer between 0 and {len(options) - 1}")
     print(f"You have selected {selection}: {picked}")
     return selection, picked
+
+
+def enter_time(message: str):
+    date = None
+    while date is None:
+        date = input(message)
+        print()
+        try:
+            date = Time(date)
+        except ValueError:
+            print("Date format not recognised. Try again:")
+    return date
 
 
 def select_option(message: str, options: Union[List[str], dict], default: Union[str, int] = None, sort: bool = True):
