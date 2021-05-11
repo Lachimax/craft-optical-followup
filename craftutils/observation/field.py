@@ -904,13 +904,21 @@ class SpectroscopyEpoch(Epoch):
                                        filter(lambda f: f.endswith(".sorted"), os.listdir(setup_files)).__next__())
             # Retrieve bias files from .sorted file.
             with open(sorted_path) as sorted_file:
-                bias_lines = list(filter(lambda s: "bias" in s and "CHIP1" in s, sorted_file.readlines()))
+                sorted_lines = sorted_file.readlines()
+            bias_lines = list(filter(lambda s: "bias" in s and "CHIP1" in s, sorted_lines))
+            std_line = filter(lambda s: "standard" in s and "CHIP1" in s, sorted_lines).__next__()
+            std_start_index = sorted_lines.index(std_line)
+            std_end_index = sorted_lines[std_start_index:].index(
+                "##########################################################") + std_start_index
+            std_lines = sorted_lines[std_start_index:std_end_index]
+
             pypeit_file_path = os.path.join(self.path_2_pypeit, f"{instrument}_A", f"{instrument}_A.pypeit")
             # Insert bias lines into .pypeit file
             with open(pypeit_file_path, 'r+') as pypeit_file:
                 pypeit_lines = pypeit_file.readlines()
                 pypeit_lines = pypeit_lines[:-2]
                 pypeit_lines += bias_lines
+                pypeit_lines += std_lines
                 pypeit_lines += ["data end\n", "\n"]
                 pypeit_file.writelines(pypeit_lines)
 
