@@ -63,8 +63,6 @@ def main(field_name: str,
             else:
                 exit(0)
         field = fld.Field.from_params(name=field_name)
-    field.mkdir_params()
-    field.mkdir()
     if spectroscopy:
         mode = "Spectroscopy"
     elif imaging:
@@ -73,11 +71,17 @@ def main(field_name: str,
         _, mode = u.select_option(message="Please select a mode.", options=["Imaging", "Spectroscopy"])
 
     if mode == "Spectroscopy":
-        field.gather_epochs_spectroscopy()
-        print("This doesn't do anything yet.")
-        print("Exiting.")
-        exit(0)
-    else:
+        if epoch_name is None:
+            # Build a list of imaging epochs from that field.
+            field.gather_epochs_spectroscopy()
+            # Let the user select an epoch.
+            epoch = field.select_epoch_spectroscopy()
+        else:
+            epoch = fld.SpectroscopyEpoch.from_params(epoch_name)
+
+        epoch.pipeline()
+
+    else:  # if mode == "Imaging"
         if epoch_name is None:
             # Build a list of imaging epochs from that field.
             if type(field) is fld.FRBField:
@@ -85,18 +89,10 @@ def main(field_name: str,
             field.gather_epochs_imaging()
             # Let the user select an epoch.
             epoch = field.select_epoch_imaging()
-        elif epoch_name == "new":
-            epoch = field.new_epoch_imaging()
         else:
-            if instrument is None:
-                _, instrument = u.select_option("Select an instrument:", options=fld.instruments_imaging)
-            epoch = field.epoch_from_params(epoch_name=epoch_name, instrument=instrument, old_format=old_format)
-        # Data retrieval
-        if isinstance(epoch, fld.ESOImagingEpoch):
-            if epoch.query_stage("Download raw data from ESO archive?", stage='download'):
-                epoch.retrieve()
-        if epoch.query_stage("Do initial setup?", stage='initial_setup'):
-            epoch.initial()
+            epoch = fld.ImagingEpoch.from_params(epoch_name)
+
+        epoch.pipeline()
 
 
 if __name__ == '__main__':
