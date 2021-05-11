@@ -219,13 +219,13 @@ def print_eso_calselector_info(description: str, mode_requested: str):
     return alert, mode_warning, certified_warning
 
 
-def save_eso_raw_data_and_calibs(output: str, program_id: str, date_obs: Union[str, Time], obj: str,
-                                 instrument: str = "fors2"):
+def save_eso_raw_data_and_calibs(output: str, program_id: str, date_obs: Union[str, Time],
+                                 instrument: str, mode: str, obj: str = None):
     u.mkdir_check(output)
     instrument = instrument.lower()
     login_eso()
     print(f"Querying the ESO TAP service at {eso_tap_url}")
-    query = query_eso_raw(program_id=program_id, date_obs=date_obs, obj=obj, instrument=instrument)
+    query = query_eso_raw(program_id=program_id, date_obs=date_obs, obj=obj, instrument=instrument, mode=mode)
     print(query)
     raw_frames = get_eso_raw_frame_list(query=query)
     calib_urls = get_eso_calib_associations_all(raw_frames=raw_frames)
@@ -254,7 +254,7 @@ def get_eso_raw_frame_list(query: str):
 
 
 def query_eso_raw(program_id: str, date_obs: Union[str, Time], obj: str = None, instrument: str = "fors2",
-                  mode="imaging"):
+                  mode: str = "imaging"):
     instrument = instrument.lower()
     mode = mode.lower()
     if mode not in ["imaging", "spectroscopy"]:
@@ -264,7 +264,7 @@ def query_eso_raw(program_id: str, date_obs: Union[str, Time], obj: str = None, 
         if mode == "imaging":
             mode_str = "dp_tech like 'IMA%'"
         elif mode == "spectroscopy":
-            mode_str = "(dp_tech like 'SPECTRUM%' OR dp_tech like 'ECHELLE%' OR dp_tech like 'MOS%' OR dp_tech like 'MXU%' OR dp_tech like 'HIT%' OR dp_tech like 'IMAGE_SPECTRUM%')"
+            mode_str = "dp_tech = 'SPECTRUM'"
     if instrument == "xshooter":
         if mode == "imaging":
             mode_str = "dp_tech like 'IMA%'"
@@ -280,8 +280,8 @@ WHERE prog_id='{program_id}'
 AND dp_cat='SCIENCE'
 AND instrument='{instrument}'
 AND {mode_str}
-AND date_obs>'{date_obs.isot}'
-AND date_obs<'{(date_obs + 1).isot}'
+AND date_obs>'{date_obs.to_datetime().date()}'
+AND date_obs<'{(date_obs + 1).to_datetime().date()}'
 """
     if obj is not None:
         query += f"AND target='{obj}'"

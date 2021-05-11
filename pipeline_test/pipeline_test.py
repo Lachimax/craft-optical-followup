@@ -26,7 +26,7 @@ def main(field_name: str,
         for old_field in old_fields:
             if old_field not in fields:
                 fields.append(old_field)
-        opt, field_name = u.select_option("No field specified. Please select one:", options=fields)
+        opt, field_name = u.select_option("No field specified. Please select one:", options=fields, sort=True)
         if opt == 0:
             new_field = True
             field_name = input("Please enter the name of the new field:\n")
@@ -61,6 +61,7 @@ def main(field_name: str,
             if u.select_yn("Convert to new format?"):
                 fld.FRBField.convert_old_param(frb=field_name)
             else:
+                print("Exiting...")
                 exit(0)
         field = fld.Field.from_params(name=field_name)
     if spectroscopy:
@@ -77,9 +78,9 @@ def main(field_name: str,
             # Let the user select an epoch.
             epoch = field.select_epoch_spectroscopy()
         else:
-            epoch = fld.SpectroscopyEpoch.from_params(epoch_name)
-
-        epoch.pipeline()
+            if instrument is None:
+                instrument = fld.select_instrument(mode="spectroscopy")
+            epoch = fld.SpectroscopyEpoch.from_params(epoch_name, instrument=instrument)
 
     else:  # if mode == "Imaging"
         if epoch_name is None:
@@ -90,9 +91,11 @@ def main(field_name: str,
             # Let the user select an epoch.
             epoch = field.select_epoch_imaging()
         else:
-            epoch = fld.ImagingEpoch.from_params(epoch_name)
+            if instrument is None:
+                instrument = fld.select_instrument(mode="imaging")
+            epoch = fld.ImagingEpoch.from_params(epoch_name, instrument=instrument)
 
-        epoch.pipeline()
+    epoch.pipeline()
 
 
 if __name__ == '__main__':

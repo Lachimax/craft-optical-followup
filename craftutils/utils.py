@@ -565,6 +565,7 @@ def unit_str_to_float(string: str):
     print("Value:", value)
     return value, units
 
+
 def option(options: list, default: str = None):
     for i, opt in enumerate(options):
         print(i, opt)
@@ -592,7 +593,7 @@ def option(options: list, default: str = None):
 def enter_time(message: str):
     date = None
     while date is None:
-        date = input(message+"\n")
+        date = input(message + "\n")
         print()
         try:
             date = Time(date)
@@ -601,7 +602,7 @@ def enter_time(message: str):
     return date
 
 
-def select_option(message: str, options: Union[List[str], dict], default: Union[str, int] = None, sort: bool = True):
+def select_option(message: str, options: Union[List[str], dict], default: Union[str, int] = None, sort: bool = False):
     """
     Options can be a list of strings, or a dict in which the keys are the options to be printed and the values are the
     represented options; that is, the returned object will be the value represented by the selected key.

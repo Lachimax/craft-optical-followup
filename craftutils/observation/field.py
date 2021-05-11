@@ -10,12 +10,22 @@ import craftutils.utils as u
 import craftutils.params as p
 import craftutils.retrieve as retrieve
 import craftutils.observation.objects as objects
-import craftutils.observation.epoch.epoch as ep
 
 config = p.config
 
 instruments_imaging = ["vlt-fors2", "vlt-xshooter", "mgb-imacs"]
 instruments_spectroscopy = ["vlt-fors2", "vlt-xshooter"]
+
+
+def select_instrument(mode: str):
+    if mode == "imaging":
+        options = instruments_imaging
+    elif mode == "spectroscopy":
+        options = instruments_spectroscopy
+    else:
+        raise ValueError("Mode must be 'imaging' or 'spectroscopy'.")
+    _, instrument = u.select_option("Select an instrument:", options=options)
+    return instrument
 
 
 def list_fields():
@@ -38,13 +48,13 @@ def list_fields_old():
     return fields
 
 
-def params_init(param_file: Union[str, dict]):
+def _params_init(param_file: Union[str, dict]):
     if type(param_file) is str:
         # Load params from .yaml at path.
         param_file = u.sanitise_file_ext(filename=param_file, ext="yaml")
         param_dict = p.load_params(file=param_file)
         if param_dict is None:
-            return None, None, None
+            raise FileNotFoundError(f"No parameter file found at {param_file}.")
         name = u.get_filename(path=param_file, include_ext=False)
         param_dict["param_path"] = param_file
     else:
@@ -53,6 +63,27 @@ def params_init(param_file: Union[str, dict]):
         param_file = param_dict["param_path"]
 
     return name, param_file, param_dict
+
+
+def _retrieve_eso_epoch(epoch: Union['ESOImagingEpoch', 'ESOSpectroscopyEpoch'], path: str):
+    if epoch.program_id is None:
+        epoch.set_program_id(input("A program ID is required to retrieve ESO data. Enter here:\n"))
+    if epoch.date is None:
+        epoch.set_date(Time(
+            input("An observation date is required to retrieve ESO data. Enter here, in iso or isot format:\n")))
+    if isinstance(epoch, ESOImagingEpoch):
+        mode = "imaging"
+    elif isinstance(epoch, ESOSpectroscopyEpoch):
+        mode = "spectroscopy"
+    else:
+        raise TypeError("epoch must be either an ESOImagingEpoch or an ESOSpectroscopyEpoch.")
+    u.mkdir_check(path)
+    instrument = epoch.instrument.split('-')[-1]
+    r = retrieve.save_eso_raw_data_and_calibs(output=path, date_obs=epoch.date,
+                                              program_id=epoch.program_id, instrument=instrument, mode=mode)
+    if r:
+        os.system(f"uncompress {path}/*.Z -f")
+    return r
 
 
 class Field:
@@ -107,7 +138,7 @@ class Field:
         self.epochs_imaging_loaded = {}
 
     def __str__(self):
-        return ""
+        return f"{self.name}"
 
     def __repr__(self):
         return self.__str__()
@@ -165,7 +196,7 @@ class Field:
             if epoch["format"] == 'old':
                 date_string = " (old format)           "
             elif "date" in epoch and epoch["date"] is not None:
-                date_string = f" {epoch['date']}"
+                date_string = f" {epoch['date'].to_datetime().date()}"
             options[f'{epoch["name"]}\t{date_string}\t{epoch["instrument"]}'] = epoch
         for epoch in self.epochs_imaging_loaded:
             # If epoch is already instantiated.
@@ -187,7 +218,7 @@ class Field:
         options = {}
         for epoch in self.epochs_spectroscopy:
             epoch = self.epochs_spectroscopy[epoch]
-            options[f"{epoch['name']}\t{epoch['date'].isot}\t{epoch['instrument']}"] = epoch
+            options[f"{epoch['name']}\t{epoch['date'].to_datetime().date()}\t{epoch['instrument']}"] = epoch
         for epoch in self.epochs_spectroscopy_loaded:
             epoch = self.epochs_spectroscopy_loaded[epoch]
             options[f'*{epoch.name}\t{epoch.date.isot}\t{epoch.instrument}'] = epoch
@@ -212,7 +243,7 @@ class Field:
         :param mode:
         :return:
         """
-        _, instrument = u.select_option("Select an instrument:", options=instruments_spectroscopy)
+        instrument = select_instrument(mode=mode)
         if mode == "imaging":
             cls = ImagingEpoch.select_child_class(instrument=instrument)
         elif mode == "spectroscopy":
@@ -224,17 +255,15 @@ class Field:
         new_params["instrument"] = instrument
         new_params["date"] = u.enter_time(message="Enter UTC observation date, in iso or isot format:")
         new_params["program_id"] = input("Enter the programmme ID for the observation:\n")
-        param_path = self._epoch_path(mode=mode, instrument=instrument, epoch_name=new_params["name"])
+        new_params["data_path"] = self._epoch_data_path(mode=mode, instrument=instrument, date=new_params["date"])
+        param_path = self._epoch_param_path(mode=mode, instrument=instrument, epoch_name=new_params["name"])
 
         p.save_params(file=param_path, dictionary=new_params)
         epoch = cls.from_file(param_file=param_path, field=self)
 
         return epoch
 
-    def _epoch_path(self, mode: str, instrument: str, epoch_name: str):
-        return os.path.join(self._instrument_path(mode=mode, instrument=instrument), f"{epoch_name}.yaml")
-
-    def _mode_path(self, mode: str):
+    def _mode_param_path(self, mode: str):
         if self.param_dir is not None:
             path = os.path.join(self.param_dir, mode)
             u.mkdir_check(path)
@@ -242,8 +271,30 @@ class Field:
         else:
             raise ValueError(f"param_dir is not set for {self}.")
 
-    def _instrument_path(self, mode: str, instrument: str):
-        path = os.path.join(self._mode_path(mode=mode), instrument)
+    def _mode_data_path(self, mode: str):
+        if self.data_path is not None:
+            path = os.path.join(self.data_path, mode)
+            u.mkdir_check(path)
+            return path
+        else:
+            raise ValueError(f"data_path is not set for {self}.")
+
+    def _instrument_param_path(self, mode: str, instrument: str):
+        path = os.path.join(self._mode_param_path(mode=mode), instrument)
+        u.mkdir_check(path)
+        return path
+
+    def _instrument_data_path(self, mode: str, instrument: str):
+        path = os.path.join(self._mode_data_path(mode=mode), instrument)
+        u.mkdir_check(path)
+        return path
+
+    def _epoch_param_path(self, mode: str, instrument: str, epoch_name: str):
+        return os.path.join(self._instrument_param_path(mode=mode, instrument=instrument), f"{epoch_name}.yaml")
+
+    def _epoch_data_path(self, mode: str, instrument: str, date: Time):
+        path = os.path.join(self._instrument_data_path(mode=mode, instrument=instrument),
+                            f"{date.to_datetime().date()}")
         u.mkdir_check(path)
         return path
 
@@ -259,7 +310,7 @@ class Field:
 
     @classmethod
     def from_file(cls, param_file: Union[str, dict]):
-        name, param_file, param_dict = params_init(param_file)
+        name, param_file, param_dict = _params_init(param_file)
         if param_file is None:
             return None
         # Check data_dir path for relevant .yamls (output_values, etc.)
@@ -350,7 +401,7 @@ class FRBField(Field):
 
     @classmethod
     def from_file(cls, param_file: Union[str, dict]):
-        name, param_file, param_dict = params_init(param_file)
+        name, param_file, param_dict = _params_init(param_file)
 
         # Check data_dir path for relevant .yamls (output_values, etc.)
 
@@ -443,7 +494,9 @@ class FRBField(Field):
         return epochs
 
 
-epoch_stage_dirs = ["0-data_with_raw_calibs"]
+epoch_stage_dirs = {"0-download": "0-data_with_raw_calibs",
+                    "2-pypeit_setup": "2-pypeit_setup",
+                    "3-pypeit": "3-pypeit"}
 
 
 class Epoch:
@@ -475,6 +528,21 @@ class Epoch:
         self.stages_complete = self.stages()
         self.load_output_file()
         self.log = {}
+
+        # Data reduction paths
+        self.path_0_raw = None
+        self._path_0_raw()
+        self.path_1_initial_setup = None
+
+    def pipeline(self):
+        self.proc_1_initial_setup()
+
+    def proc_1_initial_setup(self):
+        return None
+
+    def _path_0_raw(self):
+        if self.data_path is not None and self.path_0_raw is None:
+            self.path_0_raw = os.path.join(self.data_path, epoch_stage_dirs["0-download"])
 
     def load_output_file(self):
         if self.output_file is None:
@@ -542,7 +610,7 @@ class Epoch:
 
     @classmethod
     def stages(cls):
-        return {}
+        return {"1-initial_setup": None}
 
     @classmethod
     def default_params(cls):
@@ -596,11 +664,11 @@ class ImagingEpoch(Epoch):
         self.guess_data_path()
 
     def pipeline(self):
-        if self.query_stage("Do initial setup?", stage='1-initial_setup'):
+        if self.query_stage("Do initial setup of files?", stage='1-initial_setup'):
             self.proc_1_initial_setup()
 
     def proc_1_initial_setup(self):
-        a = 0
+        return None
 
     def guess_data_path(self):
         if self.data_path is None and self.field is not None and self.field.data_path is not None and \
@@ -628,7 +696,7 @@ class ImagingEpoch(Epoch):
     @classmethod
     def from_file(cls, param_file: Union[str, dict], old_format: bool = False, field: Field = None):
 
-        name, param_file, param_dict = params_init(param_file)
+        name, param_file, param_dict = _params_init(param_file)
 
         if old_format:
             instrument = "vlt-fors2"
@@ -722,25 +790,14 @@ class ESOImagingEpoch(ImagingEpoch):
         Check ESO archive for the epoch raw frames, and download those frames and associated files.
         :return:
         """
-        if self.program_id is None:
-            self.set_program_id(input("A program ID is required to retrieve ESO data. Enter here:\n"))
-        if self.date is None:
-            self.set_date(Time(
-                input("An observation date is required to retrieve ESO data. Enter here, in iso or isot format:\n")))
-
-        raw_path = os.path.join(self.data_path, epoch_stage_dirs[0])
-        u.mkdir_check(raw_path)
-        instrument = self.instrument.split('-')[-1]
-        r = retrieve.save_eso_raw_data_and_calibs(output=raw_path, date_obs=self.date,
-                                                  program_id=self.program_id, instrument=instrument)
-        if r:
-            os.system(f"uncompress {raw_path}/*.Z -f")
+        r = _retrieve_eso_epoch(self)
         return r
 
     @classmethod
     def stages(cls):
         param_dict = super().stages()
-        param_dict.update({"0-download": None})
+        param_dict.update({"0-download": None,
+                           })
         return param_dict
 
 
@@ -753,7 +810,9 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
             if name is None:
                 raise ValueError("name must be provided for old_format=True.")
             param_file = cls.convert_old_params(epoch_name=name)
-        name, param_file, param_dict = params_init(param_file)
+        name, param_file, param_dict = _params_init(param_file)
+        if param_dict is None:
+            raise FileNotFoundError(f"No parameter file found at {param_file}.")
 
         if field is None:
             field = param_dict["field"]
@@ -815,12 +874,62 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
 
 class SpectroscopyEpoch(Epoch):
 
-    def pipeline(self):
-        if self.query_stage("Do initial setup?", stage='1-initial_setup'):
-            self.proc_1_initial_setup()
+    def __init__(self,
+                 param_path: str = None,
+                 name: str = None,
+                 field: Union[str, Field] = None,
+                 data_path: str = None,
+                 instrument: str = None,
+                 date: Union[str, Time] = None,
+                 program_id: str = None
+                 ):
+        super().__init__(param_path=param_path, name=name, field=field, data_path=data_path, instrument=instrument,
+                         date=date, program_id=program_id)
+        self.path_2_pypeit = None
+        self._path_2_pypeit()
 
-    def proc_1_initial_setup(self):
-        return None
+    def proc_2_pypeit_setup(self):
+        if self.query_stage("Do PypeIt setup?", stage='2-pypeit_setup'):
+            self._path_2_pypeit()
+            setup_files = os.path.join(self.path_2_pypeit, 'setup_files', '')
+            os.system(f"rm {setup_files}*")
+            # Make pypeit-compatible version of instrument name.
+            instrument = self.instrument.replace('-', '_')
+            os.system(
+                f"pypeit_setup -r {self.path_0_raw} -d {self.path_2_pypeit} -s {instrument}")
+            os.system(
+                f"pypeit_setup -r {self.path_0_raw} -d {self.path_2_pypeit} -s {instrument} -c A")
+
+            sorted_path = os.path.join(setup_files,
+                                       filter(lambda f: f.endswith(".sorted"), os.listdir(setup_files)).__next__())
+            # Retrieve bias files from .sorted file.
+            with open(sorted_path) as sorted_file:
+                bias_lines = list(filter(lambda s: "bias" in s and "CHIP1" in s, sorted_file.readlines()))
+            pypeit_file_path = os.path.join(self.path_2_pypeit, f"{instrument}_A", f"{instrument}_A.pypeit")
+            # Insert bias lines into .pypeit file
+            with open(pypeit_file_path, 'r+') as pypeit_file:
+                pypeit_lines = pypeit_file.readlines()
+                pypeit_lines = pypeit_lines[:-2]
+                pypeit_lines += bias_lines
+                pypeit_lines += ["data end\n", "\n"]
+                pypeit_file.writelines(pypeit_lines)
+
+            self.stages_complete['2-pypeit_setup'] = Time.now()
+            self.update_output_file()
+
+    def _path_2_pypeit(self):
+        if self.data_path is not None and self.path_2_pypeit is None:
+            self.path_2_pypeit = os.path.join(self.data_path, epoch_stage_dirs["2-pypeit_setup"])
+
+    def _path_3_pypeit(self):
+        if self.data_path is not None and self.path_2_pypeit is None:
+            self.path_3_pypeit = os.path.join(self.data_path, epoch_stage_dirs["3-pypeit"])
+
+    @classmethod
+    def stages(cls):
+        param_dict = super().stages()
+        param_dict.update({"2-pypeit_setup": None})
+        return param_dict
 
     @classmethod
     def select_child_class(cls, instrument: str):
@@ -836,7 +945,9 @@ class SpectroscopyEpoch(Epoch):
 
     @classmethod
     def from_file(cls, param_file: Union[str, dict], field: Field = None):
-        name, param_file, param_dict = params_init(param_file)
+        name, param_file, param_dict = _params_init(param_file)
+        if param_dict is None:
+            raise FileNotFoundError(f"No parameter file found at {param_file}.")
         instrument = param_dict["instrument"].lower()
         if field is None:
             field = param_dict["field"]
@@ -862,41 +973,74 @@ class SpectroscopyEpoch(Epoch):
 
 
 class ESOSpectroscopyEpoch(SpectroscopyEpoch):
-    def pipeline(self):
-        self.proc_0_download()
-        super().pipeline()
+    def __init__(self,
+                 param_path: str = None,
+                 name: str = None,
+                 field: Union[str, Field] = None,
+                 data_path: str = None,
+                 instrument: str = None,
+                 date: Union[str, Time] = None,
+                 program_id: str = None
+                 ):
+        super().__init__(param_path=param_path,
+                         name=name,
+                         field=field,
+                         data_path=data_path,
+                         instrument=instrument,
+                         date=date,
+                         program_id=program_id)
+        # Data reduction paths
 
-    def proc_0_download(self):
+    def pipeline(self):
+        if self.data_path is not None:
+            u.mkdir_check(self.data_path)
+        else:
+            raise ValueError(f"data_path has not been set for {self}")
+        self.proc_0_raw()
+        self.proc_1_initial_setup()
+        self.proc_2_pypeit_setup()
+
+    def proc_0_raw(self):
         if self.query_stage("Download raw data from ESO archive?", stage='0-download'):
+            self._path_0_raw()
             r = self.retrieve()
             if r:
                 self.stages_complete['0-download'] = Time.now()
                 self.update_output_file()
+
+    def proc_1_initial_setup(self):
+        if self.query_stage("Do initial setup of files?", stage='1-initial_setup'):
+            self._path_0_raw()
+            m_path = os.path.join(self.path_0_raw, "M")
+            u.mkdir_check(m_path)
+            os.system(f"mv {os.path.join(self.path_0_raw, 'M.')}* {m_path}")
+            self.stages_complete['1-initial_setup'] = Time.now()
+            self.update_output_file()
 
     def retrieve(self):
         """
         Check ESO archive for the epoch raw frames, and download those frames and associated files.
         :return:
         """
-        if self.program_id is None:
-            self.set_program_id(input("A program ID is required to retrieve ESO data. Enter here:\n"))
-        if self.date is None:
-            self.set_date(Time(
-                input(
-                    "An observation date is required to retrieve ESO data. Enter here, in iso or isot format:\n")))
-
-        raw_path = os.path.join(self.data_path, epoch_stage_dirs[0])
-        u.mkdir_check(raw_path)
-        instrument = self.instrument.split('-')[-1]
-        r = retrieve.save_eso_raw_data_and_calibs(output=raw_path, date_obs=self.date,
-                                                  program_id=self.program_id, instrument=instrument)
-        if r:
-            os.system(f"uncompress {raw_path}/*.Z -f")
+        r = _retrieve_eso_epoch(self, path=self.path_0_raw)
         return r
+
+    @classmethod
+    def stages(cls):
+        param_dict = super().stages()
+        param_dict.update({"0-download": None})
+        return param_dict
 
 
 class FORS2SpectroscopyEpoch(ESOSpectroscopyEpoch):
-    a = 0
+    def pipeline(self):
+        if self.data_path is not None:
+            u.mkdir_check(self.data_path)
+        else:
+            raise ValueError(f"data_path has not been set for {self}")
+        self.proc_0_raw()
+        self.proc_1_initial_setup()
+        self.proc_2_pypeit_setup()
 
 
 class XShooterSpectroscopyEpoch(ESOSpectroscopyEpoch):
