@@ -495,8 +495,8 @@ class FRBField(Field):
 
 
 epoch_stage_dirs = {"0-download": "0-data_with_raw_calibs",
-                    "2-pypeit_setup": "2-pypeit_setup",
-                    "3-pypeit": "3-pypeit"}
+                    "2-pypeit": "2-pypeit",
+                    }
 
 
 class Epoch:
@@ -888,55 +888,18 @@ class SpectroscopyEpoch(Epoch):
         self.path_2_pypeit = None
         self._path_2_pypeit()
 
-    def proc_2_pypeit_setup(self):
-        if self.query_stage("Do PypeIt setup?", stage='2-pypeit_setup'):
-            self._path_2_pypeit()
-            setup_files = os.path.join(self.path_2_pypeit, 'setup_files', '')
-            os.system(f"rm {setup_files}*")
-            # Make pypeit-compatible version of instrument name.
-            instrument = self.instrument.replace('-', '_')
-            os.system(
-                f"pypeit_setup -r {self.path_0_raw} -d {self.path_2_pypeit} -s {instrument}")
-            os.system(
-                f"pypeit_setup -r {self.path_0_raw} -d {self.path_2_pypeit} -s {instrument} -c A")
-
-            sorted_path = os.path.join(setup_files,
-                                       filter(lambda f: f.endswith(".sorted"), os.listdir(setup_files)).__next__())
-            # Retrieve bias files from .sorted file.
-            with open(sorted_path) as sorted_file:
-                sorted_lines = sorted_file.readlines()
-            bias_lines = list(filter(lambda s: "bias" in s and "CHIP1" in s, sorted_lines))
-            std_line = filter(lambda s: "standard" in s and "CHIP1" in s, sorted_lines).__next__()
-            std_start_index = sorted_lines.index(std_line)
-            std_end_index = sorted_lines[std_start_index:].index(
-                "##########################################################") + std_start_index
-            std_lines = sorted_lines[std_start_index:std_end_index]
-
-            pypeit_file_path = os.path.join(self.path_2_pypeit, f"{instrument}_A", f"{instrument}_A.pypeit")
-            # Insert bias lines into .pypeit file
-            with open(pypeit_file_path, 'r+') as pypeit_file:
-                pypeit_lines = pypeit_file.readlines()
-                pypeit_lines = pypeit_lines[:-2]
-                pypeit_lines += bias_lines
-                pypeit_lines += std_lines
-                pypeit_lines += ["data end\n", "\n"]
-                pypeit_file.writelines(pypeit_lines)
-
-            self.stages_complete['2-pypeit_setup'] = Time.now()
-            self.update_output_file()
+    def proc_2_pypeit(self):
+        return None
 
     def _path_2_pypeit(self):
         if self.data_path is not None and self.path_2_pypeit is None:
-            self.path_2_pypeit = os.path.join(self.data_path, epoch_stage_dirs["2-pypeit_setup"])
-
-    def _path_3_pypeit(self):
-        if self.data_path is not None and self.path_2_pypeit is None:
-            self.path_3_pypeit = os.path.join(self.data_path, epoch_stage_dirs["3-pypeit"])
+            self.path_2_pypeit = os.path.join(self.data_path, epoch_stage_dirs["2-pypeit"])
 
     @classmethod
     def stages(cls):
         param_dict = super().stages()
-        param_dict.update({"2-pypeit_setup": None})
+        param_dict.update({"2-pypeit_setup": None,
+                           "3-pypeit_run": None})
         return param_dict
 
     @classmethod
@@ -1006,7 +969,7 @@ class ESOSpectroscopyEpoch(SpectroscopyEpoch):
             raise ValueError(f"data_path has not been set for {self}")
         self.proc_0_raw()
         self.proc_1_initial_setup()
-        self.proc_2_pypeit_setup()
+        self.proc_2_pypeit()
 
     def proc_0_raw(self):
         if self.query_stage("Download raw data from ESO archive?", stage='0-download'):
@@ -1048,7 +1011,59 @@ class FORS2SpectroscopyEpoch(ESOSpectroscopyEpoch):
             raise ValueError(f"data_path has not been set for {self}")
         self.proc_0_raw()
         self.proc_1_initial_setup()
-        self.proc_2_pypeit_setup()
+        self.proc_2_pypeit()
+
+    def proc_2_pypeit(self):
+        if self.query_stage("Do PypeIt setup?", stage='2-pypeit_setup'):
+            self._path_2_pypeit()
+            setup_files = os.path.join(self.path_2_pypeit, 'setup_files', '')
+            os.system(f"rm {setup_files}*")
+            # Make pypeit-compatible version of instrument name.
+            instrument = self.instrument.replace('-', '_')
+            os.system(
+                f"pypeit_setup -r {self.path_0_raw} -d {self.path_2_pypeit} -s {instrument}")
+            os.system(
+                f"pypeit_setup -r {self.path_0_raw} -d {self.path_2_pypeit} -s {instrument} -c A")
+
+            sorted_path = os.path.join(setup_files,
+                                       filter(lambda f: f.endswith(".sorted"), os.listdir(setup_files)).__next__())
+            # Retrieve bias files from .sorted file.
+            with open(sorted_path) as sorted_file:
+                sorted_lines = sorted_file.readlines()
+            bias_lines = list(filter(lambda s: "bias" in s and "CHIP1" in s, sorted_lines))
+            std_line = filter(lambda s: "standard" in s and "CHIP1" in s, sorted_lines).__next__()
+            std_start_index = sorted_lines.index(std_line)
+            # print(sorted_lines[std_start_index:])
+            std_end_index = sorted_lines[std_start_index:].index(
+                "##########################################################\n") + std_start_index
+            std_lines = sorted_lines[std_start_index:std_end_index]
+
+            pypeit_run_path = os.path.join(self.path_2_pypeit, f"{instrument}_A")
+            pypeit_file_path = os.path.join(pypeit_run_path, f"{instrument}_A.pypeit")
+            # Insert bias lines into .pypeit file
+            with open(pypeit_file_path, 'r') as pypeit_file:
+                pypeit_lines = pypeit_file.readlines()
+            os.remove(pypeit_file_path)
+
+            cal_position = pypeit_lines.index("[rdx]\n")
+            pypeit_lines.insert(cal_position, "\t\tsync_predict = nearest\n")
+            pypeit_lines.insert(cal_position, "\t[[slitedges]]\n")
+            pypeit_lines.insert(cal_position, "[calibrations]\n")
+            pypeit_lines = pypeit_lines[:-2]
+            pypeit_lines += bias_lines
+            pypeit_lines += std_lines
+            pypeit_lines += ["data end\n", "\n"]
+
+            with open(pypeit_file_path, 'w') as pypeit_file:
+                pypeit_file.writelines(pypeit_lines)
+
+            self.stages_complete['2-pypeit_setup'] = Time.now()
+            self.update_output_file()
+
+        if self.query_stage("Run PypeIt?", stage='3-pypeit_run'):
+            os.system(f"run_pypeit {pypeit_file_path} -r {pypeit_run_path} -o")
+            self.stages_complete['3-pypeit_run'] = Time.now()
+            self.update_output_file()
 
 
 class XShooterSpectroscopyEpoch(ESOSpectroscopyEpoch):
