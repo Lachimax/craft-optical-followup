@@ -592,7 +592,7 @@ def option(options: list, default: str = None):
 def enter_time(message: str):
     date = None
     while date is None:
-        date = input(message)
+        date = input(message+"\n")
         print()
         try:
             date = Time(date)
