@@ -1,4 +1,3 @@
-import datetime
 import os.path
 import warnings
 from typing import Union, List
@@ -96,7 +95,9 @@ class Field:
         self.param_dir = None
         if self.param_path is not None:
             self.param_dir = os.path.split(self.param_path)[0]
+        self.mkdir_params()
         self.data_path = data_path
+        self.mkdir()
 
         # Derived attributes
 
@@ -112,7 +113,8 @@ class Field:
         return self.__str__()
 
     def mkdir(self):
-        u.mkdir_check(self.data_path)
+        if self.data_path is not None:
+            u.mkdir_check(self.data_path)
 
     def mkdir_params(self):
         if self.param_dir is not None:
@@ -121,7 +123,7 @@ class Field:
         else:
             warnings.warn(f"param_dir is not set for this {type(self)}.")
 
-    def gather_epochs(self, mode: str = "imaging"):
+    def _gather_epochs(self, mode: str = "imaging"):
         print(f"Searching for {mode} epoch param files...")
         epochs = {}
         if self.param_dir is not None:
@@ -141,12 +143,12 @@ class Field:
         return epochs
 
     def gather_epochs_spectroscopy(self):
-        epochs = self.gather_epochs(mode="spectroscopy")
+        epochs = self._gather_epochs(mode="spectroscopy")
         self.epochs_spectroscopy.update(epochs)
         return epochs
 
     def gather_epochs_imaging(self):
-        epochs = self.gather_epochs(mode="imaging")
+        epochs = self._gather_epochs(mode="imaging")
         self.epochs_imaging.update(epochs)
         return epochs
 
@@ -185,7 +187,7 @@ class Field:
         options = {}
         for epoch in self.epochs_spectroscopy:
             epoch = self.epochs_spectroscopy[epoch]
-            options[f"{epoch['name']}\t{epoch['date']}\tepoch['instrument']"] = epoch
+            options[f"{epoch['name']}\t{epoch['date'].isot}\t{epoch['instrument']}"] = epoch
         for epoch in self.epochs_spectroscopy_loaded:
             epoch = self.epochs_spectroscopy_loaded[epoch]
             options[f'*{epoch.name}\t{epoch.date.isot}\t{epoch.instrument}'] = epoch
@@ -199,32 +201,51 @@ class Field:
         return epoch
 
     def new_epoch_imaging(self):
-
-        _, instrument = u.select_option("Select an instrument:", options=instruments_imaging)
-        new_params = ImagingEpoch.select_child_class(instrument=instrument).default_params()
-        date = u.enter_time(message="Enter UTC observation date, in iso or isot format:")
-        new_params["date"] = date
-        new_params["program_id"] = input("Enter the programmme ID for the observation:\n")
-        new_params["instrument"] = instrument
-        epoch_name = u.user_input("Please enter a name for the epoch.")
-
-        param_path = os.path.join(self.param_dir, "imaging", instrument, f"{epoch_name}.yaml")
-        p.save_params(file=param_path,
-                      dictionary=new_params)
-
-        epoch = ImagingEpoch.from_file(param_file=param_path)
-        epoch.field = self
-
-        self.epochs_imaging_loaded[epoch_name] = epoch
-        return epoch
+        return self._new_epoch(mode="imaging")
 
     def new_epoch_spectroscopy(self):
+        return self._new_epoch(mode="spectroscopy")
 
+    def _new_epoch(self, mode: str):
+        """
+        Helper method for generating a new epoch.
+        :param mode:
+        :return:
+        """
         _, instrument = u.select_option("Select an instrument:", options=instruments_spectroscopy)
-        if instrument == "vlt-fors2":
-            new_params = FORS2SpectroscopyEpoch.default_params()
+        if mode == "imaging":
+            cls = ImagingEpoch.select_child_class(instrument=instrument)
+        elif mode == "spectroscopy":
+            cls = SpectroscopyEpoch.select_child_class(instrument=instrument)
         else:
-            new_params = SpectroscopyEpoch.default_params()
+            raise ValueError("mode must be 'imaging' or 'spectroscopy'.")
+        new_params = cls.default_params()
+        new_params["name"] = u.user_input("Please enter a name for the epoch.")
+        new_params["instrument"] = instrument
+        new_params["date"] = u.enter_time(message="Enter UTC observation date, in iso or isot format:")
+        new_params["program_id"] = input("Enter the programmme ID for the observation:\n")
+        param_path = self._epoch_path(mode=mode, instrument=instrument, epoch_name=new_params["name"])
+
+        p.save_params(file=param_path, dictionary=new_params)
+        epoch = cls.from_file(param_file=param_path, field=self)
+
+        return epoch
+
+    def _epoch_path(self, mode: str, instrument: str, epoch_name: str):
+        return os.path.join(self._instrument_path(mode=mode, instrument=instrument), f"{epoch_name}.yaml")
+
+    def _mode_path(self, mode: str):
+        if self.param_dir is not None:
+            path = os.path.join(self.param_dir, mode)
+            u.mkdir_check(path)
+            return path
+        else:
+            raise ValueError(f"param_dir is not set for {self}.")
+
+    def _instrument_path(self, mode: str, instrument: str):
+        path = os.path.join(self._mode_path(mode=mode), instrument)
+        u.mkdir_check(path)
+        return path
 
     @classmethod
     def default_params(cls):
@@ -237,13 +258,7 @@ class Field:
         return default_params
 
     @classmethod
-    def from_params(cls, name):
-        path = os.path.join(p.param_path, "fields", name, name)
-        return cls.from_file(param_file=path)
-
-    @classmethod
     def from_file(cls, param_file: Union[str, dict]):
-
         name, param_file, param_dict = params_init(param_file)
         if param_file is None:
             return None
@@ -260,7 +275,12 @@ class Field:
                        objs=param_dict["objects"]
                        )
         elif field_type == "FRBField":
-            return FRBField().from_file(param_file)
+            return FRBField.from_file(param_file)
+
+    @classmethod
+    def from_params(cls, name):
+        path = os.path.join(p.param_path, "fields", name, name)
+        return cls.from_file(param_file=path)
 
     @classmethod
     def new_yaml(cls, name: str, path: str = None, quiet: bool = False):
@@ -297,6 +317,7 @@ class FRBField(Field):
                          data_path=data_path,
                          objs=objs
                          )
+
         self.frb = frb
         self.epochs_imaging_old = {}
 
@@ -427,13 +448,12 @@ epoch_stage_dirs = ["0-data_with_raw_calibs"]
 
 class Epoch:
     def __init__(self,
+                 param_path: str = None,
                  name: str = None,
                  field: Union[str, Field] = None,
-                 param_path: str = None,
                  data_path: str = None,
                  instrument: str = None,
                  date: Union[str, Time] = None,
-                 obj: str = None,
                  program_id: str = None
                  ):
 
@@ -448,13 +468,13 @@ class Epoch:
         self.date = date
         if type(self.date) is str:
             self.date = Time(date)
-        self.obj = obj
         self.program_id = program_id
 
         # Written attributes
         self.output_file = None
         self.stages_complete = self.stages()
         self.load_output_file()
+        self.log = {}
 
     def load_output_file(self):
         if self.output_file is None:
@@ -485,7 +505,7 @@ class Epoch:
     def query_stage(self, message, stage):
         done = self.check_done(stage=stage)
         if done is not None:
-            message += f" (performed at {done.isot})"
+            message += f" (last performed at {done.isot})"
         options = ["Yes", "Skip", "Exit"]
         opt, _ = u.select_option(message=message, options=options)
         if opt == 0:
@@ -537,6 +557,29 @@ class Epoch:
         }
         return default_params
 
+    @classmethod
+    def new_yaml(cls, name: str, path: str = None, quiet: bool = False):
+        param_dict = cls.default_params()
+        param_dict["name"] = name
+        if path is not None:
+            path = os.path.join(path, name)
+            p.save_params(file=path, dictionary=param_dict, quiet=quiet)
+        return param_dict
+
+    @classmethod
+    def _from_params_setup(cls, name: str, field: Union[Field, str] = None):
+        field_name = None
+        if isinstance(field, Field):
+            field_name = field.name
+        elif isinstance(field, str):
+            field_name = field
+            field = None
+        elif field is not None:
+            raise TypeError(f"field must be str or Field, not {type(field)}")
+        if field_name is None:
+            field_name = name.split("_")[0]
+        return field_name, field
+
 
 class ImagingEpoch(Epoch):
     def __init__(self,
@@ -552,6 +595,13 @@ class ImagingEpoch(Epoch):
                          date=date, program_id=program_id)
         self.guess_data_path()
 
+    def pipeline(self):
+        if self.query_stage("Do initial setup?", stage='1-initial_setup'):
+            self.proc_1_initial_setup()
+
+    def proc_1_initial_setup(self):
+        a = 0
+
     def guess_data_path(self):
         if self.data_path is None and self.field is not None and self.field.data_path is not None and \
                 self.instrument is not None and self.date is not None:
@@ -561,22 +611,13 @@ class ImagingEpoch(Epoch):
     @classmethod
     def stages(cls):
         stages = super().stages()
-        stages.update({"initial_setup": None})
+        stages.update({"1-initial_setup": None})
         return stages
 
     @classmethod
     def from_params(cls, name: str, field: Union[Field, str] = None, instrument: str = None, old_format: bool = False):
-        field_name = None
-        if isinstance(field, Field):
-            field_name = field.name
-        elif isinstance(field, str):
-            field_name = field
-            field = None
-        elif field is not None:
-            raise TypeError(f"field must be str or Field, not {type(field)}")
         instrument = instrument.lower()
-        if field_name is None:
-            field_name = name.split("_")[0]
+        field_name, field = cls._from_params_setup(name=name, field=field)
         if old_format:
             instrument = instrument.split("-")[-1]
             path = os.path.join(p.param_path, f"epochs_{instrument}", name)
@@ -597,9 +638,8 @@ class ImagingEpoch(Epoch):
         if field is None:
             field = param_dict["field"]
 
-        if instrument == "vlt-fors2":
-            return FORS2ImagingEpoch().from_file(param_dict, name=name, old_format=old_format, field=field)
-        else:
+        sub_cls = cls.select_child_class(instrument=instrument)
+        if sub_cls is ImagingEpoch:
             return cls(name=name,
                        field=field,
                        param_path=param_file,
@@ -608,6 +648,8 @@ class ImagingEpoch(Epoch):
                        date=param_dict['date'],
                        program_id=param_dict["program_id"]
                        )
+        else:
+            return sub_cls.from_file(param_dict, name=name, old_format=old_format, field=field)
 
     @classmethod
     def default_params(cls):
@@ -639,15 +681,6 @@ class ImagingEpoch(Epoch):
         return default_params
 
     @classmethod
-    def new_yaml(cls, name: str, path: str = None, quiet: bool = False):
-        param_dict = cls.default_params()
-        param_dict["name"] = name
-        if path is not None:
-            path = os.path.join(path, name)
-            p.save_params(file=path, dictionary=param_dict, quiet=quiet)
-        return param_dict
-
-    @classmethod
     def select_child_class(cls, instrument: str):
         instrument = instrument.lower()
         if instrument == "vlt-fors2":
@@ -673,6 +706,17 @@ class ESOImagingEpoch(ImagingEpoch):
                          date=date, program_id=program_id,
                          standard_epochs=standard_epochs)
 
+    def pipeline(self):
+        self.proc_0_download()
+        super().pipeline()
+
+    def proc_0_download(self):
+        if self.query_stage("Download raw data from ESO archive?", stage='0-download'):
+            r = self.retrieve()
+            if r:
+                self.stages_complete['0-download'] = Time.now()
+                self.update_output_file()
+
     def retrieve(self):
         """
         Check ESO archive for the epoch raw frames, and download those frames and associated files.
@@ -687,18 +731,16 @@ class ESOImagingEpoch(ImagingEpoch):
         raw_path = os.path.join(self.data_path, epoch_stage_dirs[0])
         u.mkdir_check(raw_path)
         instrument = self.instrument.split('-')[-1]
-        r = retrieve.save_eso_raw_data_and_calibs(output=raw_path, date_obs=self.date, obj=self.obj,
+        r = retrieve.save_eso_raw_data_and_calibs(output=raw_path, date_obs=self.date,
                                                   program_id=self.program_id, instrument=instrument)
         if r:
             os.system(f"uncompress {raw_path}/*.Z -f")
-            self.stages['download'] = Time.now()
-            self.update_output_file()
         return r
 
     @classmethod
     def stages(cls):
         param_dict = super().stages()
-        param_dict.update({"download": None})
+        param_dict.update({"0-download": None})
         return param_dict
 
 
@@ -771,40 +813,14 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
         return output_path
 
 
-class SpectroscopyEpoch:
-    def __init__(self,
-                 param_path: str = None,
-                 name: str = None,
-                 field: Field = None,
-                 data_path: str = None,
-                 instrument: str = None,
-                 date: str = None,
-                 program_id: str = None
-                 ):
-        self.name = name
-        self.field = field
-        self.param_path = param_path
-        self.data_path = data_path
-        self.instrument = instrument
-        self.date = date
-        self.program_id = program_id
+class SpectroscopyEpoch(Epoch):
 
-    @classmethod
-    def default_params(cls):
-        return {"name": None,
-                "field": None,
-                "data_path": None,
-                "date": None,
-                "program_id": None}
+    def pipeline(self):
+        if self.query_stage("Do initial setup?", stage='1-initial_setup'):
+            self.proc_1_initial_setup()
 
-    @classmethod
-    def new_yaml(cls, name: str, path: str = None, quiet: bool = False):
-        param_dict = cls.default_params()
-        param_dict["name"] = name
-        if path is not None:
-            path = os.path.join(path, name)
-            p.save_params(file=path, dictionary=param_dict, quiet=quiet)
-        return param_dict
+    def proc_1_initial_setup(self):
+        return None
 
     @classmethod
     def select_child_class(cls, instrument: str):
@@ -818,10 +834,65 @@ class SpectroscopyEpoch:
         else:
             raise ValueError(f"Unrecognised instrument {instrument}")
 
+    @classmethod
+    def from_file(cls, param_file: Union[str, dict], field: Field = None):
+        name, param_file, param_dict = params_init(param_file)
+        instrument = param_dict["instrument"].lower()
+        if field is None:
+            field = param_dict["field"]
+        sub_cls = cls.select_child_class(instrument=instrument)
+        # if sub_cls is SpectroscopyEpoch:
+        return sub_cls(name=name,
+                       field=field,
+                       param_path=param_file,
+                       data_path=param_dict["data_path"],
+                       instrument=instrument,
+                       date=param_dict["date"],
+                       program_id=param_dict["program_id"],
+                       )
+        # else:
+        # return sub_cls.from_file(param_file=param_file, field=field)
+
+    @classmethod
+    def from_params(cls, name, field: Union[Field, str] = None, instrument: str = None):
+        instrument = instrument.lower()
+        field_name, field = cls._from_params_setup(name=name, field=field)
+        path = os.path.join(p.param_path, "fields", field_name, "spectroscopy", instrument, name)
+        return cls.from_file(param_file=path, field=field)
+
 
 class ESOSpectroscopyEpoch(SpectroscopyEpoch):
+    def pipeline(self):
+        self.proc_0_download()
+        super().pipeline()
+
+    def proc_0_download(self):
+        if self.query_stage("Download raw data from ESO archive?", stage='0-download'):
+            r = self.retrieve()
+            if r:
+                self.stages_complete['0-download'] = Time.now()
+                self.update_output_file()
+
     def retrieve(self):
-        a = 0
+        """
+        Check ESO archive for the epoch raw frames, and download those frames and associated files.
+        :return:
+        """
+        if self.program_id is None:
+            self.set_program_id(input("A program ID is required to retrieve ESO data. Enter here:\n"))
+        if self.date is None:
+            self.set_date(Time(
+                input(
+                    "An observation date is required to retrieve ESO data. Enter here, in iso or isot format:\n")))
+
+        raw_path = os.path.join(self.data_path, epoch_stage_dirs[0])
+        u.mkdir_check(raw_path)
+        instrument = self.instrument.split('-')[-1]
+        r = retrieve.save_eso_raw_data_and_calibs(output=raw_path, date_obs=self.date,
+                                                  program_id=self.program_id, instrument=instrument)
+        if r:
+            os.system(f"uncompress {raw_path}/*.Z -f")
+        return r
 
 
 class FORS2SpectroscopyEpoch(ESOSpectroscopyEpoch):
