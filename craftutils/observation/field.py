@@ -10,6 +10,7 @@ import craftutils.utils as u
 import craftutils.params as p
 import craftutils.retrieve as retrieve
 import craftutils.observation.objects as objects
+import craftutils.observation.image as image
 
 config = p.config
 
@@ -77,10 +78,19 @@ def _retrieve_eso_epoch(epoch: Union['ESOImagingEpoch', 'ESOSpectroscopyEpoch'],
         mode = "spectroscopy"
     else:
         raise TypeError("epoch must be either an ESOImagingEpoch or an ESOSpectroscopyEpoch.")
+    if epoch.obj is None:
+        obj = u.user_input(
+            "Specifying an object might help find the correct observation. Enter here, as it appears in the archive OBJECT field, or leave blank:\n")
+        if obj in ["", " "]:
+            obj = None
+        else:
+            epoch.set_obj(obj)
+
     u.mkdir_check(path)
     instrument = epoch.instrument.split('-')[-1]
     r = retrieve.save_eso_raw_data_and_calibs(output=path, date_obs=epoch.date,
-                                              program_id=epoch.program_id, instrument=instrument, mode=mode)
+                                              program_id=epoch.program_id, instrument=instrument, mode=mode,
+                                              obj=epoch.obj)
     if r:
         os.system(f"uncompress {path}/*.Z -f")
     return r
@@ -507,7 +517,8 @@ class Epoch:
                  data_path: str = None,
                  instrument: str = None,
                  date: Union[str, Time] = None,
-                 program_id: str = None
+                 program_id: str = None,
+                 obj: str = None
                  ):
 
         # Input attributes
@@ -522,17 +533,18 @@ class Epoch:
         if type(self.date) is str:
             self.date = Time(date)
         self.program_id = program_id
+        self.obj = obj
 
         # Written attributes
         self.output_file = None
         self.stages_complete = self.stages()
-        self.load_output_file()
         self.log = {}
 
         # Data reduction paths
-        self.path_0_raw = None
+        self.paths = {}
         self._path_0_raw()
-        self.path_1_initial_setup = None
+
+        self.load_output_file()
 
     def pipeline(self):
         self.proc_1_initial_setup()
@@ -541,8 +553,8 @@ class Epoch:
         return None
 
     def _path_0_raw(self):
-        if self.data_path is not None and self.path_0_raw is None:
-            self.path_0_raw = os.path.join(self.data_path, epoch_stage_dirs["0-download"])
+        if self.data_path is not None and "raw_dir" not in self.paths:
+            self.paths["raw_dir"] = os.path.join(self.data_path, epoch_stage_dirs["0-download"])
 
     def load_output_file(self):
         if self.output_file is None:
@@ -551,11 +563,19 @@ class Epoch:
                 outputs = p.load_params(file=self.output_file)
                 if outputs is not None:
                     self.stages_complete.update(outputs["stages"])
+                    if "paths" in outputs:
+                        self.paths.update(outputs["paths"])
                 return outputs
             else:
                 return False
         else:
             return True
+
+    def _output_dict(self):
+        return {
+            "stages": self.stages_complete,
+            "paths": self.paths
+        }
 
     def update_output_file(self):
         if self.output_file is not None:
@@ -563,9 +583,7 @@ class Epoch:
             if param_dict is None:
                 param_dict = {}
             # For each of these, check if None first.
-            param_dict.update({
-                "stages": self.stages_complete
-            })
+            param_dict.update(self._output_dict())
             p.save_params(dictionary=param_dict, file=self.output_file)
         else:
             raise ValueError("Output could not be saved to file due to lack of valid output path.")
@@ -596,9 +614,14 @@ class Epoch:
         self.date = date
         self.update_param_file("date")
 
+    def set_obj(self, obj: str):
+        self.obj = obj
+        self.update_param_file("obj")
+
     def update_param_file(self, param: str):
         p_dict = {"program_id": self.program_id,
-                  "date": self.date}
+                  "date": self.date,
+                  "obj": self.obj}
         if param not in p_dict:
             raise ValueError(f"Either {param} is not a valid parameter, or it has not been configured.")
         if self.param_path is None:
@@ -658,9 +681,10 @@ class ImagingEpoch(Epoch):
                  instrument: str = None,
                  date: Union[str, Time] = None,
                  program_id: str = None,
+                 obj: str = None,
                  standard_epochs: list = None):
         super().__init__(name=name, field=field, param_path=param_path, data_path=data_path, instrument=instrument,
-                         date=date, program_id=program_id)
+                         date=date, program_id=program_id, obj=obj)
         self.guess_data_path()
 
     def pipeline(self):
@@ -679,7 +703,7 @@ class ImagingEpoch(Epoch):
     @classmethod
     def stages(cls):
         stages = super().stages()
-        stages.update({"1-initial_setup": None})
+        stages.update({})
         return stages
 
     @classmethod
@@ -714,7 +738,8 @@ class ImagingEpoch(Epoch):
                        data_path=param_dict['data_path'],
                        instrument=instrument,
                        date=param_dict['date'],
-                       program_id=param_dict["program_id"]
+                       program_id=param_dict["program_id"],
+                       obj=param_dict["obj"]
                        )
         else:
             return sub_cls.from_file(param_dict, name=name, old_format=old_format, field=field)
@@ -790,7 +815,11 @@ class ESOImagingEpoch(ImagingEpoch):
         Check ESO archive for the epoch raw frames, and download those frames and associated files.
         :return:
         """
-        r = _retrieve_eso_epoch(self)
+        r = []
+        if "raw_dir" in self.paths:
+            r = _retrieve_eso_epoch(self, path=self.paths["raw_dir"])
+        else:
+            warnings.warn("raw_dir has not been set. Retrieve could not be run.")
         return r
 
     @classmethod
@@ -881,25 +910,38 @@ class SpectroscopyEpoch(Epoch):
                  data_path: str = None,
                  instrument: str = None,
                  date: Union[str, Time] = None,
-                 program_id: str = None
+                 program_id: str = None,
+                 obj: str = None,
                  ):
         super().__init__(param_path=param_path, name=name, field=field, data_path=data_path, instrument=instrument,
-                         date=date, program_id=program_id)
-        self.path_2_pypeit = None
-        self._path_2_pypeit()
+                         date=date, program_id=program_id, obj=obj)
 
-    def proc_2_pypeit(self):
+        self.obj = obj
+
+        self._path_2_pypeit()
+        self.standards_raw = []
+        self._instrument_pypeit = self.instrument.replace('-', '_')
+
+    def _output_dict(self):
+        output_dict = super()._output_dict()
+        return output_dict
+
+    def proc_2_pypeit_setup(self):
+        return None
+
+    def proc_3_pypeit_run(self):
         return None
 
     def _path_2_pypeit(self):
-        if self.data_path is not None and self.path_2_pypeit is None:
-            self.path_2_pypeit = os.path.join(self.data_path, epoch_stage_dirs["2-pypeit"])
+        if self.data_path is not None and "pypeit_dir" not in self.paths:
+            self.paths["pypeit_dir"] = os.path.join(self.data_path, epoch_stage_dirs["2-pypeit"])
 
     @classmethod
     def stages(cls):
         param_dict = super().stages()
         param_dict.update({"2-pypeit_setup": None,
-                           "3-pypeit_run": None})
+                           "3-pypeit_run": None,
+                           "4-pypeit_flux_calib": None})
         return param_dict
 
     @classmethod
@@ -951,7 +993,7 @@ class ESOSpectroscopyEpoch(SpectroscopyEpoch):
                  data_path: str = None,
                  instrument: str = None,
                  date: Union[str, Time] = None,
-                 program_id: str = None
+                 program_id: str = None,
                  ):
         super().__init__(param_path=param_path,
                          name=name,
@@ -969,7 +1011,7 @@ class ESOSpectroscopyEpoch(SpectroscopyEpoch):
             raise ValueError(f"data_path has not been set for {self}")
         self.proc_0_raw()
         self.proc_1_initial_setup()
-        self.proc_2_pypeit()
+        self.proc_2_pypeit_setup()
 
     def proc_0_raw(self):
         if self.query_stage("Download raw data from ESO archive?", stage='0-download'):
@@ -982,9 +1024,9 @@ class ESOSpectroscopyEpoch(SpectroscopyEpoch):
     def proc_1_initial_setup(self):
         if self.query_stage("Do initial setup of files?", stage='1-initial_setup'):
             self._path_0_raw()
-            m_path = os.path.join(self.path_0_raw, "M")
+            m_path = os.path.join(self.paths["raw_dir"], "M")
             u.mkdir_check(m_path)
-            os.system(f"mv {os.path.join(self.path_0_raw, 'M.')}* {m_path}")
+            os.system(f"mv {os.path.join(self.paths['raw_dir'], 'M.')}* {m_path}")
             self.stages_complete['1-initial_setup'] = Time.now()
             self.update_output_file()
 
@@ -993,7 +1035,11 @@ class ESOSpectroscopyEpoch(SpectroscopyEpoch):
         Check ESO archive for the epoch raw frames, and download those frames and associated files.
         :return:
         """
-        r = _retrieve_eso_epoch(self, path=self.path_0_raw)
+        r = []
+        if "raw_dir" in self.paths:
+            r = _retrieve_eso_epoch(self, path=self.paths["raw_dir"])
+        else:
+            warnings.warn("raw_dir has not been set. Retrieve could not be run.")
         return r
 
     @classmethod
@@ -1011,19 +1057,22 @@ class FORS2SpectroscopyEpoch(ESOSpectroscopyEpoch):
             raise ValueError(f"data_path has not been set for {self}")
         self.proc_0_raw()
         self.proc_1_initial_setup()
-        self.proc_2_pypeit()
+        self.proc_2_pypeit_setup()
+        self.proc_3_pypeit_run()
+        self.proc_4_pypeit_flux()
+        self.proc_5_pypeit_coadd()
 
-    def proc_2_pypeit(self):
+    def proc_2_pypeit_setup(self):
         if self.query_stage("Do PypeIt setup?", stage='2-pypeit_setup'):
             self._path_2_pypeit()
-            setup_files = os.path.join(self.path_2_pypeit, 'setup_files', '')
+            setup_files = os.path.join(self.paths["pypeit_dir"], 'setup_files', '')
             os.system(f"rm {setup_files}*")
             # Make pypeit-compatible version of instrument name.
-            instrument = self.instrument.replace('-', '_')
+            instrument = self._instrument_pypeit
             os.system(
-                f"pypeit_setup -r {self.path_0_raw} -d {self.path_2_pypeit} -s {instrument}")
+                f"pypeit_setup -r {self.paths['raw_dir']} -d {self.paths['pypeit_dir']} -s {instrument}")
             os.system(
-                f"pypeit_setup -r {self.path_0_raw} -d {self.path_2_pypeit} -s {instrument} -c A")
+                f"pypeit_setup -r {self.paths['raw_dir']} -d {self.paths['pypeit_dir']} -s {instrument} -c A")
 
             sorted_path = os.path.join(setup_files,
                                        filter(lambda f: f.endswith(".sorted"), os.listdir(setup_files)).__next__())
@@ -1031,43 +1080,110 @@ class FORS2SpectroscopyEpoch(ESOSpectroscopyEpoch):
             with open(sorted_path) as sorted_file:
                 sorted_lines = sorted_file.readlines()
             bias_lines = list(filter(lambda s: "bias" in s and "CHIP1" in s, sorted_lines))
+            # Find line containing information for standard observation.
             std_line = filter(lambda s: "standard" in s and "CHIP1" in s, sorted_lines).__next__()
+            std_raw = image.SpecRawImage.from_pypeit_line(std_line, pypeit_raw_path=self.paths['raw_dir'])
+            self.standards_raw.append(std_raw)
             std_start_index = sorted_lines.index(std_line)
-            # print(sorted_lines[std_start_index:])
+            # Find last line of the std-obs configuration (encapsulating the required calibration files)
             std_end_index = sorted_lines[std_start_index:].index(
                 "##########################################################\n") + std_start_index
             std_lines = sorted_lines[std_start_index:std_end_index]
 
-            pypeit_run_path = os.path.join(self.path_2_pypeit, f"{instrument}_A")
-            pypeit_file_path = os.path.join(pypeit_run_path, f"{instrument}_A.pypeit")
-            # Insert bias lines into .pypeit file
+            pypeit_run_dir = os.path.join(self.paths['pypeit_dir'], f"{instrument}_A")
+            pypeit_file_path = os.path.join(pypeit_run_dir, f"{instrument}_A.pypeit")
+            # Retrieve text from .pypeit file
             with open(pypeit_file_path, 'r') as pypeit_file:
                 pypeit_lines = pypeit_file.readlines()
-            os.remove(pypeit_file_path)
-
+            # Add lines to set slit prediction to "nearest" in .pypeit file.
             cal_position = pypeit_lines.index("[rdx]\n")
             pypeit_lines.insert(cal_position, "\t\tsync_predict = nearest\n")
             pypeit_lines.insert(cal_position, "\t[[slitedges]]\n")
             pypeit_lines.insert(cal_position, "[calibrations]\n")
+            # Remove last two lines of file ("data end")
             pypeit_lines = pypeit_lines[:-2]
+            # Insert bias lines from .sorted file
             pypeit_lines += bias_lines
+            # Insert standard lines from .sorted file
             pypeit_lines += std_lines
+            # Reinsert the last two lines.
             pypeit_lines += ["data end\n", "\n"]
-
+            # Delete .pypeit file, to be rewritten.
+            os.remove(pypeit_file_path)
+            # Write modified .pypeit file to disk.
             with open(pypeit_file_path, 'w') as pypeit_file:
                 pypeit_file.writelines(pypeit_lines)
+
+            self.paths["pypeit_file"] = pypeit_file_path
+            self.paths["pypeit_run_dir"] = pypeit_run_dir
 
             self.stages_complete['2-pypeit_setup'] = Time.now()
             self.update_output_file()
 
+    def proc_3_pypeit_run(self):
         if self.query_stage("Run PypeIt?", stage='3-pypeit_run'):
-            os.system(f"run_pypeit {pypeit_file_path} -r {pypeit_run_path} -o")
+            os.system(f"run_pypeit {self.paths['pypeit_file']} -r {self.paths['pypeit_run_dir']} -o")
             self.stages_complete['3-pypeit_run'] = Time.now()
             self.update_output_file()
 
+    def proc_4_pypeit_flux(self):
+        if self.query_stage("Do fluxing with PypeIt?", stage='4-pypeit_flux_calib'):
+            pypeit_science_dir = os.path.join(self.paths["pypeit_run_dir"], "Science")
+            std_reduced_filename = filter(lambda f: "spec1d" in f and "STD" in f and f.endswith(".fits"),
+                                          os.listdir(pypeit_science_dir)).__next__()
+            std_reduced_path = os.path.join(pypeit_science_dir, std_reduced_filename)
+            print(f"Using {std_reduced_path} for fluxing.")
+            sensfunc_path = os.path.join(self.paths['pypeit_run_dir'], "sens.fits")
+            # Generate sensitivity function from standard observation
+            os.system(f"pypeit_sensfunc {std_reduced_path} -o {sensfunc_path}")
+            # Generate flux setup file.
+            cwd = os.getcwd()
+            os.chdir(self.paths["pypeit_run_dir"])
+            os.system(f"pypeit_flux_setup {pypeit_science_dir}")
+            os.chdir(cwd)
+            flux_setup_path = os.path.join(self.paths["pypeit_run_dir"], f"{self._instrument_pypeit}.flux")
+
+            # Insert name of sensitivity file to flux setup file.
+            with open(flux_setup_path, "r") as flux_setup:
+                flux_lines = flux_setup.readlines()
+            file_first = flux_lines.index("flux read\n") + 1
+            flux_lines[file_first] = flux_lines[file_first][:-1] + " " + sensfunc_path + "\n"
+            # Delete flux setup file for rewriting.
+            os.remove(flux_setup_path)
+            # Rewrite modified .flux file.
+            with open(flux_setup_path, "w") as flux_setup:
+                flux_setup.writelines(flux_lines)
+            # Run pypeit_flux_calib
+            os.system(f"pypeit_flux_calib {flux_setup_path}")
+
+            self.paths["pypeit_sensitivity_file"] = sensfunc_path
+            self.paths["pypeit_std_reduced"] = std_reduced_path
+            self.paths["pypeit_science_dir"] = pypeit_science_dir
+            self.paths["pypeit_flux_setup"] = flux_setup_path
+            self.stages_complete['4-pypeit_flux_calib'] = Time.now()
+            self.update_output_file()
+
+    def proc_5_pypeit_coadd(self):
+        if self.query_stage(
+                "Do coaddition with PypeIt?\nYou should first inspect the 2d spectra to determine which objects to co-add.",
+                stage='5-pypeit_coadd'):
+            for file in filter(lambda f: "spec2d" in f, os.listdir(self.paths["pypeit_science_dir"])):
+                path = os.path.join(self.paths["pypeit_science_dir"], file)
+                os.system(f"pypeit_show_2dspec {path}")
+
 
 class XShooterSpectroscopyEpoch(ESOSpectroscopyEpoch):
-    a = 0
+    def pipeline(self):
+        if self.data_path is not None:
+            u.mkdir_check(self.data_path)
+        else:
+            raise ValueError(f"data_path has not been set for {self}")
+        self.proc_0_raw()
+        self.proc_1_initial_setup()
+        self.proc_2_pypeit_setup()
+        self.proc_3_pypeit_run()
+        self.proc_4_pypeit_flux()
+        self.proc_5_pypeit_coadd()
 
 # def test_frbfield_from_params():
 #     frb_field = FRBField.from_file("FRB181112")

@@ -17,6 +17,19 @@ from astropy.time import Time
 # TODO: Arrange these into some kind of logical order.
 # TODO: Also comment.
 
+def traverse_dict(dictionary: dict, function, keys: list = None):
+    if keys is None:
+        keys = []
+    for key in dictionary:
+        keys_this = keys.copy()
+        keys_this.append(key)
+        value = dictionary[key]
+        if type(value) is dict:
+            traverse_dict(value, function=function, keys=keys_this)
+        else:
+            function(keys_this, value)
+
+
 def get_filename(path: str, include_ext: True):
     # Split the path into file and path.
     filename = os.path.split(path)[-1]
