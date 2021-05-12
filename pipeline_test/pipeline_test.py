@@ -26,7 +26,7 @@ def main(field_name: str,
         for old_field in old_fields:
             if old_field not in fields:
                 fields.append(old_field)
-        opt, field_name = u.select_option("No field specified. Please select one:", options=fields, sort=True)
+        opt, field_name = u.select_option("No field specified. Please select one:", options=fields, sort=False)
         if opt == 0:
             new_field = True
             field_name = input("Please enter the name of the new field:\n")
@@ -80,7 +80,7 @@ def main(field_name: str,
         else:
             if instrument is None:
                 instrument = fld.select_instrument(mode="spectroscopy")
-            epoch = fld.SpectroscopyEpoch.from_params(epoch_name, instrument=instrument)
+            epoch = fld.SpectroscopyEpoch.from_params(epoch_name, instrument=instrument, field=field)
 
     else:  # if mode == "Imaging"
         if epoch_name is None:

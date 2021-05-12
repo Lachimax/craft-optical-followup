@@ -311,7 +311,7 @@ def align(comparison: Union[fits.hdu.hdulist.HDUList, str], template: Union[fits
         comparison.close()
 
 
-def divide_by_exp_time(file: Union['fits.hdu.hdulist.HDUList', 'str'], output: 'str' = None):
+def divide_by_exp_time(file: Union['fits.hdu_list.hdulist.HDUList', 'str'], output: 'str' = None):
     """
     Convert a fits file from total counts to counts/second.
     :param file: Path or HDU object of the file.
@@ -402,7 +402,7 @@ def subtract_file(file: Union[str, fits.HDUList], sub_file: Union[str, fits.HDUL
     return subbed
 
 
-def detect_edges(file: Union['fits.hdu.hdulist.HDUList', 'str']):
+def detect_edges(file: Union['fits.hdu_list.hdulist.HDUList', 'str']):
     """
     Detects the edges of a rectangular non-zero block, where the frame consists of zeroed pixels. For use with
     background files with an obvious frame.
@@ -437,7 +437,7 @@ def detect_edges(file: Union['fits.hdu.hdulist.HDUList', 'str']):
     return left, right, bottom, top
 
 
-def detect_edges_area(file: Union['fits.hdu.hdulist.HDUList', 'str']):
+def detect_edges_area(file: Union['fits.hdu_list.hdulist.HDUList', 'str']):
     if type(file) is str:
         file = fits.open(file)
 
@@ -479,7 +479,7 @@ def detect_edges_area(file: Union['fits.hdu.hdulist.HDUList', 'str']):
     return left, right, bottom, top
 
 
-def get_filter(file: Union['fits.hdu.hdulist.HDUList', 'str']):
+def get_filter(file: Union['fits.hdu_list.hdulist.HDUList', 'str']):
     path = False
     if type(file) is str:
         path = True
@@ -501,7 +501,7 @@ def get_filter(file: Union['fits.hdu.hdulist.HDUList', 'str']):
         return filters
 
 
-def get_header_attribute(file: Union['fits.hdu.hdulist.HDUList', 'str'], attribute: 'str', ext: 'int' = 0):
+def get_header_attribute(file: Union['fits.hdu_list.hdulist.HDUList', 'str'], attribute: 'str', ext: 'int' = 0):
     file, path = path_or_hdu(file)
 
     header = file[ext].header
@@ -516,7 +516,7 @@ def get_header_attribute(file: Union['fits.hdu.hdulist.HDUList', 'str'], attribu
     return value
 
 
-def get_chip_num(file: Union['fits.hdu.hdulist.HDUList', 'str']):
+def get_chip_num(file: Union['fits.hdu_list.hdulist.HDUList', 'str']):
     """
     For use with FORS2 images only. Returns 1 if image is from upper CCD, 2 if lower, and 0 if the necessary information
     is not present in the FITS file (likely indicating a stacked or non-FORS2 image).
@@ -532,15 +532,15 @@ def get_chip_num(file: Union['fits.hdu.hdulist.HDUList', 'str']):
     return chip
 
 
-def get_exp_time(file: Union['fits.hdu.hdulist.HDUList', 'str']):
+def get_exp_time(file: Union['fits.hdu_list.hdulist.HDUList', 'str']):
     return get_header_attribute(file=file, attribute='EXPTIME')
 
 
-def get_airmass(file: Union['fits.hdu.hdulist.HDUList', 'str']):
+def get_airmass(file: Union['fits.hdu_list.hdulist.HDUList', 'str']):
     return get_header_attribute(file=file, attribute='AIRMASS')
 
 
-def get_object(file: Union['fits.hdu.hdulist.HDUList', 'str']):
+def get_object(file: Union['fits.hdu_list.hdulist.HDUList', 'str']):
     return get_header_attribute(file=file, attribute='OBJECT')
 
 
@@ -600,7 +600,7 @@ def sort_by_filter(path: 'str'):
             sh.move(path + file, filter_path)
 
 
-def get_pixel_scale(file: Union['fits.hdu.hdulist.HDUList', 'str'], layer: int = 0, astropy_units: bool = False):
+def get_pixel_scale(file: Union['fits.hdu_list.hdulist.HDUList', 'str'], layer: int = 0, astropy_units: bool = False):
     """
     Using the FITS file header, obtains the pixel scale of the file (in degrees).
     Declination scale is the true angular size of the pixel.

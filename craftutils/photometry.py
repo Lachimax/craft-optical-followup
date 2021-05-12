@@ -1200,7 +1200,7 @@ def aperture_photometry(data: np.ndarray, x: float = None, y: float = None, fwhm
     return cat, apertures, annuli
 
 
-def mask_from_area(area_file: Union['fits.hdu.hdulist.HDUList', 'str'], plot=False):
+def mask_from_area(area_file: Union['fits.hdu_list.hdulist.HDUList', 'str'], plot=False):
     """
     Creates a photometry mask using only the highest-valued pixels in a Montage area file.
     :param area_file: Either an astropy.io.fits hdu data object or a path to a fits file, which should be the Montage
@@ -1244,8 +1244,8 @@ def create_mask(file, left, right, bottom, top, plot=False):
     return mask
 
 
-def source_table(file: Union['fits.hdu.hdulist.HDUList', 'str'],
-                 bg_file: Union['fits.hdu.hdulist.HDUList', 'str'] = None, output: 'str' = None, plot: 'bool' = False,
+def source_table(file: Union['fits.hdu_list.hdulist.HDUList', 'str'],
+                 bg_file: Union['fits.hdu_list.hdulist.HDUList', 'str'] = None, output: 'str' = None, plot: 'bool' = False,
                  algorithm: 'str' = 'DAO',
                  exp_time: 'float' = None, zeropoint: 'float' = 0., ext: 'float' = 0.0, airmass: 'float' = None,
                  colour_coeff: 'float' = 0.0, colours=None, fwhm: 'float' = 2.0, fwhm_override: 'bool' = False,

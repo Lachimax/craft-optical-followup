@@ -4,6 +4,7 @@ from typing import Union, List
 
 from astropy.time import Time
 from astropy.coordinates import SkyCoord
+import astropy.units as units
 
 import craftutils.astrometry as a
 import craftutils.utils as u
@@ -78,19 +79,17 @@ def _retrieve_eso_epoch(epoch: Union['ESOImagingEpoch', 'ESOSpectroscopyEpoch'],
         mode = "spectroscopy"
     else:
         raise TypeError("epoch must be either an ESOImagingEpoch or an ESOSpectroscopyEpoch.")
-    if epoch.obj is None:
+    if epoch.target is None:
         obj = u.user_input(
             "Specifying an object might help find the correct observation. Enter here, as it appears in the archive OBJECT field, or leave blank:\n")
-        if obj in ["", " "]:
-            obj = None
-        else:
-            epoch.set_obj(obj)
+        if obj not in ["", " "]:
+            epoch.set_target(obj)
 
     u.mkdir_check(path)
     instrument = epoch.instrument.split('-')[-1]
     r = retrieve.save_eso_raw_data_and_calibs(output=path, date_obs=epoch.date,
                                               program_id=epoch.program_id, instrument=instrument, mode=mode,
-                                              obj=epoch.obj)
+                                              obj=epoch.target)
     if r:
         os.system(f"uncompress {path}/*.Z -f")
     return r
@@ -265,7 +264,8 @@ class Field:
         new_params["instrument"] = instrument
         new_params["date"] = u.enter_time(message="Enter UTC observation date, in iso or isot format:")
         new_params["program_id"] = input("Enter the programmme ID for the observation:\n")
-        new_params["data_path"] = self._epoch_data_path(mode=mode, instrument=instrument, date=new_params["date"])
+        new_params["data_path"] = self._epoch_data_path(mode=mode, instrument=instrument, date=new_params["date"],
+                                                        epoch_name=new_params["name"])
         param_path = self._epoch_param_path(mode=mode, instrument=instrument, epoch_name=new_params["name"])
 
         p.save_params(file=param_path, dictionary=new_params)
@@ -302,9 +302,9 @@ class Field:
     def _epoch_param_path(self, mode: str, instrument: str, epoch_name: str):
         return os.path.join(self._instrument_param_path(mode=mode, instrument=instrument), f"{epoch_name}.yaml")
 
-    def _epoch_data_path(self, mode: str, instrument: str, date: Time):
+    def _epoch_data_path(self, mode: str, instrument: str, date: Time, epoch_name: str):
         path = os.path.join(self._instrument_data_path(mode=mode, instrument=instrument),
-                            f"{date.to_datetime().date()}")
+                            f"{date.to_datetime().date()}-{epoch_name}")
         u.mkdir_check(path)
         return path
 
@@ -518,7 +518,7 @@ class Epoch:
                  instrument: str = None,
                  date: Union[str, Time] = None,
                  program_id: str = None,
-                 obj: str = None
+                 target: str = None
                  ):
 
         # Input attributes
@@ -533,7 +533,7 @@ class Epoch:
         if type(self.date) is str:
             self.date = Time(date)
         self.program_id = program_id
-        self.obj = obj
+        self.target = target
 
         # Written attributes
         self.output_file = None
@@ -614,14 +614,14 @@ class Epoch:
         self.date = date
         self.update_param_file("date")
 
-    def set_obj(self, obj: str):
-        self.obj = obj
-        self.update_param_file("obj")
+    def set_target(self, target: str):
+        self.target = target
+        self.update_param_file("target")
 
     def update_param_file(self, param: str):
         p_dict = {"program_id": self.program_id,
                   "date": self.date,
-                  "obj": self.obj}
+                  "target": self.target}
         if param not in p_dict:
             raise ValueError(f"Either {param} is not a valid parameter, or it has not been configured.")
         if self.param_path is None:
@@ -643,7 +643,7 @@ class Epoch:
             "data_path": None,
             "instrument": None,
             "date": None,
-            "obj": None,
+            "target": None,
             "program_id": None
         }
         return default_params
@@ -681,10 +681,10 @@ class ImagingEpoch(Epoch):
                  instrument: str = None,
                  date: Union[str, Time] = None,
                  program_id: str = None,
-                 obj: str = None,
+                 target: str = None,
                  standard_epochs: list = None):
         super().__init__(name=name, field=field, param_path=param_path, data_path=data_path, instrument=instrument,
-                         date=date, program_id=program_id, obj=obj)
+                         date=date, program_id=program_id, target=target)
         self.guess_data_path()
 
     def pipeline(self):
@@ -902,6 +902,7 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
 
 
 class SpectroscopyEpoch(Epoch):
+    grisms = {}
 
     def __init__(self,
                  param_path: str = None,
@@ -911,12 +912,18 @@ class SpectroscopyEpoch(Epoch):
                  instrument: str = None,
                  date: Union[str, Time] = None,
                  program_id: str = None,
-                 obj: str = None,
+                 target: str = None,
+                 grism: str = None
                  ):
         super().__init__(param_path=param_path, name=name, field=field, data_path=data_path, instrument=instrument,
-                         date=date, program_id=program_id, obj=obj)
+                         date=date, program_id=program_id, target=target)
 
-        self.obj = obj
+        if grism in self.grisms:
+            self.grism = grism
+        else:
+            warnings.warn("grism not configured.")
+
+        self.obj = target
 
         self._path_2_pypeit()
         self.standards_raw = []
@@ -935,6 +942,7 @@ class SpectroscopyEpoch(Epoch):
     def _path_2_pypeit(self):
         if self.data_path is not None and "pypeit_dir" not in self.paths:
             self.paths["pypeit_dir"] = os.path.join(self.data_path, epoch_stage_dirs["2-pypeit"])
+
 
     @classmethod
     def stages(cls):
@@ -994,6 +1002,7 @@ class ESOSpectroscopyEpoch(SpectroscopyEpoch):
                  instrument: str = None,
                  date: Union[str, Time] = None,
                  program_id: str = None,
+                 grism: str = None
                  ):
         super().__init__(param_path=param_path,
                          name=name,
@@ -1001,7 +1010,8 @@ class ESOSpectroscopyEpoch(SpectroscopyEpoch):
                          data_path=data_path,
                          instrument=instrument,
                          date=date,
-                         program_id=program_id)
+                         program_id=program_id,
+                         grism=grism)
         # Data reduction paths
 
     def pipeline(self):
@@ -1050,6 +1060,13 @@ class ESOSpectroscopyEpoch(SpectroscopyEpoch):
 
 
 class FORS2SpectroscopyEpoch(ESOSpectroscopyEpoch):
+    _instrument_pypeit = "vlt_fors2"
+    grisms = {
+        "GRIS_300I": {
+            "lambda_min": 6000 * units.angstrom,
+            "lambda_max": 11000 * units.angstrom
+        }}
+
     def pipeline(self):
         if self.data_path is not None:
             u.mkdir_check(self.data_path)
@@ -1067,12 +1084,10 @@ class FORS2SpectroscopyEpoch(ESOSpectroscopyEpoch):
             self._path_2_pypeit()
             setup_files = os.path.join(self.paths["pypeit_dir"], 'setup_files', '')
             os.system(f"rm {setup_files}*")
-            # Make pypeit-compatible version of instrument name.
-            instrument = self._instrument_pypeit
             os.system(
-                f"pypeit_setup -r {self.paths['raw_dir']} -d {self.paths['pypeit_dir']} -s {instrument}")
+                f"pypeit_setup -r {self.paths['raw_dir']} -d {self.paths['pypeit_dir']} -s {self._instrument_pypeit}")
             os.system(
-                f"pypeit_setup -r {self.paths['raw_dir']} -d {self.paths['pypeit_dir']} -s {instrument} -c A")
+                f"pypeit_setup -r {self.paths['raw_dir']} -d {self.paths['pypeit_dir']} -s {self._instrument_pypeit} -c A")
 
             sorted_path = os.path.join(setup_files,
                                        filter(lambda f: f.endswith(".sorted"), os.listdir(setup_files)).__next__())
@@ -1082,7 +1097,7 @@ class FORS2SpectroscopyEpoch(ESOSpectroscopyEpoch):
             bias_lines = list(filter(lambda s: "bias" in s and "CHIP1" in s, sorted_lines))
             # Find line containing information for standard observation.
             std_line = filter(lambda s: "standard" in s and "CHIP1" in s, sorted_lines).__next__()
-            std_raw = image.SpecRawImage.from_pypeit_line(std_line, pypeit_raw_path=self.paths['raw_dir'])
+            std_raw = image.SpecRaw.from_pypeit_line(std_line, pypeit_raw_path=self.paths['raw_dir'])
             self.standards_raw.append(std_raw)
             std_start_index = sorted_lines.index(std_line)
             # Find last line of the std-obs configuration (encapsulating the required calibration files)
@@ -1090,8 +1105,8 @@ class FORS2SpectroscopyEpoch(ESOSpectroscopyEpoch):
                 "##########################################################\n") + std_start_index
             std_lines = sorted_lines[std_start_index:std_end_index]
 
-            pypeit_run_dir = os.path.join(self.paths['pypeit_dir'], f"{instrument}_A")
-            pypeit_file_path = os.path.join(pypeit_run_dir, f"{instrument}_A.pypeit")
+            pypeit_run_dir = os.path.join(self.paths['pypeit_dir'], f"{self._instrument_pypeit}_A")
+            pypeit_file_path = os.path.join(pypeit_run_dir, f"{self._instrument_pypeit}_A.pypeit")
             # Retrieve text from .pypeit file
             with open(pypeit_file_path, 'r') as pypeit_file:
                 pypeit_lines = pypeit_file.readlines()
@@ -1171,9 +1186,14 @@ class FORS2SpectroscopyEpoch(ESOSpectroscopyEpoch):
                 path = os.path.join(self.paths["pypeit_science_dir"], file)
                 os.system(f"pypeit_show_2dspec {path}")
 
+    def proc_6_marz_format(self):
+        return None
+
 
 class XShooterSpectroscopyEpoch(ESOSpectroscopyEpoch):
-    def pipeline(self):
+    _instrument_pypeit = "vlt_xshooter"
+
+    def pipeline(self, do: str = None):
         if self.data_path is not None:
             u.mkdir_check(self.data_path)
         else:
@@ -1181,9 +1201,23 @@ class XShooterSpectroscopyEpoch(ESOSpectroscopyEpoch):
         self.proc_0_raw()
         self.proc_1_initial_setup()
         self.proc_2_pypeit_setup()
-        self.proc_3_pypeit_run()
-        self.proc_4_pypeit_flux()
-        self.proc_5_pypeit_coadd()
+        # self.proc_3_pypeit_run()
+        # self.proc_4_pypeit_flux()
+        # self.proc_5_pypeit_coadd()
+
+    def proc_2_pypeit_setup(self):
+        if self.query_stage("Do PypeIt setup?", stage='2-pypeit_setup'):
+            self._path_2_pypeit()
+            os.system(
+                f"pypeit_setup -r {self.paths['raw_dir']} -d {self.paths['pypeit_dir']} -s {self._instrument_pypeit}_vis")
+            for setup in ['A', "B", "C"]:
+                os.system(
+                    f"pypeit_setup -r {self.paths['raw_dir']} -d {self.paths['pypeit_dir']} -s {self._instrument_pypeit}_vis -c {setup}")
+
+            for setup in ["B", "C"]:
+                setup_files = os.path.join(self.paths["pypeit_dir"], 'setup_files', '')
+                
+
 
 # def test_frbfield_from_params():
 #     frb_field = FRBField.from_file("FRB181112")
