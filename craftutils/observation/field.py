@@ -10,6 +10,7 @@ import craftutils.astrometry as a
 import craftutils.utils as u
 import craftutils.params as p
 import craftutils.retrieve as retrieve
+import craftutils.spectroscopy as spec
 import craftutils.observation.objects as objects
 import craftutils.observation.image as image
 
@@ -592,12 +593,12 @@ class Epoch:
         done = self.check_done(stage=stage)
         if done is not None:
             message += f" (last performed at {done.isot})"
-        options = ["Yes", "Skip", "Exit"]
+        options = ["No", "Yes", "Exit"]
         opt, _ = u.select_option(message=message, options=options)
         if opt == 0:
-            return True
-        if opt == 1:
             return False
+        if opt == 1:
+            return True
         if opt == 2:
             exit(0)
 
@@ -929,6 +930,85 @@ class SpectroscopyEpoch(Epoch):
         self.standards_raw = []
         self._instrument_pypeit = self.instrument.replace('-', '_')
 
+        self._pypeit_file = None
+        self._pypeit_sorted_file = None
+        self._pypeit_file_f_start = None
+        self._pypeit_file_f_end = None
+        self._pypeit_user_param_start = None
+
+    def read_pypeit_sorted_file(self):
+        if "pypeit_setup_dir" in self.paths and self.paths["pypeit_setup_dir"] is not None:
+            setup_files = self.paths["pypeit_setup_dir"]
+            sorted_path = os.path.join(setup_files,
+                                       filter(lambda f: f.endswith(".sorted"), os.listdir(setup_files)).__next__())
+            with open(sorted_path) as sorted_file:
+                self._pypeit_sorted_file = sorted_file.readlines()
+        else:
+            raise KeyError("pypeit_setup_dir has not been set.")
+
+    def read_pypeit_file(self, setup: str):
+        if "pypeit_dir" in self.paths and "pypeit_dir" is not None:
+            pypeit_run_dir = os.path.join(self.paths['pypeit_dir'], f"{self._instrument_pypeit}_{setup}")
+            pypeit_file_path = os.path.join(pypeit_run_dir, f"{self._instrument_pypeit}_{setup}.pypeit")
+            # Retrieve text from .pypeit file
+            with open(pypeit_file_path, 'r') as pypeit_file:
+                self._pypeit_file = pypeit_file.readlines()
+            self.paths["pypeit_run_dir"] = pypeit_run_dir
+            self.paths["pypeit_file"] = pypeit_file_path
+            self._pypeit_file_f_start = self._pypeit_file.index("data read\n") + 3
+            self._pypeit_file_f_end = self._pypeit_file.index("data end\n")
+            self._pypeit_user_param_start = self._pypeit_file.index("[rdx]\n")
+            return self._pypeit_file
+        else:
+            raise KeyError("pypeit_run_dir has not been set.")
+
+    def write_pypeit_file(self):
+        """
+        Rerites the stored .pypeit file to disk at its original path.
+        :return: path of .pypeit file.
+        """
+        if self._pypeit_file is not None:
+            pypeit_file_path = self.paths["pypeit_file_path"]
+            # Delete .pypeit file, to be rewritten.
+            os.remove(pypeit_file_path)
+            # Write .pypeit file to disk.
+            with open(pypeit_file_path, 'w') as pypeit_file:
+                pypeit_file.writelines(self._pypeit_file)
+            return pypeit_file_path
+        else:
+            raise ValueError("pypeit_file has not yet been read.")
+
+    def add_pypeit_user_param(self, param: list, value: str):
+        """
+        Inserts a parameter for the PypeIt run at the correct point in the stored .pypeit file.
+        :param param: For m
+        :param value:
+        :return:
+        """
+        if self._pypeit_file is not None:
+            setting = f"{param.pop()} = {value}\n"
+            self._pypeit_file.insert(self._pypeit_user_param_start, setting)
+            while len(param) > 0:
+                # Encase each level of the parameter in the correct number of square brackets.
+                level = len(param)
+                par = param.pop()
+                par = "\t" * (level - 1) + "[" * level + par + "]" * level
+                self._pypeit_file.insert(self._pypeit_user_param_start, par)
+        else:
+            raise ValueError("pypeit_file has not yet been read.")
+
+    def add_pypeit_file_lines(self, lines: list):
+        if self._pypeit_file is not None:
+            # Remove last two lines of file ("data end")
+            pypeit_lines = self._pypeit_file[:-2]
+            # Insert desired lines
+            pypeit_lines += lines
+            # Reinsert last two lines.
+            pypeit_lines += ["data end\n", "\n"]
+            self._pypeit_file = pypeit_lines
+        else:
+            raise ValueError("pypeit_file has not yet been read.")
+
     def _output_dict(self):
         output_dict = super()._output_dict()
         return output_dict
@@ -942,7 +1022,6 @@ class SpectroscopyEpoch(Epoch):
     def _path_2_pypeit(self):
         if self.data_path is not None and "pypeit_dir" not in self.paths:
             self.paths["pypeit_dir"] = os.path.join(self.data_path, epoch_stage_dirs["2-pypeit"])
-
 
     @classmethod
     def stages(cls):
@@ -1083,61 +1162,43 @@ class FORS2SpectroscopyEpoch(ESOSpectroscopyEpoch):
         if self.query_stage("Do PypeIt setup?", stage='2-pypeit_setup'):
             self._path_2_pypeit()
             setup_files = os.path.join(self.paths["pypeit_dir"], 'setup_files', '')
+            self.paths["pypeit_setup_dir"] = setup_files
             os.system(f"rm {setup_files}*")
-            os.system(
-                f"pypeit_setup -r {self.paths['raw_dir']} -d {self.paths['pypeit_dir']} -s {self._instrument_pypeit}")
-            os.system(
-                f"pypeit_setup -r {self.paths['raw_dir']} -d {self.paths['pypeit_dir']} -s {self._instrument_pypeit} -c A")
-
-            sorted_path = os.path.join(setup_files,
-                                       filter(lambda f: f.endswith(".sorted"), os.listdir(setup_files)).__next__())
+            # Generate .sorted file and others
+            spec.pypeit_setup(root=self.paths['raw_dir'], output_path=self.paths['pypeit_dir'],
+                              spectrograph=self._instrument_pypeit)
+            # Generate files to use for run. Set cfg_split to "A" because that corresponds to Chip 1, which is the only
+            # one we need to worry about.
+            spec.pypeit_setup(root=self.paths['raw_dir'], output_path=self.paths['pypeit_dir'],
+                              spectrograph=self._instrument_pypeit, cfg_split="A")
+            # Read .sorted file
+            self.read_pypeit_sorted_file()
             # Retrieve bias files from .sorted file.
-            with open(sorted_path) as sorted_file:
-                sorted_lines = sorted_file.readlines()
-            bias_lines = list(filter(lambda s: "bias" in s and "CHIP1" in s, sorted_lines))
+            bias_lines = list(filter(lambda s: "bias" in s and "CHIP1" in s, self._pypeit_sorted_file))
             # Find line containing information for standard observation.
-            std_line = filter(lambda s: "standard" in s and "CHIP1" in s, sorted_lines).__next__()
+            std_line = filter(lambda s: "standard" in s and "CHIP1" in s, self._pypeit_sorted_file).__next__()
             std_raw = image.SpecRaw.from_pypeit_line(std_line, pypeit_raw_path=self.paths['raw_dir'])
             self.standards_raw.append(std_raw)
-            std_start_index = sorted_lines.index(std_line)
+            std_start_index = self._pypeit_sorted_file.index(std_line)
             # Find last line of the std-obs configuration (encapsulating the required calibration files)
-            std_end_index = sorted_lines[std_start_index:].index(
+            std_end_index = self._pypeit_sorted_file[std_start_index:].index(
                 "##########################################################\n") + std_start_index
-            std_lines = sorted_lines[std_start_index:std_end_index]
-
-            pypeit_run_dir = os.path.join(self.paths['pypeit_dir'], f"{self._instrument_pypeit}_A")
-            pypeit_file_path = os.path.join(pypeit_run_dir, f"{self._instrument_pypeit}_A.pypeit")
-            # Retrieve text from .pypeit file
-            with open(pypeit_file_path, 'r') as pypeit_file:
-                pypeit_lines = pypeit_file.readlines()
+            std_lines = self._pypeit_sorted_file[std_start_index:std_end_index]
+            # Read in .pypeit file
+            self.read_pypeit_file(setup="A")
             # Add lines to set slit prediction to "nearest" in .pypeit file.
-            cal_position = pypeit_lines.index("[rdx]\n")
-            pypeit_lines.insert(cal_position, "\t\tsync_predict = nearest\n")
-            pypeit_lines.insert(cal_position, "\t[[slitedges]]\n")
-            pypeit_lines.insert(cal_position, "[calibrations]\n")
-            # Remove last two lines of file ("data end")
-            pypeit_lines = pypeit_lines[:-2]
+            self.add_pypeit_user_param(param=["calibrations", "slitedges", "sync_predict"], value="nearest")
             # Insert bias lines from .sorted file
-            pypeit_lines += bias_lines
-            # Insert standard lines from .sorted file
-            pypeit_lines += std_lines
-            # Reinsert the last two lines.
-            pypeit_lines += ["data end\n", "\n"]
-            # Delete .pypeit file, to be rewritten.
-            os.remove(pypeit_file_path)
-            # Write modified .pypeit file to disk.
-            with open(pypeit_file_path, 'w') as pypeit_file:
-                pypeit_file.writelines(pypeit_lines)
-
-            self.paths["pypeit_file"] = pypeit_file_path
-            self.paths["pypeit_run_dir"] = pypeit_run_dir
+            self.add_pypeit_file_lines(lines=bias_lines + std_lines)
+            # Write modified .pypeit file back to disk.
+            self.write_pypeit_file()
 
             self.stages_complete['2-pypeit_setup'] = Time.now()
             self.update_output_file()
 
     def proc_3_pypeit_run(self):
         if self.query_stage("Run PypeIt?", stage='3-pypeit_run'):
-            os.system(f"run_pypeit {self.paths['pypeit_file']} -r {self.paths['pypeit_run_dir']} -o")
+            spec.run_pypeit(pypeit_file=self.paths['pypeit_file'], redux_path=self.paths['pypeit_run_dir'])
             self.stages_complete['3-pypeit_run'] = Time.now()
             self.update_output_file()
 
@@ -1192,6 +1253,9 @@ class FORS2SpectroscopyEpoch(ESOSpectroscopyEpoch):
 
 class XShooterSpectroscopyEpoch(ESOSpectroscopyEpoch):
     _instrument_pypeit = "vlt_xshooter"
+    _cfg_split_letters = {"uvb": "A",
+                          "nir": "B",
+                          "vis": "C"}
 
     def pipeline(self, do: str = None):
         if self.data_path is not None:
@@ -1208,15 +1272,26 @@ class XShooterSpectroscopyEpoch(ESOSpectroscopyEpoch):
     def proc_2_pypeit_setup(self):
         if self.query_stage("Do PypeIt setup?", stage='2-pypeit_setup'):
             self._path_2_pypeit()
-            os.system(
-                f"pypeit_setup -r {self.paths['raw_dir']} -d {self.paths['pypeit_dir']} -s {self._instrument_pypeit}_vis")
-            for setup in ['A', "B", "C"]:
-                os.system(
-                    f"pypeit_setup -r {self.paths['raw_dir']} -d {self.paths['pypeit_dir']} -s {self._instrument_pypeit}_vis -c {setup}")
+            # for arm in ['uvb', "nir", "vis"]:
+            arm = "vis"
+            spec.pypeit_setup(root=self.paths['raw_dir'], output_path=self.paths['pypeit_dir'],
+                              spectrograph=f"{self._instrument_pypeit}_{arm}")
+            setup_files = os.path.join(self.paths["pypeit_dir"], 'setup_files', '')
+            os.system(f"rm {setup_files}*")
+            setup = self._cfg_split_letters[arm]
+            spec.pypeit_setup(root=self.paths['raw_dir'], output_path=self.paths['pypeit_dir'],
+                              spectrograph=f"{self._instrument_pypeit}_{arm}", cfg_split=setup)
 
-            for setup in ["B", "C"]:
-                setup_files = os.path.join(self.paths["pypeit_dir"], 'setup_files', '')
-                
+            # Retrieve text from .pypeit file
+            self.read_pypeit_file(setup=setup)
+            self.paths["pypeit_setup_dir"] = setup_files
+
+    def proc_3_pypeit_run(self):
+        if self.query_stage("Run PypeIt?", stage='3-pypeit_run'):
+            spec.run_pypeit(pypeit_file=self.paths['pypeit_file'], redux_path=self.paths['pypeit_run_dir'])
+            self.stages_complete['3-pypeit_run'] = Time.now()
+            self.update_output_file()
+
 
 
 # def test_frbfield_from_params():
