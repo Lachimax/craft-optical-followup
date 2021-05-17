@@ -32,12 +32,15 @@ class Image:
 class SpecRaw(Image):
     def __init__(self, path: str = None):
         super().__init__(path=path)
+        self.pypeit_line = None
 
     @classmethod
     def from_pypeit_line(cls, line: str, pypeit_raw_path: str):
         attributes = line.split('|')
         filename = attributes[0]
-        return SpecRaw(path=os.path.join(pypeit_raw_path, filename))
+        inst = SpecRaw(path=os.path.join(pypeit_raw_path, filename))
+        inst.pypeit_line = line
+        return inst
 
 
 class Spec1DCoadded(Image):
