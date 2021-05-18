@@ -626,7 +626,7 @@ def option(options: list, default: str = None):
         try:
             picked = options[selection]
         except IndexError:
-            print(f"Response is not in provided options. Please pick an integer between 0 and {len(options) - 1}")
+            print(f"Response is not in provided options. Please select an integer from 0 to {len(options) - 1}")
     print(f"You have selected {selection}: {picked}")
     return selection, picked
 
