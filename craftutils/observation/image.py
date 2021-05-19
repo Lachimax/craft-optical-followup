@@ -10,10 +10,11 @@ import craftutils.fits_files as ff
 
 
 class Image:
-    def __init__(self, path: str = None):
+    def __init__(self, path: str = None, frame_type: str = None):
         self.path = path
         self.filename = os.path.split(self.path)[-1]
         self.hdu_list = None
+        self.frame_type = frame_type
 
     def open(self):
         if self.path is not None and self.hdu_list is None:
@@ -30,15 +31,20 @@ class Image:
 
 
 class SpecRaw(Image):
-    def __init__(self, path: str = None):
-        super().__init__(path=path)
+    def __init__(self, path: str = None, frame_type: str = None, decker: str = None, binning: str = None):
+        super().__init__(path=path, frame_type=frame_type)
         self.pypeit_line = None
+        self.decker = decker
+        self.binning = binning
 
     @classmethod
     def from_pypeit_line(cls, line: str, pypeit_raw_path: str):
         attributes = line.split('|')
-        filename = attributes[0]
-        inst = SpecRaw(path=os.path.join(pypeit_raw_path, filename))
+        attributes = list(map(lambda a: a.replace(" ", ""), attributes))
+        inst = SpecRaw(path=os.path.join(pypeit_raw_path, attributes[1]),
+                       frame_type=attributes[2],
+                       decker=attributes[7],
+                       binning=attributes[8])
         inst.pypeit_line = line
         return inst
 
@@ -49,6 +55,13 @@ class Spec1DCoadded(Image):
         self.marz_format_path = None
 
     def convert_to_marz_format(self, output: str, lambda_min: float = None, lambda_max: float = None):
+        """
+        Extracts the 1D spectrum from the PypeIt-generated file and rearranges it into the format accepted by Marz.
+        :param output:
+        :param lambda_min:
+        :param lambda_max:
+        :return:
+        """
         self.open()
         data = self.hdu_list[1].data
         header = self.hdu_list[1].header.copy()
