@@ -666,6 +666,19 @@ class Epoch:
     def set_path(self, key, value):
         self.paths[key] = value
 
+    def update_param_file(self, param: str):
+        p_dict = {"program_id": self.program_id,
+                  "date": self.date,
+                  "target": self.target}
+        if param not in p_dict:
+            raise ValueError(f"Either {param} is not a valid parameter, or it has not been configured.")
+        if self.param_path is None:
+            raise ValueError("param_path has not been set.")
+        else:
+            params = p.load_params(self.param_path)
+        params[param] = p_dict[param]
+        p.save_params(file=self.param_path, dictionary=params)
+
     def get_path(self, key):
         if key in self.paths:
             return self.paths[key]
