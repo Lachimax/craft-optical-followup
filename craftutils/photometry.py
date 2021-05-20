@@ -920,8 +920,6 @@ def zeropoint_science_field(epoch: str,
             cat_zeropoint = 0.
             cat_zeropoint_err = 0.
 
-            # TODO: Cycle through preferred catalogues, like in the standard-star script
-
             if cat_name.lower() != "sextractor":
                 cat_path = f"{frb_properties['data_dir']}/{cat_name}/{cat_name}.csv"
                 column_names = r.cat_columns(cat=cat_name, f=f_0)
