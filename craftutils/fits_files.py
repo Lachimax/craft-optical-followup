@@ -1034,17 +1034,13 @@ def fits_table_all(input_path: str, output_path: str = "", science_only: bool = 
     :return:
     """
 
-    # If there's no trailing slash in the paths, add one.
-    if not output_path.endswith(".csv"):
-        output_path = u.check_trailing_slash(output_path)
-
     if output_path == "":
-        output_path = input_path + "fits_table.csv"
-    elif output_path[-4:] != ".csv":
-        if output_path[-1] == "/":
-            output_path = output_path + "fits_table.csv"
-        else:
-            output_path = output_path + ".csv"
+        output_path = os.path.join(input_path, "fits_table.csv")
+
+    if os.path.isdir(output_path):
+        output_path = output_path + "fits_table.csv"
+    else:
+        output_path = u.sanitise_file_ext(filename=output_path, ext="csv")
 
     print('Writing table of fits files to: \n', output_path)
 
@@ -1063,10 +1059,11 @@ def fits_table_all(input_path: str, output_path: str = "", science_only: bool = 
 
     for i, f in enumerate(files_fits):
         data = {}
-        file = fits.open(input_path + f)
+        file = fits.open(os.path.join(input_path, f))
         header = file[0].header
         for key in header:
-            data[key] = header[key]
+            if key != '':
+                data[key] = str(header[key])
         if 'ESO TEL AIRM END' in data and 'ESO TEL AIRM START' in data:
             data['AIRMASS'] = (float(data['ESO TEL AIRM END']) + float(data['ESO TEL AIRM START'])) / 2
         if science_only and 'SCIENCE' in data['ESO DPR CATG']:

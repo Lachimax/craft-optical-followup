@@ -17,6 +17,34 @@ from astropy.time import Time
 # TODO: Arrange these into some kind of logical order.
 # TODO: Also comment.
 
+def relevant_timescale(time: units.Quantity):
+    if not time.unit.is_equivalent(units.second):
+        raise ValueError(f"{time} is not a time.")
+    microseconds = time.to(units.us)
+    if microseconds < 1000 * units.us:
+        return microseconds
+    milliseconds = time.to(units.ms)
+    if milliseconds < 1000 * units.ms:
+        return milliseconds
+    seconds = time.to(units.second)
+    if seconds < 60 * units.second:
+        return seconds
+    minutes = time.to(units.minute)
+    if minutes < 60 * units.minute:
+        return minutes
+    hours = time.to(units.hour)
+    if hours < 24 * units.hour:
+        return hours
+    days = time.to(units.day)
+    if days < 7 * units.day:
+        return days
+    weeks = time.to(units.week)
+    if weeks < 52.2 * units.week:
+        return weeks
+    years = time.to(units.year)
+    return years
+
+
 def traverse_dict(dictionary: dict, function, keys: list = None):
     if keys is None:
         keys = []
@@ -598,7 +626,7 @@ def option(options: list, default: str = None):
         try:
             picked = options[selection]
         except IndexError:
-            print(f"Response is not in provided options. Please pick an integer between 0 and {len(options) - 1}")
+            print(f"Response is not in provided options. Please select an integer from 0 to {len(options) - 1}")
     print(f"You have selected {selection}: {picked}")
     return selection, picked
 

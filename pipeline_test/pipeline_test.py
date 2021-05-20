@@ -15,7 +15,7 @@ def main(field_name: str,
          imaging: bool,
          spectroscopy: bool,
          instrument: str,
-         old_format: bool):
+         do: str):
     new_field = False
     print("Refreshing parameter files from templates...")
     p.refresh_params_all(quiet=True)
@@ -95,6 +95,7 @@ def main(field_name: str,
                 instrument = fld.select_instrument(mode="imaging")
             epoch = fld.ImagingEpoch.from_params(epoch_name, instrument=instrument)
 
+    epoch.do = do
     epoch.pipeline()
 
 
@@ -108,7 +109,9 @@ if __name__ == '__main__':
                         default=None)
     parser.add_argument("-i", help="Imaging pipeline", action="store_true")
     parser.add_argument("-s", help="Spectroscopy pipeline. Overrides -i.", action="store_true")
-    parser.add_argument("-o", help="Load old-format param file.")
+    parser.add_argument("--do", help="Epoch processing stages to perform (overrides manual selection if provided). "
+                                     "Numbers separated by space or comma.",
+                        type=str)
 
     # Load arguments
 
@@ -119,4 +122,4 @@ if __name__ == '__main__':
          imaging=args.i,
          spectroscopy=args.s,
          instrument=args.instrument,
-         old_format=args.o)
+         do=args.do)

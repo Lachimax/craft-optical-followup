@@ -10,8 +10,10 @@ import craftutils.astrometry as a
 import craftutils.utils as u
 import craftutils.params as p
 import craftutils.retrieve as retrieve
+import craftutils.spectroscopy as spec
 import craftutils.observation.objects as objects
 import craftutils.observation.image as image
+import craftutils.fits_files as ff
 
 config = p.config
 
@@ -56,7 +58,7 @@ def _params_init(param_file: Union[str, dict]):
         param_file = u.sanitise_file_ext(filename=param_file, ext="yaml")
         param_dict = p.load_params(file=param_file)
         if param_dict is None:
-            raise FileNotFoundError(f"No parameter file found at {param_file}.")
+            return None, None, None  # raise FileNotFoundError(f"No parameter file found at {param_file}.")
         name = u.get_filename(path=param_file, include_ext=False)
         param_dict["param_path"] = param_file
     else:
@@ -93,6 +95,21 @@ def _retrieve_eso_epoch(epoch: Union['ESOImagingEpoch', 'ESOSpectroscopyEpoch'],
     if r:
         os.system(f"uncompress {path}/*.Z -f")
     return r
+
+
+def _check_do_list(do: Union[list, str]):
+    if type(do) is str:
+        try:
+            do = [int(do)]
+        except ValueError:
+            if " " in do:
+                char = " "
+            elif "," in do:
+                char = ","
+            else:
+                raise ValueError("do string is not correctly formatted.")
+            do = list(map(int, do.split(char)))
+    return do
 
 
 class Field:
@@ -518,7 +535,8 @@ class Epoch:
                  instrument: str = None,
                  date: Union[str, Time] = None,
                  program_id: str = None,
-                 target: str = None
+                 target: str = None,
+                 do: Union[list, str] = None
                  ):
 
         # Input attributes
@@ -535,22 +553,41 @@ class Epoch:
         self.program_id = program_id
         self.target = target
 
+        self.do = do
+
         # Written attributes
         self.output_file = None
         self.stages_complete = self.stages()
         self.log = {}
 
+        self.binning = None
+
         # Data reduction paths
         self.paths = {}
         self._path_0_raw()
 
+        # Frames
+        self.frames_raw = []
+        self.frames_bias = []
+        self.frames_standard = []
+        self.frames_science = []
+        self.frames_dark = []
+
         self.load_output_file()
 
     def pipeline(self):
-        self.proc_1_initial_setup()
+        self._pipeline_init()
+
+    def _pipeline_init(self, ):
+        if self.data_path is not None:
+            u.mkdir_check(self.data_path)
+        else:
+            raise ValueError(f"data_path has not been set for {self}")
+        self.do = _check_do_list(self.do)
 
     def proc_1_initial_setup(self):
-        return None
+        do = self.query_stage("Do initial setup of files?", stage='1-initial_setup')
+        return do
 
     def _path_0_raw(self):
         if self.data_path is not None and "raw_dir" not in self.paths:
@@ -588,23 +625,31 @@ class Epoch:
         else:
             raise ValueError("Output could not be saved to file due to lack of valid output path.")
 
-    def query_stage(self, message, stage):
-        done = self.check_done(stage=stage)
-        if done is not None:
-            message += f" (last performed at {done.isot})"
-        options = ["Yes", "Skip", "Exit"]
-        opt, _ = u.select_option(message=message, options=options)
-        if opt == 0:
-            return True
-        if opt == 1:
-            return False
-        if opt == 2:
-            exit(0)
-
     def check_done(self, stage: str):
         if stage not in self.stages_complete:
             raise ValueError(f"{stage} is not a valid stage for this Epoch.")
         return self.stages_complete[stage]
+
+    def query_stage(self, message: str, stage: str):
+        n = int(stage[0])
+        if self.do is not None:
+            if n in self.do:
+                return True
+        else:
+            message = f"{n}. {message}"
+            done = self.check_done(stage=stage)
+            if done is not None:
+                time_since = (Time.now() - done).sec * units.second
+                time_since = u.relevant_timescale(time_since)
+                message += f" (last performed at {done.isot}, {time_since.round(1)} ago)"
+            options = ["No", "Yes", "Exit"]
+            opt, _ = u.select_option(message=message, options=options)
+            if opt == 0:
+                return False
+            if opt == 1:
+                return True
+            if opt == 2:
+                exit(0)
 
     def set_program_id(self, program_id: str):
         self.program_id = program_id
@@ -618,18 +663,28 @@ class Epoch:
         self.target = target
         self.update_param_file("target")
 
-    def update_param_file(self, param: str):
-        p_dict = {"program_id": self.program_id,
-                  "date": self.date,
-                  "target": self.target}
-        if param not in p_dict:
-            raise ValueError(f"Either {param} is not a valid parameter, or it has not been configured.")
-        if self.param_path is None:
-            raise ValueError("param_path has not been set.")
+    def set_path(self, key, value):
+        self.paths[key] = value
+
+    def get_path(self, key):
+        if key in self.paths:
+            return self.paths[key]
         else:
-            params = p.load_params(self.param_path)
-        params[param] = p_dict[param]
-        p.save_params(file=self.param_path, dictionary=params)
+            raise KeyError(f"{key} has not been set.")
+
+    def add_raw_frame(self, raw_frame: image.Image):
+        self.frames_raw.append(raw_frame)
+        self.sort_frame(raw_frame)
+
+    def sort_frame(self, frame: image.Image):
+        if frame.frame_type == "bias":
+            self.frames_bias.append(frame)
+        elif frame.frame_type == "science":
+            self.frames_science.append(frame)
+        elif frame.frame_type == "standard":
+            self.frames_standard.append(frame)
+        elif frame.frame_type == "dark":
+            self.frames_dark.append(frame)
 
     @classmethod
     def stages(cls):
@@ -686,13 +741,6 @@ class ImagingEpoch(Epoch):
         super().__init__(name=name, field=field, param_path=param_path, data_path=data_path, instrument=instrument,
                          date=date, program_id=program_id, target=target)
         self.guess_data_path()
-
-    def pipeline(self):
-        if self.query_stage("Do initial setup of files?", stage='1-initial_setup'):
-            self.proc_1_initial_setup()
-
-    def proc_1_initial_setup(self):
-        return None
 
     def guess_data_path(self):
         if self.data_path is None and self.field is not None and self.field.data_path is not None and \
@@ -800,10 +848,11 @@ class ESOImagingEpoch(ImagingEpoch):
                          standard_epochs=standard_epochs)
 
     def pipeline(self):
-        self.proc_0_download()
         super().pipeline()
+        self.proc_0_download()
+        self.proc_1_initial_setup()
 
-    def proc_0_download(self):
+    def proc_0_download(self, do: list = None):
         if self.query_stage("Download raw data from ESO archive?", stage='0-download'):
             r = self.retrieve()
             if r:
@@ -913,14 +962,15 @@ class SpectroscopyEpoch(Epoch):
                  date: Union[str, Time] = None,
                  program_id: str = None,
                  target: str = None,
-                 grism: str = None
+                 grism: str = None,
+                 decker: str = None
                  ):
         super().__init__(param_path=param_path, name=name, field=field, data_path=data_path, instrument=instrument,
                          date=date, program_id=program_id, target=target)
 
-        if grism in self.grisms:
-            self.grism = grism
-        else:
+        self.decker = decker
+        self.grism = grism
+        if grism is None or grism not in self.grisms:
             warnings.warn("grism not configured.")
 
         self.obj = target
@@ -929,20 +979,121 @@ class SpectroscopyEpoch(Epoch):
         self.standards_raw = []
         self._instrument_pypeit = self.instrument.replace('-', '_')
 
+        self._pypeit_file = None
+        self._pypeit_sorted_file = None
+
+    def read_pypeit_sorted_file(self):
+        if "pypeit_setup_dir" in self.paths and self.paths["pypeit_setup_dir"] is not None:
+            setup_files = self.paths["pypeit_setup_dir"]
+            sorted_path = os.path.join(setup_files,
+                                       filter(lambda f: f.endswith(".sorted"), os.listdir(setup_files)).__next__())
+            with open(sorted_path) as sorted_file:
+                self._pypeit_sorted_file = sorted_file.readlines()
+        else:
+            raise KeyError("pypeit_setup_dir has not been set.")
+
+    def _read_pypeit_file(self, filename):
+        pypeit_run_dir = os.path.join(self.paths['pypeit_dir'], filename)
+        self.set_path("pypeit_run_dir", pypeit_run_dir)
+        self.set_path("pypeit_file", os.path.join(pypeit_run_dir, f"{filename}.pypeit"))
+        # Retrieve text from .pypeit file
+        with open(self.get_path("pypeit_file"), 'r') as pypeit_file:
+            pypeit_lines = pypeit_file.readlines()
+            self._set_pypeit_file(pypeit_lines)
+        f_start = pypeit_lines.index("data read\n") + 3
+        f_end = pypeit_lines.index("data end\n")
+        for line in pypeit_lines[f_start:f_end]:
+            raw = image.SpecRaw.from_pypeit_line(line=line, pypeit_raw_path=self.paths["raw_dir"])
+            self.add_raw_frame(raw)
+        return pypeit_lines
+
+    def read_pypeit_file(self, setup: str):
+        if "pypeit_dir" in self.paths and self.paths["pypeit_dir"] is not None:
+            filename = f"{self._instrument_pypeit}_{setup}"
+            self._read_pypeit_file(filename=filename)
+            return self._pypeit_file
+        else:
+            raise KeyError("pypeit_run_dir has not been set.")
+
+    def _set_pypeit_file(self, lines: list):
+        self._pypeit_file = lines
+
+    def _get_pypeit_file(self):
+        return self._pypeit_file
+
+    def write_pypeit_file(self):
+        """
+        Rewrites the stored .pypeit file to disk at its original path.
+        :return: path of .pypeit file.
+        """
+        if self._pypeit_file is not None:
+            pypeit_file_path = self.paths["pypeit_file"]
+            # Delete .pypeit file, to be rewritten.
+            os.remove(pypeit_file_path)
+            # Write .pypeit file to disk.
+            with open(pypeit_file_path, 'w') as pypeit_file:
+                pypeit_file.writelines(self._pypeit_file)
+            return pypeit_file_path
+        else:
+            raise ValueError("pypeit_file has not yet been read.")
+
+    def add_pypeit_user_param(self, param: list, value: str):
+        """
+        Inserts a parameter for the PypeIt run at the correct point in the stored .pypeit file.
+        :param param: For m
+        :param value:
+        :return:
+        """
+        pypeit_file = self._get_pypeit_file()
+        if pypeit_file is not None:
+            # Build the final line of the setting specially.
+            setting = "\t" * (len(param) - 1) + f"{param.pop()} = {value}\n"
+            # First, check if param sub-headings are already there:
+            p_start = pypeit_file.index("[rdx]\n")
+            insert_here = False
+            for i, par in enumerate(param):
+                # Encase each level of the parameter in the correct number of square brackets and tabs.
+                par = "\t" * i + "[" * (i + 1) + par + "]" * (i + 1) + "\n"
+                if par in pypeit_file and not insert_here:
+                    p_start = pypeit_file.index(par) + 1
+                else:
+                    pypeit_file.insert(p_start, par)
+                    p_start += 1
+                    insert_here = True
+            # Insert the final line.
+            pypeit_file.insert(p_start, setting)
+
+            self._set_pypeit_file(lines=pypeit_file)
+        else:
+            raise ValueError("pypeit_file has not yet been read.")
+
+    def add_pypeit_file_lines(self, lines: list):
+        if self._pypeit_file is not None:
+            # Remove last two lines of file ("data end")
+            pypeit_lines = self._pypeit_file[:-2]
+            # Insert desired lines
+            pypeit_lines += lines
+            # Reinsert last two lines.
+            pypeit_lines += ["data end\n", "\n"]
+            self._pypeit_file = pypeit_lines
+        else:
+            raise ValueError("pypeit_file has not yet been read.")
+
     def _output_dict(self):
         output_dict = super()._output_dict()
+        output_dict.update({"binning": self.binning,
+                            "decker": self.decker})
         return output_dict
 
     def proc_2_pypeit_setup(self):
-        return None
+        return self.query_stage("Do PypeIt setup?", stage='2-pypeit_setup')
 
     def proc_3_pypeit_run(self):
-        return None
+        return self.query_stage("Run PypeIt?", stage='3-pypeit_run')
 
     def _path_2_pypeit(self):
         if self.data_path is not None and "pypeit_dir" not in self.paths:
             self.paths["pypeit_dir"] = os.path.join(self.data_path, epoch_stage_dirs["2-pypeit"])
-
 
     @classmethod
     def stages(cls):
@@ -1015,13 +1166,11 @@ class ESOSpectroscopyEpoch(SpectroscopyEpoch):
         # Data reduction paths
 
     def pipeline(self):
-        if self.data_path is not None:
-            u.mkdir_check(self.data_path)
-        else:
-            raise ValueError(f"data_path has not been set for {self}")
+        super().pipeline()
         self.proc_0_raw()
         self.proc_1_initial_setup()
         self.proc_2_pypeit_setup()
+        self.proc_3_pypeit_run()
 
     def proc_0_raw(self):
         if self.query_stage("Download raw data from ESO archive?", stage='0-download'):
@@ -1037,6 +1186,11 @@ class ESOSpectroscopyEpoch(SpectroscopyEpoch):
             m_path = os.path.join(self.paths["raw_dir"], "M")
             u.mkdir_check(m_path)
             os.system(f"mv {os.path.join(self.paths['raw_dir'], 'M.')}* {m_path}")
+            ff.fits_table_all(input_path=self.paths["raw_dir"],
+                              output_path=os.path.join(self.data_path, f"{self.name}_fits_table_science.csv"))
+            ff.fits_table_all(input_path=self.paths["raw_dir"],
+                              output_path=os.path.join(self.data_path, f"{self.name}_fits_table_all.csv"),
+                              science_only=False)
             self.stages_complete['1-initial_setup'] = Time.now()
             self.update_output_file()
 
@@ -1068,14 +1222,7 @@ class FORS2SpectroscopyEpoch(ESOSpectroscopyEpoch):
         }}
 
     def pipeline(self):
-        if self.data_path is not None:
-            u.mkdir_check(self.data_path)
-        else:
-            raise ValueError(f"data_path has not been set for {self}")
-        self.proc_0_raw()
-        self.proc_1_initial_setup()
-        self.proc_2_pypeit_setup()
-        self.proc_3_pypeit_run()
+        super().pipeline()
         self.proc_4_pypeit_flux()
         self.proc_5_pypeit_coadd()
 
@@ -1083,61 +1230,43 @@ class FORS2SpectroscopyEpoch(ESOSpectroscopyEpoch):
         if self.query_stage("Do PypeIt setup?", stage='2-pypeit_setup'):
             self._path_2_pypeit()
             setup_files = os.path.join(self.paths["pypeit_dir"], 'setup_files', '')
+            self.paths["pypeit_setup_dir"] = setup_files
             os.system(f"rm {setup_files}*")
-            os.system(
-                f"pypeit_setup -r {self.paths['raw_dir']} -d {self.paths['pypeit_dir']} -s {self._instrument_pypeit}")
-            os.system(
-                f"pypeit_setup -r {self.paths['raw_dir']} -d {self.paths['pypeit_dir']} -s {self._instrument_pypeit} -c A")
-
-            sorted_path = os.path.join(setup_files,
-                                       filter(lambda f: f.endswith(".sorted"), os.listdir(setup_files)).__next__())
+            # Generate .sorted file and others
+            spec.pypeit_setup(root=self.paths['raw_dir'], output_path=self.paths['pypeit_dir'],
+                              spectrograph=self._instrument_pypeit)
+            # Generate files to use for run. Set cfg_split to "A" because that corresponds to Chip 1, which is the only
+            # one we need to worry about.
+            spec.pypeit_setup(root=self.paths['raw_dir'], output_path=self.paths['pypeit_dir'],
+                              spectrograph=self._instrument_pypeit, cfg_split="A")
+            # Read .sorted file
+            self.read_pypeit_sorted_file()
             # Retrieve bias files from .sorted file.
-            with open(sorted_path) as sorted_file:
-                sorted_lines = sorted_file.readlines()
-            bias_lines = list(filter(lambda s: "bias" in s and "CHIP1" in s, sorted_lines))
+            bias_lines = list(filter(lambda s: "bias" in s and "CHIP1" in s, self._pypeit_sorted_file))
             # Find line containing information for standard observation.
-            std_line = filter(lambda s: "standard" in s and "CHIP1" in s, sorted_lines).__next__()
+            std_line = filter(lambda s: "standard" in s and "CHIP1" in s, self._pypeit_sorted_file).__next__()
             std_raw = image.SpecRaw.from_pypeit_line(std_line, pypeit_raw_path=self.paths['raw_dir'])
             self.standards_raw.append(std_raw)
-            std_start_index = sorted_lines.index(std_line)
+            std_start_index = self._pypeit_sorted_file.index(std_line)
             # Find last line of the std-obs configuration (encapsulating the required calibration files)
-            std_end_index = sorted_lines[std_start_index:].index(
+            std_end_index = self._pypeit_sorted_file[std_start_index:].index(
                 "##########################################################\n") + std_start_index
-            std_lines = sorted_lines[std_start_index:std_end_index]
-
-            pypeit_run_dir = os.path.join(self.paths['pypeit_dir'], f"{self._instrument_pypeit}_A")
-            pypeit_file_path = os.path.join(pypeit_run_dir, f"{self._instrument_pypeit}_A.pypeit")
-            # Retrieve text from .pypeit file
-            with open(pypeit_file_path, 'r') as pypeit_file:
-                pypeit_lines = pypeit_file.readlines()
+            std_lines = self._pypeit_sorted_file[std_start_index:std_end_index]
+            # Read in .pypeit file
+            self.read_pypeit_file(setup="A")
             # Add lines to set slit prediction to "nearest" in .pypeit file.
-            cal_position = pypeit_lines.index("[rdx]\n")
-            pypeit_lines.insert(cal_position, "\t\tsync_predict = nearest\n")
-            pypeit_lines.insert(cal_position, "\t[[slitedges]]\n")
-            pypeit_lines.insert(cal_position, "[calibrations]\n")
-            # Remove last two lines of file ("data end")
-            pypeit_lines = pypeit_lines[:-2]
+            self.add_pypeit_user_param(param=["calibrations", "slitedges", "sync_predict"], value="nearest")
             # Insert bias lines from .sorted file
-            pypeit_lines += bias_lines
-            # Insert standard lines from .sorted file
-            pypeit_lines += std_lines
-            # Reinsert the last two lines.
-            pypeit_lines += ["data end\n", "\n"]
-            # Delete .pypeit file, to be rewritten.
-            os.remove(pypeit_file_path)
-            # Write modified .pypeit file to disk.
-            with open(pypeit_file_path, 'w') as pypeit_file:
-                pypeit_file.writelines(pypeit_lines)
-
-            self.paths["pypeit_file"] = pypeit_file_path
-            self.paths["pypeit_run_dir"] = pypeit_run_dir
+            self.add_pypeit_file_lines(lines=bias_lines + std_lines)
+            # Write modified .pypeit file back to disk.
+            self.write_pypeit_file()
 
             self.stages_complete['2-pypeit_setup'] = Time.now()
             self.update_output_file()
 
     def proc_3_pypeit_run(self):
         if self.query_stage("Run PypeIt?", stage='3-pypeit_run'):
-            os.system(f"run_pypeit {self.paths['pypeit_file']} -r {self.paths['pypeit_run_dir']} -o")
+            spec.run_pypeit(pypeit_file=self.paths['pypeit_file'], redux_path=self.paths['pypeit_run_dir'])
             self.stages_complete['3-pypeit_run'] = Time.now()
             self.update_output_file()
 
@@ -1180,44 +1309,235 @@ class FORS2SpectroscopyEpoch(ESOSpectroscopyEpoch):
 
     def proc_5_pypeit_coadd(self):
         if self.query_stage(
-                "Do coaddition with PypeIt?\nYou should first inspect the 2d spectra to determine which objects to co-add.",
+                "Do coaddition with PypeIt?\nYou should first inspect the 2D spectra to determine which objects to co-add.",
                 stage='5-pypeit_coadd'):
             for file in filter(lambda f: "spec2d" in f, os.listdir(self.paths["pypeit_science_dir"])):
                 path = os.path.join(self.paths["pypeit_science_dir"], file)
                 os.system(f"pypeit_show_2dspec {path}")
 
-    def proc_6_marz_format(self):
-        return None
+    def proc_6_marz_format(self, do: list = None):
+        return self.query_stage("Convert co-added 1D spectra to Marz format?", stage='6-marz-format')
 
 
 class XShooterSpectroscopyEpoch(ESOSpectroscopyEpoch):
     _instrument_pypeit = "vlt_xshooter"
+    _cfg_split_letters = {"uvb": "A",
+                          "nir": "B",
+                          "vis": "C"}
+    arms = ['uvb', "nir", "vis"]
 
-    def pipeline(self, do: str = None):
-        if self.data_path is not None:
-            u.mkdir_check(self.data_path)
-        else:
-            raise ValueError(f"data_path has not been set for {self}")
-        self.proc_0_raw()
-        self.proc_1_initial_setup()
-        self.proc_2_pypeit_setup()
-        # self.proc_3_pypeit_run()
+    def __init__(self,
+                 param_path: str = None,
+                 name: str = None,
+                 field: Union[str, Field] = None,
+                 data_path: str = None,
+                 instrument: str = None,
+                 date: Union[str, Time] = None,
+                 program_id: str = None,
+                 ):
+
+        super().__init__(param_path=param_path,
+                         name=name,
+                         field=field,
+                         data_path=data_path,
+                         instrument=instrument,
+                         date=date,
+                         program_id=program_id
+                         )
+
+        self.frames_raw = {"uvb": [],
+                           "vis": [],
+                           "nir": []}
+        self.frames_bias = {"uvb": [],
+                            "vis": [],
+                            "nir": []}
+        self.frames_standard = {"uvb": [],
+                                "vis": [],
+                                "nir": []}
+        self.frames_science = {"uvb": [],
+                               "vis": [],
+                               "nir": []}
+        self.frames_dark = {"uvb": [],
+                            "vis": [],
+                            "nir": []}
+        self._pypeit_file = {"uvb": [],
+                             "vis": [],
+                             "nir": []}
+        self._pypeit_user_param_start = {"uvb": None,
+                                         "vis": None,
+                                         "nir": None}
+        self._pypeit_user_param_end = {"uvb": None,
+                                       "vis": None,
+                                       "nir": None}
+
+        self.binning = {"uvb": None,
+                        "vis": None,
+                        "nir": None}
+        self.decker = {"uvb": None,
+                       "vis": None,
+                       "nir": None}
+
+        self.load_output_file()
+        self._current_arm = None
+
+    def pipeline(self):
+        super().pipeline()
         # self.proc_4_pypeit_flux()
         # self.proc_5_pypeit_coadd()
 
     def proc_2_pypeit_setup(self):
         if self.query_stage("Do PypeIt setup?", stage='2-pypeit_setup'):
             self._path_2_pypeit()
-            os.system(
-                f"pypeit_setup -r {self.paths['raw_dir']} -d {self.paths['pypeit_dir']} -s {self._instrument_pypeit}_vis")
-            for setup in ['A', "B", "C"]:
-                os.system(
-                    f"pypeit_setup -r {self.paths['raw_dir']} -d {self.paths['pypeit_dir']} -s {self._instrument_pypeit}_vis -c {setup}")
-
-            for setup in ["B", "C"]:
+            for arm in self.arms:
+                self._current_arm = arm
+                # arm = "vis"
+                spec.pypeit_setup(root=self.paths['raw_dir'], output_path=self.paths['pypeit_dir'],
+                                  spectrograph=f"{self._instrument_pypeit}_{arm}")
                 setup_files = os.path.join(self.paths["pypeit_dir"], 'setup_files', '')
-                
+                os.system(f"rm {setup_files}*")
+                setup = self._cfg_split_letters[arm]
+                spec.pypeit_setup(root=self.paths['raw_dir'], output_path=self.paths['pypeit_dir'],
+                                  spectrograph=f"{self._instrument_pypeit}_{arm}", cfg_split=setup)
 
+                # Retrieve text from .pypeit file
+                self.read_pypeit_file(setup=setup)
+                if arm == "nir":
+                    self.add_pypeit_user_param(param=["calibrations", "pixelflatframe", "process", "use_darkimage"],
+                                               value="True")
+                    self.add_pypeit_user_param(param=["calibrations", "illumflatframe", "process", "use_darkimage"],
+                                               value="True")
+                    self.add_pypeit_user_param(param=["calibrations", "traceframe", "process", "use_darkimage"],
+                                               value="True")
+                # Remove incompatible binnings and frametypes
+                self.find_science_attributes(arm=arm)
+                print(f"\nRemoving incompatible files for {arm} arm:")
+                for raw_frame in self.frames_raw[arm]:
+                    if raw_frame.binning != self.binning[arm] \
+                            or raw_frame.frame_type == "None" \
+                            or raw_frame.decker not in ["Pin_row", self.decker[arm]]:
+                        self._pypeit_file[arm].remove(raw_frame.pypeit_line)
+                self.set_path("pypeit_setup_dir", setup_files)
+                self.write_pypeit_file()
+            self._current_arm = None
+            self.stages_complete['2-pypeit_setup'] = Time.now()
+            self.update_output_file()
+
+    def proc_3_pypeit_run(self):
+        for arm in self.arms:
+            self._current_arm = arm
+            if self.query_stage(f"Run PypeIt for {arm.upper()} arm?", stage='3-pypeit_run'):
+                spec.run_pypeit(pypeit_file=self.get_path('pypeit_file'),
+                                redux_path=self.get_path('pypeit_run_dir'))
+                self.stages_complete[f'3-pypeit_run_{arm}'] = Time.now()
+                self.update_output_file()
+        self._current_arm = None
+
+    def add_raw_frame(self, raw_frame: image.Image):
+        if self._current_arm is not None:
+            arm = self._current_arm
+            self.frames_raw[arm].append(raw_frame)
+            self.sort_frame(raw_frame)
+        else:
+            raise ValueError("self._current_arm not set.")
+
+    def sort_frame(self, frame: image.Image):
+        arm = self._current_arm
+        if frame.frame_type == "bias":
+            self.frames_bias[arm].append(frame)
+        elif frame.frame_type == "science":
+            self.frames_science[arm].append(frame)
+        elif frame.frame_type == "standard":
+            self.frames_standard[arm].append(frame)
+        elif frame.frame_type == "dark":
+            self.frames_dark[arm].append(frame)
+
+    def find_science_attributes(self, arm: str):
+        if self.frames_science:
+            frame = self.frames_science[arm][0]
+            self.binning[arm] = frame.binning
+            self.decker[arm] = frame.decker
+        else:
+            raise ValueError(f"Science frames list for {arm} is empty.")
+        return self.binning[arm]
+
+    def read_pypeit_file(self, setup: str):
+        if "pypeit_dir" in self.paths and self.paths["pypeit_dir"] is not None:
+            arm = self._current_arm
+            filename = f"{self._instrument_pypeit}_{arm}_{setup}"
+            self._read_pypeit_file(filename=filename)
+            return self._pypeit_file[arm]
+        else:
+            raise KeyError("pypeit_run_dir has not been set.")
+
+    def _set_pypeit_file(self, lines: list):
+        if self._current_arm is not None:
+            self._pypeit_file[self._current_arm] = lines
+        else:
+            raise ValueError("No arm currently active.")
+
+    def _get_pypeit_file(self):
+        if self._current_arm is not None:
+            return self._pypeit_file[self._current_arm]
+        else:
+            raise ValueError("No arm currently active.")
+
+    def _get_key_arm(self, key):
+        if self._current_arm is not None:
+            if self._current_arm is not None:
+                arm = self._current_arm
+                key = f"{arm}_{key}"
+        return key
+
+    def get_path(self, key):
+        key = self._get_key_arm(key)
+        return self.paths[key]
+
+    def set_path(self, key: str, value: str):
+        key = self._get_key_arm(key)
+        self.paths[key] = value
+
+    @classmethod
+    def stages(cls):
+        param_dict = super().stages()
+        param_dict.update({"2-pypeit_setup": None,
+                           "3-pypeit_run_uvb": None,
+                           "3-pypeit_run_vis": None,
+                           "3-pypeit_run_nir": None,
+                           "4-pypeit_flux_calib": None})
+        return param_dict
+
+    def _output_dict(self):
+        return {
+            "stages": self.stages_complete,
+            "paths": self.paths,
+        }
+
+    def load_output_file(self):
+        outputs = super().load_output_file()
+        if outputs not in [None, True, False]:
+            self.stages_complete.update(outputs["stages"])
+            if "paths" in outputs:
+                self.paths.update(outputs[f"paths"])
+        return outputs
+
+    def write_pypeit_file(self):
+        """
+        Rewrites the stored .pypeit file to disk at its original path.
+        :return: path of .pypeit file.
+        """
+        arm = self._current_arm
+        pypeit_lines = self._get_pypeit_file()
+        if pypeit_lines is not None:
+            pypeit_file_path = self.get_path("pypeit_file")
+            # Delete .pypeit file, to be rewritten.
+            os.remove(pypeit_file_path)
+            # Write .pypeit file to disk.
+            print(f"Writing pypeit file to {pypeit_file_path}")
+            with open(pypeit_file_path, 'w') as pypeit_file:
+                pypeit_file.writelines(pypeit_lines)
+        else:
+            raise ValueError(f"pypeit_file has not yet been read for {arm}.")
+        return pypeit_file_path
 
 # def test_frbfield_from_params():
 #     frb_field = FRBField.from_file("FRB181112")
