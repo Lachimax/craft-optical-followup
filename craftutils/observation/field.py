@@ -631,7 +631,10 @@ class Epoch:
         return self.stages_complete[stage]
 
     def query_stage(self, message: str, stage: str):
-        n = int(stage[0])
+        n = float(stage[:stage.find("-")])
+        # Check if n is an integer, and if so cast to int.
+        if n == int(n):
+            n = int(n)
         if self.do is not None:
             if n in self.do:
                 return True
@@ -1343,7 +1346,7 @@ class XShooterSpectroscopyEpoch(ESOSpectroscopyEpoch):
     _cfg_split_letters = {"uvb": "A",
                           "nir": "B",
                           "vis": "C"}
-    arms = ['uvb', "nir", "vis"]
+    arms = ['uvb', "vis", "nir"]
 
     def __init__(self,
                  param_path: str = None,
@@ -1455,13 +1458,13 @@ class XShooterSpectroscopyEpoch(ESOSpectroscopyEpoch):
             self.update_output_file()
 
     def proc_3_pypeit_run(self, do_not_reuse_masters=False):
-        for arm in self.arms:
+        for i, arm in enumerate(self.arms):
             self._current_arm = arm
-            if self.query_stage(f"Run PypeIt for {arm.upper()} arm?", stage='3-pypeit_run'):
+            if self.query_stage(f"Run PypeIt for {arm.upper()} arm?", stage=f'3.{i + 1}-pypeit_run_{arm}'):
                 spec.run_pypeit(pypeit_file=self.get_path('pypeit_file'),
                                 redux_path=self.get_path('pypeit_run_dir'),
                                 do_not_reuse_masters=do_not_reuse_masters)
-                self.stages_complete[f'3-pypeit_run_{arm}'] = Time.now()
+                self.stages_complete[f'3.{i + 1}-pypeit_run_{arm}'] = Time.now()
                 self.update_output_file()
         self._current_arm = None
 
@@ -1533,9 +1536,9 @@ class XShooterSpectroscopyEpoch(ESOSpectroscopyEpoch):
     def stages(cls):
         param_dict = super().stages()
         param_dict.update({"2-pypeit_setup": None,
-                           "3-pypeit_run_uvb": None,
-                           "3-pypeit_run_vis": None,
-                           "3-pypeit_run_nir": None,
+                           "3.1-pypeit_run_uvb": None,
+                           "3.2-pypeit_run_vis": None,
+                           "3.3-pypeit_run_nir": None,
                            "4-pypeit_flux_calib": None})
         return param_dict
 
