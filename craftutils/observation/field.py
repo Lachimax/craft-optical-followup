@@ -575,7 +575,7 @@ class Epoch:
 
         self.load_output_file()
 
-    def pipeline(self):
+    def pipeline(self, **kwargs):
         self._pipeline_init()
 
     def _pipeline_init(self, ):
@@ -611,7 +611,7 @@ class Epoch:
     def _output_dict(self):
         return {
             "stages": self.stages_complete,
-            "paths": self.paths
+            "paths": self.paths,
         }
 
     def update_output_file(self):
@@ -860,7 +860,7 @@ class ESOImagingEpoch(ImagingEpoch):
                          date=date, program_id=program_id,
                          standard_epochs=standard_epochs)
 
-    def pipeline(self):
+    def pipeline(self, **kwargs):
         super().pipeline()
         self.proc_0_download()
         self.proc_1_initial_setup()
@@ -1101,7 +1101,7 @@ class SpectroscopyEpoch(Epoch):
     def proc_2_pypeit_setup(self):
         return self.query_stage("Do PypeIt setup?", stage='2-pypeit_setup')
 
-    def proc_3_pypeit_run(self):
+    def proc_3_pypeit_run(self, do_not_reuse_masters=False):
         return self.query_stage("Run PypeIt?", stage='3-pypeit_run')
 
     def _path_2_pypeit(self):
@@ -1178,7 +1178,7 @@ class ESOSpectroscopyEpoch(SpectroscopyEpoch):
                          grism=grism)
         # Data reduction paths
 
-    def pipeline(self):
+    def pipeline(self, **kwargs):
         super().pipeline()
         self.proc_0_raw()
         self.proc_1_initial_setup()
@@ -1234,7 +1234,7 @@ class FORS2SpectroscopyEpoch(ESOSpectroscopyEpoch):
             "lambda_max": 11000 * units.angstrom
         }}
 
-    def pipeline(self):
+    def pipeline(self, **kwargs):
         super().pipeline()
         self.proc_4_pypeit_flux()
         self.proc_5_pypeit_coadd()
@@ -1277,9 +1277,9 @@ class FORS2SpectroscopyEpoch(ESOSpectroscopyEpoch):
             self.stages_complete['2-pypeit_setup'] = Time.now()
             self.update_output_file()
 
-    def proc_3_pypeit_run(self):
+    def proc_3_pypeit_run(self, do_not_reuse_masters=False):
         if self.query_stage("Run PypeIt?", stage='3-pypeit_run'):
-            spec.run_pypeit(pypeit_file=self.paths['pypeit_file'], redux_path=self.paths['pypeit_run_dir'])
+            spec.run_pypeit(pypeit_file=self.paths['pypeit_file'], redux_path=self.paths['pypeit_run_dir'], do_not_reuse_masters=do_not_reuse_masters)
             self.stages_complete['3-pypeit_run'] = Time.now()
             self.update_output_file()
 
@@ -1393,7 +1393,7 @@ class XShooterSpectroscopyEpoch(ESOSpectroscopyEpoch):
         self.load_output_file()
         self._current_arm = None
 
-    def pipeline(self):
+    def pipeline(self, **kwargs):
         super().pipeline()
         # self.proc_4_pypeit_flux()
         # self.proc_5_pypeit_coadd()
@@ -1424,23 +1424,37 @@ class XShooterSpectroscopyEpoch(ESOSpectroscopyEpoch):
                 # Remove incompatible binnings and frametypes
                 self.find_science_attributes(arm=arm)
                 print(f"\nRemoving incompatible files for {arm} arm:")
+                pypeit_file = self._get_pypeit_file()
                 for raw_frame in self.frames_raw[arm]:
                     if raw_frame.binning != self.binning[arm] \
                             or raw_frame.frame_type == "None" \
                             or raw_frame.decker not in ["Pin_row", self.decker[arm]]:
-                        self._pypeit_file[arm].remove(raw_frame.pypeit_line)
+                        pypeit_file.remove(raw_frame.pypeit_line)
+                    if arm == "nir":
+                        # For the NIR arm, PypeIt only works if you use the Science frames for the arc, tilt calib.
+                        if raw_frame.frame_type in ["arc,tilt", "tilt,arc"]:
+                            self._pypeit_file[arm].remove(raw_frame.pypeit_line)
+                        elif raw_frame.frame_type == "science":
+                            raw_frame.frame_type = "science,arc,tilt"
+                            # Find original line in PypeIt file
+                            to_replace = pypeit_file.index(raw_frame.pypeit_line)
+                            # Rewrite pypeit line.
+                            raw_frame.pypeit_line = raw_frame.pypeit_line.replace("science", "science,arc,tilt")
+                            pypeit_file[to_replace] = raw_frame.pypeit_line
+                self._set_pypeit_file(pypeit_file)
                 self.set_path("pypeit_setup_dir", setup_files)
                 self.write_pypeit_file()
             self._current_arm = None
             self.stages_complete['2-pypeit_setup'] = Time.now()
             self.update_output_file()
 
-    def proc_3_pypeit_run(self):
+    def proc_3_pypeit_run(self, do_not_reuse_masters=False):
         for arm in self.arms:
             self._current_arm = arm
             if self.query_stage(f"Run PypeIt for {arm.upper()} arm?", stage='3-pypeit_run'):
                 spec.run_pypeit(pypeit_file=self.get_path('pypeit_file'),
-                                redux_path=self.get_path('pypeit_run_dir'))
+                                redux_path=self.get_path('pypeit_run_dir'),
+                                do_not_reuse_masters=do_not_reuse_masters)
                 self.stages_complete[f'3-pypeit_run_{arm}'] = Time.now()
                 self.update_output_file()
         self._current_arm = None
