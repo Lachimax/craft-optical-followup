@@ -15,7 +15,8 @@ def main(field_name: str,
          imaging: bool,
          spectroscopy: bool,
          instrument: str,
-         do: str):
+         do: str,
+         do_not_reuse_masters: bool):
     new_field = False
     print("Refreshing parameter files from templates...")
     p.refresh_params_all(quiet=True)
@@ -96,7 +97,7 @@ def main(field_name: str,
             epoch = fld.ImagingEpoch.from_params(epoch_name, instrument=instrument)
 
     epoch.do = do
-    epoch.pipeline()
+    epoch.pipeline(do_not_reuse_masters=do_not_reuse_masters)
 
 
 if __name__ == '__main__':
@@ -112,6 +113,11 @@ if __name__ == '__main__':
     parser.add_argument("--do", help="Epoch processing stages to perform (overrides manual selection if provided). "
                                      "Numbers separated by space or comma.",
                         type=str)
+    parser.add_argument("--do_not_reuse_masters", help="If provided, PypeIt is asked to re-make master frames for every"
+                                                       "science reduction (including within a run). DRASTICALLY "
+                                                       "increases PypeIt runtime, especially for epochs with many "
+                                                       "science frames.",
+                        action='store_true')
 
     # Load arguments
 
@@ -122,4 +128,5 @@ if __name__ == '__main__':
          imaging=args.i,
          spectroscopy=args.s,
          instrument=args.instrument,
-         do=args.do)
+         do=args.do,
+         do_not_reuse_master=args.do_not_reuse_masters)

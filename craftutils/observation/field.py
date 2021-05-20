@@ -861,7 +861,7 @@ class ESOImagingEpoch(ImagingEpoch):
                          standard_epochs=standard_epochs)
 
     def pipeline(self, **kwargs):
-        super().pipeline()
+        super().pipeline(**kwargs)
         self.proc_0_download()
         self.proc_1_initial_setup()
 
@@ -1179,11 +1179,15 @@ class ESOSpectroscopyEpoch(SpectroscopyEpoch):
         # Data reduction paths
 
     def pipeline(self, **kwargs):
-        super().pipeline()
+        super().pipeline(**kwargs)
+        if "do_not_reuse_masters" in kwargs:
+            do_not_reuse_masters = True
+        else:
+            do_not_reuse_masters = False
         self.proc_0_raw()
         self.proc_1_initial_setup()
         self.proc_2_pypeit_setup()
-        self.proc_3_pypeit_run()
+        self.proc_3_pypeit_run(do_not_reuse_masters=do_not_reuse_masters)
 
     def proc_0_raw(self):
         if self.query_stage("Download raw data from ESO archive?", stage='0-download'):
@@ -1235,7 +1239,7 @@ class FORS2SpectroscopyEpoch(ESOSpectroscopyEpoch):
         }}
 
     def pipeline(self, **kwargs):
-        super().pipeline()
+        super().pipeline(**kwargs)
         self.proc_4_pypeit_flux()
         self.proc_5_pypeit_coadd()
 
@@ -1279,7 +1283,9 @@ class FORS2SpectroscopyEpoch(ESOSpectroscopyEpoch):
 
     def proc_3_pypeit_run(self, do_not_reuse_masters=False):
         if self.query_stage("Run PypeIt?", stage='3-pypeit_run'):
-            spec.run_pypeit(pypeit_file=self.paths['pypeit_file'], redux_path=self.paths['pypeit_run_dir'], do_not_reuse_masters=do_not_reuse_masters)
+            spec.run_pypeit(pypeit_file=self.paths['pypeit_file'],
+                            redux_path=self.paths['pypeit_run_dir'],
+                            do_not_reuse_masters=do_not_reuse_masters)
             self.stages_complete['3-pypeit_run'] = Time.now()
             self.update_output_file()
 
@@ -1394,7 +1400,7 @@ class XShooterSpectroscopyEpoch(ESOSpectroscopyEpoch):
         self._current_arm = None
 
     def pipeline(self, **kwargs):
-        super().pipeline()
+        super().pipeline(**kwargs)
         # self.proc_4_pypeit_flux()
         # self.proc_5_pypeit_coadd()
 
