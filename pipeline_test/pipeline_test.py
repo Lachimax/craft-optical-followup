@@ -129,4 +129,4 @@ if __name__ == '__main__':
          spectroscopy=args.s,
          instrument=args.instrument,
          do=args.do,
-         do_not_reuse_master=args.do_not_reuse_masters)
+         do_not_reuse_masters=args.do_not_reuse_masters)
