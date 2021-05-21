@@ -666,6 +666,19 @@ class Epoch:
         self.target = target
         self.update_param_file("target")
 
+    def get_binning(self):
+        return self.binning
+
+    def set_binning(self, binning: str):
+        self.binning = binning
+        return binning
+
+    def get_path(self, key):
+        if key in self.paths:
+            return self.paths[key]
+        else:
+            raise KeyError(f"{key} has not been set.")
+
     def set_path(self, key, value):
         self.paths[key] = value
 
@@ -681,12 +694,6 @@ class Epoch:
             params = p.load_params(self.param_path)
         params[param] = p_dict[param]
         p.save_params(file=self.param_path, dictionary=params)
-
-    def get_path(self, key):
-        if key in self.paths:
-            return self.paths[key]
-        else:
-            raise KeyError(f"{key} has not been set.")
 
     def add_raw_frame(self, raw_frame: image.Image):
         self.frames_raw.append(raw_frame)
@@ -1111,6 +1118,25 @@ class SpectroscopyEpoch(Epoch):
         if self.data_path is not None and "pypeit_dir" not in self.paths:
             self.paths["pypeit_dir"] = os.path.join(self.data_path, epoch_stage_dirs["2-pypeit"])
 
+    def find_science_attributes(self):
+        if self.frames_science:
+            frame = self.get_frames_science()[0]
+            self.set_binning(frame.binning)
+            self.set_decker(frame.decker)
+        else:
+            raise ValueError(f"Science frames list is empty.")
+        return frame
+
+    def get_frames_science(self):
+        return self.frames_science
+
+    def get_decker(self):
+        return self.decker
+
+    def set_decker(self, decker: str):
+        self.decker = decker
+        return decker
+
     @classmethod
     def stages(cls):
         param_dict = super().stages()
@@ -1385,6 +1411,9 @@ class XShooterSpectroscopyEpoch(ESOSpectroscopyEpoch):
         self._pypeit_file = {"uvb": [],
                              "vis": [],
                              "nir": []}
+        self._pypeit_file_std = {"uvb": [],
+                                 "vis": [],
+                                 "nir": []}
         self._pypeit_user_param_start = {"uvb": None,
                                          "vis": None,
                                          "nir": None}
@@ -1395,9 +1424,15 @@ class XShooterSpectroscopyEpoch(ESOSpectroscopyEpoch):
         self.binning = {"uvb": None,
                         "vis": None,
                         "nir": None}
+        self.binning_std = {"uvb": None,
+                            "vis": None,
+                            "nir": None}
         self.decker = {"uvb": None,
                        "vis": None,
                        "nir": None}
+        self.decker_std = {"uvb": None,
+                           "vis": None,
+                           "nir": None}
 
         self.load_output_file()
         self._current_arm = None
@@ -1431,9 +1466,10 @@ class XShooterSpectroscopyEpoch(ESOSpectroscopyEpoch):
                     self.add_pypeit_user_param(param=["calibrations", "traceframe", "process", "use_darkimage"],
                                                value="True")
                 # Remove incompatible binnings and frametypes
-                self.find_science_attributes(arm=arm)
+                self.find_science_attributes()
                 print(f"\nRemoving incompatible files for {arm} arm:")
                 pypeit_file = self._get_pypeit_file()
+                pypeit_file_std = pypeit_file.copy()
                 for raw_frame in self.frames_raw[arm]:
                     if raw_frame.binning != self.binning[arm] \
                             or raw_frame.frame_type == "None" \
@@ -1469,15 +1505,12 @@ class XShooterSpectroscopyEpoch(ESOSpectroscopyEpoch):
         self._current_arm = None
 
     def add_raw_frame(self, raw_frame: image.Image):
-        if self._current_arm is not None:
-            arm = self._current_arm
-            self.frames_raw[arm].append(raw_frame)
-            self.sort_frame(raw_frame)
-        else:
-            raise ValueError("self._current_arm not set.")
+        arm = self._get_current_arm()
+        self.frames_raw[arm].append(raw_frame)
+        self.sort_frame(raw_frame)
 
     def sort_frame(self, frame: image.Image):
-        arm = self._current_arm
+        arm = self._get_current_arm()
         if frame.frame_type == "bias":
             self.frames_bias[arm].append(frame)
         elif frame.frame_type == "science":
@@ -1487,42 +1520,14 @@ class XShooterSpectroscopyEpoch(ESOSpectroscopyEpoch):
         elif frame.frame_type == "dark":
             self.frames_dark[arm].append(frame)
 
-    def find_science_attributes(self, arm: str):
-        if self.frames_science:
-            frame = self.frames_science[arm][0]
-            self.binning[arm] = frame.binning
-            self.decker[arm] = frame.decker
-        else:
-            raise ValueError(f"Science frames list for {arm} is empty.")
-        return self.binning[arm]
-
     def read_pypeit_file(self, setup: str):
         if "pypeit_dir" in self.paths and self.paths["pypeit_dir"] is not None:
-            arm = self._current_arm
+            arm = self._get_current_arm()
             filename = f"{self._instrument_pypeit}_{arm}_{setup}"
             self._read_pypeit_file(filename=filename)
             return self._pypeit_file[arm]
         else:
             raise KeyError("pypeit_run_dir has not been set.")
-
-    def _set_pypeit_file(self, lines: list):
-        if self._current_arm is not None:
-            self._pypeit_file[self._current_arm] = lines
-        else:
-            raise ValueError("No arm currently active.")
-
-    def _get_pypeit_file(self):
-        if self._current_arm is not None:
-            return self._pypeit_file[self._current_arm]
-        else:
-            raise ValueError("No arm currently active.")
-
-    def _get_key_arm(self, key):
-        if self._current_arm is not None:
-            if self._current_arm is not None:
-                arm = self._current_arm
-                key = f"{arm}_{key}"
-        return key
 
     def get_path(self, key):
         key = self._get_key_arm(key)
@@ -1531,6 +1536,40 @@ class XShooterSpectroscopyEpoch(ESOSpectroscopyEpoch):
     def set_path(self, key: str, value: str):
         key = self._get_key_arm(key)
         self.paths[key] = value
+
+    def get_frames_science(self):
+        return self.frames_science[self._get_current_arm()]
+
+    def get_binning(self):
+        return self.binning[self._get_current_arm()]
+
+    def set_binning(self, binning: str):
+        self.binning[self._get_current_arm()] = binning
+        return binning
+
+    def get_decker(self):
+        return self.decker[self._get_current_arm()]
+
+    def set_decker(self, decker: str):
+        self.decker = decker
+        return decker
+
+    def _get_current_arm(self):
+        if self._current_arm is not None:
+            return self._current_arm
+        else:
+            raise ValueError("self._current_arm is not set (no arm currently active).")
+
+    def _set_pypeit_file(self, lines: list):
+        self._pypeit_file[self._get_current_arm()] = lines
+
+    def _get_pypeit_file(self):
+        return self._pypeit_file[self._get_current_arm()]
+
+    def _get_key_arm(self, key):
+        arm = self._get_current_arm()
+        key = f"{arm}_{key}"
+        return key
 
     @classmethod
     def stages(cls):
@@ -1561,7 +1600,7 @@ class XShooterSpectroscopyEpoch(ESOSpectroscopyEpoch):
         Rewrites the stored .pypeit file to disk at its original path.
         :return: path of .pypeit file.
         """
-        arm = self._current_arm
+        arm = self._get_current_arm()
         pypeit_lines = self._get_pypeit_file()
         if pypeit_lines is not None:
             pypeit_file_path = self.get_path("pypeit_file")
