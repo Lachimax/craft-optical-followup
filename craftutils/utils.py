@@ -17,6 +17,15 @@ from astropy.time import Time
 # TODO: Arrange these into some kind of logical order.
 # TODO: Also comment.
 
+def write_list_to_file(path: str, file: list):
+    # Delete file, to be rewritten.
+    rm_check(path)
+    # Write file to disk.
+    print(f"Writing pypeit file to {path}")
+    with open(path, 'w') as pypeit_file:
+        pypeit_file.writelines(file)
+
+
 def relevant_timescale(time: units.Quantity):
     if not time.unit.is_equivalent(units.second):
         raise ValueError(f"{time} is not a time.")
