@@ -561,6 +561,7 @@ class Epoch:
         self.log = {}
 
         self.binning = None
+        self.binning_std = None
 
         # Data reduction paths
         self.paths = {}
@@ -671,6 +672,13 @@ class Epoch:
 
     def set_binning(self, binning: str):
         self.binning = binning
+        return binning
+
+    def get_binning_std(self):
+        return self.binning_std
+
+    def set_binning_std(self, binning: str):
+        self.binning_std = binning
         return binning
 
     def get_path(self, key):
@@ -992,6 +1000,7 @@ class SpectroscopyEpoch(Epoch):
                          date=date, program_id=program_id, target=target)
 
         self.decker = decker
+        self.decker_std = decker
         self.grism = grism
         if grism is None or grism not in self.grisms:
             warnings.warn("grism not configured.")
@@ -1014,6 +1023,29 @@ class SpectroscopyEpoch(Epoch):
                 self._pypeit_sorted_file = sorted_file.readlines()
         else:
             raise KeyError("pypeit_setup_dir has not been set.")
+
+    def setup_info(self, setup: str):
+        """
+        Pulls setup info from a pypeit .sorted file.
+        :param setup:
+        :return:
+        """
+        file = self._get_pypeit_sorted_file()
+        # Find start of setup description
+        setup_start = file.index(f"Setup {setup}\n")
+        setup_dict = {}
+        i = setup_start + 1
+        line = file[i]
+        # Assemble a dictionary of the setup parameters.
+        while line != "#---------------------------------------------------------\n":
+            while line[0] == " ":
+                line = line[1:]
+            line = line[:-1]
+            key, value = line.split(": ")
+            setup_dict[key] = value
+            i += 1
+            line = file[i]
+        return setup_dict
 
     def _read_pypeit_file(self, filename):
         pypeit_run_dir = os.path.join(self.paths['pypeit_dir'], filename)
@@ -1038,27 +1070,18 @@ class SpectroscopyEpoch(Epoch):
         else:
             raise KeyError("pypeit_run_dir has not been set.")
 
-    def _set_pypeit_file(self, lines: list):
-        self._pypeit_file = lines
-
-    def _get_pypeit_file(self):
-        return self._pypeit_file
-
-    def write_pypeit_file(self):
+    def write_pypeit_file_science(self):
         """
         Rewrites the stored .pypeit file to disk at its original path.
         :return: path of .pypeit file.
         """
-        if self._pypeit_file is not None:
-            pypeit_file_path = self.paths["pypeit_file"]
-            # Delete .pypeit file, to be rewritten.
-            os.remove(pypeit_file_path)
-            # Write .pypeit file to disk.
-            with open(pypeit_file_path, 'w') as pypeit_file:
-                pypeit_file.writelines(self._pypeit_file)
-            return pypeit_file_path
+        pypeit_lines = self._get_pypeit_file()
+        if pypeit_lines is not None:
+            pypeit_file_path = self.get_path("pypeit_file")
+            u.write_list_to_file(path=pypeit_file_path, file=pypeit_lines)
         else:
             raise ValueError("pypeit_file has not yet been read.")
+        return pypeit_file_path
 
     def add_pypeit_user_param(self, param: list, value: str):
         """
@@ -1091,7 +1114,7 @@ class SpectroscopyEpoch(Epoch):
             raise ValueError("pypeit_file has not yet been read.")
 
     def add_pypeit_file_lines(self, lines: list):
-        if self._pypeit_file is not None:
+        if self._get_pypeit_file() is not None:
             # Remove last two lines of file ("data end")
             pypeit_lines = self._pypeit_file[:-2]
             # Insert desired lines
@@ -1119,16 +1142,30 @@ class SpectroscopyEpoch(Epoch):
             self.paths["pypeit_dir"] = os.path.join(self.data_path, epoch_stage_dirs["2-pypeit"])
 
     def find_science_attributes(self):
-        if self.frames_science:
-            frame = self.get_frames_science()[0]
+        frames = self.get_frames_science()
+        if frames:
+            frame = frames[0]
             self.set_binning(frame.binning)
             self.set_decker(frame.decker)
         else:
             raise ValueError(f"Science frames list is empty.")
         return frame
 
+    def find_std_attributes(self):
+        frames = self.get_frames_standard()
+        if frames:
+            frame = frames[0]
+            self.set_binning_std(frame.binning)
+            self.set_decker_std(frame.decker)
+        else:
+            raise ValueError(f"Standard frames list is empty.")
+        return frame
+
     def get_frames_science(self):
         return self.frames_science
+
+    def get_frames_standard(self):
+        return self.frames_standard
 
     def get_decker(self):
         return self.decker
@@ -1136,6 +1173,22 @@ class SpectroscopyEpoch(Epoch):
     def set_decker(self, decker: str):
         self.decker = decker
         return decker
+
+    def get_decker_std(self):
+        return self.decker_std
+
+    def set_decker_std(self, decker: str):
+        self.decker_std = decker
+        return decker
+
+    def _set_pypeit_file(self, lines: list):
+        self._pypeit_file = lines
+
+    def _get_pypeit_file(self):
+        return self._pypeit_file
+
+    def _get_pypeit_sorted_file(self):
+        return self._pypeit_sorted_file
 
     @classmethod
     def stages(cls):
@@ -1210,7 +1263,7 @@ class ESOSpectroscopyEpoch(SpectroscopyEpoch):
     def pipeline(self, **kwargs):
         super().pipeline(**kwargs)
         if "do_not_reuse_masters" in kwargs:
-            do_not_reuse_masters = True
+            do_not_reuse_masters = kwargs["do_not_reuse_masters"]
         else:
             do_not_reuse_masters = False
         self.proc_0_raw()
@@ -1305,7 +1358,7 @@ class FORS2SpectroscopyEpoch(ESOSpectroscopyEpoch):
             # Insert bias lines from .sorted file
             self.add_pypeit_file_lines(lines=bias_lines + std_lines)
             # Write modified .pypeit file back to disk.
-            self.write_pypeit_file()
+            self.write_pypeit_file_science()
 
             self.stages_complete['2-pypeit_setup'] = Time.now()
             self.update_output_file()
@@ -1369,9 +1422,6 @@ class FORS2SpectroscopyEpoch(ESOSpectroscopyEpoch):
 
 class XShooterSpectroscopyEpoch(ESOSpectroscopyEpoch):
     _instrument_pypeit = "vlt_xshooter"
-    _cfg_split_letters = {"uvb": "A",
-                          "nir": "B",
-                          "vis": "C"}
     arms = ['uvb', "vis", "nir"]
 
     def __init__(self,
@@ -1408,12 +1458,15 @@ class XShooterSpectroscopyEpoch(ESOSpectroscopyEpoch):
         self.frames_dark = {"uvb": [],
                             "vis": [],
                             "nir": []}
-        self._pypeit_file = {"uvb": [],
-                             "vis": [],
-                             "nir": []}
-        self._pypeit_file_std = {"uvb": [],
-                                 "vis": [],
-                                 "nir": []}
+        self._pypeit_file = {"uvb": None,
+                             "vis": None,
+                             "nir": None}
+        self._pypeit_file_std = {"uvb": None,
+                                 "vis": None,
+                                 "nir": None}
+        self._pypeit_sorted_file = {"uvb": None,
+                                    "vis": None,
+                                    "nir": None}
         self._pypeit_user_param_start = {"uvb": None,
                                          "vis": None,
                                          "nir": None}
@@ -1434,6 +1487,10 @@ class XShooterSpectroscopyEpoch(ESOSpectroscopyEpoch):
                            "vis": None,
                            "nir": None}
 
+        self._cfg_split_letters = {"uvb": None,
+                                   "vis": None,
+                                   "nir": None}
+
         self.load_output_file()
         self._current_arm = None
 
@@ -1445,19 +1502,22 @@ class XShooterSpectroscopyEpoch(ESOSpectroscopyEpoch):
     def proc_2_pypeit_setup(self):
         if self.query_stage("Do PypeIt setup?", stage='2-pypeit_setup'):
             self._path_2_pypeit()
+            setup_files = os.path.join(self.paths["pypeit_dir"], 'setup_files', '')
+            self.paths["pypeit_setup_dir"] = setup_files
+            os.system(f"rm {setup_files}*")
             for arm in self.arms:
                 self._current_arm = arm
-                # arm = "vis"
                 spec.pypeit_setup(root=self.paths['raw_dir'], output_path=self.paths['pypeit_dir'],
                                   spectrograph=f"{self._instrument_pypeit}_{arm}")
-                setup_files = os.path.join(self.paths["pypeit_dir"], 'setup_files', '')
-                os.system(f"rm {setup_files}*")
+                # Read .sorted file
+                self.read_pypeit_sorted_file()
+                print(self._cfg_split_letters)
                 setup = self._cfg_split_letters[arm]
                 spec.pypeit_setup(root=self.paths['raw_dir'], output_path=self.paths['pypeit_dir'],
                                   spectrograph=f"{self._instrument_pypeit}_{arm}", cfg_split=setup)
-
                 # Retrieve text from .pypeit file
                 self.read_pypeit_file(setup=setup)
+                # Add parameter to use dark frames for NIR reduction.
                 if arm == "nir":
                     self.add_pypeit_user_param(param=["calibrations", "pixelflatframe", "process", "use_darkimage"],
                                                value="True")
@@ -1465,20 +1525,38 @@ class XShooterSpectroscopyEpoch(ESOSpectroscopyEpoch):
                                                value="True")
                     self.add_pypeit_user_param(param=["calibrations", "traceframe", "process", "use_darkimage"],
                                                value="True")
-                # Remove incompatible binnings and frametypes
                 self.find_science_attributes()
+                # For X-Shooter, we need to reduce the standards separately due to the habit of observing them with
+                # different decker (who knows)
+                self.find_std_attributes()
+                # Remove incompatible binnings and frametypes
                 print(f"\nRemoving incompatible files for {arm} arm:")
                 pypeit_file = self._get_pypeit_file()
                 pypeit_file_std = pypeit_file.copy()
+                decker = self.get_decker()
+                binning = self.get_binning()
+                decker_std = self.get_decker_std()
+                binning_std = self.get_binning_std()
                 for raw_frame in self.frames_raw[arm]:
-                    if raw_frame.binning != self.binning[arm] \
-                            or raw_frame.frame_type == "None" \
-                            or raw_frame.decker not in ["Pin_row", self.decker[arm]]:
+                    # Remove all frames with frame_type "None" from both science and standard lists.
+                    if raw_frame.frame_type == "None":
                         pypeit_file.remove(raw_frame.pypeit_line)
+                        pypeit_file_std.remove(raw_frame.pypeit_line)
+                    else:
+                        # Remove files with incompatible binnings from science reduction list.
+                        if raw_frame.binning != binning \
+                                or raw_frame.decker not in ["Pin_row", decker]:
+                            pypeit_file.remove(raw_frame.pypeit_line)
+                        # Likewise, but for flux standards.
+                        if raw_frame.binning != binning_std \
+                                or raw_frame.decker not in ["Pin_row", decker_std]:
+                            pypeit_file_std.remove(raw_frame.pypeit_line)
+                    # Special behaviour for NIR arm
                     if arm == "nir":
                         # For the NIR arm, PypeIt only works if you use the Science frames for the arc, tilt calib.
                         if raw_frame.frame_type in ["arc,tilt", "tilt,arc"]:
-                            self._pypeit_file[arm].remove(raw_frame.pypeit_line)
+                            pypeit_file.remove(raw_frame.pypeit_line)
+                            pypeit_file_std.remove(raw_frame.pypeit_line)
                         elif raw_frame.frame_type == "science":
                             raw_frame.frame_type = "science,arc,tilt"
                             # Find original line in PypeIt file
@@ -1486,19 +1564,43 @@ class XShooterSpectroscopyEpoch(ESOSpectroscopyEpoch):
                             # Rewrite pypeit line.
                             raw_frame.pypeit_line = raw_frame.pypeit_line.replace("science", "science,arc,tilt")
                             pypeit_file[to_replace] = raw_frame.pypeit_line
+                        elif raw_frame.frame_type == "standard":
+                            raw_frame.frame_type = "standard,arc,tilt"
+                            # Find original line in PypeIt file
+                            to_replace = pypeit_file_std.index(raw_frame.pypeit_line)
+                            # Rewrite pypeit line.
+                            raw_frame.pypeit_line = raw_frame.pypeit_line.replace("standard", "standard,arc,tilt")
+                            pypeit_file_std[to_replace] = raw_frame.pypeit_line
                 self._set_pypeit_file(pypeit_file)
-                self.set_path("pypeit_setup_dir", setup_files)
-                self.write_pypeit_file()
+                self._set_pypeit_file_std(pypeit_file_std)
+                self.write_pypeit_file_science()
+                std_path = os.path.join(self.paths["pypeit_dir"], self.get_path("pypeit_run_dir"), "Flux_Standards")
+                u.mkdir_check(std_path)
+                self.set_path("pypeit_dir_std", std_path)
+                self.set_path("pypeit_file_std",
+                              os.path.join(self.get_path("pypeit_run_dir"), f"vlt_xshooter_{arm}_std.pypeit"))
+                self.write_pypeit_file_std()
             self._current_arm = None
             self.stages_complete['2-pypeit_setup'] = Time.now()
             self.update_output_file()
 
     def proc_3_pypeit_run(self, do_not_reuse_masters=False):
         for i, arm in enumerate(self.arms):
+            # UVB not yet implemented in PypeIt, so we skip.
+            if arm == "uvb":
+                continue
             self._current_arm = arm
             if self.query_stage(f"Run PypeIt for {arm.upper()} arm?", stage=f'3.{i + 1}-pypeit_run_{arm}'):
                 spec.run_pypeit(pypeit_file=self.get_path('pypeit_file'),
                                 redux_path=self.get_path('pypeit_run_dir'),
+                                do_not_reuse_masters=do_not_reuse_masters)
+                self.stages_complete[f'3.{i + 1}-pypeit_run_{arm}'] = Time.now()
+                self.update_output_file()
+            if self.query_stage(f"Run PypeIt on flux standards for {arm.upper()} arm?",
+                                stage=f'3.{i + 1}-pypeit_run_{arm}_std'):
+                print(self.get_path('pypeit_file_std'))
+                spec.run_pypeit(pypeit_file=self.get_path('pypeit_file_std'),
+                                redux_path=self.get_path('pypeit_dir_std'),
                                 do_not_reuse_masters=do_not_reuse_masters)
                 self.stages_complete[f'3.{i + 1}-pypeit_run_{arm}'] = Time.now()
                 self.update_output_file()
@@ -1520,6 +1622,23 @@ class XShooterSpectroscopyEpoch(ESOSpectroscopyEpoch):
         elif frame.frame_type == "dark":
             self.frames_dark[arm].append(frame)
 
+    def read_pypeit_sorted_file(self):
+        arm = self._get_current_arm()
+        if "pypeit_setup_dir" in self.paths and self.paths["pypeit_setup_dir"] is not None:
+            setup_files = self.paths["pypeit_setup_dir"]
+            sorted_path = os.path.join(setup_files,
+                                       filter(lambda f: f"vlt_xshooter_{arm}" in f and f.endswith(".sorted"),
+                                              os.listdir(setup_files)).__next__())
+            with open(sorted_path) as sorted_file:
+                file = sorted_file.readlines()
+            self._pypeit_sorted_file[arm] = file
+            for setup in ["A", "B", "C"]:
+                info = self.setup_info(setup=setup)
+                arm_this = info["arm"].lower()
+                self._cfg_split_letters[arm_this] = setup
+        else:
+            raise KeyError("pypeit_setup_dir has not been set.")
+
     def read_pypeit_file(self, setup: str):
         if "pypeit_dir" in self.paths and self.paths["pypeit_dir"] is not None:
             arm = self._get_current_arm()
@@ -1540,6 +1659,9 @@ class XShooterSpectroscopyEpoch(ESOSpectroscopyEpoch):
     def get_frames_science(self):
         return self.frames_science[self._get_current_arm()]
 
+    def get_frames_standard(self):
+        return self.frames_standard[self._get_current_arm()]
+
     def get_binning(self):
         return self.binning[self._get_current_arm()]
 
@@ -1547,11 +1669,25 @@ class XShooterSpectroscopyEpoch(ESOSpectroscopyEpoch):
         self.binning[self._get_current_arm()] = binning
         return binning
 
+    def get_binning_std(self):
+        return self.binning_std[self._get_current_arm()]
+
+    def set_binning_std(self, binning: str):
+        self.binning_std[self._get_current_arm()] = binning
+        return binning
+
     def get_decker(self):
         return self.decker[self._get_current_arm()]
 
     def set_decker(self, decker: str):
-        self.decker = decker
+        self.decker[self._get_current_arm()] = decker
+        return decker
+
+    def get_decker_std(self):
+        return self.decker_std[self._get_current_arm()]
+
+    def set_decker_std(self, decker: str):
+        self.decker_std[self._get_current_arm()] = decker
         return decker
 
     def _get_current_arm(self):
@@ -1566,6 +1702,15 @@ class XShooterSpectroscopyEpoch(ESOSpectroscopyEpoch):
     def _get_pypeit_file(self):
         return self._pypeit_file[self._get_current_arm()]
 
+    def _get_pypeit_sorted_file(self):
+        return self._pypeit_sorted_file[self._get_current_arm()]
+
+    def _set_pypeit_file_std(self, lines: list):
+        self._pypeit_file_std[self._get_current_arm()] = lines
+
+    def _get_pypeit_file_std(self):
+        return self._pypeit_file_std[self._get_current_arm()]
+
     def _get_key_arm(self, key):
         arm = self._get_current_arm()
         key = f"{arm}_{key}"
@@ -1576,8 +1721,11 @@ class XShooterSpectroscopyEpoch(ESOSpectroscopyEpoch):
         param_dict = super().stages()
         param_dict.update({"2-pypeit_setup": None,
                            "3.1-pypeit_run_uvb": None,
+                           "3.1-pypeit_run_uvb_std": None,
                            "3.2-pypeit_run_vis": None,
+                           "3.2-pypeit_run_vis_std": None,
                            "3.3-pypeit_run_nir": None,
+                           "3.3-pypeit_run_nir_std": None,
                            "4-pypeit_flux_calib": None})
         return param_dict
 
@@ -1595,23 +1743,17 @@ class XShooterSpectroscopyEpoch(ESOSpectroscopyEpoch):
                 self.paths.update(outputs[f"paths"])
         return outputs
 
-    def write_pypeit_file(self):
+    def write_pypeit_file_std(self):
         """
-        Rewrites the stored .pypeit file to disk at its original path.
+        Rewrites the stored .pypeit file to disk.
         :return: path of .pypeit file.
         """
-        arm = self._get_current_arm()
-        pypeit_lines = self._get_pypeit_file()
+        pypeit_lines = self._get_pypeit_file_std()
         if pypeit_lines is not None:
-            pypeit_file_path = self.get_path("pypeit_file")
-            # Delete .pypeit file, to be rewritten.
-            os.remove(pypeit_file_path)
-            # Write .pypeit file to disk.
-            print(f"Writing pypeit file to {pypeit_file_path}")
-            with open(pypeit_file_path, 'w') as pypeit_file:
-                pypeit_file.writelines(pypeit_lines)
+            pypeit_file_path = os.path.join(self.get_path("pypeit_file_std"), )
+            u.write_list_to_file(path=pypeit_file_path, file=pypeit_lines)
         else:
-            raise ValueError(f"pypeit_file has not yet been read for {arm}.")
+            raise ValueError("pypeit_file_std has not yet been read.")
         return pypeit_file_path
 
 # def test_frbfield_from_params():
