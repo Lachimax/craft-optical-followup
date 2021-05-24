@@ -343,7 +343,8 @@ def determine_zeropoint_sextractor(sextractor_cat_path: str,
                                    cat_type: str = 'csv',
                                    cat_zeropoint: float = 0.0,
                                    cat_zeropoint_err: float = 0.0,
-                                   latex_plot: bool = False):
+                                   latex_plot: bool = False,
+                                   snr_cut: bool = False):
     """
     This function expects your catalogue to be a .csv.
     :param sextractor_cat_path:
@@ -542,6 +543,12 @@ def determine_zeropoint_sextractor(sextractor_cat_path: str,
     print(sum(np.invert(remove)),
           'matches after removing objects objects with SExtractor mags < ' + str(mag_range_sex_lower))
     params[f'matches_{n_match}_sex_mag_upper'] = int(sum(np.invert(remove)))
+    n_match += 1
+
+    remove = remove + (matches['SNR_WIN'] < 300)
+    print(sum(np.invert(remove)),
+          'matches after removing objects objects with SNR_WIN < 300')
+    params[f'matches_{n_match}_snr'] = int(sum(np.invert(remove)))
     n_match += 1
 
     if stars_only:
@@ -908,11 +915,11 @@ def zeropoint_science_field(epoch: str,
             now = time.Time.now()
             now.format = 'isot'
             if test_name is None:
-                test_name = ""
+                test_name = cat_name
             test_name = str(now) + '_' + test_name
 
             output_path = os.path.join(output, f_0, test_name)
-            u.mkdir_check_nested(output_path)
+            u.mkdir_check(output_path)
 
             chip_1_bottom = 740
             chip_2_top = 600
@@ -952,22 +959,22 @@ def zeropoint_science_field(epoch: str,
             print('SExtractor catalogue path:', sextractor_path)
             print('Image path:', image_path)
             print('Catalogue path:', cat_path)
-            print('Output:', output_path + test_name)
+            print('Output:', output_path)
             print()
 
             print(cat_zeropoint)
 
             if separate_chips:
                 # Split based on which CCD chip the object falls upon.
-                u.mkdir_check(output_path + "chip_1")
-                u.mkdir_check(output_path + "chip_2")
+                u.mkdir_check(os.path.join(output_path, "chip_1"))
+                u.mkdir_check(os.path.join(output_path, "chip_2"))
 
                 print('Chip 1:')
                 up = determine_zeropoint_sextractor(sextractor_cat_path=sextractor_path,
                                                     image=image_path,
                                                     cat_path=cat_path,
                                                     cat_name=cat_name,
-                                                    output_path=output_path + "/chip_1/",
+                                                    output_path=os.path.join(output_path, "chip_1"),
                                                     show=show_plots,
                                                     cat_ra_col=cat_ra_col,
                                                     cat_dec_col=cat_dec_col,
@@ -995,7 +1002,7 @@ def zeropoint_science_field(epoch: str,
                                                       image=image_path,
                                                       cat_path=cat_path,
                                                       cat_name=cat_name,
-                                                      output_path=output_path + "/chip_2/",
+                                                      output_path=os.path.join(output_path, "chip_2"),
                                                       show=show_plots,
                                                       cat_ra_col=cat_ra_col,
                                                       cat_dec_col=cat_dec_col,
@@ -1243,7 +1250,8 @@ def create_mask(file, left, right, bottom, top, plot=False):
 
 
 def source_table(file: Union['fits.hdu_list.hdulist.HDUList', 'str'],
-                 bg_file: Union['fits.hdu_list.hdulist.HDUList', 'str'] = None, output: 'str' = None, plot: 'bool' = False,
+                 bg_file: Union['fits.hdu_list.hdulist.HDUList', 'str'] = None, output: 'str' = None,
+                 plot: 'bool' = False,
                  algorithm: 'str' = 'DAO',
                  exp_time: 'float' = None, zeropoint: 'float' = 0., ext: 'float' = 0.0, airmass: 'float' = None,
                  colour_coeff: 'float' = 0.0, colours=None, fwhm: 'float' = 2.0, fwhm_override: 'bool' = False,
