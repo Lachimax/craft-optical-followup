@@ -1014,6 +1014,44 @@ class SpectroscopyEpoch(Epoch):
         self._pypeit_file = None
         self._pypeit_sorted_file = None
 
+    def proc_4_pypeit_flux(self):
+        if self.query_stage("Do fluxing with PypeIt?", stage='4-pypeit_flux_calib'):
+            self._pypeit_flux()
+            self.stages_complete['4-pypeit_flux_calib'] = Time.now()
+            self.update_output_file()
+
+    def _pypeit_flux(self):
+        pypeit_run_dir = self.get_path("pypeit_run_dir")
+        pypeit_science_dir = os.path.join(pypeit_run_dir, "Science")
+        std_reduced_filename = filter(lambda f: "spec1d" in f and "STD" in f and f.endswith(".fits"),
+                                      os.listdir(pypeit_science_dir)).__next__()
+        std_reduced_path = os.path.join(pypeit_science_dir, std_reduced_filename)
+        print(f"Using {std_reduced_path} for fluxing.")
+        sensfunc_path = os.path.join(pypeit_run_dir, "sens.fits")
+        # Generate sensitivity function from standard observation
+        spec.pypeit_sensfunc(spec1dfile=std_reduced_path, outfile=sensfunc_path)
+        # Generate flux setup file.
+        spec.pypeit_flux_setup(sci_path=pypeit_science_dir, run_dir=pypeit_run_dir)
+        flux_setup_path = os.path.join(pypeit_run_dir, f"{self._instrument_pypeit}.flux")
+
+        # Insert name of sensitivity file to flux setup file.
+        with open(flux_setup_path, "r") as flux_setup:
+            flux_lines = flux_setup.readlines()
+        file_first = flux_lines.index("flux read\n") + 1
+        flux_lines[file_first] = flux_lines[file_first][:-1] + " " + sensfunc_path + "\n"
+        # Delete flux setup file for rewriting.
+        os.remove(flux_setup_path)
+        # Rewrite modified .flux file.
+        with open(flux_setup_path, "w") as flux_setup:
+            flux_setup.writelines(flux_lines)
+        # Run pypeit_flux_calib
+        os.system(f"pypeit_flux_calib {flux_setup_path}")
+
+        self.set_path("pypeit_sensitivity_file", sensfunc_path)
+        self.set_path("pypeit_std_reduced", std_reduced_path)
+        self.set_path("pypeit_science_dir", pypeit_science_dir)
+        self.set_path("pypeit_flux_setup", flux_setup_path)
+
     def read_pypeit_sorted_file(self):
         if "pypeit_setup_dir" in self.paths and self.paths["pypeit_setup_dir"] is not None:
             setup_files = self.paths["pypeit_setup_dir"]
@@ -1270,6 +1308,7 @@ class ESOSpectroscopyEpoch(SpectroscopyEpoch):
         self.proc_1_initial_setup()
         self.proc_2_pypeit_setup()
         self.proc_3_pypeit_run(do_not_reuse_masters=do_not_reuse_masters)
+        self.proc_4_pypeit_flux()
 
     def proc_0_raw(self):
         if self.query_stage("Download raw data from ESO archive?", stage='0-download'):
@@ -1371,50 +1410,13 @@ class FORS2SpectroscopyEpoch(ESOSpectroscopyEpoch):
             self.stages_complete['3-pypeit_run'] = Time.now()
             self.update_output_file()
 
-    def proc_4_pypeit_flux(self):
-        if self.query_stage("Do fluxing with PypeIt?", stage='4-pypeit_flux_calib'):
-            pypeit_science_dir = os.path.join(self.paths["pypeit_run_dir"], "Science")
-            std_reduced_filename = filter(lambda f: "spec1d" in f and "STD" in f and f.endswith(".fits"),
-                                          os.listdir(pypeit_science_dir)).__next__()
-            std_reduced_path = os.path.join(pypeit_science_dir, std_reduced_filename)
-            print(f"Using {std_reduced_path} for fluxing.")
-            sensfunc_path = os.path.join(self.paths['pypeit_run_dir'], "sens.fits")
-            # Generate sensitivity function from standard observation
-            os.system(f"pypeit_sensfunc {std_reduced_path} -o {sensfunc_path}")
-            # Generate flux setup file.
-            cwd = os.getcwd()
-            os.chdir(self.paths["pypeit_run_dir"])
-            os.system(f"pypeit_flux_setup {pypeit_science_dir}")
-            os.chdir(cwd)
-            flux_setup_path = os.path.join(self.paths["pypeit_run_dir"], f"{self._instrument_pypeit}.flux")
-
-            # Insert name of sensitivity file to flux setup file.
-            with open(flux_setup_path, "r") as flux_setup:
-                flux_lines = flux_setup.readlines()
-            file_first = flux_lines.index("flux read\n") + 1
-            flux_lines[file_first] = flux_lines[file_first][:-1] + " " + sensfunc_path + "\n"
-            # Delete flux setup file for rewriting.
-            os.remove(flux_setup_path)
-            # Rewrite modified .flux file.
-            with open(flux_setup_path, "w") as flux_setup:
-                flux_setup.writelines(flux_lines)
-            # Run pypeit_flux_calib
-            os.system(f"pypeit_flux_calib {flux_setup_path}")
-
-            self.paths["pypeit_sensitivity_file"] = sensfunc_path
-            self.paths["pypeit_std_reduced"] = std_reduced_path
-            self.paths["pypeit_science_dir"] = pypeit_science_dir
-            self.paths["pypeit_flux_setup"] = flux_setup_path
-            self.stages_complete['4-pypeit_flux_calib'] = Time.now()
-            self.update_output_file()
-
     def proc_5_pypeit_coadd(self):
         if self.query_stage(
                 "Do coaddition with PypeIt?\nYou should first inspect the 2D spectra to determine which objects to co-add.",
                 stage='5-pypeit_coadd'):
-            for file in filter(lambda f: "spec2d" in f, os.listdir(self.paths["pypeit_science_dir"])):
+            for file in filter(lambda f: "spec1d" in f, os.listdir(self.paths["pypeit_science_dir"])):
                 path = os.path.join(self.paths["pypeit_science_dir"], file)
-                os.system(f"pypeit_show_2dspec {path}")
+                os.system(f"pypeit_show_1dspec {path}")
 
     def proc_6_marz_format(self, do: list = None):
         return self.query_stage("Convert co-added 1D spectra to Marz format?", stage='6-marz-format')
@@ -1496,7 +1498,6 @@ class XShooterSpectroscopyEpoch(ESOSpectroscopyEpoch):
 
     def pipeline(self, **kwargs):
         super().pipeline(**kwargs)
-        # self.proc_4_pypeit_flux()
         # self.proc_5_pypeit_coadd()
 
     def proc_2_pypeit_setup(self):
@@ -1532,31 +1533,26 @@ class XShooterSpectroscopyEpoch(ESOSpectroscopyEpoch):
                 # Remove incompatible binnings and frametypes
                 print(f"\nRemoving incompatible files for {arm} arm:")
                 pypeit_file = self._get_pypeit_file()
-                pypeit_file_std = pypeit_file.copy()
+                # pypeit_file_std = pypeit_file.copy()
                 decker = self.get_decker()
                 binning = self.get_binning()
                 decker_std = self.get_decker_std()
-                binning_std = self.get_binning_std()
                 for raw_frame in self.frames_raw[arm]:
                     # Remove all frames with frame_type "None" from both science and standard lists.
                     if raw_frame.frame_type == "None":
                         pypeit_file.remove(raw_frame.pypeit_line)
-                        pypeit_file_std.remove(raw_frame.pypeit_line)
+                        # pypeit_file_std.remove(raw_frame.pypeit_line)
                     else:
                         # Remove files with incompatible binnings from science reduction list.
                         if raw_frame.binning != binning \
-                                or raw_frame.decker not in ["Pin_row", decker]:
+                                or raw_frame.decker not in ["Pin_row", decker, decker_std]:
                             pypeit_file.remove(raw_frame.pypeit_line)
-                        # Likewise, but for flux standards.
-                        if raw_frame.binning != binning_std \
-                                or raw_frame.decker not in ["Pin_row", decker_std]:
-                            pypeit_file_std.remove(raw_frame.pypeit_line)
                     # Special behaviour for NIR arm
                     if arm == "nir":
                         # For the NIR arm, PypeIt only works if you use the Science frames for the arc, tilt calib.
                         if raw_frame.frame_type in ["arc,tilt", "tilt,arc"]:
                             pypeit_file.remove(raw_frame.pypeit_line)
-                            pypeit_file_std.remove(raw_frame.pypeit_line)
+                            # pypeit_file_std.remove(raw_frame.pypeit_line)
                         elif raw_frame.frame_type == "science":
                             raw_frame.frame_type = "science,arc,tilt"
                             # Find original line in PypeIt file
@@ -1567,18 +1563,18 @@ class XShooterSpectroscopyEpoch(ESOSpectroscopyEpoch):
                         elif raw_frame.frame_type == "standard":
                             raw_frame.frame_type = "standard,arc,tilt"
                             # Find original line in PypeIt file
-                            to_replace = pypeit_file_std.index(raw_frame.pypeit_line)
+                            to_replace = pypeit_file.index(raw_frame.pypeit_line)
                             # Rewrite pypeit line.
                             raw_frame.pypeit_line = raw_frame.pypeit_line.replace("standard", "standard,arc,tilt")
-                            pypeit_file_std[to_replace] = raw_frame.pypeit_line
+                            pypeit_file[to_replace] = raw_frame.pypeit_line
                 self._set_pypeit_file(pypeit_file)
-                self._set_pypeit_file_std(pypeit_file_std)
+                # self._set_pypeit_file_std(pypeit_file_std)
                 self.write_pypeit_file_science()
-                std_path = os.path.join(self.paths["pypeit_dir"], self.get_path("pypeit_run_dir"), "Flux_Standards")
-                u.mkdir_check(std_path)
-                self.set_path("pypeit_dir_std", std_path)
-                self.set_path("pypeit_file_std",
-                              os.path.join(self.get_path("pypeit_run_dir"), f"vlt_xshooter_{arm}_std.pypeit"))
+                # std_path = os.path.join(self.paths["pypeit_dir"], self.get_path("pypeit_run_dir"), "Flux_Standards")
+                # u.mkdir_check(std_path)
+                # self.set_path("pypeit_dir_std", std_path)
+                # self.set_path("pypeit_file_std",
+                #              os.path.join(self.get_path("pypeit_run_dir"), f"vlt_xshooter_{arm}_std.pypeit"))
                 self.write_pypeit_file_std()
             self._current_arm = None
             self.stages_complete['2-pypeit_setup'] = Time.now()
@@ -1596,15 +1592,27 @@ class XShooterSpectroscopyEpoch(ESOSpectroscopyEpoch):
                                 do_not_reuse_masters=do_not_reuse_masters)
                 self.stages_complete[f'3.{i + 1}-pypeit_run_{arm}'] = Time.now()
                 self.update_output_file()
-            if self.query_stage(f"Run PypeIt on flux standards for {arm.upper()} arm?",
-                                stage=f'3.{i + 1}-pypeit_run_{arm}_std'):
-                print(self.get_path('pypeit_file_std'))
-                spec.run_pypeit(pypeit_file=self.get_path('pypeit_file_std'),
-                                redux_path=self.get_path('pypeit_dir_std'),
-                                do_not_reuse_masters=do_not_reuse_masters)
-                self.stages_complete[f'3.{i + 1}-pypeit_run_{arm}'] = Time.now()
-                self.update_output_file()
+            # if arm != "nir" and self.query_stage(f"Run PypeIt on flux standards for {arm.upper()} arm?",
+            #                                      stage=f'3.{i + 1}-pypeit_run_{arm}_std'):
+            #     print(self.get_path('pypeit_file_std'))
+            #     spec.run_pypeit(pypeit_file=self.get_path('pypeit_file_std'),
+            #                     redux_path=self.get_path('pypeit_dir_std'),
+            #                     do_not_reuse_masters=do_not_reuse_masters)
+            #     self.stages_complete[f'3.{i + 1}-pypeit_run_{arm}'] = Time.now()
+            #     self.update_output_file()
         self._current_arm = None
+
+    def proc_4_pypeit_flux(self):
+        if self.query_stage("Do fluxing with PypeIt?", stage='4-pypeit_flux_calib'):
+            for arm in self.arms:
+                # UVB not yet implemented in PypeIt, so we skip.
+                if arm == "uvb":
+                    continue
+                self._current_arm = arm
+                self._pypeit_flux()
+            self._current_arm = None
+            self.stages_complete['4-pypeit_flux_calib'] = Time.now()
+            self.update_output_file()
 
     def add_raw_frame(self, raw_frame: image.Image):
         arm = self._get_current_arm()
