@@ -1015,9 +1015,8 @@ def fits_table(input_path: str, output_path: str = "", science_only: bool = True
         output.append(data)
         file.close()
 
-    output.sort(key=lambda a: a['identifier'])
-
-    out_file = Table.read(output, format="ascii.csv")
+    out_file = Table(output)
+    out_file.sort(keys="identifier")
     out_file.write(output_path, format="ascii.csv")
 
     return out_file
