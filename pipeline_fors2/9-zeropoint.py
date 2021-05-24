@@ -344,7 +344,8 @@ def main(epoch,
                               "zeropoint_err": float(best_zeropoint["zeropoint_err"]),
                               "airmass": float(best_zeropoint["airmass"]),
                               "airmass_err": float(best_zeropoint["airmass_err"]),
-                              "type": str(best_zeropoint["type"])}
+                              "type": str(best_zeropoint["type"]),
+                              "catalogue": str(best_zeropoint["cat"])}
         output_dict = {f + '_zeropoints': zeropoints}
         p.add_output_values(obj=epoch, instrument='FORS2', params=output_dict)
 
@@ -407,7 +408,7 @@ if __name__ == '__main__':
                         type=float)
     parser.add_argument('--pixel_tolerance',
                         help='Search tolerance for matching objects, in FORS2 (g) pixels.',
-                        default=10.,
+                        default=4.,
                         type=float)
 
     args = parser.parse_args()
