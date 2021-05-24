@@ -270,9 +270,10 @@ def plot_galaxy(fig: plt.figure, data_title: str, instrument: str, f: str, ra: f
                 image_name: str = 'astrometry_image',
                 object_name: str = None, ticks: int = None, interval: str = 'minmax',
                 show_coords=True,
-                reverse_y=False):
+                reverse_y=False,
+                show_frb=False, ellipse_colour: str = 'white', ):
     instrument = instrument.lower()
-    instruments = {'fors2': 'FORS2', 'imacs': 'IMACS', 'xshooter': 'X-shooter', 'gmos': 'GMOS'}
+    instruments = {'fors2': 'FORS2', 'imacs': 'IMACS', 'xshooter': 'X-shooter', 'gmos': 'GMOS', 'hubble': 'Hubble Space Telescope'}
 
     if instrument == 'imacs':
         f_0 = f
@@ -329,6 +330,38 @@ def plot_galaxy(fig: plt.figure, data_title: str, instrument: str, f: str, ra: f
                                   show_coords=show_coords,
                                   reverse_y=reverse_y)
 
+    burst_name = data_title[:data_title.find("_")]
+    name = burst_name[3:]
+    burst_properties = p.object_params_frb(burst_name)
+    burst_ra = burst_properties['burst_ra']
+    burst_dec = burst_properties['burst_dec']
+
+    if show_frb is True:
+        show_frb = 'quadrature'
+
+    if show_frb == 'all':
+        # Statistical
+        a, b, theta = am.calculate_error_ellipse(burst_properties, error='statistical')
+        plot_gal_params(hdu=hdu_cut, ras=[burst_ra], decs=[burst_dec], a=[a],
+                        b=[b],
+                        theta=[-theta], colour=ellipse_colour, line_style='-')
+        # Systematic
+        a, b, theta = am.calculate_error_ellipse(burst_properties, error='systematic')
+        plot_gal_params(hdu=hdu_cut, ras=[burst_ra], decs=[burst_dec], a=[a],
+                        b=[b],
+                        theta=[-theta], colour=ellipse_colour, line_style='--')
+        # Quadrature
+        a, b, theta = am.calculate_error_ellipse(burst_properties, error='quadrature')
+        plot_gal_params(hdu=hdu_cut, ras=[burst_ra], decs=[burst_dec], a=[a],
+                        b=[b],
+                        theta=[-theta], colour=ellipse_colour, line_style=':')
+
+    elif show_frb is not False:
+        a, b, theta = am.calculate_error_ellipse(burst_properties, error=show_frb)
+        plot_gal_params(hdu=hdu_cut, ras=[burst_ra], decs=[burst_dec], a=[a],
+                        b=[b],
+                        theta=[-theta], colour=ellipse_colour, line_style='-')
+
     return plot, hdu_cut
 
 
@@ -359,9 +392,6 @@ def plot_hg(data_title: str, instrument: str, f: str, frame: int,
     hg_ra = burst_properties['hg_ra']
     hg_dec = burst_properties['hg_dec']
 
-    burst_ra = burst_properties['burst_ra']
-    burst_dec = burst_properties['burst_dec']
-
     ang_size_distance = burst_properties['ang_size_distance']
 
     if show_name:
@@ -375,7 +405,8 @@ def plot_hg(data_title: str, instrument: str, f: str, frame: int,
                                 vmax=vmax,
                                 show_grid=show_grid,
                                 show_filter=show_filter, image_name=image_name, show_instrument=show_instrument,
-                                object_name=object_name, ticks=ticks, show_coords=show_coords, reverse_y=reverse_y)
+                                object_name=object_name, ticks=ticks, show_coords=show_coords, reverse_y=reverse_y,
+                                show_frb=show_frb, ellipse_colour=ellipse_colour)
 
     if show_z:
         if reverse_y:
@@ -397,32 +428,6 @@ def plot_hg(data_title: str, instrument: str, f: str, frame: int,
                          colour=bar_colour, spread=frame / 10, reverse_y=reverse_y, frame=frame)
         else:
             raise ValueError('Bar position not recognised.')
-
-    if show_frb is True:
-        show_frb = 'quadrature'
-
-    if show_frb == 'all':
-        # Statistical
-        a, b, theta = am.calculate_error_ellipse(burst_properties, error='statistical')
-        plot_gal_params(hdu=hdu_cut, ras=[burst_ra], decs=[burst_dec], a=[a],
-                        b=[b],
-                        theta=[-theta], colour=ellipse_colour, line_style='-')
-        # Systematic
-        a, b, theta = am.calculate_error_ellipse(burst_properties, error='systematic')
-        plot_gal_params(hdu=hdu_cut, ras=[burst_ra], decs=[burst_dec], a=[a],
-                        b=[b],
-                        theta=[-theta], colour=ellipse_colour, line_style='--')
-        # Quadrature
-        a, b, theta = am.calculate_error_ellipse(burst_properties, error='quadrature')
-        plot_gal_params(hdu=hdu_cut, ras=[burst_ra], decs=[burst_dec], a=[a],
-                        b=[b],
-                        theta=[-theta], colour=ellipse_colour, line_style=':')
-
-    elif show_frb is not False:
-        a, b, theta = am.calculate_error_ellipse(burst_properties, error=show_frb)
-        plot_gal_params(hdu=hdu_cut, ras=[burst_ra], decs=[burst_dec], a=[a],
-                        b=[b],
-                        theta=[-theta], colour=ellipse_colour, line_style='-')
 
         # burst_x, burst_y = wcs_cut.all_world2pix(burst_ra, burst_dec, 0)
         # plt.scatter(burst_x, burst_y)
