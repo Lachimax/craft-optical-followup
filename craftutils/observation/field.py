@@ -22,6 +22,7 @@ config = p.config
 
 instruments_imaging = ["vlt-fors2", "vlt-xshooter", "mgb-imacs", "panstarrs"]
 instruments_spectroscopy = ["vlt-fors2", "vlt-xshooter"]
+surveys = ["panstarrs"]
 
 
 def select_instrument(mode: str):
@@ -280,12 +281,18 @@ class Field:
         else:
             raise ValueError("mode must be 'imaging' or 'spectroscopy'.")
         new_params = cls.default_params()
-        new_params["name"] = u.user_input("Please enter a name for the epoch.")
+        if instrument in surveys:
+            new_params["name"] = instrument.upper()
+            new_params["date"] = None
+            new_params["program_id"] = None
+            survey = True
+        else:
+            new_params["name"] = u.user_input("Please enter a name for the epoch.")
+            new_params["date"] = u.enter_time(message="Enter UTC observation date, in iso or isot format:")
+            new_params["program_id"] = input("Enter the programmme ID for the observation:\n")
         new_params["instrument"] = instrument
-        new_params["date"] = u.enter_time(message="Enter UTC observation date, in iso or isot format:")
-        new_params["program_id"] = input("Enter the programmme ID for the observation:\n")
         new_params["data_path"] = self._epoch_data_path(mode=mode, instrument=instrument, date=new_params["date"],
-                                                        epoch_name=new_params["name"])
+                                                        epoch_name=new_params["name"], survey=survey)
         param_path = self._epoch_param_path(mode=mode, instrument=instrument, epoch_name=new_params["name"])
 
         p.save_params(file=param_path, dictionary=new_params)
@@ -322,9 +329,12 @@ class Field:
     def _epoch_param_path(self, mode: str, instrument: str, epoch_name: str):
         return os.path.join(self._instrument_param_path(mode=mode, instrument=instrument), f"{epoch_name}.yaml")
 
-    def _epoch_data_path(self, mode: str, instrument: str, date: Time, epoch_name: str):
-        path = os.path.join(self._instrument_data_path(mode=mode, instrument=instrument),
-                            f"{date.to_datetime().date()}-{epoch_name}")
+    def _epoch_data_path(self, mode: str, instrument: str, date: Time, epoch_name: str, survey: bool = False):
+        if survey:
+            path = self._instrument_data_path(mode=mode, instrument=instrument)
+        else:
+            path = os.path.join(self._instrument_data_path(mode=mode, instrument=instrument),
+                                f"{date.to_datetime().date()}-{epoch_name}")
         u.mkdir_check(path)
         return path
 
@@ -435,9 +445,10 @@ class FRBField(Field):
 
         # Check data_dir path for relevant .yamls (output_values, etc.)
 
+        print("from_file", param_dict["centre"])
         centre_ra, centre_dec = p.select_coords(param_dict["centre"])
         frb = objects.FRB.from_dict(param_dict["frb"])
-
+        print("from_file", centre_ra, centre_dec)
         return cls(name=name,
                    centre_coords=f"{centre_ra} {centre_dec}",
                    param_path=param_file,
@@ -898,8 +909,8 @@ class ImagingEpoch(Epoch):
     def guess_data_path(self):
         if self.data_path is None and self.field is not None and self.field.data_path is not None and \
                 self.instrument is not None and self.date is not None:
-            self.data_path = os.path.join(self.field.data_path, "imaging", self.instrument.upper(),
-                                          self.date.isot + self.name)
+            self.data_path = os.path.join(self.field.data_path, "imaging", self.instrument,
+                                          f"{self.date.isot}-{self.name}")
         return self.data_path
 
     @classmethod
@@ -943,8 +954,10 @@ class ImagingEpoch(Epoch):
                        program_id=param_dict["program_id"],
                        target=param_dict["obj"]
                        )
-        else:
+        elif sub_cls is FORS2ImagingEpoch:
             return sub_cls.from_file(param_dict, name=name, old_format=old_format, field=field)
+        else:
+            return sub_cls.from_file(param_dict, name=name, field=field)
 
     @classmethod
     def default_params(cls):
@@ -1006,7 +1019,8 @@ class PanSTARRSImagingEpoch(ImagingEpoch):
     # TODO: Automatic cutout download; don't worry for now.
 
     def pipeline(self, **kwargs):
-        super().pipeline()
+        super().pipeline(**kwargs)
+        self.proc_0_download()
 
     def proc_0_download(self):
         if self.query_stage("Download data table from PanSTARRS1 archive?", stage='0-download'):
@@ -1016,12 +1030,13 @@ class PanSTARRSImagingEpoch(ImagingEpoch):
                 self.update_output_file()
 
     def retrieve(self):
-        if self.field is not None and type(self.field) is Field:
+        if self.field is not None and isinstance(self.field, Field):
             coord = self.field.centre_coords
+            print(coord)
             ra = coord.ra.value
             dec = coord.dec.value
-            output = os.path.join(self.data_path, "PANSTARRS")
-            table = retrieve.save_mast_photometry(ra=ra, dec=dec, output=self.data_path, cat="panstarrs")
+            output = os.path.join(self.data_path, f"panstarrs_{self.field.name}.csv")
+            table = retrieve.save_mast_photometry(ra=ra, dec=dec, output=output, cat="panstarrs")
             self.set_path("cat_path", output)
             return table
         else:
@@ -1032,7 +1047,7 @@ class PanSTARRSImagingEpoch(ImagingEpoch):
 
     def guess_data_path(self):
         if self.data_path is None and self.field is not None and self.field.data_path is not None:
-            self.data_path = os.path.join(self.field.data_path, "imaging", "PANSTARRS")
+            self.data_path = os.path.join(self.field.data_path, "imaging", "panstarrs")
         return self.data_path
 
     @classmethod
