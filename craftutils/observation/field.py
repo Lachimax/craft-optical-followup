@@ -941,7 +941,7 @@ class ImagingEpoch(Epoch):
                        instrument=instrument,
                        date=param_dict['date'],
                        program_id=param_dict["program_id"],
-                       obj=param_dict["obj"]
+                       target=param_dict["obj"]
                        )
         else:
             return sub_cls.from_file(param_dict, name=name, old_format=old_format, field=field)
@@ -1074,10 +1074,10 @@ class ESOImagingEpoch(ImagingEpoch):
 
     def pipeline(self, **kwargs):
         super().pipeline(**kwargs)
-        self.proc_0_download()
+        self.proc_0_raw()
         self.proc_1_initial_setup()
 
-    def proc_0_download(self, do: list = None):
+    def proc_0_raw(self, do: list = None):
         if self.query_stage("Download raw data from ESO archive?", stage='0-download'):
             r = self.retrieve()
             if r:
@@ -1221,23 +1221,20 @@ class SpectroscopyEpoch(Epoch):
                                       os.listdir(pypeit_science_dir)).__next__()
         std_reduced_path = os.path.join(pypeit_science_dir, std_reduced_filename)
         print(f"Using {std_reduced_path} for fluxing.")
+
         sensfunc_path = os.path.join(pypeit_run_dir, "sens.fits")
         # Generate sensitivity function from standard observation
-        spec.pypeit_sensfunc(spec1dfile=std_reduced_path, outfile=sensfunc_path)
+        spec.pypeit_sensfunc(spec1dfile=std_reduced_path)  # , outfile=sensfunc_path)
         # Generate flux setup file.
         spec.pypeit_flux_setup(sci_path=pypeit_science_dir, run_dir=pypeit_run_dir)
         flux_setup_path = os.path.join(pypeit_run_dir, f"{self._instrument_pypeit}.flux")
-
         # Insert name of sensitivity file to flux setup file.
         with open(flux_setup_path, "r") as flux_setup:
             flux_lines = flux_setup.readlines()
         file_first = flux_lines.index("flux read\n") + 1
         flux_lines[file_first] = flux_lines[file_first][:-1] + " " + sensfunc_path + "\n"
-        # Delete flux setup file for rewriting.
-        os.remove(flux_setup_path)
-        # Rewrite modified .flux file.
-        with open(flux_setup_path, "w") as flux_setup:
-            flux_setup.writelines(flux_lines)
+        # Write back to file.
+        u.write_list_to_file(path=flux_setup_path, file=flux_lines)
         # Run pypeit_flux_calib
         os.system(f"pypeit_flux_calib {flux_setup_path}")
 
@@ -1512,19 +1509,16 @@ class ESOSpectroscopyEpoch(SpectroscopyEpoch):
                 self.stages_complete['0-download'] = Time.now()
                 self.update_output_file()
 
-    def proc_1_initial_setup(self):
-        if self.query_stage("Do initial setup of files?", stage='1-initial_setup'):
-            self._path_0_raw()
-            m_path = os.path.join(self.paths["raw_dir"], "M")
-            u.mkdir_check(m_path)
-            os.system(f"mv {os.path.join(self.paths['raw_dir'], 'M.')}* {m_path}")
-            ff.fits_table_all(input_path=self.paths["raw_dir"],
-                              output_path=os.path.join(self.data_path, f"{self.name}_fits_table_science.csv"))
-            ff.fits_table_all(input_path=self.paths["raw_dir"],
-                              output_path=os.path.join(self.data_path, f"{self.name}_fits_table_all.csv"),
-                              science_only=False)
-            self.stages_complete['1-initial_setup'] = Time.now()
-            self.update_output_file()
+    def _initial_setup(self):
+        self._path_0_raw()
+        m_path = os.path.join(self.paths["raw_dir"], "M")
+        u.mkdir_check(m_path)
+        os.system(f"mv {os.path.join(self.paths['raw_dir'], 'M.')}* {m_path}")
+        ff.fits_table_all(input_path=self.paths["raw_dir"],
+                          output_path=os.path.join(self.data_path, f"{self.name}_fits_table_science.csv"))
+        ff.fits_table_all(input_path=self.paths["raw_dir"],
+                          output_path=os.path.join(self.data_path, f"{self.name}_fits_table_all.csv"),
+                          science_only=False)
 
     def retrieve(self):
         """
