@@ -20,7 +20,7 @@ import craftutils.fits_files as ff
 
 config = p.config
 
-instruments_imaging = ["vlt-fors2", "vlt-xshooter", "mgb-imacs"]
+instruments_imaging = ["vlt-fors2", "vlt-xshooter", "mgb-imacs", "panstarrs"]
 instruments_spectroscopy = ["vlt-fors2", "vlt-xshooter"]
 
 
@@ -590,8 +590,14 @@ class Epoch:
         self.do = _check_do_list(self.do)
 
     def proc_1_initial_setup(self):
-        do = self.query_stage("Do initial setup of files?", stage='1-initial_setup')
-        return do
+        if self.query_stage("Do initial setup of files?", stage='1-initial_setup'):
+            self._initial_setup()
+            self.stages_complete['1-initial_setup'] = Time.now()
+            self.update_output_file()
+        return
+
+    def _initial_setup(self):
+        pass
 
     def _path_0_raw(self):
         if self.data_path is not None and "raw_dir" not in self.paths:
