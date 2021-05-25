@@ -22,8 +22,8 @@ from craftutils import utils as u
 
 keys = p.keys()
 fors2_filters_retrievable = ["I_BESS", "R_SPEC", "b_HIGH", "v_HIGH"]
-photometry_catalogues = ['DES', 'SDSS', 'SkyMapper', 'PANSTARRS']
-mast_catalogues = ['panstarrs']
+photometry_catalogues = ['DES', 'SDSS', 'SkyMapper', 'PanSTARRS1']
+mast_catalogues = ['panstarrs1']
 
 
 def cat_columns(cat, f: str = None):
@@ -54,7 +54,7 @@ def cat_columns(cat, f: str = None):
                 'ra': f"raj2000",
                 'dec': f"dej2000",
                 'class_star': f"class_star_SkyMapper"}
-    elif cat == 'panstarrs':
+    elif cat == 'panstarrs1':
         f = f.lower()
         return {'mag_psf': f"{f}PSFMag",
                 'mag_psf_err': f"{f}PSFMagErr",
@@ -81,8 +81,8 @@ def update_std_photometry(ra: float, dec: float, cat: str):
         return update_std_sdss_photometry(ra=ra, dec=dec)
     elif cat == 'skymapper':
         return update_std_skymapper_photometry(ra=ra, dec=dec)
-    elif cat == 'panstarrs':
-        return update_std_mast_photometry(ra=ra, dec=dec, cat="panstarrs")
+    elif cat == 'panstarrs1':
+        return update_std_mast_photometry(ra=ra, dec=dec, cat="panstarrs1")
     else:
         raise ValueError("Catalogue name not recognised.")
 
@@ -1077,9 +1077,9 @@ def retrieve_skymapper_cutout(ra: float, dec: float):
 
 
 mast_url = "https://catalogs.mast.stsci.edu/api/v0.1/"
-catalogue_filters = {"panstarrs": ["g", "r", "i", "z", "y"],
+catalogue_filters = {"panstarrs1": ["g", "r", "i", "z", "y"],
                      "gaia": []}
-catalogue_columns = {"panstarrs": ["objID", "qualityFlag", "raStack", "decStack", "raStackErr", "decStackErr",
+catalogue_columns = {"panstarrs1": ["objID", "qualityFlag", "raStack", "decStack", "raStackErr", "decStackErr",
                                    "{:s}PSFMag", "{:s}PSFMagErr", "{:s}ApMag", "{:s}ApMagErr",
                                    "{:s}KronMag", "{:s}KronMagErr", "{:s}psfLikelihood"],
                      "gaia": ["astrometric_primary_flag",
@@ -1094,7 +1094,7 @@ catalogue_columns = {"panstarrs": ["objID", "qualityFlag", "raStack", "decStack"
                               ]}
 
 
-def construct_columns(cat="panstarrs"):
+def construct_columns(cat="panstarrs1"):
     cat = cat.lower()
     columns = catalogue_columns[cat]
     filters = catalogue_filters[cat]
@@ -1109,7 +1109,7 @@ def construct_columns(cat="panstarrs"):
     return columns_build
 
 
-def retrieve_mast_photometry(ra: float, dec: float, cat: str = "panstarrs", release="dr2", table="stack"):
+def retrieve_mast_photometry(ra: float, dec: float, cat: str = "panstarrs1", release="dr2", table="stack"):
     print(f"\nQuerying {cat} {release} archive for field centring on RA={ra}, DEC={dec}")
     cat = cat.lower()
     url = f"{mast_url}{cat}/{release}/{table}.csv"
@@ -1122,7 +1122,7 @@ def retrieve_mast_photometry(ra: float, dec: float, cat: str = "panstarrs", rele
         return text
 
 
-def save_mast_photometry(ra: float, dec: float, output: str, cat: str = "panstarrs"):
+def save_mast_photometry(ra: float, dec: float, output: str, cat: str = "panstarrs1"):
     response = retrieve_mast_photometry(ra=ra, dec=dec, cat=cat)
     if response == "ERROR":
         return response
@@ -1136,7 +1136,7 @@ def save_mast_photometry(ra: float, dec: float, output: str, cat: str = "panstar
     return response
 
 
-def update_std_mast_photometry(ra: float, dec: float, cat: str = "panstarrs", force: bool = False):
+def update_std_mast_photometry(ra: float, dec: float, cat: str = "panstarrs1", force: bool = False):
     cat = cat.lower()
     data_dir = p.config['top_data_dir']
     field_path = f"{data_dir}/std_fields/RA{ra}_DEC{dec}/"
@@ -1167,7 +1167,7 @@ def update_std_mast_photometry(ra: float, dec: float, cat: str = "panstarrs", fo
 
 # TODO: A lot of basically repeated code here. Might be good to consolidate it somehow.
 
-def update_frb_mast_photometry(frb: str, cat: str = "panstarrs", force: bool = False):
+def update_frb_mast_photometry(frb: str, cat: str = "panstarrs1", force: bool = False):
     """
     Retrieve MAST photometry for the field of an FRB (with a valid param file in param_dir), in a 0.2 deg radius cone
     centred on the FRB coordinates, and download it to the appropriate data directory.
