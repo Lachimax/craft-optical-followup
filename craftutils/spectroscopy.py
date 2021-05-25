@@ -33,14 +33,22 @@ def run_pypeit(pypeit_file: str, redux_path: str, do_not_reuse_masters: bool = F
     print(system_str)
 
 
-def pypeit_sensfunc(spec1dfile: str, outfile: str):
-    system_str = f"pypeit_sensfunc {spec1dfile} -o {outfile}"
+def pypeit_sensfunc(spec1dfile: str, outfile: str = None, run_dir: str = None):
+    cwd = ""
+    if run_dir is not None:
+        cwd = os.getcwd()
+        os.chdir(run_dir)
+    system_str = f"pypeit_sensfunc {spec1dfile}"
+    if outfile is not None:
+        system_str += f" -o {outfile}"
     print()
     print(system_str)
     print()
     os.system(system_str)
     print()
     print(system_str)
+    if run_dir is not None:
+        os.chdir(cwd)
 
 
 def pypeit_flux_setup(sci_path: str, run_dir: str = None):
