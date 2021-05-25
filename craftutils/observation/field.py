@@ -980,10 +980,81 @@ class ImagingEpoch(Epoch):
         instrument = instrument.lower()
         if instrument == "vlt-fors2":
             return FORS2ImagingEpoch
+        if instrument == "panstarrs":
+            return PanSTARRSImagingEpoch
         elif instrument in instruments_imaging:
             return ImagingEpoch
         else:
             raise ValueError(f"Unrecognised instrument {instrument}")
+
+
+class PanSTARRSImagingEpoch(ImagingEpoch):
+
+    def __init__(self,
+                 name: str = None,
+                 field: Union[str, Field] = None,
+                 param_path: str = None,
+                 data_path: str = None,
+                 ):
+        self.instrument = "panstarrs"
+        super().__init__(name=name,
+                         field=field,
+                         param_path=param_path,
+                         data_path=data_path,
+                         )
+
+    # TODO: Automatic cutout download; don't worry for now.
+
+    def pipeline(self, **kwargs):
+        super().pipeline()
+
+    def proc_0_download(self):
+        if self.query_stage("Download data table from PanSTARRS1 archive?", stage='0-download'):
+            r = self.retrieve()
+            if r:
+                self.stages_complete['0-download'] = Time.now()
+                self.update_output_file()
+
+    def retrieve(self):
+        if self.field is not None and type(self.field) is Field:
+            coord = self.field.centre_coords
+            ra = coord.ra.value
+            dec = coord.dec.value
+            output = os.path.join(self.data_path, "PANSTARRS")
+            table = retrieve.save_mast_photometry(ra=ra, dec=dec, output=self.data_path, cat="panstarrs")
+            self.set_path("cat_path", output)
+            return table
+        else:
+            raise ValueError("self.field must be set, and must be a Field object, for retrieve to operate.")
+
+    def _initial_setup(self):
+        pass
+
+    def guess_data_path(self):
+        if self.data_path is None and self.field is not None and self.field.data_path is not None:
+            self.data_path = os.path.join(self.field.data_path, "imaging", "PANSTARRS")
+        return self.data_path
+
+    @classmethod
+    def stages(cls):
+        param_dict = super().stages()
+        param_dict.update({"0-download": None,
+                           })
+        return param_dict
+
+    @classmethod
+    def from_file(cls, param_file: Union[str, dict], name: str = None, field: Field = None):
+        name, param_file, param_dict = _params_init(param_file)
+        if param_dict is None:
+            raise FileNotFoundError(f"No parameter file found at {param_file}.")
+
+        if field is None:
+            field = param_dict["field"]
+
+        return cls(name=name,
+                   field=field,
+                   param_path=param_file,
+                   data_path=param_dict['data_path'])
 
 
 class ESOImagingEpoch(ImagingEpoch):
