@@ -56,23 +56,6 @@ def list_fields_old():
     return fields
 
 
-def _params_init(param_file: Union[str, dict]):
-    if type(param_file) is str:
-        # Load params from .yaml at path.
-        param_file = u.sanitise_file_ext(filename=param_file, ext="yaml")
-        param_dict = p.load_params(file=param_file)
-        if param_dict is None:
-            return None, None, None  # raise FileNotFoundError(f"No parameter file found at {param_file}.")
-        name = u.get_filename(path=param_file, include_ext=False)
-        param_dict["param_path"] = param_file
-    else:
-        param_dict = param_file
-        name = param_dict["name"]
-        param_file = param_dict["param_path"]
-
-    return name, param_file, param_dict
-
-
 def _retrieve_eso_epoch(epoch: Union['ESOImagingEpoch', 'ESOSpectroscopyEpoch'], path: str):
     if epoch.program_id is None:
         epoch.set_program_id(input("A program ID is required to retrieve ESO data. Enter here:\n"))
@@ -159,6 +142,7 @@ class Field:
         self.mkdir_params()
         self.data_path = data_path
         self.mkdir()
+        self.output_file = None
 
         # Derived attributes
 
@@ -166,6 +150,11 @@ class Field:
         self.epochs_spectroscopy_loaded = {}
         self.epochs_imaging = {}
         self.epochs_imaging_loaded = {}
+
+        self.paths = {}
+        self.cats = {}
+
+        self.load_output_file()
 
     def __str__(self):
         return f"{self.name}"
@@ -316,6 +305,14 @@ class Field:
         else:
             raise ValueError(f"data_path is not set for {self}.")
 
+    def _cat_data_path(self, cat: str):
+        if self.data_path is not None:
+            filename = f"{cat}_{self.name}.csv"
+            path = os.path.join(self.data_path, filename)
+            return path
+        else:
+            raise ValueError(f"data_path is not set for {self}.")
+
     def _instrument_param_path(self, mode: str, instrument: str):
         path = os.path.join(self._mode_param_path(mode=mode), instrument)
         u.mkdir_check(path)
@@ -338,6 +335,55 @@ class Field:
         u.mkdir_check(path)
         return path
 
+    def retrieve_photometry_surveys(self, force_update: bool = False):
+        self.retrieve_photometry_panstarrs1(force_update=force_update)
+
+    def retrieve_photometry_panstarrs1(self, force_update: bool = False):
+        return self.retrieve_photometry_mast(cat="panstarrs1", force_update=force_update)
+
+    def retrieve_photometry_mast(self, cat: str, force_update: bool = False):
+        output = self._cat_data_path(cat=cat)
+        self.set_path(f"cat_csv_{cat}", output)
+        ra = self.centre_coords.ra.value
+        dec = self.centre_coords.dec.value
+        if force_update or f"in_{cat}" not in self.cats:
+            response = retrieve.save_mast_photometry(ra=ra, dec=dec, output=output, cat="panstarrs1", radius=0.3)
+            if response != "ERROR":
+                if response is not None:
+                    self.cats[f"in_{cat}"] = True
+                else:
+                    self.cats[f"in_{cat}"] = False
+                self.update_output_file()
+            return response
+        elif self.cats[f"in_{cat}"] is True:
+            print(f"There is already {cat} data present for this field.")
+            return True
+        else:
+            print(f"This field is not present in {cat}.")
+
+    def get_path(self, key):
+        if key in self.paths:
+            return self.paths[key]
+        else:
+            raise KeyError(f"{key} has not been set.")
+
+    def set_path(self, key, value):
+        self.paths[key] = value
+
+    def load_output_file(self):
+        outputs = p.load_output_file(self)
+        if "cats" in outputs:
+            self.cats.update(outputs["cats"])
+
+    def _output_dict(self):
+        return {
+            "paths": self.paths,
+            "cats": self.cats,
+        }
+
+    def update_output_file(self):
+        p.update_output_file(self)
+
     @classmethod
     def default_params(cls):
         default_params = {"name": None,
@@ -350,7 +396,7 @@ class Field:
 
     @classmethod
     def from_file(cls, param_file: Union[str, dict]):
-        name, param_file, param_dict = _params_init(param_file)
+        name, param_file, param_dict = p.params_init(param_file)
         if param_file is None:
             return None
         # Check data_dir path for relevant .yamls (output_values, etc.)
@@ -441,14 +487,12 @@ class FRBField(Field):
 
     @classmethod
     def from_file(cls, param_file: Union[str, dict]):
-        name, param_file, param_dict = _params_init(param_file)
+        name, param_file, param_dict = p.params_init(param_file)
 
         # Check data_dir path for relevant .yamls (output_values, etc.)
 
-        print("from_file", param_dict["centre"])
         centre_ra, centre_dec = p.select_coords(param_dict["centre"])
         frb = objects.FRB.from_dict(param_dict["frb"])
-        print("from_file", centre_ra, centre_dec)
         return cls(name=name,
                    centre_coords=f"{centre_ra} {centre_dec}",
                    param_path=param_file,
@@ -588,8 +632,6 @@ class Epoch:
         self.frames_science = []
         self.frames_dark = []
 
-        self.load_output_file()
-
     def pipeline(self, **kwargs):
         self._pipeline_init()
 
@@ -605,7 +647,6 @@ class Epoch:
             self._initial_setup()
             self.stages_complete['1-initial_setup'] = Time.now()
             self.update_output_file()
-        return
 
     def _initial_setup(self):
         pass
@@ -615,36 +656,21 @@ class Epoch:
             self.paths["raw_dir"] = os.path.join(self.data_path, epoch_stage_dirs["0-download"])
 
     def load_output_file(self):
-        if self.output_file is None:
-            if self.data_path is not None and self.name is not None:
-                self.output_file = os.path.join(self.data_path, f"{self.name}_outputs.yaml")
-                outputs = p.load_params(file=self.output_file)
-                if outputs is not None:
-                    self.stages_complete.update(outputs["stages"])
-                    if "paths" in outputs:
-                        self.paths.update(outputs["paths"])
-                return outputs
-            else:
-                return False
-        else:
-            return True
+        outputs = p.load_output_file(self)
+        if type(outputs) is dict:
+            self.stages_complete.update(outputs["stages"])
+        return outputs
 
     def _output_dict(self):
+        science_frame_paths = list(map(lambda f: f.path, self.frames_science))
         return {
             "stages": self.stages_complete,
             "paths": self.paths,
+            "frames_science": science_frame_paths
         }
 
     def update_output_file(self):
-        if self.output_file is not None:
-            param_dict = p.load_params(self.output_file)
-            if param_dict is None:
-                param_dict = {}
-            # For each of these, check if None first.
-            param_dict.update(self._output_dict())
-            p.save_params(dictionary=param_dict, file=self.output_file)
-        else:
-            raise ValueError("Output could not be saved to file due to lack of valid output path.")
+        p.update_output_file(self)
 
     def check_done(self, stage: str):
         if stage not in self.stages_complete:
@@ -792,6 +818,7 @@ class ImagingEpoch(Epoch):
         super().__init__(name=name, field=field, param_path=param_path, data_path=data_path, instrument=instrument,
                          date=date, program_id=program_id, target=target)
         self.guess_data_path()
+        self.filters = []
 
     def _initial_setup(self):
         data_dir = self.data_path
@@ -913,6 +940,19 @@ class ImagingEpoch(Epoch):
                                           f"{self.date.isot}-{self.name}")
         return self.data_path
 
+    def _output_dict(self):
+        output_dict = super()._output_dict()
+        output_dict.update({"filters": self.filters,
+                            })
+        return output_dict
+
+    def load_output_file(self):
+        outputs = super().load_output_file()
+        if "frames_science" in outputs:
+            for frame in outputs["frames_science"]:
+                cls = image.ImagingImage.select_child_class(instrument=self.instrument)
+                self.frames_science.append(cls(path=frame))
+
     @classmethod
     def stages(cls):
         stages = super().stages()
@@ -933,7 +973,7 @@ class ImagingEpoch(Epoch):
     @classmethod
     def from_file(cls, param_file: Union[str, dict], old_format: bool = False, field: Field = None):
 
-        name, param_file, param_dict = _params_init(param_file)
+        name, param_file, param_dict = p.params_init(param_file)
 
         if old_format:
             instrument = "vlt-fors2"
@@ -994,14 +1034,14 @@ class ImagingEpoch(Epoch):
         if instrument == "vlt-fors2":
             return FORS2ImagingEpoch
         if instrument == "panstarrs":
-            return PanSTARRSImagingEpoch
+            return PanSTARRS1ImagingEpoch
         elif instrument in instruments_imaging:
             return ImagingEpoch
         else:
             raise ValueError(f"Unrecognised instrument {instrument}")
 
 
-class PanSTARRSImagingEpoch(ImagingEpoch):
+class PanSTARRS1ImagingEpoch(ImagingEpoch):
 
     def __init__(self,
                  name: str = None,
@@ -1009,57 +1049,88 @@ class PanSTARRSImagingEpoch(ImagingEpoch):
                  param_path: str = None,
                  data_path: str = None,
                  ):
-        self.instrument = "panstarrs"
         super().__init__(name=name,
                          field=field,
                          param_path=param_path,
                          data_path=data_path,
                          )
+        self.instrument = "panstarrs"
+        self.load_output_file()
+        if isinstance(field, Field):
+            self.field.retrieve_photometry_panstarrs1()
 
     # TODO: Automatic cutout download; don't worry for now.
 
     def pipeline(self, **kwargs):
         super().pipeline(**kwargs)
         self.proc_0_download()
+        self.proc_1_initial_setup()
+        self.proc_2_source_extraction()
+        self.proc_3_photometric_calibration()
+        self.read_photometry()
 
     def proc_0_download(self):
-        if self.query_stage("Download data table from PanSTARRS1 archive?", stage='0-download'):
-            r = self.retrieve()
-            if r:
-                self.stages_complete['0-download'] = Time.now()
-                self.update_output_file()
+        # Retrieve imaging from PanSTARRS
+        pass
 
-    def retrieve(self):
-        if self.field is not None and isinstance(self.field, Field):
-            coord = self.field.centre_coords
-            print(coord)
-            ra = coord.ra.value
-            dec = coord.dec.value
-            output = os.path.join(self.data_path, f"panstarrs_{self.field.name}.csv")
-            table = retrieve.save_mast_photometry(ra=ra, dec=dec, output=output, cat="panstarrs")
-            self.set_path("cat_path", output)
-            return table
-        else:
-            raise ValueError("self.field must be set, and must be a Field object, for retrieve to operate.")
+    def proc_2_source_extraction(self):
+        if self.query_stage("Do source extraction?", stage='2-source_extraction'):
+            for img in self.frames_science:
+                source_extraction_path = os.path.join(self.data_path, "2-source_extraction")
+                u.mkdir_check(source_extraction_path)
+                self.set_path("source_extraction_dir", source_extraction_path)
+                img.source_extraction_psf(output_dir=source_extraction_path)
+
+    def proc_3_photometric_calibration(self):
+        if self.query_stage("Do photometric calibration?", stage="3-photometric_calibration"):
+            calib_dir = os.path.join(self.data_path, "3-photometric_calibration")
+            u.mkdir_check(calib_dir)
+            for img in self.frames_science:
+                img.zeropoint(cat_path=self.field.get_path("cat_csv_panstarrs1"),
+                              output_path=os.path.join(calib_dir, img.name),
+                              cat_name="PanSTARRS1",
+                              image_name="PanSTARRS Cutout",
+                              pix_tol=4.
+                              )
+
 
     def _initial_setup(self):
-        pass
+        imaging_dir = os.path.join(self.data_path, "0-imaging")
+        self.set_path("imaging_dir", imaging_dir)
+        # Write a table of fits files from the 0-imaging directory.
+        table_path_all = os.path.join(self.data_path, f"{self.name}_fits_table_all.csv")
+        self.set_path("fits_table", table_path_all)
+        ff.fits_table_all(input_path=imaging_dir, output_path=table_path_all, science_only=False)
+        for file in filter(lambda f: f.endswith(".fits"), os.listdir(imaging_dir)):
+            path = os.path.join(imaging_dir, file)
+            img = image.PanSTARRS1Cutout(path=path)
+            img.get_filter()
+            if img not in self.frames_science:
+                self.frames_science.append(img)
+            if img.filter not in self.filters:
+                self.filters.append(img.filter)
 
     def guess_data_path(self):
         if self.data_path is None and self.field is not None and self.field.data_path is not None:
-            self.data_path = os.path.join(self.field.data_path, "imaging", "panstarrs")
+            self.data_path = os.path.join(self.field.data_path, "imaging", "panstarrs1")
         return self.data_path
+
+    def read_photometry(self):
+        for img in self.frames_science:
+            img.plot_apertures()
 
     @classmethod
     def stages(cls):
         param_dict = super().stages()
         param_dict.update({"0-download": None,
+                           "2-source_extraction": None,
+                           "3-photometric_calibration": None
                            })
         return param_dict
 
     @classmethod
     def from_file(cls, param_file: Union[str, dict], name: str = None, field: Field = None):
-        name, param_file, param_dict = _params_init(param_file)
+        name, param_file, param_dict = p.params_init(param_file)
         if param_dict is None:
             raise FileNotFoundError(f"No parameter file found at {param_file}.")
 
@@ -1128,7 +1199,7 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
             if name is None:
                 raise ValueError("name must be provided for old_format=True.")
             param_file = cls.convert_old_params(epoch_name=name)
-        name, param_file, param_dict = _params_init(param_file)
+        name, param_file, param_dict = p.params_init(param_file)
         if param_dict is None:
             raise FileNotFoundError(f"No parameter file found at {param_file}.")
 
@@ -1232,7 +1303,7 @@ class SpectroscopyEpoch(Epoch):
     def _pypeit_flux(self):
         pypeit_run_dir = self.get_path("pypeit_run_dir")
         pypeit_science_dir = os.path.join(pypeit_run_dir, "Science")
-        std_reduced_filename = filter(lambda f: "spec1d" in f and "STD" in f and f.endswith(".fits"),
+        std_reduced_filename = filter(lambda f: "spec1d" in f and "STD,FLUX" in f and f.endswith(".fits"),
                                       os.listdir(pypeit_science_dir)).__next__()
         std_reduced_path = os.path.join(pypeit_science_dir, std_reduced_filename)
         print(f"Using {std_reduced_path} for fluxing.")
@@ -1381,6 +1452,9 @@ class SpectroscopyEpoch(Epoch):
     def proc_3_pypeit_run(self, do_not_reuse_masters=False):
         return self.query_stage("Run PypeIt?", stage='3-pypeit_run')
 
+    def proc_5_pypeit_coadd(self):
+        pass
+
     def _path_2_pypeit(self):
         if self.data_path is not None and "pypeit_dir" not in self.paths:
             self.paths["pypeit_dir"] = os.path.join(self.data_path, epoch_stage_dirs["2-pypeit"])
@@ -1456,7 +1530,7 @@ class SpectroscopyEpoch(Epoch):
 
     @classmethod
     def from_file(cls, param_file: Union[str, dict], field: Field = None):
-        name, param_file, param_dict = _params_init(param_file)
+        name, param_file, param_dict = p.params_init(param_file)
         if param_dict is None:
             raise FileNotFoundError(f"No parameter file found at {param_file}.")
         instrument = param_dict["instrument"].lower()
@@ -1515,6 +1589,7 @@ class ESOSpectroscopyEpoch(SpectroscopyEpoch):
         self.proc_2_pypeit_setup()
         self.proc_3_pypeit_run(do_not_reuse_masters=do_not_reuse_masters)
         self.proc_4_pypeit_flux()
+        self.proc_5_pypeit_coadd()
 
     def proc_0_raw(self):
         if self.query_stage("Download raw data from ESO archive?", stage='0-download'):
@@ -1672,6 +1747,9 @@ class XShooterSpectroscopyEpoch(ESOSpectroscopyEpoch):
         self._pypeit_sorted_file = {"uvb": None,
                                     "vis": None,
                                     "nir": None}
+        self._pypeit_coadd1d_file = {"uvb": None,
+                                    "vis": None,
+                                    "nir": None}
         self._pypeit_user_param_start = {"uvb": None,
                                          "vis": None,
                                          "nir": None}
@@ -1778,7 +1856,7 @@ class XShooterSpectroscopyEpoch(ESOSpectroscopyEpoch):
                 # self.set_path("pypeit_dir_std", std_path)
                 # self.set_path("pypeit_file_std",
                 #              os.path.join(self.get_path("pypeit_run_dir"), f"vlt_xshooter_{arm}_std.pypeit"))
-                self.write_pypeit_file_std()
+                # self.write_pypeit_file_std()
             self._current_arm = None
             self.stages_complete['2-pypeit_setup'] = Time.now()
             self.update_output_file()
@@ -1816,6 +1894,17 @@ class XShooterSpectroscopyEpoch(ESOSpectroscopyEpoch):
             self._current_arm = None
             self.stages_complete['4-pypeit_flux_calib'] = Time.now()
             self.update_output_file()
+
+    def proc_5_pypeit_coadd(self):
+        if self.query_stage("Coadd 1D spectra with PypeIt?", stage='5-pypeit_coadd'):
+            for arm in self.arms:
+                self._current_arm = arm
+                run_dir = self.get_path("pypeit_dir")
+                coadd_file_path = os.path.join(run_dir, f"{self._instrument_pypeit}_{arm}.coadd1d")
+                self.set_path("pypeit_coadd1d_file", coadd_file_path)
+                with open()
+
+            self._current_arm = None
 
     def add_raw_frame(self, raw_frame: image.Image):
         arm = self._get_current_arm()
@@ -1858,6 +1947,8 @@ class XShooterSpectroscopyEpoch(ESOSpectroscopyEpoch):
             return self._pypeit_file[arm]
         else:
             raise KeyError("pypeit_run_dir has not been set.")
+
+
 
     def get_path(self, key):
         key = self._get_key_arm(key)
@@ -1921,6 +2012,12 @@ class XShooterSpectroscopyEpoch(ESOSpectroscopyEpoch):
 
     def _get_pypeit_file_std(self):
         return self._pypeit_file_std[self._get_current_arm()]
+
+    def _set_pypeit_coadd1d_file(self, lines: list):
+        self._pypeit_coadd1d_file[self._get_current_arm()] = lines
+
+    def _get_pypeit_coadd1d_file(self):
+        return self._pypeit_coadd1d_file[self._get_current_arm()]
 
     def _get_key_arm(self, key):
         arm = self._get_current_arm()

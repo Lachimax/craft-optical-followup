@@ -1016,7 +1016,6 @@ def fits_table(input_path: str, output_path: str = "", science_only: bool = True
         file.close()
 
     out_file = Table(output)
-    out_file.sort(keys="identifier")
     out_file.write(output_path, format="ascii.csv")
 
     return out_file
@@ -1070,8 +1069,6 @@ def fits_table_all(input_path: str, output_path: str = "", science_only: bool = 
         elif not science_only:
             output.append(data)
         file.close()
-
-    output.sort(key=lambda a: a['ARCFILE'])
 
     out_file = Table(output)
     out_file.write(output_path, format="ascii.csv")

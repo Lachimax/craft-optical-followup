@@ -1080,8 +1080,8 @@ mast_url = "https://catalogs.mast.stsci.edu/api/v0.1/"
 catalogue_filters = {"panstarrs1": ["g", "r", "i", "z", "y"],
                      "gaia": []}
 catalogue_columns = {"panstarrs1": ["objID", "qualityFlag", "raStack", "decStack", "raStackErr", "decStackErr",
-                                   "{:s}PSFMag", "{:s}PSFMagErr", "{:s}ApMag", "{:s}ApMagErr",
-                                   "{:s}KronMag", "{:s}KronMagErr", "{:s}psfLikelihood"],
+                                    "{:s}PSFMag", "{:s}PSFMagErr", "{:s}ApMag", "{:s}ApMagErr",
+                                    "{:s}KronMag", "{:s}KronMagErr", "{:s}psfLikelihood"],
                      "gaia": ["astrometric_primary_flag",
                               "ra", "ra_error", "dec", "dec_error",
                               "b",
@@ -1109,11 +1109,17 @@ def construct_columns(cat="panstarrs1"):
     return columns_build
 
 
-def retrieve_mast_photometry(ra: float, dec: float, cat: str = "panstarrs1", release="dr2", table="stack"):
+def retrieve_mast_photometry(ra: float, dec: float, cat: str = "panstarrs1", release="dr2", table="stack",
+                             radius: float = 0.1):
+    if cat == "panstarrs1":
+        cat_str = "panstarrs"
+    else:
+        cat_str = cat
     print(f"\nQuerying {cat} {release} archive for field centring on RA={ra}, DEC={dec}")
     cat = cat.lower()
-    url = f"{mast_url}{cat}/{release}/{table}.csv"
-    request = {'ra': ra, 'dec': dec, 'radius': 0.1, 'columns': construct_columns(cat=cat)}
+    url = f"{mast_url}{cat_str}/{release}/{table}.csv"
+    print(url)
+    request = {'ra': ra, 'dec': dec, 'radius': radius, 'columns': construct_columns(cat=cat)}
     response = requests.get(url, params=request)
     text = response.text
     if text == '':
@@ -1122,8 +1128,9 @@ def retrieve_mast_photometry(ra: float, dec: float, cat: str = "panstarrs1", rel
         return text
 
 
-def save_mast_photometry(ra: float, dec: float, output: str, cat: str = "panstarrs1"):
-    response = retrieve_mast_photometry(ra=ra, dec=dec, cat=cat)
+def save_mast_photometry(ra: float, dec: float, output: str, cat: str = "panstarrs1", radius: float = 0.1):
+    response = retrieve_mast_photometry(ra=ra, dec=dec, cat=cat, radius=radius)
+    print(response)
     if response == "ERROR":
         return response
     elif response is not None:
@@ -1131,6 +1138,8 @@ def save_mast_photometry(ra: float, dec: float, output: str, cat: str = "panstar
         print(f"Saving {cat} photometry to {output}")
         with open(output, "w") as file:
             file.write(response)
+    elif "404 Not Found" in response:
+        return "ERROR"
     else:
         print(f'No data retrieved from {cat}.')
     return response

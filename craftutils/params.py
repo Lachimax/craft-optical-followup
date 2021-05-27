@@ -124,6 +124,7 @@ def yaml_to_json(yaml_file: str, output: str = None, quiet: bool = False):
 
 config = check_for_config()
 param_path = u.check_trailing_slash(config['param_dir'])
+project_path = u.check_trailing_slash(config['proj_dir'])
 
 
 def path_or_params_obj(obj: Union[dict, str], instrument: str = 'FORS2', quiet: bool = False):
@@ -683,6 +684,69 @@ def keys():
     else:
         raise FileNotFoundError(f"keys.json does not exist at param_path={param_path}. "
                                 f"Please make a copy from {os.path.join(config['proj_dir'], 'param', 'keys.json')}")
+
+
+def path_to_config_sextractor_config_pre_psfex():
+    return os.path.join(path_to_config_psfex(), "pre-psfex.sex")
+
+
+def path_to_config_sextractor_config():
+    return os.path.join(path_to_config_psfex(), "psf-fit.sex")
+
+
+def path_to_config_sextractor_param_pre_psfex():
+    return os.path.join(path_to_config_psfex(), "pre-psfex.param")
+
+
+def path_to_config_sextractor_param():
+    return os.path.join(path_to_config_psfex(), "psf-fit.param")
+
+
+def path_to_config_psfex():
+    return os.path.join(project_path, "param", "psfex")
+
+
+def params_init(param_file: Union[str, dict]):
+    if type(param_file) is str:
+        # Load params from .yaml at path.
+        param_file = u.sanitise_file_ext(filename=param_file, ext="yaml")
+        param_dict = load_params(file=param_file)
+        if param_dict is None:
+            return None, None, None  # raise FileNotFoundError(f"No parameter file found at {param_file}.")
+        name = u.get_filename(path=param_file, include_ext=False)
+        param_dict["param_path"] = param_file
+    else:
+        param_dict = param_file
+        name = param_dict["name"]
+        param_file = param_dict["param_path"]
+
+    return name, param_file, param_dict
+
+
+def load_output_file(obj):
+    if obj.data_path is not None and obj.name is not None:
+        obj.output_file = os.path.join(obj.data_path, f"{obj.name}_outputs.yaml")
+        outputs = load_params(file=obj.output_file)
+        if outputs is not None:
+            if "paths" in outputs:
+                obj.paths.update(outputs["paths"])
+        return outputs
+    else:
+        raise ValueError("Insufficient information to find output file; data_path and name must be set.")
+
+
+def update_output_file(obj):
+    if obj.output_file is not None:
+        param_dict = load_params(obj.output_file)
+        if param_dict is None:
+            param_dict = {}
+        # For each of these, check if None first.
+        print(param_dict)
+        print(obj._output_dict())
+        param_dict.update(obj._output_dict())
+        save_params(dictionary=param_dict, file=obj.output_file)
+    else:
+        raise ValueError("Output could not be saved to file due to lack of valid output path.")
 
 
 

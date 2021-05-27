@@ -2,6 +2,7 @@
 import copy
 import os
 import math
+import shutil
 from typing import Union, List
 from copy import deepcopy
 from datetime import datetime as dt
@@ -327,8 +328,8 @@ def determine_zeropoint_sextractor(sextractor_cat_path: str,
                                    cat_mag_col: str = 'WAVG_MAG_PSF_',
                                    sex_ra_col='ALPHA_SKY',
                                    sex_dec_col='DELTA_SKY',
-                                   sex_x_col: str = 'X_IMAGE',
-                                   sex_y_col: str = 'Y_IMAGE',
+                                   sex_x_col: str = 'XPSF_IMAGE',
+                                   sex_y_col: str = 'YPSF_IMAGE',
                                    pix_tol: float = 10.,
                                    flux_column: str = 'FLUX_PSF',
                                    flux_err_column: str = 'FLUXERR_PSF',
@@ -382,6 +383,13 @@ def determine_zeropoint_sextractor(sextractor_cat_path: str,
 
     image, path = ff.path_or_hdu(hdu=image)
     params['image_path'] = str(path)
+
+    print("Running zeropoint determination, with:")
+    print('SExtractor catalogue path:', sextractor_cat_path)
+    print('Image path:', path)
+    print('Catalogue path:', cat_path)
+    print('Output:', output_path)
+    print()
 
     u.mkdir_check(output_path)
 
@@ -928,7 +936,7 @@ def zeropoint_science_field(epoch: str,
             cat_zeropoint_err = 0.
 
             if cat_name.lower() != "sextractor":
-                cat_path = f"{frb_properties['data_dir']}/{cat_name}/{cat_name}.csv"
+                cat_path = os.path.join(f"{frb_properties['data_dir']}", f"{cat_name}", f"{cat_name}.csv")
                 column_names = r.cat_columns(cat=cat_name, f=f_0)
                 cat_ra_col = column_names['ra']
                 cat_dec_col = column_names['dec']
@@ -955,12 +963,6 @@ def zeropoint_science_field(epoch: str,
             sextractor_path = paths[f_0 + '_cat_path']
 
             exp_time = ff.get_exp_time(image_path)
-
-            print('SExtractor catalogue path:', sextractor_path)
-            print('Image path:', image_path)
-            print('Catalogue path:', cat_path)
-            print('Output:', output_path)
-            print()
 
             print(cat_zeropoint)
 
@@ -1726,7 +1728,7 @@ def insert_synthetic_point_sources_psfex(image: np.ndarray, x: np.float, y: np.f
         source = table.Table(rows=[row], names=('x_0', 'y_0', 'flux'))
         print('Convolving...')
         add = ph.datasets.make_model_sources_image(shape=image.shape, model=gaussian_model, source_table=source)
-        kernel = convolution.CustomKernel(psfex(model=model, x=source['x_0'], y=source['y_0']))
+        kernel = convolution.CustomKernel(load_psfex(model=model, x=source['x_0'], y=source['y_0']))
         add = convolution.convolve(add, kernel)
 
         combine += add
@@ -1746,7 +1748,7 @@ def insert_synthetic_point_sources_psfex(image: np.ndarray, x: np.float, y: np.f
     return combine, sources
 
 
-def psfex(model: str, x, y):
+def load_psfex(model: str, x, y):
     """
     Since PSFEx generates a model that is dependent on image position, this is used to collapse that into a useable kernel
     for convolution purposes.
@@ -2233,3 +2235,65 @@ def intensity_radius(image, centre_x, centre_y, noise: float = None, limit: floa
             intensities.append(np.mean(pixels))
 
     return radii, np.array(intensities)
+
+
+def source_extractor(image_path: str,
+                     output_dir: str = None,
+                     configuration_file: str = None,
+                     parameters_file: str = None,
+                     catalog_name: str = None,
+                     copy_params: bool = True,
+                     **configs):
+    """
+    :param configs: Any source-extractor (sextractor) parameter, normally read via the config file but that can be
+    overridden by passing to the shell command, can be given here.
+    """
+    old_dir = os.getcwd()
+    if output_dir is None:
+        output_dir = os.getcwd()
+    else:
+        os.chdir(output_dir)
+
+    if copy_params:
+        os.system(f"cp {os.path.join(p.path_to_config_psfex(), '*')} .")
+
+    sys_str = "source-extractor "
+    sys_str += image_path + " "
+    if configuration_file is not None:
+        sys_str += f" -c {configuration_file}"
+    if catalog_name is None:
+        image_name = os.path.split(image_path)[-1]
+        catalog_name = f"{image_name}.cat"
+    sys_str += f" -CATALOG_NAME {catalog_name}"
+    if parameters_file is not None:
+        sys_str += f" -PARAMETERS_NAME {parameters_file}"
+    for param in configs:
+        sys_str += f" -{param.upper()} {configs[param]}"
+    print()
+    print(sys_str)
+    print()
+    os.system(sys_str)
+    print()
+    print(sys_str)
+    print()
+    catalog_path = os.path.join(output_dir, catalog_name)
+    os.chdir(old_dir)
+    return catalog_path
+
+
+def psfex(catalog: str, output_name: str = None, output_dir: str = None):
+    old_dir = os.getcwd()
+    if output_dir is None:
+        output_dir = os.getcwd()
+    else:
+        os.chdir(output_dir)
+    if output_name is None:
+        cat_name = os.path.split(catalog)[-1]
+        output_name = cat_name.replace(".fits", ".psf")
+    sys_str = f"psfex {catalog} -o {output_name}"
+    print(f"\n{sys_str}\n")
+    os.system(sys_str)
+    print(f"\n{sys_str}\n")
+    os.chdir(old_dir)
+    psfex_path = os.path.join(output_dir, output_name)
+    return psfex_path
