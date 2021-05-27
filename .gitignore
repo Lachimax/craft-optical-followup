@@ -117,6 +117,9 @@ pyraf/clcache\.v2
 *.DS_Store
 *.gitignore~
 
+*.fits
+*.par
+
 /param/keys*
 /param/config.yaml
 /param/config.json
