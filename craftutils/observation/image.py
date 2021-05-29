@@ -19,6 +19,9 @@ from craftutils.retrieve import cat_columns
 
 
 class Image:
+    header_keys = {"exposure_time": "EXPTIME",
+                   "noise_read": "RON",
+                   "gain": "GAIN"}
     def __init__(self, path: str = None, frame_type: str = None, instrument: str = None):
         self.path = path
         self.output_path = path.replace(".fits", "_outputs.yaml")
@@ -27,7 +30,16 @@ class Image:
         self.hdu_list = None
         self.frame_type = frame_type
         self.headers = None
+        self.data = None
         self.instrument = instrument
+
+        # Header attributes
+        self.exposure_time = None
+        self.gain = None
+        self.noise_read = None
+        self.n_x = None
+        self.n_y = None
+        self.n_pix = None
 
     def __eq__(self, other):
         return self.name == other.name
@@ -65,24 +77,42 @@ class Image:
         else:
             print("Headers already loaded.")
 
-    def get_header_item(self, key: str, ext: int = 0):
-        self.load_headers()
-        if key in self.headers[ext]:
-            return self.headers[ext][key]
+    def load_data(self, force: bool = False):
+        if self.data is None or force:
+            self.open()
+            self.data = list(map(lambda h: h.data, self.hdu_list))
+            self.close()
+        else:
+            print("Data already loaded.")
 
     def get_id(self):
         return self.filename[:self.filename.find(".fits")]
 
+    def extract_header_item(self, key: str, ext: int = 0):
+        self.load_headers()
+        if key in self.headers[ext]:
+            return self.headers[ext][key]
+
     def extract_gain(self):
-        self.gain = self.get_header_item("GAIN") * units.electron / units.adu
+        key = self.header_keys["gain"]
+        self.gain = self.extract_header_item(key) * units.electron / units.adu
         return self.gain
 
     def extract_exposure_time(self):
-        self.exposure_time = self.get_header_item("EXPTIME") * units.second
+        key = self.header_keys["exposure_time"]
+        self.exposure_time = self.extract_header_item(key) * units.second
+        return self.exposure_time
 
     def extract_noise_read(self):
-        self.noise_read = self.get_header_item("HIERARCH CELL.READNOISE") * units
+        key = self.header_keys["noise_read"]
+        self.noise_read = self.extract_header_item(key) * units.electron / units.pixel
+        return self.noise_read
 
+    def extract_n_pix(self, ext: int = 0):
+        self.load_data()
+        self.n_y, self.n_x = self.data[ext].shape()
+        self.n_pix = self.n_y * self.n_x
+        return self.n_pix
 
 
 
@@ -101,8 +131,8 @@ class ImagingImage(Image):
 
         self.fwhm_pix_psfex = None
         self.fwhm_psfex = None
-        self.exposure_time = None
-        self.gain = None
+
+        self.sky_background = None
 
         self.zeropoints = {}
         self.zeropoint_output_paths = {}
@@ -259,6 +289,29 @@ class ImagingImage(Image):
         self.zeropoints[cat_name.lower()] = zp_dict
         self.zeropoint_output_paths[cat_name.lower()] = output_path
 
+    def signal_to_noise(self, flux_target: units.Quantity, n_pix: units.Quantity):
+        flux_target = u.check_quantity(flux_target, units.adu)
+        self.extract_exposure_time()
+        rate_target = flux_target / self.exposure_time
+        rate_sky = self.estimate_sky_background() / self.exposure_time
+        rate_read = self.extract_noise_read() / units.pixel
+
+        ph.signal_to_noise(rate_target=rate_target,
+                           rate_sky=rate_sky,
+                           rate_read=rate_read,
+                           exp_time=self.exposure_time,
+                           gain=self.gain,
+                           n_pix=n_pix
+                           )
+
+    def estimate_sky_background(self, ext: int = 0, force: bool = False):
+        if force or self.sky_background is None:
+            self.load_data()
+            self.sky_background = np.median(self.data[ext]) * units.adu / units.pixel
+        else:
+            print("Sky background already estimated.")
+        return self.sky_background
+
     def plot_apertures(self):
         self.load_source_cat()
         pl.plot_all_params(image=self.path, cat=self.source_cat, kron=True, show=False)
@@ -275,16 +328,20 @@ class ImagingImage(Image):
 
 
 class PanSTARRS1Cutout(ImagingImage):
+    header_keys = super().header_keys
+    header_keys.update({"noise_read": "HIERARCH CELL.READNOISE",
+                        "filter": "HIERARCH FPA.FILTERID"})
+
     def __init__(self, path: str = None):
         super().__init__(path=path)
-        self.get_filter()
+        self.extract_filter()
         self.instrument = "panstarrs1"
         self.exposure_time = None
         self.extract_exposure_time()
 
-    def get_filter(self):
-        self.load_headers()
-        fil_string = self.get_header_item("HIERARCH FPA.FILTERID")
+    def extract_filter(self):
+        key = self.header_keys["filter"]
+        fil_string = self.extract_header_item(key)
         self.filter = fil_string[:fil_string.find(".")]
         self.filter_short = self.filter
 
@@ -298,10 +355,6 @@ class PanSTARRS1Cutout(ImagingImage):
         #    exp_times.append(self.headers[0][key])
 
         self.exposure_time = exp_time  # np.mean(exp_times)
-
-    def extract_gain(self):
-        self.gain = self.get_header_item("HIERARCH CELL.GAIN") * units.electron / units.adu
-        return self.gain
 
 
 class SpecRaw(Image):

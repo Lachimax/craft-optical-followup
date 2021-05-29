@@ -1110,7 +1110,7 @@ class PanSTARRS1ImagingEpoch(ImagingEpoch):
         for file in filter(lambda f: f.endswith(".fits"), os.listdir(imaging_dir)):
             path = os.path.join(imaging_dir, file)
             img = image.PanSTARRS1Cutout(path=path)
-            img.get_filter()
+            img.extract_filter()
             if img not in self.frames_science:
                 self.frames_science.append(img)
             if img.filter not in self.filters:

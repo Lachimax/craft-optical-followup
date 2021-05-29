@@ -2307,14 +2307,21 @@ def signal_to_noise(rate_target: units.Quantity,
                     n_pix: units.Quantity,
                     rate_dark: units.Quantity = 0.0 * (units.electron / (units.second * units.pixel)),
                     ):
-    if not rate_target.unit.is_equivalent(units.adu / units.second):
-        raise units.UnitsError(f"rate_target unit is not equivalent to adu/second: {rate_target.unit}")
-    if not rate_sky.unit.is_equivalent(units.adu / (units.second / units.pixel)):
-        raise units.UnitsError(f"rate_sky unit is not equivalent to adu/second/pixel: {rate_sky.unit}")
-    if not rate_dark.unit.is_equivalent(units.electron / (units.second * units.pixel)):
-        raise units.UnitsError(f"rate_dark unit is not equivalent to electron/second/pixel: {rate_dark.unit}")
-    if not exp_time.unit.is_equivalent(units.second):
-        raise units.UnitsError(f"exp_time is not in units of  time: {exp_time.unit}")
+    """
+    Calculate the signal-to-noise ratio of an observed object using the Howell 1989 formulation.
+    :param rate_target:
+    :param rate_sky:
+    :param rate_read:
+    :param exp_time:
+    :param gain:
+    :param n_pix:
+    :param rate_dark:
+    :return:
+    """
+    rate_target = u.check_quantity(rate_target, units.adu / units.second)
+    rate_sky = u.check_quantity(rate_sky, units.second / units.pixel)
+    rate_dark = u.check_quantity(rate_dark, units.electron / (units.second * units.pixel))
+    exp_time = u.check_quantity(exp_time, units.second)
     snr = rate_target * np.sqrt(exp_time * gain) / np.sqrt(
         rate_target + n_pix * (rate_sky + rate_dark / gain + rate_read ** 2 / exp_time * gain))
     return snr
