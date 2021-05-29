@@ -3,6 +3,7 @@ import warnings
 from typing import Union
 
 import numpy as np
+import matplotlib.pyplot as plt
 
 import astropy.io.fits as fits
 import astropy.table as table
@@ -56,18 +57,33 @@ class Image:
         return {"frame_type": self.frame_type,
                 }
 
-    def load_headers(self):
-        if self.headers is None:
+    def load_headers(self, force: bool = False):
+        if self.headers is None or force:
             self.open()
-            self.headers = []
-            for hdu in self.hdu_list:
-                self.headers.append(hdu.header)
+            self.headers = list(map(lambda h: h.header, self.hdu_list))
             self.close()
         else:
             print("Headers already loaded.")
 
+    def get_header_item(self, key: str, ext: int = 0):
+        self.load_headers()
+        if key in self.headers[ext]:
+            return self.headers[ext][key]
+
     def get_id(self):
         return self.filename[:self.filename.find(".fits")]
+
+    def extract_gain(self):
+        self.gain = self.get_header_item("GAIN") * units.electron / units.adu
+        return self.gain
+
+    def extract_exposure_time(self):
+        self.exposure_time = self.get_header_item("EXPTIME") * units.second
+
+    def extract_noise_read(self):
+        self.noise_read = self.get_header_item("HIERARCH CELL.READNOISE") * units
+
+
 
 
 class ImagingImage(Image):
@@ -86,6 +102,7 @@ class ImagingImage(Image):
         self.fwhm_pix_psfex = None
         self.fwhm_psfex = None
         self.exposure_time = None
+        self.gain = None
 
         self.zeropoints = {}
         self.zeropoint_output_paths = {}
@@ -108,7 +125,7 @@ class ImagingImage(Image):
     def psfex(self, catalog: str, output_dir: str):
         self.psfex_path = ph.psfex(catalog=catalog, output_dir=output_dir)
         self.psfex_output = fits.open(self.psfex_path)
-        self.pixel_scale()
+        self.extract_pixel_scale()
         pix_scale = self.pixel_scale_dec
         self.fwhm_pix_psfex = self.psfex_output[1].header['PSF_FWHM'] * units.pixel
         self.fwhm_psfex = self.fwhm_pix_psfex.to(units.arcsec, pix_scale)
@@ -143,7 +160,7 @@ class ImagingImage(Image):
         if self.source_cat is None:
             self.source_cat = table.Table.read(self.source_cat_path, format="ascii.sextractor")
 
-    def pixel_scale(self, layer: int = 0):
+    def extract_pixel_scale(self, layer: int = 0):
         if self.pixel_scale_ra is None or self.pixel_scale_dec is None:
             self.open()
             self.pixel_scale_ra, self.pixel_scale_dec = ff.get_pixel_scale(self.hdu_list, layer=layer,
@@ -151,14 +168,6 @@ class ImagingImage(Image):
             self.close()
         else:
             warnings.warn("Pixel scale already set.")
-
-    @classmethod
-    def select_child_class(cls, instrument: str):
-        instrument = instrument.lower()
-        if instrument == "panstarrs":
-            return PanSTARRS1Cutout
-        else:
-            raise ValueError(f"Unrecognised instrument {instrument}")
 
     def _output_dict(self):
         outputs = super()._output_dict()
@@ -252,8 +261,17 @@ class ImagingImage(Image):
 
     def plot_apertures(self):
         self.load_source_cat()
-        pl.plot_all_params(image=self.path, cat=self.source_cat, kron=True, show=True)
+        pl.plot_all_params(image=self.path, cat=self.source_cat, kron=True, show=False)
+        plt.title(self.filter)
+        plt.show()
 
+    @classmethod
+    def select_child_class(cls, instrument: str):
+        instrument = instrument.lower()
+        if instrument == "panstarrs":
+            return PanSTARRS1Cutout
+        else:
+            raise ValueError(f"Unrecognised instrument {instrument}")
 
 
 class PanSTARRS1Cutout(ImagingImage):
@@ -262,21 +280,28 @@ class PanSTARRS1Cutout(ImagingImage):
         self.get_filter()
         self.instrument = "panstarrs1"
         self.exposure_time = None
-        self.get_exposure_time()
+        self.extract_exposure_time()
 
     def get_filter(self):
         self.load_headers()
-        fil_string = self.headers[0]["HIERARCH FPA.FILTERID"]
+        fil_string = self.get_header_item("HIERARCH FPA.FILTERID")
         self.filter = fil_string[:fil_string.find(".")]
         self.filter_short = self.filter
 
-    def get_exposure_time(self):
+    def extract_exposure_time(self):
         self.load_headers()
         exp_time_keys = filter(lambda k: k.startswith("EXP_"), self.headers[0])
-        exp_times = []
+        exp_time = 0.
+        # exp_times = []
         for key in exp_time_keys:
-            exp_times.append(self.headers[0][key])
-        self.exposure_time = np.mean(exp_times)
+            exp_time += self.headers[0][key]
+        #    exp_times.append(self.headers[0][key])
+
+        self.exposure_time = exp_time  # np.mean(exp_times)
+
+    def extract_gain(self):
+        self.gain = self.get_header_item("HIERARCH CELL.GAIN") * units.electron / units.adu
+        return self.gain
 
 
 class SpecRaw(Image):

@@ -59,3 +59,11 @@ def pypeit_flux_setup(sci_path: str, run_dir: str = None):
     os.system(f"pypeit_flux_setup {sci_path}")
     if run_dir is not None:
         os.chdir(cwd)
+
+
+def pypeit_coadd_1dspec(coadd1d_file: str):
+    sys_str = f"pypeit_coadd_1dspec {coadd1d_file}"
+    print("\n" + sys_str + "\n")
+    os.system(sys_str)
+    print("\n" + sys_str + "\n")
+

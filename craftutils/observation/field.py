@@ -814,11 +814,13 @@ class ImagingEpoch(Epoch):
                  date: Union[str, Time] = None,
                  program_id: str = None,
                  target: str = None,
+                 source_extractor_config: dict = None,
                  standard_epochs: list = None):
         super().__init__(name=name, field=field, param_path=param_path, data_path=data_path, instrument=instrument,
                          date=date, program_id=program_id, target=target)
         self.guess_data_path()
         self.filters = []
+        self.source_extractor_config = source_extractor_config
 
     def _initial_setup(self):
         data_dir = self.data_path
@@ -992,7 +994,8 @@ class ImagingEpoch(Epoch):
                        instrument=instrument,
                        date=param_dict['date'],
                        program_id=param_dict["program_id"],
-                       target=param_dict["obj"]
+                       target=param_dict["obj"],
+                       source_extractor_config=param_dict['sextractor'],
                        )
         elif sub_cls is FORS2ImagingEpoch:
             return sub_cls.from_file(param_dict, name=name, old_format=old_format, field=field)
@@ -1048,11 +1051,13 @@ class PanSTARRS1ImagingEpoch(ImagingEpoch):
                  field: Union[str, Field] = None,
                  param_path: str = None,
                  data_path: str = None,
+                 source_extractor_config: dict = None
                  ):
         super().__init__(name=name,
                          field=field,
                          param_path=param_path,
                          data_path=data_path,
+                         source_extractor_config=source_extractor_config
                          )
         self.instrument = "panstarrs"
         self.load_output_file()
@@ -1079,7 +1084,9 @@ class PanSTARRS1ImagingEpoch(ImagingEpoch):
                 source_extraction_path = os.path.join(self.data_path, "2-source_extraction")
                 u.mkdir_check(source_extraction_path)
                 self.set_path("source_extraction_dir", source_extraction_path)
-                img.source_extraction_psf(output_dir=source_extraction_path)
+                configs = self.source_extractor_config
+                img.source_extraction_psf(output_dir=source_extraction_path,
+                                          phot_autoparams=f"{configs['kron_factor']},{configs['kron_radius_min']}")
 
     def proc_3_photometric_calibration(self):
         if self.query_stage("Do photometric calibration?", stage="3-photometric_calibration"):
@@ -1092,7 +1099,6 @@ class PanSTARRS1ImagingEpoch(ImagingEpoch):
                               image_name="PanSTARRS Cutout",
                               pix_tol=4.
                               )
-
 
     def _initial_setup(self):
         imaging_dir = os.path.join(self.data_path, "0-imaging")
@@ -1140,7 +1146,8 @@ class PanSTARRS1ImagingEpoch(ImagingEpoch):
         return cls(name=name,
                    field=field,
                    param_path=param_file,
-                   data_path=param_dict['data_path'])
+                   data_path=param_dict['data_path'],
+                   source_extractor_config=param_dict['sextractor'])
 
 
 class ESOImagingEpoch(ImagingEpoch):
@@ -1293,6 +1300,7 @@ class SpectroscopyEpoch(Epoch):
 
         self._pypeit_file = None
         self._pypeit_sorted_file = None
+        self._pypeit_coadd1d_file = None
 
     def proc_4_pypeit_flux(self):
         if self.query_stage("Do fluxing with PypeIt?", stage='4-pypeit_flux_calib'):
@@ -1310,10 +1318,10 @@ class SpectroscopyEpoch(Epoch):
 
         sensfunc_path = os.path.join(pypeit_run_dir, "sens.fits")
         # Generate sensitivity function from standard observation
-        spec.pypeit_sensfunc(spec1dfile=std_reduced_path)  # , outfile=sensfunc_path)
+        spec.pypeit_sensfunc(spec1dfile=std_reduced_path, outfile=sensfunc_path)
         # Generate flux setup file.
         spec.pypeit_flux_setup(sci_path=pypeit_science_dir, run_dir=pypeit_run_dir)
-        flux_setup_path = os.path.join(pypeit_run_dir, f"{self._instrument_pypeit}.flux")
+        flux_setup_path = os.path.join(pypeit_run_dir, self.pypeit_flux_title())
         # Insert name of sensitivity file to flux setup file.
         with open(flux_setup_path, "r") as flux_setup:
             flux_lines = flux_setup.readlines()
@@ -1328,6 +1336,9 @@ class SpectroscopyEpoch(Epoch):
         self.set_path("pypeit_std_reduced", std_reduced_path)
         self.set_path("pypeit_science_dir", pypeit_science_dir)
         self.set_path("pypeit_flux_setup", flux_setup_path)
+
+    def pypeit_flux_title(self):
+        return f"{self._instrument_pypeit}.flux"
 
     def read_pypeit_sorted_file(self):
         if "pypeit_setup_dir" in self.paths and self.paths["pypeit_setup_dir"] is not None:
@@ -1398,19 +1409,24 @@ class SpectroscopyEpoch(Epoch):
             raise ValueError("pypeit_file has not yet been read.")
         return pypeit_file_path
 
-    def add_pypeit_user_param(self, param: list, value: str):
+    def add_pypeit_user_param(self, param: list, value: str, file_type: str = "pypeit"):
         """
         Inserts a parameter for the PypeIt run at the correct point in the stored .pypeit file.
         :param param: For m
         :param value:
         :return:
         """
-        pypeit_file = self._get_pypeit_file()
+        if file_type == "pypeit":
+            pypeit_file = self._get_pypeit_file()
+        elif file_type == "coadd1d":
+            pypeit_file = self._get_pypeit_coadd1d_file()
+        else:
+            raise ValueError(f"file_type {file_type} not recognised.")
         if pypeit_file is not None:
             # Build the final line of the setting specially.
             setting = "\t" * (len(param) - 1) + f"{param.pop()} = {value}\n"
             # First, check if param sub-headings are already there:
-            p_start = pypeit_file.index("[rdx]\n")
+            p_start = pypeit_file.index("# User-defined execution parameters\n") + 1
             insert_here = False
             for i, par in enumerate(param):
                 # Encase each level of the parameter in the correct number of square brackets and tabs.
@@ -1424,7 +1440,11 @@ class SpectroscopyEpoch(Epoch):
             # Insert the final line.
             pypeit_file.insert(p_start, setting)
 
-            self._set_pypeit_file(lines=pypeit_file)
+            if file_type == "pypeit":
+                self._set_pypeit_file(lines=pypeit_file)
+            elif file_type == "coadd1d":
+                self._set_pypeit_coadd1d_file(lines=pypeit_file)
+
         else:
             raise ValueError("pypeit_file has not yet been read.")
 
@@ -1504,6 +1524,12 @@ class SpectroscopyEpoch(Epoch):
 
     def _get_pypeit_file(self):
         return self._pypeit_file
+
+    def _set_pypeit_coadd1d_file(self, lines: list):
+        self._pypeit_coadd1d_file = lines
+
+    def _get_pypeit_coadd1d_file(self):
+        return self._pypeit_coadd1d_file
 
     def _get_pypeit_sorted_file(self):
         return self._pypeit_sorted_file
@@ -1639,8 +1665,6 @@ class FORS2SpectroscopyEpoch(ESOSpectroscopyEpoch):
 
     def pipeline(self, **kwargs):
         super().pipeline(**kwargs)
-        self.proc_4_pypeit_flux()
-        self.proc_5_pypeit_coadd()
 
     def proc_2_pypeit_setup(self):
         if self.query_stage("Do PypeIt setup?", stage='2-pypeit_setup'):
@@ -1748,8 +1772,8 @@ class XShooterSpectroscopyEpoch(ESOSpectroscopyEpoch):
                                     "vis": None,
                                     "nir": None}
         self._pypeit_coadd1d_file = {"uvb": None,
-                                    "vis": None,
-                                    "nir": None}
+                                     "vis": None,
+                                     "nir": None}
         self._pypeit_user_param_start = {"uvb": None,
                                          "vis": None,
                                          "nir": None}
@@ -1884,27 +1908,52 @@ class XShooterSpectroscopyEpoch(ESOSpectroscopyEpoch):
         self._current_arm = None
 
     def proc_4_pypeit_flux(self):
-        if self.query_stage("Do fluxing with PypeIt?", stage='4-pypeit_flux_calib'):
-            for arm in self.arms:
-                # UVB not yet implemented in PypeIt, so we skip.
-                if arm == "uvb":
-                    continue
+        for i, arm in enumerate(self.arms):
+            # UVB not yet implemented in PypeIt, so we skip.
+            if arm == "uvb":
+                continue
+            self._current_arm = arm
+            if self.query_stage(f"Do PypeIt fluxing for {arm.upper()} arm?",
+                                stage=f'4.{i + 1}-pypeit_flux_calib_{arm}'):
                 self._current_arm = arm
                 self._pypeit_flux()
-            self._current_arm = None
-            self.stages_complete['4-pypeit_flux_calib'] = Time.now()
-            self.update_output_file()
+            self.stages_complete[f'4.{i + 1}-pypeit_flux_calib_{arm}'] = Time.now()
+        self._current_arm = None
+        self.update_output_file()
 
     def proc_5_pypeit_coadd(self):
-        if self.query_stage("Coadd 1D spectra with PypeIt?", stage='5-pypeit_coadd'):
-            for arm in self.arms:
-                self._current_arm = arm
-                run_dir = self.get_path("pypeit_dir")
+        for i, arm in enumerate(self.arms):
+            # UVB not yet implemented in PypeIt, so we skip.
+            if arm == "uvb":
+                continue
+            self._current_arm = arm
+            if self.query_stage(f"Do PypeIt coaddition for {arm.upper()} arm?",
+                                stage=f'5.{i + 1}-pypeit_coadd_{arm}'):
+                run_dir = self.get_path("pypeit_run_dir")
                 coadd_file_path = os.path.join(run_dir, f"{self._instrument_pypeit}_{arm}.coadd1d")
                 self.set_path("pypeit_coadd1d_file", coadd_file_path)
-                with open()
+                with open(coadd_file_path) as file:
+                    coadd_file_lines = file.readlines()
+                output_path = os.path.join(run_dir, f"{self.name}_{arm}_coadded.fits")
+                sensfunc_path = self.get_path("pypeit_sensitivity_file")
+                # Remove parameter lines to be re-entered below
+                coadd_file_lines.remove("  coaddfile = YOUR_OUTPUT_FILE_NAME # Please set your output file name\n")
+                coadd_file_lines.remove(
+                    "  sensfuncfile = YOUR_SENSFUNC_FILE # Please set your SENSFUNC file name. Only required for Echelle\n")
+                coadd_file_lines.remove("  wave_method = velocity # creates a uniformly space grid in log10(lambda)\n")
+                # Remove non-science files
+                for line in coadd_file_lines[coadd_file_lines.index("coadd1d read\n"):]:
+                    if "STD,FLUX" in line or "STD,TELLURIC" in line:
+                        coadd_file_lines.remove(line)
 
-            self._current_arm = None
+                self._set_pypeit_coadd1d_file(coadd_file_lines)
+                # Re-insert parameter lines
+                self.add_pypeit_user_param(param=["coadd1d", "coaddfile"], value=output_path, file_type="coadd1d")
+                self.add_pypeit_user_param(param=["coadd1d", "sensfuncfile"], value=sensfunc_path, file_type="coadd1d")
+                self.add_pypeit_user_param(param=["coadd1d", "wave_method"], value="velocity", file_type="coadd1d")
+                u.write_list_to_file(coadd_file_path, self._get_pypeit_coadd1d_file())
+                spec.pypeit_coadd_1dspec(coadd1d_file=coadd_file_path)
+        self._current_arm = None
 
     def add_raw_frame(self, raw_frame: image.Image):
         arm = self._get_current_arm()
@@ -1948,7 +1997,8 @@ class XShooterSpectroscopyEpoch(ESOSpectroscopyEpoch):
         else:
             raise KeyError("pypeit_run_dir has not been set.")
 
-
+    def pypeit_flux_title(self):
+        return f"{self._instrument_pypeit}_{self._get_current_arm()}.flux"
 
     def get_path(self, key):
         key = self._get_key_arm(key)
@@ -2029,12 +2079,15 @@ class XShooterSpectroscopyEpoch(ESOSpectroscopyEpoch):
         param_dict = super().stages()
         param_dict.update({"2-pypeit_setup": None,
                            "3.1-pypeit_run_uvb": None,
-                           "3.1-pypeit_run_uvb_std": None,
                            "3.2-pypeit_run_vis": None,
-                           "3.2-pypeit_run_vis_std": None,
                            "3.3-pypeit_run_nir": None,
-                           "3.3-pypeit_run_nir_std": None,
-                           "4-pypeit_flux_calib": None})
+                           "4.1-pypeit_flux_calib_uvb": None,
+                           "4.2-pypeit_flux_calib_vis": None,
+                           "4.3-pypeit_flux_calib_nir": None,
+                           "5.1-pypeit_coadd_uvb": None,
+                           "5.2-pypeit_coadd_vis": None,
+                           "5.3-pypeit_coadd_nir": None,
+                           })
         return param_dict
 
     def _output_dict(self):

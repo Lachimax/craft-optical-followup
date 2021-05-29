@@ -2297,3 +2297,24 @@ def psfex(catalog: str, output_name: str = None, output_dir: str = None):
     os.chdir(old_dir)
     psfex_path = os.path.join(output_dir, output_name)
     return psfex_path
+
+
+def signal_to_noise(rate_target: units.Quantity,
+                    rate_sky: units.Quantity,
+                    rate_read: units.Quantity,
+                    exp_time: units.Quantity,
+                    gain: units.Quantity,
+                    n_pix: units.Quantity,
+                    rate_dark: units.Quantity = 0.0 * (units.electron / (units.second * units.pixel)),
+                    ):
+    if not rate_target.unit.is_equivalent(units.adu / units.second):
+        raise units.UnitsError(f"rate_target unit is not equivalent to adu/second: {rate_target.unit}")
+    if not rate_sky.unit.is_equivalent(units.adu / (units.second / units.pixel)):
+        raise units.UnitsError(f"rate_sky unit is not equivalent to adu/second/pixel: {rate_sky.unit}")
+    if not rate_dark.unit.is_equivalent(units.electron / (units.second * units.pixel)):
+        raise units.UnitsError(f"rate_dark unit is not equivalent to electron/second/pixel: {rate_dark.unit}")
+    if not exp_time.unit.is_equivalent(units.second):
+        raise units.UnitsError(f"exp_time is not in units of  time: {exp_time.unit}")
+    snr = rate_target * np.sqrt(exp_time * gain) / np.sqrt(
+        rate_target + n_pix * (rate_sky + rate_dark / gain + rate_read ** 2 / exp_time * gain))
+    return snr
