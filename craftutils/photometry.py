@@ -107,7 +107,7 @@ def image_depth_diagnostics(hdu: Union[str, fits.HDUList], fil: str, sextractor:
     cat_dec_col = column_names['dec']
     cat_mag_col = column_names['mag_psf']
 
-    zp = determine_zeropoint_sextractor(sextractor_cat_path=sextractor,
+    zp = determine_zeropoint_sextractor(sextractor_cat=sextractor,
                                         image=file,
                                         cat_path=cat_path,
                                         cat_name=cat_name,
@@ -120,7 +120,7 @@ def image_depth_diagnostics(hdu: Union[str, fits.HDUList], fil: str, sextractor:
                                         sex_dec_col="DELTAPSF_SKY",
                                         sex_x_col='XPSF_IMAGE',
                                         sex_y_col='YPSF_IMAGE',
-                                        pix_tol=5.0,
+                                        dist_tol=5.0,
                                         flux_column="FLUX_PSF",
                                         stars_only=True,
                                         star_class_tol=star_class_tol,
@@ -255,13 +255,20 @@ def gain_median_combine(old_gain: float = 0.8, n_frames: int = 1):
     return 2 * n_frames * old_gain / 3
 
 
-def magnitude_complete(flux: 'float', flux_err: 'float' = 0.0,
-                       exp_time: 'float' = 1., exp_time_err: 'float' = 0.0,
-                       zeropoint: 'float' = 0.0, zeropoint_err: 'float' = 0.0,
-                       airmass: 'float' = 0.0, airmass_err: 'float' = 0.0,
-                       ext: 'float' = 0.0, ext_err: 'float' = 0.0,
-                       colour_term: 'float' = 0.0, colour_term_err: 'float' = 0.0,
-                       colour: 'float' = 0.0, colour_err: 'float' = 0.0):
+def magnitude_complete(flux: units.Quantity,
+                       flux_err: units.Quantity = 0.0 * units.ct,
+                       exp_time: units.Quantity = 1. * units.second,
+                       exp_time_err: units.Quantity = 0.0 * units.second,
+                       zeropoint: units.Quantity = 0.0 * units.mag,
+                       zeropoint_err: units.Quantity = 0.0 * units.mag,
+                       airmass: float = 0.0,
+                       airmass_err: float = 0.0,
+                       ext: units.Quantity = 0.0 * units.mag,
+                       ext_err: units.Quantity = 0.0 * units.mag,
+                       colour_term: float = 0.0,
+                       colour_term_err: float = 0.0,
+                       colour: units.Quantity = 0.0 * units.mag,
+                       colour_err: units.Quantity = 0.0 * units.mag):
     """
     Returns a photometric magnitude and the calculated error.
     :param flux: Total flux of the object over the exposure time, in counts.
@@ -287,14 +294,8 @@ def magnitude_complete(flux: 'float', flux_err: 'float' = 0.0,
 
     magnitude = mag_inst + zeropoint - ext * airmass - colour_term * colour
 
-    # TODO: Since colour will be an array, the below might cause problems. Check this.
-
-    error_extinction = u.error_product(value=ext * airmass,
-                                       measurements=[ext, airmass],
-                                       errors=[ext_err, airmass_err])
-    error_colour = u.error_product(value=colour_term * colour,
-                                   measurements=[colour_term, colour],
-                                   errors=[colour_term_err, colour_err])
+    error_extinction = u.uncertainty_product(ext * airmass, (ext, ext_err), (airmass, airmass_err))
+    error_colour = u.uncertainty_product(colour_term * colour, (colour_term, colour_term_err), (colour, colour_err))
 
     error_plus = mag_error_plus + zeropoint_err + error_extinction + error_colour
     error_minus = mag_error_minus - zeropoint_err - error_extinction - error_colour
@@ -302,21 +303,23 @@ def magnitude_complete(flux: 'float', flux_err: 'float' = 0.0,
     return magnitude, error_plus, error_minus
 
 
-def magnitude_error(flux: 'float', flux_err: 'float' = 0.0,
-                    exp_time: 'float' = 1., exp_time_err: 'float' = 0.0,
-                    absolute: 'bool' = False):
+def magnitude_error(flux: units.Quantity,
+                    flux_err: units.Quantity = 0.0 * units.ct,
+                    exp_time: units.Quantity = 1. * units.second,
+                    exp_time_err: units.Quantity = 0.0 * units.second,
+                    absolute: bool = False):
     flux_per_sec = flux / exp_time
-    error_fps = u.error_product(value=flux_per_sec, measurements=[flux, exp_time], errors=[flux_err, exp_time_err])
-    mag, error_plus, error_minus = u.error_func(arg=flux_per_sec, err=error_fps,
-                                                func=lambda x: -2.5 * np.log10(x),
-                                                absolute=absolute)
+    error_fps = u.uncertainty_product(flux_per_sec, (flux, flux_err), (exp_time, exp_time_err))
+    mag = units.Magnitude(flux_per_sec).value * units.mag
+    error_plus = units.Magnitude(flux_per_sec - error_fps).value * units.mag
+    error_minus = units.Magnitude(flux_per_sec + error_fps).value * units.mag
+    if not absolute:
+        return mag, mag + error_plus, mag - error_minus
+    else:
+        return mag, error_plus, error_minus
 
-    return np.array([mag, error_plus, error_minus])
 
-
-# TODO: Use calculated SNR in magnitude cuts (SNR>3.0, or higher?)
-
-def determine_zeropoint_sextractor(sextractor_cat_path: str,
+def determine_zeropoint_sextractor(sextractor_cat: Union[str, table.QTable],
                                    cat_path: str,
                                    image: Union[str, fits.HDUList],
                                    output_path: str,
@@ -330,25 +333,26 @@ def determine_zeropoint_sextractor(sextractor_cat_path: str,
                                    sex_dec_col='DELTA_SKY',
                                    sex_x_col: str = 'XPSF_IMAGE',
                                    sex_y_col: str = 'YPSF_IMAGE',
-                                   pix_tol: float = 10.,
+                                   dist_tol: units.Quantity = 2 * units.arcsec,
                                    flux_column: str = 'FLUX_PSF',
                                    flux_err_column: str = 'FLUXERR_PSF',
-                                   mag_range_sex_upper: float = 100,
-                                   mag_range_sex_lower: float = -100,
+                                   mag_range_sex_upper: units.Quantity = 100 * units.mag,
+                                   mag_range_sex_lower: units.Quantity = -100 * units.mag,
                                    stars_only: bool = True,
                                    star_class_tol: float = 0.95,
                                    star_class_col: str = 'CLASS_STAR',
                                    exp_time: float = None,
-                                   y_lower: int = 0,
-                                   y_upper: int = 100000,
+                                   y_lower: units.Quantity = 0 * units.pix,
+                                   y_upper: units.Quantity = 100000 * units.pix,
                                    cat_type: str = 'csv',
-                                   cat_zeropoint: float = 0.0,
-                                   cat_zeropoint_err: float = 0.0,
+                                   cat_zeropoint: float = 0.0 * units.mag,
+                                   cat_zeropoint_err: float = 0.0 * units.mag,
                                    latex_plot: bool = False,
-                                   snr_cut: bool = False):
+                                   snr_cut: float = 300.,
+                                   snr_col: str = 'SNR_WIN'):
     """
     This function expects your catalogue to be a .csv.
-    :param sextractor_cat_path:
+    :param sextractor_cat:
     :param cat_path:
     :param image:
     :param cat_name:
@@ -362,7 +366,7 @@ def determine_zeropoint_sextractor(sextractor_cat_path: str,
     :param sex_dec_col:
     :param sex_x_col:
     :param sex_y_col:
-    :param pix_tol:
+    :param dist_tol:
     :param flux_column:
     :param flux_err_column:
     :param mag_range_sex_upper:
@@ -385,7 +389,7 @@ def determine_zeropoint_sextractor(sextractor_cat_path: str,
     params['image_path'] = str(path)
 
     print("Running zeropoint determination, with:")
-    print('SExtractor catalogue path:', sextractor_cat_path)
+    print('SExtractor catalogue path:', sextractor_cat)
     print('Image path:', path)
     print('Catalogue path:', cat_path)
     print('Output:', output_path)
@@ -397,51 +401,57 @@ def determine_zeropoint_sextractor(sextractor_cat_path: str,
         exp_time = ff.get_exp_time(image)
 
     # Extract pixel scales from images.
-    _, pix_scale = ff.get_pixel_scale(image)
+    _, pix_scale = ff.get_pixel_scale(image, astropy_units=True)
     print('PIXEL SCALE:', pix_scale)
     # Get tolerance as angle.
-    tolerance = pix_tol * pix_scale
+    if dist_tol.unit.is_equivalent(units.pix):
+        tolerance = dist_tol.to(units.deg, pix_scale)
+    tolerance = dist_tol
     print('TOLERANCE:', tolerance)
 
     # Import the catalogue of the sky region.
     if cat_type != 'sextractor':
-        cat = table.Table.read(cat_path, format='ascii.csv')
+        cat = table.QTable.read(cat_path, format='ascii.csv')
         cat = cat.filled(fill_value=-999.)
+        cat[cat_ra_col] *= units.deg
+        cat[cat_dec_col] *= units.deg
+        cat[cat_mag_col] *= units.mag
 
     else:
-        cat = table.Table.read(cat_path, format="ascii.sextractor")
+        cat = table.QTable.read(cat_path, format="ascii.sextractor")
 
     if len(cat) == 0:
         raise ValueError("The reference catalogue is empty.")
 
-    params['time'] = str(dt.now().strftime('%Y-%m-%dT%H:%M:%S'))
+    params['time'] = str(time.Time.now())
     params['catalogue'] = str(cat_name)
     params['airmass'] = float(ff.get_airmass(image))
     print('Airmass:', params['airmass'])
-    params['exp_time'] = float(exp_time)
-    params['pix_tol'] = float(pix_tol)
-    params['ang_tol'] = float(tolerance)
+    params['exp_time'] = exp_time = u.check_quantity(exp_time, units.second)
+    params['pix_tol'] = dist_tol
+    params['ang_tol'] = tolerance = u.check_quantity(tolerance, units.deg)
     #    params['mag_cut_min'] = float(mag_range_cat_lower)
     #    params['mag_cut_max'] = float(mag_range_cat_upper)
     params['cat_path'] = str(cat_path)
     params['cat_ra_col'] = str(cat_ra_col)
     params['cat_dec_col'] = str(cat_dec_col)
     params['cat_flux_col'] = str(cat_mag_col)
-    params['sextractor_path'] = str(sextractor_cat_path)
+    params['sextractor_path'] = str(sextractor_cat)
     params['sex_ra_col'] = str(sex_ra_col)
     params['sex_dec_col'] = str(sex_dec_col)
     params['sex_flux_col'] = str(flux_column)
     params['stars_only'] = stars_only
-    params['pix_scale_deg_image'] = float(pix_scale)
-    params['pix_scale_arc_image'] = float(pix_scale * 60 * 60)
-    params['y_lower'] = float(y_lower)
-    params['y_upper'] = float(y_upper)
-    params['cat_zeropoint'] = float(cat_zeropoint)
-    params['cat_zeropoint_err'] = float(cat_zeropoint_err)
+    params['y_lower'] = y_lower
+    params['y_upper'] = y_upper
+    params['cat_zeropoint'] = u.check_quantity(cat_zeropoint, units.mag)
+    params['cat_zeropoint_err'] = u.check_quantity(cat_zeropoint_err, units.mag)
     if stars_only:
         params['star_class_tol'] = float(star_class_tol)
 
-    source_tbl = table.Table.read(sextractor_cat_path, format="ascii.sextractor")
+    if type(sextractor_cat) is str:
+        source_tbl = table.QTable.read(sextractor_cat, format="ascii.sextractor")
+    else:
+        source_tbl = sextractor_cat
 
     source_tbl['mag'], mag_err_plus, mag_err_minus = magnitude_complete(flux=source_tbl[flux_column],
                                                                         flux_err=source_tbl[flux_err_column],
@@ -541,7 +551,6 @@ def determine_zeropoint_sextractor(sextractor_cat_path: str,
     print(sum(np.invert(remove)), 'matches after removing objects in y-exclusion zone')
     params[f'matches_{n_match}_y_exclusion'] = int(sum(np.invert(remove)))
     n_match += 1
-
     remove = remove + (matches['mag'] < mag_range_sex_lower)
     print(sum(np.invert(remove)),
           'matches after removing objects objects with SExtractor mags > ' + str(mag_range_sex_upper))
@@ -553,7 +562,7 @@ def determine_zeropoint_sextractor(sextractor_cat_path: str,
     params[f'matches_{n_match}_sex_mag_upper'] = int(sum(np.invert(remove)))
     n_match += 1
 
-    remove = remove + (matches['SNR_WIN'] < 300)
+    remove = remove + (matches[snr_col] < snr_cut)
     print(sum(np.invert(remove)),
           'matches after removing objects objects with SNR_WIN < 300')
     params[f'matches_{n_match}_snr'] = int(sum(np.invert(remove)))
@@ -607,7 +616,7 @@ def determine_zeropoint_sextractor(sextractor_cat_path: str,
 
     delta = -np.inf
     rmse_prior = np.inf
-    mag_min = np.min(x[x > -98])
+    mag_min = np.min(x[x > -98 * units.mag])
     x_iter = x[:]
     y_iter = y[:]
     y_uncertainty_iter = y_uncertainty[:]
@@ -623,7 +632,7 @@ def determine_zeropoint_sextractor(sextractor_cat_path: str,
     keep = np.ones(x_iter.shape, dtype=bool)
     n = 0
     u.mkdir_check(output_path + "min_mag_iterations/")
-    while (rmse_prior > 1.0 or delta <= 0) and sum(keep) > 3:
+    while (rmse_prior > 1.0 * units.mag or delta <= 0) and sum(keep) > 3:
         x_prior = x_iter
         y_prior = y_iter
         y_uncertainty_prior = y_uncertainty_iter
@@ -652,14 +661,14 @@ def determine_zeropoint_sextractor(sextractor_cat_path: str,
 
         delta = rmse_this - rmse_prior
 
-        mag_min += 0.1
+        mag_min += 0.1 * units.mag
 
         print("Iterating min cat mag:", mag_min, rmse_prior, delta)
 
         rmse_prior = rmse_this
         n += 1
 
-    mag_min -= 0.1
+    mag_min -= 0.1 * units.mag
 
     x = x_prior
     y = y_prior
@@ -667,7 +676,7 @@ def determine_zeropoint_sextractor(sextractor_cat_path: str,
     weights = weights_prior
     matches = matches_prior
 
-    params["mag_cut_min"] = float(mag_min)
+    params["mag_cut_min"] = mag_min
     print(len(x), f'matches after iterating minimum mag ({mag_min})')
     params[f'matches_{n_match}_min_cut'] = int(len(x))
     n_match += 1
@@ -713,14 +722,14 @@ def determine_zeropoint_sextractor(sextractor_cat_path: str,
 
         delta = rmse_this - rmse_prior
 
-        mag_max -= 0.1
+        mag_max -= 0.1 * units.mag
         rmse_prior = rmse_this
 
         print("Iterating max cat mag:", mag_max, rmse_prior, delta)
 
         n += 1
 
-    mag_max += 0.1
+    mag_max += 0.1 * units.mag
 
     x = x_prior
     y = y_prior
@@ -728,7 +737,7 @@ def determine_zeropoint_sextractor(sextractor_cat_path: str,
     weights = weights_prior
     matches = matches_prior
 
-    params["mag_cut_max"] = float(mag_max)
+    params["mag_cut_max"] = mag_max
     print(len(x), f'matches after iterating maximum mag ({mag_max})')
     params[f'matches_{n_match}_mag_cut'] = int(len(x))
     n_match += 1
@@ -743,7 +752,7 @@ def determine_zeropoint_sextractor(sextractor_cat_path: str,
 
     plt.plot(x, line_free, c='red', label='Line of best fit')
     plt.scatter(x, y, c='blue')
-    plt.errorbar(x, y, yerr=y_uncertainty, linestyle="None")
+#    plt.errorbar(x, y, yerr=y_uncertainty, linestyle="None")
     plt.plot(x, line_fixed, c='green', label='Fixed slope = 1')
     plt.legend()
     plt.suptitle("Magnitude Comparisons")
@@ -758,19 +767,20 @@ def determine_zeropoint_sextractor(sextractor_cat_path: str,
     print("FIXED:", fitted_fixed)
     print("RMSE:", rmse)
 
-    params["zeropoint_raw"] = float(-fitted_fixed.intercept)
-    params["rmse_raw"] = float(rmse)
+    params["zeropoint_raw"] = -fitted_fixed.intercept
+    params["rmse_raw"] = rmse * units.mag
     params["free_fit"] = [float(fitted_free.intercept.value), float(fitted_free.slope.value)]
 
     or_fitter = fitting.FittingWithOutlierRemoval(fitter, sigma_clip, niter=1, sigma=2.0)
 
-    fitted_clipped, mask = or_fitter(linear_model_fixed, x, y, weights=weights)
-    fitted_free_clipped, free_mask = or_fitter(linear_model_free, x, y, weights=weights)
+    #print(type(linear_model_fixed), type(x), type(y), type(weights))
+    fitted_clipped, mask = or_fitter(linear_model_fixed, x.value, y.value, weights=weights.value)
+    fitted_free_clipped, free_mask = or_fitter(linear_model_free, x.value, y.value, weights=weights.value)
 
-    line_clipped = fitted_clipped(x)
+    line_clipped = fitted_clipped(x.value)
     line_clipped = line_clipped[~mask]
 
-    line_free_clipped = fitted_free_clipped(x)
+    line_free_clipped = fitted_free_clipped(x.value)
     line_free_clipped = line_free_clipped[~free_mask]
 
     y_clipped = y[~mask]
@@ -784,7 +794,7 @@ def determine_zeropoint_sextractor(sextractor_cat_path: str,
 
     plt.plot(x_free_clipped, line_free_clipped, c='red', label='Line of best fit')
     plt.scatter(x_clipped, y_clipped, c='blue')
-    plt.errorbar(x_clipped, y_clipped, yerr=y_uncertainty_clipped, linestyle="None")
+    # plt.errorbar(x_clipped, y_clipped, yerr=y_uncertainty_clipped, linestyle="None")
     plt.plot(x_clipped, line_clipped, c='green', label='Fixed slope = 1')
     plt.legend()
     plt.suptitle("Magnitude Comparisons")
@@ -803,15 +813,16 @@ def determine_zeropoint_sextractor(sextractor_cat_path: str,
         return None
 
     print("CLIPPED:", fitted_clipped)
-    rmse = u.root_mean_squared_error(model_values=line_clipped, obs_values=y_clipped, weights=weights_clipped)
+    rmse = u.root_mean_squared_error(model_values=line_clipped * units.mag,
+                                     obs_values=y_clipped, weights=weights_clipped)
     print("RMSE:", rmse)
 
     matches_final = matches[~mask]
 
     params["free_fit_clipped"] = [float(fitted_free_clipped.intercept.value), float(fitted_free_clipped.slope.value)]
-    params['rmse_clipped'] = float(rmse)
-    params['zeropoint'] = float(-fitted_clipped.intercept)
-    params['zeropoint_err'] = float(params['rmse_clipped'] + cat_zeropoint_err)
+    params['rmse_clipped'] = rmse
+    params['zeropoint'] = float(-fitted_clipped.intercept) * units.mag
+    params['zeropoint_err'] = cat_zeropoint_err + params['rmse_clipped']
 
     #     if latex_plot:
     #         plot_params = p.plotting_params()
@@ -856,7 +867,7 @@ def determine_zeropoint_sextractor(sextractor_cat_path: str,
 
     matches_final.write(output_path + "matches.csv", format='ascii.csv')
     u.rm_check(output_path + 'parameters.yaml')
-    p.add_params(file=output_path + 'parameters.yaml', params=params)
+    p.add_params(file=output_path + 'parameters.yaml', params=params, skip_json=True)
 
     print('Zeropoint - kx: ' + str(params['zeropoint']) + ' +/- ' + str(
         params['zeropoint_err']))
@@ -972,7 +983,7 @@ def zeropoint_science_field(epoch: str,
                 u.mkdir_check(os.path.join(output_path, "chip_2"))
 
                 print('Chip 1:')
-                up = determine_zeropoint_sextractor(sextractor_cat_path=sextractor_path,
+                up = determine_zeropoint_sextractor(sextractor_cat=sextractor_path,
                                                     image=image_path,
                                                     cat_path=cat_path,
                                                     cat_name=cat_name,
@@ -985,7 +996,7 @@ def zeropoint_science_field(epoch: str,
                                                     sex_dec_col=sex_dec_col,
                                                     sex_x_col=sex_x_col,
                                                     sex_y_col=sex_y_col,
-                                                    pix_tol=pix_tol,
+                                                    dist_tol=pix_tol,
                                                     flux_column=sex_flux_col,
                                                     mag_range_sex_upper=mag_range_sex_upper,
                                                     mag_range_sex_lower=mag_range_sex_lower,
@@ -1000,7 +1011,7 @@ def zeropoint_science_field(epoch: str,
                                                     )
 
                 print('Chip 2:')
-                down = determine_zeropoint_sextractor(sextractor_cat_path=sextractor_path,
+                down = determine_zeropoint_sextractor(sextractor_cat=sextractor_path,
                                                       image=image_path,
                                                       cat_path=cat_path,
                                                       cat_name=cat_name,
@@ -1013,7 +1024,7 @@ def zeropoint_science_field(epoch: str,
                                                       sex_dec_col=sex_dec_col,
                                                       sex_x_col=sex_x_col,
                                                       sex_y_col=sex_y_col,
-                                                      pix_tol=pix_tol,
+                                                      dist_tol=pix_tol,
                                                       flux_column=sex_flux_col,
                                                       mag_range_sex_upper=mag_range_sex_upper,
                                                       mag_range_sex_lower=mag_range_sex_lower,
@@ -1029,7 +1040,7 @@ def zeropoint_science_field(epoch: str,
                 return up, down
 
             else:
-                chip = determine_zeropoint_sextractor(sextractor_cat_path=sextractor_path,
+                chip = determine_zeropoint_sextractor(sextractor_cat=sextractor_path,
                                                       image=image_path,
                                                       cat_path=cat_path,
                                                       cat_name=cat_name,
@@ -1042,7 +1053,7 @@ def zeropoint_science_field(epoch: str,
                                                       sex_dec_col=sex_dec_col,
                                                       sex_x_col=sex_x_col,
                                                       sex_y_col=sex_y_col,
-                                                      pix_tol=pix_tol,
+                                                      dist_tol=pix_tol,
                                                       flux_column=sex_flux_col,
                                                       mag_range_sex_upper=mag_range_sex_upper,
                                                       mag_range_sex_lower=mag_range_sex_lower,
@@ -2318,10 +2329,23 @@ def signal_to_noise(rate_target: units.Quantity,
     :param rate_dark:
     :return:
     """
-    rate_target = u.check_quantity(rate_target, units.adu / units.second)
-    rate_sky = u.check_quantity(rate_sky, units.second / units.pixel)
+    rate_target = u.check_quantity(rate_target, units.ct / units.second)
+    rate_sky = u.check_quantity(rate_sky, units.ct * units.second**-1 * units.pixel**-1)
+    rate_read = u.check_quantity(rate_read, units.electron / units.pixel)
     rate_dark = u.check_quantity(rate_dark, units.electron / (units.second * units.pixel))
     exp_time = u.check_quantity(exp_time, units.second)
+    gain = u.check_quantity(gain, units.electron / units.ct)
+    n_pix = u.check_quantity(n_pix, units.pix)
+
+    print(rate_target)
+    print(rate_sky)
+    print(rate_dark)
+    print(exp_time)
+    print(gain)
+    print(n_pix)
+
+    print(rate_read ** 2 / (exp_time * gain))
+
     snr = rate_target * np.sqrt(exp_time * gain) / np.sqrt(
-        rate_target + n_pix * (rate_sky + rate_dark / gain + rate_read ** 2 / exp_time * gain))
+        rate_target + n_pix * (rate_sky + rate_dark / gain + rate_read / (exp_time * gain)))
     return snr

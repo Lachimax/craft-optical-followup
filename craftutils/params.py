@@ -156,7 +156,7 @@ def change_yaml_param(file: str = 'project', param: str = None, value=None, upda
     return p
 
 
-def add_params(file: str, params: dict, quiet: bool = False):
+def add_params(file: str, params: dict, quiet: bool = False, skip_json: bool = False):
     file = u.sanitise_file_ext(file, '.yaml')
     if os.path.isfile(file):
         param_dict = load_params(file)
@@ -164,7 +164,8 @@ def add_params(file: str, params: dict, quiet: bool = False):
         param_dict = {}
     param_dict.update(params)
     save_params(file, param_dict, quiet=quiet)
-    yaml_to_json(file, quiet=quiet)
+    if not skip_json:
+        yaml_to_json(file, quiet=quiet)
 
 
 def add_config_param(params: dict, quiet=False):

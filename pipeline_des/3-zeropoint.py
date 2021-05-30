@@ -94,7 +94,7 @@ def main(obj,
 
         print(cat_zeropoint)
 
-        up = photometry.determine_zeropoint_sextractor(sextractor_cat_path=sextractor_path,
+        up = photometry.determine_zeropoint_sextractor(sextractor_cat=sextractor_path,
                                                        image=image_path,
                                                        image_name='DES',
                                                        cat_path=cat_path,
@@ -108,7 +108,7 @@ def main(obj,
                                                        sex_dec_col=sex_dec_col,
                                                        sex_x_col=sex_x_col,
                                                        sex_y_col=sex_y_col,
-                                                       pix_tol=pix_tol,
+                                                       dist_tol=pix_tol,
                                                        mag_tol=mag_tol,
                                                        flux_column=sex_flux_col,
                                                        mag_range_cat_upper=mag_range_upper,

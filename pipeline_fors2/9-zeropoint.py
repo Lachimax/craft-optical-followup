@@ -174,7 +174,7 @@ def main(epoch,
                     print("Use sextractor class star:", use_sex_star_class)
 
                     zeropoints["standard_field"][field][cat_name] = photometry.determine_zeropoint_sextractor(
-                        sextractor_cat_path=sextractor_path,
+                        sextractor_cat=sextractor_path,
                         image=image_path,
                         cat_path=cat_path,
                         cat_name=cat_name,
@@ -187,7 +187,7 @@ def main(epoch,
                         sex_dec_col=sex_dec_col,
                         sex_x_col=sex_x_col,
                         sex_y_col=sex_y_col,
-                        pix_tol=pix_tol,
+                        dist_tol=pix_tol,
                         flux_column=sex_flux_col,
                         mag_range_sex_upper=mag_range_sex_upper,
                         mag_range_sex_lower=mag_range_sex_lower,

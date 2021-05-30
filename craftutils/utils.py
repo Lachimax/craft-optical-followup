@@ -2,6 +2,7 @@
 
 import math
 import os
+import sys
 from typing import List, Union
 from datetime import datetime as dt
 
@@ -236,17 +237,49 @@ def directory_of(path: str):
     return path, file
 
 
+def uncertainty_product(value, *args: tuple):
+    """
+    Each arg should be a tuple, in which the first entry is the measurement and the second entry is the uncertainty in
+    that measurement. These may be in the form of numpy arrays or table columns.
+    """
+    variance_pre = 0.
+    for measurement, uncertainty in args:
+        if hasattr(measurement, "__len__"):
+            if isinstance(measurement, units.Quantity):
+                measurement[measurement == 0.0] = sys.float_info.min * measurement.unit
+            else:
+                measurement[measurement == 0.0] = sys.float_info.min
+        elif measurement == 0.0:
+            measurement = sys.float_info.min
+        variance_pre = variance_pre + (uncertainty / measurement) ** 2
+    sigma_pre = np.sqrt(variance_pre)
+    sigma = np.abs(value) * sigma_pre
+    return sigma
+
+
+def uncertainty_sum(*args):
+    variance = 0.
+    for measurement, uncertainty in args:
+        variance += uncertainty ** 2
+    sigma = np.sqrt(variance)
+    return sigma
+
+
 def error_product(value, measurements, errors):
     """
-    Produces the absolute error of a value calculated as a product or as a quotient.
+    Produces the absolute uncertainty of a value calculated as a product or as a quotient.
     :param value: The final calculated value.
     :param measurements: An array of the measurements used to calculate the value.
     :param errors: An array of the respective errors of the measurements. Expected to be in the same order as
         measurements.
     :return:
     """
+
     measurements = np.array(measurements)
     errors = np.array(errors)
+    print("VALUE:", value)
+    print("UNCERTAINTIES:", errors)
+    print("MEASUREMENTS:", measurements)
     return value * np.sum(np.abs(errors[measurements != 0.] / measurements[measurements != 0.]))
 
 
@@ -260,15 +293,22 @@ def error_func(arg, err, func=lambda x: np.log10(x), absolute=False):
     :return:
     """
     measurement = func(arg)
+    print("\narg", arg)
+    print("\nmeasurement", measurement)
     # One of these should come out negative - that becomes the minus error, and the positive the plus error.
     error_plus = func(arg + err) - measurement
     error_minus = func(arg - err) - measurement
 
     error_plus_actual = []
     error_minus_actual = []
-    for i, _ in enumerate(error_plus):
-        error_plus_actual.append(np.max([error_plus[i], error_minus[i]]))
-        error_minus_actual.append(np.min([error_plus[i], error_minus[i]]))
+    print("\nerror_plus", error_plus)
+    try:
+        for i, _ in enumerate(error_plus):
+            error_plus_actual.append(np.max([error_plus[i], error_minus[i]]))
+            error_minus_actual.append(np.min([error_plus[i], error_minus[i]]))
+    except TypeError:
+        error_plus_actual.append(np.max([error_plus, error_minus]))
+        error_minus_actual.append(np.min([error_plus, error_minus]))
 
     if absolute:
         return measurement + np.array([0., error_plus_actual, error_minus_actual])

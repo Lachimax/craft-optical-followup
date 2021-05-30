@@ -19,9 +19,7 @@ from craftutils.retrieve import cat_columns
 
 
 class Image:
-    header_keys = {"exposure_time": "EXPTIME",
-                   "noise_read": "RON",
-                   "gain": "GAIN"}
+
     def __init__(self, path: str = None, frame_type: str = None, instrument: str = None):
         self.path = path
         self.output_path = path.replace(".fits", "_outputs.yaml")
@@ -94,17 +92,17 @@ class Image:
             return self.headers[ext][key]
 
     def extract_gain(self):
-        key = self.header_keys["gain"]
-        self.gain = self.extract_header_item(key) * units.electron / units.adu
+        key = self.header_keys()["gain"]
+        self.gain = self.extract_header_item(key) * units.electron / units.ct
         return self.gain
 
     def extract_exposure_time(self):
-        key = self.header_keys["exposure_time"]
+        key = self.header_keys()["exposure_time"]
         self.exposure_time = self.extract_header_item(key) * units.second
         return self.exposure_time
 
     def extract_noise_read(self):
-        key = self.header_keys["noise_read"]
+        key = self.header_keys()["noise_read"]
         self.noise_read = self.extract_header_item(key) * units.electron / units.pixel
         return self.noise_read
 
@@ -114,6 +112,12 @@ class Image:
         self.n_pix = self.n_y * self.n_x
         return self.n_pix
 
+    @classmethod
+    def header_keys(cls):
+        header_keys = {"exposure_time": "EXPTIME",
+                       "noise_read": "RON",
+                       "gain": "GAIN"}
+        return header_keys
 
 
 class ImagingImage(Image):
@@ -126,6 +130,7 @@ class ImagingImage(Image):
 
         self.psfex_path = None
         self.psfex_output = None
+        self.source_cat_sextractor_path = None
         self.source_cat_path = None
         self.source_cat = None
 
@@ -136,6 +141,8 @@ class ImagingImage(Image):
 
         self.zeropoints = {}
         self.zeropoint_output_paths = {}
+
+        self.depth = None
 
         self.load_output_file()
 
@@ -172,26 +179,42 @@ class ImagingImage(Image):
         self.psfex(catalog=cat_path, output_dir=output_dir)
         config = p.path_to_config_sextractor_config()
         output_params = p.path_to_config_sextractor_param()
-        self.source_cat_path = self.source_extraction(configuration_file=config,
-                                                      output_dir=output_dir,
-                                                      parameters_file=output_params,
-                                                      catalog_name=f"{self.name}_psf-fit.cat",
-                                                      psf_name=self.psfex_path,
-                                                      seeing_fwhm=self.fwhm_psfex.value,
-                                                      **configs
-                                                      )
+        self.source_cat_sextractor_path = self.source_extraction(configuration_file=config,
+                                                                 output_dir=output_dir,
+                                                                 parameters_file=output_params,
+                                                                 catalog_name=f"{self.name}_psf-fit.cat",
+                                                                 psf_name=self.psfex_path,
+                                                                 seeing_fwhm=self.fwhm_psfex.value,
+                                                                 **configs
+                                                                 )
         print(cat_path)
-        self.load_source_cat()
+        self.load_source_cat_sextractor()
         self.update_output_file()
 
-    def load_source_cat(self, force: bool = False):
+    def load_source_cat_sextractor(self, force: bool = False):
         if force:
             self.source_cat = None
         if self.source_cat is None:
-            self.source_cat = table.Table.read(self.source_cat_path, format="ascii.sextractor")
+            self.source_cat = table.QTable.read(self.source_cat_sextractor_path, format="ascii.sextractor")
 
-    def extract_pixel_scale(self, layer: int = 0):
-        if self.pixel_scale_ra is None or self.pixel_scale_dec is None:
+    def load_source_cat(self, force: bool = False):
+        if force or self.source_cat is None:
+            if self.source_cat_path is not None:
+                self.source_cat = table.QTable.read(self.source_cat_path, format="ascii.ecsv")
+            elif self.source_cat_sextractor_path is not None:
+                self.load_source_cat_sextractor(force=force)
+            else:
+                warnings.warn("No valid source_cat_path found. Could not load source_table")
+
+    def write_source_cat(self):
+        if self.source_cat_path is None:
+            self.source_cat_path = self.path.replace(".fits", "_source_cat.ecsv")
+        if self.source_cat is None:
+            raise ValueError("source_cat not yet loaded.")
+        self.source_cat.write(self.source_cat_path, format="ascii.ecsv")
+
+    def extract_pixel_scale(self, layer: int = 0, force: bool = False):
+        if force or self.pixel_scale_ra is None or self.pixel_scale_dec is None:
             self.open()
             self.pixel_scale_ra, self.pixel_scale_dec = ff.get_pixel_scale(self.hdu_list, layer=layer,
                                                                            astropy_units=True)
@@ -203,12 +226,18 @@ class ImagingImage(Image):
         outputs = super()._output_dict()
         outputs.update({"filter": self.filter,
                         "psfex_path": self.psfex_path,
+                        "source_cat_sextractor_path": self.source_cat_sextractor_path,
                         "source_cat_path": self.source_cat_path,
                         "fwhm_pix_psfex": self.fwhm_pix_psfex,
                         "fwhm_psfex": self.fwhm_psfex,
                         "zeropoints": self.zeropoints,
                         "zeropoint_output_paths": self.zeropoint_output_paths})
         return outputs
+
+    def update_output_file(self):
+        p.update_output_file(self)
+        if self.source_cat is not None:
+            self.write_source_cat()
 
     def load_output_file(self):
         outputs = super().load_output_file()
@@ -217,6 +246,8 @@ class ImagingImage(Image):
                 self.filter = outputs["filter"]
             if "psfex_path" in outputs:
                 self.psfex_path = outputs["psfex_path"]
+            if "source_cat_sextractor_path" in outputs:
+                self.source_cat_sextractor_path = outputs["source_cat_sextractor_path"]
             if "source_cat_path" in outputs:
                 self.source_cat_path = outputs["source_cat_path"]
             if "fwhm_psfex" in outputs:
@@ -233,8 +264,8 @@ class ImagingImage(Image):
                   cat_path: str,
                   output_path: str,
                   cat_name: str = 'Catalogue',
-                  cat_zeropoint: float = 0.0,
-                  cat_zeropoint_err: float = 0.0,
+                  cat_zeropoint: units.Quantity = 0.0 * units.mag,
+                  cat_zeropoint_err: units.Quantity = 0.0 * units.mag,
                   image_name: str = None,
                   show: bool = False,
                   sex_x_col: str = 'XPSF_IMAGE',
@@ -245,11 +276,11 @@ class ImagingImage(Image):
                   stars_only: bool = True,
                   star_class_col: str = 'CLASS_STAR',
                   star_class_tol: float = 0.95,
-                  mag_range_sex_lower: float = -100.,
-                  mag_range_sex_upper: float = 100.,
-                  pix_tol: float = 5.,
+                  mag_range_sex_lower: units.Quantity = -100. * units.mag,
+                  mag_range_sex_upper: units.Quantity = 100. * units.mag,
+                  dist_tol: units.Quantity = 2. * units.arcsec,
                   ):
-
+        self.signal_to_noise()
         if image_name is None:
             image_name = self.name
 
@@ -259,7 +290,7 @@ class ImagingImage(Image):
         cat_mag_col = column_names['mag_psf']
         cat_type = "csv"
 
-        zp_dict = ph.determine_zeropoint_sextractor(sextractor_cat_path=self.source_cat_path,
+        zp_dict = ph.determine_zeropoint_sextractor(sextractor_cat=self.source_cat,
                                                     image=self.path,
                                                     cat_path=cat_path,
                                                     cat_name=cat_name,
@@ -273,7 +304,7 @@ class ImagingImage(Image):
                                                     sex_dec_col=sex_dec_col,
                                                     sex_x_col=sex_x_col,
                                                     sex_y_col=sex_y_col,
-                                                    pix_tol=pix_tol,
+                                                    dist_tol=dist_tol,
                                                     flux_column=sex_flux_col,
                                                     mag_range_sex_upper=mag_range_sex_upper,
                                                     mag_range_sex_lower=mag_range_sex_lower,
@@ -283,31 +314,83 @@ class ImagingImage(Image):
                                                     exp_time=self.exposure_time,
                                                     cat_type=cat_type,
                                                     cat_zeropoint=cat_zeropoint,
-                                                    cat_zeropoint_err=cat_zeropoint_err
+                                                    cat_zeropoint_err=cat_zeropoint_err,
+                                                    snr_col='SNR'
                                                     )
 
+        zp_dict['airmass'] = 0.0
         self.zeropoints[cat_name.lower()] = zp_dict
         self.zeropoint_output_paths[cat_name.lower()] = output_path
+        self.update_output_file()
+        return self.zeropoints[cat_name.lower()]
 
-    def signal_to_noise(self, flux_target: units.Quantity, n_pix: units.Quantity):
-        flux_target = u.check_quantity(flux_target, units.adu)
+    def aperture_areas(self):
+        self.load_source_cat()
+        self.extract_pixel_scale()
+        self.source_cat["A_IMAGE"] = self.source_cat["A_WORLD"].to(units.pix, self.pixel_scale_dec)
+        self.source_cat["B_IMAGE"] = self.source_cat["A_WORLD"].to(units.pix, self.pixel_scale_dec)
+        self.source_cat["KRON_AREA_IMAGE"] = self.source_cat["A_IMAGE"] * self.source_cat["B_IMAGE"] * np.pi
+
+    def calibrate_magnitudes(self, zeropoint_name: str, force: bool = False):
+        if force or f"MAG_AUTO_ZP_{zeropoint_name}" not in self.source_cat:
+            if zeropoint_name not in self.zeropoints:
+                raise KeyError(f"Zeropoint {zeropoint_name} does not exist.")
+            zp_dict = self.zeropoints[zeropoint_name]
+            mag, mag_err_minus, mag_err_plus = ph.magnitude_complete(flux=self.source_cat["FLUX_AUTO"],
+                                                                     flux_err=self.source_cat[
+                                                                         "FLUXERR_AUTO"],
+                                                                     exp_time=self.exposure_time,
+                                                                     exp_time_err=0.0 * units.second,
+                                                                     zeropoint=zp_dict['zeropoint'],
+                                                                     zeropoint_err=zp_dict[
+                                                                         'zeropoint_err'],
+                                                                     airmass=zp_dict['airmass'],
+                                                                     airmass_err=0.0,
+                                                                     ext=0.0 * units.mag,
+                                                                     ext_err=0.0 * units.mag,
+                                                                     colour_term=0.0,
+                                                                     colour=0.0 * units.mag,
+                                                                     )
+            self.source_cat[f"MAG_AUTO_ZP_{zeropoint_name}"] = mag
+            self.source_cat[f"MAGERR_AUTO_ZP_{zeropoint_name}"] = np.max([np.abs(mag_err_minus), np.abs(mag_err_plus)])
+            self.update_output_file()
+        else:
+            print(f"Magnitudes already calibrated for {zeropoint_name}")
+
+    def estimate_depth(self, zeropoint_name: str):
+        self.load_source_cat()
+        self.signal_to_noise()
+        self.calibrate_magnitudes(zeropoint_name=zeropoint_name)
+        cat_3sigma = self.source_cat[self.source_cat["SNR"] > 3.0]
+        self.depth = np.max(cat_3sigma[f"MAG_AUTO_ZP_{zeropoint_name}"])
+        self.update_output_file()
+        return self.depth
+
+    def signal_to_noise(self):
+        self.load_source_cat()
         self.extract_exposure_time()
+        self.extract_gain()
+        self.aperture_areas()
+        flux_target = self.source_cat['FLUX_AUTO']
         rate_target = flux_target / self.exposure_time
         rate_sky = self.estimate_sky_background() / self.exposure_time
-        rate_read = self.extract_noise_read() / units.pixel
+        rate_read = self.extract_noise_read()
+        n_pix = self.source_cat['KRON_AREA_IMAGE'] / units.pixel
 
-        ph.signal_to_noise(rate_target=rate_target,
-                           rate_sky=rate_sky,
-                           rate_read=rate_read,
-                           exp_time=self.exposure_time,
-                           gain=self.gain,
-                           n_pix=n_pix
-                           )
+        self.source_cat["SNR"] = ph.signal_to_noise(rate_target=rate_target,
+                                                    rate_sky=rate_sky,
+                                                    rate_read=rate_read,
+                                                    exp_time=self.exposure_time,
+                                                    gain=self.gain,
+                                                    n_pix=n_pix
+                                                    )
+        self.update_output_file()
+        return self.source_cat["SNR"]
 
     def estimate_sky_background(self, ext: int = 0, force: bool = False):
         if force or self.sky_background is None:
             self.load_data()
-            self.sky_background = np.median(self.data[ext]) * units.adu / units.pixel
+            self.sky_background = np.nanmedian(self.data[ext]) * units.ct / units.pixel
         else:
             print("Sky background already estimated.")
         return self.sky_background
@@ -328,9 +411,6 @@ class ImagingImage(Image):
 
 
 class PanSTARRS1Cutout(ImagingImage):
-    header_keys = super().header_keys
-    header_keys.update({"noise_read": "HIERARCH CELL.READNOISE",
-                        "filter": "HIERARCH FPA.FILTERID"})
 
     def __init__(self, path: str = None):
         super().__init__(path=path)
@@ -340,7 +420,7 @@ class PanSTARRS1Cutout(ImagingImage):
         self.extract_exposure_time()
 
     def extract_filter(self):
-        key = self.header_keys["filter"]
+        key = self.header_keys()["filter"]
         fil_string = self.extract_header_item(key)
         self.filter = fil_string[:fil_string.find(".")]
         self.filter_short = self.filter
@@ -354,7 +434,15 @@ class PanSTARRS1Cutout(ImagingImage):
             exp_time += self.headers[0][key]
         #    exp_times.append(self.headers[0][key])
 
-        self.exposure_time = exp_time  # np.mean(exp_times)
+        self.exposure_time = exp_time * units.second  # np.mean(exp_times)
+
+    @classmethod
+    def header_keys(cls):
+        header_keys = super().header_keys()
+        header_keys.update({"noise_read": "HIERARCH CELL.READNOISE",
+                            "filter": "HIERARCH FPA.FILTERID",
+                            "gain": "HIERARCH CELL.GAIN"})
+        return header_keys
 
 
 class SpecRaw(Image):

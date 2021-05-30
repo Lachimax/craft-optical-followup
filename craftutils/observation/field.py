@@ -820,6 +820,8 @@ class ImagingEpoch(Epoch):
                          date=date, program_id=program_id, target=target)
         self.guess_data_path()
         self.filters = []
+        self.deepest = None
+        self.deepest_filter = None
         self.source_extractor_config = source_extractor_config
 
     def _initial_setup(self):
@@ -1087,18 +1089,31 @@ class PanSTARRS1ImagingEpoch(ImagingEpoch):
                 configs = self.source_extractor_config
                 img.source_extraction_psf(output_dir=source_extraction_path,
                                           phot_autoparams=f"{configs['kron_factor']},{configs['kron_radius_min']}")
+            self.stages_complete['2-source_extraction'] = Time.now()
+
 
     def proc_3_photometric_calibration(self):
         if self.query_stage("Do photometric calibration?", stage="3-photometric_calibration"):
             calib_dir = os.path.join(self.data_path, "3-photometric_calibration")
             u.mkdir_check(calib_dir)
+            deepest = self.frames_science[0]
             for img in self.frames_science:
                 img.zeropoint(cat_path=self.field.get_path("cat_csv_panstarrs1"),
                               output_path=os.path.join(calib_dir, img.name),
                               cat_name="PanSTARRS1",
                               image_name="PanSTARRS Cutout",
-                              pix_tol=4.
                               )
+                img.estimate_depth(zeropoint_name="panstarrs1")
+
+                if img.depth > deepest.depth:
+                    deepest = img
+
+            for img in self.frames_science:
+                print(img.filter, img.depth)
+            self.deepest_filter = deepest.filter
+            self.deepest = img
+            print("DEEPEST FILTER:", self.deepest_filter, self.deepest.depth)
+            self.stages_complete['3-photometric_calibration'] = Time.now()
 
     def _initial_setup(self):
         imaging_dir = os.path.join(self.data_path, "0-imaging")
