@@ -13,9 +13,10 @@ from astropy.table import Table
 from astropy.visualization import (ImageNormalize, LogStretch, SqrtStretch, ZScaleInterval, MinMaxInterval,
                                    PowerStretch, wcsaxes)
 
-from craftutils import fits_files as ff
-from craftutils import params as p
-from craftutils import astrometry as am
+import craftutils.fits_files as ff
+import craftutils.params as p
+import craftutils.astrometry as am
+import craftutils.utils as u
 
 
 def plot_kron(fig: plt.figure, data_title: str, instrument: str, f: str, index: Union[int, list], catalogue: str,
@@ -566,6 +567,9 @@ def plot_gal_params(hdu: fits.HDUList, ras: Union[list, np.ndarray, float], decs
     theta = -theta + ff.get_rotation_angle(header)
     # Convert to radians
     theta = theta * np.pi / 180
+
+    a = u.dequantify(a)
+    b = u.dequantify(b)
 
     for i, x in enumerate(xs):
         if a[i] != 0 and b[i] != 0:

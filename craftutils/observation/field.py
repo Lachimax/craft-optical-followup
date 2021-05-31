@@ -17,6 +17,7 @@ import craftutils.spectroscopy as spec
 import craftutils.observation.objects as objects
 import craftutils.observation.image as image
 import craftutils.fits_files as ff
+import craftutils.plotting as pl
 
 config = p.config
 
@@ -119,9 +120,10 @@ class Field:
 
         # Input attributes
 
-        if objs is dict:
+        if type(objs) is dict:
             obj_list = []
             for name in objs:
+                print(name)
                 obj = objects.Object.from_dict(objs[name])
                 obj_list.append(obj)
             objs = obj_list
@@ -456,6 +458,8 @@ class FRBField(Field):
                          )
 
         self.frb = frb
+        if self.frb is not None and self.frb.host_galaxy is not None:
+            self.objects.append(self.frb.host_galaxy)
         self.epochs_imaging_old = {}
 
     @classmethod
@@ -642,7 +646,7 @@ class Epoch:
             raise ValueError(f"data_path has not been set for {self}")
         self.do = _check_do_list(self.do)
 
-    def proc_1_initial_setup(self):
+    def proc_1_initial_setup(self, **kwargs):
         if self.query_stage("Do initial setup of files?", stage='1-initial_setup'):
             self._initial_setup()
             self.stages_complete['1-initial_setup'] = Time.now()
@@ -671,6 +675,7 @@ class Epoch:
 
     def update_output_file(self):
         p.update_output_file(self)
+
 
     def check_done(self, stage: str):
         if stage not in self.stages_complete:
@@ -819,10 +824,12 @@ class ImagingEpoch(Epoch):
         super().__init__(name=name, field=field, param_path=param_path, data_path=data_path, instrument=instrument,
                          date=date, program_id=program_id, target=target)
         self.guess_data_path()
+        self.source_extractor_config = source_extractor_config
+
         self.filters = []
+        self.coadded = {}
         self.deepest = None
         self.deepest_filter = None
-        self.source_extractor_config = source_extractor_config
 
     def _initial_setup(self):
         data_dir = self.data_path
@@ -946,16 +953,35 @@ class ImagingEpoch(Epoch):
 
     def _output_dict(self):
         output_dict = super()._output_dict()
+        if self.deepest is not None:
+            deepest = self.deepest.path
+        else:
+            deepest = None
         output_dict.update({"filters": self.filters,
+                            "deepest": deepest,
+                            "deepest_filter": self.deepest_filter,
+                            "coadded": {k: v.path for k, v in self.coadded.items()}
                             })
         return output_dict
 
     def load_output_file(self):
         outputs = super().load_output_file()
+        cls = image.ImagingImage.select_child_class(instrument=self.instrument)
         if "frames_science" in outputs:
             for frame in outputs["frames_science"]:
-                cls = image.ImagingImage.select_child_class(instrument=self.instrument)
                 self.frames_science.append(cls(path=frame))
+        if "filters" in outputs:
+            self.filters = outputs["filters"]
+        if "deepest" in outputs and outputs["deepest"] is not None:
+            self.frames_science.append(cls(path=outputs["deepest"]))
+        if "deepest_filter" in outputs:
+            self.deepest = outputs["deepest"]
+        if "coadded" in outputs:
+            for fil in outputs["coadded"]:
+                if outputs["coadded"][fil] is not None:
+                    self.coadded[fil] = cls(path=outputs["coadded"][fil])
+
+
 
     @classmethod
     def stages(cls):
@@ -1070,29 +1096,29 @@ class PanSTARRS1ImagingEpoch(ImagingEpoch):
 
     def pipeline(self, **kwargs):
         super().pipeline(**kwargs)
-        self.proc_0_download()
-        self.proc_1_initial_setup()
-        self.proc_2_source_extraction()
-        self.proc_3_photometric_calibration()
-        self.read_photometry()
+        self.proc_0_download(**kwargs)
+        self.proc_1_initial_setup(**kwargs)
+        self.proc_2_source_extraction(**kwargs)
+        self.proc_3_photometric_calibration(**kwargs)
+        self.proc_4_dual_mode_source_extraction(**kwargs)
+        self.proc_5_get_photometry(**kwargs)
 
-    def proc_0_download(self):
+    def proc_0_download(self, **kwargs):
         # Retrieve imaging from PanSTARRS
         pass
 
-    def proc_2_source_extraction(self):
+    def proc_2_source_extraction(self, **kwargs):
         if self.query_stage("Do source extraction?", stage='2-source_extraction'):
+            source_extraction_path = os.path.join(self.data_path, "2-source_extraction")
+            u.mkdir_check(source_extraction_path)
             for img in self.frames_science:
-                source_extraction_path = os.path.join(self.data_path, "2-source_extraction")
-                u.mkdir_check(source_extraction_path)
                 self.set_path("source_extraction_dir", source_extraction_path)
                 configs = self.source_extractor_config
                 img.source_extraction_psf(output_dir=source_extraction_path,
                                           phot_autoparams=f"{configs['kron_factor']},{configs['kron_radius_min']}")
             self.stages_complete['2-source_extraction'] = Time.now()
 
-
-    def proc_3_photometric_calibration(self):
+    def proc_3_photometric_calibration(self, **kwargs):
         if self.query_stage("Do photometric calibration?", stage="3-photometric_calibration"):
             calib_dir = os.path.join(self.data_path, "3-photometric_calibration")
             u.mkdir_check(calib_dir)
@@ -1111,9 +1137,37 @@ class PanSTARRS1ImagingEpoch(ImagingEpoch):
             for img in self.frames_science:
                 print(img.filter, img.depth)
             self.deepest_filter = deepest.filter
-            self.deepest = img
+            self.deepest = deepest
             print("DEEPEST FILTER:", self.deepest_filter, self.deepest.depth)
             self.stages_complete['3-photometric_calibration'] = Time.now()
+
+    def proc_4_dual_mode_source_extraction(self, **kwargs):
+        if self.query_stage("Do source extraction in dual-mode, using deepest image as footprint?",
+                            stage="4-dual_mode_source_extraction"):
+            source_extraction_path = os.path.join(self.data_path, "4-dual_mode_source_extraction")
+            u.mkdir_check(source_extraction_path)
+            for img in self.frames_science:
+                self.set_path("source_extraction_dual_dir", source_extraction_path)
+                configs = self.source_extractor_config
+                img.source_extraction_psf(output_dir=source_extraction_path,
+                                          phot_autoparams=f"{configs['kron_factor']},{configs['kron_radius_min']}",
+                                          template=self.deepest)
+
+        self.stages_complete["4-dual_mode_source_extraction"] = Time.now()
+
+    def proc_5_get_photometry(self, **kwargs):
+        if self.query_stage("Get photometry?",
+                            stage="5-get_photometry"):
+            for fil in self.coadded:
+                img = self.coadded[fil]
+                for obj in self.field.objects:
+                    nearest = img.find_object(obj.position)
+                    print("FILTER:", fil)
+                    print(f"MAG_AUTO = {nearest['MAG_AUTO_ZP_panstarrs1']}")
+                    print(f"A = {nearest['A_WORLD'].to(units.arcsec)}; B = {nearest['B_WORLD'].to(units.arcsec)}")
+                    img.plot_object(nearest)
+
+        self.stages_complete["5-get_photometry"] = Time.now()
 
     def _initial_setup(self):
         imaging_dir = os.path.join(self.data_path, "0-imaging")
@@ -1130,22 +1184,21 @@ class PanSTARRS1ImagingEpoch(ImagingEpoch):
                 self.frames_science.append(img)
             if img.filter not in self.filters:
                 self.filters.append(img.filter)
+            self.coadded[img.filter] = img
 
     def guess_data_path(self):
         if self.data_path is None and self.field is not None and self.field.data_path is not None:
             self.data_path = os.path.join(self.field.data_path, "imaging", "panstarrs1")
         return self.data_path
 
-    def read_photometry(self):
-        for img in self.frames_science:
-            img.plot_apertures()
-
     @classmethod
     def stages(cls):
         param_dict = super().stages()
         param_dict.update({"0-download": None,
                            "2-source_extraction": None,
-                           "3-photometric_calibration": None
+                           "3-photometric_calibration": None,
+                           "4-dual_mode_source_extraction": None,
+                           "5-get_photometry": None
                            })
         return param_dict
 

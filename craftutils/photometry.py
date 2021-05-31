@@ -564,7 +564,7 @@ def determine_zeropoint_sextractor(sextractor_cat: Union[str, table.QTable],
 
     remove = remove + (matches[snr_col] < snr_cut)
     print(sum(np.invert(remove)),
-          'matches after removing objects objects with SNR_WIN < 300')
+          f'matches after removing objects objects with {snr_col} < 300')
     params[f'matches_{n_match}_snr'] = int(sum(np.invert(remove)))
     n_match += 1
 
@@ -752,7 +752,7 @@ def determine_zeropoint_sextractor(sextractor_cat: Union[str, table.QTable],
 
     plt.plot(x, line_free, c='red', label='Line of best fit')
     plt.scatter(x, y, c='blue')
-#    plt.errorbar(x, y, yerr=y_uncertainty, linestyle="None")
+    #    plt.errorbar(x, y, yerr=y_uncertainty, linestyle="None")
     plt.plot(x, line_fixed, c='green', label='Fixed slope = 1')
     plt.legend()
     plt.suptitle("Magnitude Comparisons")
@@ -773,7 +773,7 @@ def determine_zeropoint_sextractor(sextractor_cat: Union[str, table.QTable],
 
     or_fitter = fitting.FittingWithOutlierRemoval(fitter, sigma_clip, niter=1, sigma=2.0)
 
-    #print(type(linear_model_fixed), type(x), type(y), type(weights))
+    # print(type(linear_model_fixed), type(x), type(y), type(weights))
     fitted_clipped, mask = or_fitter(linear_model_fixed, x.value, y.value, weights=weights.value)
     fitted_free_clipped, free_mask = or_fitter(linear_model_free, x.value, y.value, weights=weights.value)
 
@@ -2254,6 +2254,7 @@ def source_extractor(image_path: str,
                      parameters_file: str = None,
                      catalog_name: str = None,
                      copy_params: bool = True,
+                     template_image_path: str = None,
                      **configs):
     """
     :param configs: Any source-extractor (sextractor) parameter, normally read via the config file but that can be
@@ -2269,6 +2270,8 @@ def source_extractor(image_path: str,
         os.system(f"cp {os.path.join(p.path_to_config_psfex(), '*')} .")
 
     sys_str = "source-extractor "
+    if template_image_path is not None:
+        sys_str += f"{template_image_path},"
     sys_str += image_path + " "
     if configuration_file is not None:
         sys_str += f" -c {configuration_file}"
@@ -2330,7 +2333,7 @@ def signal_to_noise(rate_target: units.Quantity,
     :return:
     """
     rate_target = u.check_quantity(rate_target, units.ct / units.second)
-    rate_sky = u.check_quantity(rate_sky, units.ct * units.second**-1 * units.pixel**-1)
+    rate_sky = u.check_quantity(rate_sky, units.ct * units.second ** -1 * units.pixel ** -1)
     rate_read = u.check_quantity(rate_read, units.electron / units.pixel)
     rate_dark = u.check_quantity(rate_dark, units.electron / (units.second * units.pixel))
     exp_time = u.check_quantity(exp_time, units.second)

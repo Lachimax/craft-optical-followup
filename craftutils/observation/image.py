@@ -9,6 +9,7 @@ import astropy.io.fits as fits
 import astropy.table as table
 import astropy.wcs as wcs
 import astropy.units as units
+from astropy.coordinates import SkyCoord
 
 import craftutils.utils as u
 import craftutils.fits_files as ff
@@ -20,7 +21,7 @@ from craftutils.retrieve import cat_columns
 
 class Image:
 
-    def __init__(self, path: str = None, frame_type: str = None, instrument: str = None):
+    def __init__(self, path: str, frame_type: str = None, instrument: str = None):
         self.path = path
         self.output_path = path.replace(".fits", "_outputs.yaml")
         self.data_path, self.filename = os.path.split(self.path)
@@ -121,7 +122,7 @@ class Image:
 
 
 class ImagingImage(Image):
-    def __init__(self, path: str = None, frame_type: str = None, instrument: str = None):
+    def __init__(self, path: str, frame_type: str = None, instrument: str = None):
         super().__init__(path=path, frame_type=frame_type, instrument=instrument)
         self.filter = None
         self.filter_short = None
@@ -131,8 +132,11 @@ class ImagingImage(Image):
         self.psfex_path = None
         self.psfex_output = None
         self.source_cat_sextractor_path = None
+        self.source_cat_sextractor_dual_path = None
         self.source_cat_path = None
+        self.source_cat_dual_path = None
         self.source_cat = None
+        self.source_cat_dual = None
 
         self.fwhm_pix_psfex = None
         self.fwhm_psfex = None
@@ -150,43 +154,59 @@ class ImagingImage(Image):
                           output_dir: str,
                           parameters_file: str = None,
                           catalog_name: str = None,
+                          template: 'ImagingImage' = None,
                           **configs):
+        if template is not None:
+            template = template.path
+        print("TEMPLATE PATH:", template)
         return ph.source_extractor(image_path=self.path,
                                    output_dir=output_dir,
                                    configuration_file=configuration_file,
                                    parameters_file=parameters_file,
                                    catalog_name=catalog_name,
+                                   template_image_path=template,
                                    **configs
                                    )
 
-    def psfex(self, catalog: str, output_dir: str):
-        self.psfex_path = ph.psfex(catalog=catalog, output_dir=output_dir)
-        self.psfex_output = fits.open(self.psfex_path)
-        self.extract_pixel_scale()
-        pix_scale = self.pixel_scale_dec
-        self.fwhm_pix_psfex = self.psfex_output[1].header['PSF_FWHM'] * units.pixel
-        self.fwhm_psfex = self.fwhm_pix_psfex.to(units.arcsec, pix_scale)
-        self.update_output_file()
+    def psfex(self, output_dir: str, force: str = False):
+        if force or self.psfex_path is None:
+            config = p.path_to_config_sextractor_config_pre_psfex()
+            output_params = p.path_to_config_sextractor_param_pre_psfex()
+            catalog = self.source_extraction(configuration_file=config,
+                                             output_dir=output_dir,
+                                             parameters_file=output_params,
+                                             catalog_name=f"{self.name}_psfex.fits",
+                                             )
+            self.psfex_path = ph.psfex(catalog=catalog, output_dir=output_dir)
+            self.psfex_output = fits.open(self.psfex_path)
+            self.extract_pixel_scale()
+            pix_scale = self.pixel_scale_dec
+            self.fwhm_pix_psfex = self.psfex_output[1].header['PSF_FWHM'] * units.pixel
+            self.fwhm_psfex = self.fwhm_pix_psfex.to(units.arcsec, pix_scale)
+            self.update_output_file()
+        self.load_psfex_output()
 
-    def source_extraction_psf(self, output_dir: str, **configs):
-        config = p.path_to_config_sextractor_config_pre_psfex()
-        output_params = p.path_to_config_sextractor_param_pre_psfex()
+    def load_psfex_output(self, force: bool = False):
+        if force or self.psfex_output is None:
+            self.psfex_output = fits.open(self.psfex_path)
+
+    def source_extraction_psf(self, output_dir: str, template: 'ImagingImage' = None, **configs):
+        self.psfex(output_dir=output_dir)
+        config = p.path_to_config_sextractor_config()
+        output_params = p.path_to_config_sextractor_param()
         cat_path = self.source_extraction(configuration_file=config,
                                           output_dir=output_dir,
                                           parameters_file=output_params,
-                                          catalog_name=f"{self.name}_psfex.fits",
+                                          catalog_name=f"{self.name}_psf-fit.cat",
+                                          psf_name=self.psfex_path,
+                                          seeing_fwhm=self.fwhm_psfex.value,
+                                          template=template,
+                                          **configs
                                           )
-        self.psfex(catalog=cat_path, output_dir=output_dir)
-        config = p.path_to_config_sextractor_config()
-        output_params = p.path_to_config_sextractor_param()
-        self.source_cat_sextractor_path = self.source_extraction(configuration_file=config,
-                                                                 output_dir=output_dir,
-                                                                 parameters_file=output_params,
-                                                                 catalog_name=f"{self.name}_psf-fit.cat",
-                                                                 psf_name=self.psfex_path,
-                                                                 seeing_fwhm=self.fwhm_psfex.value,
-                                                                 **configs
-                                                                 )
+        if template is not None:
+            self.source_cat_sextractor_dual_path = cat_path
+        else:
+            self.source_cat_sextractor_path = cat_path
         print(cat_path)
         self.load_source_cat_sextractor()
         self.update_output_file()
@@ -197,6 +217,12 @@ class ImagingImage(Image):
         if self.source_cat is None:
             self.source_cat = table.QTable.read(self.source_cat_sextractor_path, format="ascii.sextractor")
 
+    def load_source_cat_sextractor_dual(self, force: bool = False):
+        if force:
+            self.source_cat_dual = None
+        if self.source_cat_dual is None:
+            self.source_cat_dual = table.QTable.read(self.source_cat_sextractor_dual_path, format="ascii.sextractor")
+
     def load_source_cat(self, force: bool = False):
         if force or self.source_cat is None:
             if self.source_cat_path is not None:
@@ -205,13 +231,28 @@ class ImagingImage(Image):
                 self.load_source_cat_sextractor(force=force)
             else:
                 warnings.warn("No valid source_cat_path found. Could not load source_table")
+            if self.source_cat_dual_path is not None:
+                self.source_cat_dual = table.QTable.read(self.source_cat_dual_path, format="ascii.ecsv")
+            elif self.source_cat_sextractor_dual_path is not None:
+                self.load_source_cat_sextractor_dual(force=force)
+            else:
+                warnings.warn("No valid source_cat_dual_path found. Could not load source_table")
 
     def write_source_cat(self):
         if self.source_cat_path is None:
             self.source_cat_path = self.path.replace(".fits", "_source_cat.ecsv")
         if self.source_cat is None:
-            raise ValueError("source_cat not yet loaded.")
-        self.source_cat.write(self.source_cat_path, format="ascii.ecsv")
+            warnings.warn("source_cat not yet loaded.")
+        else:
+            print("Writing source catalogue to", self.source_cat_path)
+            self.source_cat.write(self.source_cat_path, format="ascii.ecsv")
+        if self.source_cat_dual_path is None:
+            self.source_cat_dual_path = self.path.replace(".fits", "_source_cat_dual.ecsv")
+        if self.source_cat_dual is None:
+            warnings.warn("source_cat_dual not yet loaded.")
+        else:
+            print("Writing dual-mode source catalogue to", self.source_cat_dual_path)
+            self.source_cat_dual.write(self.source_cat_dual_path, format="ascii.ecsv")
 
     def extract_pixel_scale(self, layer: int = 0, force: bool = False):
         if force or self.pixel_scale_ra is None or self.pixel_scale_dec is None:
@@ -227,7 +268,9 @@ class ImagingImage(Image):
         outputs.update({"filter": self.filter,
                         "psfex_path": self.psfex_path,
                         "source_cat_sextractor_path": self.source_cat_sextractor_path,
+                        "source_cat_sextractor_dual_path": self.source_cat_sextractor_dual_path,
                         "source_cat_path": self.source_cat_path,
+                        "source_cat_dual_path": self.source_cat_dual_path,
                         "fwhm_pix_psfex": self.fwhm_pix_psfex,
                         "fwhm_psfex": self.fwhm_psfex,
                         "zeropoints": self.zeropoints,
@@ -236,8 +279,7 @@ class ImagingImage(Image):
 
     def update_output_file(self):
         p.update_output_file(self)
-        if self.source_cat is not None:
-            self.write_source_cat()
+        self.write_source_cat()
 
     def load_output_file(self):
         outputs = super().load_output_file()
@@ -248,8 +290,12 @@ class ImagingImage(Image):
                 self.psfex_path = outputs["psfex_path"]
             if "source_cat_sextractor_path" in outputs:
                 self.source_cat_sextractor_path = outputs["source_cat_sextractor_path"]
+            if "source_cat_sextractor_dual_path" in outputs:
+                self.source_cat_sextractor_path = outputs["source_cat_sextractor_path"]
             if "source_cat_path" in outputs:
                 self.source_cat_path = outputs["source_cat_path"]
+            if "source_cat_path" in outputs:
+                self.source_cat_dual_path = outputs["source_cat_path"]
             if "fwhm_psfex" in outputs:
                 self.fwhm_psfex = outputs["fwhm_psfex"]
             if "fwhm_psfex" in outputs:
@@ -383,9 +429,16 @@ class ImagingImage(Image):
                                                     exp_time=self.exposure_time,
                                                     gain=self.gain,
                                                     n_pix=n_pix
-                                                    )
+                                                    ).value
         self.update_output_file()
         return self.source_cat["SNR"]
+
+    def object_axes(self):
+        self.load_source_cat()
+        self.extract_pixel_scale()
+        self.source_cat["A_IMAGE"] = self.source_cat["A_WORLD"].to(units.pix, self.pixel_scale_dec)
+        self.source_cat["B_IMAGE"] = self.source_cat["B_WORLD"].to(units.pix, self.pixel_scale_dec)
+        self.source_cat_dual
 
     def estimate_sky_background(self, ext: int = 0, force: bool = False):
         if force or self.sky_background is None:
@@ -401,6 +454,60 @@ class ImagingImage(Image):
         plt.title(self.filter)
         plt.show()
 
+    def find_object(self, coord: SkyCoord, dual: bool = True):
+        self.load_source_cat()
+        if dual:
+            cat = self.source_cat_dual
+        else:
+            cat = self.source_cat
+
+        coord_cat = SkyCoord(cat["ALPHA_SKY"], cat["DELTA_SKY"])
+        separation = coord.separation(coord_cat)
+        nearest = cat[np.argmin(separation)]
+        return nearest
+
+    def plot_object(self, row: table.Row, ext: int = 0, frame: units.Quantity = 10 * units.pix):
+        self.extract_pixel_scale()
+        self.open()
+        kron_a = row['KRON_RADIUS'] * row['A_WORLD']
+        kron_b = row['KRON_RADIUS'] * row['B_WORLD']
+        pix_scale = self.pixel_scale_dec
+        kron_theta = row['THETA_WORLD']
+        kron_theta = -kron_theta + ff.get_rotation_angle(header=self.headers[ext], astropy_units=True)
+        this_frame = max(kron_a.to(units.pixel, pix_scale) * np.cos(kron_theta) + 10 * units.pix,
+                         kron_a.to(units.pixel, pix_scale) * np.sin(kron_theta) + 10 * units.pix,
+                         frame)
+        mid_x = row["X_IMAGE"]
+        mid_y = row["Y_IMAGE"]
+        left = mid_x - this_frame
+        right = mid_x + this_frame
+        bottom = mid_y - this_frame
+        top = mid_y + this_frame
+        image_cut = ff.trim(hdu=self.hdu_list, left=left, right=right, bottom=bottom, top=top)
+        norm = pl.nice_norm(image=image_cut[ext].data)
+        plt.imshow(image_cut[0].data, origin='lower', norm=norm)
+        pl.plot_gal_params(hdu=image_cut,
+                           ras=[row["ALPHA_SKY"].value],
+                           decs=[row["DELTA_SKY"].value],
+                           a=[row["A_WORLD"].value],
+                           b=[row["B_WORLD"].value],
+                           theta=[row["THETA_WORLD"].value],
+                           world=True,
+                           show_centre=True
+                           )
+        pl.plot_gal_params(hdu=image_cut,
+                           ras=[row["ALPHA_SKY"].value],
+                           decs=[row["DELTA_SKY"].value],
+                           a=[kron_a.value],
+                           b=[kron_b.value],
+                           theta=[row["THETA_WORLD"].value],
+                           world=True,
+                           show_centre=True
+                           )
+        plt.title(self.name)
+        plt.show()
+        self.close()
+
     @classmethod
     def select_child_class(cls, instrument: str):
         instrument = instrument.lower()
@@ -412,7 +519,7 @@ class ImagingImage(Image):
 
 class PanSTARRS1Cutout(ImagingImage):
 
-    def __init__(self, path: str = None):
+    def __init__(self, path: str):
         super().__init__(path=path)
         self.extract_filter()
         self.instrument = "panstarrs1"

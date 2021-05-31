@@ -742,8 +742,6 @@ def update_output_file(obj):
         if param_dict is None:
             param_dict = {}
         # For each of these, check if None first.
-        print(param_dict)
-        print(obj._output_dict())
         param_dict.update(obj._output_dict())
         save_params(dictionary=param_dict, file=obj.output_file)
     else:

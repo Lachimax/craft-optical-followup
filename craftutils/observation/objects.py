@@ -166,7 +166,7 @@ class Galaxy(Object):
                  position: Union[SkyCoord, str] = None,
                  position_err: Union[float, un.Quantity, dict, PositionUncertainty, tuple] = 0.0 * un.arcsec,
                  z: float = 0.0):
-        super(Galaxy, self).__init__(name=name,
+        super().__init__(name=name,
                                      position=position,
                                      position_err=position_err)
         self.z = z
@@ -181,15 +181,25 @@ class Galaxy(Object):
 
 
 class FRB(Object):
+    def __init__(self,
+                 name: str = None,
+                 position: Union[SkyCoord, str] = None,
+                 position_err: Union[float, un.Quantity, dict, PositionUncertainty, tuple] = 0.0 * un.arcsec,
+                 host_galaxy: Galaxy = None):
+        super().__init__(name=name,
+                         position=position,
+                         position_err=position_err)
+        self.host_galaxy = host_galaxy
 
     @classmethod
     def from_dict(cls, dictionary: dict, name: str = None):
-        frb = super(FRB, cls).from_dict(dictionary=dictionary)
+        frb = super().from_dict(dictionary=dictionary)
+        frb.host_galaxy = Galaxy.from_dict(dictionary=dictionary["host_galaxy"])
         return frb
 
     @classmethod
     def default_params(cls):
-        default_params = super(FRB, cls).default_params()
+        default_params = super().default_params()
         default_params.update({
             "host_galaxy": Galaxy.default_params(),
             "mjd": 58000
