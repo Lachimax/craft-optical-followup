@@ -209,12 +209,14 @@ class ImagingImage(Image):
             self.source_cat_sextractor_path = cat_path
         print(cat_path)
         self.load_source_cat_sextractor()
+        self.load_source_cat_sextractor_dual()
         self.update_output_file()
 
     def load_source_cat_sextractor(self, force: bool = False):
         if force:
             self.source_cat = None
         if self.source_cat is None:
+            print(self.source_cat_sextractor_dual_path)
             self.source_cat = table.QTable.read(self.source_cat_sextractor_path, format="ascii.sextractor")
 
     def load_source_cat_sextractor_dual(self, force: bool = False):
@@ -246,11 +248,15 @@ class ImagingImage(Image):
         else:
             print("Writing source catalogue to", self.source_cat_path)
             self.source_cat.write(self.source_cat_path, format="ascii.ecsv")
+
         if self.source_cat_dual_path is None:
+            print("GOT HERE 1")
             self.source_cat_dual_path = self.path.replace(".fits", "_source_cat_dual.ecsv")
         if self.source_cat_dual is None:
+            print("GOT HERE 2")
             warnings.warn("source_cat_dual not yet loaded.")
         else:
+            print("GOT HERE 3")
             print("Writing dual-mode source catalogue to", self.source_cat_dual_path)
             self.source_cat_dual.write(self.source_cat_dual_path, format="ascii.ecsv")
 
@@ -294,8 +300,8 @@ class ImagingImage(Image):
                 self.source_cat_sextractor_path = outputs["source_cat_sextractor_path"]
             if "source_cat_path" in outputs:
                 self.source_cat_path = outputs["source_cat_path"]
-            if "source_cat_path" in outputs:
-                self.source_cat_dual_path = outputs["source_cat_path"]
+            if "source_cat_dual_path" in outputs:
+                self.source_cat_dual_path = outputs["source_cat_dual_path"]
             if "fwhm_psfex" in outputs:
                 self.fwhm_psfex = outputs["fwhm_psfex"]
             if "fwhm_psfex" in outputs:
@@ -377,13 +383,19 @@ class ImagingImage(Image):
         self.source_cat["B_IMAGE"] = self.source_cat["A_WORLD"].to(units.pix, self.pixel_scale_dec)
         self.source_cat["KRON_AREA_IMAGE"] = self.source_cat["A_IMAGE"] * self.source_cat["B_IMAGE"] * np.pi
 
-    def calibrate_magnitudes(self, zeropoint_name: str, force: bool = False):
-        if force or f"MAG_AUTO_ZP_{zeropoint_name}" not in self.source_cat:
+    def calibrate_magnitudes(self, zeropoint_name: str, force: bool = False, dual: bool = False):
+        self.load_source_cat()
+        if dual:
+            cat = self.source_cat_dual
+        else:
+            cat = self.source_cat
+
+        if force or f"MAG_AUTO_ZP_{zeropoint_name}" not in cat:
             if zeropoint_name not in self.zeropoints:
                 raise KeyError(f"Zeropoint {zeropoint_name} does not exist.")
             zp_dict = self.zeropoints[zeropoint_name]
-            mag, mag_err_minus, mag_err_plus = ph.magnitude_complete(flux=self.source_cat["FLUX_AUTO"],
-                                                                     flux_err=self.source_cat[
+            mag, mag_err_minus, mag_err_plus = ph.magnitude_complete(flux=cat["FLUX_AUTO"],
+                                                                     flux_err=cat[
                                                                          "FLUXERR_AUTO"],
                                                                      exp_time=self.exposure_time,
                                                                      exp_time_err=0.0 * units.second,
@@ -397,8 +409,12 @@ class ImagingImage(Image):
                                                                      colour_term=0.0,
                                                                      colour=0.0 * units.mag,
                                                                      )
-            self.source_cat[f"MAG_AUTO_ZP_{zeropoint_name}"] = mag
-            self.source_cat[f"MAGERR_AUTO_ZP_{zeropoint_name}"] = np.max([np.abs(mag_err_minus), np.abs(mag_err_plus)])
+            cat[f"MAG_AUTO_ZP_{zeropoint_name}"] = mag
+            cat[f"MAGERR_AUTO_ZP_{zeropoint_name}"] = np.max([np.abs(mag_err_minus), np.abs(mag_err_plus)])
+            if dual:
+                self.source_cat_dual = cat
+            else:
+                self.source_cat = cat
             self.update_output_file()
         else:
             print(f"Magnitudes already calibrated for {zeropoint_name}")

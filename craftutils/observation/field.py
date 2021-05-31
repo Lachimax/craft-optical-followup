@@ -973,9 +973,9 @@ class ImagingEpoch(Epoch):
         if "filters" in outputs:
             self.filters = outputs["filters"]
         if "deepest" in outputs and outputs["deepest"] is not None:
-            self.frames_science.append(cls(path=outputs["deepest"]))
+            self.deepest = cls(path=outputs["deepest"])
         if "deepest_filter" in outputs:
-            self.deepest = outputs["deepest"]
+            self.deepest_filter = outputs["deepest_filter"]
         if "coadded" in outputs:
             for fil in outputs["coadded"]:
                 if outputs["coadded"][fil] is not None:
@@ -1117,6 +1117,7 @@ class PanSTARRS1ImagingEpoch(ImagingEpoch):
                 img.source_extraction_psf(output_dir=source_extraction_path,
                                           phot_autoparams=f"{configs['kron_factor']},{configs['kron_radius_min']}")
             self.stages_complete['2-source_extraction'] = Time.now()
+            self.update_output_file()
 
     def proc_3_photometric_calibration(self, **kwargs):
         if self.query_stage("Do photometric calibration?", stage="3-photometric_calibration"):
@@ -1140,8 +1141,11 @@ class PanSTARRS1ImagingEpoch(ImagingEpoch):
             self.deepest = deepest
             print("DEEPEST FILTER:", self.deepest_filter, self.deepest.depth)
             self.stages_complete['3-photometric_calibration'] = Time.now()
+            self.update_output_file()
 
     def proc_4_dual_mode_source_extraction(self, **kwargs):
+        print(self.deepest)
+        print(self.deepest.path)
         if self.query_stage("Do source extraction in dual-mode, using deepest image as footprint?",
                             stage="4-dual_mode_source_extraction"):
             source_extraction_path = os.path.join(self.data_path, "4-dual_mode_source_extraction")
@@ -1153,13 +1157,15 @@ class PanSTARRS1ImagingEpoch(ImagingEpoch):
                                           phot_autoparams=f"{configs['kron_factor']},{configs['kron_radius_min']}",
                                           template=self.deepest)
 
-        self.stages_complete["4-dual_mode_source_extraction"] = Time.now()
+            self.stages_complete["4-dual_mode_source_extraction"] = Time.now()
+            self.update_output_file()
 
     def proc_5_get_photometry(self, **kwargs):
         if self.query_stage("Get photometry?",
                             stage="5-get_photometry"):
             for fil in self.coadded:
                 img = self.coadded[fil]
+                img.calibrate_magnitudes(zeropoint_name="panstarrs1", dual=True)
                 for obj in self.field.objects:
                     nearest = img.find_object(obj.position)
                     print("FILTER:", fil)
@@ -1167,7 +1173,8 @@ class PanSTARRS1ImagingEpoch(ImagingEpoch):
                     print(f"A = {nearest['A_WORLD'].to(units.arcsec)}; B = {nearest['B_WORLD'].to(units.arcsec)}")
                     img.plot_object(nearest)
 
-        self.stages_complete["5-get_photometry"] = Time.now()
+            self.stages_complete["5-get_photometry"] = Time.now()
+            self.update_output_file()
 
     def _initial_setup(self):
         imaging_dir = os.path.join(self.data_path, "0-imaging")
