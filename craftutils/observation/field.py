@@ -8,6 +8,7 @@ import numpy as np
 from astropy.time import Time
 from astropy.coordinates import SkyCoord
 import astropy.units as units
+import astropy.table as table
 
 import craftutils.astrometry as a
 import craftutils.utils as u
@@ -21,9 +22,9 @@ import craftutils.plotting as pl
 
 config = p.config
 
-instruments_imaging = ["vlt-fors2", "vlt-xshooter", "mgb-imacs", "panstarrs"]
-instruments_spectroscopy = ["vlt-fors2", "vlt-xshooter"]
-surveys = ["panstarrs"]
+instruments_imaging = p.instruments_imaging
+instruments_spectroscopy = p.instruments_spectroscopy
+surveys = p.surveys
 
 
 def select_instrument(mode: str):
@@ -123,10 +124,12 @@ class Field:
         if type(objs) is dict:
             obj_list = []
             for name in objs:
-                print(name)
-                obj = objects.Object.from_dict(objs[name])
-                obj_list.append(obj)
+                if name != "<name>":
+                    obj = objects.Object.from_dict(objs[name])
+                    self.add_object(obj)
             objs = obj_list
+        elif objs is None:
+            objs = []
 
         self.objects = objs
 
@@ -167,11 +170,13 @@ class Field:
     def mkdir(self):
         if self.data_path is not None:
             u.mkdir_check(self.data_path)
+            u.mkdir_check(os.path.join(self.data_path, "objects"))
 
     def mkdir_params(self):
         if self.param_dir is not None:
             u.mkdir_check(os.path.join(self.param_dir, "spectroscopy"))
             u.mkdir_check(os.path.join(self.param_dir, "imaging"))
+            u.mkdir_check(os.path.join(self.param_dir, "objects"))
         else:
             warnings.warn(f"param_dir is not set for this {type(self)}.")
 
@@ -278,6 +283,7 @@ class Field:
             new_params["program_id"] = None
             survey = True
         else:
+            survey = False
             new_params["name"] = u.user_input("Please enter a name for the epoch.")
             new_params["date"] = u.enter_time(message="Enter UTC observation date, in iso or isot format:")
             new_params["program_id"] = input("Enter the programmme ID for the observation:\n")
@@ -372,7 +378,7 @@ class Field:
     def set_path(self, key, value):
         self.paths[key] = value
 
-    def load_output_file(self):
+    def load_output_file(self, **kwargs):
         outputs = p.load_output_file(self)
         if "cats" in outputs:
             self.cats.update(outputs["cats"])
@@ -386,12 +392,16 @@ class Field:
     def update_output_file(self):
         p.update_output_file(self)
 
+    def add_object(self, obj: objects.Object):
+        self.objects.append(obj)
+        obj.field = self
+
     @classmethod
     def default_params(cls):
         default_params = {"name": None,
                           "type": "Field",
                           "centre": objects.position_dictionary.copy(),
-                          "objects": {"<name>": objects.position_dictionary.copy()
+                          "objects": {"<name>": objects.Object.default_params()
                                       }
                           }
         return default_params
@@ -458,8 +468,10 @@ class FRBField(Field):
                          )
 
         self.frb = frb
-        if self.frb is not None and self.frb.host_galaxy is not None:
-            self.objects.append(self.frb.host_galaxy)
+        if self.frb is not None:
+            self.frb.field = self
+            if self.frb.host_galaxy is not None:
+                self.add_object(self.frb.host_galaxy)
         self.epochs_imaging_old = {}
 
     @classmethod
@@ -635,6 +647,7 @@ class Epoch:
         self.frames_standard = []
         self.frames_science = []
         self.frames_dark = []
+        self.coadded = {}
 
     def pipeline(self, **kwargs):
         self._pipeline_init()
@@ -659,10 +672,18 @@ class Epoch:
         if self.data_path is not None and "raw_dir" not in self.paths:
             self.paths["raw_dir"] = os.path.join(self.data_path, epoch_stage_dirs["0-download"])
 
-    def load_output_file(self):
+    def load_output_file(self, **kwargs):
         outputs = p.load_output_file(self)
         if type(outputs) is dict:
             self.stages_complete.update(outputs["stages"])
+            cls = image.Image.select_child_class(instrument=self.instrument, **kwargs)
+            if "frames_science" in outputs:
+                for frame in outputs["frames_science"]:
+                    self.frames_science.append(cls(path=frame))
+            if "coadded" in outputs:
+                for fil in outputs["coadded"]:
+                    if outputs["coadded"][fil] is not None:
+                        self.coadded[fil] = cls(path=outputs["coadded"][fil])
         return outputs
 
     def _output_dict(self):
@@ -670,12 +691,12 @@ class Epoch:
         return {
             "stages": self.stages_complete,
             "paths": self.paths,
-            "frames_science": science_frame_paths
+            "frames_science": science_frame_paths,
+            "coadded": {k: v.path for k, v in self.coadded.items()}
         }
 
     def update_output_file(self):
         p.update_output_file(self)
-
 
     def check_done(self, stage: str):
         if stage not in self.stages_complete:
@@ -827,7 +848,6 @@ class ImagingEpoch(Epoch):
         self.source_extractor_config = source_extractor_config
 
         self.filters = []
-        self.coadded = {}
         self.deepest = None
         self.deepest_filter = None
 
@@ -960,28 +980,20 @@ class ImagingEpoch(Epoch):
         output_dict.update({"filters": self.filters,
                             "deepest": deepest,
                             "deepest_filter": self.deepest_filter,
-                            "coadded": {k: v.path for k, v in self.coadded.items()}
                             })
         return output_dict
 
-    def load_output_file(self):
-        outputs = super().load_output_file()
-        cls = image.ImagingImage.select_child_class(instrument=self.instrument)
-        if "frames_science" in outputs:
-            for frame in outputs["frames_science"]:
-                self.frames_science.append(cls(path=frame))
-        if "filters" in outputs:
-            self.filters = outputs["filters"]
-        if "deepest" in outputs and outputs["deepest"] is not None:
-            self.deepest = cls(path=outputs["deepest"])
-        if "deepest_filter" in outputs:
-            self.deepest_filter = outputs["deepest_filter"]
-        if "coadded" in outputs:
-            for fil in outputs["coadded"]:
-                if outputs["coadded"][fil] is not None:
-                    self.coadded[fil] = cls(path=outputs["coadded"][fil])
-
-
+    def load_output_file(self, **kwargs):
+        outputs = super().load_output_file(**kwargs)
+        if type(outputs) is dict:
+            cls = image.Image.select_child_class(instrument=self.instrument)
+            if "filters" in outputs:
+                self.filters = outputs["filters"]
+            if "deepest" in outputs and outputs["deepest"] is not None:
+                self.deepest = cls(path=outputs["deepest"])
+            if "deepest_filter" in outputs:
+                self.deepest_filter = outputs["deepest_filter"]
+        return outputs
 
     @classmethod
     def stages(cls):
@@ -1144,8 +1156,6 @@ class PanSTARRS1ImagingEpoch(ImagingEpoch):
             self.update_output_file()
 
     def proc_4_dual_mode_source_extraction(self, **kwargs):
-        print(self.deepest)
-        print(self.deepest.path)
         if self.query_stage("Do source extraction in dual-mode, using deepest image as footprint?",
                             stage="4-dual_mode_source_extraction"):
             source_extraction_path = os.path.join(self.data_path, "4-dual_mode_source_extraction")
@@ -1163,16 +1173,36 @@ class PanSTARRS1ImagingEpoch(ImagingEpoch):
     def proc_5_get_photometry(self, **kwargs):
         if self.query_stage("Get photometry?",
                             stage="5-get_photometry"):
+            object_property_path = os.path.join(self.data_path, "5-object_properties")
+            u.mkdir_check(object_property_path)
             for fil in self.coadded:
+                fil_output_path = os.path.join(object_property_path, fil)
+                u.mkdir_check(fil_output_path)
                 img = self.coadded[fil]
                 img.calibrate_magnitudes(zeropoint_name="panstarrs1", dual=True)
+                rows = []
                 for obj in self.field.objects:
                     nearest = img.find_object(obj.position)
+                    rows.append(nearest)
+                    err = max(nearest['MAGERR_AUTO_ZP_panstarrs1_plus'], nearest['MAGERR_AUTO_ZP_panstarrs1_minus'])
                     print("FILTER:", fil)
-                    print(f"MAG_AUTO = {nearest['MAG_AUTO_ZP_panstarrs1']}")
+                    print(f"MAG_AUTO = {nearest['MAG_AUTO_ZP_panstarrs1']} +/- {err}")
                     print(f"A = {nearest['A_WORLD'].to(units.arcsec)}; B = {nearest['B_WORLD'].to(units.arcsec)}")
-                    img.plot_object(nearest)
-
+                    img.plot_object(nearest, output=os.path.join(fil_output_path, f"{obj.name}.png"), show=False)
+                    obj.cat_row = nearest
+                    obj.photometry[f"{fil}_panstarrs1_custom"] = {"mag": nearest['MAG_AUTO_ZP_panstarrs1'],
+                                                                  "mag_err": err,
+                                                                  "a": nearest['A_WORLD'],
+                                                                  "b": nearest['B_WORLD'],
+                                                                  "ra": nearest['ALPHA_SKY'],
+                                                                  "ra_err": np.sqrt(nearest["ERRX2_WORLD"]),
+                                                                  "dec": nearest['DELTA_SKY'],
+                                                                  "dec_err": np.sqrt(nearest["ERRY2_WORLD"]),
+                                                                  "kron_radius": nearest["KRON_RADIUS"]}
+                    obj.update_output_file()
+                tbl = table.hstack(rows)
+                tbl.write(os.path.join(fil_output_path, f"{self.field.name}_{self.name}_{fil}.ecsv"),
+                          format="ascii.ecsv")
             self.stages_complete["5-get_photometry"] = Time.now()
             self.update_output_file()
 
@@ -1795,7 +1825,7 @@ class FORS2SpectroscopyEpoch(ESOSpectroscopyEpoch):
                 path = os.path.join(self.paths["pypeit_science_dir"], file)
                 os.system(f"pypeit_show_1dspec {path}")
 
-    def proc_6_marz_format(self, do: list = None):
+    def proc_6_marz_format(self):
         return self.query_stage("Convert co-added 1D spectra to Marz format?", stage='6-marz-format')
 
 
@@ -2028,7 +2058,14 @@ class XShooterSpectroscopyEpoch(ESOSpectroscopyEpoch):
                 self.add_pypeit_user_param(param=["coadd1d", "wave_method"], value="velocity", file_type="coadd1d")
                 u.write_list_to_file(coadd_file_path, self._get_pypeit_coadd1d_file())
                 spec.pypeit_coadd_1dspec(coadd1d_file=coadd_file_path)
+                self.coadded[arm] = image.Spec1DCoadded(path=output_path)
+
         self._current_arm = None
+
+    def proc_6_marz_format(self):
+        if self.query_stage("Convert co-added 1D spectra to Marz format?", stage='6-marz-format'):
+            for arm in self.coadded:
+                self.coadded[arm].convert_to_marz_format()
 
     def add_raw_frame(self, raw_frame: image.Image):
         arm = self._get_current_arm()
@@ -2171,7 +2208,7 @@ class XShooterSpectroscopyEpoch(ESOSpectroscopyEpoch):
             "paths": self.paths,
         }
 
-    def load_output_file(self):
+    def load_output_file(self, **kwargs):
         outputs = super().load_output_file()
         if outputs not in [None, True, False]:
             self.stages_complete.update(outputs["stages"])
