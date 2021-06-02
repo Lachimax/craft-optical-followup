@@ -14,6 +14,9 @@ from craftutils import utils as u
 
 yaml.AstropyDumper.ignore_aliases = lambda *args: True
 
+instruments_imaging = ["vlt-fors2", "vlt-xshooter", "mgb-imacs", "panstarrs"]
+instruments_spectroscopy = ["vlt-fors2", "vlt-xshooter"]
+surveys = ["panstarrs"]
 
 def serialise_attributes(dumper, data):
     dict_representation = data.__dict__
