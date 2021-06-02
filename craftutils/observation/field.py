@@ -382,6 +382,7 @@ class Field:
         outputs = p.load_output_file(self)
         if "cats" in outputs:
             self.cats.update(outputs["cats"])
+        return outputs
 
     def _output_dict(self):
         return {
@@ -672,18 +673,27 @@ class Epoch:
         if self.data_path is not None and "raw_dir" not in self.paths:
             self.paths["raw_dir"] = os.path.join(self.data_path, epoch_stage_dirs["0-download"])
 
+    def add_coadded_image(self, img: Union[str, image.Spec1DCoadded], key: str, **kwargs):
+        cls = image.Image.select_child_class(instrument=self.instrument, frame_type="coadded", **kwargs)
+        if isinstance(img, str):
+            img = cls(path=img)
+        img.epoch = self
+        self.coadded[key] = img
+        return img
+
     def load_output_file(self, **kwargs):
         outputs = p.load_output_file(self)
         if type(outputs) is dict:
             self.stages_complete.update(outputs["stages"])
-            cls = image.Image.select_child_class(instrument=self.instrument, **kwargs)
             if "frames_science" in outputs:
+                cls = image.Image.select_child_class(instrument=self.instrument, frame_type="raw", **kwargs)
                 for frame in outputs["frames_science"]:
                     self.frames_science.append(cls(path=frame))
             if "coadded" in outputs:
+
                 for fil in outputs["coadded"]:
                     if outputs["coadded"][fil] is not None:
-                        self.coadded[fil] = cls(path=outputs["coadded"][fil])
+                        self.add_coadded_image(img=outputs["coadded"][fil], key=fil)
         return outputs
 
     def _output_dict(self):
@@ -984,9 +994,9 @@ class ImagingEpoch(Epoch):
         return output_dict
 
     def load_output_file(self, **kwargs):
-        outputs = super().load_output_file(**kwargs)
+        outputs = super().load_output_file(mode="imaging", **kwargs)
         if type(outputs) is dict:
-            cls = image.Image.select_child_class(instrument=self.instrument)
+            cls = image.Image.select_child_class(instrument=self.instrument, mode='imaging')
             if "filters" in outputs:
                 self.filters = outputs["filters"]
             if "deepest" in outputs and outputs["deepest"] is not None:
@@ -1580,6 +1590,10 @@ class SpectroscopyEpoch(Epoch):
     def proc_5_pypeit_coadd(self):
         pass
 
+    def proc_6_convert_to_marz_format(self):
+        if self.query_stage("Convert co-added 1D spectra to Marz format?", stage='6-marz-format'):
+            pass
+
     def _path_2_pypeit(self):
         if self.data_path is not None and "pypeit_dir" not in self.paths:
             self.paths["pypeit_dir"] = os.path.join(self.data_path, epoch_stage_dirs["2-pypeit"])
@@ -1721,6 +1735,7 @@ class ESOSpectroscopyEpoch(SpectroscopyEpoch):
         self.proc_3_pypeit_run(do_not_reuse_masters=do_not_reuse_masters)
         self.proc_4_pypeit_flux()
         self.proc_5_pypeit_coadd()
+        self.proc_6_convert_to_marz_format()
 
     def proc_0_raw(self):
         if self.query_stage("Download raw data from ESO archive?", stage='0-download'):
@@ -1825,13 +1840,15 @@ class FORS2SpectroscopyEpoch(ESOSpectroscopyEpoch):
                 path = os.path.join(self.paths["pypeit_science_dir"], file)
                 os.system(f"pypeit_show_1dspec {path}")
 
-    def proc_6_marz_format(self):
-        return self.query_stage("Convert co-added 1D spectra to Marz format?", stage='6-marz-format')
-
 
 class XShooterSpectroscopyEpoch(ESOSpectroscopyEpoch):
     _instrument_pypeit = "vlt_xshooter"
-    arms = ['uvb', "vis", "nir"]
+    grisms = {'uvb': {"lambda_min": 300 * units.nm,
+                      "lambda_max": 550 * units.nm},
+              "vis": {"lambda_min": 550 * units.nm,
+                      "lambda_max": 1000 * units.nm},
+              "nir": {"lambda_min": 1000 * units.nm,
+                      "lambda_max": 2500 * units.nm}}
 
     def __init__(self,
                  param_path: str = None,
@@ -1916,7 +1933,7 @@ class XShooterSpectroscopyEpoch(ESOSpectroscopyEpoch):
             setup_files = os.path.join(self.paths["pypeit_dir"], 'setup_files', '')
             self.paths["pypeit_setup_dir"] = setup_files
             os.system(f"rm {setup_files}*")
-            for arm in self.arms:
+            for arm in self.grisms:
                 self._current_arm = arm
                 spec.pypeit_setup(root=self.paths['raw_dir'], output_path=self.paths['pypeit_dir'],
                                   spectrograph=f"{self._instrument_pypeit}_{arm}")
@@ -1991,7 +2008,7 @@ class XShooterSpectroscopyEpoch(ESOSpectroscopyEpoch):
             self.update_output_file()
 
     def proc_3_pypeit_run(self, do_not_reuse_masters=False):
-        for i, arm in enumerate(self.arms):
+        for i, arm in enumerate(self.grisms):
             # UVB not yet implemented in PypeIt, so we skip.
             if arm == "uvb":
                 continue
@@ -2013,7 +2030,7 @@ class XShooterSpectroscopyEpoch(ESOSpectroscopyEpoch):
         self._current_arm = None
 
     def proc_4_pypeit_flux(self):
-        for i, arm in enumerate(self.arms):
+        for i, arm in enumerate(self.grisms):
             # UVB not yet implemented in PypeIt, so we skip.
             if arm == "uvb":
                 continue
@@ -2027,7 +2044,7 @@ class XShooterSpectroscopyEpoch(ESOSpectroscopyEpoch):
         self.update_output_file()
 
     def proc_5_pypeit_coadd(self):
-        for i, arm in enumerate(self.arms):
+        for i, arm in enumerate(self.grisms):
             # UVB not yet implemented in PypeIt, so we skip.
             if arm == "uvb":
                 continue
@@ -2058,14 +2075,25 @@ class XShooterSpectroscopyEpoch(ESOSpectroscopyEpoch):
                 self.add_pypeit_user_param(param=["coadd1d", "wave_method"], value="velocity", file_type="coadd1d")
                 u.write_list_to_file(coadd_file_path, self._get_pypeit_coadd1d_file())
                 spec.pypeit_coadd_1dspec(coadd1d_file=coadd_file_path)
-                self.coadded[arm] = image.Spec1DCoadded(path=output_path)
+                self.add_coadded_image(coadd_file_path, arm=arm)
+
+            self.stages_complete[f'5.{i + 1}-pypeit_coadd_{arm}'] = Time.now()
 
         self._current_arm = None
 
-    def proc_6_marz_format(self):
-        if self.query_stage("Convert co-added 1D spectra to Marz format?", stage='6-marz-format'):
+    def proc_6_convert_to_marz_format(self):
+        if self.query_stage("Convert co-added 1D spectra to Marz format?", stage='6-convert_to_marz_format'):
             for arm in self.coadded:
                 self.coadded[arm].convert_to_marz_format()
+            self.stages_complete[f'6-convert_to_marz_format'] = Time.now()
+
+    def add_coadded_image(self, img: Union[str, image.Spec1DCoadded], **kwargs):
+        arm = kwargs["key"]
+        if isinstance(img, str):
+            img = image.Spec1DCoadded(path=img, grism=arm)
+        img.epoch = self
+        self.coadded[arm] = img
+        return img
 
     def add_raw_frame(self, raw_frame: image.Image):
         arm = self._get_current_arm()
@@ -2199,6 +2227,7 @@ class XShooterSpectroscopyEpoch(ESOSpectroscopyEpoch):
                            "5.1-pypeit_coadd_uvb": None,
                            "5.2-pypeit_coadd_vis": None,
                            "5.3-pypeit_coadd_nir": None,
+                           "6-convert_to_marz_format": None
                            })
         return param_dict
 
@@ -2209,7 +2238,7 @@ class XShooterSpectroscopyEpoch(ESOSpectroscopyEpoch):
         }
 
     def load_output_file(self, **kwargs):
-        outputs = super().load_output_file()
+        outputs = super().load_output_file(mode="spectroscopy", **kwargs)
         if outputs not in [None, True, False]:
             self.stages_complete.update(outputs["stages"])
             if "paths" in outputs:

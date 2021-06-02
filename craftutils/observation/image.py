@@ -17,14 +17,13 @@ import craftutils.photometry as ph
 import craftutils.params as p
 import craftutils.plotting as pl
 from craftutils.retrieve import cat_columns
-from craftutils.observation.field import instruments_imaging, instruments_spectroscopy
 
 
 class Image:
 
     def __init__(self, path: str, frame_type: str = None, instrument: str = None):
         self.path = path
-        self.output_path = path.replace(".fits", "_outputs.yaml")
+        self.output_file = path.replace(".fits", "_outputs.yaml")
         self.data_path, self.filename = os.path.split(self.path)
         self.name = self.get_id()
         self.hdu_list = None
@@ -32,6 +31,7 @@ class Image:
         self.headers = None
         self.data = None
         self.instrument = instrument
+        self.epoch = None
 
         # Header attributes
         self.exposure_time = None
@@ -124,12 +124,16 @@ class Image:
     @classmethod
     def select_child_class(cls, instrument: str, **kwargs):
         instrument = instrument.lower()
-        if instrument in instruments_imaging:
-            return ImagingImage.select_child_class(instrument=instrument, **kwargs)
-        elif instrument in instruments_spectroscopy:
-            return Spectrum.select_child_class(instrument=instrument, **kwargs)
+        if 'mode' in kwargs:
+            mode = kwargs['mode']
+            if mode == 'imaging':
+                return ImagingImage.select_child_class(instrument=instrument, **kwargs)
+            elif mode == 'spectroscopy':
+                return Spectrum.select_child_class(instrument=instrument, **kwargs)
+            else:
+                raise ValueError(f"Unrecognised instrument {instrument}")
         else:
-            raise ValueError(f"Unrecognised instrument {instrument}")
+            raise KeyError(f"mode must be provided for {cls}.select_child_class()")
 
 
 class ImagingImage(Image):
@@ -611,6 +615,23 @@ class PanSTARRS1Cutout(ImagingImage):
 
 
 class Spectrum(Image):
+    def __init__(self, path: str = None, frame_type: str = None, decker: str = None, binning: str = None,
+                 grism: str = None):
+        super().__init__(path=path, frame_type=frame_type)
+        self.decker = decker
+        self.binning = binning
+        self.grism = grism
+
+        self.lambda_min = None
+        self.lambda_max = None
+
+    def get_lambda_range(self):
+        if self.epoch is not None:
+            self.lambda_min = self.epoch.grisms[self.grism]["lambda_min"]
+            self.lambda_max = self.epoch.grisms[self.grism]["lambda_max"]
+        else:
+            print("self.epoch not set; could not determine lambda range")
+
     @classmethod
     def select_child_class(cls, instrument: str, **kwargs):
         if 'frame_type' in kwargs:
@@ -627,10 +648,8 @@ class SpecRaw(Spectrum):
     frame_type = "raw"
 
     def __init__(self, path: str = None, frame_type: str = None, decker: str = None, binning: str = None):
-        super().__init__(path=path, frame_type=frame_type)
+        super().__init__(path=path, frame_type=frame_type, decker=decker, binning=binning)
         self.pypeit_line = None
-        self.decker = decker
-        self.binning = binning
 
     @classmethod
     def from_pypeit_line(cls, line: str, pypeit_raw_path: str):
@@ -644,12 +663,12 @@ class SpecRaw(Spectrum):
         return inst
 
 
-class Spec1DCoadded(Image):
-    def __init__(self, path: str = None):
-        super().__init__(path=path)
+class Spec1DCoadded(Spectrum):
+    def __init__(self, path: str = None, grism: str = None):
+        super().__init__(path=path, grism=grism)
         self.marz_format_path = None
 
-    def convert_to_marz_format(self, output: str = None, lambda_min: float = None, lambda_max: float = None):
+    def convert_to_marz_format(self, output: str = None):
         """
         Extracts the 1D spectrum from the PypeIt-generated file and rearranges it into the format accepted by Marz.
         :param output:
@@ -657,6 +676,7 @@ class Spec1DCoadded(Image):
         :param lambda_max:
         :return:
         """
+        self.get_lambda_range()
         self.open()
         data = self.hdu_list[1].data
         header = self.hdu_list[1].header.copy()
@@ -672,24 +692,34 @@ class Spec1DCoadded(Image):
         del header["TFIELDS"]
         del header['XTENSION']
 
-        i_min = np.abs(lambda_min - data['flux']).argmin()
-        i_max = np.abs(lambda_max - data['flux']).argmin()
+        i_min = np.abs(self.lambda_min.to(units.angstrom).value - data['wave']).argmin()
+        i_max = np.abs(self.lambda_max.to(units.angstrom).value - data['wave']).argmin()
         data = data[i_min:i_max]
+
+        print(data)
+        print(data.shape)
 
         primary = fits.PrimaryHDU(data['flux'])
         primary.header.update(header)
+        primary.header["NAXIS"] = 1
+        primary.header["NAXIS1"] = len(data)
+        del primary.header["NAXIS2"]
 
         variance = fits.ImageHDU(data['ivar'])
         variance.name = 'VARIANCE'
+        primary.header["NAXIS"] = 1
+        primary.header["NAXIS1"] = len(data)
 
         wavelength = fits.ImageHDU(data['wave'])
         wavelength.name = 'WAVELENGTH'
+        primary.header["NAXIS"] = 1
+        primary.header["NAXIS1"] = len(data)
 
         new_hdu_list = fits.HDUList([primary, variance, wavelength])
 
         if output is None:
-            output = self.path.replace(".fits", "marz.fits")
-        new_hdu_list.writeto(output)
+            output = self.path.replace(".fits", "_marz.fits")
+        new_hdu_list.writeto(output, overwrite=True)
         self.marz_format_path = output
         self.close()
         self.update_output_file()
