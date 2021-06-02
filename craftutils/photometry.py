@@ -297,8 +297,8 @@ def magnitude_complete(flux: units.Quantity,
     error_extinction = u.uncertainty_product(ext * airmass, (ext, ext_err), (airmass, airmass_err))
     error_colour = u.uncertainty_product(colour_term * colour, (colour_term, colour_term_err), (colour, colour_err))
 
-    error_plus = mag_error_plus + zeropoint_err + error_extinction + error_colour
-    error_minus = mag_error_minus - zeropoint_err - error_extinction - error_colour
+    error_plus = mag_error_plus + np.sqrt(zeropoint_err**2 + error_extinction**2 + error_colour**2)
+    error_minus = mag_error_minus - np.sqrt(zeropoint_err**2 + error_extinction**2 + error_colour**2)
 
     return magnitude, error_plus, error_minus
 
@@ -314,7 +314,7 @@ def magnitude_error(flux: units.Quantity,
     error_plus = units.Magnitude(flux_per_sec - error_fps).value * units.mag
     error_minus = units.Magnitude(flux_per_sec + error_fps).value * units.mag
     if not absolute:
-        return mag, mag + error_plus, mag - error_minus
+        return mag, mag - error_plus, mag - error_minus
     else:
         return mag, error_plus, error_minus
 
@@ -768,7 +768,7 @@ def determine_zeropoint_sextractor(sextractor_cat: Union[str, table.QTable],
     print("RMSE:", rmse)
 
     params["zeropoint_raw"] = -fitted_fixed.intercept
-    params["rmse_raw"] = rmse * units.mag
+    params["rmse_raw"] = rmse
     params["free_fit"] = [float(fitted_free.intercept.value), float(fitted_free.slope.value)]
 
     or_fitter = fitting.FittingWithOutlierRemoval(fitter, sigma_clip, niter=1, sigma=2.0)
