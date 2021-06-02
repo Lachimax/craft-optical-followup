@@ -17,6 +17,7 @@ import craftutils.photometry as ph
 import craftutils.params as p
 import craftutils.plotting as pl
 from craftutils.retrieve import cat_columns
+from craftutils.observation.field import instruments_imaging, instruments_spectroscopy
 
 
 class Image:
@@ -120,6 +121,16 @@ class Image:
                        "gain": "GAIN"}
         return header_keys
 
+    @classmethod
+    def select_child_class(cls, instrument: str, **kwargs):
+        instrument = instrument.lower()
+        if instrument in instruments_imaging:
+            return ImagingImage.select_child_class(instrument=instrument, **kwargs)
+        elif instrument in instruments_spectroscopy:
+            return Spectrum.select_child_class(instrument=instrument, **kwargs)
+        else:
+            raise ValueError(f"Unrecognised instrument {instrument}")
+
 
 class ImagingImage(Image):
     def __init__(self, path: str, frame_type: str = None, instrument: str = None):
@@ -137,6 +148,7 @@ class ImagingImage(Image):
         self.source_cat_dual_path = None
         self.source_cat = None
         self.source_cat_dual = None
+        self.dual_mode_template = None
 
         self.fwhm_pix_psfex = None
         self.fwhm_psfex = None
@@ -158,6 +170,7 @@ class ImagingImage(Image):
                           **configs):
         if template is not None:
             template = template.path
+            self.dual_mode_template = template
         print("TEMPLATE PATH:", template)
         return ph.source_extractor(image_path=self.path,
                                    output_dir=output_dir,
@@ -213,50 +226,58 @@ class ImagingImage(Image):
         self.update_output_file()
 
     def load_source_cat_sextractor(self, force: bool = False):
-        if force:
-            self.source_cat = None
-        if self.source_cat is None:
-            print(self.source_cat_sextractor_dual_path)
-            self.source_cat = table.QTable.read(self.source_cat_sextractor_path, format="ascii.sextractor")
+        if self.source_cat_sextractor_path is not None:
+            if force:
+                self.source_cat = None
+            if self.source_cat is None:
+                print("Loading source_table from", self.source_cat_sextractor_path)
+                self.source_cat = table.QTable.read(self.source_cat_sextractor_path, format="ascii.sextractor")
+        else:
+            print("source_cat could not be loaded because source_cat_sextractor_path has not been set.")
 
     def load_source_cat_sextractor_dual(self, force: bool = False):
-        if force:
-            self.source_cat_dual = None
-        if self.source_cat_dual is None:
-            self.source_cat_dual = table.QTable.read(self.source_cat_sextractor_dual_path, format="ascii.sextractor")
+        if self.source_cat_sextractor_dual_path is not None:
+            if force:
+                self.source_cat_dual = None
+            if self.source_cat_dual is None:
+                print("Loading source_table from", self.source_cat_sextractor_dual_path)
+                self.source_cat_dual = table.QTable.read(self.source_cat_sextractor_dual_path,
+                                                         format="ascii.sextractor")
+        else:
+            print("source_cat_dual could not be loaded because source_cat_sextractor_dual_path has not been set.")
 
     def load_source_cat(self, force: bool = False):
         if force or self.source_cat is None:
             if self.source_cat_path is not None:
+                print("Loading source_table from", self.source_cat_path)
                 self.source_cat = table.QTable.read(self.source_cat_path, format="ascii.ecsv")
             elif self.source_cat_sextractor_path is not None:
                 self.load_source_cat_sextractor(force=force)
             else:
-                warnings.warn("No valid source_cat_path found. Could not load source_table")
+                print("No valid source_cat_path found. Could not load source_table.")
+
             if self.source_cat_dual_path is not None:
+                print("Loading source_table from", self.source_cat_dual_path)
                 self.source_cat_dual = table.QTable.read(self.source_cat_dual_path, format="ascii.ecsv")
             elif self.source_cat_sextractor_dual_path is not None:
                 self.load_source_cat_sextractor_dual(force=force)
             else:
-                warnings.warn("No valid source_cat_dual_path found. Could not load source_table")
+                warnings.warn("No valid source_cat_dual_path found. Could not load source_table.")
 
     def write_source_cat(self):
         if self.source_cat_path is None:
             self.source_cat_path = self.path.replace(".fits", "_source_cat.ecsv")
         if self.source_cat is None:
-            warnings.warn("source_cat not yet loaded.")
+            print("source_cat not yet loaded.")
         else:
             print("Writing source catalogue to", self.source_cat_path)
             self.source_cat.write(self.source_cat_path, format="ascii.ecsv")
 
         if self.source_cat_dual_path is None:
-            print("GOT HERE 1")
             self.source_cat_dual_path = self.path.replace(".fits", "_source_cat_dual.ecsv")
         if self.source_cat_dual is None:
-            print("GOT HERE 2")
-            warnings.warn("source_cat_dual not yet loaded.")
+            print("source_cat_dual not yet loaded.")
         else:
-            print("GOT HERE 3")
             print("Writing dual-mode source catalogue to", self.source_cat_dual_path)
             self.source_cat_dual.write(self.source_cat_dual_path, format="ascii.ecsv")
 
@@ -271,16 +292,20 @@ class ImagingImage(Image):
 
     def _output_dict(self):
         outputs = super()._output_dict()
-        outputs.update({"filter": self.filter,
-                        "psfex_path": self.psfex_path,
-                        "source_cat_sextractor_path": self.source_cat_sextractor_path,
-                        "source_cat_sextractor_dual_path": self.source_cat_sextractor_dual_path,
-                        "source_cat_path": self.source_cat_path,
-                        "source_cat_dual_path": self.source_cat_dual_path,
-                        "fwhm_pix_psfex": self.fwhm_pix_psfex,
-                        "fwhm_psfex": self.fwhm_psfex,
-                        "zeropoints": self.zeropoints,
-                        "zeropoint_output_paths": self.zeropoint_output_paths})
+        outputs.update({
+            "filter": self.filter,
+            "psfex_path": self.psfex_path,
+            "source_cat_sextractor_path": self.source_cat_sextractor_path,
+            "source_cat_sextractor_dual_path": self.source_cat_sextractor_dual_path,
+            "source_cat_path": self.source_cat_path,
+            "source_cat_dual_path": self.source_cat_dual_path,
+            "fwhm_pix_psfex": self.fwhm_pix_psfex,
+            "fwhm_psfex": self.fwhm_psfex,
+            "zeropoints": self.zeropoints,
+            "zeropoint_output_paths": self.zeropoint_output_paths,
+            "depth": self.depth,
+            "dual_mode_template": self.dual_mode_template
+        })
         return outputs
 
     def update_output_file(self):
@@ -310,6 +335,10 @@ class ImagingImage(Image):
                 self.zeropoints = outputs["zeropoints"]
             if "zeropoint_output_paths" in outputs:
                 self.zeropoint_output_paths = outputs["zeropoint_output_paths"]
+            if "depth" in outputs and outputs["depth"] is not None:
+                self.depth = outputs["depth"]
+            if "dual_mode_template" in outputs and outputs["dual_mode_template"] is not None:
+                self.dual_mode_template = outputs["dual_mode_template"]
         return outputs
 
     def zeropoint(self,
@@ -367,7 +396,8 @@ class ImagingImage(Image):
                                                     cat_type=cat_type,
                                                     cat_zeropoint=cat_zeropoint,
                                                     cat_zeropoint_err=cat_zeropoint_err,
-                                                    snr_col='SNR'
+                                                    snr_col='SNR',
+                                                    # snr_cut=500
                                                     )
 
         zp_dict['airmass'] = 0.0
@@ -410,7 +440,13 @@ class ImagingImage(Image):
                                                                      colour=0.0 * units.mag,
                                                                      )
             cat[f"MAG_AUTO_ZP_{zeropoint_name}"] = mag
-            cat[f"MAGERR_AUTO_ZP_{zeropoint_name}"] = np.max([np.abs(mag_err_minus), np.abs(mag_err_plus)])
+            print("calibrate_magnitudes mag_err_minus")
+            print(mag_err_minus)
+            print("calibrate_magnitudes mag_err_plus")
+            print(mag_err_plus)
+            cat[f"MAGERR_AUTO_ZP_{zeropoint_name}_plus"] = np.abs(mag_err_plus)
+            cat[f"MAGERR_AUTO_ZP_{zeropoint_name}_minus"] = np.abs(mag_err_minus)
+            print(np.amax([np.abs(mag_err_minus), np.abs(mag_err_plus)]))
             if dual:
                 self.source_cat_dual = cat
             else:
@@ -424,6 +460,8 @@ class ImagingImage(Image):
         self.signal_to_noise()
         self.calibrate_magnitudes(zeropoint_name=zeropoint_name)
         cat_3sigma = self.source_cat[self.source_cat["SNR"] > 3.0]
+        print("Total sources:", len(self.source_cat))
+        print("Sources > 3 sigma:", len(cat_3sigma))
         self.depth = np.max(cat_3sigma[f"MAG_AUTO_ZP_{zeropoint_name}"])
         self.update_output_file()
         return self.depth
@@ -435,7 +473,7 @@ class ImagingImage(Image):
         self.aperture_areas()
         flux_target = self.source_cat['FLUX_AUTO']
         rate_target = flux_target / self.exposure_time
-        rate_sky = self.estimate_sky_background() / self.exposure_time
+        rate_sky = self.source_cat['BACKGROUND'] / (self.exposure_time * units.pix)
         rate_read = self.extract_noise_read()
         n_pix = self.source_cat['KRON_AREA_IMAGE'] / units.pixel
 
@@ -482,7 +520,9 @@ class ImagingImage(Image):
         nearest = cat[np.argmin(separation)]
         return nearest
 
-    def plot_object(self, row: table.Row, ext: int = 0, frame: units.Quantity = 10 * units.pix):
+    def plot_object(self, row: table.Row, ext: int = 0, frame: units.Quantity = 10 * units.pix, output: str = None,
+                    show: bool = False):
+
         self.extract_pixel_scale()
         self.open()
         kron_a = row['KRON_RADIUS'] * row['A_WORLD']
@@ -521,11 +561,13 @@ class ImagingImage(Image):
                            show_centre=True
                            )
         plt.title(self.name)
-        plt.show()
+        plt.savefig(os.path.join(output))
+        if show:
+            plt.show()
         self.close()
 
     @classmethod
-    def select_child_class(cls, instrument: str):
+    def select_child_class(cls, instrument: str, **kwargs):
         instrument = instrument.lower()
         if instrument == "panstarrs":
             return PanSTARRS1Cutout
@@ -568,7 +610,22 @@ class PanSTARRS1Cutout(ImagingImage):
         return header_keys
 
 
-class SpecRaw(Image):
+class Spectrum(Image):
+    @classmethod
+    def select_child_class(cls, instrument: str, **kwargs):
+        if 'frame_type' in kwargs:
+            frame_type = kwargs['frame_type']
+            if frame_type == "coadded":
+                return Spec1DCoadded
+            elif frame_type == "raw":
+                return SpecRaw
+        else:
+            raise KeyError("frame_type is required.")
+
+
+class SpecRaw(Spectrum):
+    frame_type = "raw"
+
     def __init__(self, path: str = None, frame_type: str = None, decker: str = None, binning: str = None):
         super().__init__(path=path, frame_type=frame_type)
         self.pypeit_line = None
@@ -592,7 +649,7 @@ class Spec1DCoadded(Image):
         super().__init__(path=path)
         self.marz_format_path = None
 
-    def convert_to_marz_format(self, output: str, lambda_min: float = None, lambda_max: float = None):
+    def convert_to_marz_format(self, output: str = None, lambda_min: float = None, lambda_max: float = None):
         """
         Extracts the 1D spectrum from the PypeIt-generated file and rearranges it into the format accepted by Marz.
         :param output:
@@ -630,10 +687,19 @@ class Spec1DCoadded(Image):
 
         new_hdu_list = fits.HDUList([primary, variance, wavelength])
 
+        if output is None:
+            output = self.path.replace(".fits", "marz.fits")
         new_hdu_list.writeto(output)
         self.marz_format_path = output
-
         self.close()
+        self.update_output_file()
+
+    def _output_dict(self):
+        outputs = super()._output_dict()
+        outputs.update({
+            "marz_format_path": self.marz_format_path
+        })
+        return outputs
 
 # def pypeit_str(self):
 #     header = self.hdu[0].header
