@@ -1,6 +1,5 @@
 from typing import Union, Tuple
-
-from scipy.special import erf
+import os
 
 from astropy.coordinates import SkyCoord
 import astropy.units as un
@@ -137,11 +136,43 @@ class Object:
     def __init__(self,
                  name: str = None,
                  position: Union[SkyCoord, str] = None,
-                 position_err: Union[float, un.Quantity, dict, PositionUncertainty, tuple] = 0.0 * un.arcsec):
+                 position_err: Union[float, un.Quantity, dict, PositionUncertainty, tuple] = 0.0 * un.arcsec,
+                 field=None):
         self.name = name
         self.position = a.attempt_skycoord(position)
         if type(position_err) is not PositionUncertainty:
             self.position_err = PositionUncertainty(uncertainty=position_err, position=self.position)
+
+        self.cat_row = None
+        self.photometry = {}
+        self.data_path = None
+        self.output_file = None
+        self.field = field
+        self.load_output_file()
+
+    def _output_dict(self):
+        return {"photometry": self.photometry}
+
+    def load_output_file(self):
+        if self.data_path is not None:
+            outputs = p.load_output_file(self)
+            if outputs is not None:
+                if "photometry" in outputs and outputs["photometry"] is not None:
+                    self.photometry = outputs["frame_type"]
+            return outputs
+
+    def check_data_path(self):
+        if self.field is not None:
+            self.data_path = os.path.join(self.field.data_path, "objects", self.name)
+            u.mkdir_check(self.data_path)
+            self.output_file = os.path.join(self.data_path, f"{self.name}_outputs.yaml")
+            return True
+        else:
+            return False
+
+    def update_output_file(self):
+        if self.check_data_path():
+            p.update_output_file(self)
 
     @classmethod
     def default_params(cls):
@@ -167,8 +198,8 @@ class Galaxy(Object):
                  position_err: Union[float, un.Quantity, dict, PositionUncertainty, tuple] = 0.0 * un.arcsec,
                  z: float = 0.0):
         super().__init__(name=name,
-                                     position=position,
-                                     position_err=position_err)
+                         position=position,
+                         position_err=position_err)
         self.z = z
 
     @classmethod
