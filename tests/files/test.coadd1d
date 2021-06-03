@@ -1,0 +1,20 @@
+# Auto-generated PypeIt file
+# Tue 30 Mar 2021 13:29:22
+
+# User-defined execution parameters
+[coadd1d]
+  coaddfile = foreground_coadded.fits # Please set your output file name
+  sensfuncfile = YOUR_SENSFUNC_FILE # Please set your SENSFUNC file name
+  wave_method = linear # creates a uniformly space grid in lambda
+
+# This file includes all extracted objects. You need to figure out which object you want to 
+# coadd before running pypeit_coadd_1dspec!!!
+
+# Read in the coadd1d
+coadd1d read
+ Science/spec1d_FORS2.2021-03-07T02:20:57.373-FRB190714host_FORS2_2021Mar07T022057.373.fits SPAT0088-SLIT0482-DET01
+ Science/spec1d_FORS2.2021-03-07T02:44:16.324-FRB190714host_FORS2_2021Mar07T024416.323.fits SPAT0008-SLIT0482-DET01
+ Science/spec1d_FORS2.2021-03-07T03:19:21.283-FRB190714host_FORS2_2021Mar07T031921.283.fits SPAT0088-SLIT0482-DET01
+ Science/spec1d_FORS2.2021-03-07T03:42:39.754-FRB190714host_FORS2_2021Mar07T034239.754.fits SPAT0008-SLIT0482-DET01
+coadd1d end
+

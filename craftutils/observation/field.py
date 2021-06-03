@@ -693,7 +693,7 @@ class Epoch:
 
                 for fil in outputs["coadded"]:
                     if outputs["coadded"][fil] is not None:
-                        self.add_coadded_image(img=outputs["coadded"][fil], key=fil)
+                        self.add_coadded_image(img=outputs["coadded"][fil], key=fil, **kwargs)
         return outputs
 
     def _output_dict(self):
@@ -1198,7 +1198,8 @@ class PanSTARRS1ImagingEpoch(ImagingEpoch):
                     print("FILTER:", fil)
                     print(f"MAG_AUTO = {nearest['MAG_AUTO_ZP_panstarrs1']} +/- {err}")
                     print(f"A = {nearest['A_WORLD'].to(units.arcsec)}; B = {nearest['B_WORLD'].to(units.arcsec)}")
-                    img.plot_object(nearest, output=os.path.join(fil_output_path, f"{obj.name}.png"), show=False)
+                    img.plot_object(nearest, output=os.path.join(fil_output_path, f"{obj.name}.png"), show=False,
+                                    title=f"{obj.name}, {fil}-band, {nearest['MAG_AUTO_ZP_panstarrs1'].round(3).value} ± {err.round(3)}")
                     obj.cat_row = nearest
                     obj.photometry[f"{fil}_panstarrs1_custom"] = {"mag": nearest['MAG_AUTO_ZP_panstarrs1'],
                                                                   "mag_err": err,
@@ -1537,18 +1538,26 @@ class SpectroscopyEpoch(Epoch):
             pypeit_file = self._get_pypeit_coadd1d_file()
         else:
             raise ValueError(f"file_type {file_type} not recognised.")
+
         if pypeit_file is not None:
             # Build the final line of the setting specially.
             setting = "\t" * (len(param) - 1) + f"{param.pop()} = {value}\n"
-            # First, check if param sub-headings are already there:
             p_start = pypeit_file.index("# User-defined execution parameters\n") + 1
             insert_here = False
+            # For each level of the param list, look to see if it's already there.
+            for i, line in pypeit_file[p_start]:
+                if param[0] in line:
+                    p_start = i
+                    break
+
             for i, par in enumerate(param):
                 # Encase each level of the parameter in the correct number of square brackets and tabs.
                 par = "\t" * i + "[" * (i + 1) + par + "]" * (i + 1) + "\n"
+                # First, check if param sub-headings are already there:
                 if par in pypeit_file and not insert_here:
                     p_start = pypeit_file.index(par) + 1
                 else:
+                    # Insert the line at correct position.
                     pypeit_file.insert(p_start, par)
                     p_start += 1
                     insert_here = True
@@ -2058,11 +2067,6 @@ class XShooterSpectroscopyEpoch(ESOSpectroscopyEpoch):
                     coadd_file_lines = file.readlines()
                 output_path = os.path.join(run_dir, f"{self.name}_{arm}_coadded.fits")
                 sensfunc_path = self.get_path("pypeit_sensitivity_file")
-                # Remove parameter lines to be re-entered below
-                coadd_file_lines.remove("  coaddfile = YOUR_OUTPUT_FILE_NAME # Please set your output file name\n")
-                coadd_file_lines.remove(
-                    "  sensfuncfile = YOUR_SENSFUNC_FILE # Please set your SENSFUNC file name. Only required for Echelle\n")
-                coadd_file_lines.remove("  wave_method = velocity # creates a uniformly space grid in log10(lambda)\n")
                 # Remove non-science files
                 for line in coadd_file_lines[coadd_file_lines.index("coadd1d read\n"):]:
                     if "STD,FLUX" in line or "STD,TELLURIC" in line:
@@ -2075,7 +2079,7 @@ class XShooterSpectroscopyEpoch(ESOSpectroscopyEpoch):
                 self.add_pypeit_user_param(param=["coadd1d", "wave_method"], value="velocity", file_type="coadd1d")
                 u.write_list_to_file(coadd_file_path, self._get_pypeit_coadd1d_file())
                 spec.pypeit_coadd_1dspec(coadd1d_file=coadd_file_path)
-                self.add_coadded_image(coadd_file_path, arm=arm)
+                self.add_coadded_image(coadd_file_path, key=arm)
 
             self.stages_complete[f'5.{i + 1}-pypeit_coadd_{arm}'] = Time.now()
 

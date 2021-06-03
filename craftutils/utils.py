@@ -779,3 +779,68 @@ def user_input(message: str, typ: type = str, default=None):
                 print(f"Could not cast {inp} to {typ}. Try again:")
     print(f"You have entered {inp}.")
     return inp
+
+
+def scan_nested_dict(dictionary: dict, keys: list):
+    value = dictionary
+    for key in keys:
+        value = value[key]
+    return value
+
+
+def get_pypeit_user_params(file: Union[list, str]):
+
+    if isinstance(file, str):
+        with open(file) as f:
+            file = f.readlines()
+
+    p_start = file.index("# User-defined execution parameters\n") + 1
+    p_end = p_start + 1
+    while file[p_end] != "\n":
+        p_end += 1
+
+    param_dict = {}
+    level = 0
+    level_list = []
+    level_dict = param_dict
+    i = p_start
+    while i < p_end:
+        print()
+        print("i", i)
+        print(level_list)
+        print("param_dict")
+        print_nested_dict(param_dict)
+        print("level_dict")
+        print_nested_dict(level_dict)
+        print("level, prevous level")
+        line = file[i]
+        previous_level = level
+        level = line.count("[")
+        level_list = level_list[:level+1]
+        level_dict = scan_nested_dict(dictionary=param_dict, keys=level_list)
+        line = line.replace(" ", "").replace("\t", "").replace("[", "").replace("]", "").replace("\n", "")
+        print(level, previous_level)
+        print("line")
+        print(line)
+        level_list.append(line)
+        if level > previous_level:
+            level_dict[line] = {}
+            level_dict = level_dict[line]
+        else:
+            if level == 0:
+                if "#" in line:
+                    line = line[:line.find("#")]
+                key, value = line.split("=")
+                level_dict[key] = value
+                level = previous_level
+        i += 1
+    return param_dict
+
+
+def print_nested_dict(dictionary, level: int = 0):
+    for key in dictionary:
+        print(level * "\t", key + ":")
+        if isinstance(dictionary[key], dict):
+            print_nested_dict(dictionary[key], level + 1)
+        else:
+            print((level + 1) * "\t", dictionary[key])

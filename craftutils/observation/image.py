@@ -1,6 +1,7 @@
 import os
 import warnings
 from typing import Union
+from copy import deepcopy
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -525,7 +526,7 @@ class ImagingImage(Image):
         return nearest
 
     def plot_object(self, row: table.Row, ext: int = 0, frame: units.Quantity = 10 * units.pix, output: str = None,
-                    show: bool = False):
+                    show: bool = False, title: str = None):
 
         self.extract_pixel_scale()
         self.open()
@@ -564,7 +565,9 @@ class ImagingImage(Image):
                            world=True,
                            show_centre=True
                            )
-        plt.title(self.name)
+        if title is None:
+            title = self.name
+        plt.title(title)
         plt.savefig(os.path.join(output))
         if show:
             plt.show()
@@ -667,8 +670,31 @@ class Spec1DCoadded(Spectrum):
     def __init__(self, path: str = None, grism: str = None):
         super().__init__(path=path, grism=grism)
         self.marz_format_path = None
+        self.trimmed_path = None
 
-    def convert_to_marz_format(self, output: str = None):
+    def trim(self, output: str = None, lambda_min: units.Quantity = None, lambda_max: units.Quantity = None):
+        if lambda_min is None:
+            lambda_min = self.lambda_min
+        if lambda_max is None:
+            lambda_max = self.lambda_max
+
+        lambda_min = lambda_min.to(units.angstrom)
+        lambda_max = lambda_max.to(units.angstrom)
+
+        if output is None:
+            output = self.path.replace(".fits", f"_trimmed_{lambda_min.value}-{lambda_max.value}.fits")
+
+        self.open()
+        hdu_list = deepcopy(self.hdu_list)
+        data = hdu_list[1].data
+        i_min = np.abs(lambda_min.to(units.angstrom).value - data['wave']).argmin()
+        i_max = np.abs(lambda_max.to(units.angstrom).value - data['wave']).argmin()
+        data = data[i_min:i_max]
+        hdu_list[1].data = data
+        hdu_list.writeto(output, overwrite=True)
+        self.trimmed_path = output
+
+    def convert_to_marz_format(self, output: str = None, version: str = "main"):
         """
         Extracts the 1D spectrum from the PypeIt-generated file and rearranges it into the format accepted by Marz.
         :param output:
@@ -677,10 +703,20 @@ class Spec1DCoadded(Spectrum):
         :return:
         """
         self.get_lambda_range()
-        self.open()
-        data = self.hdu_list[1].data
-        header = self.hdu_list[1].header.copy()
-        header.update(self.hdu_list[0].header)
+
+        if version == "main":
+            path = self.path
+        elif version == "trimmed":
+            path = self.trimmed_path
+
+        hdu_list = fits.open(path)
+        print(version)
+        print(path)
+
+        data = hdu_list[1].data
+        header = hdu_list[1].header.copy()
+        header.update(hdu_list[0].header)
+
         del header["TTYPE1"]
         del header["TTYPE2"]
         del header["TTYPE3"]
@@ -721,13 +757,14 @@ class Spec1DCoadded(Spectrum):
             output = self.path.replace(".fits", "_marz.fits")
         new_hdu_list.writeto(output, overwrite=True)
         self.marz_format_path = output
-        self.close()
+        hdu_list.close()
         self.update_output_file()
 
     def _output_dict(self):
         outputs = super()._output_dict()
         outputs.update({
-            "marz_format_path": self.marz_format_path
+            "marz_format_path": self.marz_format_path,
+            "trimmed_paths": self.trimmed_path
         })
         return outputs
 

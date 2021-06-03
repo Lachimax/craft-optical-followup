@@ -1,0 +1,71 @@
+# Auto-generated PypeIt file
+# Wed 02 Jun 2021 17:36:02
+
+# User-defined execution parameters
+[calibrations]
+	[[traceframe]]
+		[[[process]]]
+			use_darkimage = True
+	[[illumflatframe]]
+		[[[process]]]
+			use_darkimage = True
+	[[pixelflatframe]]
+		[[[process]]]
+			use_darkimage = True
+[rdx]
+spectrograph = vlt_xshooter_nir
+
+# Setup
+setup read
+    Setup B:
+        arm: NIR
+setup end
+
+# Read in the data
+data read
+ path /home/lachlan/Data/FRB171020/spectroscopy/vlt-xshooter/2018-08-03-ESO_601-G036_1/0-data_with_raw_calibs
+|                           filename |       frametype |         ra |       dec |                target | dispname |  decker | binning |            mjd | airmass | exptime | arm | dither | calib | comb_id | bkg_id |
+| XSHOO.2018-08-03T12:32:44.410.fits |            dark |       None |      None |             LAMP,FLAT |  default |  5.0x11 |     1,1 | 58333.52273623 |    None |  1.4976 | NIR |   None |     1 |      -1 |     -1 |
+| XSHOO.2018-08-03T12:33:01.409.fits |            dark |       None |      None |             LAMP,FLAT |  default |  5.0x11 |     1,1 | 58333.52293298 |    None |  1.4976 | NIR |   None |     1 |      -1 |     -1 |
+| XSHOO.2018-08-03T12:33:22.121.fits |            dark |       None |      None |             LAMP,FLAT |  default |  5.0x11 |     1,1 |  58333.5231727 |    None |  1.4976 | NIR |   None |     1 |      -1 |     -1 |
+| XSHOO.2018-08-03T12:33:43.580.fits |            dark |       None |      None |             LAMP,FLAT |  default |  5.0x11 |     1,1 | 58333.52342107 |    None |  1.4976 | NIR |   None |     1 |      -1 |     -1 |
+| XSHOO.2018-08-03T12:34:05.038.fits |            dark |       None |      None |             LAMP,FLAT |  default |  5.0x11 |     1,1 | 58333.52366942 |    None |  1.4976 | NIR |   None |     1 |      -1 |     -1 |
+| XSHOO.2018-08-03T13:36:07.512.fits |            dark |       None |      None |             LAMP,FLAT |  default |  0.9x11 |     1,1 | 58333.56675361 |    None |    8.32 | NIR |   None |     1 |      -1 |     -1 |
+| XSHOO.2018-08-03T13:36:42.419.fits |            dark |       None |      None |             LAMP,FLAT |  default |  0.9x11 |     1,1 | 58333.56715763 |    None |    8.32 | NIR |   None |     1 |      -1 |     -1 |
+| XSHOO.2018-08-03T13:37:17.326.fits |            dark |       None |      None |             LAMP,FLAT |  default |  0.9x11 |     1,1 | 58333.56756164 |    None |    8.32 | NIR |   None |     1 |      -1 |     -1 |
+| XSHOO.2018-08-03T13:37:52.232.fits |            dark |       None |      None |             LAMP,FLAT |  default |  0.9x11 |     1,1 | 58333.56796565 |    None |    8.32 | NIR |   None |     1 |      -1 |     -1 |
+| XSHOO.2018-08-03T13:38:24.365.fits |            dark |       None |      None |             LAMP,FLAT |  default |  0.9x11 |     1,1 | 58333.56833756 |    None |    8.32 | NIR |   None |     1 |      -1 |     -1 |
+| XSHOO.2018-08-03T12:32:33.308.fits | pixelflat,trace |       None |      None |             LAMP,FLAT |  default |  5.0x11 |     1,1 | 58333.52260773 |    None |  1.4976 | NIR |   None |     1 |      -1 |     -1 |
+| XSHOO.2018-08-03T12:32:52.552.fits | pixelflat,trace |       None |      None |             LAMP,FLAT |  default |  5.0x11 |     1,1 | 58333.52283046 |    None |  1.4976 | NIR |   None |     1 |      -1 |     -1 |
+| XSHOO.2018-08-03T12:33:11.017.fits | pixelflat,trace |       None |      None |             LAMP,FLAT |  default |  5.0x11 |     1,1 | 58333.52304418 |    None |  1.4976 | NIR |   None |     1 |      -1 |     -1 |
+| XSHOO.2018-08-03T12:33:32.476.fits | pixelflat,trace |       None |      None |             LAMP,FLAT |  default |  5.0x11 |     1,1 | 58333.52329255 |    None |  1.4976 | NIR |   None |     1 |      -1 |     -1 |
+| XSHOO.2018-08-03T12:33:53.935.fits | pixelflat,trace |       None |      None |             LAMP,FLAT |  default |  5.0x11 |     1,1 | 58333.52354092 |    None |  1.4976 | NIR |   None |     1 |      -1 |     -1 |
+| XSHOO.2018-08-03T13:35:52.139.fits | pixelflat,trace |       None |      None |             LAMP,FLAT |  default |  0.9x11 |     1,1 | 58333.56657568 |    None |    8.32 | NIR |   None |     1 |      -1 |     -1 |
+| XSHOO.2018-08-03T13:36:24.273.fits | pixelflat,trace |       None |      None |             LAMP,FLAT |  default |  0.9x11 |     1,1 |  58333.5669476 |    None |    8.32 | NIR |   None |     1 |      -1 |     -1 |
+| XSHOO.2018-08-03T13:36:59.179.fits | pixelflat,trace |       None |      None |             LAMP,FLAT |  default |  0.9x11 |     1,1 | 58333.56735161 |    None |    8.32 | NIR |   None |     1 |      -1 |     -1 |
+| XSHOO.2018-08-03T13:37:34.086.fits | pixelflat,trace |       None |      None |             LAMP,FLAT |  default |  0.9x11 |     1,1 | 58333.56775563 |    None |    8.32 | NIR |   None |     1 |      -1 |     -1 |
+| XSHOO.2018-08-03T13:38:06.911.fits | pixelflat,trace |       None |      None |             LAMP,FLAT |  default |  0.9x11 |     1,1 | 58333.56813554 |    None |    8.32 | NIR |   None |     1 |      -1 |     -1 |
+| XSHOO.2018-08-02T23:17:32.374.fits |         science,arc,tilt | 211.919902 | -48.70349 |          STD,TELLURIC |  default |  0.9x11 |     1,1 | 58332.97051359 |   1.133 |     7.0 | NIR |    2.5 |     1 |      35 |     -1 |
+| XSHOO.2018-08-02T23:18:31.361.fits |         science,arc,tilt | 211.918738 | -48.70465 |          STD,TELLURIC |  default |  0.9x11 |     1,1 | 58332.97119631 |   1.134 |     7.0 | NIR |   -2.5 |     1 |      26 |     -1 |
+| XSHOO.2018-08-03T03:15:57.666.fits |         science,arc,tilt | 333.853525 |  -19.5851 | ESO 601-G036 Ref star |  default |  0.9x11 |     1,1 |  58333.1360841 |    1.32 |   120.0 | NIR |   None |     1 |      22 |     -1 |
+| XSHOO.2018-08-03T03:18:05.877.fits |         science,arc,tilt | 333.853525 |  -19.5851 | ESO 601-G036 Ref star |  default |  0.9x11 |     1,1 | 58333.13756802 |   1.311 |   120.0 | NIR |   None |     1 |      20 |     -1 |
+| XSHOO.2018-08-03T03:20:14.085.fits |         science,arc,tilt | 333.853525 |  -19.5851 | ESO 601-G036 Ref star |  default |  0.9x11 |     1,1 | 58333.13905191 |   1.301 |   120.0 | NIR |   None |     1 |      40 |     -1 |
+| XSHOO.2018-08-03T03:23:58.944.fits |         science,arc,tilt | 333.853533 | -19.57538 | ESO 601-G036 Ref star |  default |  0.9x11 |     1,1 | 58333.14165444 |   1.286 |   120.0 | NIR |   None |     1 |       4 |     -1 |
+| XSHOO.2018-08-03T03:26:07.153.fits |         science,arc,tilt | 333.853533 | -19.57538 | ESO 601-G036 Ref star |  default |  0.9x11 |     1,1 | 58333.14313834 |   1.277 |   120.0 | NIR |   None |     1 |      42 |     -1 |
+| XSHOO.2018-08-03T03:28:15.362.fits |         science,arc,tilt | 333.853533 | -19.57538 | ESO 601-G036 Ref star |  default |  0.9x11 |     1,1 | 58333.14462224 |   1.269 |   120.0 | NIR |   None |     1 |      32 |     -1 |
+| XSHOO.2018-08-03T03:38:51.339.fits |         science,arc,tilt | 333.855211 | -19.59423 | ESO 601-G036 Ref star |  default |  0.9x11 |     1,1 | 58333.15198309 |   1.229 |   120.0 | NIR |   None |     1 |      12 |     -1 |
+| XSHOO.2018-08-03T03:40:59.545.fits |         science,arc,tilt | 333.855211 | -19.59423 | ESO 601-G036 Ref star |  default |  0.9x11 |     1,1 | 58333.15346696 |   1.222 |   120.0 | NIR |   None |     1 |       8 |     -1 |
+| XSHOO.2018-08-03T03:43:07.751.fits |         science,arc,tilt | 333.855211 | -19.59423 | ESO 601-G036 Ref star |  default |  0.9x11 |     1,1 | 58333.15495082 |   1.215 |   120.0 | NIR |   None |     1 |      11 |     -1 |
+| XSHOO.2018-08-03T03:46:50.609.fits |         science,arc,tilt | 333.855213 | -19.59201 | ESO 601-G036 Ref star |  default |  0.9x11 |     1,1 |  58333.1575302 |   1.203 |   120.0 | NIR |   None |     1 |      18 |     -1 |
+| XSHOO.2018-08-03T03:48:58.816.fits |         science,arc,tilt | 333.855213 | -19.59201 | ESO 601-G036 Ref star |  default |  0.9x11 |     1,1 | 58333.15901407 |   1.196 |   120.0 | NIR |   None |     1 |      37 |     -1 |
+| XSHOO.2018-08-03T03:51:07.022.fits |         science,arc,tilt | 333.855213 | -19.59201 | ESO 601-G036 Ref star |  default |  0.9x11 |     1,1 | 58333.16049794 |   1.189 |   120.0 | NIR |   None |     1 |      36 |     -1 |
+| XSHOO.2018-08-03T06:52:40.941.fits |         science,arc,tilt | 333.857186 | -19.58773 | ESO 601-G036 Ref star |  default |  0.9x11 |     1,1 | 58333.28658496 |   1.019 |   120.0 | NIR |   None |     1 |      38 |     -1 |
+| XSHOO.2018-08-03T06:54:49.817.fits |         science,arc,tilt | 333.857186 | -19.58773 | ESO 601-G036 Ref star |  default |  0.9x11 |     1,1 | 58333.28807658 |    1.02 |   120.0 | NIR |   None |     1 |      10 |     -1 |
+| XSHOO.2018-08-03T06:56:58.025.fits |         science,arc,tilt | 333.857186 | -19.58773 | ESO 601-G036 Ref star |  default |  0.9x11 |     1,1 | 58333.28956047 |   1.022 |   120.0 | NIR |   None |     1 |      21 |     -1 |
+| XSHOO.2018-08-03T07:00:41.549.fits |         science,arc,tilt | 333.857193 | -19.57801 | ESO 601-G036 Ref star |  default |  0.9x11 |     1,1 | 58333.29214756 |   1.025 |   120.0 | NIR |   None |     1 |      27 |     -1 |
+| XSHOO.2018-08-03T07:02:49.090.fits |         science,arc,tilt | 333.857193 | -19.57801 | ESO 601-G036 Ref star |  default |  0.9x11 |     1,1 | 58333.29362373 |   1.027 |   120.0 | NIR |   None |     1 |      33 |     -1 |
+| XSHOO.2018-08-03T07:04:57.296.fits |         science,arc,tilt | 333.857193 | -19.57801 | ESO 601-G036 Ref star |  default |  0.9x11 |     1,1 | 58333.29510759 |   1.029 |   120.0 | NIR |   None |     1 |      19 |     -1 |
+| XSHOO.2018-08-02T22:59:16.818.fits |        standard,arc,tilt | 245.890689 |  -39.2296 |              STD,FLUX |  default |  5.0x11 |     1,1 | 58332.95783354 |   1.082 |   120.0 | NIR |    2.5 |     1 |      29 |     -1 |
+| XSHOO.2018-08-02T23:03:39.054.fits |        standard,arc,tilt | 245.892313 | -39.23019 |              STD,FLUX |  default |  5.0x11 |     1,1 | 58332.96086868 |   1.077 |   120.0 | NIR |   -2.5 |     1 |      39 |     -1 |
+data end
+
