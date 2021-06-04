@@ -788,8 +788,39 @@ def scan_nested_dict(dictionary: dict, keys: list):
     return value
 
 
-def get_pypeit_user_params(file: Union[list, str]):
+def get_scope(lines: list, levels: list):
+    print("==============================")
+    print(lines)
+    print(levels)
+    if len(lines) == 1:
+        return lines[0]
+    this_dict = {}
+    this_level = levels[0]
+    for i, line in enumerate(lines):
+        print()
+        if levels[i] == this_level:
+            scope_end = 1
+            while scope_end < len(levels) and levels[scope_end] >= levels[0]:
+                scope_end += 1
+            this_dict[line] = get_scope(lines=lines[1:scope_end], levels=levels[1:scope_end])
 
+    return this_dict
+
+
+def get_pypeit_param_levels(lines: list):
+    levels = []
+    last_non_zero = 0
+    for i, line in enumerate(lines):
+        level = line.count("[")
+        if level == 0:
+            level = levels[last_non_zero] + 1
+        else:
+            last_non_zero = i
+        levels.append(level)
+    return levels
+
+
+def get_pypeit_user_params(file: Union[list, str]):
     if isinstance(file, str):
         with open(file) as f:
             file = f.readlines()
@@ -804,40 +835,55 @@ def get_pypeit_user_params(file: Union[list, str]):
     level_list = []
     level_dict = param_dict
     i = p_start
-    while i < p_end:
-        print()
-        print("i", i)
-        print(level_list)
-        print("param_dict")
-        print_nested_dict(param_dict)
-        print("level_dict")
-        print_nested_dict(level_dict)
-        print("level, prevous level")
+
+    levels = get_pypeit_param_levels(lines=file[p_start:p_end])
+
+    for i in range(p_start, p_end):
         line = file[i]
-        previous_level = level
-        level = line.count("[")
-        level_list = level_list[:level+1]
-        level_dict = scan_nested_dict(dictionary=param_dict, keys=level_list)
-        line = line.replace(" ", "").replace("\t", "").replace("[", "").replace("]", "").replace("\n", "")
-        print(level, previous_level)
-        print("line")
-        print(line)
-        level_list.append(line)
-        if level > previous_level:
-            level_dict[line] = {}
-            level_dict = level_dict[line]
-        else:
-            if level == 0:
-                if "#" in line:
-                    line = line[:line.find("#")]
-                key, value = line.split("=")
-                level_dict[key] = value
-                level = previous_level
-        i += 1
+        scope_start = i
+        scope_end = i + 1
+        while levels[scope_end] > levels[scope_start]:
+            scope_end += 1
+
+    while i < p_end:
+        pass
+
+        # print("==================================================")
+        # line = file[i]
+        # previous_level = level
+        # level = line.count("[")
+        # level_list = level_list[:level]
+        # if "#" in line:
+        #     line = line[:line.find("#")]
+        # line = line.replace(" ", "").replace("\t", "").replace("[", "").replace("]", "").replace("\n", "")
+        # if level > previous_level:
+        #     level_dict[line] = {}
+        #     level_list.append(line)
+        # else:
+        #     if level == 0:
+        #         line, value = line.split("=")
+        #         level_dict[line] = value
+        #         level = previous_level
+        #     else:
+        #         level_dict[line] = {}
+        #         level_list.append(line)
+        # print("line", line)
+        # print("level", level, "prevous level", previous_level)
+        # print("i", i)
+        # print(level_list)
+        # print("param_dict")
+        # print_nested_dict(param_dict)
+        # print("level_dict")
+        # print_nested_dict(level_dict)
+        #
+        # level_dict = scan_nested_dict(dictionary=param_dict, keys=level_list)
+        # i += 1
     return param_dict
 
 
 def print_nested_dict(dictionary, level: int = 0):
+    if not isinstance(dictionary, dict):
+        raise TypeError("dictionary must be dict")
     for key in dictionary:
         print(level * "\t", key + ":")
         if isinstance(dictionary[key], dict):
