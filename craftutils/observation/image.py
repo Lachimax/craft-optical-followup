@@ -433,13 +433,11 @@ class ImagingImage(Image):
             zp_dict = self.zeropoints[zeropoint_name]
             cat[f"MAG_AUTO_ZP_{zeropoint_name}"], cat[f"MAGERR_AUTO_ZP_{zeropoint_name}"] = ph.magnitude_complete(
                 flux=cat["FLUX_AUTO"],
-                flux_err=cat[
-                    "FLUXERR_AUTO"],
+                flux_err=cat["FLUXERR_AUTO"],
                 exp_time=self.exposure_time,
                 exp_time_err=0.0 * units.second,
                 zeropoint=zp_dict['zeropoint'],
-                zeropoint_err=zp_dict[
-                    'zeropoint_err'],
+                zeropoint_err=zp_dict['zeropoint_err'],
                 airmass=zp_dict['airmass'],
                 airmass_err=0.0,
                 ext=0.0 * units.mag,
