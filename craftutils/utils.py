@@ -259,7 +259,7 @@ def uncertainty_product(value, *args: tuple):
 
 def uncertainty_sum(*args):
     variance = 0.
-    for measurement, uncertainty in args:
+    for uncertainty in args:
         variance += uncertainty ** 2
     sigma = np.sqrt(variance)
     return sigma
