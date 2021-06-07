@@ -808,9 +808,11 @@ def get_scope(lines: list, levels: list):
         print()
         if levels[i] == this_level:
             scope_end = 1
-            while scope_end < len(levels) and levels[scope_end] >= levels[0]:
+            while scope_end < len(levels) and levels[scope_end] >= this_level:
                 scope_end += 1
             this_dict[line] = get_scope(lines=lines[1:scope_end], levels=levels[1:scope_end])
+
+    print(this_dict)
 
     return this_dict
 
@@ -825,7 +827,9 @@ def get_pypeit_param_levels(lines: list):
         else:
             last_non_zero = i
         levels.append(level)
-    return levels
+        line = line.replace("\t", "").replace(" ", "").replace("[", "").replace("]", "").replace("\n", "")
+        lines[i] = line
+    return lines, levels
 
 
 def get_pypeit_user_params(file: Union[list, str]):
