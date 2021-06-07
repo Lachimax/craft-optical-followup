@@ -1194,7 +1194,7 @@ class PanSTARRS1ImagingEpoch(ImagingEpoch):
                 for obj in self.field.objects:
                     nearest = img.find_object(obj.position)
                     rows.append(nearest)
-                    err = max(nearest['MAGERR_AUTO_ZP_panstarrs1_plus'], nearest['MAGERR_AUTO_ZP_panstarrs1_minus'])
+                    err = nearest['MAGERR_AUTO_ZP_panstarrs1']
                     print("FILTER:", fil)
                     print(f"MAG_AUTO = {nearest['MAG_AUTO_ZP_panstarrs1']} +/- {err}")
                     print(f"A = {nearest['A_WORLD'].to(units.arcsec)}; B = {nearest['B_WORLD'].to(units.arcsec)}")

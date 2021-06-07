@@ -29,9 +29,11 @@ import craftutils.utils as u
 from craftutils import plotting
 from craftutils import retrieve as r
 
-
 # TODO: End-to-end pipeline script?
 # TODO: Change expected types to Union
+
+gain_unit = units.electron / units.ct
+
 
 def image_psf_diagnostics(hdu: Union[str, fits.HDUList], cat: str, star_class_tol: float = 0.9,
                           mag_max: float = 0.0, mag_min: float = -7.0,
@@ -289,34 +291,30 @@ def magnitude_complete(flux: units.Quantity,
     if airmass is None:
         airmass = 0.0
 
-    mag_inst, mag_error_plus, mag_error_minus = magnitude_error(flux=flux, flux_err=flux_err,
-                                                                exp_time=exp_time, exp_time_err=exp_time_err)
-
+    mag_inst, mag_error = magnitude_uncertainty(flux=flux, flux_err=flux_err,
+                                                exp_time=exp_time, exp_time_err=exp_time_err)
     magnitude = mag_inst + zeropoint - ext * airmass - colour_term * colour
-
     error_extinction = u.uncertainty_product(ext * airmass, (ext, ext_err), (airmass, airmass_err))
     error_colour = u.uncertainty_product(colour_term * colour, (colour_term, colour_term_err), (colour, colour_err))
+    error = u.uncertainty_sum(mag_error, zeropoint_err, error_extinction, error_colour)
 
-    error_plus = mag_error_plus + np.sqrt(zeropoint_err**2 + error_extinction**2 + error_colour**2)
-    error_minus = mag_error_minus - np.sqrt(zeropoint_err**2 + error_extinction**2 + error_colour**2)
-
-    return magnitude, error_plus, error_minus
+    return magnitude, error
 
 
-def magnitude_error(flux: units.Quantity,
-                    flux_err: units.Quantity = 0.0 * units.ct,
-                    exp_time: units.Quantity = 1. * units.second,
-                    exp_time_err: units.Quantity = 0.0 * units.second,
-                    absolute: bool = False):
+def magnitude_uncertainty(flux: units.Quantity,
+                          flux_err: units.Quantity = 0.0 * units.ct,
+                          exp_time: units.Quantity = 1. * units.second,
+                          exp_time_err: units.Quantity = 0.0 * units.second):
+    flux = u.check_quantity(flux, unit=units.ct)
+    flux_err = u.check_quantity(flux_err, unit=units.ct)
+    exp_time = u.check_quantity(exp_time, unit=units.second)
+    exp_time_err = u.check_quantity(exp_time_err, unit=units.second)
+
     flux_per_sec = flux / exp_time
     error_fps = u.uncertainty_product(flux_per_sec, (flux, flux_err), (exp_time, exp_time_err))
     mag = units.Magnitude(flux_per_sec).value * units.mag
-    error_plus = units.Magnitude(flux_per_sec - error_fps).value * units.mag
-    error_minus = units.Magnitude(flux_per_sec + error_fps).value * units.mag
-    if not absolute:
-        return mag, mag - error_plus, mag - error_minus
-    else:
-        return mag, error_plus, error_minus
+    error = u.uncertainty_log10(arg=flux_per_sec, uncertainty_arg=error_fps, a=-2.5) * units.mag
+    return mag, error
 
 
 def determine_zeropoint_sextractor(sextractor_cat: Union[str, table.QTable],
@@ -453,11 +451,10 @@ def determine_zeropoint_sextractor(sextractor_cat: Union[str, table.QTable],
     else:
         source_tbl = sextractor_cat
 
-    source_tbl['mag'], mag_err_plus, mag_err_minus = magnitude_complete(flux=source_tbl[flux_column],
+    source_tbl['mag'], source_tbl['mag_err'] = magnitude_complete(flux=source_tbl[flux_column],
                                                                         flux_err=source_tbl[flux_err_column],
                                                                         exp_time=exp_time)
 
-    source_tbl['mag_err'] = np.maximum(np.abs(mag_err_plus), np.abs(mag_err_minus))
 
     # Plot all stars found by SExtractor.
     source_tbl = source_tbl[source_tbl[sex_ra_col] != 0.0]
@@ -495,7 +492,7 @@ def determine_zeropoint_sextractor(sextractor_cat: Union[str, table.QTable],
     matches_cat = cat[match_ids_cat]
 
     # Plot all matches with catalogue.
-    plt.scatter(matches[sex_ra_col], matches[sex_dec_col], label='SExtractor MAG\_AUTO')
+    plt.scatter(matches[sex_ra_col], matches[sex_dec_col], label='SExtractor MAG\\_AUTO')
     plt.scatter(matches_cat[cat_ra_col], matches_cat[cat_dec_col], c='green', label=cat_name + ' Catalogue')
     plt.legend()
     plt.title('Matches with ' + cat_name + ' Catalogue')
@@ -2260,6 +2257,10 @@ def source_extractor(image_path: str,
     :param configs: Any source-extractor (sextractor) parameter, normally read via the config file but that can be
     overridden by passing to the shell command, can be given here.
     """
+
+    if "gain" in configs:
+        configs["gain"] = u.check_quantity(number=configs["gain"], unit=gain_unit).to(gain_unit).value
+
     old_dir = os.getcwd()
     if output_dir is None:
         output_dir = os.getcwd()
@@ -2337,7 +2338,7 @@ def signal_to_noise(rate_target: units.Quantity,
     rate_read = u.check_quantity(rate_read, units.electron / units.pixel)
     rate_dark = u.check_quantity(rate_dark, units.electron / (units.second * units.pixel))
     exp_time = u.check_quantity(exp_time, units.second)
-    gain = u.check_quantity(gain, units.electron / units.ct)
+    gain = u.check_quantity(gain, gain_unit)
     n_pix = u.check_quantity(n_pix, units.pix)
 
     print(rate_target)

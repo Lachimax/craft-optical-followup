@@ -277,11 +277,11 @@ def main(obj,
             mag_aper_local_err = max(abs(mag_aper_local_err_minus[index_local]),
                                      abs(mag_aper_err_plus[index_local]))
 
-            mag_ins, mag_ins_err_1, mag_ins_err_2 = ph.magnitude_error(flux=np.array([this['FLUX_AUTO']]),
-                                                                       flux_err=np.array([this['FLUXERR_AUTO']]),
-                                                                       exp_time=exp_time, exp_time_err=exp_time_err)
+            mag_ins, mag_ins_err = ph.magnitude_uncertainty(flux=np.array([this['FLUX_AUTO']]),
+                                                              flux_err=np.array([this['FLUXERR_AUTO']]),
+                                                              exp_time=exp_time, exp_time_err=exp_time_err)
             mag_ins = mag_ins[0]
-            mag_ins_err = max(abs(mag_ins_err_1[0]), abs(mag_ins_err_2[0]))
+            mag_ins_err = mag_ins_err[0]
 
             # Do photutils photometry
             # Define aperture using mag_auto kron_aperture:
@@ -615,7 +615,7 @@ def main(obj,
             plt.imshow(image_cut[0].data, origin='lower')
             # , norm=ImageNormalize(image_cut[0].data, stretch=SqrtStretch(), interval=ZScaleInterval()))
             p.plot_gal_params(hdu=image_cut,
-                              ras=[ ],
+                              ras=[],
                               decs=[output_catalogue_this['dec_given']],
                               a=[0],
                               b=[0],

@@ -265,6 +265,14 @@ def uncertainty_sum(*args):
     return sigma
 
 
+def uncertainty_log10(arg: float, uncertainty_arg: float, a: float = 1.):
+    """
+    Calculates standard uncertainty for function of the form a * log10(arg)
+    :return:
+    """
+    return np.abs(a * uncertainty_arg / (arg * np.log(10)))
+
+
 def error_product(value, measurements, errors):
     """
     Produces the absolute uncertainty of a value calculated as a product or as a quotient.

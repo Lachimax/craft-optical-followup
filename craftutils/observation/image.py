@@ -176,6 +176,7 @@ class ImagingImage(Image):
         if template is not None:
             template = template.path
             self.dual_mode_template = template
+        self.extract_gain()
         print("TEMPLATE PATH:", template)
         return ph.source_extractor(image_path=self.path,
                                    output_dir=output_dir,
@@ -183,6 +184,7 @@ class ImagingImage(Image):
                                    parameters_file=parameters_file,
                                    catalog_name=catalog_name,
                                    template_image_path=template,
+                                   gain=self.gain.value,
                                    **configs
                                    )
 
@@ -429,29 +431,22 @@ class ImagingImage(Image):
             if zeropoint_name not in self.zeropoints:
                 raise KeyError(f"Zeropoint {zeropoint_name} does not exist.")
             zp_dict = self.zeropoints[zeropoint_name]
-            mag, mag_err_minus, mag_err_plus = ph.magnitude_complete(flux=cat["FLUX_AUTO"],
-                                                                     flux_err=cat[
-                                                                         "FLUXERR_AUTO"],
-                                                                     exp_time=self.exposure_time,
-                                                                     exp_time_err=0.0 * units.second,
-                                                                     zeropoint=zp_dict['zeropoint'],
-                                                                     zeropoint_err=zp_dict[
-                                                                         'zeropoint_err'],
-                                                                     airmass=zp_dict['airmass'],
-                                                                     airmass_err=0.0,
-                                                                     ext=0.0 * units.mag,
-                                                                     ext_err=0.0 * units.mag,
-                                                                     colour_term=0.0,
-                                                                     colour=0.0 * units.mag,
-                                                                     )
-            cat[f"MAG_AUTO_ZP_{zeropoint_name}"] = mag
-            print("calibrate_magnitudes mag_err_minus")
-            print(mag_err_minus)
-            print("calibrate_magnitudes mag_err_plus")
-            print(mag_err_plus)
-            cat[f"MAGERR_AUTO_ZP_{zeropoint_name}_plus"] = np.abs(mag_err_plus)
-            cat[f"MAGERR_AUTO_ZP_{zeropoint_name}_minus"] = np.abs(mag_err_minus)
-            print(np.amax([np.abs(mag_err_minus), np.abs(mag_err_plus)]))
+            cat[f"MAG_AUTO_ZP_{zeropoint_name}"], cat[f"MAGERR_AUTO_ZP_{zeropoint_name}"] = ph.magnitude_complete(
+                flux=cat["FLUX_AUTO"],
+                flux_err=cat[
+                    "FLUXERR_AUTO"],
+                exp_time=self.exposure_time,
+                exp_time_err=0.0 * units.second,
+                zeropoint=zp_dict['zeropoint'],
+                zeropoint_err=zp_dict[
+                    'zeropoint_err'],
+                airmass=zp_dict['airmass'],
+                airmass_err=0.0,
+                ext=0.0 * units.mag,
+                ext_err=0.0 * units.mag,
+                colour_term=0.0,
+                colour=0.0 * units.mag,
+                )
             if dual:
                 self.source_cat_dual = cat
             else:
