@@ -52,6 +52,12 @@ def test_scan_nested_dict():
                               keys=["calibrations", "illumflatframe", "process", "use_darkimage"]) == "True"
     assert u.scan_nested_dict(dictionary=dictionary, keys=["coadd1d"]) == {"sensfuncfile": "YOUR_SENSFUNC_FILE"}
 
+
+def test_uncertainty_log10():
+    flux = 4051519.0
+    flux_err = 28118.24
+    assert u.uncertainty_log10(arg=flux, uncertainty_arg=flux_err, a=-2.5) == 0.00753519635032644
+
 # def test_get_pypeit_user_params():
 #     files = [coadd_path,
 #              pypeit_path]
