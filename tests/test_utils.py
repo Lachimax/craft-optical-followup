@@ -29,10 +29,10 @@ pypeit_lines_stripped = ["calibrations",
                          "traceframe",
                          "process",
                          "use_darkimage=True",
-                        "illumflatframe",
+                         "illumflatframe",
                          "process",
                          "use_darkimage=True",
-                        "pixelflatframe",
+                         "pixelflatframe",
                          "process",
                          "use_darkimage=True",
                          "rdx",
@@ -43,30 +43,23 @@ with open(os.path.join(pypeit_path)) as file:
 
 
 def test_get_pypeit_param_levels():
-    assert u.get_pypeit_param_levels(pypeit_param_lines) == (pypeit_lines_stripped, [1, 2, 3, 4, 2, 3, 4, 2, 3, 4, 1, 2])
-    assert u.get_pypeit_param_levels(coadd_param_lines) == (coadd_lines_stripped, [1, 2, 2, 2])
+    assert u.get_pypeit_param_levels(pypeit_param_lines.copy()) == (
+    pypeit_lines_stripped, [1, 2, 3, 4, 2, 3, 4, 2, 3, 4, 1, 2])
+    assert u.get_pypeit_param_levels(coadd_param_lines.copy()) == (coadd_lines_stripped, [1, 2, 2, 2])
 
 
 def test_get_scope():
-    levels, lines = u.get_pypeit_param_levels(pypeit_param_lines)
-    assert u.get_scope(lines, levels) == pypeit_dictionary
-    levels, lines = u.get_pypeit_param_levels(coadd_param_lines)
-    assert u.get_scope(lines, levels) == coadd_dictionary
+    lines, levels = u.get_pypeit_param_levels(pypeit_param_lines.copy())
+    assert u.get_scope(levels=levels, lines=lines) == pypeit_dictionary
+    lines, levels = u.get_pypeit_param_levels(coadd_param_lines.copy())
+    assert u.get_scope(levels=levels, lines=lines) == coadd_dictionary
 
 
 def test_scan_nested_dict():
-    dictionary = {"calibrations": {"traceframe": {"process": {"use_darkimage": "True"},
-                                                  },
-                                   "illumflatframe": {"process": {"use_darkimage": "True"},
-                                                      },
-                                   "pixelflatframe": {"process": {"use_darkimage": "True"}
-                                                      },
-                                   },
-                  "coadd1d": {"sensfuncfile": "YOUR_SENSFUNC_FILE"}
-                  }
-    assert u.scan_nested_dict(dictionary=dictionary,
+    dictionary = pypeit_dictionary.copy()
+    assert u.scan_nested_dict(dictionary=dictionary.copy(),
                               keys=["calibrations", "illumflatframe", "process", "use_darkimage"]) == "True"
-    assert u.scan_nested_dict(dictionary=dictionary, keys=["coadd1d"]) == {"sensfuncfile": "YOUR_SENSFUNC_FILE"}
+    assert u.scan_nested_dict(dictionary=dictionary.copy(), keys=["coadd1d"]) == {"sensfuncfile": "YOUR_SENSFUNC_FILE"}
 
 
 def test_uncertainty_log10():

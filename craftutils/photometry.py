@@ -1640,7 +1640,7 @@ def match_coordinates_multi(prime, match_tables, ra_tolerance: 'float', dec_tole
     return data.dropna()
 
 
-def mag_to_flux(mag: np.float, exp_time: float = 1., zeropoint: float = 0.0, extinction: float = 0.0,
+def mag_to_flux(mag: np.float64, exp_time: float = 1., zeropoint: float = 0.0, extinction: float = 0.0,
                 airmass: float = 0.0):
     return exp_time * 10 ** (-(mag - zeropoint + extinction * airmass) / 2.5)
 
@@ -1794,8 +1794,8 @@ def load_psfex(model: str, x, y):
 
 
 def insert_point_sources_to_file(file: Union[fits.hdu.HDUList, str],
-                                 x: np.float, y: np.float,
-                                 mag: np.float,
+                                 x: np.float64, y: np.float64,
+                                 mag: np.float64,
                                  fwhm: float = None,
                                  output: str = None, overwrite: bool = True,
                                  zeropoint: float = 0.0,

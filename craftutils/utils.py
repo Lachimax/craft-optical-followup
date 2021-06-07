@@ -801,15 +801,16 @@ def get_scope(lines: list, levels: list):
     print(lines)
     print(levels)
     if len(lines) == 1:
-        return lines[0]
+        key, value = lines[0].split("=")
+        return {key: value}
     this_dict = {}
     this_level = levels[0]
     for i, line in enumerate(lines):
-        print()
         if levels[i] == this_level:
-            scope_end = 1
+            scope_end = 2
             while scope_end < len(levels) and levels[scope_end] >= this_level:
                 scope_end += 1
+            print(i, line)
             this_dict[line] = get_scope(lines=lines[1:scope_end], levels=levels[1:scope_end])
 
     print(this_dict)
@@ -823,11 +824,16 @@ def get_pypeit_param_levels(lines: list):
     for i, line in enumerate(lines):
         level = line.count("[")
         if level == 0:
+            print(last_non_zero)
+            print(levels)
+            print(line)
             level = levels[last_non_zero] + 1
         else:
             last_non_zero = i
         levels.append(level)
         line = line.replace("\t", "").replace(" ", "").replace("[", "").replace("]", "").replace("\n", "")
+        if "#" in line:
+            line = line.split("#")[0]
         lines[i] = line
     return lines, levels
 
