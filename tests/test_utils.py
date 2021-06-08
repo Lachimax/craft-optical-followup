@@ -11,6 +11,7 @@ coadd_lines_stripped = ["coadd1d",
                         "coaddfile=foreground_coadded.fits",
                         "sensfuncfile=YOUR_SENSFUNC_FILE",
                         "wave_method=linear"]
+
 with open(coadd_path) as file:
     coadd_lines = file.readlines()
     coadd_param_lines = coadd_lines[4:8]
@@ -42,9 +43,14 @@ with open(os.path.join(pypeit_path)) as file:
     pypeit_param_lines = pypeit_lines[4:16]
 
 
+def test_scan_nested_dict():
+    assert u.scan_nested_dict(dictionary=pypeit_dictionary.copy(),
+                              keys=["calibrations", "illumflatframe", "process", "use_darkimage"]) == "True"
+
+
 def test_get_pypeit_param_levels():
     assert u.get_pypeit_param_levels(pypeit_param_lines.copy()) == (
-    pypeit_lines_stripped, [1, 2, 3, 4, 2, 3, 4, 2, 3, 4, 1, 2])
+        pypeit_lines_stripped, [1, 2, 3, 4, 2, 3, 4, 2, 3, 4, 1, 2])
     assert u.get_pypeit_param_levels(coadd_param_lines.copy()) == (coadd_lines_stripped, [1, 2, 2, 2])
 
 
@@ -55,11 +61,9 @@ def test_get_scope():
     assert u.get_scope(levels=levels, lines=lines) == coadd_dictionary
 
 
-def test_scan_nested_dict():
-    dictionary = pypeit_dictionary.copy()
-    assert u.scan_nested_dict(dictionary=dictionary.copy(),
-                              keys=["calibrations", "illumflatframe", "process", "use_darkimage"]) == "True"
-    assert u.scan_nested_dict(dictionary=dictionary.copy(), keys=["coadd1d"]) == {"sensfuncfile": "YOUR_SENSFUNC_FILE"}
+def test_get_pypeit_user_params():
+    assert u.get_pypeit_user_params(file=coadd_path) == coadd_dictionary
+    assert u.get_pypeit_user_params(file=pypeit_path) == pypeit_dictionary
 
 
 def test_uncertainty_log10():
