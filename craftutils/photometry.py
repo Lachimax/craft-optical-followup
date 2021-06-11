@@ -9,7 +9,8 @@ from datetime import datetime as dt
 
 import numpy as np
 import photutils as ph
-from matplotlib import pyplot as plt
+from photutils.datasets import make_model_sources_image
+import matplotlib.pyplot as plt
 
 import astropy.stats as stats
 import astropy.wcs as wcs
@@ -60,7 +61,10 @@ def image_psf_diagnostics(hdu: Union[str, fits.HDUList], cat: str, star_class_to
         stars = stars[match_ids]
         print(f"Num stars after match to other sextractor cat:", len(stars))
 
-    stars.add_column(np.zeros(len(stars)), name="FWHM_FITTED")
+    stars.add_column(np.zeros(len(stars)), name="GAUSSIAN_FWHM_FITTED")
+    stars.add_column(np.zeros(len(stars)), name="MOFFAT_FWHM_FITTED")
+    stars.add_column(np.zeros(len(stars)), name="MOFFAT_ALPHA_FITTED")
+    stars.add_column(np.zeros(len(stars)), name="MOFFAT_GAMMA_FITTED")
 
     for j, star in enumerate(stars):
         ra = star["ALPHA_SKY"]
@@ -77,12 +81,28 @@ def image_psf_diagnostics(hdu: Union[str, fits.HDUList], cat: str, star_class_to
 
         # Fit the data using astropy.modeling
 
-        model_init = models.Moffat2D(x_0=frame, y_0=frame)  # , theta=-2.4)
+        # First, a Moffat function
+        model_init = models.Moffat2D(x_0=frame, y_0=frame)
         fitter = fitting.LevMarLSQFitter()
         model = fitter(model_init, x, y, data)
         fwhm = (model.fwhm * units.pixel).to(units.degree, scale).value
 
-        star["FWHM_FITTED"] = fwhm
+        star["MOFFAT_FWHM_FITTED"] = fwhm
+        star["MOFFAT_GAMMA_FITTED"] = model.gamma.value
+        star["MOFFAT_ALPHA_FITTED"] = model.alpha.value
+
+        # Then a good-old-fashioned Gaussian, with the x and y axes tied together.
+        model_init = models.Gaussian2D(x_mean=frame, y_mean=frame)
+
+        def tie_stddev(mod):
+            return mod.x_stddev
+
+        model_init.y_stddev.tied = tie_stddev
+        fitter = fitting.LevMarLSQFitter()
+        model = fitter(model_init, x, y, data)
+        fwhm = (model.x_fwhm * units.pixel).to(units.degree, scale).value
+        star["GAUSSIAN_FWHM_FITTED"] = fwhm
+
         stars[j] = star
 
     clipped = sigma_clip(stars["FWHM_FITTED"], masked=True)
@@ -452,9 +472,8 @@ def determine_zeropoint_sextractor(sextractor_cat: Union[str, table.QTable],
         source_tbl = sextractor_cat
 
     source_tbl['mag'], source_tbl['mag_err'] = magnitude_complete(flux=source_tbl[flux_column],
-                                                                        flux_err=source_tbl[flux_err_column],
-                                                                        exp_time=exp_time)
-
+                                                                  flux_err=source_tbl[flux_err_column],
+                                                                  exp_time=exp_time)
 
     # Plot all stars found by SExtractor.
     source_tbl = source_tbl[source_tbl[sex_ra_col] != 0.0]
@@ -1678,7 +1697,7 @@ def insert_synthetic_point_sources_gauss(image: np.ndarray, x: np.float, y: np.f
     sources['flux'] = mag_to_flux(mag=mag, exp_time=exp_time, zeropoint=zeropoint, extinction=extinction,
                                   airmass=airmass)
     print('Generating additive image...')
-    add = ph.datasets.make_model_sources_image(shape=image.shape, model=gaussian_model, source_table=sources)
+    add = make_model_sources_image(shape=image.shape, model=gaussian_model, source_table=sources)
 
     # plt.imshow(add)
 
@@ -1727,7 +1746,6 @@ def insert_synthetic_point_sources_psfex(image: np.ndarray, x: np.float, y: np.f
 
     combine = np.zeros(image.shape)
     print('Generating additive image...')
-    rows = []
     for i in range(len(x)):
         flux = mag_to_flux(mag=mag[i], exp_time=exp_time, zeropoint=zeropoint, extinction=extinction,
                            airmass=airmass)
@@ -1735,7 +1753,7 @@ def insert_synthetic_point_sources_psfex(image: np.ndarray, x: np.float, y: np.f
         row = (x[i], y[i], flux)
         source = table.Table(rows=[row], names=('x_0', 'y_0', 'flux'))
         print('Convolving...')
-        add = ph.datasets.make_model_sources_image(shape=image.shape, model=gaussian_model, source_table=source)
+        add = make_model_sources_image(shape=image.shape, model=gaussian_model, source_table=source)
         kernel = convolution.CustomKernel(load_psfex(model=model, x=source['x_0'], y=source['y_0']))
         add = convolution.convolve(add, kernel)
 
