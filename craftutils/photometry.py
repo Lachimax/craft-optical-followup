@@ -105,15 +105,19 @@ def image_psf_diagnostics(hdu: Union[str, fits.HDUList], cat: str, star_class_to
 
         stars[j] = star
 
-    clipped = sigma_clip(stars["FWHM_FITTED"], masked=True)
-    stars_clip = stars[~clipped.mask]
-    print(f"Num stars after sigma clipping w. astropy PSF:", len(stars))
+    clipped = sigma_clip(stars["MOFFAT_FWHM_FITTED"], masked=True)
+    stars_clip_moffat = stars[~clipped.mask]
+    print(f"Num stars after sigma clipping w. astropy Moffat PSF:", len(stars))
+
+    clipped = sigma_clip(stars["GAUSSIAN_FWHM_FITTED"], masked=True)
+    stars_clip_gauss = stars[~clipped.mask]
+    print(f"Num stars after sigma clipping w. astropy Gaussian PSF:", len(stars))
 
     clipped = sigma_clip(stars["FWHM_WORLD"], masked=True)
     stars_clip_sex = stars[~clipped.mask]
     print(f"Num stars after sigma clipping w. Sextractor PSF:", len(stars))
 
-    return stars_clip, stars_clip_sex
+    return stars_clip_moffat, stars_clip_gauss, stars_clip_sex
 
 
 def image_depth_diagnostics(hdu: Union[str, fits.HDUList], fil: str, sextractor: str, cat_path: str, cat_name: str,

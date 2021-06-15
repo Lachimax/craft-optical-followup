@@ -518,6 +518,17 @@ class ImagingImage(Image):
         nearest = cat[np.argmin(separation)]
         return nearest
 
+    def generate_psf_image(self, x: int, y: int, output: str = None):
+        """
+        Generates an image of the modelled point-spread function of the image.
+        :param x:
+        :param y:
+        :param output:
+        :return:
+        """
+        pass
+
+
     def plot_object(self, row: table.Row, ext: int = 0, frame: units.Quantity = 10 * units.pix, output: str = None,
                     show: bool = False, title: str = None):
 
