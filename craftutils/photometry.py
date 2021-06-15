@@ -37,7 +37,7 @@ gain_unit = units.electron / units.ct
 
 
 def image_psf_diagnostics(hdu: Union[str, fits.HDUList], cat: Union[str, table.Table], star_class_tol: float = 0.9,
-                          mag_max: float = 0.0, mag_min: float = -7.0,
+                          mag_max: float = 0.0 * units.mag, mag_min: float = -7.0 * units.mag,
                           match_to: table.Table = None, frame: float = 15):
     hdu, path = ff.path_or_hdu(hdu=hdu)
 
@@ -66,6 +66,9 @@ def image_psf_diagnostics(hdu: Union[str, fits.HDUList], cat: Union[str, table.T
     stars.add_column(np.zeros(len(stars)), name="MOFFAT_FWHM_FITTED")
     stars.add_column(np.zeros(len(stars)), name="MOFFAT_ALPHA_FITTED")
     stars.add_column(np.zeros(len(stars)), name="MOFFAT_GAMMA_FITTED")
+    if type(stars) is table.QTable:
+        stars["GAUSSIAN_FWHM_FITTED"] *= units.deg
+        stars["MOFFAT_FWHM_FITTED"] *= units.deg
 
     for j, star in enumerate(stars):
         ra = star["ALPHA_SKY"]
@@ -86,7 +89,7 @@ def image_psf_diagnostics(hdu: Union[str, fits.HDUList], cat: Union[str, table.T
         model_init = models.Moffat2D(x_0=frame, y_0=frame)
         fitter = fitting.LevMarLSQFitter()
         model = fitter(model_init, x, y, data)
-        fwhm = (model.fwhm * units.pixel).to(units.degree, scale).value
+        fwhm = (model.fwhm * units.pixel).to(units.degree, scale)
 
         star["MOFFAT_FWHM_FITTED"] = fwhm
         star["MOFFAT_GAMMA_FITTED"] = model.gamma.value
@@ -101,7 +104,7 @@ def image_psf_diagnostics(hdu: Union[str, fits.HDUList], cat: Union[str, table.T
         model_init.y_stddev.tied = tie_stddev
         fitter = fitting.LevMarLSQFitter()
         model = fitter(model_init, x, y, data)
-        fwhm = (model.x_fwhm * units.pixel).to(units.degree, scale).value
+        fwhm = (model.x_fwhm * units.pixel).to(units.degree, scale)
         star["GAUSSIAN_FWHM_FITTED"] = fwhm
 
         stars[j] = star
@@ -573,20 +576,21 @@ def determine_zeropoint_sextractor(sextractor_cat: Union[str, table.QTable],
     print(sum(np.invert(remove)), 'matches after removing objects in y-exclusion zone')
     params[f'matches_{n_match}_y_exclusion'] = int(sum(np.invert(remove)))
     n_match += 1
+
     remove = remove + (matches['mag'] < mag_range_sex_lower)
     print(sum(np.invert(remove)),
-          'matches after removing objects objects with SExtractor mags > ' + str(mag_range_sex_upper))
+          'matches after removing objects with SExtractor mags > ' + str(mag_range_sex_upper))
     params[f'matches_{n_match}_sex_mag_upper'] = int(sum(np.invert(remove)))
 
     remove = remove + (mag_range_sex_upper < matches['mag'])
     print(sum(np.invert(remove)),
-          'matches after removing objects objects with SExtractor mags < ' + str(mag_range_sex_lower))
+          'matches after removing objects with SExtractor mags < ' + str(mag_range_sex_lower))
     params[f'matches_{n_match}_sex_mag_upper'] = int(sum(np.invert(remove)))
     n_match += 1
 
     remove = remove + (matches[snr_col] < snr_cut)
     print(sum(np.invert(remove)),
-          f'matches after removing objects objects with {snr_col} < 300')
+          f'matches after removing objects with {snr_col} < {snr_cut}')
     params[f'matches_{n_match}_snr'] = int(sum(np.invert(remove)))
     n_match += 1
 
