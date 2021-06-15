@@ -38,6 +38,7 @@ class Image:
         self.exposure_time = None
         self.gain = None
         self.noise_read = None
+        self.date_obs = None
         self.n_x = None
         self.n_y = None
         self.n_pix = None
@@ -99,6 +100,11 @@ class Image:
         self.gain = self.extract_header_item(key) * units.electron / units.ct
         return self.gain
 
+    def extract_date_obs(self):
+        key = self.header_keys()["date-obs"]
+        self.date_obs = self.extract_header_item(key)
+        return self.date_obs
+
     def extract_exposure_time(self):
         key = self.header_keys()["exposure_time"]
         self.exposure_time = self.extract_header_item(key) * units.second
@@ -106,7 +112,11 @@ class Image:
 
     def extract_noise_read(self):
         key = self.header_keys()["noise_read"]
-        self.noise_read = self.extract_header_item(key) * units.electron / units.pixel
+        noise = self.extract_header_item(key)
+        if noise is not None:
+            self.noise_read = self.extract_header_item(key) * units.electron / units.pixel
+        else:
+            raise KeyError(f"{key} not present in header.")
         return self.noise_read
 
     def extract_n_pix(self, ext: int = 0):
@@ -119,7 +129,8 @@ class Image:
     def header_keys(cls):
         header_keys = {"exposure_time": "EXPTIME",
                        "noise_read": "RON",
-                       "gain": "GAIN"}
+                       "gain": "GAIN",
+                       "date-obs": "DATE-OBS"}
         return header_keys
 
     @classmethod
@@ -158,7 +169,20 @@ class ImagingImage(Image):
         self.fwhm_pix_psfex = None
         self.fwhm_psfex = None
 
-        self.
+        self.fwhm_max_moffat = None
+        self.fwhm_median_moffat = None
+        self.fwhm_min_moffat = None
+        self.fwhm_sigma_moffat = None
+
+        self.fwhm_max_gauss = None
+        self.fwhm_median_gauss = None
+        self.fwhm_min_gauss = None
+        self.fwhm_sigma_gauss = None
+
+        self.fwhm_max_sextractor = None
+        self.fwhm_median_sextractor = None
+        self.fwhm_min_sextractor = None
+        self.fwhm_sigma_sextractor = None
 
         self.sky_background = None
 
@@ -299,6 +323,11 @@ class ImagingImage(Image):
         else:
             warnings.warn("Pixel scale already set.")
 
+    def extract_filter(self):
+        key = self.header_keys()["filter"]
+        self.filter = self.extract_header_item(key)
+        return self.filter
+
     def _output_dict(self):
         outputs = super()._output_dict()
         outputs.update({
@@ -369,12 +398,15 @@ class ImagingImage(Image):
                   mag_range_sex_lower: units.Quantity = -100. * units.mag,
                   mag_range_sex_upper: units.Quantity = 100. * units.mag,
                   dist_tol: units.Quantity = 2. * units.arcsec,
+                  snr_cut=200
                   ):
         self.signal_to_noise()
         if image_name is None:
             image_name = self.name
-
+        self.extract_filter()
+        print("FILTER:", self.filter_short)
         column_names = cat_columns(cat=cat_name, f=self.filter_short)
+        print("MAG NAME:", column_names['mag_psf'])
         cat_ra_col = column_names['ra']
         cat_dec_col = column_names['dec']
         cat_mag_col = column_names['mag_psf']
@@ -406,9 +438,11 @@ class ImagingImage(Image):
                                                     cat_zeropoint=cat_zeropoint,
                                                     cat_zeropoint_err=cat_zeropoint_err,
                                                     snr_col='SNR',
-                                                    # snr_cut=500
+                                                    snr_cut=snr_cut
                                                     )
 
+        if zp_dict is None:
+            return None
         zp_dict['airmass'] = 0.0
         self.zeropoints[cat_name.lower()] = zp_dict
         self.zeropoint_output_paths[cat_name.lower()] = output_path
@@ -467,7 +501,7 @@ class ImagingImage(Image):
         return self.depth
 
     def psf_diagnostics(self, star_class_tol: float = 0.95,
-                        mag_max: float = 0.0, mag_min: float = -7.0,
+                        mag_max: float = 0.0 * units.mag, mag_min: float = -7.0 * units.mag,
                         match_to: table.Table = None, frame: float = 15):
         self.open()
         self.load_source_cat()
@@ -478,6 +512,24 @@ class ImagingImage(Image):
                                                                         mag_min=mag_min,
                                                                         match_to=match_to,
                                                                         frame=frame)
+
+        fwhm_gauss = (stars_gauss["GAUSSIAN_FWHM_FITTED"]).to(units.arcsec)
+        self.fwhm_median_gauss = np.nanmedian(fwhm_gauss)
+        self.fwhm_max_gauss = np.nanmax(fwhm_gauss)
+        self.fwhm_min_gauss = np.nanmin(fwhm_gauss)
+        self.fwhm_sigma_gauss = np.nanstd(fwhm_gauss)
+
+        fwhm_moffat = (stars_gauss["MOFFAT_FWHM_FITTED"]).to(units.arcsec)
+        self.fwhm_median_moffat = np.nanmedian(fwhm_moffat)
+        self.fwhm_max_moffat = np.nanmax(fwhm_moffat)
+        self.fwhm_min_moffat = np.nanmin(fwhm_moffat)
+        self.fwhm_sigma_moffat = np.nanstd(fwhm_moffat)
+
+        fwhm_sextractor = (stars_gauss["FWHM_WORLD"]).to(units.arcsec)
+        self.fwhm_median_sextractor = np.nanmedian(fwhm_sextractor)
+        self.fwhm_max_sextractor = np.nanmax(fwhm_sextractor)
+        self.fwhm_min_sextractor = np.nanmin(fwhm_sextractor)
+        self.fwhm_sigma_sextractor = np.nanstd(fwhm_sextractor)
 
         self.close()
 
@@ -500,6 +552,7 @@ class ImagingImage(Image):
                                                     n_pix=n_pix
                                                     ).value
         self.update_output_file()
+        print("MEDIAN SNR:", np.median(self.source_cat["SNR"]))
         return self.source_cat["SNR"]
 
     def object_axes(self):
@@ -507,7 +560,8 @@ class ImagingImage(Image):
         self.extract_pixel_scale()
         self.source_cat["A_IMAGE"] = self.source_cat["A_WORLD"].to(units.pix, self.pixel_scale_dec)
         self.source_cat["B_IMAGE"] = self.source_cat["B_WORLD"].to(units.pix, self.pixel_scale_dec)
-        self.source_cat_dual
+        self.source_cat_dual["A_IMAGE"] = self.source_cat_dual["A_WORLD"].to(units.pix, self.pixel_scale_dec)
+        self.source_cat_dual["B_IMAGE"] = self.source_cat_dual["B_WORLD"].to(units.pix, self.pixel_scale_dec)
 
     def estimate_sky_background(self, ext: int = 0, force: bool = False):
         if force or self.sky_background is None:
@@ -635,6 +689,32 @@ class PanSTARRS1Cutout(ImagingImage):
                             "filter": "HIERARCH FPA.FILTERID",
                             "gain": "HIERARCH CELL.GAIN"})
         return header_keys
+
+
+class FORS2Image(ImagingImage):
+
+    @classmethod
+    def header_keys(cls):
+        header_keys = super().header_keys()
+        header_keys.update({"noise_read": "HIERARCH ESO DET OUT1 RON",
+                            "filter": "HIERARCH ESO INS FILT1 NAME",
+                            "gain": "HIERARCH ESO DET OUT1 GAIN"})
+        return header_keys
+
+    def extract_filter(self):
+        key = self.header_keys()["filter"]
+        fil_string = self.extract_header_item(key)
+        self.filter = fil_string[:fil_string.find(".")]
+        self.filter_short = self.filter[0]
+
+    def extract_chip_number(self):
+        chip_string = self.extract_header_item(key='HIERARCH ESO DET CHIP1 ID')
+        chip = 0
+        if chip_string == 'CCID20-14-5-3':
+            chip = 1
+        elif chip_string == 'CCID20-14-5-6':
+            chip = 2
+        return chip
 
 
 class Spectrum(Image):
