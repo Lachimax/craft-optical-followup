@@ -36,14 +36,15 @@ from craftutils import retrieve as r
 gain_unit = units.electron / units.ct
 
 
-def image_psf_diagnostics(hdu: Union[str, fits.HDUList], cat: str, star_class_tol: float = 0.9,
+def image_psf_diagnostics(hdu: Union[str, fits.HDUList], cat: Union[str, table.Table], star_class_tol: float = 0.9,
                           mag_max: float = 0.0, mag_min: float = -7.0,
                           match_to: table.Table = None, frame: float = 15):
     hdu, path = ff.path_or_hdu(hdu=hdu)
 
     hdu = copy.deepcopy(hdu)
 
-    cat = table.Table.read(cat, format="ascii.sextractor")
+    if isinstance(cat, str):
+        cat = table.Table.read(cat, format="ascii.sextractor")
     stars = cat[cat["CLASS_STAR"] > star_class_tol]
     stars = stars[stars["MAG_PSF"] < mag_max]
     stars = stars[stars["MAG_PSF"] > mag_min]
@@ -947,6 +948,9 @@ def zeropoint_science_field(epoch: str,
         f_0 = fil[0]
         # do_zeropoint = properties[f_0 + '_do_zeropoint_field']
 
+        output_path_pre = os.path.join(output, f_0)
+        u.mkdir_check(output_path_pre)
+
         if f_0 + '_zeropoint_provided' not in outputs:  # and do_zeropoint:
 
             print('Zeropoint not found, attempting to calculate zeropoint...')
@@ -957,7 +961,7 @@ def zeropoint_science_field(epoch: str,
                 test_name = cat_name
             test_name = str(now) + '_' + test_name
 
-            output_path = os.path.join(output, f_0, test_name)
+            output_path = os.path.join(output_path_pre, test_name)
             u.mkdir_check(output_path)
 
             chip_1_bottom = 740

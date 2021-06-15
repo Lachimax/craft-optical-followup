@@ -158,6 +158,8 @@ class ImagingImage(Image):
         self.fwhm_pix_psfex = None
         self.fwhm_psfex = None
 
+        self.
+
         self.sky_background = None
 
         self.zeropoints = {}
@@ -444,7 +446,7 @@ class ImagingImage(Image):
                 ext_err=0.0 * units.mag,
                 colour_term=0.0,
                 colour=0.0 * units.mag,
-                )
+            )
             if dual:
                 self.source_cat_dual = cat
             else:
@@ -463,6 +465,21 @@ class ImagingImage(Image):
         self.depth = np.max(cat_3sigma[f"MAG_AUTO_ZP_{zeropoint_name}"])
         self.update_output_file()
         return self.depth
+
+    def psf_diagnostics(self, star_class_tol: float = 0.95,
+                        mag_max: float = 0.0, mag_min: float = -7.0,
+                        match_to: table.Table = None, frame: float = 15):
+        self.open()
+        self.load_source_cat()
+        stars_moffat, stars_gauss, stars_sex = ph.image_psf_diagnostics(hdu=self.hdu_list,
+                                                                        cat=self.source_cat,
+                                                                        star_class_tol=star_class_tol,
+                                                                        mag_max=mag_max,
+                                                                        mag_min=mag_min,
+                                                                        match_to=match_to,
+                                                                        frame=frame)
+
+        self.close()
 
     def signal_to_noise(self):
         self.load_source_cat()
@@ -527,7 +544,6 @@ class ImagingImage(Image):
         :return:
         """
         pass
-
 
     def plot_object(self, row: table.Row, ext: int = 0, frame: units.Quantity = 10 * units.pix, output: str = None,
                     show: bool = False, title: str = None):
