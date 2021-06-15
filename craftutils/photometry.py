@@ -429,7 +429,8 @@ def determine_zeropoint_sextractor(sextractor_cat: Union[str, table.QTable],
     # Get tolerance as angle.
     if dist_tol.unit.is_equivalent(units.pix):
         tolerance = dist_tol.to(units.deg, pix_scale)
-    tolerance = dist_tol
+    else:
+        tolerance = dist_tol
     print('TOLERANCE:', tolerance)
 
     # Import the catalogue of the sky region.

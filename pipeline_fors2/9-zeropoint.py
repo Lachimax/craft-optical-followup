@@ -1,4 +1,4 @@
-# Code by Lachlan Marnoch, 2019
+# Code by Lachlan Marnoch, 2019 - 2021
 
 import os
 
@@ -6,6 +6,7 @@ import astropy.time as time
 import matplotlib
 import numpy as np
 from astropy import table
+from astropy import units
 from craftutils import fits_files as ff
 from craftutils import params as p
 from craftutils import photometry
@@ -84,9 +85,9 @@ def main(epoch,
                                                                                           star_class_col='CLASS_STAR',
                                                                                           star_class_tol=0.95,
                                                                                           show_plots=False,
-                                                                                          mag_range_sex_lower=-100.,
-                                                                                          mag_range_sex_upper=100.,
-                                                                                          pix_tol=5.,
+                                                                                          mag_range_sex_lower=-100. * units.mag,
+                                                                                          mag_range_sex_upper=100. * units.mag,
+                                                                                          pix_tol=5. * units.pixel,
                                                                                           separate_chips=True,
                                                                                           cat_name=cat_name)
 
