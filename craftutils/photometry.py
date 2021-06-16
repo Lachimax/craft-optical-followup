@@ -44,7 +44,7 @@ def image_psf_diagnostics(hdu: Union[str, fits.HDUList], cat: Union[str, table.T
     hdu = copy.deepcopy(hdu)
 
     if isinstance(cat, str):
-        cat = table.Table.read(cat, format="ascii.sextractor")
+        cat = table.QTable.read(cat, format="ascii.sextractor")
     stars = cat[cat["CLASS_STAR"] > star_class_tol]
     stars = stars[stars["MAG_PSF"] < mag_max]
     stars = stars[stars["MAG_PSF"] > mag_min]
@@ -90,7 +90,6 @@ def image_psf_diagnostics(hdu: Union[str, fits.HDUList], cat: Union[str, table.T
         fitter = fitting.LevMarLSQFitter()
         model = fitter(model_init, x, y, data)
         fwhm = (model.fwhm * units.pixel).to(units.degree, scale)
-
         star["MOFFAT_FWHM_FITTED"] = fwhm
         star["MOFFAT_GAMMA_FITTED"] = model.gamma.value
         star["MOFFAT_ALPHA_FITTED"] = model.alpha.value
@@ -1790,7 +1789,7 @@ def insert_synthetic_point_sources_psfex(image: np.ndarray, x: np.float, y: np.f
 def load_psfex(model: str, x, y):
     """
     Since PSFEx generates a model that is dependent on image position, this is used to collapse that into a useable kernel
-    for convolution purposes.
+    for convolution and insertion purposes. See https://psfex.readthedocs.io/en/latest/Appendices.html
     :param model:
     :param x:
     :param y:
