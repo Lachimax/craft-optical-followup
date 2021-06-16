@@ -1,18 +1,29 @@
 # Code by Lachlan Marnoch, 2021
-from json.decoder import JSONDecodeError
 import urllib
-from datetime import date
-from typing import Union
-import requests
 import os
 import time
+from datetime import date, datetime
+from json.decoder import JSONDecodeError
+from typing import Union
+
+import cgi
+import requests
+import re
+
+import astropy.units as units
+from astropy.coordinates import SkyCoord
+from astropy.table import Table
+from astropy.time import Time
+
+from pyvo import dal
 
 from craftutils import params as p
 from craftutils import utils as u
 
 keys = p.keys()
 fors2_filters_retrievable = ["I_BESS", "R_SPEC", "b_HIGH", "v_HIGH"]
-photometry_catalogues = ['DES', 'SDSS', 'SkyMapper']
+photometry_catalogues = ['DES', 'SDSS', 'SkyMapper', 'PANSTARRS1']
+mast_catalogues = ['panstarrs1']
 
 
 def cat_columns(cat, f: str = None):
@@ -32,17 +43,27 @@ def cat_columns(cat, f: str = None):
     elif cat == 'sdss':
         f = f.lower()
         return {'mag_psf': f"psfMag_{f}",
-                'mag_psf_err': f"WAVG_MAGERR_PSF_{f}",
+                'mag_psf_err': f"psfMagErr_{f}",
                 'ra': f"ra",
                 'dec': f"dec",
                 'class_star': f"probPSF_{f}"}
     elif cat == 'skymapper':
         f = f.lower()
         return {'mag_psf': f"{f}_psf",
-                'mag_psf_err': f"WAVG_MAGERR_PSF_{f}",
+                'mag_psf_err': f"e_{f}_psf",
                 'ra': f"raj2000",
                 'dec': f"dej2000",
                 'class_star': f"class_star_SkyMapper"}
+    elif cat == 'panstarrs1':
+        f = f.lower()
+        return {'mag_psf': f"{f}PSFMag",
+                'mag_psf_err': f"{f}PSFMagErr",
+                'ra': f"raStack",
+                'dec': f"decStack",
+                'class_star': f"psfLikelihood"}
+    elif cat == 'gaia':
+        return {'ra': f"ra",
+                'dec': f"dec"}
     else:
         raise ValueError(f"Catalogue {cat} not recognised.")
 
@@ -60,6 +81,8 @@ def update_std_photometry(ra: float, dec: float, cat: str):
         return update_std_sdss_photometry(ra=ra, dec=dec)
     elif cat == 'skymapper':
         return update_std_skymapper_photometry(ra=ra, dec=dec)
+    elif cat == 'panstarrs1':
+        return update_std_mast_photometry(ra=ra, dec=dec, cat="panstarrs1")
     else:
         raise ValueError("Catalogue name not recognised.")
 
@@ -72,8 +95,222 @@ def update_frb_photometry(frb: str, cat: str):
         return update_frb_sdss_photometry(frb=frb)
     elif cat == 'skymapper':
         return update_frb_skymapper_photometry(frb=frb)
+    elif cat in mast_catalogues:
+        return update_frb_mast_photometry(frb=frb, cat=cat)
     else:
         raise ValueError("Catalogue name not recognised.")
+
+
+# ESO retrieval code based on the script at
+# http://archive.eso.org/programmatic/scripts/eso_authenticated_download_raw_and_calibs.py
+# authored by A.Micol, Archive Science Group, ESO
+
+eso_tap_url = "http://archive.eso.org/tap_obs"
+
+
+def login_eso():
+    if "eso_auth_token" not in keys:
+        print("Attempting login to ESO archive.")
+        token_url = "https://www.eso.org/sso/oidc/token"
+        r = requests.get(token_url,
+                         params={"response_type": "id_token token", "grant_type": "password",
+                                 "client_id": "clientid",
+                                 "username": keys["eso_user"], "password": keys["eso_pwd"]})
+        try:
+            token_response = r.json()
+            token = token_response['id_token'] + '=='
+            keys["eso_auth_token"] = token
+            print("Login successful.")
+        except JSONDecodeError:
+            print("Login failed; either credentials are invalid, or there was a server-side error; skipping ESO tasks.")
+            keys["eso_auth_token"] = None
+    return keys["eso_auth_token"]
+
+
+def save_eso_asset(file_url: str, output: str, filename: str = None):
+    print("Downloading asset from:")
+    print(file_url)
+    headers = None
+    token = login_eso()
+    if token is not None:
+        headers = {"Authorization": "Bearer " + keys["eso_auth_token"]}
+        response = requests.get(file_url, headers=headers)
+    else:
+        # Trying to download anonymously
+        response = requests.get(file_url, stream=True, headers=headers)
+
+    if filename is None:
+        content_disposition = response.headers.get('Content-Disposition')
+        if content_disposition is not None:
+            value, params = cgi.parse_header(content_disposition)
+            filename = params["filename"]
+
+        if filename is None:
+            # last chance: get anything after the last '/'
+            filename = file_url[file_url.rindex('/') + 1:]
+
+    if response.status_code == 200:
+        path = os.path.join(output, filename)
+        print(f"Writing asset to {path}...")
+        with open(path, 'wb') as f:
+            for chunk in response.iter_content(chunk_size=50000):
+                f.write(chunk)
+        print("Done")
+    else:
+        response = None
+
+    return response
+
+
+def eso_calselector_info(description: str):
+    """Parse the main calSelector description, and fetch: category, complete, certified, mode, and messages."""
+
+    category = ""
+    complete = ""
+    certified = ""
+    mode = ""
+    messages = ""
+
+    m = re.search('category="([^"]+)"', description)
+    if m:
+        category = m.group(1)
+    m = re.search('complete="([^"]+)"', description)
+    if m:
+        complete = m.group(1).lower()
+    m = re.search('certified="([^"]+)"', description)
+    if m:
+        certified = m.group(1).lower()
+    m = re.search('mode="([^"]+)"', description)
+    if m:
+        mode = m.group(1).lower()
+    m = re.search('messages="([^"]+)"', description)
+    if m:
+        messages = m.group(1)
+
+    return category, complete, certified, mode, messages
+
+
+def print_eso_calselector_info(description: str, mode_requested: str):
+    """Print the most relevant params contained in the main calselector description."""
+
+    category, complete, certified, mode_executed, messages = eso_calselector_info(description)
+
+    alert = ""
+    if complete != "true":
+        alert = "ALERT: incomplete calibration cascade"
+
+    mode_warning = ""
+    if mode_executed != mode_requested:
+        mode_warning = "WARNING: requested mode (%s) could not be executed" % (mode_requested)
+
+    certified_warning = ""
+    if certified != "true":
+        certified_warning = "WARNING: certified=\"%s\"" % (certified)
+
+    print("    calibration info:")
+    print("    ------------------------------------")
+    print(f"    science category={category}")
+    print(f"    cascade complete={complete}")
+    print(f"    cascade messages={messages}")
+    print(f"    cascade certified={certified}")
+    print(f"    cascade executed mode={mode_executed}")
+    print(f"    full description: {description}")
+
+    return alert, mode_warning, certified_warning
+
+
+def save_eso_raw_data_and_calibs(output: str, program_id: str, date_obs: Union[str, Time],
+                                 instrument: str, mode: str, obj: str = None):
+    u.mkdir_check(output)
+    instrument = instrument.lower()
+    login_eso()
+    print(f"Querying the ESO TAP service at {eso_tap_url}")
+    query = query_eso_raw(program_id=program_id, date_obs=date_obs, obj=obj, instrument=instrument, mode=mode)
+    print(query)
+    raw_frames = get_eso_raw_frame_list(query=query)
+    calib_urls = get_eso_calib_associations_all(raw_frames=raw_frames)
+    urls = list(raw_frames['url']) + calib_urls
+    if not urls:
+        print("No data was found in the raw ESO archive for the given parameters.")
+    for url in urls:
+        save_eso_asset(file_url=url, output=output)
+    return urls
+
+
+def get_eso_raw_frame_list(query: str):
+    login_eso()
+    tap_obs = dal.tap.TAPService(eso_tap_url)
+    again = True
+    raw_frames = Table()
+    while again:
+        try:
+            raw_frames = tap_obs.search(query=query)
+            raw_frames = raw_frames.to_table()
+            again = False
+        except dal.exceptions.DALQueryError:
+            again = u.select_yn("The request timed out. Try again?")
+    raw_frames['url'] = list(map(lambda r: f"https://dataportal.eso.org/dataportal_new/file/{r}", raw_frames['dp_id']))
+    return raw_frames
+
+
+def query_eso_raw(program_id: str, date_obs: Union[str, Time], obj: str = None, instrument: str = "fors2",
+                  mode: str = "imaging"):
+    instrument = instrument.lower()
+    mode = mode.lower()
+    if mode not in ["imaging", "spectroscopy"]:
+        raise ValueError("Mode must be 'imaging' or 'spectroscopy'")
+    mode_str = ""
+    if instrument == "fors2":
+        if mode == "imaging":
+            mode_str = "dp_tech like 'IMA%'"
+        elif mode == "spectroscopy":
+            mode_str = "dp_tech = 'SPECTRUM'"
+    if instrument == "xshooter":
+        if mode == "imaging":
+            mode_str = "dp_tech like 'IMA%'"
+        elif mode == "spectroscopy":
+            mode_str = "dp_tech like 'ECHELLE%'"
+
+    if type(date_obs) is str:
+        date_obs = Time(date_obs)
+    query = \
+        f"""SELECT dp_id
+FROM dbo.raw
+WHERE prog_id='{program_id}'
+AND dp_cat='SCIENCE'
+AND instrument='{instrument}'
+AND {mode_str}
+AND date_obs>'{date_obs.to_datetime().date()}'
+AND date_obs<'{(date_obs + 1).to_datetime().date()}'
+"""
+    if obj is not None:
+        query += f"AND target='{obj}'"
+    return query
+
+
+def get_eso_calib_associations_all(raw_frames: Table, mode_requested: str = "raw2raw"):
+    calib_urls = []
+    for frame in raw_frames:
+        calib_urls_this = get_eso_associations(raw_frame=frame['dp_id'], mode_requested=mode_requested)
+        for url in calib_urls_this:
+            if url not in calib_urls:
+                calib_urls.append(url)
+    return calib_urls
+
+
+def get_eso_associations(raw_frame: str, mode_requested: str = "raw2raw"):
+    print(f"Searching for associated calibration frames for {raw_frame}...")
+    # Get list of calibration files associated with the raw frame.
+    calselector_url = f"http://archive.eso.org/calselector/v1/associations?dp_id={raw_frame}&mode={mode_requested}&responseformat=votable"
+    datalink = dal.adhoc.DatalinkResults.from_result_url(calselector_url)
+    # this_description = next(datalink.bysemantics('#this')).description
+    # Print cascade information and main description
+    # alert, mode_warning, certified_warning = print_eso_calselector_info(this_description, mode_requested)
+    # create and use a mask to get only the #calibration entries:
+    calibrators = datalink['semantics'] == '#calibration'
+    calib_urls = datalink.to_table()[calibrators]['access_url']
+    print("Done.")
+    return calib_urls
 
 
 def retrieve_fors2_calib(fil: str = 'I_BESS', date_from: str = '2017-01-01', date_to: str = None):
@@ -383,7 +620,11 @@ def login_des():
         }
     )
     # Store the JWT auth token
-    keys['des_auth_token'] = r.json()['token']
+    try:
+        keys['des_auth_token'] = r.json()['token']
+    except JSONDecodeError:
+        print("Login failed; either credentials are invalid, or there was a server-side error; skipping DES tasks.")
+        return 'ERROR'
     return keys['des_auth_token']
 
 
@@ -537,10 +778,9 @@ def retrieve_des_photometry(ra: float, dec: float):
     :return: Retrieved photometry table, as a Bytes object, if successful; None if not.
     """
     print(f"Querying DES DR2 archive for field centring on RA={ra}, DEC={dec}")
-    try:
-        login_des()
-    except JSONDecodeError:
-        return "ERROR"
+    error = login_des()
+    if error == "ERROR":
+        return error
     query = f"SELECT * " \
             f"FROM DR2_MAIN " \
             f"WHERE " \
@@ -569,9 +809,7 @@ def save_des_photometry(ra: float, dec: float, output: str):
     :return: Retrieved photometry table, as a Bytes object, if successful; None if not.
     """
     data = retrieve_des_photometry(ra=ra, dec=dec)
-    if data == "ERROR":
-        print("A connection error occurred.")
-    elif data is not None:
+    if data is not None and data != "ERROR":
         u.mkdir_check_nested(path=output)
         print("Saving DES photometry to" + output)
         with open(output, "wb") as file:
@@ -606,11 +844,12 @@ def update_std_des_photometry(ra: float, dec: float, force: bool = False):
         path = field_path + "DES/DES.csv"
         response = save_des_photometry(ra=ra, dec=dec, output=path)
         params = {}
-        if response is not None:
-            params["in_des"] = True
-        else:
-            params["in_des"] = False
-        p.add_params(file=field_path + "output_values", params=params)
+        if response != "ERROR":
+            if response is not None:
+                params["in_des"] = True
+            else:
+                params["in_des"] = False
+            p.add_params(file=field_path + "output_values", params=params)
         return response
     elif outputs["in_des"] is True:
         print("There is already DES data present for this field.")
@@ -640,11 +879,12 @@ def update_frb_des_photometry(frb: str, force: bool = False):
     if outputs is None or "in_des" not in outputs or force:
         response = save_des_photometry(ra=params['burst_ra'], dec=params['burst_dec'], output=path)
         params = {}
-        if response is not None:
-            params["in_des"] = True
-        else:
-            params["in_des"] = False
-        p.add_output_values_frb(obj=frb, params=params)
+        if response != "ERROR":
+            if response is not None:
+                params["in_des"] = True
+            else:
+                params["in_des"] = False
+            p.add_output_values_frb(obj=frb, params=params)
         return response
     elif outputs["in_des"] is True:
         print("There is already DES data present for this field.")
@@ -728,10 +968,11 @@ def update_frb_des_cutout(frb: str, force: bool = False):
     """
     params = p.object_params_frb(obj=frb)
     outputs = p.frb_output_params(obj=frb)
+    error = ""
     if "in_des" not in outputs:
-        update_frb_des_photometry(frb=frb)
+        error = update_frb_des_photometry(frb=frb)
         outputs = p.frb_output_params(obj=frb)
-    if force or outputs["in_des"]:
+    if error != "ERROR" and (force or outputs["in_des"]):
         path = params['data_dir'] + "DES/0-data/"
         files = os.listdir(path)
         condition = False
@@ -780,8 +1021,8 @@ def update_std_skymapper_photometry(ra: float, dec: float, force: bool = False):
     data_dir = p.config['top_data_dir']
     field_path = f"{data_dir}/std_fields/RA{ra}_DEC{dec}/"
     outputs = p.load_params(field_path + "output_values")
+    path = field_path + "SkyMapper/SkyMapper.csv"
     if outputs is None or "in_skymapper" not in outputs or force:
-        path = field_path + "SkyMapper/SkyMapper.csv"
         response = save_skymapper_photometry(ra=ra, dec=dec, output=path)
         params = {}
         if response != "ERROR":
@@ -794,15 +1035,18 @@ def update_std_skymapper_photometry(ra: float, dec: float, force: bool = False):
         else:
             return None
     elif outputs["in_skymapper"] is True:
-        print("There is already SkyMapper data present for this field.")
-        return True
+        if os.path.isfile(path):
+            print("There is already SkyMapper data present for this field.")
+            return True
+        else:
+            raise FileNotFoundError(f"Catalogue expected at {path}, but not found; something has gone wrong.")
     else:
         print("This field is not present in SkyMapper.")
 
 
 def update_frb_skymapper_photometry(frb: str, force: bool = False):
     """
-    Retrieve DES photometry for the field of an FRB (with a valid param file in param_dir), in a 0.2 deg radius cone
+    Retrieve SkyMapper photometry for the field of an FRB (with a valid param file in param_dir), in a 0.2 deg radius cone
     centred on the FRB coordinates, and download it to the appropriate data directory.
     (Note - the width of the box is in RA degrees, not corrected for spherical distortion)
     :param frb: FRB name, FRBXXXXXX. Must match title of param file.
@@ -814,11 +1058,12 @@ def update_frb_skymapper_photometry(frb: str, force: bool = False):
     if outputs is None or "in_skymapper" not in outputs or force:
         response = save_skymapper_photometry(ra=params['burst_ra'], dec=params['burst_dec'], output=path)
         params = {}
-        if response is not None:
-            params["in_skymapper"] = True
-        else:
-            params["in_skymapper"] = False
-        p.add_output_values_frb(obj=frb, params=params)
+        if response != "ERROR":
+            if response is not None:
+                params["in_skymapper"] = True
+            else:
+                params["in_skymapper"] = False
+            p.add_output_values_frb(obj=frb, params=params)
         return response
     elif outputs["in_skymapper"] is True:
         print("There is already SkyMapper data present for this field.")
@@ -829,3 +1074,173 @@ def update_frb_skymapper_photometry(frb: str, force: bool = False):
 
 def retrieve_skymapper_cutout(ra: float, dec: float):
     url = "http://api.skymapper.nci.org.au/aus/siap/dr3/query?"
+
+
+mast_url = "https://catalogs.mast.stsci.edu/api/v0.1/"
+catalogue_filters = {"panstarrs1": ["g", "r", "i", "z", "y"],
+                     "gaia": []}
+catalogue_columns = {"panstarrs1": ["objID", "qualityFlag", "raStack", "decStack", "raStackErr", "decStackErr",
+                                    "{:s}PSFMag", "{:s}PSFMagErr", "{:s}ApMag", "{:s}ApMagErr",
+                                    "{:s}KronMag", "{:s}KronMagErr", "{:s}psfLikelihood"],
+                     "gaia": ["astrometric_primary_flag",
+                              "ra", "ra_error", "dec", "dec_error",
+                              "b",
+                              "duplicated_source", "hip", "l", "matched_observations",
+                              "parallax", "parallax_error",
+                              "pmdec", "pmdec_error", "pmra", "pmra_error",
+                              "phot_g_mean_flux", "phot_g_mean_flux_error", "phot_g_mean_mag", "phot_g_n_obs",
+                              "phot_variable_flag",
+                              "random_index", "ref_epoch", "solution_id", "source_id", "tycho2_id"
+                              ]}
+
+
+def construct_columns(cat="panstarrs1"):
+    cat = cat.lower()
+    columns = catalogue_columns[cat]
+    filters = catalogue_filters[cat]
+    columns_build = []
+    for column in columns:
+        if "{:s}" not in column:
+            columns_build.append(column)
+        else:
+            for f in filters:
+                columns_build.append(column.format(f))
+
+    return columns_build
+
+
+def retrieve_mast_photometry(ra: float, dec: float, cat: str = "panstarrs1", release="dr2", table="stack",
+                             radius: float = 0.1):
+    if cat == "panstarrs1":
+        cat_str = "panstarrs"
+    else:
+        cat_str = cat
+    print(f"\nQuerying {cat} {release} archive for field centring on RA={ra}, DEC={dec}")
+    cat = cat.lower()
+    url = f"{mast_url}{cat_str}/{release}/{table}.csv"
+    print(url)
+    request = {'ra': ra, 'dec': dec, 'radius': radius, 'columns': construct_columns(cat=cat)}
+    response = requests.get(url, params=request)
+    text = response.text
+    if text == '':
+        return None
+    else:
+        return text
+
+
+def save_mast_photometry(ra: float, dec: float, output: str, cat: str = "panstarrs1", radius: float = 0.1):
+    response = retrieve_mast_photometry(ra=ra, dec=dec, cat=cat, radius=radius)
+    print(response)
+    if response == "ERROR":
+        return response
+    elif response is not None:
+        u.mkdir_check_nested(path=output)
+        print(f"Saving {cat} photometry to {output}")
+        with open(output, "w") as file:
+            file.write(response)
+    elif "404 Not Found" in response:
+        return "ERROR"
+    else:
+        print(f'No data retrieved from {cat}.')
+    return response
+
+
+def update_std_mast_photometry(ra: float, dec: float, cat: str = "panstarrs1", force: bool = False):
+    cat = cat.lower()
+    data_dir = p.config['top_data_dir']
+    field_path = f"{data_dir}/std_fields/RA{ra}_DEC{dec}/"
+    u.mkdir_check_nested(field_path)
+    outputs = p.load_params(field_path + "output_values")
+    path = f"{field_path}{cat.upper()}/{cat.upper()}.csv"
+    if outputs is None or f"in_{cat}" not in outputs or force:
+        response = save_mast_photometry(ra=ra, dec=dec, output=path, cat=cat)
+        params = {}
+        if response != "ERROR":
+            if response is not None:
+                params[f"in_{cat}"] = True
+            else:
+                params[f"in_{cat}"] = False
+            p.add_params(file=field_path + "output_values", params=params)
+            return response
+        else:
+            return None
+    elif outputs[f"in_{cat}"] is True:
+        if os.path.isfile(path):
+            print(f"There is already {cat} data present for this field.")
+            return True
+        else:
+            raise FileNotFoundError(f"Catalogue expected at {path}, but not found; something has gone wrong.")
+    else:
+        print(f"This field is not present in {cat}.")
+
+
+# TODO: A lot of basically repeated code here. Might be good to consolidate it somehow.
+
+def update_frb_mast_photometry(frb: str, cat: str = "panstarrs1", force: bool = False):
+    """
+    Retrieve MAST photometry for the field of an FRB (with a valid param file in param_dir), in a 0.2 deg radius cone
+    centred on the FRB coordinates, and download it to the appropriate data directory.
+    (Note - the width of the box is in RA degrees, not corrected for spherical distortion)
+    :param frb: FRB name, FRBXXXXXX. Must match title of param file.
+    :return: True if successful, False if not.
+    """
+    params = p.object_params_frb(frb)
+    path = f"{params['data_dir']}{cat.upper()}/{cat.upper()}.csv"
+    outputs = p.frb_output_params(obj=frb)
+    if outputs is None or f"in_{cat}" not in outputs or force:
+        response = save_mast_photometry(ra=params['burst_ra'], dec=params['burst_dec'], output=path, cat=cat)
+        params = {}
+        if response != "ERROR":
+            if response is not None:
+                params[f"in_{cat}"] = True
+            else:
+                params[f"in_{cat}"] = False
+            p.add_output_values_frb(obj=frb, params=params)
+        return response
+    elif outputs[f"in_{cat}"] is True:
+        print(f"There is already {cat} data present for this field.")
+        return True
+    else:
+        print(f"This field is not present in {cat}.")
+
+
+def retrieve_gaia(ra: float, dec: float):
+    from astroquery.gaia import Gaia
+    print(f"\nQuerying Gaia DR2 archive for field centring on RA={ra}, DEC={dec}")
+    coord = SkyCoord(ra=ra, dec=dec, unit=(units.degree, units.degree), frame='icrs')
+    radius = units.Quantity(0.1, units.deg)
+    j = Gaia.cone_search_async(coordinate=coord, radius=radius)
+    r = j.get_results()
+    return r
+
+
+def save_gaia(ra: float, dec: float, output: str):
+    table = retrieve_gaia(ra=ra, dec=dec)
+    if len(table) > 0:
+        u.mkdir_check_nested(path=output)
+        print(f"Saving GAIA catalogue to {output}")
+        table.write(output, format="ascii.csv")
+        return table
+    else:
+        print("No data retrieved from Gaia DR2")
+        return None
+
+
+def update_frb_gaia(frb: str, force: bool = False):
+    params = p.object_params_frb(frb)
+    path = f"{params['data_dir']}Gaia/Gaia.csv"
+    outputs = p.frb_output_params(obj=frb)
+    if outputs is None or f"in_gaia" not in outputs or force:
+        response = save_gaia(ra=params['burst_ra'], dec=params['burst_dec'], output=path)
+        params = {}
+        if response is not None:
+            params[f"in_gaia"] = True
+        else:
+            params[f"in_gaia"] = False
+        p.add_output_values_frb(obj=frb, params=params)
+        return response
+    elif outputs[f"in_gaia"] is True:
+        print(f"There is already Gaia data present for this field.")
+        return True
+    else:
+        print(f"This field is not present in Gaia.")
