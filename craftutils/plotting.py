@@ -272,9 +272,11 @@ def plot_galaxy(fig: plt.figure, data_title: str, instrument: str, f: str, ra: f
                 object_name: str = None, ticks: int = None, interval: str = 'minmax',
                 show_coords=True,
                 reverse_y=False,
-                show_frb=False, ellipse_colour: str = 'white', ):
+                show_frb=False, ellipse_colour: str = 'white',
+                line_width=1.):
     instrument = instrument.lower()
-    instruments = {'fors2': 'FORS2', 'imacs': 'IMACS', 'xshooter': 'X-shooter', 'gmos': 'GMOS', 'hubble': 'Hubble Space Telescope'}
+    instruments = {'fors2': 'FORS2', 'imacs': 'IMACS', 'xshooter': 'X-shooter', 'gmos': 'GMOS',
+                   'hubble': 'Hubble Space Telescope'}
 
     if instrument == 'imacs':
         f_0 = f
@@ -329,7 +331,8 @@ def plot_galaxy(fig: plt.figure, data_title: str, instrument: str, f: str, ra: f
                                   show_grid=show_grid,
                                   ticks=ticks, interval=interval,
                                   show_coords=show_coords,
-                                  reverse_y=reverse_y)
+                                  reverse_y=reverse_y,
+                                  )
 
     burst_name = data_title[:data_title.find("_")]
     name = burst_name[3:]
@@ -361,7 +364,7 @@ def plot_galaxy(fig: plt.figure, data_title: str, instrument: str, f: str, ra: f
         a, b, theta = am.calculate_error_ellipse(burst_properties, error=show_frb)
         plot_gal_params(hdu=hdu_cut, ras=[burst_ra], decs=[burst_dec], a=[a],
                         b=[b],
-                        theta=[-theta], colour=ellipse_colour, line_style='-')
+                        theta=[-theta], colour=ellipse_colour, line_style='-', line_width=line_width)
 
     return plot, hdu_cut
 
@@ -380,7 +383,8 @@ def plot_hg(data_title: str, instrument: str, f: str, frame: int,
             show_distance: bool = True, bar_position: str = 'left',
             show_coords: bool = True,
             show_name: bool = True,
-            reverse_y=False):
+            reverse_y=False,
+            line_width=1.):
     instrument = instrument.lower()
     instruments = {'fors2': 'FORS2', 'imacs': 'IMACS', 'xshooter': 'X-shooter', 'gmos': 'GMOS'}
     if instrument not in instruments:
@@ -407,7 +411,8 @@ def plot_hg(data_title: str, instrument: str, f: str, frame: int,
                                 show_grid=show_grid,
                                 show_filter=show_filter, image_name=image_name, show_instrument=show_instrument,
                                 object_name=object_name, ticks=ticks, show_coords=show_coords, reverse_y=reverse_y,
-                                show_frb=show_frb, ellipse_colour=ellipse_colour)
+                                show_frb=show_frb, ellipse_colour=ellipse_colour,
+                                line_width=line_width)
 
     if show_z:
         if reverse_y:
@@ -537,7 +542,7 @@ def plot_gal_params(hdu: fits.HDUList, ras: Union[list, np.ndarray, float], decs
                     a: Union[list, np.ndarray, float], b: Union[list, np.ndarray, float],
                     theta: Union[list, np.ndarray, float], colour: str = 'white',
                     show_centre: bool = False,
-                    label: str = None, world: bool = True, world_axes: bool = True, line_style='-'):
+                    label: str = None, world: bool = True, world_axes: bool = True, line_style='-', line_width=1):
     """
 
     :param hdu:
@@ -578,7 +583,7 @@ def plot_gal_params(hdu: fits.HDUList, ras: Union[list, np.ndarray, float], decs
                                                        theta=theta[i])
             else:
                 ellipse = photutils.EllipticalAperture((x, ys[i]), a=a[i], b=b[i], theta=theta[i])
-            ellipse.plot(color=colour, label=label, ls=line_style)
+            ellipse.plot(color=colour, label=label, ls=line_style, linewidth=line_width)
             line_label = None
         else:
             line_label = label
