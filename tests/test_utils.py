@@ -1,5 +1,8 @@
 import os
 
+import astropy.units as units
+import pytest
+
 import craftutils.utils as u
 import craftutils.params as p
 
@@ -70,6 +73,32 @@ def test_uncertainty_log10():
     flux = 4051519.0
     flux_err = 28118.24
     assert u.uncertainty_log10(arg=flux, uncertainty_arg=flux_err, a=-2.5) == 0.00753519635032644
+
+
+def test_check_quantity():
+    number = 10.
+    assert u.check_quantity(number=number, unit=units.meter) == number * units.meter
+    number = 10. * units.meter
+    assert u.check_quantity(number=number, unit=units.meter) == number
+    number = 1000. * units.centimeter
+    assert u.check_quantity(number=number, unit=units.meter, convert=True) == 10. * units.meter
+    assert u.check_quantity(number=number, unit=units.meter, convert=True).unit == units.meter
+    assert u.check_quantity(number=number, unit=units.meter, convert=False).unit == units.centimeter
+    with pytest.raises(units.UnitsError) as e:
+        u.check_quantity(number=number, unit=units.meter, allow_mismatch=False)
+    assert e.type is units.UnitsError
+    with pytest.raises(units.UnitsError) as e:
+        u.check_quantity(number=number, unit=units.joule)
+    assert e.type is units.UnitsError
+
+
+def test_dequantify():
+    number = 10.
+    assert u.dequantify(number=number) == 10.
+    number = 10. * units.meter
+    assert u.dequantify(number=number) == 10.
+    number = 1000. * units.centimeter
+    assert u.dequantify(number=number, unit=units.meter) == 10.
 
 # def test_get_pypeit_user_params():
 #     files = [coadd_path,

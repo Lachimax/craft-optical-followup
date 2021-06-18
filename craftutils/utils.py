@@ -101,20 +101,33 @@ def check_dict(key: str, dictionary: dict, na_values: Union[tuple, list] = (None
         return dictionary[key]
 
 
-def check_quantity(number: Union[float, int, units.Quantity], unit: units.Unit, allow_mismatch: bool = True):
+def check_quantity(number: Union[float, int, units.Quantity], unit: units.Unit, allow_mismatch: bool = True,
+                   convert: bool = False):
     if type(number) is not units.Quantity:
         number *= unit
     elif number.unit != unit:
         if not allow_mismatch:
-            raise ValueError(f"This is already a Quantity, but with units {number.unit}; units {unit} were specified.")
+            raise units.UnitsError(f"This is already a Quantity, but with units {number.unit}; units {unit} were specified.")
         elif not (number.unit.is_equivalent(unit)):
-            raise ValueError(
+            raise units.UnitsError(
                 f"This number is already a Quantity, but with incompatible units ({number.unit}); units {unit} were specified.")
+        elif convert:
+            number = number.to(unit)
     return number
 
 
-def dequantify(number: Union[float, int, units.Quantity]):
+def dequantify(number: Union[float, int, units.Quantity], unit: units.Unit = None):
+    """
+    Removes the unit from an astropy Quantity, or returns the number unchanged if it is not a Quantity.
+    If a unit is provided, and number is a Quantity, an attempt will be made to convert the number to that unit before
+    returning the value.
+    :param number:
+    :param unit:
+    :return:
+    """
     if type(number) is units.Quantity:
+        if unit is not None:
+            number = check_quantity(number=number, unit=unit, convert=True)
         return number.value
     else:
         return number
