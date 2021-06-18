@@ -18,7 +18,6 @@ import craftutils.spectroscopy as spec
 import craftutils.observation.objects as objects
 import craftutils.observation.image as image
 import craftutils.fits_files as ff
-import craftutils.plotting as pl
 
 config = p.config
 
@@ -72,7 +71,8 @@ def _retrieve_eso_epoch(epoch: Union['ESOImagingEpoch', 'ESOSpectroscopyEpoch'],
         raise TypeError("epoch must be either an ESOImagingEpoch or an ESOSpectroscopyEpoch.")
     if epoch.target is None:
         obj = u.user_input(
-            "Specifying an object might help find the correct observation. Enter here, as it appears in the archive OBJECT field, or leave blank:\n")
+            "Specifying an object might help find the correct observation. Enter here, as it appears in the archive "
+            "OBJECT field, or leave blank:\n")
         if obj not in ["", " "]:
             epoch.set_target(obj)
 
@@ -107,7 +107,8 @@ class Field:
                  centre_coords: Union[SkyCoord, str] = None,
                  param_path: str = None,
                  data_path: str = None,
-                 objs: Union[List[objects.Object], dict] = None
+                 objs: Union[List[objects.Object], dict] = None,
+                 extent: units.Quantity = None
                  ):
         """
 
@@ -160,6 +161,8 @@ class Field:
         self.cats = {}
 
         self.load_output_file()
+
+        self.extent = extent
 
     def __str__(self):
         return f"{self.name}"
@@ -343,20 +346,23 @@ class Field:
         u.mkdir_check(path)
         return path
 
-    def retrieve_photometry_surveys(self, force_update: bool = False):
-        self.retrieve_photometry_panstarrs1(force_update=force_update)
+    def retrieve_catalogues(self, force_update: bool = False):
+        for cat in retrieve.photometry_catalogues:
+            self.retrieve_catalogue(cat=cat, force_update=force_update)
 
-    def retrieve_photometry_panstarrs1(self, force_update: bool = False):
-        return self.retrieve_photometry_mast(cat="panstarrs1", force_update=force_update)
-
-    def retrieve_photometry_mast(self, cat: str, force_update: bool = False):
+    def retrieve_catalogue(self, cat: str, force_update: bool = False):
+        if isinstance(self.extent, units.Quantity):
+            radius = self.extent
+        else:
+            radius = 0.2 * units.deg
         output = self._cat_data_path(cat=cat)
         self.set_path(f"cat_csv_{cat}", output)
         ra = self.centre_coords.ra.value
         dec = self.centre_coords.dec.value
         if force_update or f"in_{cat}" not in self.cats:
-            response = retrieve.save_mast_photometry(ra=ra, dec=dec, output=output, cat="panstarrs1", radius=0.3)
-            if response != "ERROR":
+            response = retrieve.save_catalogue(ra=ra, dec=dec, output=output, cat=cat.lower(),
+                                               radius=radius)
+            if not isinstance(response, table.Table) and response != "ERROR":
                 if response is not None:
                     self.cats[f"in_{cat}"] = True
                 else:
@@ -380,8 +386,9 @@ class Field:
 
     def load_output_file(self, **kwargs):
         outputs = p.load_output_file(self)
-        if "cats" in outputs:
-            self.cats.update(outputs["cats"])
+        if outputs is not None:
+            if "cats" in outputs:
+                self.cats.update(outputs["cats"])
         return outputs
 
     def _output_dict(self):
@@ -403,7 +410,8 @@ class Field:
                           "type": "Field",
                           "centre": objects.position_dictionary.copy(),
                           "objects": {"<name>": objects.Object.default_params()
-                                      }
+                                      },
+                          "extent": 0.2 * units.deg
                           }
         return default_params
 
@@ -417,12 +425,18 @@ class Field:
         field_type = param_dict["type"]
         centre_ra, centre_dec = p.select_coords(param_dict["centre"])
 
+        if "extent" in param_dict:
+            extent = param_dict["extent"]
+        else:
+            extent = None
+
         if field_type == "Field":
             return cls(name=name,
                        centre_coords=f"{centre_ra} {centre_dec}",
                        param_path=param_file,
                        data_path=param_dict["data_path"],
-                       objs=param_dict["objects"]
+                       objs=param_dict["objects"],
+                       extent=extent
                        )
         elif field_type == "FRBField":
             return FRBField.from_file(param_file)
@@ -454,7 +468,8 @@ class FRBField(Field):
                  param_path: str = None,
                  data_path: str = None,
                  objs: List[objects.Object] = None,
-                 frb: objects.FRB = None):
+                 frb: objects.FRB = None,
+                 extent: units.Quantity = None):
         if centre_coords is None:
             if frb is not None:
                 centre_coords = frb.position
@@ -465,7 +480,8 @@ class FRBField(Field):
                          centre_coords=centre_coords,
                          param_path=param_path,
                          data_path=data_path,
-                         objs=objs
+                         objs=objs,
+                         extent=extent
                          )
 
         self.frb = frb
@@ -510,12 +526,17 @@ class FRBField(Field):
 
         centre_ra, centre_dec = p.select_coords(param_dict["centre"])
         frb = objects.FRB.from_dict(param_dict["frb"])
+        if "extent" in param_dict:
+            extent = param_dict["extent"]
+        else:
+            extent = None
         return cls(name=name,
                    centre_coords=f"{centre_ra} {centre_dec}",
                    param_path=param_file,
                    data_path=param_dict["data_path"],
                    objs=param_dict["objects"],
-                   frb=frb
+                   frb=frb,
+                   extent=extent
                    )
 
     @classmethod
@@ -1112,7 +1133,7 @@ class PanSTARRS1ImagingEpoch(ImagingEpoch):
         self.instrument = "panstarrs"
         self.load_output_file()
         if isinstance(field, Field):
-            self.field.retrieve_photometry_panstarrs1()
+            self.field.retrieve_catalogue(cat="panstarrs1")
 
     # TODO: Automatic cutout download; don't worry for now.
 
@@ -1124,10 +1145,6 @@ class PanSTARRS1ImagingEpoch(ImagingEpoch):
         self.proc_3_photometric_calibration(**kwargs)
         self.proc_4_dual_mode_source_extraction(**kwargs)
         self.proc_5_get_photometry(**kwargs)
-
-    def proc_0_download(self, **kwargs):
-        # Retrieve imaging from PanSTARRS
-        pass
 
     def proc_2_source_extraction(self, **kwargs):
         if self.query_stage("Do source extraction?", stage='2-source_extraction'):

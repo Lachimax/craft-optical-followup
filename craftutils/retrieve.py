@@ -97,6 +97,7 @@ def update_frb_photometry(frb: str, cat: str):
 
 
 def save_catalogue(ra: float, dec: float, output: str, cat: str, radius: units.Quantity = 0.3 * units.deg):
+    cat = cat.lower()
     if cat not in photometry_catalogues:
         raise KeyError(f"catalogue {cat} not recognised.")
 
@@ -104,7 +105,7 @@ def save_catalogue(ra: float, dec: float, output: str, cat: str, radius: units.Q
     if func is save_mast_photometry:
         return func(ra=ra, dec=dec, output=output, cat=cat, radius=radius)
     else:
-        return func(ra=ra, dec=dec, output=output, cat=cat, radius=radius)
+        return func(ra=ra, dec=dec, output=output, radius=radius)
 
 
 # ESO retrieval code based on the script at
@@ -1121,10 +1122,10 @@ def construct_columns(cat="panstarrs1"):
 
 def retrieve_mast_photometry(ra: float, dec: float, cat: str = "panstarrs1", release="dr2", table="stack",
                              radius: units.Quantity = 0.2 * units.deg):
-    if cat == "panstarrs1":
+    if cat.lower() == "panstarrs1":
         cat_str = "panstarrs"
     else:
-        cat_str = cat
+        cat_str = cat.lower()
 
     radius = u.dequantify(radius, unit=units.deg)
     print(f"\nQuerying {cat} {release} archive for field centring on RA={ra}, DEC={dec}")
@@ -1226,8 +1227,8 @@ def retrieve_gaia(ra: float, dec: float, radius: units.Quantity = 0.1 * units.de
     return r
 
 
-def save_gaia(ra: float, dec: float, output: str):
-    table = retrieve_gaia(ra=ra, dec=dec)
+def save_gaia(ra: float, dec: float, output: str, radius: units.Quantity = 0.2 * units.deg):
+    table = retrieve_gaia(ra=ra, dec=dec, radius=radius)
     if len(table) > 0:
         u.mkdir_check_nested(path=output)
         print(f"Saving GAIA catalogue to {output}")
@@ -1261,7 +1262,8 @@ def update_frb_gaia(frb: str, force: bool = False):
 keys = p.keys()
 fors2_filters_retrievable = ["I_BESS", "R_SPEC", "b_HIGH", "v_HIGH"]
 mast_catalogues = ['panstarrs1']
-photometry_catalogues = {'DES': save_des_photometry,
-                         'SDSS': save_sdss_photometry,
-                         'SkyMapper': save_skymapper_photometry,
-                         'PanSTARRS1': save_mast_photometry}
+photometry_catalogues = {'des': save_des_photometry,
+                         'sdss': save_sdss_photometry,
+                         'skymapper': save_skymapper_photometry,
+                         'panstarrs1': save_mast_photometry,
+                         'gaia': save_gaia}

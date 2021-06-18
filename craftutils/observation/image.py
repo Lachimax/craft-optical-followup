@@ -297,7 +297,7 @@ class ImagingImage(Image):
             elif self.source_cat_sextractor_dual_path is not None:
                 self.load_source_cat_sextractor_dual(force=force)
             else:
-                warnings.warn("No valid source_cat_dual_path found. Could not load source_table.")
+                print("No valid source_cat_dual_path found. Could not load source_table.")
 
     def write_source_cat(self):
         if self.source_cat_path is None:
@@ -538,7 +538,8 @@ class ImagingImage(Image):
     def astrometry_diagnostics(self):
         self.load_source_cat()
 
-
+    def match_to_cat(self):
+        pass
 
     def signal_to_noise(self):
         self.load_source_cat()

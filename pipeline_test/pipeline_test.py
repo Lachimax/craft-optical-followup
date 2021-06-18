@@ -66,7 +66,7 @@ def main(field_name: str,
                 exit(0)
         field = fld.Field.from_params(name=field_name)
     if u.select_yn("Check survey catalogues for photometry of this field?"):
-        field.retrieve_photometry_surveys()
+        field.retrieve_catalogues()
     if spectroscopy:
         mode = "Spectroscopy"
     elif imaging:
