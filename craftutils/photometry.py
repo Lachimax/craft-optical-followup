@@ -2,10 +2,8 @@
 import copy
 import os
 import math
-import shutil
 from typing import Union, List
 from copy import deepcopy
-from datetime import datetime as dt
 
 import numpy as np
 import photutils as ph
@@ -24,11 +22,13 @@ from astropy.modeling import models, fitting
 from astropy.modeling.functional_models import Sersic1D
 from astropy.stats import sigma_clip
 
-from craftutils import fits_files as ff
+import craftutils.fits_files as ff
 import craftutils.params as p
 import craftutils.utils as u
-from craftutils import plotting
-from craftutils import retrieve as r
+import craftutils.plotting as plotting
+import craftutils.retrieve as r
+
+from craftutils.wrap.psfex import load_psfex
 
 # TODO: End-to-end pipeline script?
 # TODO: Change expected types to Union
@@ -149,7 +149,7 @@ def image_depth_diagnostics(hdu: Union[str, fits.HDUList], fil: str, sextractor:
                                         sex_dec_col="DELTAPSF_SKY",
                                         sex_x_col='XPSF_IMAGE',
                                         sex_y_col='YPSF_IMAGE',
-                                        dist_tol=5.0,
+                                        dist_tol=5.0 * units.pixel,
                                         flux_column="FLUX_PSF",
                                         stars_only=True,
                                         star_class_tol=star_class_tol,
@@ -1225,18 +1225,18 @@ def aperture_photometry(data: np.ndarray, x: float = None, y: float = None, fwhm
     # 'flux' is then the corrected flux of the aperture.
     cat['flux'] = cat['aperture_sum'] - cat['subtract']
     # 'mag' is the aperture magnitude.
-    cat['mag'], cat['mag_err_plus'], cat['mag_err_minus'] = magnitude_complete(flux=cat['flux'],
-                                                                               # flux_err=cat['aperture_sum_err'],
-                                                                               exp_time=exp_time,
-                                                                               exp_time_err=exp_time_err,
-                                                                               zeropoint=zeropoint,
-                                                                               zeropoint_err=zeropoint_err,
-                                                                               ext=ext, ext_err=ext_err,
-                                                                               airmass=airmass,
-                                                                               airmass_err=airmass_err,
-                                                                               colour_term=colour_term,
-                                                                               colour_term_err=colour_term_err,
-                                                                               colour=colours, colour_err=colours_err)
+    cat['mag'], cat['mag_err'] = magnitude_complete(flux=cat['flux'],
+                                                    # flux_err=cat['aperture_sum_err'],
+                                                    exp_time=exp_time,
+                                                    exp_time_err=exp_time_err,
+                                                    zeropoint=zeropoint,
+                                                    zeropoint_err=zeropoint_err,
+                                                    ext=ext, ext_err=ext_err,
+                                                    airmass=airmass,
+                                                    airmass_err=airmass_err,
+                                                    colour_term=colour_term,
+                                                    colour_term_err=colour_term_err,
+                                                    colour=colours, colour_err=colours_err)
     # If selected, plot the apertures and annuli against the image.
     if plot:
         plt.imshow(data, origin='lower')
@@ -1786,43 +1786,6 @@ def insert_synthetic_point_sources_psfex(image: np.ndarray, x: np.float, y: np.f
     return combine, sources
 
 
-def load_psfex(model: str, x, y):
-    """
-    Since PSFEx generates a model that is dependent on image position, this is used to collapse that into a useable kernel
-    for convolution and insertion purposes. See https://psfex.readthedocs.io/en/latest/Appendices.html
-    :param model:
-    :param x:
-    :param y:
-    :return:
-    """
-    model, path = ff.path_or_hdu(model)
-
-    header = model[1].header
-
-    a = model[1].data[0][0]
-
-    x = (x - header['POLZERO1']) / header['POLSCAL1']
-    y = (y - header['POLZERO2']) / header['POLSCAL2']
-
-    if len(a) == 3:
-        psf = a[0] + a[1] * x + a[2] * y
-
-    elif len(a) == 6:
-        psf = a[0] + a[1] * x + a[2] * x ** 2 + a[3] * y + a[4] * y ** 2 + a[5] * x * y
-
-    elif len(a) == 10:
-        psf = a[0] + a[1] * x + a[2] * x ** 2 + a[3] * x ** 3 + a[4] * y + a[5] * x * y + a[6] * x ** 2 * y + \
-              a[7] * y ** 2 + a[8] * x * y ** 2 + a[9] * y ** 3
-
-    else:
-        raise ValueError("I haven't accounted for polynomials of order > 3. My bad.")
-
-    if path:
-        model.close()
-
-    return psf
-
-
 def insert_point_sources_to_file(file: Union[fits.hdu.HDUList, str],
                                  x: np.float64, y: np.float64,
                                  mag: np.float64,
@@ -2273,75 +2236,6 @@ def intensity_radius(image, centre_x, centre_y, noise: float = None, limit: floa
             intensities.append(np.mean(pixels))
 
     return radii, np.array(intensities)
-
-
-def source_extractor(image_path: str,
-                     output_dir: str = None,
-                     configuration_file: str = None,
-                     parameters_file: str = None,
-                     catalog_name: str = None,
-                     copy_params: bool = True,
-                     template_image_path: str = None,
-                     **configs):
-    """
-    :param configs: Any source-extractor (sextractor) parameter, normally read via the config file but that can be
-    overridden by passing to the shell command, can be given here.
-    """
-
-    if "gain" in configs:
-        configs["gain"] = u.check_quantity(number=configs["gain"], unit=gain_unit).to(gain_unit).value
-
-    old_dir = os.getcwd()
-    if output_dir is None:
-        output_dir = os.getcwd()
-    else:
-        os.chdir(output_dir)
-
-    if copy_params:
-        os.system(f"cp {os.path.join(p.path_to_config_psfex(), '*')} .")
-
-    sys_str = "source-extractor "
-    if template_image_path is not None:
-        sys_str += f"{template_image_path},"
-    sys_str += image_path + " "
-    if configuration_file is not None:
-        sys_str += f" -c {configuration_file}"
-    if catalog_name is None:
-        image_name = os.path.split(image_path)[-1]
-        catalog_name = f"{image_name}.cat"
-    sys_str += f" -CATALOG_NAME {catalog_name}"
-    if parameters_file is not None:
-        sys_str += f" -PARAMETERS_NAME {parameters_file}"
-    for param in configs:
-        sys_str += f" -{param.upper()} {configs[param]}"
-    print()
-    print(sys_str)
-    print()
-    os.system(sys_str)
-    print()
-    print(sys_str)
-    print()
-    catalog_path = os.path.join(output_dir, catalog_name)
-    os.chdir(old_dir)
-    return catalog_path
-
-
-def psfex(catalog: str, output_name: str = None, output_dir: str = None):
-    old_dir = os.getcwd()
-    if output_dir is None:
-        output_dir = os.getcwd()
-    else:
-        os.chdir(output_dir)
-    if output_name is None:
-        cat_name = os.path.split(catalog)[-1]
-        output_name = cat_name.replace(".fits", ".psf")
-    sys_str = f"psfex {catalog} -o {output_name}"
-    print(f"\n{sys_str}\n")
-    os.system(sys_str)
-    print(f"\n{sys_str}\n")
-    os.chdir(old_dir)
-    psfex_path = os.path.join(output_dir, output_name)
-    return psfex_path
 
 
 def signal_to_noise(rate_target: units.Quantity,

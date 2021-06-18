@@ -17,7 +17,9 @@ import craftutils.fits_files as ff
 import craftutils.photometry as ph
 import craftutils.params as p
 import craftutils.plotting as pl
+
 from craftutils.retrieve import cat_columns
+from craftutils.wrap import psfex
 
 
 class Image:
@@ -223,7 +225,7 @@ class ImagingImage(Image):
                                              parameters_file=output_params,
                                              catalog_name=f"{self.name}_psfex.fits",
                                              )
-            self.psfex_path = ph.psfex(catalog=catalog, output_dir=output_dir)
+            self.psfex_path = psfex.psfex(catalog=catalog, output_dir=output_dir)
             self.psfex_output = fits.open(self.psfex_path)
             self.extract_pixel_scale()
             pix_scale = self.pixel_scale_dec
@@ -532,6 +534,11 @@ class ImagingImage(Image):
         self.fwhm_sigma_sextractor = np.nanstd(fwhm_sextractor)
 
         self.close()
+
+    def astrometry_diagnostics(self):
+        self.load_source_cat()
+
+
 
     def signal_to_noise(self):
         self.load_source_cat()
