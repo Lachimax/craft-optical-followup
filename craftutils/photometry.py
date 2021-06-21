@@ -44,7 +44,7 @@ def image_psf_diagnostics(hdu: Union[str, fits.HDUList], cat: Union[str, table.T
 
     hdu = copy.deepcopy(hdu)
 
-    cat = u.path_or_table()
+    cat = u.path_or_table(cat)
     if isinstance(cat, str):
         cat = table.QTable.read(cat, format="ascii.sextractor")
     stars = cat[cat["CLASS_STAR"] > star_class_tol]
