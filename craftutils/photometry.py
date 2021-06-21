@@ -27,6 +27,7 @@ import craftutils.params as p
 import craftutils.utils as u
 import craftutils.plotting as plotting
 import craftutils.retrieve as r
+import craftutils.astrometry as a
 
 from craftutils.wrap.psfex import load_psfex
 
@@ -43,6 +44,7 @@ def image_psf_diagnostics(hdu: Union[str, fits.HDUList], cat: Union[str, table.T
 
     hdu = copy.deepcopy(hdu)
 
+    cat = u.path_or_table()
     if isinstance(cat, str):
         cat = table.QTable.read(cat, format="ascii.sextractor")
     stars = cat[cat["CLASS_STAR"] > star_class_tol]
@@ -52,14 +54,14 @@ def image_psf_diagnostics(hdu: Union[str, fits.HDUList], cat: Union[str, table.T
     print(f"Initial num stars:", len(stars))
 
     if match_to is not None:
-        match_ids, match_ids_cat = u.match_cat(x_match=stars["ALPHA_SKY"],
-                                               y_match=stars["DELTA_SKY"],
-                                               x_cat=match_to["ALPHA_SKY"],
-                                               y_cat=match_to["DELTA_SKY"],
-                                               tolerance=2. / 3600.,
-                                               world=True)
+        stars, stars_match = a.match_catalogs(cat_1=stars,
+                                              cat_2=match_to,
+                                              ra_col_1="ALPHA_SKY",
+                                              dec_col_1="DELTA_SKY",
+                                              ra_col_2="ALPHA_SKY",
+                                              dec_col_2="DELTA_SKY",
+                                              tolerance=2 * units.arcsec)
 
-        stars = stars[match_ids]
         print(f"Num stars after match to other sextractor cat:", len(stars))
 
     stars.add_column(np.zeros(len(stars)), name="GAUSSIAN_FWHM_FITTED")
