@@ -9,6 +9,7 @@ import astropy.table as table
 import astropy.io.fits as fits
 import astropy.wcs as wcs
 from astropy.coordinates import SkyCoord
+import astropy.units as units
 
 import craftutils.fits_files as ff
 import craftutils.params as p
@@ -398,3 +399,38 @@ def tweak_final(sextractor_path: str, destination: str,
 
     else:
         print('No catalogue found for this alignment.')
+
+
+def find_nearest(coord: SkyCoord, search_coords: SkyCoord):
+    separations = coord.separation(search_coords)
+    match_id = np.argmin(separations)
+    return match_id, separations[match_id]
+
+
+def match_catalogs(cat_1: table.Table, cat_2: table.Table,
+                   ra_col_1: str = "ALPHAPSF_SKY", dec_col_1: str = "DELTAPSF_SKY",
+                   ra_col_2: str = "ra", dec_col_2: str = "dec",
+                   tolerance: units.Quantity = 1 * units.arcsec):
+
+    coords_1 = SkyCoord(cat_1[ra_col_1], cat_1[dec_col_1])
+    coords_2 = SkyCoord(cat_2[ra_col_2], cat_1[dec_col_2])
+
+    if len(coords_1) >= len(coords_2):
+        idx, distance, _ = coords_2.match_to_catalog_sky(coords_1)
+        keep = idx[distance < tolerance]
+        idx = idx[keep]
+        matches_2 = cat_2[keep]
+        distance = distance[keep]
+
+        matches_1 = cat_1[idx]
+
+    else:
+        idx, distance, _ = coords_1.match_to_catalog_sky(coords_2)
+        keep = idx[distance < tolerance]
+        idx = idx[keep]
+        matches_1 = cat_1[keep]
+        distance = distance[keep]
+
+        matches_2 = cat_2[idx]
+
+    return matches_1, matches_2, distance
