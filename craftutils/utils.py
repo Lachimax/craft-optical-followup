@@ -118,7 +118,8 @@ def check_quantity(number: Union[float, int, units.Quantity], unit: units.Unit, 
         number *= unit
     elif number.unit != unit:
         if not allow_mismatch:
-            raise units.UnitsError(f"This is already a Quantity, but with units {number.unit}; units {unit} were specified.")
+            raise units.UnitsError(
+                f"This is already a Quantity, but with units {number.unit}; units {unit} were specified.")
         elif not (number.unit.is_equivalent(unit)):
             raise units.UnitsError(
                 f"This number is already a Quantity, but with incompatible units ({number.unit}); units {unit} were specified.")
@@ -444,7 +445,6 @@ def first_file(path: "str", ext: 'str' = None):
 
 
 def find_object(x, y, x_search, y_search, world=False):
-    # TODO: Throw error here if search arrays not same length
     """
     Returns closest match to given coordinates from the given search space.
     :param x: x-coordinate to find
@@ -453,8 +453,10 @@ def find_object(x, y, x_search, y_search, world=False):
     :param y_search: array to search for y-coordinate
     :return: id (int), distance (float)
     """
-
-    # TODO: This could be done better with SkyCoord
+    if len(x) != len(x_search):
+        raise ValueError('x_match and y_match must be the same length.')
+    if len(y) != len(y_search):
+        raise ValueError('x_cat and y_cat must be the same length.')
     if world:
         distances = np.sqrt(((x_search - x) * np.cos(y)) ** 2 + (y_search - y) ** 2)
     else:
@@ -478,11 +480,6 @@ def match_cat(x_match, y_match, x_cat, y_cat, tolerance=np.inf, world=False, ret
     :return: tuple of arrays containing: 0. the match indices in the search array and 1. the match indices in the
     catalogue.
     """
-
-    if len(x_match) != len(y_match):
-        raise ValueError('x_match and y_match must be the same length.')
-    if len(x_cat) != len(y_cat):
-        raise ValueError('x_cat and y_cat must be the same length.')
 
     matches_search = []
     matches_cat = []
