@@ -13,6 +13,7 @@ import astropy.units as units
 from astropy.coordinates import SkyCoord
 
 import craftutils.utils as u
+import craftutils.astrometry as a
 import craftutils.fits_files as ff
 import craftutils.photometry as ph
 import craftutils.params as p
@@ -535,11 +536,25 @@ class ImagingImage(Image):
 
         self.close()
 
-    def astrometry_diagnostics(self):
-        self.load_source_cat()
+    def astrometry_diagnostics(self, reference_cat: Union[str, table.QTable], ra_col: str = "ra", dec_col: str = "dec"):
+        matches_source_cat, matches_ext_cat, distance = self.match_to_cat(cat=reference_cat, ra_col=ra_col,
+                                                                          dec_col=dec_col)
+        mean_offset = np.mean(distance)
+        median_offset = np.median(distance)
+        rms_offset = np.sqrt(distance ** 2)
+        plt.hist(distance)
+        plt.show()
+        return mean_offset, median_offset, rms_offset
 
-    def match_to_cat(self):
-        pass
+    def match_to_cat(self, cat: Union[str, table.QTable], ra_col: str = "ra", dec_col: str = "dec"):
+        self.load_source_cat()
+        matches_source_cat, matches_ext_cat, distance = a.match_catalogs(cat_1=self.source_cat,
+                                                                         cat_2=cat,
+                                                                         ra_col_1="ALPHAPSF_SKY",
+                                                                         dec_col_1="DELTAPSF_SKY",
+                                                                         ra_col_2=ra_col,
+                                                                         dec_col_2=dec_col)
+        return matches_source_cat, matches_ext_cat, distance
 
     def signal_to_noise(self):
         self.load_source_cat()
@@ -700,6 +715,8 @@ class PanSTARRS1Cutout(ImagingImage):
 
 
 class FORS2Image(ImagingImage):
+    def __init__(self, path: str, frame_type: str = None):
+        super().__init__(path=path, frame_type=frame_type, instrument="vlt-fors2")
 
     @classmethod
     def header_keys(cls):

@@ -40,11 +40,11 @@ gain_unit = units.electron / units.ct
 def image_psf_diagnostics(hdu: Union[str, fits.HDUList], cat: Union[str, table.Table], star_class_tol: float = 0.9,
                           mag_max: float = 0.0 * units.mag, mag_min: float = -7.0 * units.mag,
                           match_to: table.Table = None, frame: float = 15):
+
     hdu, path = ff.path_or_hdu(hdu=hdu)
-
     hdu = copy.deepcopy(hdu)
-
     cat = u.path_or_table(cat)
+
     if isinstance(cat, str):
         cat = table.QTable.read(cat, format="ascii.sextractor")
     stars = cat[cat["CLASS_STAR"] > star_class_tol]

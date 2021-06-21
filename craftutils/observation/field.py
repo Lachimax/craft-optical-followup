@@ -498,12 +498,14 @@ class FRBField(Field):
         default_params.update({
             "type": "FRBField",
             "frb": objects.FRB.default_params(),
-            "subtraction": {"template_epochs": {"des": None,
-                                                "fors2": None,
-                                                "xshooter": None,
-                                                "sdss": None
-                                                }
-                            }
+            "subtraction":
+                {"template_epochs":
+                     {"des": None,
+                      "fors2": None,
+                      "xshooter": None,
+                      "sdss": None
+                      }
+                 }
         })
 
         return default_params
