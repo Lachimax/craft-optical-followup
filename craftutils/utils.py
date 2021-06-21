@@ -18,6 +18,17 @@ from astropy.time import Time
 # TODO: Arrange these into some kind of logical order.
 # TODO: Also comment.
 
+def str_or_table(tbl: Union[str, table.QTable, table.Table], load_qtable: bool = True, fmt: str = "ascii.ecsv"):
+    if isinstance(tbl, str):
+        if load_qtable:
+            tbl = table.QTable.read(tbl, format=fmt)
+        else:
+            tbl = table.Table.read(tbl, format=fmt)
+    elif not isinstance(tbl, table.Table):
+        raise TypeError(f"tbl must be a string or an astropy Table, not {type(tbl)}")
+    return tbl
+
+
 def write_list_to_file(path: str, file: list):
     # Delete file, to be rewritten.
     rm_check(path)
