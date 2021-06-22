@@ -375,11 +375,34 @@ class Field:
         else:
             print(f"This field is not present in {cat}.")
 
+    def generate_astrometry_index_file(self, cat: str = "gaia"):
+        self.retrieve_catalogue(cat=cat)
+        if not self.check_cat(cat=cat):
+            print(f"Field is not in {cat}; index file could not be created.")
+        else:
+            cat_path = self.get_path(f"cat_csv_{cat}")
+            index_path = os.path.join(config["top_data_dir"], "astrometry_index_files")
+            u.mkdir_check(index_path)
+            cat_index_path = os.path.join(index_path, cat)
+            prefix = f"{cat}_index_{self.name}"
+            a.generate_astrometry_indices(cat_name=cat,
+                                          cat=cat_path,
+                                          fits_cat_output=cat_path.replace(".csv", ".fits"),
+                                          unique_id_prefix=prefix,
+                                          index_output_dir=cat_index_path
+                                          )
+
     def get_path(self, key):
         if key in self.paths:
             return self.paths[key]
         else:
             raise KeyError(f"{key} has not been set.")
+
+    def check_cat(self, cat: str):
+        if f"in_{cat}" in self.cats:
+            return self.cats[f"in_{cat}"]
+        else:
+            return None
 
     def set_path(self, key, value):
         self.paths[key] = value

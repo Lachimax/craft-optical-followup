@@ -23,6 +23,13 @@ from craftutils import utils as u
 
 def cat_columns(cat, f: str = None):
     cat = cat.lower()
+    if f == "rank":
+        f = {"des": "r",
+             "sdss": "r",
+             "skymapper": "r",
+             "panstarrs1": "r",
+             "gaia": "g"
+             }[cat]
     if f is not None:
         f = f[0]
     else:

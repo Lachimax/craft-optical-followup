@@ -18,9 +18,10 @@ import craftutils.fits_files as ff
 import craftutils.photometry as ph
 import craftutils.params as p
 import craftutils.plotting as pl
+import craftutils.wrap.source_extractor as se
+import craftutils.wrap.psfex as psfex
 
 from craftutils.retrieve import cat_columns
-from craftutils.wrap import psfex
 
 
 class Image:
@@ -207,7 +208,7 @@ class ImagingImage(Image):
             self.dual_mode_template = template
         self.extract_gain()
         print("TEMPLATE PATH:", template)
-        return ph.source_extractor(image_path=self.path,
+        return se.source_extractor(image_path=self.path,
                                    output_dir=output_dir,
                                    configuration_file=configuration_file,
                                    parameters_file=parameters_file,
@@ -301,19 +302,19 @@ class ImagingImage(Image):
                 print("No valid source_cat_dual_path found. Could not load source_table.")
 
     def write_source_cat(self):
-        if self.source_cat_path is None:
-            self.source_cat_path = self.path.replace(".fits", "_source_cat.ecsv")
         if self.source_cat is None:
             print("source_cat not yet loaded.")
         else:
+            if self.source_cat_path is None:
+                self.source_cat_path = self.path.replace(".fits", "_source_cat.ecsv")
             print("Writing source catalogue to", self.source_cat_path)
             self.source_cat.write(self.source_cat_path, format="ascii.ecsv")
 
-        if self.source_cat_dual_path is None:
-            self.source_cat_dual_path = self.path.replace(".fits", "_source_cat_dual.ecsv")
         if self.source_cat_dual is None:
             print("source_cat_dual not yet loaded.")
         else:
+            if self.source_cat_dual_path is None:
+                self.source_cat_dual_path = self.path.replace(".fits", "_source_cat_dual.ecsv")
             print("Writing dual-mode source catalogue to", self.source_cat_dual_path)
             self.source_cat_dual.write(self.source_cat_dual_path, format="ascii.ecsv")
 
@@ -536,24 +537,32 @@ class ImagingImage(Image):
 
         self.close()
 
-    def astrometry_diagnostics(self, reference_cat: Union[str, table.QTable], ra_col: str = "ra", dec_col: str = "dec"):
-        matches_source_cat, matches_ext_cat, distance = self.match_to_cat(cat=reference_cat, ra_col=ra_col,
-                                                                          dec_col=dec_col)
+    def astrometry_diagnostics(self, reference_cat: Union[str, table.QTable],
+                               ra_col: str = "ra", dec_col: str = "dec",
+                               tolerance: units.Quantity = 3 * units.arcsec):
+        matches_source_cat, matches_ext_cat, distance = self.match_to_cat(cat=reference_cat,
+                                                                          ra_col=ra_col,
+                                                                          dec_col=dec_col,
+                                                                          tolerance=tolerance)
         mean_offset = np.mean(distance)
         median_offset = np.median(distance)
-        rms_offset = np.sqrt(distance ** 2)
-        plt.hist(distance)
+        rms_offset = np.sqrt(np.mean(distance ** 2))
+        plt.hist(distance.to(units.arcsec).value)
+        plt.xlabel("Offset (\")")
         plt.show()
         return mean_offset, median_offset, rms_offset
 
-    def match_to_cat(self, cat: Union[str, table.QTable], ra_col: str = "ra", dec_col: str = "dec"):
+    def match_to_cat(self, cat: Union[str, table.QTable],
+                     ra_col: str = "ra", dec_col: str = "dec",
+                     tolerance: units.Quantity = 1 * units.arcsec):
         self.load_source_cat()
         matches_source_cat, matches_ext_cat, distance = a.match_catalogs(cat_1=self.source_cat,
                                                                          cat_2=cat,
                                                                          ra_col_1="ALPHAPSF_SKY",
                                                                          dec_col_1="DELTAPSF_SKY",
                                                                          ra_col_2=ra_col,
-                                                                         dec_col_2=dec_col)
+                                                                         dec_col_2=dec_col,
+                                                                         tolerance=tolerance)
         return matches_source_cat, matches_ext_cat, distance
 
     def signal_to_noise(self):
@@ -669,6 +678,15 @@ class ImagingImage(Image):
         if show:
             plt.show()
         self.close()
+
+    def plot(self, ext: int = 0, **kwargs):
+        self.open()
+        data = self.hdu_list[ext]
+        plt.imshow(data, **kwargs)
+        self.close()
+
+    def plot_sky(self):
+        plt.plot()
 
     @classmethod
     def select_child_class(cls, instrument: str, **kwargs):
