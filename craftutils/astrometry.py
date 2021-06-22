@@ -15,6 +15,7 @@ import craftutils.fits_files as ff
 import craftutils.params as p
 import craftutils.utils as u
 import craftutils.plotting as pl
+import craftutils.wrap.astrometry_net as astrometry_net
 
 
 def attempt_skycoord(coord: Union[SkyCoord, str, tuple, list, np.ndarray]):
