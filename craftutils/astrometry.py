@@ -1,5 +1,5 @@
 # Code by Lachlan Marnoch, 2019 - 2021
-
+import copy
 from typing import Union, Iterable
 import os
 
@@ -11,6 +11,7 @@ import astropy.io.fits as fits
 import astropy.wcs as wcs
 from astropy.coordinates import SkyCoord
 import astropy.units as units
+import astropy.time as time
 
 import craftutils.fits_files as ff
 import craftutils.params as p
@@ -18,6 +19,25 @@ import craftutils.utils as u
 import craftutils.plotting as pl
 import craftutils.wrap.astrometry_net as astrometry_net
 from craftutils.retrieve import cat_columns
+
+
+def correct_gaia_to_epoch(gaia_cat: Union[str, table.QTable], new_epoch: time.Time):
+    gaia_cat = u.path_or_table(gaia_cat, fmt="ascii.csv")
+    gaia_cat["ra"] *= units.deg
+    gaia_cat["dec"] *= units.deg
+    gaia_cat["pmra"] = gaia_cat["pmra"] * (units.milliarcsecond / units.year)
+    gaia_cat["pmdec"] = gaia_cat["pmdec"] * (units.milliarcsecond / units.year)
+    epochs = list(map(lambda y: f"J{y}", gaia_cat['ref_epoch']))
+    gaia_coords = SkyCoord(ra=gaia_cat["ra"], dec=gaia_cat["dec"],
+                           pm_ra_cosdec=gaia_cat["pmra"], pm_dec=gaia_cat["pmdec"],
+                           obstime=epochs)
+    gaia_coords_corrected = gaia_coords.apply_space_motion(new_obstime=new_epoch)
+    gaia_cat_corrected = copy.deepcopy(gaia_cat)
+    gaia_cat_corrected["ra"] = gaia_coords_corrected.ra
+    gaia_cat_corrected["dec"] = gaia_coords_corrected.dec
+    new_epoch.format = "jyear"
+    gaia_cat_corrected["ref_epoch"] = new_epoch.value
+    return gaia_coords_corrected
 
 
 def generate_astrometry_indices(cat_name: str, cat: Union[str, table.Table],
@@ -30,7 +50,7 @@ def generate_astrometry_indices(cat_name: str, cat: Union[str, table.Table],
             fits_cat_output = cat.replace(".csv", ".fits")
         else:
             fits_cat_output = cat + ".fits"
-    cat = u.path_or_table(cat)
+    cat = u.path_or_table(cat, fmt="ascii.csv")
     cols = cat_columns(cat=cat_name, f="rank")
     cat.write(fits_cat_output, format='fits', overwrite=True)
     for scale in range(p_lower, p_upper + 1):
