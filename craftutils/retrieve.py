@@ -30,35 +30,46 @@ def cat_columns(cat, f: str = None):
 
     if cat == 'des':
         f = f.upper()
-        return {'mag_psf': f"WAVG_MAG_PSF_{f}",
-                'mag_psf_err': f"WAVG_MAGERR_PSF_{f}",
-                'ra': f"RA",
-                'dec': f"DEC",
-                'class_star': f"CLASS_STAR_{f}"}
+        return {
+            'mag_auto': f"MAG_AUTO_{f}",
+            'mag_auto_err': f"MAGERR_AUTO_{f}",
+            'mag_psf': f"WAVG_MAG_PSF_{f}",
+            'mag_psf_err': f"WAVG_MAGERR_PSF_{f}",
+            'ra': f"RA",
+            'dec': f"DEC",
+            'class_star': f"CLASS_STAR_{f}"}
     elif cat == 'sdss':
         f = f.lower()
-        return {'mag_psf': f"psfMag_{f}",
-                'mag_psf_err': f"psfMagErr_{f}",
-                'ra': f"ra",
-                'dec': f"dec",
-                'class_star': f"probPSF_{f}"}
+        return {
+            'mag_psf': f"psfMag_{f}",
+            'mag_psf_err': f"psfMagErr_{f}",
+            'ra': f"ra",
+            'dec': f"dec",
+            'class_star': f"probPSF_{f}"}
     elif cat == 'skymapper':
         f = f.lower()
-        return {'mag_psf': f"{f}_psf",
-                'mag_psf_err': f"e_{f}_psf",
-                'ra': f"raj2000",
-                'dec': f"dej2000",
-                'class_star': f"class_star_SkyMapper"}
+        return {
+            'mag_psf': f"{f}_psf",
+            'mag_psf_err': f"e_{f}_psf",
+            'ra': f"raj2000",
+            'dec': f"dej2000",
+            'class_star': f"class_star_SkyMapper"}
     elif cat == 'panstarrs1':
         f = f.lower()
-        return {'mag_psf': f"{f}PSFMag",
-                'mag_psf_err': f"{f}PSFMagErr",
-                'ra': f"raStack",
-                'dec': f"decStack",
-                'class_star': f"psfLikelihood"}
+        return {
+            'mag_auto': f"{f}KronMag",
+            'mag_auto_err': f"{f}KronMagErr",
+            'mag_psf': f"{f}PSFMag",
+            'mag_psf_err': f"{f}PSFMagErr",
+            'ra': f"raStack",
+            'dec': f"decStack",
+            'class_star': f"psfLikelihood"}
     elif cat == 'gaia':
-        return {'ra': f"ra",
-                'dec': f"dec"}
+        return {
+            'mag_auto': f"phot_{f}_mean_mag",
+            'ra': f"ra",
+            'dec': f"dec",
+        }
     else:
         raise ValueError(f"Catalogue {cat} not recognised.")
 
