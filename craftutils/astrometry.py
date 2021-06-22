@@ -1,6 +1,7 @@
 # Code by Lachlan Marnoch, 2019 - 2021
 
 from typing import Union, Iterable
+import os
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -16,6 +17,30 @@ import craftutils.params as p
 import craftutils.utils as u
 import craftutils.plotting as pl
 import craftutils.wrap.astrometry_net as astrometry_net
+from craftutils.retrieve import cat_columns
+
+
+def generate_astrometry_indices(cat_name: str, cat: Union[str, table.Table],
+                                unique_id_prefix: str,
+                                index_output_dir: str, fits_cat_output: str = None,
+                                p_lower: int = 0, p_upper: int = 2):
+    cat_name = cat_name.lower()
+    if fits_cat_output is None and isinstance(cat, str):
+        if cat.endswith(".csv"):
+            fits_cat_output = cat.replace(".csv", ".fits")
+        else:
+            fits_cat_output = cat + ".fits"
+    cat = u.path_or_table(cat)
+    cols = cat_columns(cat=cat_name, f="rank")
+    cat.write(fits_cat_output, format='fits', overwrite=True)
+    for scale in range(p_lower, p_upper + 1):
+        astrometry_net.build_astrometry_index(input_fits_catalog=fits_cat_output,
+                                              unique_id=f"{unique_id_prefix}_{scale}",
+                                              output_index=os.path.join(index_output_dir, f""),
+                                              scale_number=scale,
+                                              sort_column=cols["mag_auto"],
+                                              scan_through_catalog=True
+                                              )
 
 
 def attempt_skycoord(coord: Union[SkyCoord, str, tuple, list, np.ndarray]):
@@ -412,13 +437,12 @@ def match_catalogs(cat_1: table.Table, cat_2: table.Table,
                    ra_col_1: str = "ALPHAPSF_SKY", dec_col_1: str = "DELTAPSF_SKY",
                    ra_col_2: str = "ra", dec_col_2: str = "dec",
                    tolerance: units.Quantity = 1 * units.arcsec):
-
     coords_1 = SkyCoord(cat_1[ra_col_1], cat_1[dec_col_1])
-    coords_2 = SkyCoord(cat_2[ra_col_2], cat_1[dec_col_2])
+    coords_2 = SkyCoord(cat_2[ra_col_2], cat_2[dec_col_2])
 
     if len(coords_1) >= len(coords_2):
         idx, distance, _ = coords_2.match_to_catalog_sky(coords_1)
-        keep = idx[distance < tolerance]
+        keep = distance < tolerance
         idx = idx[keep]
         matches_2 = cat_2[keep]
         distance = distance[keep]
@@ -427,7 +451,7 @@ def match_catalogs(cat_1: table.Table, cat_2: table.Table,
 
     else:
         idx, distance, _ = coords_1.match_to_catalog_sky(coords_2)
-        keep = idx[distance < tolerance]
+        keep = distance < tolerance
         idx = idx[keep]
         matches_1 = cat_1[keep]
         distance = distance[keep]
