@@ -158,7 +158,9 @@ class Field:
         self.epochs_imaging_loaded = {}
 
         self.paths = {}
+
         self.cats = {}
+        self.cat_gaia = None
 
         self.load_output_file()
 
@@ -348,44 +350,50 @@ class Field:
 
     def retrieve_catalogues(self, force_update: bool = False):
         for cat in retrieve.photometry_catalogues:
-            self.retrieve_catalogue(cat=cat, force_update=force_update)
+            self.retrieve_catalogue(cat_name=cat, force_update=force_update)
 
-    def retrieve_catalogue(self, cat: str, force_update: bool = False):
+    def retrieve_catalogue(self, cat_name: str, force_update: bool = False):
         if isinstance(self.extent, units.Quantity):
             radius = self.extent
         else:
             radius = 0.2 * units.deg
-        output = self._cat_data_path(cat=cat)
-        self.set_path(f"cat_csv_{cat}", output)
+        output = self._cat_data_path(cat=cat_name)
         ra = self.centre_coords.ra.value
         dec = self.centre_coords.dec.value
-        if force_update or f"in_{cat}" not in self.cats:
-            response = retrieve.save_catalogue(ra=ra, dec=dec, output=output, cat=cat.lower(),
+        if force_update or f"in_{cat_name}" not in self.cats:
+            response = retrieve.save_catalogue(ra=ra, dec=dec, output=output, cat=cat_name.lower(),
                                                radius=radius)
             if not isinstance(response, table.Table) and response != "ERROR":
                 if response is not None:
-                    self.cats[f"in_{cat}"] = True
+                    self.cats[f"in_{cat_name}"] = True
+                    self.set_path(f"cat_csv_{cat_name}", output)
                 else:
-                    self.cats[f"in_{cat}"] = False
+                    self.cats[f"in_{cat_name}"] = False
                 self.update_output_file()
             return response
-        elif self.cats[f"in_{cat}"] is True:
-            print(f"There is already {cat} data present for this field.")
+        elif self.cats[f"in_{cat_name}"] is True:
+            print(f"There is already {cat_name} data present for this field.")
             return True
         else:
-            print(f"This field is not present in {cat}.")
+            print(f"This field is not present in {cat_name}.")
 
-    def generate_astrometry_index_file(self, cat: str = "gaia"):
-        self.retrieve_catalogue(cat=cat)
-        if not self.check_cat(cat=cat):
-            print(f"Field is not in {cat}; index file could not be created.")
+    def load_catalogue(self, cat_name: str):
+        if self.retrieve_catalogue(cat_name):
+            return retrieve.load_catalogue(cat_name=cat_name, cat=self.get_path(f"cat_csv_{cat_name}"))
         else:
-            cat_path = self.get_path(f"cat_csv_{cat}")
+            print("Could not load catalogue; field is outside footprint.")
+
+    def generate_astrometry_indices(self, cat_name: str = "gaia"):
+        self.retrieve_catalogue(cat_name=cat_name)
+        if not self.check_cat(cat_name=cat_name):
+            print(f"Field is not in {cat_name}; index file could not be created.")
+        else:
+            cat_path = self.get_path(f"cat_csv_{cat_name}")
             index_path = os.path.join(config["top_data_dir"], "astrometry_index_files")
             u.mkdir_check(index_path)
-            cat_index_path = os.path.join(index_path, cat)
-            prefix = f"{cat}_index_{self.name}"
-            a.generate_astrometry_indices(cat_name=cat,
+            cat_index_path = os.path.join(index_path, cat_name)
+            prefix = f"{cat_name}_index_{self.name}"
+            a.generate_astrometry_indices(cat_name=cat_name,
                                           cat=cat_path,
                                           fits_cat_output=cat_path.replace(".csv", ".fits"),
                                           unique_id_prefix=prefix,
@@ -398,9 +406,9 @@ class Field:
         else:
             raise KeyError(f"{key} has not been set.")
 
-    def check_cat(self, cat: str):
-        if f"in_{cat}" in self.cats:
-            return self.cats[f"in_{cat}"]
+    def check_cat(self, cat_name: str):
+        if f"in_{cat_name}" in self.cats:
+            return self.cats[f"in_{cat_name}"]
         else:
             return None
 
@@ -1051,6 +1059,21 @@ class ImagingEpoch(Epoch):
                 self.deepest_filter = outputs["deepest_filter"]
         return outputs
 
+    def generate_gaia_astrometry_indices(self):
+        if not isinstance(self.field, Field):
+            raise ValueError("field has not been set for this observation.")
+        self.field.retrieve_catalogue(cat_name="gaia")
+        gaia_cat = self.field.load_catalogue(cat_name="gaia")
+        index_path = os.path.join(config["top_data_dir"], "astrometry_index_files")
+        u.mkdir_check(index_path)
+        cat_index_path = os.path.join(index_path, "gaia")
+        gaia_cat_corrected = a.correct_gaia_to_epoch(gaia_cat=gaia_cat,
+                                                     new_epoch=self.date)
+        a.generate_astrometry_indices(cat_name="gaia",
+                                      cat=gaia_cat_corrected,
+                                      unique_id_prefix=f"gaia_index_{self.field.name}",
+                                      index_output_dir=cat_index_path)
+
     @classmethod
     def stages(cls):
         stages = super().stages()
@@ -1158,7 +1181,7 @@ class PanSTARRS1ImagingEpoch(ImagingEpoch):
         self.instrument = "panstarrs"
         self.load_output_file()
         if isinstance(field, Field):
-            self.field.retrieve_catalogue(cat="panstarrs1")
+            self.field.retrieve_catalogue(cat_name="panstarrs1")
 
     # TODO: Automatic cutout download; don't worry for now.
 

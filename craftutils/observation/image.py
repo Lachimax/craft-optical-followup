@@ -541,6 +541,9 @@ class ImagingImage(Image):
 
         self.close()
 
+    def correct_astrometry(self):
+        pass
+
     def astrometry_diagnostics(self, reference_cat: Union[str, table.QTable],
                                ra_col: str = "ra", dec_col: str = "dec",
                                tolerance: units.Quantity = 3 * units.arcsec):
