@@ -1,20 +1,35 @@
 import os
 
+from typing import Union
+
+from craftutils.utils import system_command
+
 
 def build_astrometry_index(input_fits_catalog: str, unique_id: str, output_index: str = None,
                            scale_number: int = 0, sort_column: str = 'mag',
                            scan_through_catalog: bool = True, *flags, **params):
-    sys_str = f"build-astrometry-index -i {input_fits_catalog} -I {unique_id}"
+    params["i"] = input_fits_catalog
+    params["I"] = unique_id
     if output_index is not None:
-        sys_str += f" -o {output_index}"
+        params["o"] = output_index
     if scale_number is not None:
-        sys_str += f" -P {scale_number}"
+        params["P"] = scale_number
     if sort_column is not None:
-        sys_str += f" -s {sort_column}"
+        params["s"] = sort_column
+
+    flags = list(flags)
     if scan_through_catalog:
-        sys_str += "-E"
-    for param in params:
-        sys_str += f" -{param.upper()} {params[param]}"
-    for flag in flags:
-        sys_str += f" -{flag}"
-    os.system(sys_str)
+        flags.append("E")
+
+    system_command(command="build-astrometry-index", *flags, **params)
+
+
+def solve_field(image_files: Union[str, list], base_filename: str = "astrometry",
+                overwrite: bool = True, *flags, **params):
+
+    params["o"] = base_filename
+
+    flags = list(flags)
+    if overwrite:
+        flags.append("O")
+    system_command(command="solve-field", arguments=image_files, *flags, **params)
