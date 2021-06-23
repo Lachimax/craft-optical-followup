@@ -877,3 +877,27 @@ def print_nested_dict(dictionary, level: int = 0):
             print_nested_dict(dictionary[key], level + 1)
         else:
             print((level + 1) * "\t", dictionary[key])
+
+
+def system_command(command: str, arguments: Union[str, list] = None, *flags, **params):
+    if command in [""]:
+        raise ValueError("Empty command.")
+    if " " in command:
+        raise ValueError("Command contains spaces.")
+    sys_str = command
+    if arguments is not None:
+        if isinstance(arguments, str):
+            arguments = [arguments]
+        for argument in arguments:
+            sys_str += f" {argument}"
+    for param in params:
+        sys_str += f" -{param} {params[param]}"
+    for flag in flags:
+        if len(flag) == 1:
+            sys_str += f" -{flag}"
+        elif len(flag) > 1:
+            sys_str += f" --{flag}"
+    print()
+    print(sys_str)
+    print()
+    os.system(sys_str)
