@@ -12,7 +12,7 @@ import re
 
 import astropy.units as units
 from astropy.coordinates import SkyCoord
-from astropy.table import Table
+from astropy.table import Table, QTable
 from astropy.time import Time
 
 from pyvo import dal
@@ -1277,11 +1277,80 @@ def update_frb_gaia(frb: str, force: bool = False):
         print(f"This field is not present in Gaia.")
 
 
+def load_catalogue(cat_name: str, cat: str):
+    cat = u.path_or_table(cat_name, fmt="ascii.csv", load_qtable=True)
+    cat_column_units = column_units[cat_name]
+    cat_filters = filters[cat_name]
+    for col_name in cat_column_units:
+        if "{:s}" in col_name:
+            for fil in cat_filters:
+                cat[col_name] = cat[col_name.format(fil)] * cat_column_units[col_name]
+        else:
+            cat[col_name] = cat[col_name] * cat_column_units[col_name]
+    return cat
+
+
+filters = \
+    {"gaia": ["g", "bp", "rp"]}
+
+column_units = \
+    {
+        "gaia":  # See https://gea.esac.esa.int/archive/documentation/GDR2/Gaia_archive/chap_datamodel/sec_dm_main_tables/ssec_dm_gaia_source.html
+            {
+                "ref_epoch": units.year,
+                "ra": units.deg,
+                "ra_error": units.milliarcsecond,
+                "dec": units.deg,
+                "dec_error": units.milliarcsecond,
+                "parallax": units.milliarcsecond,
+                "parallax_error": units.milliarcsecond,
+                "pmra": units.milliarcsecond / units.year,
+                "pmra_error": units.milliarcsecond / units.year,
+                "pmdec": units.milliarcsecond / units.year,
+                "pmdec_error": units.milliarcsecond / units.year,
+                "astrometric_excess_noise": units.milliarcsecond,
+                "astrometric_weight_al": units.milliarcsecond ** 2,
+                "astrometric_pseudo_colour": units.micrometer ** -1,
+                "astrometric_sigma5d_max": units.milliarcsecond,
+                "phot_{:s}_mean_flux": units.electron / units.second,
+                "phot_{:s}_mean_flux_error": units.electron / units.second,
+                "phot_{:s}_mean_mag": units.mag,
+                "bp_rp": units.mag,
+                "bp_g": units.mag,
+                "g_rp": units.mag,
+                "radial_velocity": units.kilometer / units.second,
+                "radial_velocity_error": units.kilometer / units.second,
+                "rv_template_teff": units.Kelvin,
+                "rv_template_fe_h": units.dex,
+                "l": units.deg,
+                "b": units.deg,
+                "ecl_lon": units.deg,
+                "ecl_lat": units.deg,
+                "teff_val": units.Kelvin,
+                "teff_percentile_lower": units.Kelvin,
+                "teff_percentile_upper": units.Kelvin,
+                "a_g_val": units.mag,
+                "a_g_percentile_lower": units.mag,
+                "a_g_percentile_upper": units.mag,
+                "e_bp_min_rp_val": units.mag,
+                "e_bp_min_rp_percentile_lower": units.mag,
+                "e_bp_min_rp_percentile_upper": units.mag,
+                "radius_val": units.solRad,
+                "radius_percentile_lower": units.solRad,
+                "radius_percentile_upper": units.solRad,
+                "lum_val": units.solLum,
+                "lum_percentile_lower": units.solLum,
+                "lum_percentile_upper": units.solLum,
+            }
+
+    }
+
 keys = p.keys()
 fors2_filters_retrievable = ["I_BESS", "R_SPEC", "b_HIGH", "v_HIGH"]
 mast_catalogues = ['panstarrs1']
-photometry_catalogues = {'des': save_des_photometry,
-                         'sdss': save_sdss_photometry,
-                         'skymapper': save_skymapper_photometry,
-                         'panstarrs1': save_mast_photometry,
-                         'gaia': save_gaia}
+photometry_catalogues = {
+    'des': save_des_photometry,
+    'sdss': save_sdss_photometry,
+    'skymapper': save_skymapper_photometry,
+    'panstarrs1': save_mast_photometry,
+    'gaia': save_gaia}

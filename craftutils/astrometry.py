@@ -18,11 +18,11 @@ import craftutils.params as p
 import craftutils.utils as u
 import craftutils.plotting as pl
 import craftutils.wrap.astrometry_net as astrometry_net
-from craftutils.retrieve import cat_columns
+from craftutils.retrieve import cat_columns, load_catalogue
 
 
 def correct_gaia_to_epoch(gaia_cat: Union[str, table.QTable], new_epoch: time.Time):
-    gaia_cat = u.path_or_table(gaia_cat, fmt="ascii.csv")
+    gaia_cat = load_catalogue(cat_name="gaia", cat=gaia_cat)
     gaia_cat["ra"] *= units.deg
     gaia_cat["dec"] *= units.deg
     gaia_cat["pmra"] = gaia_cat["pmra"] * (units.milliarcsecond / units.year)
@@ -37,7 +37,7 @@ def correct_gaia_to_epoch(gaia_cat: Union[str, table.QTable], new_epoch: time.Ti
     gaia_cat_corrected["dec"] = gaia_coords_corrected.dec
     new_epoch.format = "jyear"
     gaia_cat_corrected["ref_epoch"] = new_epoch.value
-    return gaia_coords_corrected
+    return gaia_cat_corrected
 
 
 def generate_astrometry_indices(cat_name: str, cat: Union[str, table.Table],
