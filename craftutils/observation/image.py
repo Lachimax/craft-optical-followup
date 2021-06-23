@@ -43,6 +43,7 @@ class Image:
         self.gain = None
         self.noise_read = None
         self.date_obs = None
+        self.mjd_obs = None
         self.n_x = None
         self.n_y = None
         self.n_pix = None
@@ -107,6 +108,8 @@ class Image:
     def extract_date_obs(self):
         key = self.header_keys()["date-obs"]
         self.date_obs = self.extract_header_item(key)
+        key = self.header_keys()["mjd-obs"]
+        self.mjd_obs = self.extract_header_item(key)
         return self.date_obs
 
     def extract_exposure_time(self):
@@ -134,7 +137,8 @@ class Image:
         header_keys = {"exposure_time": "EXPTIME",
                        "noise_read": "RON",
                        "gain": "GAIN",
-                       "date-obs": "DATE-OBS"}
+                       "date-obs": "DATE-OBS",
+                       "mjd-obs": "MJD-OBS"}
         return header_keys
 
     @classmethod
@@ -550,6 +554,12 @@ class ImagingImage(Image):
         plt.hist(distance.to(units.arcsec).value)
         plt.xlabel("Offset (\")")
         plt.show()
+        plt.scatter(matches_ext_cat[ra_col], matches_ext_cat[dec_col], c=distance.to(units.arcsec))
+        plt.xlabel("Right Ascension (Catalogue)")
+        plt.ylabel("Declination (Catalogue)")
+        plt.colorbar(label="Offset of measured position from catalogue (arcseconds)")
+        plt.show()
+        print(len(matches_source_cat), len(matches_ext_cat))
         return mean_offset, median_offset, rms_offset
 
     def match_to_cat(self, cat: Union[str, table.QTable],
