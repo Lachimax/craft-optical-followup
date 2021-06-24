@@ -1077,6 +1077,7 @@ class ImagingEpoch(Epoch):
                                       unique_id_prefix=f"gaia_index_{self.field.name}",
                                       index_output_dir=cat_index_path)
 
+
     @classmethod
     def stages(cls):
         stages = super().stages()
@@ -1347,8 +1348,8 @@ class ESOImagingEpoch(ImagingEpoch):
                  target: str = None,
                  standard_epochs: list = None):
         super().__init__(name=name, field=field, param_path=param_path, data_path=data_path, instrument=instrument,
-                         date=date, program_id=program_id,
-                         standard_epochs=standard_epochs, target=target)
+                         date=date, program_id=program_id, target=target,
+                         standard_epochs=standard_epochs)
 
     def pipeline(self, **kwargs):
         super().pipeline(**kwargs)
@@ -1409,7 +1410,7 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
                    instrument='vlt-fors2',
                    program_id=param_dict['program_id'],
                    date=param_dict['date'],
-                   target=target)
+                   target=param_dict['target'])
 
     @classmethod
     def convert_old_params(cls, epoch_name: str):
