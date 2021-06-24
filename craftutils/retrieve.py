@@ -1288,7 +1288,7 @@ def load_catalogue(cat_name: str, cat: str):
     for col_name in cat_column_units:
         if "{:s}" in col_name:
             for fil in cat_filters:
-                cat[col_name] = cat[col_name.format(fil)] * cat_column_units[col_name]
+                cat[col_name.format(fil)] = cat[col_name.format(fil)] * cat_column_units[col_name]
         else:
             cat[col_name] = cat[col_name] * cat_column_units[col_name]
     return cat
@@ -1301,7 +1301,6 @@ column_units = \
     {
         "gaia":  # See https://gea.esac.esa.int/archive/documentation/GDR2/Gaia_archive/chap_datamodel/sec_dm_main_tables/ssec_dm_gaia_source.html
             {
-                "ref_epoch": units.year,
                 "ra": units.deg,
                 "ra_error": units.milliarcsecond,
                 "dec": units.deg,

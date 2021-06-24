@@ -1069,11 +1069,10 @@ class ImagingEpoch(Epoch):
         if not isinstance(self.field, Field):
             raise ValueError("field has not been set for this observation.")
         self.field.retrieve_catalogue(cat_name="gaia")
-        gaia_cat = self.field.load_catalogue(cat_name="gaia")
         index_path = os.path.join(config["top_data_dir"], "astrometry_index_files")
         u.mkdir_check(index_path)
         cat_index_path = os.path.join(index_path, "gaia")
-        gaia_cat_corrected = a.correct_gaia_to_epoch(gaia_cat=gaia_cat,
+        gaia_cat_corrected = a.correct_gaia_to_epoch(gaia_cat=self.field.get_path(f"cat_csv_gaia"),
                                                      new_epoch=self.date)
         a.generate_astrometry_indices(cat_name="gaia",
                                       cat=gaia_cat_corrected,
