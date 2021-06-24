@@ -1282,7 +1282,7 @@ def update_frb_gaia(frb: str, force: bool = False):
 
 
 def load_catalogue(cat_name: str, cat: str):
-    cat = u.path_or_table(cat_name, fmt="ascii.csv", load_qtable=True)
+    cat = u.path_or_table(cat, fmt="ascii.csv", load_qtable=True)
     cat_column_units = column_units[cat_name]
     cat_filters = filters[cat_name]
     for col_name in cat_column_units:
