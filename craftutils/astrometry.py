@@ -23,10 +23,6 @@ from craftutils.retrieve import cat_columns, load_catalogue
 
 def correct_gaia_to_epoch(gaia_cat: Union[str, table.QTable], new_epoch: time.Time):
     gaia_cat = load_catalogue(cat_name="gaia", cat=gaia_cat)
-    gaia_cat["ra"] *= units.deg
-    gaia_cat["dec"] *= units.deg
-    gaia_cat["pmra"] = gaia_cat["pmra"] * (units.milliarcsecond / units.year)
-    gaia_cat["pmdec"] = gaia_cat["pmdec"] * (units.milliarcsecond / units.year)
     epochs = list(map(lambda y: f"J{y}", gaia_cat['ref_epoch']))
     gaia_coords = SkyCoord(ra=gaia_cat["ra"], dec=gaia_cat["dec"],
                            pm_ra_cosdec=gaia_cat["pmra"], pm_dec=gaia_cat["pmdec"],
