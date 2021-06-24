@@ -21,7 +21,7 @@ def build_astrometry_index(input_fits_catalog: str, unique_id: str, output_index
     if scan_through_catalog:
         flags.append("E")
 
-    system_command(command="build-astrometry-index", *flags, **params)
+    system_command("build-astrometry-index", *flags, **params)
 
 
 def solve_field(image_files: Union[str, list], base_filename: str = "astrometry",
