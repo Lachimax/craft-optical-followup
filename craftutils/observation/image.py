@@ -1,3 +1,4 @@
+# Code by Lachlan Marnoch, 2021
 import os
 import warnings
 from typing import Union

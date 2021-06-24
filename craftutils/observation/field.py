@@ -1,3 +1,4 @@
+# Code by Lachlan Marnoch, 2021
 import os
 import warnings
 from typing import Union, List
@@ -688,7 +689,7 @@ class Epoch:
         self.do = do
 
         # Written attributes
-        self.output_file = None
+        self.output_file = None # This will be set during the load_output_file call
         self.stages_complete = self.stages()
         self.log = {}
 
@@ -706,6 +707,8 @@ class Epoch:
         self.frames_science = []
         self.frames_dark = []
         self.coadded = {}
+
+        self.load_output_file()
 
     def pipeline(self, **kwargs):
         self._pipeline_init()
