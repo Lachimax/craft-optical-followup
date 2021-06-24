@@ -350,6 +350,7 @@ class Field:
 
     def retrieve_catalogues(self, force_update: bool = False):
         for cat in retrieve.photometry_catalogues:
+            print(f"Checking for photometry in {cat}")
             self.retrieve_catalogue(cat_name=cat, force_update=force_update)
 
     def retrieve_catalogue(self, cat_name: str, force_update: bool = False):
@@ -363,7 +364,9 @@ class Field:
         if force_update or f"in_{cat_name}" not in self.cats:
             response = retrieve.save_catalogue(ra=ra, dec=dec, output=output, cat=cat_name.lower(),
                                                radius=radius)
-            if not isinstance(response, table.Table) and response != "ERROR":
+            # Check if a valid response was received; if not, we don't want to erroneously report that
+            # the field doesn't exist in the catalogue.
+            if response != "ERROR":
                 if response is not None:
                     self.cats[f"in_{cat_name}"] = True
                     self.set_path(f"cat_csv_{cat_name}", output)
@@ -1113,7 +1116,7 @@ class ImagingEpoch(Epoch):
                        instrument=instrument,
                        date=param_dict['date'],
                        program_id=param_dict["program_id"],
-                       target=param_dict["obj"],
+                       target=param_dict["target"],
                        source_extractor_config=param_dict['sextractor'],
                        )
         elif sub_cls is FORS2ImagingEpoch:
@@ -1341,10 +1344,11 @@ class ESOImagingEpoch(ImagingEpoch):
                  instrument: str = None,
                  program_id: str = None,
                  date: Union[str, Time] = None,
+                 target: str = None,
                  standard_epochs: list = None):
         super().__init__(name=name, field=field, param_path=param_path, data_path=data_path, instrument=instrument,
                          date=date, program_id=program_id,
-                         standard_epochs=standard_epochs)
+                         standard_epochs=standard_epochs, target=target)
 
     def pipeline(self, **kwargs):
         super().pipeline(**kwargs)
@@ -1393,6 +1397,10 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
 
         if field is None:
             field = param_dict["field"]
+        if 'target' in param_dict:
+            target = param_dict['target']
+        else:
+            target=None
 
         return cls(name=name,
                    field=field,
@@ -1400,7 +1408,8 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
                    data_path=param_dict['data_path'],
                    instrument='vlt-fors2',
                    program_id=param_dict['program_id'],
-                   date=param_dict['date'])
+                   date=param_dict['date'],
+                   target=target)
 
     @classmethod
     def convert_old_params(cls, epoch_name: str):
@@ -1755,6 +1764,10 @@ class SpectroscopyEpoch(Epoch):
         instrument = param_dict["instrument"].lower()
         if field is None:
             field = param_dict["field"]
+        if 'target' in param_dict:
+            target = param_dict['target']
+        else:
+            target=None
         sub_cls = cls.select_child_class(instrument=instrument)
         # if sub_cls is SpectroscopyEpoch:
         return sub_cls(name=name,
@@ -1764,6 +1777,7 @@ class SpectroscopyEpoch(Epoch):
                        instrument=instrument,
                        date=param_dict["date"],
                        program_id=param_dict["program_id"],
+                       target=target
                        )
         # else:
         # return sub_cls.from_file(param_file=param_file, field=field)
