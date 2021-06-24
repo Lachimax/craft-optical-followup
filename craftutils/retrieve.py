@@ -287,12 +287,12 @@ def query_eso_raw(program_id: str, date_obs: Union[str, Time], obj: str = None, 
     mode_str = ""
     if instrument == "fors2":
         if mode == "imaging":
-            mode_str = "dp_tech like 'IMA%'"
+            mode_str = "dp_tech = 'IMAGE'"
         elif mode == "spectroscopy":
             mode_str = "dp_tech = 'SPECTRUM'"
     if instrument == "xshooter":
         if mode == "imaging":
-            mode_str = "dp_tech like 'IMA%'"
+            mode_str = "dp_tech = 'IMAGE'"
         elif mode == "spectroscopy":
             mode_str = "dp_tech like 'ECHELLE%'"
 
@@ -647,7 +647,10 @@ def login_des():
     )
     # Store the JWT auth token
     try:
-        keys['des_auth_token'] = r.json()['token']
+        js = r.json()
+        if js['status'] == 'error':
+            raise PermissionError(js['message'])
+        keys['des_auth_token'] = js['token']
     except JSONDecodeError:
         print("Login failed; either credentials are invalid, or there was a server-side error; skipping DES tasks.")
         return 'ERROR'
@@ -1251,7 +1254,8 @@ def save_gaia(ra: float, dec: float, output: str, radius: units.Quantity = 0.2 *
         u.mkdir_check_nested(path=output)
         print(f"Saving GAIA catalogue to {output}")
         table.write(output, format="ascii.csv")
-        return table
+        # print(table)
+        return str(table)
     else:
         print("No data retrieved from Gaia DR2")
         return None
