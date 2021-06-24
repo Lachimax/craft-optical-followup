@@ -1797,8 +1797,8 @@ def load_psfex(model: str, x, y):
 
 
 def insert_point_sources_to_file(file: Union[fits.hdu.HDUList, str],
-                                 x: np.float, y: np.float,
-                                 mag: np.float,
+                                 x: float, y: float,
+                                 mag: float,
                                  fwhm: float = None,
                                  output: str = None, overwrite: bool = True,
                                  zeropoint: float = 0.0,
