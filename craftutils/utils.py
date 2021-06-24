@@ -18,6 +18,17 @@ from astropy.time import Time
 # TODO: Arrange these into some kind of logical order.
 # TODO: Also comment.
 
+def path_or_table(tbl: Union[str, table.QTable, table.Table], load_qtable: bool = True, fmt: str = "ascii.ecsv"):
+    if isinstance(tbl, str):
+        if load_qtable:
+            tbl = table.QTable.read(tbl, format=fmt)
+        else:
+            tbl = table.Table.read(tbl, format=fmt)
+    elif not isinstance(tbl, table.Table):
+        raise TypeError(f"tbl must be a string or an astropy Table, not {type(tbl)}")
+    return tbl
+
+
 def write_list_to_file(path: str, file: list):
     # Delete file, to be rewritten.
     rm_check(path)
@@ -101,20 +112,34 @@ def check_dict(key: str, dictionary: dict, na_values: Union[tuple, list] = (None
         return dictionary[key]
 
 
-def check_quantity(number: Union[float, int, units.Quantity], unit: units.Unit, allow_mismatch: bool = True):
+def check_quantity(number: Union[float, int, units.Quantity], unit: units.Unit, allow_mismatch: bool = True,
+                   convert: bool = False):
     if type(number) is not units.Quantity:
         number *= unit
     elif number.unit != unit:
         if not allow_mismatch:
-            raise ValueError(f"This is already a Quantity, but with units {number.unit}; units {unit} were specified.")
+            raise units.UnitsError(
+                f"This is already a Quantity, but with units {number.unit}; units {unit} were specified.")
         elif not (number.unit.is_equivalent(unit)):
-            raise ValueError(
+            raise units.UnitsError(
                 f"This number is already a Quantity, but with incompatible units ({number.unit}); units {unit} were specified.")
+        elif convert:
+            number = number.to(unit)
     return number
 
 
-def dequantify(number: Union[float, int, units.Quantity]):
+def dequantify(number: Union[float, int, units.Quantity], unit: units.Unit = None):
+    """
+    Removes the unit from an astropy Quantity, or returns the number unchanged if it is not a Quantity.
+    If a unit is provided, and number is a Quantity, an attempt will be made to convert the number to that unit before
+    returning the value.
+    :param number:
+    :param unit:
+    :return:
+    """
     if type(number) is units.Quantity:
+        if unit is not None:
+            number = check_quantity(number=number, unit=unit, convert=True)
         return number.value
     else:
         return number
@@ -259,10 +284,18 @@ def uncertainty_product(value, *args: tuple):
 
 def uncertainty_sum(*args):
     variance = 0.
-    for measurement, uncertainty in args:
+    for uncertainty in args:
         variance += uncertainty ** 2
     sigma = np.sqrt(variance)
     return sigma
+
+
+def uncertainty_log10(arg: float, uncertainty_arg: float, a: float = 1.):
+    """
+    Calculates standard uncertainty for function of the form a * log10(arg)
+    :return:
+    """
+    return np.abs(a * uncertainty_arg / (arg * np.log(10)))
 
 
 def error_product(value, measurements, errors):
@@ -412,7 +445,6 @@ def first_file(path: "str", ext: 'str' = None):
 
 
 def find_object(x, y, x_search, y_search, world=False):
-    # TODO: Throw error here if search arrays not same length
     """
     Returns closest match to given coordinates from the given search space.
     :param x: x-coordinate to find
@@ -421,8 +453,10 @@ def find_object(x, y, x_search, y_search, world=False):
     :param y_search: array to search for y-coordinate
     :return: id (int), distance (float)
     """
-
-    # TODO: This could be done better with SkyCoord
+    if len(x) != len(x_search):
+        raise ValueError('x_match and y_match must be the same length.')
+    if len(y) != len(y_search):
+        raise ValueError('x_cat and y_cat must be the same length.')
     if world:
         distances = np.sqrt(((x_search - x) * np.cos(y)) ** 2 + (y_search - y) ** 2)
     else:
@@ -446,11 +480,6 @@ def match_cat(x_match, y_match, x_cat, y_cat, tolerance=np.inf, world=False, ret
     :return: tuple of arrays containing: 0. the match indices in the search array and 1. the match indices in the
     catalogue.
     """
-
-    if len(x_match) != len(y_match):
-        raise ValueError('x_match and y_match must be the same length.')
-    if len(x_cat) != len(y_cat):
-        raise ValueError('x_cat and y_cat must be the same length.')
 
     matches_search = []
     matches_cat = []
@@ -789,20 +818,19 @@ def scan_nested_dict(dictionary: dict, keys: list):
 
 
 def get_scope(lines: list, levels: list):
-    print("==============================")
-    print(lines)
-    print(levels)
-    if len(lines) == 1:
-        return lines[0]
     this_dict = {}
     this_level = levels[0]
     for i, line in enumerate(lines):
-        print()
         if levels[i] == this_level:
-            scope_end = 1
-            while scope_end < len(levels) and levels[scope_end] >= levels[0]:
+            scope_start = i + 1
+            scope_end = i + 1
+            while scope_end < len(levels) and levels[scope_end] > this_level:
                 scope_end += 1
-            this_dict[line] = get_scope(lines=lines[1:scope_end], levels=levels[1:scope_end])
+            if "=" in line:
+                key, value = line.split("=")
+                this_dict[key] = value
+            else:
+                this_dict[line] = get_scope(lines=lines[scope_start:scope_end], levels=levels[scope_start:scope_end])
 
     return this_dict
 
@@ -817,7 +845,11 @@ def get_pypeit_param_levels(lines: list):
         else:
             last_non_zero = i
         levels.append(level)
-    return levels
+        line = line.replace("\t", "").replace(" ", "").replace("[", "").replace("]", "").replace("\n", "")
+        if "#" in line:
+            line = line.split("#")[0]
+        lines[i] = line
+    return lines, levels
 
 
 def get_pypeit_user_params(file: Union[list, str]):
@@ -830,54 +862,9 @@ def get_pypeit_user_params(file: Union[list, str]):
     while file[p_end] != "\n":
         p_end += 1
 
-    param_dict = {}
-    level = 0
-    level_list = []
-    level_dict = param_dict
-    i = p_start
+    lines, levels = get_pypeit_param_levels(lines=file[p_start:p_end])
+    param_dict = get_scope(lines=lines, levels=levels)
 
-    levels = get_pypeit_param_levels(lines=file[p_start:p_end])
-
-    for i in range(p_start, p_end):
-        line = file[i]
-        scope_start = i
-        scope_end = i + 1
-        while levels[scope_end] > levels[scope_start]:
-            scope_end += 1
-
-    while i < p_end:
-        pass
-
-        # print("==================================================")
-        # line = file[i]
-        # previous_level = level
-        # level = line.count("[")
-        # level_list = level_list[:level]
-        # if "#" in line:
-        #     line = line[:line.find("#")]
-        # line = line.replace(" ", "").replace("\t", "").replace("[", "").replace("]", "").replace("\n", "")
-        # if level > previous_level:
-        #     level_dict[line] = {}
-        #     level_list.append(line)
-        # else:
-        #     if level == 0:
-        #         line, value = line.split("=")
-        #         level_dict[line] = value
-        #         level = previous_level
-        #     else:
-        #         level_dict[line] = {}
-        #         level_list.append(line)
-        # print("line", line)
-        # print("level", level, "prevous level", previous_level)
-        # print("i", i)
-        # print(level_list)
-        # print("param_dict")
-        # print_nested_dict(param_dict)
-        # print("level_dict")
-        # print_nested_dict(level_dict)
-        #
-        # level_dict = scan_nested_dict(dictionary=param_dict, keys=level_list)
-        # i += 1
     return param_dict
 
 
@@ -890,3 +877,27 @@ def print_nested_dict(dictionary, level: int = 0):
             print_nested_dict(dictionary[key], level + 1)
         else:
             print((level + 1) * "\t", dictionary[key])
+
+
+def system_command(command: str, arguments: Union[str, list] = None, *flags, **params):
+    if command in [""]:
+        raise ValueError("Empty command.")
+    if " " in command:
+        raise ValueError("Command contains spaces.")
+    sys_str = command
+    if arguments is not None:
+        if isinstance(arguments, str):
+            arguments = [arguments]
+        for argument in arguments:
+            sys_str += f" {argument}"
+    for param in params:
+        sys_str += f" -{param} {params[param]}"
+    for flag in flags:
+        if len(flag) == 1:
+            sys_str += f" -{flag}"
+        elif len(flag) > 1:
+            sys_str += f" --{flag}"
+    print()
+    print(sys_str)
+    print()
+    os.system(sys_str)

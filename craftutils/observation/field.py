@@ -18,7 +18,6 @@ import craftutils.spectroscopy as spec
 import craftutils.observation.objects as objects
 import craftutils.observation.image as image
 import craftutils.fits_files as ff
-import craftutils.plotting as pl
 
 config = p.config
 
@@ -72,7 +71,8 @@ def _retrieve_eso_epoch(epoch: Union['ESOImagingEpoch', 'ESOSpectroscopyEpoch'],
         raise TypeError("epoch must be either an ESOImagingEpoch or an ESOSpectroscopyEpoch.")
     if epoch.target is None:
         obj = u.user_input(
-            "Specifying an object might help find the correct observation. Enter here, as it appears in the archive OBJECT field, or leave blank:\n")
+            "Specifying an object might help find the correct observation. Enter here, as it appears in the archive "
+            "OBJECT field, or leave blank:\n")
         if obj not in ["", " "]:
             epoch.set_target(obj)
 
@@ -107,7 +107,8 @@ class Field:
                  centre_coords: Union[SkyCoord, str] = None,
                  param_path: str = None,
                  data_path: str = None,
-                 objs: Union[List[objects.Object], dict] = None
+                 objs: Union[List[objects.Object], dict] = None,
+                 extent: units.Quantity = None
                  ):
         """
 
@@ -157,9 +158,13 @@ class Field:
         self.epochs_imaging_loaded = {}
 
         self.paths = {}
+
         self.cats = {}
+        self.cat_gaia = None
 
         self.load_output_file()
+
+        self.extent = extent
 
     def __str__(self):
         return f"{self.name}"
@@ -343,31 +348,57 @@ class Field:
         u.mkdir_check(path)
         return path
 
-    def retrieve_photometry_surveys(self, force_update: bool = False):
-        self.retrieve_photometry_panstarrs1(force_update=force_update)
+    def retrieve_catalogues(self, force_update: bool = False):
+        for cat in retrieve.photometry_catalogues:
+            self.retrieve_catalogue(cat_name=cat, force_update=force_update)
 
-    def retrieve_photometry_panstarrs1(self, force_update: bool = False):
-        return self.retrieve_photometry_mast(cat="panstarrs1", force_update=force_update)
-
-    def retrieve_photometry_mast(self, cat: str, force_update: bool = False):
-        output = self._cat_data_path(cat=cat)
-        self.set_path(f"cat_csv_{cat}", output)
+    def retrieve_catalogue(self, cat_name: str, force_update: bool = False):
+        if isinstance(self.extent, units.Quantity):
+            radius = self.extent
+        else:
+            radius = 0.2 * units.deg
+        output = self._cat_data_path(cat=cat_name)
         ra = self.centre_coords.ra.value
         dec = self.centre_coords.dec.value
-        if force_update or f"in_{cat}" not in self.cats:
-            response = retrieve.save_mast_photometry(ra=ra, dec=dec, output=output, cat="panstarrs1", radius=0.3)
-            if response != "ERROR":
+        if force_update or f"in_{cat_name}" not in self.cats:
+            response = retrieve.save_catalogue(ra=ra, dec=dec, output=output, cat=cat_name.lower(),
+                                               radius=radius)
+            if not isinstance(response, table.Table) and response != "ERROR":
                 if response is not None:
-                    self.cats[f"in_{cat}"] = True
+                    self.cats[f"in_{cat_name}"] = True
+                    self.set_path(f"cat_csv_{cat_name}", output)
                 else:
-                    self.cats[f"in_{cat}"] = False
+                    self.cats[f"in_{cat_name}"] = False
                 self.update_output_file()
             return response
-        elif self.cats[f"in_{cat}"] is True:
-            print(f"There is already {cat} data present for this field.")
+        elif self.cats[f"in_{cat_name}"] is True:
+            print(f"There is already {cat_name} data present for this field.")
             return True
         else:
-            print(f"This field is not present in {cat}.")
+            print(f"This field is not present in {cat_name}.")
+
+    def load_catalogue(self, cat_name: str):
+        if self.retrieve_catalogue(cat_name):
+            return retrieve.load_catalogue(cat_name=cat_name, cat=self.get_path(f"cat_csv_{cat_name}"))
+        else:
+            print("Could not load catalogue; field is outside footprint.")
+
+    def generate_astrometry_indices(self, cat_name: str = "gaia"):
+        self.retrieve_catalogue(cat_name=cat_name)
+        if not self.check_cat(cat_name=cat_name):
+            print(f"Field is not in {cat_name}; index file could not be created.")
+        else:
+            cat_path = self.get_path(f"cat_csv_{cat_name}")
+            index_path = os.path.join(config["top_data_dir"], "astrometry_index_files")
+            u.mkdir_check(index_path)
+            cat_index_path = os.path.join(index_path, cat_name)
+            prefix = f"{cat_name}_index_{self.name}"
+            a.generate_astrometry_indices(cat_name=cat_name,
+                                          cat=cat_path,
+                                          fits_cat_output=cat_path.replace(".csv", ".fits"),
+                                          unique_id_prefix=prefix,
+                                          index_output_dir=cat_index_path
+                                          )
 
     def get_path(self, key):
         if key in self.paths:
@@ -375,13 +406,20 @@ class Field:
         else:
             raise KeyError(f"{key} has not been set.")
 
+    def check_cat(self, cat_name: str):
+        if f"in_{cat_name}" in self.cats:
+            return self.cats[f"in_{cat_name}"]
+        else:
+            return None
+
     def set_path(self, key, value):
         self.paths[key] = value
 
     def load_output_file(self, **kwargs):
         outputs = p.load_output_file(self)
-        if "cats" in outputs:
-            self.cats.update(outputs["cats"])
+        if outputs is not None:
+            if "cats" in outputs:
+                self.cats.update(outputs["cats"])
         return outputs
 
     def _output_dict(self):
@@ -403,7 +441,8 @@ class Field:
                           "type": "Field",
                           "centre": objects.position_dictionary.copy(),
                           "objects": {"<name>": objects.Object.default_params()
-                                      }
+                                      },
+                          "extent": 0.2 * units.deg
                           }
         return default_params
 
@@ -417,12 +456,18 @@ class Field:
         field_type = param_dict["type"]
         centre_ra, centre_dec = p.select_coords(param_dict["centre"])
 
+        if "extent" in param_dict:
+            extent = param_dict["extent"]
+        else:
+            extent = None
+
         if field_type == "Field":
             return cls(name=name,
                        centre_coords=f"{centre_ra} {centre_dec}",
                        param_path=param_file,
                        data_path=param_dict["data_path"],
-                       objs=param_dict["objects"]
+                       objs=param_dict["objects"],
+                       extent=extent
                        )
         elif field_type == "FRBField":
             return FRBField.from_file(param_file)
@@ -454,7 +499,8 @@ class FRBField(Field):
                  param_path: str = None,
                  data_path: str = None,
                  objs: List[objects.Object] = None,
-                 frb: objects.FRB = None):
+                 frb: objects.FRB = None,
+                 extent: units.Quantity = None):
         if centre_coords is None:
             if frb is not None:
                 centre_coords = frb.position
@@ -465,7 +511,8 @@ class FRBField(Field):
                          centre_coords=centre_coords,
                          param_path=param_path,
                          data_path=data_path,
-                         objs=objs
+                         objs=objs,
+                         extent=extent
                          )
 
         self.frb = frb
@@ -482,12 +529,14 @@ class FRBField(Field):
         default_params.update({
             "type": "FRBField",
             "frb": objects.FRB.default_params(),
-            "subtraction": {"template_epochs": {"des": None,
-                                                "fors2": None,
-                                                "xshooter": None,
-                                                "sdss": None
-                                                }
-                            }
+            "subtraction":
+                {"template_epochs":
+                     {"des": None,
+                      "fors2": None,
+                      "xshooter": None,
+                      "sdss": None
+                      }
+                 }
         })
 
         return default_params
@@ -510,12 +559,17 @@ class FRBField(Field):
 
         centre_ra, centre_dec = p.select_coords(param_dict["centre"])
         frb = objects.FRB.from_dict(param_dict["frb"])
+        if "extent" in param_dict:
+            extent = param_dict["extent"]
+        else:
+            extent = None
         return cls(name=name,
                    centre_coords=f"{centre_ra} {centre_dec}",
                    param_path=param_file,
                    data_path=param_dict["data_path"],
                    objs=param_dict["objects"],
-                   frb=frb
+                   frb=frb,
+                   extent=extent
                    )
 
     @classmethod
@@ -1005,6 +1059,21 @@ class ImagingEpoch(Epoch):
                 self.deepest_filter = outputs["deepest_filter"]
         return outputs
 
+    def generate_gaia_astrometry_indices(self):
+        if not isinstance(self.field, Field):
+            raise ValueError("field has not been set for this observation.")
+        self.field.retrieve_catalogue(cat_name="gaia")
+        gaia_cat = self.field.load_catalogue(cat_name="gaia")
+        index_path = os.path.join(config["top_data_dir"], "astrometry_index_files")
+        u.mkdir_check(index_path)
+        cat_index_path = os.path.join(index_path, "gaia")
+        gaia_cat_corrected = a.correct_gaia_to_epoch(gaia_cat=gaia_cat,
+                                                     new_epoch=self.date)
+        a.generate_astrometry_indices(cat_name="gaia",
+                                      cat=gaia_cat_corrected,
+                                      unique_id_prefix=f"gaia_index_{self.field.name}",
+                                      index_output_dir=cat_index_path)
+
     @classmethod
     def stages(cls):
         stages = super().stages()
@@ -1112,7 +1181,7 @@ class PanSTARRS1ImagingEpoch(ImagingEpoch):
         self.instrument = "panstarrs"
         self.load_output_file()
         if isinstance(field, Field):
-            self.field.retrieve_photometry_panstarrs1()
+            self.field.retrieve_catalogue(cat_name="panstarrs1")
 
     # TODO: Automatic cutout download; don't worry for now.
 
@@ -1124,10 +1193,6 @@ class PanSTARRS1ImagingEpoch(ImagingEpoch):
         self.proc_3_photometric_calibration(**kwargs)
         self.proc_4_dual_mode_source_extraction(**kwargs)
         self.proc_5_get_photometry(**kwargs)
-
-    def proc_0_download(self, **kwargs):
-        # Retrieve imaging from PanSTARRS
-        pass
 
     def proc_2_source_extraction(self, **kwargs):
         if self.query_stage("Do source extraction?", stage='2-source_extraction'):
@@ -1194,7 +1259,7 @@ class PanSTARRS1ImagingEpoch(ImagingEpoch):
                 for obj in self.field.objects:
                     nearest = img.find_object(obj.position)
                     rows.append(nearest)
-                    err = max(nearest['MAGERR_AUTO_ZP_panstarrs1_plus'], nearest['MAGERR_AUTO_ZP_panstarrs1_minus'])
+                    err = nearest['MAGERR_AUTO_ZP_panstarrs1']
                     print("FILTER:", fil)
                     print(f"MAG_AUTO = {nearest['MAG_AUTO_ZP_panstarrs1']} +/- {err}")
                     print(f"A = {nearest['A_WORLD'].to(units.arcsec)}; B = {nearest['B_WORLD'].to(units.arcsec)}")

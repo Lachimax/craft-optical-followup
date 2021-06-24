@@ -1199,7 +1199,7 @@ def write_sof(table_path: str, output_path: str = 'bias.sof', sof_type: str = 'f
             suffix = "down"
             chip_id = "1456"
 
-        std_image = files[files['object'] == 'STD']['identifier'].values[0]
+        std_image = files[files['object'] == 'STD']['identifier'][0]
 
         with open(output_path, 'a') as output:
             output.writelines(std_image + " STANDARD_IMG\n")
