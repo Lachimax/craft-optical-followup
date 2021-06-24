@@ -20,6 +20,7 @@ import craftutils.params as p
 import craftutils.plotting as pl
 import craftutils.wrap.source_extractor as se
 import craftutils.wrap.psfex as psfex
+from craftutils.wrap.astrometry_net import solve_field
 
 from craftutils.retrieve import cat_columns
 
@@ -542,7 +543,7 @@ class ImagingImage(Image):
         self.close()
 
     def correct_astrometry(self):
-        pass
+        solve_field(image_files=self.path, base_filename=f"{self.name}")
 
     def astrometry_diagnostics(self, reference_cat: Union[str, table.QTable],
                                ra_col: str = "ra", dec_col: str = "dec",

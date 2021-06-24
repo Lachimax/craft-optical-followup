@@ -32,4 +32,6 @@ def solve_field(image_files: Union[str, list], base_filename: str = "astrometry"
     flags = list(flags)
     if overwrite:
         flags.append("O")
-    system_command(command="solve-field", arguments=image_files, *flags, **params)
+    print(params)
+    print(flags)
+    system_command("solve-field", image_files, *flags, **params)
