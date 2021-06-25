@@ -689,7 +689,7 @@ class Epoch:
         self.do = do
 
         # Written attributes
-        self.output_file = None # This will be set during the load_output_file call
+        self.output_file = None  # This will be set during the load_output_file call
         self.stages_complete = self.stages()
         self.log = {}
 
@@ -1080,7 +1080,6 @@ class ImagingEpoch(Epoch):
                                       index_output_dir=cat_index_path)
         return gaia_cat_corrected
 
-
     @classmethod
     def stages(cls):
         stages = super().stages()
@@ -1404,7 +1403,7 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
         if 'target' in param_dict:
             target = param_dict['target']
         else:
-            target=None
+            target = None
 
         return cls(name=name,
                    field=field,
@@ -1771,7 +1770,7 @@ class SpectroscopyEpoch(Epoch):
         if 'target' in param_dict:
             target = param_dict['target']
         else:
-            target=None
+            target = None
         sub_cls = cls.select_child_class(instrument=instrument)
         # if sub_cls is SpectroscopyEpoch:
         return sub_cls(name=name,
