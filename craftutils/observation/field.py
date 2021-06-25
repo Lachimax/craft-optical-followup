@@ -1078,6 +1078,7 @@ class ImagingEpoch(Epoch):
                                       cat=gaia_cat_corrected,
                                       unique_id_prefix=f"gaia_index_{self.field.name}",
                                       index_output_dir=cat_index_path)
+        return gaia_cat_corrected
 
 
     @classmethod

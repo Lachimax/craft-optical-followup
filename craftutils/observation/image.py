@@ -1,4 +1,5 @@
 # Code by Lachlan Marnoch, 2021
+import copy
 import os
 import warnings
 from typing import Union
@@ -544,7 +545,9 @@ class ImagingImage(Image):
         self.close()
 
     def correct_astrometry(self):
-        solve_field(image_files=self.path, base_filename=f"{self.name}")
+        solve_field(image_files=self.path, base_filename=f"{self.name}_astrometry")
+        new_path = os.path.join(self.data_path, f"{self.name}_astrometry.new")
+        return ImagingImage(path=new_path)
 
     def astrometry_diagnostics(self, reference_cat: Union[str, table.QTable],
                                ra_col: str = "ra", dec_col: str = "dec",
