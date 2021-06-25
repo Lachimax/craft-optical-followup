@@ -18,6 +18,7 @@ instruments_imaging = ["vlt-fors2", "vlt-xshooter", "mgb-imacs", "panstarrs"]
 instruments_spectroscopy = ["vlt-fors2", "vlt-xshooter"]
 surveys = ["panstarrs"]
 
+
 def serialise_attributes(dumper, data):
     dict_representation = data.__dict__
     node = dumper.represent_dict(dict_representation)
@@ -749,7 +750,6 @@ def update_output_file(obj):
         save_params(dictionary=param_dict, file=obj.output_file)
     else:
         raise ValueError("Output could not be saved to file due to lack of valid output path.")
-
 
 
 # def change_param_name(folder):
