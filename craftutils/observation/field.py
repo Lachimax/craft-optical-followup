@@ -706,6 +706,9 @@ class Epoch:
         self.frames_standard = []
         self.frames_science = []
         self.frames_dark = []
+
+        self.frames_reduced = []
+
         self.coadded = {}
 
         self.load_output_file()
@@ -720,8 +723,8 @@ class Epoch:
             raise ValueError(f"data_path has not been set for {self}")
         self.do = _check_do_list(self.do)
 
-    def proc_1_initial_setup(self, **kwargs):
-        if self.query_stage("Do initial setup of files?", stage='1-initial_setup'):
+    def proc_1_initial_setup(self, no_query: bool = False, **kwargs):
+        if no_query or self.query_stage("Do initial setup of files?", stage='1-initial_setup'):
             self._initial_setup()
             self.stages_complete['1-initial_setup'] = Time.now()
             self.update_output_file()
@@ -733,14 +736,6 @@ class Epoch:
         if self.data_path is not None and "raw_dir" not in self.paths:
             self.paths["raw_dir"] = os.path.join(self.data_path, epoch_stage_dirs["0-download"])
 
-    def add_coadded_image(self, img: Union[str, image.Spec1DCoadded], key: str, **kwargs):
-        cls = image.Image.select_child_class(instrument=self.instrument, frame_type="coadded", **kwargs)
-        if isinstance(img, str):
-            img = cls(path=img)
-        img.epoch = self
-        self.coadded[key] = img
-        return img
-
     def load_output_file(self, **kwargs):
         outputs = p.load_output_file(self)
         if type(outputs) is dict:
@@ -750,7 +745,6 @@ class Epoch:
                 for frame in outputs["frames_science"]:
                     self.frames_science.append(cls(path=frame))
             if "coadded" in outputs:
-
                 for fil in outputs["coadded"]:
                     if outputs["coadded"][fil] is not None:
                         self.add_coadded_image(img=outputs["coadded"][fil], key=fil, **kwargs)
@@ -845,15 +839,29 @@ class Epoch:
         params[param] = p_dict[param]
         p.save_params(file=self.param_path, dictionary=params)
 
-    def add_raw_frame(self, raw_frame: image.Image):
+    def add_frame_raw(self, raw_frame: Union[image.ImagingImage, str]):
         self.frames_raw.append(raw_frame)
         self.sort_frame(raw_frame)
 
-    def sort_frame(self, frame: image.Image):
+    def add_frame_reduced(self, reduced_frame: image.Image):
+        self.frames_reduced.append(reduced_frame)
+
+    def add_coadded_image(self, img: Union[str, image.Image], key: str, **kwargs):
+        if isinstance(img, str):
+            cls = image.Image.select_child_class(instrument=self.instrument, frame_type="coadded", **kwargs)
+            img = cls(path=img)
+        img.epoch = self
+        self.coadded[key] = img
+        return img
+
+    def sort_frame(self, frame: image.Image, sort_key: str = None):
         if frame.frame_type == "bias":
             self.frames_bias.append(frame)
         elif frame.frame_type == "science":
-            self.frames_science.append(frame)
+            if isinstance(self.frames_science, list):
+                self.frames_science.append(frame)
+            elif isinstance(self.frames_science, dict):
+                self.frames_science[sort_key].append(frame)
         elif frame.frame_type == "standard":
             self.frames_standard.append(frame)
         elif frame.frame_type == "dark":
@@ -920,6 +928,25 @@ class ImagingEpoch(Epoch):
         self.filters = []
         self.deepest = None
         self.deepest_filter = None
+
+        self.frames_science = {}
+        self.frames_reduced = {}
+        self.frames_astrometry = {}
+
+    def proc_5_correct_astrometry_frames(self, no_query: bool = False, **kwargs):
+        if no_query or self.query_stage(stage="5-correct_astrometry_frames",
+                                        message="Correct astrometry of individual frames?"):
+            self.generate_gaia_astrometry_indices()
+            astrometry_path = os.path.join(self.data_path, "5-astrometry_frames")
+            u.mkdir_check(astrometry_path)
+            for fil in self.frames_reduced:
+                astrometry_fil_path = os.path.join(astrometry_path, fil)
+                for frame in self.frames_reduced[fil]:
+                    new_frame = frame.correct_astrometry(output_dir=astrometry_fil_path)
+                    self.add_frame_astrometry(new_frame)
+            self.stages_complete["5-correct_astrometry_frames"] = Time.now()
+            self.update_output_file()
+
 
     def _initial_setup(self):
         data_dir = self.data_path
@@ -1047,9 +1074,23 @@ class ImagingEpoch(Epoch):
             deepest = self.deepest.path
         else:
             deepest = None
+        frames_raw = []
+        for frame in self.frames_raw:
+            frames_raw.append(frame.path)
+        frames_reduced = {}
+        for fil in self.frames_reduced:
+            frames_reduced[fil] = list(map(lambda f: f.path, self.frames_reduced[fil]))
+        frames_astrometry = {}
+        for fil in self.frames_reduced:
+            frames_astrometry[fil] = list(map(lambda f: f.path, self.frames_astrometry[fil]))
+
         output_dict.update({"filters": self.filters,
                             "deepest": deepest,
                             "deepest_filter": self.deepest_filter,
+                            "coadded": self.coadded,
+                            "frames_raw": frames_raw,
+                            "frames_reduced": frames_reduced,
+                            "frames_astrometry": frames_astrometry,
                             })
         return output_dict
 
@@ -1063,13 +1104,31 @@ class ImagingEpoch(Epoch):
                 self.deepest = cls(path=outputs["deepest"])
             if "deepest_filter" in outputs:
                 self.deepest_filter = outputs["deepest_filter"]
+            if "frames_raw" in outputs:
+                for frame in outputs["frames_raw"]:
+                    self.add_frame_raw(raw_frame=frame)
+            if "frames_reduced" in outputs:
+                for fil in outputs["frames_reduced"]:
+                    if outputs["frames_reduced"][fil] is not None:
+                        for frame in outputs["frames_reduced"][fil]:
+                            self.add_frame_reduced(reduced_frame=frame)
+            if "frames_astrometry" in outputs:
+                for fil in outputs["frames_astrometry"]:
+                    if outputs["frames_astrometry"][fil] is not None:
+                        for frame in outputs["frames_astrometry"][fil]:
+                            self.add_frame_astrometry(astrometry_frame=frame)
+            if "coadded" in outputs:
+                for fil in outputs["coadded"]:
+                    if outputs["coadded"][fil] is not None:
+                        self.add_coadded_image(img=outputs["coadded"][fil], key=fil, **kwargs)
+
         return outputs
 
     def generate_gaia_astrometry_indices(self):
         if not isinstance(self.field, Field):
             raise ValueError("field has not been set for this observation.")
         self.field.retrieve_catalogue(cat_name="gaia")
-        index_path = os.path.join(config["top_data_dir"], "astrometry_index_files")
+        index_path = os.path.join(config["top_data_dir"], "astclass Imagingrometry_index_files")
         u.mkdir_check(index_path)
         cat_index_path = os.path.join(index_path, "gaia")
         gaia_cat_corrected = a.correct_gaia_to_epoch(gaia_cat=self.field.get_path(f"cat_csv_gaia"),
@@ -1080,10 +1139,56 @@ class ImagingEpoch(Epoch):
                                       index_output_dir=cat_index_path)
         return gaia_cat_corrected
 
+    def add_frame_raw(self, raw_frame: Union[image.ImagingImage, str]):
+        if isinstance(raw_frame, str):
+            cls = image.ImagingImage.select_child_class(instrument=self.instrument)
+            raw_frame = cls(path=raw_frame, frame_type="raw", instrument=self.instrument)
+        fil = raw_frame.extract_filter()
+        if self.check_filter(fil=fil):
+            self.frames_raw[fil].append(raw_frame)
+        self.sort_frame(raw_frame)
+
+    def add_frame_reduced(self, reduced_frame: image.ImagingImage):
+        if isinstance(reduced_frame, str):
+            cls = image.ImagingImage.select_child_class(instrument=self.instrument)
+            reduced_frame = cls(path=reduced_frame, frame_type="reduced", instrument=self.instrument)
+        fil = reduced_frame.extract_filter()
+        if self.check_filter(fil=fil):
+            self.frames_reduced[fil].append(reduced_frame)
+
+    def add_frame_astrometry(self, astrometry_frame: image.ImagingImage):
+        if isinstance(astrometry_frame, str):
+            cls = image.ImagingImage.select_child_class(instrument=self.instrument)
+            astrometry_frame = cls(path=astrometry_frame, frame_type="astrometry", instrument=self.instrument)
+        fil = astrometry_frame.extract_filter()
+        if self.check_filter(fil=fil):
+            self.frames_astrometry[fil].append(astrometry_frame)
+
+    def check_filter(self, fil: str):
+        """
+        If a filter name is not present in the various lists and dictionaries that use it, adds it.
+        @param fil:
+        @return: False if None, True if not.
+        """
+        if fil is not None:
+            if fil not in self.filters:
+                self.filters.append(fil)
+            if fil not in self.frames_science:
+                self.frames_science[fil] = []
+            if fil not in self.frames_reduced:
+                self.frames_reduced[fil] = []
+            if fil not in self.frames_astrometry:
+                self.frames_astrometry[fil] = []
+            if fil not in self.coadded:
+                self.coadded[fil] = []
+            return True
+        else:
+            return False
+
     @classmethod
     def stages(cls):
         stages = super().stages()
-        stages.update({})
+        stages.update({"5-correct_astrometry_frames": None})
         return stages
 
     @classmethod
@@ -1200,8 +1305,16 @@ class PanSTARRS1ImagingEpoch(ImagingEpoch):
         self.proc_4_dual_mode_source_extraction(**kwargs)
         self.proc_5_get_photometry(**kwargs)
 
-    def proc_2_source_extraction(self, **kwargs):
-        if self.query_stage("Do source extraction?", stage='2-source_extraction'):
+    def proc_0_download(self, **kwargs):
+        """
+        Automatically download PanSTARRS1 cutout.
+        @param kwargs: 
+        @return: 
+        """
+        pass
+
+    def proc_2_source_extraction(self, no_query: bool = False, **kwargs):
+        if no_query or self.query_stage("Do source extraction?", stage='2-source_extraction'):
             source_extraction_path = os.path.join(self.data_path, "2-source_extraction")
             u.mkdir_check(source_extraction_path)
             for img in self.frames_science:
@@ -1212,8 +1325,8 @@ class PanSTARRS1ImagingEpoch(ImagingEpoch):
             self.stages_complete['2-source_extraction'] = Time.now()
             self.update_output_file()
 
-    def proc_3_photometric_calibration(self, **kwargs):
-        if self.query_stage("Do photometric calibration?", stage="3-photometric_calibration"):
+    def proc_3_photometric_calibration(self, no_query: bool = False, **kwargs):
+        if no_query or self.query_stage("Do photometric calibration?", stage="3-photometric_calibration"):
             calib_dir = os.path.join(self.data_path, "3-photometric_calibration")
             u.mkdir_check(calib_dir)
             deepest = self.frames_science[0]
@@ -1236,9 +1349,9 @@ class PanSTARRS1ImagingEpoch(ImagingEpoch):
             self.stages_complete['3-photometric_calibration'] = Time.now()
             self.update_output_file()
 
-    def proc_4_dual_mode_source_extraction(self, **kwargs):
-        if self.query_stage("Do source extraction in dual-mode, using deepest image as footprint?",
-                            stage="4-dual_mode_source_extraction"):
+    def proc_4_dual_mode_source_extraction(self, no_query: bool = False, **kwargs):
+        if no_query or self.query_stage("Do source extraction in dual-mode, using deepest image as footprint?",
+                                        stage="4-dual_mode_source_extraction"):
             source_extraction_path = os.path.join(self.data_path, "4-dual_mode_source_extraction")
             u.mkdir_check(source_extraction_path)
             for img in self.frames_science:
@@ -1251,9 +1364,9 @@ class PanSTARRS1ImagingEpoch(ImagingEpoch):
             self.stages_complete["4-dual_mode_source_extraction"] = Time.now()
             self.update_output_file()
 
-    def proc_5_get_photometry(self, **kwargs):
-        if self.query_stage("Get photometry?",
-                            stage="5-get_photometry"):
+    def proc_5_get_photometry(self, no_query: bool = False, **kwargs):
+        if no_query or self.query_stage("Get photometry?",
+                                        stage="5-get_photometry"):
             object_property_path = os.path.join(self.data_path, "5-object_properties")
             u.mkdir_check(object_property_path)
             for fil in self.coadded:
@@ -1358,8 +1471,8 @@ class ESOImagingEpoch(ImagingEpoch):
         self.proc_0_raw()
         self.proc_1_initial_setup()
 
-    def proc_0_raw(self, do: list = None):
-        if self.query_stage("Download raw data from ESO archive?", stage='0-download'):
+    def proc_0_raw(self, no_query: bool = False, **kwargs):
+        if no_query or self.query_stage("Download raw data from ESO archive?", stage='0-download'):
             r = self.retrieve()
             if r:
                 self.stages_complete['0-download'] = Time.now()
@@ -1412,17 +1525,17 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
                    instrument='vlt-fors2',
                    program_id=param_dict['program_id'],
                    date=param_dict['date'],
-                   target=param_dict['target'])
+                   target=target)
 
     @classmethod
     def convert_old_params(cls, epoch_name: str):
         new_params = cls.new_yaml(name=epoch_name, path=None)
         old_params = p.object_params_fors2(epoch_name)
 
-        field = epoch_name[:epoch_name.find("_")]
+        field = f"FRB20{epoch_name[3:epoch_name.find('_')]}"
 
         new_params["instrument"] = "vlt-fors2"
-        new_params["data_path"] = old_params["data_dir"]
+        new_params["data_path"] = cls.guess_data_path()
         new_params["field"] = field
 
         new_params["sextractor"]["aperture_diameters"] = old_params["photometry_apertures"]
@@ -1495,8 +1608,8 @@ class SpectroscopyEpoch(Epoch):
         self._pypeit_sorted_file = None
         self._pypeit_coadd1d_file = None
 
-    def proc_4_pypeit_flux(self):
-        if self.query_stage("Do fluxing with PypeIt?", stage='4-pypeit_flux_calib'):
+    def proc_4_pypeit_flux(self, no_query: bool = False, **kwargs):
+        if no_query or self.query_stage("Do fluxing with PypeIt?", stage='4-pypeit_flux_calib'):
             self._pypeit_flux()
             self.stages_complete['4-pypeit_flux_calib'] = Time.now()
             self.update_output_file()
@@ -1578,7 +1691,7 @@ class SpectroscopyEpoch(Epoch):
         f_end = pypeit_lines.index("data end\n")
         for line in pypeit_lines[f_start:f_end]:
             raw = image.SpecRaw.from_pypeit_line(line=line, pypeit_raw_path=self.paths["raw_dir"])
-            self.add_raw_frame(raw)
+            self.add_frame_raw(raw)
         return pypeit_lines
 
     def read_pypeit_file(self, setup: str):
@@ -1667,17 +1780,19 @@ class SpectroscopyEpoch(Epoch):
                             "decker": self.decker})
         return output_dict
 
-    def proc_2_pypeit_setup(self):
-        return self.query_stage("Do PypeIt setup?", stage='2-pypeit_setup')
+    def proc_2_pypeit_setup(self, no_query: bool = False, **kwargs):
+        if no_query or self.query_stage("Do PypeIt setup?", stage='2-pypeit_setup'):
+            pass
 
-    def proc_3_pypeit_run(self, do_not_reuse_masters=False):
-        return self.query_stage("Run PypeIt?", stage='3-pypeit_run')
+    def proc_3_pypeit_run(self, no_query: bool = False, do_not_reuse_masters=False, **kwargs):
+        if no_query or self.query_stage("Run PypeIt?", stage='3-pypeit_run'):
+            pass
 
-    def proc_5_pypeit_coadd(self):
+    def proc_5_pypeit_coadd(self, no_query: bool = False, **kwargs):
         pass
 
-    def proc_6_convert_to_marz_format(self):
-        if self.query_stage("Convert co-added 1D spectra to Marz format?", stage='6-marz-format'):
+    def proc_6_convert_to_marz_format(self, no_query: bool = False, **kwargs):
+        if no_query or self.query_stage("Convert co-added 1D spectra to Marz format?", stage='6-marz-format'):
             pass
 
     def _path_2_pypeit(self):
@@ -1828,8 +1943,8 @@ class ESOSpectroscopyEpoch(SpectroscopyEpoch):
         self.proc_5_pypeit_coadd()
         self.proc_6_convert_to_marz_format()
 
-    def proc_0_raw(self):
-        if self.query_stage("Download raw data from ESO archive?", stage='0-download'):
+    def proc_0_raw(self, no_query: bool = False, **kwargs):
+        if no_query or self.query_stage("Download raw data from ESO archive?", stage='0-download'):
             self._path_0_raw()
             r = self.retrieve()
             if r:
@@ -1877,8 +1992,8 @@ class FORS2SpectroscopyEpoch(ESOSpectroscopyEpoch):
     def pipeline(self, **kwargs):
         super().pipeline(**kwargs)
 
-    def proc_2_pypeit_setup(self):
-        if self.query_stage("Do PypeIt setup?", stage='2-pypeit_setup'):
+    def proc_2_pypeit_setup(self, no_query: bool = False, **kwargs):
+        if no_query or self.query_stage("Do PypeIt setup?", stage='2-pypeit_setup'):
             self._path_2_pypeit()
             setup_files = os.path.join(self.paths["pypeit_dir"], 'setup_files', '')
             self.paths["pypeit_setup_dir"] = setup_files
@@ -1915,16 +2030,16 @@ class FORS2SpectroscopyEpoch(ESOSpectroscopyEpoch):
             self.stages_complete['2-pypeit_setup'] = Time.now()
             self.update_output_file()
 
-    def proc_3_pypeit_run(self, do_not_reuse_masters=False):
-        if self.query_stage("Run PypeIt?", stage='3-pypeit_run'):
+    def proc_3_pypeit_run(self, no_query: bool = False, do_not_reuse_masters: bool = False, **kwargs):
+        if no_query or self.query_stage("Run PypeIt?", stage='3-pypeit_run'):
             spec.run_pypeit(pypeit_file=self.paths['pypeit_file'],
                             redux_path=self.paths['pypeit_run_dir'],
                             do_not_reuse_masters=do_not_reuse_masters)
             self.stages_complete['3-pypeit_run'] = Time.now()
             self.update_output_file()
 
-    def proc_5_pypeit_coadd(self):
-        if self.query_stage(
+    def proc_5_pypeit_coadd(self, no_query: bool = False, **kwargs):
+        if no_query or self.query_stage(
                 "Do coaddition with PypeIt?\nYou should first inspect the 2D spectra to determine which objects to co-add.",
                 stage='5-pypeit_coadd'):
             for file in filter(lambda f: "spec1d" in f, os.listdir(self.paths["pypeit_science_dir"])):
@@ -2018,8 +2133,8 @@ class XShooterSpectroscopyEpoch(ESOSpectroscopyEpoch):
         super().pipeline(**kwargs)
         # self.proc_5_pypeit_coadd()
 
-    def proc_2_pypeit_setup(self):
-        if self.query_stage("Do PypeIt setup?", stage='2-pypeit_setup'):
+    def proc_2_pypeit_setup(self, no_query: bool = False, **kwargs):
+        if no_query or self.query_stage("Do PypeIt setup?", stage='2-pypeit_setup'):
             self._path_2_pypeit()
             setup_files = os.path.join(self.paths["pypeit_dir"], 'setup_files', '')
             self.paths["pypeit_setup_dir"] = setup_files
@@ -2098,13 +2213,13 @@ class XShooterSpectroscopyEpoch(ESOSpectroscopyEpoch):
             self.stages_complete['2-pypeit_setup'] = Time.now()
             self.update_output_file()
 
-    def proc_3_pypeit_run(self, do_not_reuse_masters=False):
+    def proc_3_pypeit_run(self, no_query: bool = False, do_not_reuse_masters: bool = False, **kwargs):
         for i, arm in enumerate(self.grisms):
             # UVB not yet implemented in PypeIt, so we skip.
             if arm == "uvb":
                 continue
             self._current_arm = arm
-            if self.query_stage(f"Run PypeIt for {arm.upper()} arm?", stage=f'3.{i + 1}-pypeit_run_{arm}'):
+            if no_query or self.query_stage(f"Run PypeIt for {arm.upper()} arm?", stage=f'3.{i + 1}-pypeit_run_{arm}'):
                 spec.run_pypeit(pypeit_file=self.get_path('pypeit_file'),
                                 redux_path=self.get_path('pypeit_run_dir'),
                                 do_not_reuse_masters=do_not_reuse_masters)
@@ -2120,28 +2235,28 @@ class XShooterSpectroscopyEpoch(ESOSpectroscopyEpoch):
             #     self.update_output_file()
         self._current_arm = None
 
-    def proc_4_pypeit_flux(self):
+    def proc_4_pypeit_flux(self, no_query: bool = False, **kwargs):
         for i, arm in enumerate(self.grisms):
             # UVB not yet implemented in PypeIt, so we skip.
             if arm == "uvb":
                 continue
             self._current_arm = arm
-            if self.query_stage(f"Do PypeIt fluxing for {arm.upper()} arm?",
-                                stage=f'4.{i + 1}-pypeit_flux_calib_{arm}'):
+            if no_query or self.query_stage(f"Do PypeIt fluxing for {arm.upper()} arm?",
+                                            stage=f'4.{i + 1}-pypeit_flux_calib_{arm}'):
                 self._current_arm = arm
                 self._pypeit_flux()
             self.stages_complete[f'4.{i + 1}-pypeit_flux_calib_{arm}'] = Time.now()
         self._current_arm = None
         self.update_output_file()
 
-    def proc_5_pypeit_coadd(self):
+    def proc_5_pypeit_coadd(self, no_query: bool = False, **kwargs):
         for i, arm in enumerate(self.grisms):
             # UVB not yet implemented in PypeIt, so we skip.
             if arm == "uvb":
                 continue
             self._current_arm = arm
-            if self.query_stage(f"Do PypeIt coaddition for {arm.upper()} arm?",
-                                stage=f'5.{i + 1}-pypeit_coadd_{arm}'):
+            if no_query or self.query_stage(f"Do PypeIt coaddition for {arm.upper()} arm?",
+                                            stage=f'5.{i + 1}-pypeit_coadd_{arm}'):
                 run_dir = self.get_path("pypeit_run_dir")
                 coadd_file_path = os.path.join(run_dir, f"{self._instrument_pypeit}_{arm}.coadd1d")
                 self.set_path("pypeit_coadd1d_file", coadd_file_path)
@@ -2167,8 +2282,9 @@ class XShooterSpectroscopyEpoch(ESOSpectroscopyEpoch):
 
         self._current_arm = None
 
-    def proc_6_convert_to_marz_format(self):
-        if self.query_stage("Convert co-added 1D spectra to Marz format?", stage='6-convert_to_marz_format'):
+    def proc_6_convert_to_marz_format(self, no_query: bool = False, **kwargs):
+        if no_query or self.query_stage("Convert co-added 1D spectra to Marz format?",
+                                        stage='6-convert_to_marz_format'):
             for arm in self.coadded:
                 self.coadded[arm].convert_to_marz_format()
             self.stages_complete[f'6-convert_to_marz_format'] = Time.now()
@@ -2181,7 +2297,7 @@ class XShooterSpectroscopyEpoch(ESOSpectroscopyEpoch):
         self.coadded[arm] = img
         return img
 
-    def add_raw_frame(self, raw_frame: image.Image):
+    def add_frame_raw(self, raw_frame: image.Image):
         arm = self._get_current_arm()
         self.frames_raw[arm].append(raw_frame)
         self.sort_frame(raw_frame)

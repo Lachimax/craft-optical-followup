@@ -1,6 +1,7 @@
 # Code by Lachlan Marnoch, 2021
 import copy
 import os
+import shutil
 import warnings
 from typing import Union
 from copy import deepcopy
@@ -52,7 +53,7 @@ class Image:
         self.n_pix = None
 
     def __eq__(self, other):
-        return self.name == other.name
+        return self.path == other.path
 
     def open(self):
         if self.path is not None and self.hdu_list is None:
@@ -102,6 +103,8 @@ class Image:
         self.load_headers()
         if key in self.headers[ext]:
             return self.headers[ext][key]
+        else:
+            return None
 
     def extract_gain(self):
         key = self.header_keys()["gain"]
@@ -201,6 +204,8 @@ class ImagingImage(Image):
         self.zeropoint_output_paths = {}
 
         self.depth = None
+
+        self.astrometry_corrected_path = None
 
         self.load_output_file()
 
@@ -544,10 +549,26 @@ class ImagingImage(Image):
 
         self.close()
 
-    def correct_astrometry(self):
-        solve_field(image_files=self.path, base_filename=f"{self.name}_astrometry")
-        new_path = os.path.join(self.data_path, f"{self.name}_astrometry.new")
-        return ImagingImage(path=new_path)
+    def correct_astrometry(self, output_dir: str = None):
+        """
+        Uses astrometry.net to solve the astrometry of the image. Solved image is output as a separate file.
+        @param output_dir: Directory in which to output
+        @return: Path of corrected file.
+        """
+        base_filename = f"{self.name}_astrometry"
+        solve_field(image_files=self.path, base_filename=base_filename)
+        if not os.path.isdir(output_dir):
+            raise ValueError(f"Invalid output directory {output_dir}")
+        if output_dir is not None:
+            for astrometry_product in filter(lambda f: f.startswith(base_filename), os.listdir(self.data_path)):
+                path = os.path.join(output_dir, astrometry_product)
+                shutil.move(path, output_dir)
+            new_path = os.path.join(output_dir, f"{base_filename}.new")
+        else:
+            new_path = os.path.join(self.data_path, f"{base_filename}.new")
+        self.astrometry_corrected_path = new_path
+        new_image = ImagingImage(path=new_path)
+        return new_image
 
     def astrometry_diagnostics(self, reference_cat: Union[str, table.QTable],
                                ra_col: str = "ra", dec_col: str = "dec",
@@ -818,7 +839,7 @@ class SpecRaw(Spectrum):
     @classmethod
     def from_pypeit_line(cls, line: str, pypeit_raw_path: str):
         attributes = line.split('|')
-        attributes = list(map(lambda a: a.replace(" ", ""), attributes))
+        attributes = list(map(lambda at: at.replace(" ", ""), attributes))
         inst = SpecRaw(path=os.path.join(pypeit_raw_path, attributes[1]),
                        frame_type=attributes[2],
                        decker=attributes[7],
