@@ -770,12 +770,25 @@ class Epoch:
         return outputs
 
     def _output_dict(self):
-        science_frame_paths = list(map(lambda f: f.path, self.frames_science))
+
+        science_frame_paths = []
+        for frame in self.frames_science:
+            if isinstance(frame, str):
+                science_frame_paths.append(frame)
+            elif isinstance(frame, image.ImagingImage):
+                science_frame_paths.append(frame.path)
+        coadded = {}
+        for fil in self.coadded:
+            frame = self.coadded[fil]
+            if isinstance(frame, str):
+                coadded[fil] = self.coadded[fil]
+            elif isinstance(frame, image.ImagingImage):
+                coadded[fil] = self.coadded[fil].path
         return {
             "stages": self.stages_complete,
             "paths": self.paths,
             "frames_science": science_frame_paths,
-            "coadded": {k: v.path for k, v in self.coadded.items()}
+            "coadded": coadded
         }
 
     def update_output_file(self):
@@ -1146,15 +1159,17 @@ class ImagingEpoch(Epoch):
         if not isinstance(self.field, Field):
             raise ValueError("field has not been set for this observation.")
         self.field.retrieve_catalogue(cat_name="gaia")
-        index_path = os.path.join(config["top_data_dir"], "astclass Imagingrometry_index_files")
+        index_path = os.path.join(config["top_data_dir"], "astrometry_index_files")
         u.mkdir_check(index_path)
         cat_index_path = os.path.join(index_path, "gaia")
-        gaia_cat_corrected = a.correct_gaia_to_epoch(gaia_cat=self.field.get_path(f"cat_csv_gaia"),
+        gaia_csv_path = self.field.get_path(f"cat_csv_gaia")
+        gaia_cat_corrected = a.correct_gaia_to_epoch(gaia_cat=gaia_csv_path,
                                                      new_epoch=self.date)
         a.generate_astrometry_indices(cat_name="gaia",
                                       cat=gaia_cat_corrected,
                                       unique_id_prefix=f"gaia_index_{self.field.name}",
-                                      index_output_dir=cat_index_path)
+                                      index_output_dir=cat_index_path,
+                                      fits_cat_output=gaia_csv_path.replace(".csv", ".fits"))
         return gaia_cat_corrected
 
     def add_frame_raw(self, raw_frame: Union[image.ImagingImage, str]):
@@ -1169,7 +1184,7 @@ class ImagingEpoch(Epoch):
     def add_frame_reduced(self, reduced_frame: image.ImagingImage):
         if isinstance(reduced_frame, str):
             cls = image.ImagingImage.select_child_class(instrument=self.instrument)
-            reduced_frame = cls(path=reduced_frame, frame_type="reduced", instrument=self.instrument)
+            reduced_frame = cls(path=reduced_frame, frame_type="reduced")
         fil = reduced_frame.extract_filter()
         if self.check_filter(fil=fil):
             self.frames_reduced[fil].append(reduced_frame)
@@ -1177,6 +1192,7 @@ class ImagingEpoch(Epoch):
     def add_frame_astrometry(self, astrometry_frame: image.ImagingImage):
         if isinstance(astrometry_frame, str):
             cls = image.ImagingImage.select_child_class(instrument=self.instrument)
+            print(cls)
             astrometry_frame = cls(path=astrometry_frame, frame_type="astrometry", instrument=self.instrument)
         fil = astrometry_frame.extract_filter()
         if self.check_filter(fil=fil):
@@ -1560,13 +1576,14 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
         mjd = old_data_dir[i + 3:i + 8]
         t = Time(mjd, format="mjd")
         date = t.strftime("%Y-%m-%d")
-        new_data_dir = old_data_dir.replace("FORS2", os.path.join("imaging", "vlt-fors2", f"{date}-{new_epoch_name}"))
-        new_data_dir = new_data_dir.replace(old_field, new_field)
+        new_data_dir = os.path.join(p.config['top_data_dir'], new_field, "imaging", "vlt-fors2",
+                                    f"{date}-{new_epoch_name}")
 
         new_params["instrument"] = "vlt-fors2"
         new_params["data_path"] = new_data_dir
         new_params["field"] = new_field
         new_params["name"] = new_epoch_name
+        new_params["date"] = date
 
         new_params["sextractor"]["aperture_diameters"] = old_params["photometry_apertures"]
         new_params["sextractor"]["dual_mode"] = old_params["do_dual_mode"]

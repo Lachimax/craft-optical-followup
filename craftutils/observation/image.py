@@ -340,6 +340,7 @@ class ImagingImage(Image):
             warnings.warn("Pixel scale already set.")
 
     def extract_filter(self):
+        print(type(self))
         key = self.header_keys()["filter"]
         self.filter = self.extract_header_item(key)
         return self.filter
@@ -555,14 +556,16 @@ class ImagingImage(Image):
         @param output_dir: Directory in which to output
         @return: Path of corrected file.
         """
+        u.mkdir_check(output_dir)
         base_filename = f"{self.name}_astrometry"
         solve_field(image_files=self.path, base_filename=base_filename)
         if not os.path.isdir(output_dir):
             raise ValueError(f"Invalid output directory {output_dir}")
         if output_dir is not None:
             for astrometry_product in filter(lambda f: f.startswith(base_filename), os.listdir(self.data_path)):
-                path = os.path.join(output_dir, astrometry_product)
-                shutil.move(path, output_dir)
+                path = os.path.join(self.data_path, astrometry_product)
+                shutil.copy(path, output_dir)
+                os.remove(path)
             new_path = os.path.join(output_dir, f"{base_filename}.new")
         else:
             new_path = os.path.join(self.data_path, f"{base_filename}.new")
@@ -732,8 +735,16 @@ class ImagingImage(Image):
         instrument = instrument.lower()
         if instrument == "panstarrs":
             return PanSTARRS1Cutout
+        elif instrument == "vlt-fors2":
+            return FORS2Image
         else:
             raise ValueError(f"Unrecognised instrument {instrument}")
+
+    @classmethod
+    def header_keys(cls):
+        header_keys = super().header_keys()
+        header_keys.update({"filter": "FILTER"})
+        return header_keys
 
 
 class PanSTARRS1Cutout(ImagingImage):
@@ -748,8 +759,10 @@ class PanSTARRS1Cutout(ImagingImage):
     def extract_filter(self):
         key = self.header_keys()["filter"]
         fil_string = self.extract_header_item(key)
+
         self.filter = fil_string[:fil_string.find(".")]
         self.filter_short = self.filter
+        return self.filter
 
     def extract_exposure_time(self):
         self.load_headers()
@@ -761,6 +774,7 @@ class PanSTARRS1Cutout(ImagingImage):
         #    exp_times.append(self.headers[0][key])
 
         self.exposure_time = exp_time * units.second  # np.mean(exp_times)
+        return self.exposure_time
 
     @classmethod
     def header_keys(cls):
@@ -782,12 +796,6 @@ class FORS2Image(ImagingImage):
                             "filter": "HIERARCH ESO INS FILT1 NAME",
                             "gain": "HIERARCH ESO DET OUT1 GAIN"})
         return header_keys
-
-    def extract_filter(self):
-        key = self.header_keys()["filter"]
-        fil_string = self.extract_header_item(key)
-        self.filter = fil_string[:fil_string.find(".")]
-        self.filter_short = self.filter[0]
 
     def extract_chip_number(self):
         chip_string = self.extract_header_item(key='HIERARCH ESO DET CHIP1 ID')

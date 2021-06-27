@@ -46,13 +46,16 @@ def generate_astrometry_indices(cat_name: str, cat: Union[str, table.Table],
             fits_cat_output = cat.replace(".csv", ".fits")
         else:
             fits_cat_output = cat + ".fits"
+    elif fits_cat_output is None:
+        raise ValueError("fits_cat_output must be provided if cat is given as a Table instead of a path.")
     cat = u.path_or_table(cat, fmt="ascii.csv")
     cols = cat_columns(cat=cat_name, f="rank")
     cat.write(fits_cat_output, format='fits', overwrite=True)
     for scale in range(p_lower, p_upper + 1):
+        unique_id = f"{unique_id_prefix}_{scale}"
         astrometry_net.build_astrometry_index(input_fits_catalog=fits_cat_output,
-                                              unique_id=f"{unique_id_prefix}_{scale}",
-                                              output_index=os.path.join(index_output_dir, f""),
+                                              unique_id=unique_id,
+                                              output_index=os.path.join(index_output_dir, unique_id),
                                               scale_number=scale,
                                               sort_column=cols["mag_auto"],
                                               scan_through_catalog=True
