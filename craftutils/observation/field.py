@@ -730,7 +730,7 @@ class Epoch:
 
         self.coadded = {}
 
-        self.load_output_file()
+        # self.load_output_file()
 
     def pipeline(self, **kwargs):
         self._pipeline_init()
@@ -770,13 +770,9 @@ class Epoch:
         return outputs
 
     def _output_dict(self):
-
         science_frame_paths = []
-        for frame in self.frames_science:
-            if isinstance(frame, str):
-                science_frame_paths.append(frame)
-            elif isinstance(frame, image.ImagingImage):
-                science_frame_paths.append(frame.path)
+        for fil in self.frames_science:
+            science_frame_paths[fil] = list(map(lambda f: f.path, self.frames_science[fil]))
         coadded = {}
         for fil in self.coadded:
             frame = self.coadded[fil]
@@ -965,6 +961,8 @@ class ImagingEpoch(Epoch):
         self.frames_reduced = {}
         self.frames_astrometry = {}
 
+        self.load_output_file()
+
     def proc_5_correct_astrometry_frames(self, no_query: bool = False, **kwargs):
         if no_query or self.query_stage(stage="5-correct_astrometry_frames",
                                         message="Correct astrometry of individual frames?"):
@@ -1109,6 +1107,7 @@ class ImagingEpoch(Epoch):
         for frame in self.frames_raw:
             frames_raw.append(frame.path)
         frames_reduced = {}
+
         for fil in self.frames_reduced:
             frames_reduced[fil] = list(map(lambda f: f.path, self.frames_reduced[fil]))
         frames_astrometry = {}
@@ -1189,11 +1188,12 @@ class ImagingEpoch(Epoch):
         if self.check_filter(fil=fil):
             self.frames_reduced[fil].append(reduced_frame)
 
-    def add_frame_astrometry(self, astrometry_frame: image.ImagingImage):
+    def add_frame_astrometry(self, astrometry_frame: Union[str, image.ImagingImage]):
         if isinstance(astrometry_frame, str):
             cls = image.ImagingImage.select_child_class(instrument=self.instrument)
             print(cls)
             astrometry_frame = cls(path=astrometry_frame, frame_type="astrometry", instrument=self.instrument)
+        print(type(astrometry_frame))
         fil = astrometry_frame.extract_filter()
         if self.check_filter(fil=fil):
             self.frames_astrometry[fil].append(astrometry_frame)
@@ -1207,14 +1207,17 @@ class ImagingEpoch(Epoch):
         if fil is not None:
             if fil not in self.filters:
                 self.filters.append(fil)
+            print(self.frames_science)
             if fil not in self.frames_science:
-                self.frames_science[fil] = []
+                if isinstance(self.frames_science, dict):
+                    self.frames_science[fil] = []
             if fil not in self.frames_reduced:
-                self.frames_reduced[fil] = []
+                if isinstance(self.frames_reduced, dict):
+                    self.frames_reduced[fil] = []
             if fil not in self.frames_astrometry:
                 self.frames_astrometry[fil] = []
             if fil not in self.coadded:
-                self.coadded[fil] = []
+                self.coadded[fil] = None
             return True
         else:
             return False
