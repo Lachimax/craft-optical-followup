@@ -902,3 +902,6 @@ def system_command(command: str, arguments: Union[str, list] = None, *flags, **p
     print(sys_str)
     print()
     os.system(sys_str)
+    print()
+    print(sys_str)
+    print()
