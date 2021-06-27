@@ -8,6 +8,7 @@ from craftutils.utils import system_command
 def build_astrometry_index(input_fits_catalog: str, unique_id: str, output_index: str = None,
                            scale_number: int = 0, sort_column: str = 'mag',
                            scan_through_catalog: bool = True, *flags, **params):
+    print(input_fits_catalog)
     params["i"] = input_fits_catalog
     params["I"] = unique_id
     if output_index is not None:
@@ -21,7 +22,7 @@ def build_astrometry_index(input_fits_catalog: str, unique_id: str, output_index
     if scan_through_catalog:
         flags.append("E")
 
-    system_command("build-astrometry-index", *flags, **params)
+    system_command("build-astrometry-index", None, *flags, **params)
 
 
 def solve_field(image_files: Union[str, list], base_filename: str = "astrometry",
