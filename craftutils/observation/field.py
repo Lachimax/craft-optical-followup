@@ -123,17 +123,18 @@ class Field:
 
         # Input attributes
 
+        self.objects = []
+
         if type(objs) is dict:
-            obj_list = []
             for name in objs:
                 if name != "<name>":
-                    obj = objects.Object.from_dict(objs[name])
+                    obj_dict = objs[name]
+                    if "position" not in obj_dict:
+                        obj_dict = {"position": obj_dict}
+                    if "name" not in obj_dict:
+                        obj_dict["name"] = name
+                    obj = objects.Object.from_dict(obj_dict)
                     self.add_object(obj)
-            objs = obj_list
-        elif objs is None:
-            objs = []
-
-        self.objects = objs
 
         if centre_coords is None:
             if objs is not None:
@@ -296,6 +297,7 @@ class Field:
         new_params["instrument"] = instrument
         new_params["data_path"] = self._epoch_data_path(mode=mode, instrument=instrument, date=new_params["date"],
                                                         epoch_name=new_params["name"], survey=survey)
+        new_params["field"] = self.name
         param_path = self._epoch_param_path(mode=mode, instrument=instrument, epoch_name=new_params["name"])
 
         p.save_params(file=param_path, dictionary=new_params)
@@ -444,8 +446,7 @@ class Field:
         default_params = {"name": None,
                           "type": "Field",
                           "centre": objects.position_dictionary.copy(),
-                          "objects": {"<name>": objects.Object.default_params()
-                                      },
+                          "objects": [objects.Object.default_params()],
                           "extent": 0.2 * units.deg
                           }
         return default_params
@@ -578,8 +579,12 @@ class FRBField(Field):
 
     @classmethod
     def convert_old_param(cls, frb: str):
-        new_params = cls.new_yaml(name=frb, path=None)
+
+        new_frb = f"FRB20{frb[3:]}"
+        new_params = cls.new_yaml(name=new_frb, path=None)
         old_params = p.object_params_frb(frb)
+
+        new_params["name"] = new_frb
 
         new_params["centre"]["dec"]["decimal"] = old_params["burst_dec"]
         new_params["centre"]["dec"]["dms"] = old_params["burst_dec_str"]
@@ -587,7 +592,11 @@ class FRBField(Field):
         new_params["centre"]["ra"]["decimal"] = old_params["burst_ra"]
         new_params["centre"]["ra"]["hms"] = old_params["burst_ra_str"]
 
-        new_params["data_path"] = old_params["data_dir"]
+        old_data_dir = old_params["data_dir"]
+        if isinstance(old_data_dir, str):
+            new_params["data_path"] = old_data_dir.replace(frb, new_frb)
+
+        new_params["frb"]["name"] = new_frb
 
         new_params["frb"]["host_galaxy"]["position"]["dec"]["decimal"] = old_params["hg_dec"]
         new_params["frb"]["host_galaxy"]["position"]["ra"]["decimal"] = old_params["hg_ra"]
@@ -621,17 +630,23 @@ class FRBField(Field):
 
         if "other_objects" in old_params and type(old_params["other_objects"]) is dict:
             for obj in old_params["other_objects"]:
-                new_params["objects"][obj] = objects.position_dictionary
-                new_params["objects"][obj]["dec"]["decimal"] = old_params["other_objects"][obj]["dec"]
-                new_params["objects"][obj]["ra"]["decimal"] = old_params["other_objects"][obj]["ra"]
-        del new_params["objects"]["<name>"]
+                if obj != "<name>":
+                    obj_dict = objects.Object.default_params()
+                    obj_dict["name"] = obj
+                    obj_dict["position"] = objects.position_dictionary.copy()
+                    obj_dict["position"]["dec"]["decimal"] = old_params["other_objects"][obj]["dec"]
+                    obj_dict["position"]["ra"]["decimal"] = old_params["other_objects"][obj]["ra"]
+                    new_params["objects"].append(obj_dict)
 
         new_params["subtraction"]["template_epochs"]["des"] = old_params["template_epoch_des"]
         new_params["subtraction"]["template_epochs"]["fors2"] = old_params["template_epoch_fors2"]
         new_params["subtraction"]["template_epochs"]["sdss"] = old_params["template_epoch_sdss"]
         new_params["subtraction"]["template_epochs"]["xshooter"] = old_params["template_epoch_xshooter"]
 
-        p.save_params(file=os.path.join(p.param_path, "fields", frb, f"{frb}.yaml"), dictionary=new_params, quiet=False)
+        param_path_upper = os.path.join(p.param_path, "fields", new_frb)
+        u.mkdir_check(param_path_upper)
+        p.save_params(file=os.path.join(param_path_upper, f"{new_frb}.yaml"), dictionary=new_params,
+                      quiet=False)
 
     def gather_epochs_old(self):
         print("Searching for old-format imaging epoch param files...")
@@ -640,16 +655,20 @@ class FRBField(Field):
         for instrument_path in filter(lambda d: d.startswith("epochs_"), os.listdir(param_dir)):
             instrument = instrument_path.split("_")[-1]
             instrument_path = os.path.join(param_dir, instrument_path)
-            for epoch_param in filter(lambda f: f.startswith(self.name) and f.endswith(".yaml"),
-                                      os.listdir(instrument_path)):
+            gathered = list(filter(
+                lambda f: (f.startswith(self.name) or f.startswith(f"FRB{self.name[5:]}")) and f.endswith(".yaml"),
+                os.listdir(instrument_path)))
+            gathered.sort()
+            for epoch_param in gathered:
                 epoch_name = epoch_param[:epoch_param.find('.yaml')]
-                param_path = os.path.join(instrument_path, epoch_param)
-                epoch = p.load_params(file=param_path)
-                epoch["format"] = "old"
-                epoch["name"] = epoch_name
-                epoch["instrument"] = instrument
-                epoch["param_path"] = param_path
-                epochs[epoch_name] = epoch
+                if f"{self.name}_{epoch_name[-1]}" not in self.epochs_imaging:
+                    param_path = os.path.join(instrument_path, epoch_param)
+                    epoch = p.load_params(file=param_path)
+                    epoch["format"] = "old"
+                    epoch["name"] = epoch_name
+                    epoch["instrument"] = instrument
+                    epoch["param_path"] = param_path
+                    epochs[epoch_name] = epoch
         self.epochs_imaging.update(epochs)
         return epochs
 
@@ -946,7 +965,6 @@ class ImagingEpoch(Epoch):
                     self.add_frame_astrometry(new_frame)
             self.stages_complete["5-correct_astrometry_frames"] = Time.now()
             self.update_output_file()
-
 
     def _initial_setup(self):
         data_dir = self.data_path
@@ -1506,7 +1524,7 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
         if old_format:
             if name is None:
                 raise ValueError("name must be provided for old_format=True.")
-            param_file = cls.convert_old_params(epoch_name=name)
+            param_file = cls.convert_old_params(old_epoch_name=name)
         name, param_file, param_dict = p.params_init(param_file)
         if param_dict is None:
             raise FileNotFoundError(f"No parameter file found at {param_file}.")
@@ -1528,15 +1546,27 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
                    target=target)
 
     @classmethod
-    def convert_old_params(cls, epoch_name: str):
-        new_params = cls.new_yaml(name=epoch_name, path=None)
-        old_params = p.object_params_fors2(epoch_name)
+    def convert_old_params(cls, old_epoch_name: str):
+        new_params = cls.new_yaml(name=old_epoch_name, path=None)
+        old_params = p.object_params_fors2(old_epoch_name)
 
-        field = f"FRB20{epoch_name[3:epoch_name.find('_')]}"
+        new_epoch_name = f"FRB20{old_epoch_name[3:]}"
+
+        old_field = old_epoch_name[:old_epoch_name.find('_')]
+        new_field = new_epoch_name[:new_epoch_name.find('_')]
+
+        old_data_dir = old_params["data_dir"]
+        i = old_data_dir.find("MJD")
+        mjd = old_data_dir[i + 3:i + 8]
+        t = Time(mjd, format="mjd")
+        date = t.strftime("%Y-%m-%d")
+        new_data_dir = old_data_dir.replace("FORS2", os.path.join("imaging", "vlt-fors2", f"{date}-{new_epoch_name}"))
+        new_data_dir = new_data_dir.replace(old_field, new_field)
 
         new_params["instrument"] = "vlt-fors2"
-        new_params["data_path"] = cls.guess_data_path()
-        new_params["field"] = field
+        new_params["data_path"] = new_data_dir
+        new_params["field"] = new_field
+        new_params["name"] = new_epoch_name
 
         new_params["sextractor"]["aperture_diameters"] = old_params["photometry_apertures"]
         new_params["sextractor"]["dual_mode"] = old_params["do_dual_mode"]
@@ -1552,9 +1582,10 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
         new_params["background_subtraction"]["test_synths"] = []
         if old_params["test_synths"]["ra"]:
             for i, _ in enumerate(old_params["test_synths"]):
-                synth_dict = {}
+                synth_dict = {"position": {}}
                 synth_dict["position"]["ra"] = old_params["test_synths"]["ra"][i]
                 synth_dict["position"]["dec"] = old_params["test_synths"]["dec"][i]
+                synth_dict["mags"] = {}
                 synth_dict["mags"]["g"] = old_params["test_synths"]["g_mag"][i]
                 synth_dict["mags"]["I"] = old_params["test_synths"]["I_mag"][i]
                 new_params["background_subtraction"]["test_synths"].append(synth_dict)
@@ -1565,9 +1596,9 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
         new_params["skip"]["sextractor"] = not old_params["do_sextractor"]
         new_params["skip"]["esorex"] = old_params["skip_esorex"]
 
-        instrument_path = os.path.join(p.param_path, "fields", field, "imaging", "vlt-fors2")
+        instrument_path = os.path.join(p.param_path, "fields", new_field, "imaging", "vlt-fors2")
         u.mkdir_check(instrument_path)
-        output_path = os.path.join(instrument_path, epoch_name)
+        output_path = os.path.join(instrument_path, new_epoch_name)
         p.save_params(file=output_path,
                       dictionary=new_params, quiet=False)
 

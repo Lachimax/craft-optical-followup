@@ -25,7 +25,7 @@ def main(field_name: str,
         fields += fld.list_fields()
         old_fields = fld.list_fields_old()
         for old_field in old_fields:
-            if old_field not in fields:
+            if old_field not in fields and f"FRB20{old_field[3:]}" not in fields:
                 fields.append(old_field)
         opt, field_name = u.select_option("No field specified. Please select one:", options=fields, sort=False)
         if opt == 0:
@@ -41,7 +41,9 @@ def main(field_name: str,
     if field is None:
         param_path = os.path.join(p.param_path, "fields", "")
         # Check for old format param file, and ask to convert if found.
-        old_params = p.object_params_frb(obj=field_name)
+        old_field_name = field_name
+        field_name = f"FRB20{field_name[3:]}"
+        old_params = p.object_params_frb(obj=old_field_name)
         print()
         field_param_path = os.path.join(param_path, field_name)
         print(field_param_path)
@@ -60,7 +62,7 @@ def main(field_name: str,
         else:
             print("Old format param file detected.")
             if u.select_yn("Convert to new format?"):
-                fld.FRBField.convert_old_param(frb=field_name)
+                fld.FRBField.convert_old_param(frb=old_field_name)
             else:
                 print("Exiting...")
                 exit(0)

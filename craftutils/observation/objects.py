@@ -186,9 +186,13 @@ class Object:
     @classmethod
     def from_dict(cls, dictionary: dict):
         ra, dec = p.select_coords(dictionary["position"])
+        if "position_err" in dictionary:
+            position_err = dictionary["position_err"]
+        else:
+            position_err = PositionUncertainty.default_params()
         return cls(name=dictionary["name"],
                    position=f"{ra} {dec}",
-                   position_err=dictionary["position_err"])
+                   position_err=position_err)
 
 
 class Galaxy(Object):

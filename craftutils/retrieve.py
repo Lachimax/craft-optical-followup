@@ -1173,7 +1173,7 @@ def save_mast_photometry(ra: float, dec: float, output: str, cat: str = "panstar
         print(f"Saving {cat} photometry to {output}")
         with open(output, "w") as file:
             file.write(response)
-    elif "404 Not Found" in response:
+    elif isinstance(response, str) and "404 Not Found" in response:
         return "ERROR"
     else:
         print(f'No data retrieved from {cat}.')
