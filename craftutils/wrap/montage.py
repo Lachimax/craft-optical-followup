@@ -83,7 +83,6 @@ def inject_header(file_path: str, input_directory: str,
         for colname in colnames:
             header_key = f"HIERARCH FRAME{i} {colname.upper()}"
             val = frame[colname]
-            print(val)
             insert = True
             if isinstance(val, str) and (not val.isascii() or "\n" in val) or np.ma.is_masked(val) or len(
                     f"{header_key}={val}") > 79:
@@ -224,32 +223,40 @@ def standard_script(input_directory: str, output_directory: str, output_file_pat
     :return:
     """
     u.mkdir_check(output_directory)
-    print("Creating directories to hold processed images.")
-    proj_dir = os.path.join(output_directory, "projdir")
+    old_dir = os.getcwd()
+
+    proj_dir = os.path.join("projdir")
     diff_dir = os.path.join(output_directory, "diffdir")
     corr_dir = os.path.join(output_directory, "corrdir")
     u.mkdir_check(proj_dir, diff_dir, corr_dir)
 
+    os.chdir(output_directory)
+    print("Creating directories to hold processed images.")
+
+    proj_dir = "projdir"
+    diff_dir = "diffdir"
+    corr_dir = "corrdir"
+
     print("Creating metadata tables of the input images.")
-    table_path = os.path.join(output_directory, "images.tbl")
+    table_path = "images.tbl"
     image_table(input_directory=input_directory, output_path=table_path)
 
     print("Creating FITS headers describing the footprint of the mosaic.")
-    header_path = os.path.join(output_directory, "template.hdr")
+    header_path = "template.hdr"
     make_header(table_path=table_path, output_path=header_path)
 
     print("Reprojecting input images.")
-    stats_table_path = os.path.join(output_directory, "stats.tbl")
+    stats_table_path = "stats.tbl"
     project_execute(input_directory=input_directory, table_path=table_path, header_path=header_path,
                     proj_dir=proj_dir, stats_table_path=stats_table_path)
 
     print("Creating metadata table of the reprojected images.")
-    reprojected_table_path = os.path.join(output_directory, "proj.tbl")
+    reprojected_table_path = "proj.tbl"
     image_table(input_directory=proj_dir, output_path=reprojected_table_path)
 
     print("Analyzing the overlaps between images.")
-    difference_table_path = os.path.join(output_directory, "diffs.tbl")
-    fit_table_path = os.path.join(output_directory, "fits.tbl")
+    difference_table_path = "diffs.tbl"
+    fit_table_path = "fits.tbl"
     overlaps(table_path=reprojected_table_path, difference_table_path=difference_table_path)
     difference_execute(input_directory=proj_dir, difference_table_path=difference_table_path,
                        header_path=header_path, diff_dir=diff_dir)
@@ -257,7 +264,7 @@ def standard_script(input_directory: str, output_directory: str, output_file_pat
                 fit_table_path=fit_table_path, diff_dir=diff_dir)
 
     print("Performing background modeling and compute corrections for each image.")
-    corrections_table_path = os.path.join(output_directory, "corrections.tbl")
+    corrections_table_path = "corrections.tbl"
     background_model(table_path=reprojected_table_path, fit_table_path=fit_table_path,
                      correction_table_path=corrections_table_path)
 
@@ -268,10 +275,12 @@ def standard_script(input_directory: str, output_directory: str, output_file_pat
 
     print("Coadding the images to create mosaics with background corrections.")
     if output_file_path is None:
-        output_file_path = os.path.join(output_directory, "coadded.fits")
+        output_file_path = "coadded.fits"
     add(input_directory=corr_dir, coadd_type='median', table_path=reprojected_table_path,
         header_path=header_path, output_path=output_file_path)
 
     inject_header(file_path=output_file_path, input_directory=input_directory)
+
+    os.chdir(old_dir)
 
     return output_file_path
