@@ -40,7 +40,6 @@ gain_unit = units.electron / units.ct
 def image_psf_diagnostics(hdu: Union[str, fits.HDUList], cat: Union[str, table.Table], star_class_tol: float = 0.9,
                           mag_max: float = 0.0 * units.mag, mag_min: float = -7.0 * units.mag,
                           match_to: table.Table = None, frame: float = 15):
-
     hdu, path = ff.path_or_hdu(hdu=hdu)
     hdu = copy.deepcopy(hdu)
     cat = u.path_or_table(cat)
@@ -277,13 +276,16 @@ def fit_background_fits(image: Union[str, fits.HDUList], model_type='polynomial'
 
 def gain_median_combine(old_gain: float = 0.8, n_frames: int = 1):
     """
-    Only valid if you have a median-combined image normalised to counts per second.
+    Only valid if you have a median-combined image.
     :param old_gain: Gain of the individual images.
     :param n_frames: Number of stacked images.
     :return:
     """
-
     return 2 * n_frames * old_gain / 3
+
+
+def gain_mean_combine(old_gain: float = 0.8, n_frames: int = 1):
+    return n_frames * old_gain
 
 
 def magnitude_complete(flux: units.Quantity,
