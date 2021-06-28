@@ -570,7 +570,8 @@ class ImagingImage(Image):
         else:
             new_path = os.path.join(self.data_path, f"{base_filename}.new")
         self.astrometry_corrected_path = new_path
-        new_image = ImagingImage(path=new_path)
+        cls = ImagingImage.select_child_class(instrument=self.instrument)
+        new_image = cls(path=new_path)
         return new_image
 
     def astrometry_diagnostics(self, reference_cat: Union[str, table.QTable],

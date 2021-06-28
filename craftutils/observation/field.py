@@ -759,10 +759,6 @@ class Epoch:
         outputs = p.load_output_file(self)
         if type(outputs) is dict:
             self.stages_complete.update(outputs["stages"])
-            if "frames_science" in outputs:
-                cls = image.Image.select_child_class(instrument=self.instrument, frame_type="raw", **kwargs)
-                for frame in outputs["frames_science"]:
-                    self.frames_science.append(cls(path=frame))
             if "coadded" in outputs:
                 for fil in outputs["coadded"]:
                     if outputs["coadded"][fil] is not None:
@@ -770,7 +766,7 @@ class Epoch:
         return outputs
 
     def _output_dict(self):
-        science_frame_paths = []
+        science_frame_paths = {}
         for fil in self.frames_science:
             science_frame_paths[fil] = list(map(lambda f: f.path, self.frames_science[fil]))
         coadded = {}
@@ -966,14 +962,16 @@ class ImagingEpoch(Epoch):
     def proc_5_correct_astrometry_frames(self, no_query: bool = False, **kwargs):
         if no_query or self.query_stage(stage="5-correct_astrometry_frames",
                                         message="Correct astrometry of individual frames?"):
-            self.generate_gaia_astrometry_indices()
+            # self.generate_gaia_astrometry_indices()
             astrometry_path = os.path.join(self.data_path, "5-astrometry_frames")
             u.mkdir_check(astrometry_path)
             for fil in self.frames_reduced:
                 astrometry_fil_path = os.path.join(astrometry_path, fil)
                 for frame in self.frames_reduced[fil]:
                     new_frame = frame.correct_astrometry(output_dir=astrometry_fil_path)
+                    print("new_frame", type(new_frame))
                     self.add_frame_astrometry(new_frame)
+            print(self.frames_astrometry)
             self.stages_complete["5-correct_astrometry_frames"] = Time.now()
             self.update_output_file()
 
@@ -1191,9 +1189,7 @@ class ImagingEpoch(Epoch):
     def add_frame_astrometry(self, astrometry_frame: Union[str, image.ImagingImage]):
         if isinstance(astrometry_frame, str):
             cls = image.ImagingImage.select_child_class(instrument=self.instrument)
-            print(cls)
-            astrometry_frame = cls(path=astrometry_frame, frame_type="astrometry", instrument=self.instrument)
-        print(type(astrometry_frame))
+            astrometry_frame = cls(path=astrometry_frame, frame_type="astrometry")
         fil = astrometry_frame.extract_filter()
         if self.check_filter(fil=fil):
             self.frames_astrometry[fil].append(astrometry_frame)
@@ -1207,7 +1203,6 @@ class ImagingEpoch(Epoch):
         if fil is not None:
             if fil not in self.filters:
                 self.filters.append(fil)
-            print(self.frames_science)
             if fil not in self.frames_science:
                 if isinstance(self.frames_science, dict):
                     self.frames_science[fil] = []
@@ -1229,7 +1224,7 @@ class ImagingEpoch(Epoch):
         return stages
 
     @classmethod
-    def from_params(cls, name: str, field: Union[Field, str] = None, instrument: str = None, old_format: bool = False):
+    def from_params(cls, name: str, instrument: str, field: Union[Field, str] = None, old_format: bool = False):
         instrument = instrument.lower()
         field_name, field = cls._from_params_setup(name=name, field=field)
         if old_format:
