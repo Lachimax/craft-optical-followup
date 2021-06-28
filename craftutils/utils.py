@@ -881,7 +881,8 @@ def print_nested_dict(dictionary, level: int = 0):
             print((level + 1) * "\t", dictionary[key])
 
 
-def system_command(command: str, arguments: Union[str, list] = None, *flags, **params):
+def system_command(command: str, arguments: Union[str, list] = None, suppress_print: bool = False,
+                   error_on_exit_code: bool = True, *flags, **params):
     if command in [""]:
         raise ValueError("Empty command.")
     if " " in command:
@@ -899,10 +900,19 @@ def system_command(command: str, arguments: Union[str, list] = None, *flags, **p
             sys_str += f" -{flag}"
         elif len(flag) > 1:
             sys_str += f" --{flag}"
-    print()
-    print(sys_str)
-    print()
-    os.system(sys_str)
-    print()
-    print(sys_str)
-    print()
+
+    if not suppress_print:
+        print()
+        print("Executing:")
+        print(sys_str)
+        print()
+    result = os.system(sys_str)
+    if result != 0 and error_on_exit_code:
+        raise SystemError("System command failed with exit code", result)
+    if not suppress_print:
+        print()
+        print("Finished:")
+        print(sys_str)
+        print("With code", result)
+        print()
+    return result
