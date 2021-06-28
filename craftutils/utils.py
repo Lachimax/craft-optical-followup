@@ -215,14 +215,15 @@ def rm_check(path):
         os.remove(path)
 
 
-def mkdir_check(path: str):
+def mkdir_check(*paths: str):
     """
     Checks if a directory exists; if not, creates it.
-    :param path:
+    :param paths:
     :return:
     """
-    if not os.path.isdir(path):
-        os.mkdir(path)
+    for path in paths:
+        if not os.path.isdir(path):
+            os.mkdir(path)
 
 
 # TODO: Make this system independent.
