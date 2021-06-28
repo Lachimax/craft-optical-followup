@@ -75,21 +75,21 @@ for fil in "${fils[@]}"; do
   mProjExec -p "${data_dir}${origin}${fil}" "${fil_0}.tbl" "${fil_0}_template.hdr" "${fil_0}_projdir" "${fil_0}_stats.tbl" | tee -a "${fil_0}_montage.log"
 
   echo "Create a metadata table of the reprojected images"
-  mImgtbl "${fil_0}_projdir/" "${fil_0}.tbl" | tee -a "${fil_0}_montage.log"
+  mImgtbl "${fil_0}_projdir/" "${fil_0}_proj.tbl" | tee -a "${fil_0}_montage.log"
 
   echo "Analyze the overlaps between images"
-  mOverlaps "${fil_0}.tbl" "${fil_0}_diffs.tbl" | tee -a "${fil_0}_montage.log"
+  mOverlaps "${fil_0}_proj.tbl" "${fil_0}_diffs.tbl" | tee -a "${fil_0}_montage.log"
   mDiffExec -p "${fil_0}_projdir/" "${fil_0}_diffs.tbl" "${fil_0}_template.hdr" "${fil_0}_diffdir" | tee -a "${fil_0}_montage.log"
   mFitExec "${fil_0}_diffs.tbl" "${fil_0}_fits.tbl" "${fil_0}_diffdir" | tee -a "${fil_0}_montage.log"
 
   echo "Perform background modeling and compute corrections for each image"
-  mBgModel "${fil_0}.tbl" "${fil_0}_fits.tbl" "${fil_0}_corrections.tbl" | tee -a "${fil_0}_montage.log"
+  mBgModel "${fil_0}_proj.tbl" "${fil_0}_fits.tbl" "${fil_0}_corrections.tbl" | tee -a "${fil_0}_montage.log"
 
   echo "Apply corrections to each image"
-  mBgExec -p "${fil_0}_projdir/" "${fil_0}.tbl" "${fil_0}_corrections.tbl" "${fil_0}_corrdir" | tee -a "${fil_0}_montage.log"
+  mBgExec -p "${fil_0}_projdir/" "${fil_0}_proj.tbl" "${fil_0}_corrections.tbl" "${fil_0}_corrdir" | tee -a "${fil_0}_montage.log"
 
   echo "Coadd the images to create mosaics with background corrections"
-  mAdd -p "${fil_0}_corrdir/" -a median "${fil_0}.tbl" "${fil_0}_template.hdr" "${fil_0}_coadded.fits" | tee -a "${fil_0}_montage.log"
+  mAdd -p "${fil_0}_corrdir/" -a median "${fil_0}_proj.tbl" "${fil_0}_template.hdr" "${fil_0}_coadded.fits" | tee -a "${fil_0}_montage.log"
 
 done
 

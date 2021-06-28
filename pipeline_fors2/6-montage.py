@@ -19,6 +19,7 @@ def main(data_dir, data_title, origin, destination, fil):
     print()
 
     table = ff.fits_table(origin + '/' + fil, science_only=False)
+    table.sort('identifier')
 
     fil = fil.replace('/', '')
 
@@ -47,7 +48,7 @@ def main(data_dir, data_title, origin, destination, fil):
     header.insert(-1, f'MJD-OBS = {float(np.nanmin(table["mjd_obs"]))}\n')
     dates = table["mjd_obs"]
     dates.sort()
-    header.insert(-1, f'DATE-OBS = {float(table["date_obs"][0])}\n')
+    header.insert(-1, f'DATE-OBS = {table["date_obs"][0]}\n')
 
     os.remove(header_file)
 
