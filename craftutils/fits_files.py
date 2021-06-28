@@ -1016,7 +1016,7 @@ def fits_table(input_path: str, output_path: str = "", science_only: bool = True
         file.close()
 
     out_file = Table(output)
-    out_file.write(output_path, format="ascii.csv")
+    out_file.write(output_path, format="ascii.csv", overwrite=True)
 
     return out_file
 
@@ -1071,7 +1071,7 @@ def fits_table_all(input_path: str, output_path: str = "", science_only: bool = 
         file.close()
 
     out_file = Table(output)
-    out_file.write(output_path, format="ascii.csv")
+    out_file.write(output_path, format="ascii.csv", overwrite=True)
 
     return out_file
 
