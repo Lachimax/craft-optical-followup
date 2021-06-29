@@ -548,6 +548,23 @@ class ImagingImage(Image):
 
         self.close()
 
+        results = {
+            "fwhm_median_gauss": self.fwhm_median_gauss,
+            "fwhm_max_gauss": self.fwhm_max_gauss,
+            "fwhm_min_gauss": self.fwhm_min_gauss,
+            "fwhm_sigma_gauss": self.fwhm_sigma_gauss,
+            "fwhm_median_moffat": self.fwhm_median_moffat,
+            "fwhm_max_moffat": self.fwhm_max_moffat,
+            "fwhm_min_moffat": self.fwhm_min_moffat,
+            "fwhm_sigma_moffat": self.fwhm_sigma_moffat,
+            "fwhm_median_sextractor": self.fwhm_median_sextractor,
+            "fwhm_max_sextractor": self.fwhm_max_sextractor,
+            "fwhm_min_sextractor": self.fwhm_min_sextractor,
+            "fwhm_sigma_sextractor": self.fwhm_sigma_sextractor
+        }
+
+        return results
+
     def correct_astrometry(self, output_dir: str = None):
         """
         Uses astrometry.net to solve the astrometry of the image. Solved image is output as a separate file.
@@ -560,7 +577,6 @@ class ImagingImage(Image):
         new_path = os.path.join(self.data_path, f"{base_filename}.new")
         new_new_path = os.path.join(self.data_path, f"{base_filename}.fits")
         os.rename(new_path, new_new_path)
-        new_path = new_new_path
         if not os.path.isdir(output_dir):
             raise ValueError(f"Invalid output directory {output_dir}")
         if output_dir is not None:
@@ -578,7 +594,7 @@ class ImagingImage(Image):
 
     def astrometry_diagnostics(self, reference_cat: Union[str, table.QTable],
                                ra_col: str = "ra", dec_col: str = "dec",
-                               tolerance: units.Quantity = 3 * units.arcsec):
+                               tolerance: units.Quantity = 3 * units.arcsec, show_plots: bool = False):
         matches_source_cat, matches_ext_cat, distance = self.match_to_cat(cat=reference_cat,
                                                                           ra_col=ra_col,
                                                                           dec_col=dec_col,
@@ -586,14 +602,15 @@ class ImagingImage(Image):
         mean_offset = np.mean(distance)
         median_offset = np.median(distance)
         rms_offset = np.sqrt(np.mean(distance ** 2))
-        plt.hist(distance.to(units.arcsec).value)
-        plt.xlabel("Offset (\")")
-        plt.show()
-        plt.scatter(matches_ext_cat[ra_col], matches_ext_cat[dec_col], c=distance.to(units.arcsec))
-        plt.xlabel("Right Ascension (Catalogue)")
-        plt.ylabel("Declination (Catalogue)")
-        plt.colorbar(label="Offset of measured position from catalogue (arcseconds)")
-        plt.show()
+        if show_plots:
+            plt.hist(distance.to(units.arcsec).value)
+            plt.xlabel("Offset (\")")
+            plt.show()
+            plt.scatter(matches_ext_cat[ra_col], matches_ext_cat[dec_col], c=distance.to(units.arcsec))
+            plt.xlabel("Right Ascension (Catalogue)")
+            plt.ylabel("Declination (Catalogue)")
+            plt.colorbar(label="Offset of measured position from catalogue (arcseconds)")
+            plt.show()
         return mean_offset, median_offset, rms_offset
 
     def match_to_cat(self, cat: Union[str, table.QTable],
@@ -734,6 +751,8 @@ class ImagingImage(Image):
 
     @classmethod
     def select_child_class(cls, instrument: str, **kwargs):
+        if instrument is None:
+            return ImagingImage
         instrument = instrument.lower()
         if instrument == "panstarrs":
             return PanSTARRS1Cutout

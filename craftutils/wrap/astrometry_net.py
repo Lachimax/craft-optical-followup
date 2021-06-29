@@ -5,7 +5,7 @@ from typing import Union
 from craftutils.utils import system_command
 
 
-def build_astrometry_index(input_fits_catalog: str, unique_id: str, output_index: str = None,
+def build_astrometry_index(input_fits_catalog: str, unique_id: int, output_index: str = None,
                            scale_number: int = 0, sort_column: str = 'mag',
                            scan_through_catalog: bool = True, *flags, **params):
     print(input_fits_catalog)

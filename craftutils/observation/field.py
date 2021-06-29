@@ -406,7 +406,7 @@ class Field:
             a.generate_astrometry_indices(cat_name=cat_name,
                                           cat=cat_path,
                                           fits_cat_output=cat_path.replace(".csv", ".fits"),
-                                          unique_id_prefix=prefix,
+                                          output_file_prefix=prefix,
                                           index_output_dir=cat_index_path
                                           )
 
@@ -774,6 +774,7 @@ class Epoch:
         science_frame_paths = {}
         for fil in self.frames_science:
             science_frame_paths[fil] = list(map(lambda f: f.path, self.frames_science[fil]))
+            science_frame_paths[fil].sort()
         coadded = {}
         for fil in self.coadded:
             frame = self.coadded[fil]
@@ -962,7 +963,7 @@ class ImagingEpoch(Epoch):
         self.frames_reduced = {}
         self.frames_astrometry = {}
 
-        self.load_output_file()
+        self.load_output_file(mode="imaging")
 
     def proc_5_correct_astrometry_frames(self, no_query: bool = False, **kwargs):
         if no_query or self.query_stage(stage="5-correct_astrometry_frames",
@@ -983,11 +984,15 @@ class ImagingEpoch(Epoch):
     def proc_6_coadd(self, no_query: bool = False, **kwargs):
         if no_query or self.query_stage(stage="6-coadd",
                                         message="Coadd astrometry-corrected frames with Montage?"):
-            self.coadd()
+            coadd_path = os.path.join(self.data_path, "6-coadded_with_montage")
+            self.coadd(coadd_path)
+            self.paths['coadd_dir'] = coadd_path
+            self.stages_complete["6-coadd"] = Time.now()
+            self.update_output_file()
 
-    def coadd(self, frames: str = "astrometry"):
-        coadd_path = os.path.join(self.data_path, "6-coadded_with_montage")
-        u.mkdir_check(coadd_path)
+    def coadd(self, output_dir: str, frames: str = "astrometry", ):
+
+        u.mkdir_check(output_dir)
         if frames == "astrometry":
             input_directory = self.paths['astrometry_dir']
         else:
@@ -995,11 +1000,11 @@ class ImagingEpoch(Epoch):
         for fil in self.filters:
             input_directory_fil = os.path.join(input_directory, fil)
             print(input_directory_fil)
-            output_directory_fil = os.path.join(coadd_path, fil)
+            output_directory_fil = os.path.join(output_dir, fil)
             u.mkdir_check(output_directory_fil)
-            self.add_coadded_image(
-                montage.standard_script(input_directory=input_directory_fil, output_directory=output_directory_fil),
-                key=fil, mode="imaging")
+            coadded_path = montage.standard_script(input_directory=input_directory_fil,
+                                                   output_directory=output_directory_fil)
+            self.add_coadded_image(coadded_path, key=fil, mode="imaging")
 
     def _initial_setup(self):
         data_dir = self.data_path
@@ -1130,18 +1135,26 @@ class ImagingEpoch(Epoch):
         frames_raw = []
         for frame in self.frames_raw:
             frames_raw.append(frame.path)
+        frames_raw.sort()
         frames_reduced = {}
-
         for fil in self.frames_reduced:
             frames_reduced[fil] = list(map(lambda f: f.path, self.frames_reduced[fil]))
+            frames_reduced[fil].sort()
         frames_astrometry = {}
         for fil in self.frames_reduced:
             frames_astrometry[fil] = list(map(lambda f: f.path, self.frames_astrometry[fil]))
+            frames_astrometry[fil].sort()
+        coadded = {}
+        for fil in self.coadded:
+            if isinstance(self.coadded[fil], image.Image):
+                coadded[fil] = self.coadded[fil].path
+            elif isinstance(self.coadded[fil], str):
+                coadded[fil] = self.coadded[fil]
 
         output_dict.update({"filters": self.filters,
                             "deepest": deepest,
                             "deepest_filter": self.deepest_filter,
-                            "coadded": self.coadded,
+                            "coadded": coadded,
                             "frames_raw": frames_raw,
                             "frames_reduced": frames_reduced,
                             "frames_astrometry": frames_astrometry,
@@ -1149,7 +1162,7 @@ class ImagingEpoch(Epoch):
         return output_dict
 
     def load_output_file(self, **kwargs):
-        outputs = super().load_output_file(mode="imaging", **kwargs)
+        outputs = super().load_output_file(**kwargs)
         if type(outputs) is dict:
             cls = image.Image.select_child_class(instrument=self.instrument, mode='imaging')
             if "filters" in outputs:
@@ -1178,7 +1191,7 @@ class ImagingEpoch(Epoch):
 
         return outputs
 
-    def generate_gaia_astrometry_indices(self):
+    def generate_gaia_astrometry_indices(self, correct_to_epoch: bool = True):
         if not isinstance(self.field, Field):
             raise ValueError("field has not been set for this observation.")
         self.field.retrieve_catalogue(cat_name="gaia")
@@ -1186,16 +1199,24 @@ class ImagingEpoch(Epoch):
         u.mkdir_check(index_path)
         cat_index_path = os.path.join(index_path, "gaia")
         gaia_csv_path = self.field.get_path(f"cat_csv_gaia")
-        gaia_cat_corrected = a.correct_gaia_to_epoch(gaia_cat=gaia_csv_path,
-                                                     new_epoch=self.date)
+
+        if correct_to_epoch:
+            gaia_cat = a.correct_gaia_to_epoch(gaia_cat=gaia_csv_path,
+                                               new_epoch=self.date)
+        else:
+            gaia_cat = retrieve.load_catalogue(cat_name="gaia", cat=gaia_csv_path)
+
+        unique_id_prefix = int(self.field.name.replace("FRB", ""))
+
         a.generate_astrometry_indices(cat_name="gaia",
-                                      cat=gaia_cat_corrected,
-                                      unique_id_prefix=f"gaia_index_{self.field.name}",
+                                      cat=gaia_cat,
+                                      output_file_prefix=f"gaia_index_{self.field.name}",
                                       index_output_dir=cat_index_path,
                                       fits_cat_output=gaia_csv_path.replace(".csv", ".fits"),
                                       p_lower=-1,
-                                      p_upper=2)
-        return gaia_cat_corrected
+                                      p_upper=2,
+                                      unique_id_prefix=unique_id_prefix)
+        return gaia_cat
 
     def add_frame_raw(self, raw_frame: Union[image.ImagingImage, str]):
         if isinstance(raw_frame, str):
