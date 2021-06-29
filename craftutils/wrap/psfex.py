@@ -1,9 +1,10 @@
 import os
 
 import craftutils.fits_files as ff
+from craftutils.utils import system_command
 
 
-def psfex(catalog: str, output_name: str = None, output_dir: str = None):
+def psfex(catalog: str, output_name: str = None, output_dir: str = None, **kwargs):
     old_dir = os.getcwd()
     if output_dir is None:
         output_dir = os.getcwd()
@@ -12,10 +13,7 @@ def psfex(catalog: str, output_name: str = None, output_dir: str = None):
     if output_name is None:
         cat_name = os.path.split(catalog)[-1]
         output_name = cat_name.replace(".fits", ".psf")
-    sys_str = f"psfex {catalog} -o {output_name}"
-    print(f"\n{sys_str}\n")
-    os.system(sys_str)
-    print(f"\n{sys_str}\n")
+    system_command(command="psfex", arguments=[catalog], o=output_name, **kwargs)
     os.chdir(old_dir)
     psfex_path = os.path.join(output_dir, output_name)
     return psfex_path

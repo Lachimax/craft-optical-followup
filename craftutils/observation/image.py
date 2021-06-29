@@ -55,9 +55,9 @@ class Image:
     def __eq__(self, other):
         return self.path == other.path
 
-    def open(self):
+    def open(self, mode: str = "update"):
         if self.path is not None and self.hdu_list is None:
-            self.hdu_list = fits.open(self.path)
+            self.hdu_list = fits.open(self.path, mode=mode)
         elif self.path is None:
             print("The FITS file could not be loaded because path has not been set.")
 
@@ -230,7 +230,7 @@ class ImagingImage(Image):
                                    **configs
                                    )
 
-    def psfex(self, output_dir: str, force: str = False):
+    def psfex(self, output_dir: str, force: str = False, **kwargs):
         if force or self.psfex_path is None:
             config = p.path_to_config_sextractor_config_pre_psfex()
             output_params = p.path_to_config_sextractor_param_pre_psfex()
@@ -239,14 +239,14 @@ class ImagingImage(Image):
                                              parameters_file=output_params,
                                              catalog_name=f"{self.name}_psfex.fits",
                                              )
-            self.psfex_path = psfex.psfex(catalog=catalog, output_dir=output_dir)
+            self.psfex_path = psfex.psfex(catalog=catalog, output_dir=output_dir, **kwargs)
             self.psfex_output = fits.open(self.psfex_path)
             self.extract_pixel_scale()
             pix_scale = self.pixel_scale_dec
             self.fwhm_pix_psfex = self.psfex_output[1].header['PSF_FWHM'] * units.pixel
             self.fwhm_psfex = self.fwhm_pix_psfex.to(units.arcsec, pix_scale)
             self.update_output_file()
-        self.load_psfex_output()
+        return self.load_psfex_output()
 
     def load_psfex_output(self, force: bool = False):
         if force or self.psfex_output is None:
@@ -335,6 +335,7 @@ class ImagingImage(Image):
             self.pixel_scale_ra, self.pixel_scale_dec = ff.get_pixel_scale(self.hdu_list, layer=layer,
                                                                            astropy_units=True)
             self.close()
+            return self.pixel_scale_ra, self.pixel_scale_dec
         else:
             warnings.warn("Pixel scale already set.")
 
