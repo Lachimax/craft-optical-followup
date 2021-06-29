@@ -269,7 +269,6 @@ class ImagingImage(Image):
             self.source_cat_sextractor_dual_path = cat_path
         else:
             self.source_cat_sextractor_path = cat_path
-        print(cat_path)
         self.load_source_cat_sextractor()
         self.load_source_cat_sextractor_dual()
         self.update_output_file()
@@ -340,7 +339,6 @@ class ImagingImage(Image):
             warnings.warn("Pixel scale already set.")
 
     def extract_filter(self):
-        print(type(self))
         key = self.header_keys()["filter"]
         self.filter = self.extract_header_item(key)
         return self.filter
@@ -559,6 +557,10 @@ class ImagingImage(Image):
         u.mkdir_check(output_dir)
         base_filename = f"{self.name}_astrometry"
         solve_field(image_files=self.path, base_filename=base_filename)
+        new_path = os.path.join(self.data_path, f"{base_filename}.new")
+        new_new_path = os.path.join(self.data_path, f"{base_filename}.fits")
+        os.rename(new_path, new_new_path)
+        new_path = new_new_path
         if not os.path.isdir(output_dir):
             raise ValueError(f"Invalid output directory {output_dir}")
         if output_dir is not None:
@@ -566,15 +568,12 @@ class ImagingImage(Image):
                 path = os.path.join(self.data_path, astrometry_product)
                 shutil.copy(path, output_dir)
                 os.remove(path)
-            new_path = os.path.join(output_dir, f"{base_filename}.new")
         else:
-            new_path = os.path.join(self.data_path, f"{base_filename}.new")
-        new_new_path = f"{base_filename}.fits"
-        os.rename(new_path, new_new_path)
-        new_path = new_new_path
-        self.astrometry_corrected_path = new_path
+            output_dir = self.data_path
+        final_file = os.path.join(output_dir, f"{base_filename}.fits")
+        self.astrometry_corrected_path = final_file
         cls = ImagingImage.select_child_class(instrument=self.instrument)
-        new_image = cls(path=new_path)
+        new_image = cls(path=final_file)
         return new_image
 
     def astrometry_diagnostics(self, reference_cat: Union[str, table.QTable],
@@ -595,7 +594,6 @@ class ImagingImage(Image):
         plt.ylabel("Declination (Catalogue)")
         plt.colorbar(label="Offset of measured position from catalogue (arcseconds)")
         plt.show()
-        print(len(matches_source_cat), len(matches_ext_cat))
         return mean_offset, median_offset, rms_offset
 
     def match_to_cat(self, cat: Union[str, table.QTable],
@@ -904,8 +902,6 @@ class Spec1DCoadded(Spectrum):
             path = self.trimmed_path
 
         hdu_list = fits.open(path)
-        print(version)
-        print(path)
 
         data = hdu_list[1].data
         header = hdu_list[1].header.copy()
@@ -925,9 +921,6 @@ class Spec1DCoadded(Spectrum):
         i_min = np.abs(self.lambda_min.to(units.angstrom).value - data['wave']).argmin()
         i_max = np.abs(self.lambda_max.to(units.angstrom).value - data['wave']).argmin()
         data = data[i_min:i_max]
-
-        print(data)
-        print(data.shape)
 
         primary = fits.PrimaryHDU(data['flux'])
         primary.header.update(header)

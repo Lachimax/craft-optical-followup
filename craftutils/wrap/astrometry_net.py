@@ -22,7 +22,7 @@ def build_astrometry_index(input_fits_catalog: str, unique_id: str, output_index
     if scan_through_catalog:
         flags.append("E")
 
-    system_command("build-astrometry-index", None, *flags, **params)
+    system_command("build-astrometry-index", None, False, True, *flags, **params)
 
 
 def solve_field(image_files: Union[str, list], base_filename: str = "astrometry",
@@ -33,4 +33,4 @@ def solve_field(image_files: Union[str, list], base_filename: str = "astrometry"
     flags = list(flags)
     if overwrite:
         flags.append("O")
-    system_command("solve-field", image_files, *flags, **params)
+    system_command("solve-field", image_files, False, True, *flags, **params)

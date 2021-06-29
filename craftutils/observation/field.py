@@ -19,6 +19,7 @@ import craftutils.spectroscopy as spec
 import craftutils.observation.objects as objects
 import craftutils.observation.image as image
 import craftutils.fits_files as ff
+import craftutils.wrap.montage as montage
 
 config = p.config
 
@@ -126,13 +127,13 @@ class Field:
         self.objects = []
 
         if type(objs) is dict:
-            for name in objs:
-                if name != "<name>":
-                    obj_dict = objs[name]
+            for obj_name in objs:
+                if obj_name != "<name>":
+                    obj_dict = objs[obj_name]
                     if "position" not in obj_dict:
                         obj_dict = {"position": obj_dict}
                     if "name" not in obj_dict:
-                        obj_dict["name"] = name
+                        obj_dict["name"] = obj_name
                     obj = objects.Object.from_dict(obj_dict)
                     self.add_object(obj)
 
@@ -229,7 +230,10 @@ class Field:
             if epoch["format"] == 'old':
                 date_string = " (old format)           "
             elif "date" in epoch and epoch["date"] is not None:
-                date_string = f" {epoch['date'].to_datetime().date()}"
+                if isinstance(epoch["date"], str):
+                    date_string = f" {epoch['date']}"
+                else:
+                    date_string = f" {epoch['date'].to_datetime().date()}"
             options[f'{epoch["name"]}\t{date_string}\t{epoch["instrument"]}'] = epoch
         for epoch in self.epochs_imaging_loaded:
             # If epoch is already instantiated.
@@ -510,8 +514,8 @@ class FRBField(Field):
             if frb is not None:
                 centre_coords = frb.position
 
+        print("FRBField __init__", name)
         # Input attributes
-
         super().__init__(name=name,
                          centre_coords=centre_coords,
                          param_path=param_path,
@@ -559,6 +563,7 @@ class FRBField(Field):
     @classmethod
     def from_file(cls, param_file: Union[str, dict]):
         name, param_file, param_dict = p.params_init(param_file)
+        print("from_file", name)
 
         # Check data_dir path for relevant .yamls (output_values, etc.)
 
@@ -962,18 +967,39 @@ class ImagingEpoch(Epoch):
     def proc_5_correct_astrometry_frames(self, no_query: bool = False, **kwargs):
         if no_query or self.query_stage(stage="5-correct_astrometry_frames",
                                         message="Correct astrometry of individual frames?"):
-            # self.generate_gaia_astrometry_indices()
+            self.generate_gaia_astrometry_indices()
             astrometry_path = os.path.join(self.data_path, "5-astrometry_frames")
             u.mkdir_check(astrometry_path)
+            self.frames_astrometry = {}
             for fil in self.frames_reduced:
                 astrometry_fil_path = os.path.join(astrometry_path, fil)
                 for frame in self.frames_reduced[fil]:
                     new_frame = frame.correct_astrometry(output_dir=astrometry_fil_path)
-                    print("new_frame", type(new_frame))
                     self.add_frame_astrometry(new_frame)
-            print(self.frames_astrometry)
+            self.paths['astrometry_dir'] = astrometry_path
             self.stages_complete["5-correct_astrometry_frames"] = Time.now()
             self.update_output_file()
+
+    def proc_6_coadd(self, no_query: bool = False, **kwargs):
+        if no_query or self.query_stage(stage="6-coadd",
+                                        message="Coadd astrometry-corrected frames with Montage?"):
+            self.coadd()
+
+    def coadd(self, frames: str = "astrometry"):
+        coadd_path = os.path.join(self.data_path, "6-coadded_with_montage")
+        u.mkdir_check(coadd_path)
+        if frames == "astrometry":
+            input_directory = self.paths['astrometry_dir']
+        else:
+            raise ValueError(f"{frames} not recognised as frame type.")
+        for fil in self.filters:
+            input_directory_fil = os.path.join(input_directory, fil)
+            print(input_directory_fil)
+            output_directory_fil = os.path.join(coadd_path, fil)
+            u.mkdir_check(output_directory_fil)
+            self.add_coadded_image(
+                montage.standard_script(input_directory=input_directory_fil, output_directory=output_directory_fil),
+                key=fil, mode="imaging")
 
     def _initial_setup(self):
         data_dir = self.data_path
@@ -1166,7 +1192,9 @@ class ImagingEpoch(Epoch):
                                       cat=gaia_cat_corrected,
                                       unique_id_prefix=f"gaia_index_{self.field.name}",
                                       index_output_dir=cat_index_path,
-                                      fits_cat_output=gaia_csv_path.replace(".csv", ".fits"))
+                                      fits_cat_output=gaia_csv_path.replace(".csv", ".fits"),
+                                      p_lower=-1,
+                                      p_upper=2)
         return gaia_cat_corrected
 
     def add_frame_raw(self, raw_frame: Union[image.ImagingImage, str]):
@@ -1220,7 +1248,8 @@ class ImagingEpoch(Epoch):
     @classmethod
     def stages(cls):
         stages = super().stages()
-        stages.update({"5-correct_astrometry_frames": None})
+        stages.update({"5-correct_astrometry_frames": None,
+                       "6-coadd": None})
         return stages
 
     @classmethod
@@ -1500,10 +1529,10 @@ class ESOImagingEpoch(ImagingEpoch):
 
     def pipeline(self, **kwargs):
         super().pipeline(**kwargs)
-        self.proc_0_raw()
-        self.proc_1_initial_setup()
+        self.proc_0_download(**kwargs)
+        self.proc_1_initial_setup(**kwargs)
 
-    def proc_0_raw(self, no_query: bool = False, **kwargs):
+    def proc_0_download(self, no_query: bool = False, **kwargs):
         if no_query or self.query_stage("Download raw data from ESO archive?", stage='0-download'):
             r = self.retrieve()
             if r:
@@ -1531,6 +1560,11 @@ class ESOImagingEpoch(ImagingEpoch):
 
 
 class FORS2ImagingEpoch(ESOImagingEpoch):
+
+    def pipeline(self, **kwargs):
+        super().pipeline(**kwargs)
+        self.proc_5_correct_astrometry_frames(**kwargs)
+        self.proc_6_coadd(**kwargs)
 
     @classmethod
     def from_file(cls, param_file: Union[str, dict], name: str = None, old_format: bool = False, field: Field = None):

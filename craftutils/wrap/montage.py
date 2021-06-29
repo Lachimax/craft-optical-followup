@@ -225,7 +225,7 @@ def standard_script(input_directory: str, output_directory: str, output_file_pat
     u.mkdir_check(output_directory)
     old_dir = os.getcwd()
 
-    proj_dir = os.path.join("projdir")
+    proj_dir = os.path.join(output_directory, "projdir")
     diff_dir = os.path.join(output_directory, "diffdir")
     corr_dir = os.path.join(output_directory, "corrdir")
     u.mkdir_check(proj_dir, diff_dir, corr_dir)
