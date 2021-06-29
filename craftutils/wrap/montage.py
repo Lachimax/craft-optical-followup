@@ -35,7 +35,8 @@ def make_header(table_path: str, output_path: str):
 
 def inject_header(file_path: str, input_directory: str,
                   extra_items: dict = None, keys: dict = None,
-                  coadd_type: str = 'median', ext: int = 0):
+                  coadd_type: str = 'median', ext: int = 0,
+                  instrument: str = "vlt-fors2"):
     table = fits_table_all(input_directory, science_only=False)
     table.sort("ARCFILE")
 
@@ -63,15 +64,22 @@ def inject_header(file_path: str, input_directory: str,
         f"DATE-OBS": table[important_keys["date-obs"]][0]
     }
 
-    if important_keys["filter"] in table:
+    if instrument == "vlt-fors2":
+        n_frames = np.sum(table["ESO DET CHIP1 ID"] == 1)
+    else:
+        raise ValueError(f"Instrument {instrument} is not recognised.")
+
+    insert_dict["NCOMBINE"] = n_frames
+
+    if important_keys["filter"] in table.colnames:
         insert_dict["FILTER"] = table[important_keys["filter"]][0]
 
-    if important_keys["gain"] in table:
-        old_gain = table[important_keys["gain"]].mean()
+    if important_keys["gain"] in table.colnames:
+        old_gain = np.nanmean(np.float64(table[important_keys["gain"]]))
         if coadd_type == "median":
-            new_gain = gain_median_combine(old_gain=old_gain)
+            new_gain = gain_median_combine(old_gain=old_gain, n_frames=n_frames)
         elif coadd_type == "mean":
-            new_gain = gain_mean_combine(old_gain=old_gain)
+            new_gain = gain_mean_combine(old_gain=old_gain, n_frames=n_frames)
         elif coadd_type == "sum":
             new_gain = old_gain
         else:
@@ -85,7 +93,7 @@ def inject_header(file_path: str, input_directory: str,
             val = frame[colname]
             insert = True
             if isinstance(val, str) and (not val.isascii() or "\n" in val) or np.ma.is_masked(val) or len(
-                    f"{header_key}={val}") > 79:
+                    f"{header_key}={val}") > 70:
                 insert = False
             if insert:
                 insert_dict[header_key] = val
@@ -214,7 +222,7 @@ def add(input_directory: str, table_path: str,
                             p=input_directory, a=coadd_type)
 
 
-def standard_script(input_directory: str, output_directory: str, output_file_path: str = None):
+def standard_script(input_directory: str, output_directory: str, output_file_path: str = None, instrument="vlt-fors2"):
     """
     Does a standard median coaddition of fits files in input_directory.
     Adapted from an example bash script found at http://montage.ipac.caltech.edu/docs/first_mosaic_tutorial.html
@@ -279,8 +287,8 @@ def standard_script(input_directory: str, output_directory: str, output_file_pat
     add(input_directory=corr_dir, coadd_type='median', table_path=reprojected_table_path,
         header_path=header_path, output_path=output_file_path)
 
-    inject_header(file_path=output_file_path, input_directory=input_directory)
+    inject_header(file_path=output_file_path, input_directory=input_directory, instrument="vlt-fors2")
 
     os.chdir(old_dir)
 
-    return output_file_path
+    return os.path.join(output_directory, output_file_path)
