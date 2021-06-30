@@ -373,7 +373,9 @@ class Field:
                                                radius=radius)
             # Check if a valid response was received; if not, we don't want to erroneously report that
             # the field doesn't exist in the catalogue.
-            if response != "ERROR":
+            if isinstance(response, str) and response == "ERROR":
+                pass
+            else:
                 if response is not None:
                     self.cats[f"in_{cat_name}"] = True
                     self.set_path(f"cat_csv_{cat_name}", output)
@@ -990,6 +992,39 @@ class ImagingEpoch(Epoch):
             self.stages_complete["6-coadd"] = Time.now()
             self.update_output_file()
 
+    def proc_7_photometric_calibration(self, no_query: bool = False, **kwargs):
+        if no_query or self.query_stage("Do photometric calibration?", stage="7-photometric_calibration"):
+            calib_dir = os.path.join(self.data_path, "7-photometric_calibration")
+            self.photometric_calibration(calib_dir)
+            self.paths['calib_dir'] = calib_dir
+            self.stages_complete["7-photometric_calibration"] = Time.now()
+            self.update_output_file()
+
+    def photometric_calibration(self, output_path: str):
+        u.mkdir_check(output_path)
+
+        deepest = self.coadded[self.filters[0]]
+        for fil in self.filters:
+            img = self.coadded[fil]
+            img.zeropoint(cat_path=self.field.get_path("cat_csv_panstarrs1"),
+                          output_path=os.path.join(output_path, img.name),
+                          cat_name="PanSTARRS1",
+                          image_name="PanSTARRS Cutout",
+                          )
+            img.estimate_depth(zeropoint_name="panstarrs1")
+
+            if img.depth > deepest.depth:
+                deepest = img
+
+        for fil in self.filters:
+            img = self.coadded[fil]
+            print(img.filter, img.depth)
+
+        self.deepest_filter = deepest.filter
+        self.deepest = deepest
+
+        print("DEEPEST FILTER:", self.deepest_filter, self.deepest.depth)
+
     def coadd(self, output_dir: str, frames: str = "astrometry", ):
 
         u.mkdir_check(output_dir)
@@ -1270,7 +1305,8 @@ class ImagingEpoch(Epoch):
     def stages(cls):
         stages = super().stages()
         stages.update({"5-correct_astrometry_frames": None,
-                       "6-coadd": None})
+                       "6-coadd": None,
+                       "7-photometric_calibration": None})
         return stages
 
     @classmethod
@@ -1410,24 +1446,7 @@ class PanSTARRS1ImagingEpoch(ImagingEpoch):
     def proc_3_photometric_calibration(self, no_query: bool = False, **kwargs):
         if no_query or self.query_stage("Do photometric calibration?", stage="3-photometric_calibration"):
             calib_dir = os.path.join(self.data_path, "3-photometric_calibration")
-            u.mkdir_check(calib_dir)
-            deepest = self.frames_science[0]
-            for img in self.frames_science:
-                img.zeropoint(cat_path=self.field.get_path("cat_csv_panstarrs1"),
-                              output_path=os.path.join(calib_dir, img.name),
-                              cat_name="PanSTARRS1",
-                              image_name="PanSTARRS Cutout",
-                              )
-                img.estimate_depth(zeropoint_name="panstarrs1")
-
-                if img.depth > deepest.depth:
-                    deepest = img
-
-            for img in self.frames_science:
-                print(img.filter, img.depth)
-            self.deepest_filter = deepest.filter
-            self.deepest = deepest
-            print("DEEPEST FILTER:", self.deepest_filter, self.deepest.depth)
+            self.photometric_calibration(calib_dir)
             self.stages_complete['3-photometric_calibration'] = Time.now()
             self.update_output_file()
 
