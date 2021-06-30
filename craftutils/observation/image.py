@@ -55,7 +55,7 @@ class Image:
     def __eq__(self, other):
         return self.path == other.path
 
-    def open(self, mode: str = "update"):
+    def open(self, mode: str = "readonly"):
         if self.path is not None and self.hdu_list is None:
             self.hdu_list = fits.open(self.path, mode=mode)
         elif self.path is None:
