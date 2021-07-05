@@ -1,4 +1,5 @@
 # Code by Lachlan Marnoch, 2021
+import copy
 import os
 import warnings
 from typing import Union, List
@@ -811,6 +812,7 @@ class Epoch:
         self.frames_standard = []
         self.frames_science = []
         self.frames_dark = []
+        self.frames_flat = []
 
         self.frames_reduced = []
 
@@ -833,6 +835,7 @@ class Epoch:
             self._initial_setup()
             self.stages_complete['1-initial_setup'] = Time.now()
             self.update_output_file()
+            return True
 
     def _initial_setup(self):
         pass
@@ -856,6 +859,10 @@ class Epoch:
         for fil in self.frames_science:
             science_frame_paths[fil] = list(map(lambda f: f.path, self.frames_science[fil]))
             science_frame_paths[fil].sort()
+        standard_frame_paths = {}
+        for fil in self.frames_standard:
+            standard_frame_paths[fil] = list(map(lambda f: f.path, self.frames_standard[fil]))
+            standard_frame_paths[fil].sort()
         coadded = {}
         for fil in self.coadded:
             frame = self.coadded[fil]
@@ -977,6 +984,8 @@ class Epoch:
             self.frames_standard.append(frame)
         elif frame.frame_type == "dark":
             self.frames_dark.append(frame)
+        elif frame.frame_type == "flat":
+            self.frames_flat.append(frame)
 
     @classmethod
     def stages(cls):
@@ -1040,9 +1049,16 @@ class ImagingEpoch(Epoch):
         self.deepest = None
         self.deepest_filter = None
 
+        self.exp_time_mean = {}
+        self.exp_time_err = {}
+        self.airmass_mean = {}
+        self.airmass_err = {}
+
         self.frames_science = {}
         self.frames_reduced = {}
         self.frames_astrometry = {}
+
+        self.std_pointings = {}
 
         self.load_output_file(mode="imaging")
 
@@ -1126,112 +1142,71 @@ class ImagingEpoch(Epoch):
         data_title = self.name
 
         # Write tables of fits files to main directory; firstly, science images only:
-        table = ff.fits_table(input_path=raw_dir,
-                              output_path=os.path.join(data_dir, data_title + "_fits_table_science.csv"),
-                              science_only=True)
+        tbl = ff.fits_table(input_path=raw_dir,
+                            output_path=os.path.join(data_dir, data_title + "_fits_table_science.csv"),
+                            science_only=True)
         # Then including all calibration files
-        table_full = ff.fits_table(input_path=raw_dir,
-                                   output_path=data_dir + data_title + "_fits_table_all.csv",
-                                   science_only=False)
+        tbl_full = ff.fits_table(input_path=raw_dir,
+                                 output_path=data_dir + data_title + "_fits_table_all.csv",
+                                 science_only=False)
 
         ff.fits_table_all(input_path=raw_dir,
-                          output_path=data_dir + data_title + "_fits_table_detailled.csv",
+                          output_path=data_dir + data_title + "_fits_table_detailed.csv",
                           science_only=False)
 
-        # Clear output files for fresh start.
-        u.rm_check(data_dir + '/output_values.yaml')
-        u.rm_check(data_dir + '/output_values.json')
-
-        # Collect list of filters used:
-        filters = []
-        columns = []
-
-        for j in [1, 2, 3, 4, 5]:
-            column = 'filter' + str(j)
-            for name in table[column]:
-                if name != 'free':
-                    if name not in filters:
-                        filters.append(name)
-                        columns.append(column)
+        for row in tbl_full:
+            path = os.path.join(self.paths["raw_dir"], row["identifier"])
+            cls = image.ImagingImage.select_child_class(instrument=self.instrument, mode="imaging")
+            img = cls(path)
+            img.extract_frame_type()
+            img.extract_filter()
+            # The below will also update the filter list.
+            self.add_frame_raw(path)
 
         # Collect pointings of standard-star observations.
-        std_ras = []
-        std_decs = []
-        std_pointings = []
-        for ra in table_full[table_full['object'] == 'STD']['ref_ra']:
-            if ra not in std_ras:
-                std_ras.append(ra)
-        for dec in table_full[table_full['object'] == 'STD']['ref_dec']:
-            if dec not in std_decs:
-                std_decs.append(dec)
-
-        for i, ra in enumerate(std_ras):
-            std_pointings.append(f'RA{ra}_DEC{std_decs[i]}')
-
-        print(std_ras)
-        print(std_decs)
-        print(std_pointings)
+        for img in self.frames_standard:
+            pointing = img.extract_pointing
+            fil = img.extract_filter
+            if pointing not in self.std_pointings[fil]:
+                self.std_pointings[fil].append(pointing)
 
         # Collect and save some stats on those filters:
-        param_dict = {}
-        exp_times = []
-        ns_exposures = []
 
-        param_dict['filters'] = filters
-        param_dict['object'] = table['object'][0]
-        param_dict['obs_name'] = table['obs_name'][0]
-        mjd = param_dict['mjd_obs'] = float(table['mjd_obs'][0])
+        template = self.frames_science[0]
+        if self.target is None:
+            self.target = template.object
+        if self.date is None:
+            self.set_date(self.frames_science[0].extract_date_obs())
 
-        for i, f in enumerate(filters):
-            f_0 = f[0]
-            exp_time = table['exp_time'][table[columns[i]] == f]
-            exp_times.append(exp_time)
+        std_dir = os.path.join(data_dir, 'standards')
 
-            airmass_col = table['airmass'][table[columns[i]] == f]
-            n_frames = sum(table[columns[i]] == f)
-            n_exposures = n_frames / 2
-            ns_exposures.append(n_exposures)
+        for i, fil in enumerate(self.filters):
 
-            airmass = float(np.nanmean(airmass_col))
+            exp_times = list(map(lambda frame: frame.exposure_time, self.frames_science[fil]))
+            self.exp_time_mean[fil] = np.nanmean(exp_times)
+            self.exp_time_err[fil] = np.nanstd(exp_times)
 
-            param_dict[f_0 + '_exp_time_mean'] = float(np.nanmean(exp_time))
-            param_dict[f_0 + '_exp_time_err'] = float(2 * np.nanstd(exp_time))
-            param_dict[f_0 + '_airmass_mean'] = airmass
-            param_dict[f_0 + '_airmass_err'] = float(
-                max(np.nanmax(airmass_col) - airmass, airmass - np.nanmin(airmass_col)))
-            param_dict[f_0 + '_n_frames'] = float(n_frames)
-            param_dict[f_0 + '_n_exposures'] = float(n_exposures)
-            param_dict[f_0 + '_mjd_obs'] = float(np.nanmean(table['mjd_obs'][table[columns[i]] == f]))
+            airmasses = np.array(map(lambda frame: frame.airmass, self.frames_science[fil]))
+            self.airmass_mean[fil] = np.nanmean(airmasses)
+            self.airmass_err[fil] = max(np.nanmax(airmasses) - self.airmass_mean,
+                                        self.airmass_mean - np.nanmin(airmasses))
 
-            std_filter_dir = f'{data_dir}calibration/std_star/{f}/'
+            std_filter_dir = os.path.join(std_dir, fil)
+            self.set_path(f"standard_dir_{fil}", std_filter_dir)
             u.mkdir_check(std_filter_dir)
-            print(f'Copying {f} calibration data to std_star folder...')
+            print(f'Copying {fil} calibration data to standard folder...')
 
             # Sort the STD files by filter, and within that by pointing.
-            for j, ra in enumerate(std_ras):
-                at_pointing = False
-                pointing = std_pointings[j]
-                pointing_dir = std_filter_dir + pointing + '/'
-                for file in \
-                        table_full[
-                            (table_full['object'] == 'STD') &
-                            (table_full['ref_ra'] == ra) &
-                            (table_full[columns[i]] == f)]['identifier']:
-                    at_pointing = True
-                    u.mkdir_check(pointing_dir)
-                    shutil.copyfile(raw_dir + file, pointing_dir + file)
-                if at_pointing:
-                    for file in table_full[table_full['object'] == 'BIAS']['identifier']:
-                        shutil.copyfile(raw_dir + file, pointing_dir + file)
-                    for file in table_full[(table_full['object'] == 'FLAT,SKY') & (table_full[columns[i]] == f)][
-                        'identifier']:
-                        shutil.copyfile(raw_dir + file, pointing_dir + file)
+            for j, pointing in enumerate(self.std_pointings):
+                pointing_dir = os.path.join(std_filter_dir, f"RA{pointing.ra.value}_DEC{pointing.dec.value}")
+                u.mkdir_check(pointing_dir)
+                for std in self.frames_standard[fil]:
+                    path_dest = os.path.join(pointing_dir, std.filename)
+                    shutil.move(std.path, path_dest)
+                    std.path = path_dest
+                    std.update_output_file()
 
-        p.add_output_values(obj=data_title, params=param_dict)
-        if "new_epoch" in data_dir:
-            mjd = f"MJD{int(float(mjd))}"
-            new_data_dir = data_dir.replace("new_epoch", mjd)
-            p.add_epoch_param(obj=data_title, params={"data_dir": new_data_dir})
+        self.update_output_file()
 
     def guess_data_path(self):
         if self.data_path is None and self.field is not None and self.field.data_path is not None and \
@@ -1272,6 +1247,10 @@ class ImagingEpoch(Epoch):
                             "frames_raw": frames_raw,
                             "frames_reduced": frames_reduced,
                             "frames_astrometry": frames_astrometry,
+                            "exp_time_mean": self.exp_time_mean,
+                            "exp_time_err": self.exp_time_err,
+                            "airmass_mean": self.airmass_mean,
+                            "airmass_err": self.airmass_err
                             })
         return output_dict
 
@@ -1285,6 +1264,14 @@ class ImagingEpoch(Epoch):
                 self.deepest = cls(path=outputs["deepest"])
             if "deepest_filter" in outputs:
                 self.deepest_filter = outputs["deepest_filter"]
+            if "exp_time_mean" in outputs:
+                self.exp_time_mean = outputs["exp_time_mean"]
+            if "exp_time_err" in outputs:
+                self.exp_time_err = outputs["exp_time_err"]
+            if "airmass_mean" in outputs:
+                self.airmass_mean = outputs["airmass_mean"]
+            if "airmass_err" in outputs:
+                self.airmass_err = outputs["airmass_err"]
             if "frames_raw" in outputs:
                 for frame in outputs["frames_raw"]:
                     self.add_frame_raw(raw_frame=frame)
@@ -1376,6 +1363,16 @@ class ImagingEpoch(Epoch):
                 self.frames_astrometry[fil] = []
             if fil not in self.coadded:
                 self.coadded[fil] = None
+            if fil not in self.exp_time_mean:
+                self.exp_time_mean[fil] = None
+            if fil not in self.exp_time_err:
+                self.exp_time_err[fil] = None
+            if fil not in self.airmass_mean:
+                self.airmass_mean[fil] = None
+            if fil not in self.airmass_err:
+                self.airmass_err[fil] = None
+            if fil not in self.std_pointings:
+                self.std_pointings[fil] = None
             return True
         else:
             return False

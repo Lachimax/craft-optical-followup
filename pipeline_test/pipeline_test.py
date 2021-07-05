@@ -99,6 +99,7 @@ def main(field_name: str,
             if instrument is None:
                 instrument = fld.select_instrument(mode="imaging")
             epoch = fld.ImagingEpoch.from_params(epoch_name, instrument=instrument)
+            epoch.field = field
 
     epoch.do = do
     epoch.pipeline(do_not_reuse_masters=do_not_reuse_masters)

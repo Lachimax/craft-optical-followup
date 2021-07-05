@@ -51,6 +51,8 @@ class Image:
         self.n_x = None
         self.n_y = None
         self.n_pix = None
+        self.object = None
+        self.pointing = None
 
     def __eq__(self, other):
         return self.path == other.path
@@ -132,6 +134,11 @@ class Image:
             raise KeyError(f"{key} not present in header.")
         return self.noise_read
 
+    def extract_object(self):
+        key = self.header_keys()["object"]
+        self.object = self.extract_header_item(key)
+        return self.object
+
     def extract_n_pix(self, ext: int = 0):
         self.load_data()
         self.n_y, self.n_x = self.data[ext].shape()
@@ -144,7 +151,8 @@ class Image:
                        "noise_read": "RON",
                        "gain": "GAIN",
                        "date-obs": "DATE-OBS",
-                       "mjd-obs": "MJD-OBS"}
+                       "mjd-obs": "MJD-OBS",
+                       "object": "OBJECT"}
         return header_keys
 
     @classmethod
@@ -202,6 +210,8 @@ class ImagingImage(Image):
         self.fwhm_rms_sextractor = None
 
         self.sky_background = None
+
+        self.airmass = None
 
         self.zeropoints = {}
         self.zeropoint_output_paths = {}
@@ -346,6 +356,26 @@ class ImagingImage(Image):
         key = self.header_keys()["filter"]
         self.filter = self.extract_header_item(key)
         return self.filter
+
+    def extract_airmass(self):
+        key = self.header_keys()["airmass"]
+        self.airmass = self.extract_header_item(key)
+        return self.airmass
+
+    def extract_pointing(self):
+        key = self.header_keys()["ra"]
+        ra = self.extract_header_item(key)
+        key = self.header_keys()["dec"]
+        dec = self.extract_header_item(key)
+        self.pointing = SkyCoord(ra, dec, unit=units.deg)
+        return self.pointing
+
+    def extract_old_pointing(self):
+        key = self.header_keys()["ra_old"]
+        ra = self.extract_header_item(key)
+        key = self.header_keys()["dec_old"]
+        dec = self.extract_header_item(key)
+        return SkyCoord(ra, dec, unit=units.deg)
 
     def _output_dict(self):
         outputs = super()._output_dict()
@@ -602,6 +632,32 @@ class ImagingImage(Image):
         new_image = cls(path=final_file)
         return new_image
 
+    def correct_astrometry_from_other(self, other_image: 'ImagingImage', output_dir: str = None):
+        """
+        :param other_image: Must contain both _RVAL and CRVAL keywords.
+        :param output_dir:
+        :return:
+        """
+        if not isinstance(other_image, ImagingImage):
+            raise ValueError("other_image is not a valid ImagingImage")
+        other_pointing = other_image.extract_pointing()
+        other_old_pointing = other_image.extract_old_pointing()
+        offset_ra = other_pointing.ra - other_pointing.ra
+        offset_dec = other_pointing.dec - other_pointing.dec
+
+        output_path = os.path.join(output_dir, f"{self.name}_astrometry.fits")
+        shutil.copyfile(self.path, output_path)
+
+        with fits.open(output_path, "update") as file:
+            file[0].header["_RVAL1"] = file[0].header["CRVAL1"]
+            file[0].header["CRVAL1"] = file[0].header["CRVAL1"] + offset_ra.value
+            file[0].header["_RVAL2"] = file[0].header["CRVAL2"]
+            file[0].header["CRVAL2"] = file[0].header["CRVAL2"] + offset_dec.value
+
+        cls = ImagingImage.select_child_class(instrument=self.instrument)
+        new_image = cls(path=output_path)
+        return new_image
+
     def astrometry_diagnostics(self, reference_cat: Union[str, table.QTable],
                                ra_col: str = "ra", dec_col: str = "dec",
                                tolerance: units.Quantity = 3 * units.arcsec, show_plots: bool = False):
@@ -800,9 +856,6 @@ class ImagingImage(Image):
         plt.imshow(data, **kwargs)
         self.close()
 
-    def plot_sky(self):
-        plt.plot()
-
     @classmethod
     def select_child_class(cls, instrument: str, **kwargs):
         if instrument is None:
@@ -818,7 +871,13 @@ class ImagingImage(Image):
     @classmethod
     def header_keys(cls):
         header_keys = super().header_keys()
-        header_keys.update({"filter": "FILTER"})
+        header_keys.update({"filter": "FILTER",
+                            "ra": "CRVAL1",
+                            "dec": "CRVAL2",
+                            "ra_old": "_RVAL1",
+                            "dec_old": "_RVAL2",
+                            "airmass": "AIRMASS"
+                            })
         return header_keys
 
 
@@ -863,13 +922,28 @@ class PanSTARRS1Cutout(ImagingImage):
 class FORS2Image(ImagingImage):
     def __init__(self, path: str, frame_type: str = None):
         super().__init__(path=path, frame_type=frame_type, instrument="vlt-fors2")
+        self.other_chip = None
+        self.chip_number = None
+
+    def extract_frame_type(self):
+        obj = self.extract_object()
+        category = self.extract_header_item("ESO DPR CATG")
+        if obj == "BIAS":
+            self.frame_type = "bias"
+        elif "FLAT" in obj:
+            self.frame_type = "flat"
+        elif obj == "STD":
+            self.frame_type = "standard"
+        elif self.extract_header_item("ESO DPR CATG") == "SCIENCE":
+            self.frame_type = "science"
 
     @classmethod
     def header_keys(cls):
         header_keys = super().header_keys()
         header_keys.update({"noise_read": "HIERARCH ESO DET OUT1 RON",
                             "filter": "HIERARCH ESO INS FILT1 NAME",
-                            "gain": "HIERARCH ESO DET OUT1 GAIN"})
+                            "gain": "HIERARCH ESO DET OUT1 GAIN",
+                            })
         return header_keys
 
     def extract_chip_number(self):
@@ -879,7 +953,22 @@ class FORS2Image(ImagingImage):
             chip = 1
         elif chip_string == 'CCID20-14-5-6':
             chip = 2
+        self.chip_number = chip
         return chip
+
+    def _output_dict(self):
+        outputs = super()._output_dict()
+        outputs.update({
+            "other_chip": self.other_chip.path,
+        })
+        return outputs
+
+    def load_output_file(self):
+        outputs = super().load_output_file()
+        if outputs is not None:
+            if "other_chip" in outputs:
+                self.other_chip = outputs["other_chip"]
+        return outputs
 
 
 class Spectrum(Image):
