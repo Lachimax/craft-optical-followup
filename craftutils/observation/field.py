@@ -1731,10 +1731,16 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
                 astrometry_fil_path = os.path.join(astrometry_path, fil)
                 pairs = self.pair_files(self.frames_reduced[fil])
                 for img_1, img_2 in pairs:
-                    new_img_1 = img_1.correct_astrometry(output_dir=astrometry_fil_path)
-                    self.add_frame_astrometry(new_img_1)
-                    new_img_2 = img_2.correct_astrometry_from_other(new_img_1, output_dir=astrometry_fil_path)
-                    self.add_frame_astrometry(new_img_2)
+                    try:
+                        new_img_1 = img_1.correct_astrometry(output_dir=astrometry_fil_path)
+                        self.add_frame_astrometry(new_img_1)
+                        new_img_2 = img_2.correct_astrometry_from_other(new_img_1, output_dir=astrometry_fil_path)
+                        self.add_frame_astrometry(new_img_2)
+                    except SystemError:
+                        new_img_2 = img_2.correct_astrometry(output_dir=astrometry_fil_path)
+                        self.add_frame_astrometry(new_img_2)
+                        new_img_1 = img_1.correct_astrometry_from_other(new_img_2, output_dir=astrometry_fil_path)
+                        self.add_frame_astrometry(new_img_2)
             self.paths['astrometry_dir'] = astrometry_path
             self.stages_complete["5-correct_astrometry_frames"] = Time.now()
             self.update_output_file()
