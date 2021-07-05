@@ -4,6 +4,7 @@ import warnings
 from typing import Union, List
 import shutil
 
+import matplotlib.pyplot as plt
 import numpy as np
 
 from astropy.time import Time
@@ -11,14 +12,15 @@ from astropy.coordinates import SkyCoord
 import astropy.units as units
 import astropy.table as table
 
-import craftutils.astrometry as a
-import craftutils.utils as u
-import craftutils.params as p
-import craftutils.retrieve as retrieve
-import craftutils.spectroscopy as spec
+import craftutils.astrometry as am
+import craftutils.fits_files as ff
 import craftutils.observation.objects as objects
 import craftutils.observation.image as image
-import craftutils.fits_files as ff
+import craftutils.params as p
+import craftutils.plotting as pl
+import craftutils.retrieve as retrieve
+import craftutils.spectroscopy as spec
+import craftutils.utils as u
 import craftutils.wrap.montage as montage
 
 config = p.config
@@ -141,7 +143,7 @@ class Field:
             if objs is not None:
                 centre_coords = objs[0].coords
         if centre_coords is not None:
-            self.centre_coords = a.attempt_skycoord(centre_coords)
+            self.centre_coords = am.attempt_skycoord(centre_coords)
 
         self.name = name
         self.param_path = param_path
@@ -405,12 +407,12 @@ class Field:
             u.mkdir_check(index_path)
             cat_index_path = os.path.join(index_path, cat_name)
             prefix = f"{cat_name}_index_{self.name}"
-            a.generate_astrometry_indices(cat_name=cat_name,
-                                          cat=cat_path,
-                                          fits_cat_output=cat_path.replace(".csv", ".fits"),
-                                          output_file_prefix=prefix,
-                                          index_output_dir=cat_index_path
-                                          )
+            am.generate_astrometry_indices(cat_name=cat_name,
+                                           cat=cat_path,
+                                           fits_cat_output=cat_path.replace(".csv", ".fits"),
+                                           output_file_prefix=prefix,
+                                           index_output_dir=cat_index_path
+                                           )
 
     def get_path(self, key):
         if key in self.paths:
@@ -532,6 +534,83 @@ class FRBField(Field):
             if self.frb.host_galaxy is not None:
                 self.add_object(self.frb.host_galaxy)
         self.epochs_imaging_old = {}
+
+    def plot_host(self, epoch: 'ImagingEpoch', fig: plt.Figure, fil: str,
+                  centre: SkyCoord = None,
+                  show_frb: bool = True, frame: units.Quantity = 30 * units.pix,
+                  n: int = 1, n_x: int = 1, n_y: int = 1,
+                  cmap: str = 'viridis', show_cbar: bool = False,
+                  stretch: str = 'sqrt',
+                  vmin: float = None,
+                  vmax: float = None,
+                  show_grid: bool = False,
+                  ticks: int = None, interval: str = 'minmax',
+                  show_coords: bool = True,
+                  font_size: int = 12,
+                  reverse_y=False,
+                  frb_kwargs: dict = {},
+                  **kwargs):
+
+        if not isinstance(self.frb, objects.FRB):
+            raise TypeError("self.frb has not been set properly for this FRBField.")
+        if centre is None:
+            centre = self.frb.host_galaxy.position
+
+        subplot, hdu_cut = epoch.plot_object(fig=fig, frame=frame, fil=fil, img="coadded",
+                                             centre=centre,
+                                             n=n, n_x=n_x, n_y=n_y,
+                                             cmap=cmap, show_cbar=show_cbar, stretch=stretch,
+                                             vmin=vmin, vmax=vmax,
+                                             show_grid=show_grid,
+                                             ticks=ticks, interval=interval,
+                                             show_coords=show_coords,
+                                             font_size=font_size,
+                                             reverse_y=reverse_y,
+                                             **kwargs
+                                             )
+
+        position = self.frb.position
+        ra = position.ra.value
+        dec = position.dec.value
+        uncertainty = self.frb.position_err
+
+        if show_frb:
+            show_frb = 'quadrature'
+
+        theta = uncertainty.theta.to(units.deg)
+
+        if show_frb in ['all', 'statistical']:
+            # Statistical
+            pl.plot_gal_params(hdu=hdu_cut,
+                               ras=[ra],
+                               decs=[dec],
+                               a=[uncertainty.a_stat.to(units.deg).value],
+                               b=[uncertainty.b_stat.to(units.deg).value],
+                               theta=[-theta.value], ls='.', **frb_kwargs)
+        if show_frb in ['all', 'statistical']:
+            # Systematic
+            pl.plot_gal_params(hdu=hdu_cut,
+                               ras=[ra],
+                               decs=[dec],
+                               a=[uncertainty.a_sys.to(units.deg).value],
+                               b=[uncertainty.b_sys.to(units.deg).value],
+                               theta=[-theta.value],
+                               ls='--', **frb_kwargs)
+        if show_frb in ['all', 'quadrature']:
+            a_quad = np.sqrt(uncertainty.a_stat ** 2 + uncertainty.a_sys ** 2).to(units.deg).value
+            print(a_quad)
+            b_quad = np.sqrt(uncertainty.b_stat ** 2 + uncertainty.b_sys ** 2).to(units.deg).value
+            print(b_quad)
+            pl.plot_gal_params(hdu=hdu_cut,
+                               ras=[ra],
+                               decs=[dec],
+                               a=[a_quad],
+                               b=[b_quad],
+                               theta=[-theta.value],
+                               ls='-', **frb_kwargs,
+                               label="FRB uncertainty")
+
+        return subplot, hdu_cut
 
     @classmethod
     def default_params(cls):
@@ -1236,21 +1315,21 @@ class ImagingEpoch(Epoch):
         gaia_csv_path = self.field.get_path(f"cat_csv_gaia")
 
         if correct_to_epoch:
-            gaia_cat = a.correct_gaia_to_epoch(gaia_cat=gaia_csv_path,
-                                               new_epoch=self.date)
+            gaia_cat = am.correct_gaia_to_epoch(gaia_cat=gaia_csv_path,
+                                                new_epoch=self.date)
         else:
             gaia_cat = retrieve.load_catalogue(cat_name="gaia", cat=gaia_csv_path)
 
         unique_id_prefix = int(self.field.name.replace("FRB", ""))
 
-        a.generate_astrometry_indices(cat_name="gaia",
-                                      cat=gaia_cat,
-                                      output_file_prefix=f"gaia_index_{self.field.name}",
-                                      index_output_dir=cat_index_path,
-                                      fits_cat_output=gaia_csv_path.replace(".csv", ".fits"),
-                                      p_lower=-1,
-                                      p_upper=2,
-                                      unique_id_prefix=unique_id_prefix)
+        am.generate_astrometry_indices(cat_name="gaia",
+                                       cat=gaia_cat,
+                                       output_file_prefix=f"gaia_index_{self.field.name}",
+                                       index_output_dir=cat_index_path,
+                                       fits_cat_output=gaia_csv_path.replace(".csv", ".fits"),
+                                       p_lower=-1,
+                                       p_upper=2,
+                                       unique_id_prefix=unique_id_prefix)
         return gaia_cat
 
     def add_frame_raw(self, raw_frame: Union[image.ImagingImage, str]):
@@ -1300,6 +1379,38 @@ class ImagingEpoch(Epoch):
             return True
         else:
             return False
+
+    def plot_object(self, img: str, fil: str, fig: plt.Figure,
+                    centre: SkyCoord,
+                    frame: units.Quantity = 30 * units.pix,
+                    n: int = 1, n_x: int = 1, n_y: int = 1,
+                    cmap: str = 'viridis', show_cbar: bool = False,
+                    stretch: str = 'sqrt',
+                    vmin: float = None,
+                    vmax: float = None,
+                    show_grid: bool = False,
+                    ticks: int = None, interval: str = 'minmax',
+                    show_coords: bool = True,
+                    font_size: int = 12,
+                    reverse_y=False,
+                    **kwargs):
+        if img == "coadded":
+            to_plot = self.coadded[fil]
+        else:
+            raise ValueError(f"img type {img} not recognised.")
+        subplot, hdu_cut = to_plot.plot_subimage(fig=fig, frame=frame,
+                                                 centre=centre,
+                                                 n=n, n_x=n_x, n_y=n_y,
+                                                 cmap=cmap, show_cbar=show_cbar, stretch=stretch,
+                                                 vmin=vmin, vmax=vmax,
+                                                 show_grid=show_grid,
+                                                 ticks=ticks, interval=interval,
+                                                 show_coords=show_coords,
+                                                 font_size=font_size,
+                                                 reverse_y=reverse_y,
+                                                 **kwargs
+                                                 )
+        return subplot, hdu_cut
 
     @classmethod
     def stages(cls):
@@ -1426,8 +1537,8 @@ class PanSTARRS1ImagingEpoch(ImagingEpoch):
     def proc_0_download(self, **kwargs):
         """
         Automatically download PanSTARRS1 cutout.
-        @param kwargs: 
-        @return: 
+        @param kwargs:
+        @return:
         """
         pass
 
@@ -1483,8 +1594,9 @@ class PanSTARRS1ImagingEpoch(ImagingEpoch):
                     print("FILTER:", fil)
                     print(f"MAG_AUTO = {nearest['MAG_AUTO_ZP_panstarrs1']} +/- {err}")
                     print(f"A = {nearest['A_WORLD'].to(units.arcsec)}; B = {nearest['B_WORLD'].to(units.arcsec)}")
-                    img.plot_object(nearest, output=os.path.join(fil_output_path, f"{obj.name}.png"), show=False,
-                                    title=f"{obj.name}, {fil}-band, {nearest['MAG_AUTO_ZP_panstarrs1'].round(3).value} ± {err.round(3)}")
+                    img.plot_source_extractor_object(nearest, output=os.path.join(fil_output_path, f"{obj.name}.png"),
+                                                     show=False,
+                                                     title=f"{obj.name}, {fil}-band, {nearest['MAG_AUTO_ZP_panstarrs1'].round(3).value} ± {err.round(3)}")
                     obj.cat_row = nearest
                     obj.photometry[f"{fil}_panstarrs1_custom"] = {"mag": nearest['MAG_AUTO_ZP_panstarrs1'],
                                                                   "mag_err": err,
