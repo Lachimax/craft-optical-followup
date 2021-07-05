@@ -114,6 +114,17 @@ def check_dict(key: str, dictionary: dict, na_values: Union[tuple, list] = (None
 
 def check_quantity(number: Union[float, int, units.Quantity], unit: units.Unit, allow_mismatch: bool = True,
                    convert: bool = False):
+    """
+    If the passed number is not a Quantity, turns it into one with the passed unit. If it is already a Quantity,
+    checks the unit; if the unit is compatible with the passed unit, the quantity is returned unchanged (unless convert
+    is True).
+
+    :param number: Quantity (or not) to check.
+    :param unit: Unit to check for.
+    :param allow_mismatch: If False, even compatible units will not be allowed.
+    :param convert: If True, convert compatible Quantity to units unit.
+    :return:
+    """
     if type(number) is not units.Quantity:
         number = float(number)
         number *= unit
