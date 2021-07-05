@@ -1715,6 +1715,50 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
         self.proc_5_correct_astrometry_frames(**kwargs)
         self.proc_6_coadd(**kwargs)
 
+    def proc_1_initial_setup(self, no_query: bool = False, **kwargs):
+        if super().proc_1_initial_setup(no_query, **kwargs):
+            for fil in self.filters:
+                self.pair_files(self.frames_science[fil])
+
+    def proc_5_correct_astrometry_frames(self, no_query: bool = False, **kwargs):
+        if no_query or self.query_stage(stage="5-correct_astrometry_frames",
+                                        message="Correct astrometry of individual frames?"):
+            self.generate_gaia_astrometry_indices()
+            astrometry_path = os.path.join(self.data_path, "5-astrometry_frames")
+            u.mkdir_check(astrometry_path)
+            self.frames_astrometry = {}
+            for fil in self.frames_reduced:
+                astrometry_fil_path = os.path.join(astrometry_path, fil)
+                pairs = self.pair_files(self.frames_reduced[fil])
+                for img_1, img_2 in pairs:
+                    new_img_1 = img_1.correct_astrometry(output_dir=astrometry_fil_path)
+                    self.add_frame_astrometry(new_img_1)
+                    new_img_2 = img_2.correct_astrometry_from_other(new_img_1, output_dir=astrometry_fil_path)
+                    self.add_frame_astrometry(new_img_2)
+            self.paths['astrometry_dir'] = astrometry_path
+            self.stages_complete["5-correct_astrometry_frames"] = Time.now()
+            self.update_output_file()
+
+    @classmethod
+    def pair_files(cls, images: list):
+        pairs = []
+        images.sort(key=lambda im: im.name)
+        for i, img_1 in enumerate(images):
+            if i % 2 == 0:
+                chip = img_1.extract_chip_number()
+                img_2 = images[i + 1]
+                img_1.other_chip = img_2
+                img_1.update_output_file()
+                img_2.other_chip = img_1
+                img_2.update_output_file()
+                if chip == 1:
+                    pairs.append((img_1, img_2))
+                elif chip == 2:
+                    pairs.append((img_2, img_1))
+                else:
+                    raise ValueError("Image is missing chip.")
+        return pairs
+
     @classmethod
     def from_file(cls, param_file: Union[str, dict], name: str = None, old_format: bool = False, field: Field = None):
 
