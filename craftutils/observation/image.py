@@ -642,8 +642,8 @@ class ImagingImage(Image):
             raise ValueError("other_image is not a valid ImagingImage")
         other_pointing = other_image.extract_pointing()
         other_old_pointing = other_image.extract_old_pointing()
-        offset_ra = other_pointing.ra - other_pointing.ra
-        offset_dec = other_pointing.dec - other_pointing.dec
+        offset_ra = other_pointing.ra - other_old_pointing.ra
+        offset_dec = other_pointing.dec - other_old_pointing.dec
 
         output_path = os.path.join(output_dir, f"{self.name}_astrometry.fits")
         shutil.copyfile(self.path, output_path)
