@@ -57,13 +57,16 @@ def generate_astrometry_indices(cat_name: str, cat: Union[str, table.Table],
         unique_id = unique_id_prefix + str(scale).replace("-", "0")
         unique_id = int(unique_id)
         output_file_name_scale = f"{output_file_prefix}_{scale}"
-        astrometry_net.build_astrometry_index(input_fits_catalog=fits_cat_output,
-                                              unique_id=unique_id,
-                                              output_index=os.path.join(index_output_dir, output_file_name_scale),
-                                              scale_number=scale,
-                                              sort_column=cols["mag_auto"],
-                                              scan_through_catalog=True
-                                              )
+        try:
+            astrometry_net.build_astrometry_index(input_fits_catalog=fits_cat_output,
+                                                  unique_id=unique_id,
+                                                  output_index=os.path.join(index_output_dir, output_file_name_scale),
+                                                  scale_number=scale,
+                                                  sort_column=cols["mag_auto"],
+                                                  scan_through_catalog=True
+                                                  )
+        except SystemError:
+            print(f"Building index for scale {scale} failed.")
 
 
 def attempt_skycoord(coord: Union[SkyCoord, str, tuple, list, np.ndarray]):
