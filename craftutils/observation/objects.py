@@ -1,8 +1,10 @@
 from typing import Union, Tuple
 import os
 
+import numpy as np
 from astropy.coordinates import SkyCoord
-import astropy.units as un
+import astropy.units as units
+import astropy.table as table
 
 from craftutils import params as p
 from craftutils import astrometry as a
@@ -20,23 +22,25 @@ uncertainty_dict = {"sys": 0.0,
 
 class PositionUncertainty:
     def __init__(self,
-                 uncertainty: Union[float, un.Quantity, dict, tuple] = None,
+                 uncertainty: Union[float, units.Quantity, dict, tuple] = None,
                  position: SkyCoord = None,
-                 ra_err_sys: Union[float, un.Quantity] = None,
-                 ra_err_stat: Union[float, un.Quantity] = None,
-                 dec_err_sys: Union[float, un.Quantity] = None,
-                 dec_err_stat: Union[float, un.Quantity] = None,
-                 a_stat: Union[float, un.Quantity] = None,
-                 a_sys: Union[float, un.Quantity] = None,
-                 b_stat: Union[float, un.Quantity] = None,
-                 b_sys: Union[float, un.Quantity] = None,
-                 theta: Union[float, un.Quantity] = None,
+                 ra_err_sys: Union[float, units.Quantity] = None,
+                 ra_err_stat: Union[float, units.Quantity] = None,
+                 dec_err_sys: Union[float, units.Quantity] = None,
+                 dec_err_stat: Union[float, units.Quantity] = None,
+                 a_stat: Union[float, units.Quantity] = None,
+                 a_sys: Union[float, units.Quantity] = None,
+                 b_stat: Union[float, units.Quantity] = None,
+                 b_sys: Union[float, units.Quantity] = None,
+                 theta: Union[float, units.Quantity] = None,
                  sigma: float = None
                  ):
         """
         If a single value is provided for uncertainty, the uncertainty ellipse will be assumed to be circular.
-        Any angular values provided without units are assumed to be in degrees.
         Values in dictionary, if provided, override values given as arguments.
+        Position values provided without units are assumed to be in degrees.
+        On the other hand, uncertainty values provided without units are assumed to be in arcseconds;
+        except for uncertainties in RA, which are assumed in RA seconds.
         :param uncertainty:
         :param position:
         :param ra_err_sys:
@@ -94,27 +98,27 @@ class PositionUncertainty:
 
         # Convert equatorial uncertainty to ellipse with theta=0
         if not ellipse:
-            ra_err_sys = u.check_quantity(number=ra_err_sys, unit=un.degree)
-            ra_err_stat = u.check_quantity(number=ra_err_stat, unit=un.degree)
-            dec_err_sys = u.check_quantity(number=dec_err_sys, unit=un.degree)
-            dec_err_stat = u.check_quantity(number=dec_err_stat, unit=un.degree)
+            ra_err_sys = u.check_quantity(number=ra_err_sys, unit=units.hourangle / 3600)
+            ra_err_stat = u.check_quantity(number=ra_err_stat, unit=units.hourangle / 3600)
+            dec_err_sys = u.check_quantity(number=dec_err_sys, unit=units.arcsec)
+            dec_err_stat = u.check_quantity(number=dec_err_stat, unit=units.arcsec)
 
             ra = position.ra
             dec = position.dec
-            a_sys = SkyCoord(0.0 * un.degree, dec).separation(SkyCoord(ra_err_sys, dec))
-            a_stat = SkyCoord(0.0 * un.degree, dec).separation(SkyCoord(ra_err_stat, dec))
+            a_sys = SkyCoord(0.0 * units.degree, dec).separation(SkyCoord(ra_err_sys, dec))
+            a_stat = SkyCoord(0.0 * units.degree, dec).separation(SkyCoord(ra_err_stat, dec))
             b_sys = SkyCoord(ra, dec).separation(SkyCoord(ra, dec + dec_err_sys))
             b_stat = SkyCoord(ra, dec).separation(SkyCoord(ra, dec + dec_err_stat))
             a_sys, b_sys = max(a_sys, b_sys), min(a_sys, b_sys)
             a_stat, b_stat = max(a_stat, b_stat), min(a_stat, b_stat)
-            theta = 0.0 * un.degree
+            theta = 0.0 * units.degree
         # Or use ellipse parameters as given.
         else:
-            a_sys = u.check_quantity(number=a_sys, unit=un.degree)
-            a_stat = u.check_quantity(number=a_stat, unit=un.degree)
-            b_sys = u.check_quantity(number=b_sys, unit=un.degree)
-            b_stat = u.check_quantity(number=b_stat, unit=un.degree)
-            theta = u.check_quantity(number=theta, unit=un.degree)
+            a_sys = u.check_quantity(number=a_sys, unit=units.arcsec)
+            a_stat = u.check_quantity(number=a_stat, unit=units.arcsec)
+            b_sys = u.check_quantity(number=b_sys, unit=units.arcsec)
+            b_stat = u.check_quantity(number=b_stat, unit=units.arcsec)
+            theta = u.check_quantity(number=theta, unit=units.arcsec)
 
         self.a_sys = a_sys
         self.a_stat = a_stat
@@ -136,7 +140,7 @@ class Object:
     def __init__(self,
                  name: str = None,
                  position: Union[SkyCoord, str] = None,
-                 position_err: Union[float, un.Quantity, dict, PositionUncertainty, tuple] = 0.0 * un.arcsec,
+                 position_err: Union[float, units.Quantity, dict, PositionUncertainty, tuple] = 0.0 * units.arcsec,
                  field=None):
         self.name = name
         self.position = a.attempt_skycoord(position)
@@ -194,12 +198,35 @@ class Object:
                    position=f"{ra} {dec}",
                    position_err=position_err)
 
+    @classmethod
+    def from_source_extractor_row(cls, row: table.Row, use_psf_params: bool = False):
+        if use_psf_params:
+            ra_key = "ALPHAPSF_SKY"
+            dec_key = "DELTAPSF_SKY"
+            ra_err_key = "ERRX2_WORLD"
+            dec_err_key = "ERRY2_WORLD"
+        else:
+            ra_key = "ALPHA_SKY"
+            dec_key = "DELTA_SKY"
+            ra_err_key = "ERRX2PSF_WORLD"
+            dec_err_key = "ERRY2PSF_WORLD"
+        ra_err = np.sqrt(row[ra_err_key])
+        dec_err = np.sqrt(row[dec_err_key])
+        obj = cls(name=str(row["NUMBER"]),
+                  position=SkyCoord(row[ra_key], row[dec_key]),
+                  position_err=PositionUncertainty(
+                      ra_err_stat=ra_err,
+                      dec_err_stat=dec_err),
+                  )
+        obj.cat_row = row
+        return obj
+
 
 class Galaxy(Object):
     def __init__(self,
                  name: str = None,
                  position: Union[SkyCoord, str] = None,
-                 position_err: Union[float, un.Quantity, dict, PositionUncertainty, tuple] = 0.0 * un.arcsec,
+                 position_err: Union[float, units.Quantity, dict, PositionUncertainty, tuple] = 0.0 * units.arcsec,
                  z: float = 0.0):
         super().__init__(name=name,
                          position=position,
@@ -219,7 +246,7 @@ class FRB(Object):
     def __init__(self,
                  name: str = None,
                  position: Union[SkyCoord, str] = None,
-                 position_err: Union[float, un.Quantity, dict, PositionUncertainty, tuple] = 0.0 * un.arcsec,
+                 position_err: Union[float, units.Quantity, dict, PositionUncertainty, tuple] = 0.0 * units.arcsec,
                  host_galaxy: Galaxy = None):
         super().__init__(name=name,
                          position=position,

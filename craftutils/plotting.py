@@ -19,7 +19,7 @@ import craftutils.astrometry as am
 import craftutils.utils as u
 
 
-def plot_kron(fig: plt.figure, data_title: str, instrument: str, f: str, index: Union[int, list], catalogue: str,
+def plot_kron(fig: plt.Figure, data_title: str, instrument: str, f: str, index: Union[int, list], catalogue: str,
               n: int, n_x: int, n_y: int,
               image_name: str, frame: Union[int, float], cmap: str = 'viridis', vmin: float = None, vmax: float = None,
               des: bool = False, offset_ra: int = 0, offset_dec: int = 0):
@@ -90,7 +90,7 @@ def plot_kron(fig: plt.figure, data_title: str, instrument: str, f: str, index: 
                             colour='red')
 
 
-def plot_difference(fig: plt.figure, path: str, obj: str, instrument: str,
+def plot_difference(fig: plt.Figure, path: str, obj: str, instrument: str,
                     frame: Union[int, float], world_frame: bool = True,
                     n: int = 1, n_y: int = 1, show_title: bool = True,
                     cmap: str = 'viridis', show_cbar: bool = False, stretch: str = 'sqrt', vmin: float = None,
@@ -163,23 +163,25 @@ def plot_difference(fig: plt.figure, path: str, obj: str, instrument: str,
     return fig
 
 
-def plot_subimage(fig: plt.figure, hdu: Union[str, fits.HDUList], ra: float, dec: float,
+def plot_subimage(fig: plt.Figure, hdu: Union[str, fits.HDUList], ra: float, dec: float,
                   frame: Union[int, float], world_frame: bool = False, title: str = None,
                   n: int = 1, n_x: int = 1, n_y: int = 1,
-                  cmap: str = 'viridis', show_cbar: bool = False, stretch: str = 'sqrt', vmin: float = None,
+                  cmap: str = 'viridis', show_cbar: bool = False, stretch: str = 'sqrt',
+                  vmin: float = None,
                   vmax: float = None,
                   show_grid: bool = False,
                   ticks: int = None, interval: str = 'minmax',
                   show_coords: bool = True, ylabel: str = None,
                   font_size: int = 12,
-                  reverse_y=False):
+                  reverse_y=False,
+                  **kwargs):
     """
 
     :param fig:
     :param hdu:
     :param ra:
     :param dec:
-    :param frame: in pixels, or in arcsecs (?) if world_frame is True.
+    :param frame: in pixels, or in degrees (?) if world_frame is True.
     :param world_frame:
     :param title:
     :param n:
@@ -217,6 +219,7 @@ def plot_subimage(fig: plt.figure, hdu: Union[str, fits.HDUList], ra: float, dec
         frame1 = plt.gca()
         frame1.axes.get_xaxis().set_visible(False)
         frame1.axes.set_yticks([])
+        frame1.axes.invert_yaxis()
         # frame1.axes.get_yaxis().set_visible(False)
 
     if show_grid:
@@ -251,7 +254,7 @@ def plot_subimage(fig: plt.figure, hdu: Union[str, fits.HDUList], ra: float, dec
     if ylabel is not None:
         plot.set_ylabel(ylabel, size=12)
 
-    im = plt.imshow(hdu_cut[0].data, norm=norm, cmap=cmap)
+    im = plt.imshow(hdu_cut[0].data, norm=norm, cmap=cmap, **kwargs, origin='lower')
     if reverse_y:
         plot.invert_yaxis()
     c_ticks = np.linspace(norm.vmin, norm.vmax, 5, endpoint=True)
@@ -261,7 +264,7 @@ def plot_subimage(fig: plt.figure, hdu: Union[str, fits.HDUList], ra: float, dec
     return plot, hdu_cut
 
 
-def plot_galaxy(fig: plt.figure, data_title: str, instrument: str, f: str, ra: float, dec: float,
+def plot_galaxy(fig: plt.Figure, data_title: str, instrument: str, f: str, ra: float, dec: float,
                 frame: Union[int, float], world_frame: bool = False,
                 n: int = 1, n_x: int = 1, n_y: int = 1,
                 cmap: str = 'viridis', show_cbar: bool = False, stretch: str = 'sqrt', vmin: float = None,
@@ -370,7 +373,7 @@ def plot_galaxy(fig: plt.figure, data_title: str, instrument: str, f: str, ra: f
 
 
 def plot_hg(data_title: str, instrument: str, f: str, frame: int,
-            fig: plt.figure, n: int = 1, n_x: int = 1, n_y: int = 1,
+            fig: plt.Figure, n: int = 1, n_x: int = 1, n_y: int = 1,
             show_frb: Union[bool, str] = False, ellipse_colour: str = 'white',
             cmap: str = 'viridis', show_cbar: bool = False, stretch: str = 'sqrt', vmin: float = None,
             vmax: float = None,
@@ -446,8 +449,8 @@ def plot_hg(data_title: str, instrument: str, f: str, frame: int,
 
 
 def distance_bar(hdu: fits.hdu.HDUList, ang_size_distance: float, x: float, y: float, frame: int,
-                 colour: str = 'white', length: float = None, angle_length: float = None, spread: float = 1.,
-                 reverse_y=False):
+                 length: float = None, angle_length: float = None, spread: float = 1.,
+                 reverse_y=False, line_kwargs: dict = {}, text_kwargs: dict = {}):
     """
     Draw a projected distance bar on your plot.
     :param hdu:
@@ -490,13 +493,13 @@ def distance_bar(hdu: fits.hdu.HDUList, ang_size_distance: float, x: float, y: f
     print('Angular size:', angle_length, 'arcsecs')
 
     if reverse_y:
-        plt.plot((x, x + pix_length), (2 * frame - y, 2 * frame - y), c=colour)
-        plt.text(x, 2 * frame - y - spread, f'{np.round(length / 1000, 1)} kpc', color=colour)
-        plt.text(x, 2 * frame - y + 1.7 * spread, f'{int(angle_length)} arcsec', color=colour)
+        plt.plot((x, x + pix_length), (2 * frame - y, 2 * frame - y), **line_kwargs)
+        plt.text(x, 2 * frame - y - spread, f'{np.round(length / 1000, 1)} kpc', **text_kwargs)
+        plt.text(x, 2 * frame - y + 1.7 * spread, f'{int(angle_length)} arcsec', **text_kwargs)
     else:
-        plt.plot((x, x + pix_length), (y, y), c=colour)
-        plt.text(x, y + spread, f'{np.round(length / 1000, 1)} kpc', color=colour)
-        plt.text(x, y - 1.7 * spread, f'{int(angle_length)} arcsec', color=colour)
+        plt.plot((x + 0.5, x + 0.5 + pix_length), (y, y), **line_kwargs)
+        plt.text(x, y + spread, f'{np.round(length / 1000, 1)} kpc', **text_kwargs)
+        plt.text(x, y - 1.7 * spread, f'{int(angle_length)} arcsec', **text_kwargs)
 
 
 def nice_norm(image: np.ndarray):
@@ -542,7 +545,7 @@ def plot_gal_params(hdu: fits.HDUList, ras: Union[list, np.ndarray, float], decs
                     a: Union[list, np.ndarray, float], b: Union[list, np.ndarray, float],
                     theta: Union[list, np.ndarray, float], colour: str = 'white',
                     show_centre: bool = False,
-                    label: str = None, world: bool = True, world_axes: bool = True, line_style='-', line_width=1):
+                    label: str = None, world: bool = True, world_axes: bool = True, **kwargs):
     """
 
     :param hdu:
@@ -577,13 +580,14 @@ def plot_gal_params(hdu: fits.HDUList, ras: Union[list, np.ndarray, float], decs
     b = u.dequantify(b)
 
     for i, x in enumerate(xs):
+        print(x, ys[i])
         if a[i] != 0 and b[i] != 0:
             if world_axes:
                 ellipse = photutils.EllipticalAperture((x, ys[i]), a=a[i] / pix_scale, b=b[i] / pix_scale,
                                                        theta=theta[i])
             else:
                 ellipse = photutils.EllipticalAperture((x, ys[i]), a=a[i], b=b[i], theta=theta[i])
-            ellipse.plot(color=colour, label=label, ls=line_style, linewidth=line_width)
+            ellipse.plot(**kwargs)
             line_label = None
         else:
             line_label = label

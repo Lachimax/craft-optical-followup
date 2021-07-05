@@ -187,16 +187,19 @@ class ImagingImage(Image):
         self.fwhm_median_moffat = None
         self.fwhm_min_moffat = None
         self.fwhm_sigma_moffat = None
+        self.fwhm_rms_moffat = None
 
         self.fwhm_max_gauss = None
         self.fwhm_median_gauss = None
         self.fwhm_min_gauss = None
         self.fwhm_sigma_gauss = None
+        self.fwhm_rms_gauss = None
 
         self.fwhm_max_sextractor = None
         self.fwhm_median_sextractor = None
         self.fwhm_min_sextractor = None
         self.fwhm_sigma_sextractor = None
+        self.fwhm_rms_sextractor = None
 
         self.sky_background = None
 
@@ -534,18 +537,21 @@ class ImagingImage(Image):
         self.fwhm_max_gauss = np.nanmax(fwhm_gauss)
         self.fwhm_min_gauss = np.nanmin(fwhm_gauss)
         self.fwhm_sigma_gauss = np.nanstd(fwhm_gauss)
+        self.fwhm_rms_gauss = np.sqrt(np.mean(fwhm_gauss ** 2))
 
         fwhm_moffat = (stars_gauss["MOFFAT_FWHM_FITTED"]).to(units.arcsec)
         self.fwhm_median_moffat = np.nanmedian(fwhm_moffat)
         self.fwhm_max_moffat = np.nanmax(fwhm_moffat)
         self.fwhm_min_moffat = np.nanmin(fwhm_moffat)
         self.fwhm_sigma_moffat = np.nanstd(fwhm_moffat)
+        self.fwhm_rms_moffat = np.sqrt(np.mean(fwhm_moffat ** 2))
 
         fwhm_sextractor = (stars_gauss["FWHM_WORLD"]).to(units.arcsec)
         self.fwhm_median_sextractor = np.nanmedian(fwhm_sextractor)
         self.fwhm_max_sextractor = np.nanmax(fwhm_sextractor)
         self.fwhm_min_sextractor = np.nanmin(fwhm_sextractor)
         self.fwhm_sigma_sextractor = np.nanstd(fwhm_sextractor)
+        self.fwhm_rms_sextractor = np.sqrt(np.mean(fwhm_sextractor ** 2))
 
         self.close()
 
@@ -554,14 +560,17 @@ class ImagingImage(Image):
             "fwhm_max_gauss": self.fwhm_max_gauss,
             "fwhm_min_gauss": self.fwhm_min_gauss,
             "fwhm_sigma_gauss": self.fwhm_sigma_gauss,
+            "fwhm_rms_gauss": self.fwhm_rms_gauss,
             "fwhm_median_moffat": self.fwhm_median_moffat,
             "fwhm_max_moffat": self.fwhm_max_moffat,
             "fwhm_min_moffat": self.fwhm_min_moffat,
             "fwhm_sigma_moffat": self.fwhm_sigma_moffat,
+            "fwhm_rms_moffat": self.fwhm_rms_moffat,
             "fwhm_median_sextractor": self.fwhm_median_sextractor,
             "fwhm_max_sextractor": self.fwhm_max_sextractor,
             "fwhm_min_sextractor": self.fwhm_min_sextractor,
-            "fwhm_sigma_sextractor": self.fwhm_sigma_sextractor
+            "fwhm_sigma_sextractor": self.fwhm_sigma_sextractor,
+            "fwhm_rms_sextractor": self.fwhm_rms_sextractor,
         }
 
         return results
@@ -693,8 +702,51 @@ class ImagingImage(Image):
         """
         pass
 
-    def plot_object(self, row: table.Row, ext: int = 0, frame: units.Quantity = 10 * units.pix, output: str = None,
-                    show: bool = False, title: str = None):
+    def plot_subimage(self, fig: plt.Figure, centre: SkyCoord,
+                      frame: units.Quantity,
+                      n: int = 1, n_x: int = 1, n_y: int = 1,
+                      cmap: str = 'viridis', show_cbar: bool = False,
+                      stretch: str = 'sqrt',
+                      vmin: float = None,
+                      vmax: float = None,
+                      show_grid: bool = False,
+                      ticks: int = None, interval: str = 'minmax',
+                      show_coords: bool = True, ylabel: str = None,
+                      reverse_y=False,
+                      **kwargs):
+        self.open()
+        if frame.unit.is_equivalent(units.deg):
+            world_frame = True
+            frame = frame.to(units.deg)
+        elif frame.unit.is_equivalent(units.pix):
+            world_frame = False
+            frame = frame.to(units.pix)
+        else:
+            raise units.UnitsError("Frame must have units pixels or angle, not", frame.unit)
+
+        subplot, hdu_cut = pl.plot_subimage(fig=fig, hdu=self.hdu_list,
+                                            ra=centre.ra.value,
+                                            dec=centre.dec.value,
+                                            frame=frame.value,
+                                            world_frame=world_frame,
+                                            n=n, n_x=n_x, n_y=n_y,
+                                            cmap=cmap, show_cbar=show_cbar, stretch=stretch,
+                                            vmin=vmin, vmax=vmax,
+                                            show_grid=show_grid,
+                                            ticks=ticks, interval=interval,
+                                            show_coords=show_coords,
+                                            ylabel=ylabel,
+                                            reverse_y=reverse_y,
+                                            **kwargs
+                                            )
+        self.close()
+        return subplot, hdu_cut
+
+    def plot_source_extractor_object(self, row: table.Row,
+                                     ext: int = 0,
+                                     frame: units.Quantity = 10 * units.pix,
+                                     output: str = None,
+                                     show: bool = False, title: str = None):
 
         self.extract_pixel_scale()
         self.open()
@@ -740,6 +792,7 @@ class ImagingImage(Image):
         if show:
             plt.show()
         self.close()
+        return
 
     def plot(self, ext: int = 0, **kwargs):
         self.open()
