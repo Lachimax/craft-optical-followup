@@ -1740,7 +1740,7 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
                         new_img_2 = img_2.correct_astrometry(output_dir=astrometry_fil_path)
                         self.add_frame_astrometry(new_img_2)
                         new_img_1 = img_1.correct_astrometry_from_other(new_img_2, output_dir=astrometry_fil_path)
-                        self.add_frame_astrometry(new_img_2)
+                        self.add_frame_astrometry(new_img_1)
             self.paths['astrometry_dir'] = astrometry_path
             self.stages_complete["5-correct_astrometry_frames"] = Time.now()
             self.update_output_file()
@@ -1763,6 +1763,7 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
                     pairs.append((img_2, img_1))
                 else:
                     raise ValueError("Image is missing chip.")
+                print(img_1, img_2)
         return pairs
 
     @classmethod

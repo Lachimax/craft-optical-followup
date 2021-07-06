@@ -57,6 +57,9 @@ class Image:
     def __eq__(self, other):
         return self.path == other.path
 
+    def __str__(self):
+        return self.filename
+
     def open(self, mode: str = "readonly"):
         if self.path is not None and self.hdu_list is None:
             self.hdu_list = fits.open(self.path, mode=mode)
@@ -89,6 +92,7 @@ class Image:
             self.close()
         else:
             print("Headers already loaded.")
+        return self.headers
 
     def load_data(self, force: bool = False):
         if self.data is None or force:
@@ -640,19 +644,44 @@ class ImagingImage(Image):
         """
         if not isinstance(other_image, ImagingImage):
             raise ValueError("other_image is not a valid ImagingImage")
+        other_header = other_image.load_headers()[0]
+
+        output_path = os.path.join(output_dir, f"{self.name}_astrometry.fits")
+        shutil.copyfile(self.path, output_path)
+
+        # TODO: This method works, but does not preserve the order of header keys in the new file.
+        # In fact, it makes rather a mess of them. Work out how to do this properly.
+
+        # Take old astrometry info from other header
+        start_index = other_header.index("_RVAL1") - 1
+        end_index = other_header.index("_D2_2") + 1
+        insert = other_header[start_index:end_index]
+
+        # Take new astrometry info from other header
+        start_index = other_header.index("WCSAXES") - 5
+        end_index = start_index + 269
+        insert.update(other_header[start_index:end_index])
+
         other_pointing = other_image.extract_pointing()
         other_old_pointing = other_image.extract_old_pointing()
         offset_ra = other_pointing.ra - other_old_pointing.ra
         offset_dec = other_pointing.dec - other_old_pointing.dec
 
-        output_path = os.path.join(output_dir, f"{self.name}_astrometry.fits")
-        shutil.copyfile(self.path, output_path)
+        offset_crpix1 = other_header["CRPIX1"] - other_header["_RPIX1"]
+        offset_crpix2 = other_header["CRPIX2"] - other_header["_RPIX2"]
 
         with fits.open(output_path, "update") as file:
-            file[0].header["_RVAL1"] = file[0].header["CRVAL1"]
-            file[0].header["CRVAL1"] = file[0].header["CRVAL1"] + offset_ra.value
-            file[0].header["_RVAL2"] = file[0].header["CRVAL2"]
-            file[0].header["CRVAL2"] = file[0].header["CRVAL2"] + offset_dec.value
+            insert["_RVAL1"] = file[0].header["CRVAL1"]
+            insert["_RVAL2"] = file[0].header["CRVAL2"]
+            insert["CRVAL1"] = insert["_RVAL1"] + offset_ra.value
+            insert["CRVAL2"] = insert["_RVAL2"] + offset_dec.value
+
+            insert["_RPIX1"] = file[0].header["CRPIX1"]
+            insert["_RPIX2"] = file[0].header["CRPIX2"]
+            insert["CRPIX1"] = insert["_RPIX1"] + offset_crpix1
+            insert["CRPIX2"] = insert["_RPIX2"] + offset_crpix2
+
+            file[0].header.update(insert)
 
         cls = ImagingImage.select_child_class(instrument=self.instrument)
         new_image = cls(path=output_path)
