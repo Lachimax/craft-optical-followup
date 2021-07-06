@@ -241,6 +241,18 @@ class Galaxy(Object):
         })
         return default_params
 
+    @classmethod
+    def from_dict(cls, dictionary: dict):
+        ra, dec = p.select_coords(dictionary["position"])
+        if "position_err" in dictionary:
+            position_err = dictionary["position_err"]
+        else:
+            position_err = PositionUncertainty.default_params()
+        return cls(name=dictionary["name"],
+                   position=f"{ra} {dec}",
+                   position_err=position_err,
+                   z=dictionary['z'])
+
 
 class FRB(Object):
     def __init__(self,
