@@ -351,23 +351,23 @@ def plot_galaxy(fig: plt.Figure, data_title: str, instrument: str, f: str, ra: f
         a, b, theta = am.calculate_error_ellipse(burst_properties, error='statistical')
         plot_gal_params(hdu=hdu_cut, ras=[burst_ra], decs=[burst_dec], a=[a],
                         b=[b],
-                        theta=[-theta], colour=ellipse_colour, line_style='-')
+                        theta=[-theta], colour=ellipse_colour, ls='-')
         # Systematic
         a, b, theta = am.calculate_error_ellipse(burst_properties, error='systematic')
         plot_gal_params(hdu=hdu_cut, ras=[burst_ra], decs=[burst_dec], a=[a],
                         b=[b],
-                        theta=[-theta], colour=ellipse_colour, line_style='--')
+                        theta=[-theta], colour=ellipse_colour, ls='--')
         # Quadrature
         a, b, theta = am.calculate_error_ellipse(burst_properties, error='quadrature')
         plot_gal_params(hdu=hdu_cut, ras=[burst_ra], decs=[burst_dec], a=[a],
                         b=[b],
-                        theta=[-theta], colour=ellipse_colour, line_style=':')
+                        theta=[-theta], colour=ellipse_colour, ls=':')
 
     elif show_frb is not False:
         a, b, theta = am.calculate_error_ellipse(burst_properties, error=show_frb)
         plot_gal_params(hdu=hdu_cut, ras=[burst_ra], decs=[burst_dec], a=[a],
                         b=[b],
-                        theta=[-theta], colour=ellipse_colour, line_style='-', line_width=line_width)
+                        theta=[-theta], colour=ellipse_colour, ls='-', lw=line_width)
 
     return plot, hdu_cut
 
@@ -430,11 +430,11 @@ def plot_hg(data_title: str, instrument: str, f: str, frame: int,
 
             distance_bar(hdu=hdu_cut, ang_size_distance=ang_size_distance, angle_length=1.0, x=frame / 15,
                          y=frame / 4.5,
-                         colour=bar_colour, spread=frame / 10, reverse_y=reverse_y, frame=frame)
+                         line_kwargs={"c": bar_colour}, spread=frame / 10, reverse_y=reverse_y, frame=frame)
         elif bar_position == 'right':
             distance_bar(hdu=hdu_cut, ang_size_distance=ang_size_distance, angle_length=1.0, x=frame * 2 - frame / 1.8,
                          y=frame / 4.5,
-                         colour=bar_colour, spread=frame / 10, reverse_y=reverse_y, frame=frame)
+                         line_kwargs={"c": bar_colour}, spread=frame / 10, reverse_y=reverse_y, frame=frame)
         else:
             raise ValueError('Bar position not recognised.')
 
