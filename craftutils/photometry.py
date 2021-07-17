@@ -546,7 +546,7 @@ def determine_zeropoint_sextractor(sextractor_cat: Union[str, table.QTable],
     matches_cat_pix_x, matches_cat_pix_y = wcst.all_world2pix(matches[cat_ra_col], matches[cat_dec_col], 0, quiet=False)
 
     plt.imshow(image[0].data, origin='lower', norm=plotting.nice_norm(image[0].data))
-    plt.scatter(matches_cat_pix_x, matches_cat_pix_y, label=cat_name + 'Catalogue', c=matches[star_class_col])
+    plt.scatter(matches_cat_pix_x, matches_cat_pix_y, label=cat_name + 'Catalogue', c=matches[star_class_col], cmap="plasma")
     plt.colorbar()
     plt.legend()
     plt.title('Matches with ' + cat_name + ' Catalogue against ' + image_name + ' Image (Using SExtractor)')
@@ -617,7 +617,7 @@ def determine_zeropoint_sextractor(sextractor_cat: Union[str, table.QTable],
     # Plot remaining matches
     plt.imshow(image[0].data, origin='lower', norm=plotting.nice_norm(image[0].data))
     plt.scatter(matches_clean[sex_x_col], matches_clean[sex_y_col], label='SExtractor',
-                c=matches_clean[star_class_col])
+                c=matches_clean[star_class_col], cmap="plasma")
     plt.colorbar()
     plt.legend()
     plt.title('Matches with ' + cat_name + ' Catalogue against image (Using SExtractor)')
