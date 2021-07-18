@@ -450,7 +450,8 @@ def plot_hg(data_title: str, instrument: str, f: str, frame: int,
 
 def distance_bar(hdu: fits.hdu.HDUList, ang_size_distance: float, x: float, y: float, frame: int,
                  length: float = None, angle_length: float = None, spread: float = 1.,
-                 reverse_y=False, line_kwargs: dict = {}, text_kwargs: dict = {}):
+                 reverse_y=False, fancy: bool = False, x_bar: float = None, line_kwargs: dict = {}, text_kwargs: dict = {},
+                 fancy_line_kwargs: dict = {"lw": 0.5, "color": "red"}):
     """
     Draw a projected distance bar on your plot.
     :param hdu:
@@ -459,7 +460,6 @@ def distance_bar(hdu: fits.hdu.HDUList, ang_size_distance: float, x: float, y: f
     :param angle_length: In arcsecs, the length of the bar you want to show.
     :param x: Position of bar in plot.
     :param y: Position of bar in plot.
-    :param colour: Colour of bar and text.
     :return:
     """
 
@@ -492,14 +492,41 @@ def distance_bar(hdu: fits.hdu.HDUList, ang_size_distance: float, x: float, y: f
     print('Projected length:', length, 'pc')
     print('Angular size:', angle_length, 'arcsecs')
 
-    if reverse_y:
-        plt.plot((x, x + pix_length), (2 * frame - y, 2 * frame - y), **line_kwargs)
-        plt.text(x, 2 * frame - y - spread, f'{np.round(length / 1000, 1)} kpc', **text_kwargs)
-        plt.text(x, 2 * frame - y + 1.7 * spread, f'{int(angle_length)} arcsec', **text_kwargs)
+    if "lw" in line_kwargs:
+        lw = line_kwargs["lw"]
     else:
-        plt.plot((x + 0.5, x + 0.5 + pix_length), (y, y), **line_kwargs)
-        plt.text(x, y + spread, f'{np.round(length / 1000, 1)} kpc', **text_kwargs)
-        plt.text(x, y - 1.7 * spread, f'{int(angle_length)} arcsec', **text_kwargs)
+        lw = 1
+
+    if x_bar is None:
+        x_bar = x
+
+    if reverse_y:
+        x_left = x_bar
+        x_right = x_bar + pix_length
+        y_bar = 2 * frame - y
+        y_text_kpc = 2 * frame - y - spread
+        y_text_arcsec = 2 * frame - y + 1.7 * spread
+    else:
+        x_left = x_bar + 0.5
+        x_right = x_bar + 0.5 + pix_length
+        y_bar = y
+        y_text_kpc = y + spread
+        y_text_arcsec = y - 1.7 * spread
+
+    plt.plot((x_left, x_right), (y_bar, y_bar), **line_kwargs)
+    if fancy:
+        # Large bar left endcap
+        plt.plot((x_left, x_left), (y_bar + spread / 3, y_bar - spread / 3), **line_kwargs)
+        # Large bar right endcap
+        plt.plot((x_right, x_right), (y_bar + spread / 3, y_bar - spread / 3), **line_kwargs)
+        # Small bar
+        plt.plot((x_left, x_right), (y_bar, y_bar), **fancy_line_kwargs)
+        # Small bar left endcap
+        plt.plot((x_left, x_left), (y_bar + spread / 3, y_bar - spread / 3), **fancy_line_kwargs)
+        # Small bar right endcap
+        plt.plot((x_right, x_right), (y_bar + spread / 3, y_bar - spread / 3), **fancy_line_kwargs)
+    plt.text(x, y_text_kpc, f'{np.round(length / 1000, 1)} kpc', **text_kwargs)
+    plt.text(x, y_text_arcsec, f'{int(angle_length)} arcsec', **text_kwargs)
 
 
 def nice_norm(image: np.ndarray):
