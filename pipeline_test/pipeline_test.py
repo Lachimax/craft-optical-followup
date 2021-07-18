@@ -32,7 +32,6 @@ def main(field_name: str,
             new_field = True
             field_name = input("Please enter the name of the new field:\n")
     # Check for field param file
-    print(field_name)
     if not new_field:
         field = fld.Field.from_params(name=field_name)
     else:
@@ -46,7 +45,6 @@ def main(field_name: str,
         old_params = p.object_params_frb(obj=old_field_name)
         print()
         field_param_path = os.path.join(param_path, field_name)
-        print(field_param_path)
         u.mkdir_check(field_param_path)
         field_param_path_yaml = os.path.join(field_param_path, f"{field_name}.yaml")
         if old_params is None:

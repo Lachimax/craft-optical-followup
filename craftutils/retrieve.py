@@ -1165,7 +1165,6 @@ def retrieve_mast_photometry(ra: float, dec: float, cat: str = "panstarrs1", rel
 def save_mast_photometry(ra: float, dec: float, output: str, cat: str = "panstarrs1",
                          radius: units.Quantity = 0.2 * units.deg):
     response = retrieve_mast_photometry(ra=ra, dec=dec, cat=cat, radius=radius)
-    print(response)
     if response == "ERROR":
         return response
     elif response is not None:
@@ -1254,7 +1253,6 @@ def save_gaia(ra: float, dec: float, output: str, radius: units.Quantity = 0.2 *
         u.mkdir_check_nested(path=output)
         print(f"Saving GAIA catalogue to {output}")
         table.write(output, format="ascii.csv")
-        # print(table)
         return str(table)
     else:
         print("No data retrieved from Gaia DR2")

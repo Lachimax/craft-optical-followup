@@ -45,7 +45,6 @@ def select_instrument(mode: str):
 def list_fields():
     print("Searching for field param files...")
     param_path = os.path.join(config['param_dir'], 'fields')
-    print(param_path)
     fields = list(filter(lambda d: os.path.isdir(os.path.join(param_path, d)) and os.path.isfile(
         os.path.join(param_path, d, f"{d}.yaml")), os.listdir(param_path)))
     fields.sort()
@@ -519,7 +518,6 @@ class FRBField(Field):
             if frb is not None:
                 centre_coords = frb.position
 
-        print("FRBField __init__", name)
         # Input attributes
         super().__init__(name=name,
                          centre_coords=centre_coords,
@@ -599,9 +597,7 @@ class FRBField(Field):
                                ls='--', **frb_kwargs)
         if show_frb in ['all', 'quadrature']:
             a_quad = np.sqrt(uncertainty.a_stat ** 2 + uncertainty.a_sys ** 2).to(units.deg).value
-            print(a_quad)
             b_quad = np.sqrt(uncertainty.b_stat ** 2 + uncertainty.b_sys ** 2).to(units.deg).value
-            print(b_quad)
             pl.plot_gal_params(hdu=hdu_cut,
                                ras=[ra],
                                decs=[dec],
@@ -645,7 +641,6 @@ class FRBField(Field):
     @classmethod
     def from_file(cls, param_file: Union[str, dict]):
         name, param_file, param_dict = p.params_init(param_file)
-        print("from_file", name)
 
         # Check data_dir path for relevant .yamls (output_values, etc.)
 
@@ -2425,7 +2420,6 @@ class XShooterSpectroscopyEpoch(ESOSpectroscopyEpoch):
                                   spectrograph=f"{self._instrument_pypeit}_{arm}")
                 # Read .sorted file
                 self.read_pypeit_sorted_file()
-                print(self._cfg_split_letters)
                 setup = self._cfg_split_letters[arm]
                 spec.pypeit_setup(root=self.paths['raw_dir'], output_path=self.paths['pypeit_dir'],
                                   spectrograph=f"{self._instrument_pypeit}_{arm}", cfg_split=setup)
