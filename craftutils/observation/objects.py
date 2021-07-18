@@ -184,19 +184,48 @@ class Object:
             "name": None,
             "position": position_dictionary.copy(),
             "position_err": PositionUncertainty.default_params(),
+            "type": None,
         }
         return default_params
 
     @classmethod
-    def from_dict(cls, dictionary: dict):
+    def from_dict(cls, dictionary: dict) -> 'Object':
+        """
+        Construct an Object or appropriate child class (FRB, Galaxy...) from a passed dict.
+        :param dictionary: dict with keys:
+            'position': position dictionary as given by position_dictionary
+            'position_err':
+        :return: Object reflecting dictionary.
+        """
         ra, dec = p.select_coords(dictionary["position"])
         if "position_err" in dictionary:
             position_err = dictionary["position_err"]
         else:
             position_err = PositionUncertainty.default_params()
-        return cls(name=dictionary["name"],
-                   position=f"{ra} {dec}",
-                   position_err=position_err)
+
+        if "type" in dictionary:
+            selected = cls.select_child_class(obj_type=dictionary["type"])
+        else:
+            selected = cls
+
+        print(selected)
+
+        if selected in (Object, FRB):
+            return selected(name=dictionary["name"],
+                            position=f"{ra} {dec}",
+                            position_err=position_err)
+        else:
+            return selected.from_dict(dictionary=dictionary)
+
+    @classmethod
+    def select_child_class(cls, obj_type: str):
+        obj_type = obj_type.lower()
+        if obj_type == "galaxy":
+            return Galaxy
+        elif obj_type == "frb":
+            return FRB
+        else:
+            raise ValueError(f"Didn't recognise obj_type '{obj_type}'")
 
     @classmethod
     def from_source_extractor_row(cls, row: table.Row, use_psf_params: bool = False):
