@@ -14,3 +14,11 @@ def test_fits_table_all():
     assert isinstance(tbl, table.Table)
     assert len(tbl) == 2
     assert isinstance(tbl["EXPTIME"][0], float)
+
+
+def test_fits_table():
+    tbl = ff.fits_table(good_input)
+    print(tbl.colnames)
+    assert isinstance(tbl, table.Table)
+    assert len(tbl) == 2
+    assert isinstance(tbl["exp_time"][0], float)
