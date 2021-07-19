@@ -17,8 +17,9 @@ import astropy.units as units
 from astropy.nddata import CCDData
 from astropy.table import Table
 
-from craftutils import utils as u
-from craftutils import plotting as pl
+import craftutils.utils as u
+import craftutils.plotting as pl
+import craftutils.observation.image as img
 
 
 # TODO: Fill in docstrings.
@@ -949,12 +950,14 @@ def fits_table(input_path: str, output_path: str = "", science_only: bool = True
         ids = ids + string.digits
 
     for i, f in enumerate(files_fits):
-        data = {}
-        file = fits.open(input_path + f)
-        header = file[0].header
-        data['identifier'] = f
-        if science_only and ('ESO DPR CATG' not in header or 'SCIENCE' not in header['ESO DPR CATG']):
-            continue
+        data = {'identifier': f}
+        file_path = os.path.join(input_path, f)
+        image = img.Image.from_fits(path=file_path)
+        header = image.load_headers()[0]
+        if science_only:
+            frame_type = image.extract_frame_type()
+            if frame_type not in ("science", "science_reduced"):
+                continue
         if len(ids) >= len(files_fits):
             data['id'] = ids[i]
         if "OBJECT" in header:
@@ -1013,7 +1016,6 @@ def fits_table(input_path: str, output_path: str = "", science_only: bool = True
         if "MJD-OBS" in header:
             data['mjd_obs'] = header["MJD-OBS"]
         output.append(data)
-        file.close()
 
     out_file = Table(output)
     out_file.write(output_path, format="ascii.csv", overwrite=True)
@@ -1049,26 +1051,24 @@ def fits_table_all(input_path: str, output_path: str = "", science_only: bool = 
     # Create list of dictionaries to be used as the output data
     output = []
 
-    ids = string.ascii_lowercase
-    if len(ids) < len(files_fits):
-        ids = ids + string.ascii_uppercase
-    if len(ids) < len(files_fits):
-        ids = ids + string.digits
-
     for i, f in enumerate(files_fits):
         data = {}
-        file = fits.open(os.path.join(input_path, f))
-        header = file[0].header
+        file_path = os.path.join(input_path, f)
+        image = img.Image.from_fits(path=file_path)
+        if science_only:
+            frame_type = image.extract_frame_type()
+            if frame_type not in ("science", "science_reduced"):
+                continue
+        header = image.load_headers()[0]
         for key in header:
-            if key != '':
-                data[key] = str(header[key])
+            # Remove comments.
+            if key not in ["COMMENT", "HISTORY", '']:
+                data[key] = header[key]
         if 'ESO TEL AIRM END' in data and 'ESO TEL AIRM START' in data:
             data['AIRMASS'] = (float(data['ESO TEL AIRM END']) + float(data['ESO TEL AIRM START'])) / 2
-        if science_only and 'SCIENCE' in data['ESO DPR CATG']:
             output.append(data)
         elif not science_only:
             output.append(data)
-        file.close()
 
     out_file = Table(output)
     out_file.write(output_path, format="ascii.csv", overwrite=True)
