@@ -546,7 +546,8 @@ def determine_zeropoint_sextractor(sextractor_cat: Union[str, table.QTable],
     matches_cat_pix_x, matches_cat_pix_y = wcst.all_world2pix(matches[cat_ra_col], matches[cat_dec_col], 0, quiet=False)
 
     plt.imshow(image[0].data, origin='lower', norm=plotting.nice_norm(image[0].data))
-    plt.scatter(matches_cat_pix_x, matches_cat_pix_y, label=cat_name + 'Catalogue', c=matches[star_class_col], cmap="plasma")
+    plt.scatter(matches_cat_pix_x, matches_cat_pix_y, label=cat_name + 'Catalogue', c=matches[star_class_col],
+                cmap="plasma")
     plt.colorbar()
     plt.legend()
     plt.title('Matches with ' + cat_name + ' Catalogue against ' + image_name + ' Image (Using SExtractor)')
@@ -1680,7 +1681,8 @@ def mag_to_flux(mag: np.float64, exp_time: float = 1., zeropoint: float = 0.0, e
     return exp_time * 10 ** (-(mag - zeropoint + extinction * airmass) / 2.5)
 
 
-def insert_synthetic_point_sources_gauss(image: np.ndarray, x: np.float, y: np.float, fwhm: float, mag: np.float = 0.0,
+def insert_synthetic_point_sources_gauss(image: np.ndarray, x: np.float64, y: np.float64, fwhm: float,
+                                         mag: np.float64 = 0.0,
                                          exp_time: float = 1.,
                                          zeropoint: float = 0.0, extinction: float = 0.0, airmass: float = 0.0,
                                          saturate: float = None, model: str = 'gauss'):
@@ -1727,8 +1729,8 @@ def insert_synthetic_point_sources_gauss(image: np.ndarray, x: np.float, y: np.f
     return combine, sources
 
 
-def insert_synthetic_point_sources_psfex(image: np.ndarray, x: np.float, y: np.float,
-                                         model: Union[str, fits.hdu.HDUList], mag: np.float = 0.0,
+def insert_synthetic_point_sources_psfex(image: np.ndarray, x: np.float64, y: np.float64,
+                                         model: Union[str, fits.hdu.HDUList], mag: np.float64 = 0.0,
                                          exp_time: float = 1.,
                                          zeropoint: float = 0.0, extinction: float = 0.0, airmass: float = 0.0,
                                          saturate: float = None):
