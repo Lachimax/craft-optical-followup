@@ -27,6 +27,8 @@ from craftutils.wrap.astrometry_net import solve_field
 
 from craftutils.retrieve import cat_columns
 
+instrument_header = {"FORS2": "vlt-fors2"}
+
 
 class Image:
 
@@ -156,8 +158,36 @@ class Image:
                        "gain": "GAIN",
                        "date-obs": "DATE-OBS",
                        "mjd-obs": "MJD-OBS",
-                       "object": "OBJECT"}
+                       "object": "OBJECT",
+                       "instrument": "INSTRUME"}
         return header_keys
+
+    @classmethod
+    def from_fits(cls, path: str, mode: str = "imaging"):
+        # Load fits file
+        hdu_list = fits.open(path)
+        # First, check for instrument information in each header.
+        instrument = None
+        i = 0
+        while instrument is None or i < len(hdu_list):
+            header = hdu_list[i].header
+            if "INSTRUME" in header:
+                instrument = header["INSTRUME"]
+            i += 1
+
+        if instrument is None:
+            print("Instrument could not be determined from header.")
+            child = ImagingImage
+        else:
+            # Look for standard instrument name in list
+            if instrument in instrument_header:
+                instrument = instrument_header[instrument]
+                child = cls.select_child_class(instrument=instrument, mode=mode)
+            else:
+                child = ImagingImage
+        img = child(path=path)
+        img.instrument = instrument
+        return img
 
     @classmethod
     def select_child_class(cls, instrument: str, **kwargs):
@@ -172,6 +202,18 @@ class Image:
                 raise ValueError(f"Unrecognised instrument {instrument}")
         else:
             raise KeyError(f"mode must be provided for {cls}.select_child_class()")
+
+
+class ESOImage(Image):
+    """
+    Generic parent class for ESO images, both spectra and imaging
+    """
+
+    @classmethod
+    def header_keys(cls):
+        header_keys = super().header_keys()
+        header_keys.update({"mode": "HIERARCH ESO INS MODE"})
+        return header_keys
 
 
 class ImagingImage(Image):
@@ -948,7 +990,7 @@ class PanSTARRS1Cutout(ImagingImage):
         return header_keys
 
 
-class FORS2Image(ImagingImage):
+class FORS2Image(ImagingImage, ESOImage):
     def __init__(self, path: str, frame_type: str = None):
         super().__init__(path=path, frame_type=frame_type, instrument="vlt-fors2")
         self.other_chip = None
@@ -957,23 +999,19 @@ class FORS2Image(ImagingImage):
     def extract_frame_type(self):
         obj = self.extract_object()
         category = self.extract_header_item("ESO DPR CATG")
+        if category is None:
+            category = self.extract_header_item("ESO PRO CATG")
         if obj == "BIAS":
             self.frame_type = "bias"
         elif "FLAT" in obj:
             self.frame_type = "flat"
         elif obj == "STD":
             self.frame_type = "standard"
-        elif self.extract_header_item("ESO DPR CATG") == "SCIENCE":
+        elif category == "SCIENCE":
             self.frame_type = "science"
-
-    @classmethod
-    def header_keys(cls):
-        header_keys = super().header_keys()
-        header_keys.update({"noise_read": "HIERARCH ESO DET OUT1 RON",
-                            "filter": "HIERARCH ESO INS FILT1 NAME",
-                            "gain": "HIERARCH ESO DET OUT1 GAIN",
-                            })
-        return header_keys
+        elif category == "SCIENCE_REDUCED_IMG":
+            self.frame_type = "science_reduced"
+        return self.frame_type
 
     def extract_chip_number(self):
         chip_string = self.extract_header_item(key='HIERARCH ESO DET CHIP1 ID')
