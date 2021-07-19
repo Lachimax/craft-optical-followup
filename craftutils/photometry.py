@@ -515,12 +515,11 @@ def determine_zeropoint_sextractor(sextractor_cat: Union[str, table.QTable],
     plt.close()
 
     # Match stars to catalogue.
-    match_ids, match_ids_cat = u.match_cat(x_match=source_tbl[sex_ra_col], y_match=source_tbl[sex_dec_col],
-                                           x_cat=cat[cat_ra_col],
-                                           y_cat=cat[cat_dec_col], tolerance=tolerance)
+    matches, matches_cat, _ = a.match_catalogs(cat_1=source_tbl, cat_2=cat,
+                                            ra_col_1=sex_ra_col, ra_col_2=cat_ra_col,
+                                            dec_col_1=sex_dec_col, dec_col_2=cat_dec_col,
+                                            tolerance=tolerance)
 
-    matches = source_tbl[match_ids]
-    matches_cat = cat[match_ids_cat]
 
     # Plot all matches with catalogue.
     plt.scatter(matches[sex_ra_col], matches[sex_dec_col], label='SExtractor MAG\\_AUTO')
@@ -892,6 +891,7 @@ def determine_zeropoint_sextractor(sextractor_cat: Union[str, table.QTable],
     #         plt.close()
 
     params["matches_cat_path"] = output_path + "matches.csv"
+    params["n_matches"] = len(matches_final)
 
     matches_final["mag_cat"] = matches_final[cat_mag_col]
 
