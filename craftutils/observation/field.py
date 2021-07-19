@@ -242,7 +242,7 @@ class Field:
             epoch = self.epochs_spectroscopy_loaded[epoch]
             options[f'*{epoch.name}\t{epoch.date.isot}\t{epoch.instrument}'] = epoch
         options["New epoch"] = "new"
-        j, epoch = u.select_option(message="Select epoch.", options=options)
+        j, epoch = u.select_option(message="Select epoch.", options=options, sort=True)
         if epoch == "new":
             epoch = self.new_epoch_imaging()
         elif not isinstance(epoch, Epoch):
@@ -358,9 +358,9 @@ class Field:
         return path
 
     def retrieve_catalogues(self, force_update: bool = False):
-        for cat in retrieve.photometry_catalogues:
-            print(f"Checking for photometry in {cat}")
-            self.retrieve_catalogue(cat_name=cat, force_update=force_update)
+        for cat_name in retrieve.photometry_catalogues:
+            print(f"Checking for photometry in {cat_name}")
+            self.retrieve_catalogue(cat_name=cat_name, force_update=force_update)
 
     def retrieve_catalogue(self, cat_name: str, force_update: bool = False):
         if isinstance(self.extent, units.Quantity):
@@ -961,8 +961,7 @@ class Epoch:
 
     def add_coadded_image(self, img: Union[str, image.Image], key: str, **kwargs):
         if isinstance(img, str):
-            cls = image.Image.select_child_class(instrument=self.instrument, frame_type="coadded", **kwargs)
-            img = cls(path=img)
+            img = image.CoaddedImage(path=img)
         img.epoch = self
         self.coadded[key] = img
         return img
@@ -1039,6 +1038,8 @@ class ImagingEpoch(Epoch):
                          date=date, program_id=program_id, target=target)
         self.guess_data_path()
         self.source_extractor_config = source_extractor_config
+        if self.source_extractor_config is None:
+            self.source_extractor_config = {}
 
         self.filters = []
         self.deepest = None
@@ -1082,13 +1083,32 @@ class ImagingEpoch(Epoch):
             self.stages_complete["6-coadd"] = Time.now()
             self.update_output_file()
 
-    def proc_7_photometric_calibration(self, no_query: bool = False, **kwargs):
-        if no_query or self.query_stage("Do photometric calibration?", stage="7-photometric_calibration"):
-            calib_dir = os.path.join(self.data_path, "7-photometric_calibration")
+    def proc_7_source_extraction(self, no_query: bool = False, **kwargs):
+        if no_query or self.query_stage("Do source extraction?", stage='7-source_extraction'):
+            source_extraction_path = os.path.join(self.data_path, "7-source_extraction")
+            u.mkdir_check(source_extraction_path)
+            for fil in self.coadded:
+                img = self.coadded[fil]
+                self.set_path("source_extraction_dir", source_extraction_path)
+                configs = self.source_extractor_config
+                img.source_extraction_psf(output_dir=source_extraction_path,
+                                          phot_autoparams=f"{configs['kron_factor']},{configs['kron_radius_min']}")
+            self.stages_complete['7-source_extraction'] = Time.now()
+            self.update_output_file()
+
+    def proc_8_photometric_calibration(self, no_query: bool = False, **kwargs):
+        if no_query or self.query_stage("Do photometric calibration?", stage="8-photometric_calibration"):
+            calib_dir = os.path.join(self.data_path, "8-photometric_calibration")
             self.photometric_calibration(calib_dir)
             self.paths['calib_dir'] = calib_dir
             self.stages_complete["7-photometric_calibration"] = Time.now()
             self.update_output_file()
+
+    def proc_10_get_photometry(self, no_query: bool = False, **kwargs):
+        if no_query or self.query_stage("Get photometry?", stage="9-get_photometry"):
+            object_property_path = os.path.join(self.data_path, "9-object_properties")
+            self.get_photometry(object_property_path)
+            u.mkdir_check(object_property_path)
 
     def photometric_calibration(self, output_path: str):
         u.mkdir_check(output_path)
@@ -1096,12 +1116,21 @@ class ImagingEpoch(Epoch):
         deepest = self.coadded[self.filters[0]]
         for fil in self.filters:
             img = self.coadded[fil]
-            img.zeropoint(cat_path=self.field.get_path("cat_csv_panstarrs1"),
-                          output_path=os.path.join(output_path, img.name),
-                          cat_name="PanSTARRS1",
-                          image_name="PanSTARRS Cutout",
-                          )
-            img.estimate_depth(zeropoint_name="panstarrs1")
+            for cat_name in retrieve.photometry_catalogues:
+                if cat_name == "gaia":
+                    continue
+                fil_path = os.path.join(output_path, img.filter)
+                u.mkdir_check(fil_path)
+                if f"in_{cat_name}" in self.field.cats and self.field.cats[f"in_{cat_name}"]:
+                    img.zeropoint(cat_path=self.field.get_path(f"cat_csv_{cat_name}"),
+                                  output_path=os.path.join(fil_path, cat_name),
+                                  cat_name=cat_name,
+                                  dist_tol=0.5 * units.arcsec
+                                  )
+
+            zeropoint = img.select_zeropoint()
+
+            img.estimate_depth(zeropoint_name=zeropoint["catalogue"])
 
             if img.depth > deepest.depth:
                 deepest = img
@@ -1453,7 +1482,11 @@ class ImagingEpoch(Epoch):
         stages = super().stages()
         stages.update({"5-correct_astrometry_frames": None,
                        "6-coadd": None,
-                       "7-photometric_calibration": None})
+                       "7-source_extraction": None,
+                       "8-photometric_calibration": None,
+                       "9-dual_mode_source_extraction": None,
+                       "10-get_photometry": None
+                       })
         return stages
 
     @classmethod
@@ -1613,40 +1646,10 @@ class PanSTARRS1ImagingEpoch(ImagingEpoch):
             self.update_output_file()
 
     def proc_5_get_photometry(self, no_query: bool = False, **kwargs):
-        if no_query or self.query_stage("Get photometry?",
-                                        stage="5-get_photometry"):
+        if no_query or self.query_stage("Get photometry?", stage="5-get_photometry"):
             object_property_path = os.path.join(self.data_path, "5-object_properties")
-            u.mkdir_check(object_property_path)
-            for fil in self.coadded:
-                fil_output_path = os.path.join(object_property_path, fil)
-                u.mkdir_check(fil_output_path)
-                img = self.coadded[fil]
-                img.calibrate_magnitudes(zeropoint_name="panstarrs1", dual=True)
-                rows = []
-                for obj in self.field.objects:
-                    nearest = img.find_object(obj.position)
-                    rows.append(nearest)
-                    err = nearest['MAGERR_AUTO_ZP_panstarrs1']
-                    print("FILTER:", fil)
-                    print(f"MAG_AUTO = {nearest['MAG_AUTO_ZP_panstarrs1']} +/- {err}")
-                    print(f"A = {nearest['A_WORLD'].to(units.arcsec)}; B = {nearest['B_WORLD'].to(units.arcsec)}")
-                    img.plot_source_extractor_object(nearest, output=os.path.join(fil_output_path, f"{obj.name}.png"),
-                                                     show=False,
-                                                     title=f"{obj.name}, {fil}-band, {nearest['MAG_AUTO_ZP_panstarrs1'].round(3).value} ± {err.round(3)}")
-                    obj.cat_row = nearest
-                    obj.photometry[f"{fil}_panstarrs1_custom"] = {"mag": nearest['MAG_AUTO_ZP_panstarrs1'],
-                                                                  "mag_err": err,
-                                                                  "a": nearest['A_WORLD'],
-                                                                  "b": nearest['B_WORLD'],
-                                                                  "ra": nearest['ALPHA_SKY'],
-                                                                  "ra_err": np.sqrt(nearest["ERRX2_WORLD"]),
-                                                                  "dec": nearest['DELTA_SKY'],
-                                                                  "dec_err": np.sqrt(nearest["ERRY2_WORLD"]),
-                                                                  "kron_radius": nearest["KRON_RADIUS"]}
-                    obj.update_output_file()
-                tbl = table.hstack(rows)
-                tbl.write(os.path.join(fil_output_path, f"{self.field.name}_{self.name}_{fil}.ecsv"),
-                          format="ascii.ecsv")
+            self.get_photometry(object_property_path)
+
             self.stages_complete["5-get_photometry"] = Time.now()
             self.update_output_file()
 
@@ -1671,6 +1674,31 @@ class PanSTARRS1ImagingEpoch(ImagingEpoch):
         if self.data_path is None and self.field is not None and self.field.data_path is not None:
             self.data_path = os.path.join(self.field.data_path, "imaging", "panstarrs1")
         return self.data_path
+
+    def photometric_calibration(self, output_path: str):
+        u.mkdir_check(output_path)
+
+        deepest = self.coadded[self.filters[0]]
+        for fil in self.filters:
+            img = self.coadded[fil]
+            img.zeropoint(cat_path=self.field.get_path("cat_csv_panstarrs1"),
+                          output_path=os.path.join(output_path, img.name),
+                          cat_name="PanSTARRS1",
+                          image_name="PanSTARRS Cutout",
+                          )
+            img.estimate_depth(zeropoint_name="panstarrs1")
+
+            if img.depth > deepest.depth:
+                deepest = img
+
+        for fil in self.filters:
+            img = self.coadded[fil]
+            print(img.filter, img.depth)
+
+        self.deepest_filter = deepest.filter
+        self.deepest = deepest
+
+        print("DEEPEST FILTER:", self.deepest_filter, self.deepest.depth)
 
     @classmethod
     def stages(cls):
@@ -1710,10 +1738,11 @@ class ESOImagingEpoch(ImagingEpoch):
                  program_id: str = None,
                  date: Union[str, Time] = None,
                  target: str = None,
-                 standard_epochs: list = None):
+                 standard_epochs: list = None,
+                 source_extractor_config: dict = None):
         super().__init__(name=name, field=field, param_path=param_path, data_path=data_path, instrument=instrument,
                          date=date, program_id=program_id, target=target,
-                         standard_epochs=standard_epochs)
+                         standard_epochs=standard_epochs, source_extractor_config=source_extractor_config)
 
     def pipeline(self, **kwargs):
         super().pipeline(**kwargs)
@@ -1753,6 +1782,9 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
         super().pipeline(**kwargs)
         self.proc_5_correct_astrometry_frames(**kwargs)
         self.proc_6_coadd(**kwargs)
+        self.proc_7_source_extraction(**kwargs)
+        self.proc_8_photometric_calibration(**kwargs)
+        # self.proc_10_get_photometry(**kwargs)
 
     def proc_1_initial_setup(self, no_query: bool = False, **kwargs):
         if super().proc_1_initial_setup(no_query, **kwargs):
@@ -1830,7 +1862,8 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
                    instrument='vlt-fors2',
                    program_id=param_dict['program_id'],
                    date=param_dict['date'],
-                   target=target)
+                   target=target,
+                   source_extractor_config=param_dict['sextractor'])
 
     @classmethod
     def convert_old_params(cls, old_epoch_name: str):

@@ -116,6 +116,7 @@ class Image:
 
     def extract_gain(self):
         key = self.header_keys()["gain"]
+        print(type(self), key)
         self.gain = self.extract_header_item(key) * units.electron / units.ct
         return self.gain
 
@@ -261,6 +262,7 @@ class ImagingImage(Image):
 
         self.zeropoints = {}
         self.zeropoint_output_paths = {}
+        self.zeropoint_best = None
 
         self.depth = None
 
@@ -401,6 +403,7 @@ class ImagingImage(Image):
     def extract_filter(self):
         key = self.header_keys()["filter"]
         self.filter = self.extract_header_item(key)
+        self.filter_short = self.filter[0]
         return self.filter
 
     def extract_airmass(self):
@@ -436,6 +439,7 @@ class ImagingImage(Image):
             "fwhm_psfex": self.fwhm_psfex,
             "zeropoints": self.zeropoints,
             "zeropoint_output_paths": self.zeropoint_output_paths,
+            "zeropoint_best": self.zeropoint_best,
             "depth": self.depth,
             "dual_mode_template": self.dual_mode_template
         })
@@ -468,11 +472,30 @@ class ImagingImage(Image):
                 self.zeropoints = outputs["zeropoints"]
             if "zeropoint_output_paths" in outputs:
                 self.zeropoint_output_paths = outputs["zeropoint_output_paths"]
+            if "zeropoint_best" in outputs:
+                self.zeropoint_best = outputs["zeropoint_best"]
             if "depth" in outputs and outputs["depth"] is not None:
                 self.depth = outputs["depth"]
             if "dual_mode_template" in outputs and outputs["dual_mode_template"] is not None:
                 self.dual_mode_template = outputs["dual_mode_template"]
         return outputs
+
+    def select_zeropoint(self):
+        ranking = self.rank_photometric_cat()
+        zps = {}
+        best = None
+        for cat in ranking:
+            if cat in self.zeropoints:
+                zp = self.zeropoints[cat]
+                zps[f"{cat} {zp['zeropoint']} +/- {zp['zeropoint_err']} {zp['n_matches']}"] = zp
+                if best is None:
+                    best = zp
+
+        print(f"We have selected {best['zeropoint']} +/- {best['zeropoint_err']}, from {best['catalogue']}.")
+        select_own = u.select_yn(message="Would you like to select another?", default=False)
+        if select_own:
+            best = u.select_option(message="Select best zeropoint:", options=zps)
+        return best
 
     def zeropoint(self,
                   cat_path: str,
@@ -500,6 +523,7 @@ class ImagingImage(Image):
             image_name = self.name
         self.extract_filter()
         print("FILTER:", self.filter_short)
+        print("CAT_NAME:", cat_name)
         column_names = cat_columns(cat=cat_name, f=self.filter_short)
         print("MAG NAME:", column_names['mag_psf'])
         cat_ra_col = column_names['ra']
@@ -951,6 +975,26 @@ class ImagingImage(Image):
                             })
         return header_keys
 
+    @classmethod
+    def count_exposures(cls, image_paths: list):
+        return len(image_paths)
+
+    @classmethod
+    def rank_photometric_cat(cls):
+        """
+        Gives the ranking of photometric catalogues available for calibration, ranked by similarity to filter set.
+        :return:
+        """
+
+        return ["des",
+                "panstarrs1",
+                "sdss",
+                "skymapper"]
+
+
+class CoaddedImage(ImagingImage):
+    pass
+
 
 class PanSTARRS1Cutout(ImagingImage):
 
@@ -1036,6 +1080,39 @@ class FORS2Image(ImagingImage, ESOImage):
             if "other_chip" in outputs:
                 self.other_chip = outputs["other_chip"]
         return outputs
+
+    @classmethod
+    def header_keys(cls) -> dict:
+        header_keys = super().header_keys()
+        header_keys.update(ESOImage.header_keys())
+        header_keys.update({"noise_read": "HIERARCH ESO DET OUT1 RON",
+                            "filter": "HIERARCH ESO INS FILT1 NAME",
+                            "gain": "HIERARCH ESO DET OUT1 GAIN",
+                            })
+        return header_keys
+
+    @classmethod
+    def count_exposures(cls, image_paths: list):
+        # Counts only chip 1 images
+        n = 0
+        for path in image_paths:
+            image = cls(path=path)
+            chip = image.extract_chip_number()
+            if chip == 1:
+                n += 1
+        return n
+
+    @classmethod
+    def rank_photometric_cat(cls):
+        """
+        Gives the ranking of photometric catalogues available for calibration, ranked by similarity to filter set.
+        :return:
+        """
+
+        return ["des",
+                "panstarrs1",
+                "sdss",
+                "skymapper"]
 
 
 class Spectrum(Image):

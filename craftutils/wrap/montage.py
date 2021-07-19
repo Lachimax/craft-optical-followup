@@ -93,7 +93,8 @@ def inject_header(file_path: str, input_directory: str,
         f"DATE-OBS": template.extract_date_obs(),
         f"EXPTIME": np.nanmean(table[important_keys["exptime"]]),
         f"FILTER": template.extract_filter(),
-        f"INSTRUME": template.instrument
+        f"INSTRUME": template.instrument,
+        f"RON": template.extract_noise_read().value
     }
 
     frame_paths = list(map(lambda f: os.path.join(input_directory, f), table["PATH"]))

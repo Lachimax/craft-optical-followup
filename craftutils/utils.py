@@ -466,10 +466,8 @@ def find_object(x, y, x_search, y_search, world=False):
     :param y_search: array to search for y-coordinate
     :return: id (int), distance (float)
     """
-    if len(x) != len(x_search):
-        raise ValueError('x_match and y_match must be the same length.')
-    if len(y) != len(y_search):
-        raise ValueError('x_cat and y_cat must be the same length.')
+    if len(x_search) != len(y_search):
+        raise ValueError('x_search and y_search must be the same length.')
     if world:
         distances = np.sqrt(((x_search - x) * np.cos(y)) ** 2 + (y_search - y) ** 2)
     else:
