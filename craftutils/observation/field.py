@@ -783,7 +783,7 @@ class Epoch:
         self.instrument = instrument
         self.date = date
         if type(self.date) is str:
-            self.date = Time(date)
+            self.date = Time(date, out_subfmt="date")
         self.program_id = program_id
         self.target = target
 
@@ -1115,8 +1115,13 @@ class ImagingEpoch(Epoch):
 
         print("DEEPEST FILTER:", self.deepest_filter, self.deepest.depth)
 
-    def coadd(self, output_dir: str, frames: str = "astrometry", ):
-
+    def coadd(self, output_dir: str, frames: str = "astrometry"):
+        """
+        Use Montage to coadd individual frames.
+        :param output_dir: Directory in which to write data products.
+        :param frames: Name of frames list to coadd.
+        :return:
+        """
         u.mkdir_check(output_dir)
         if frames == "astrometry":
             input_directory = self.paths['astrometry_dir']
@@ -1124,12 +1129,51 @@ class ImagingEpoch(Epoch):
             raise ValueError(f"{frames} not recognised as frame type.")
         for fil in self.filters:
             input_directory_fil = os.path.join(input_directory, fil)
-            print(input_directory_fil)
             output_directory_fil = os.path.join(output_dir, fil)
             u.mkdir_check(output_directory_fil)
             coadded_path = montage.standard_script(input_directory=input_directory_fil,
-                                                   output_directory=output_directory_fil)
+                                                   output_directory=output_directory_fil,
+                                                   output_file_name=f"{self.name}_{self.date}_{fil}_coadded.fits")
             self.add_coadded_image(coadded_path, key=fil, mode="imaging")
+
+    def get_photometry(self, path: str):
+        """
+        Retrieve photometric properties of key objects and write to disk.
+        :param path: Path to which to write the data products.
+        :return:
+        """
+        u.mkdir_check(path)
+        # Loop through filters
+        for fil in self.coadded:
+            fil_output_path = os.path.join(path, fil)
+            u.mkdir_check(fil_output_path)
+            img = self.coadded[fil]
+            img.calibrate_magnitudes(zeropoint_name="panstarrs1", dual=True)
+            rows = []
+            for obj in self.field.objects:
+                nearest = img.find_object(obj.position)
+                rows.append(nearest)
+                err = nearest['MAGERR_AUTO_ZP_panstarrs1']
+                print("FILTER:", fil)
+                print(f"MAG_AUTO = {nearest['MAG_AUTO_ZP_panstarrs1']} +/- {err}")
+                print(f"A = {nearest['A_WORLD'].to(units.arcsec)}; B = {nearest['B_WORLD'].to(units.arcsec)}")
+                img.plot_source_extractor_object(nearest, output=os.path.join(fil_output_path, f"{obj.name}.png"),
+                                                 show=False,
+                                                 title=f"{obj.name}, {fil}-band, {nearest['MAG_AUTO_ZP_panstarrs1'].round(3).value} ± {err.round(3)}")
+                obj.cat_row = nearest
+                obj.photometry[f"{fil}_panstarrs1_custom"] = {"mag": nearest['MAG_AUTO_ZP_panstarrs1'],
+                                                              "mag_err": err,
+                                                              "a": nearest['A_WORLD'],
+                                                              "b": nearest['B_WORLD'],
+                                                              "ra": nearest['ALPHA_SKY'],
+                                                              "ra_err": np.sqrt(nearest["ERRX2_WORLD"]),
+                                                              "dec": nearest['DELTA_SKY'],
+                                                              "dec_err": np.sqrt(nearest["ERRY2_WORLD"]),
+                                                              "kron_radius": nearest["KRON_RADIUS"]}
+                obj.update_output_file()
+            tbl = table.hstack(rows)
+            tbl.write(os.path.join(fil_output_path, f"{self.field.name}_{self.name}_{fil}.ecsv"),
+                      format="ascii.ecsv")
 
     def _initial_setup(self):
         data_dir = self.data_path
