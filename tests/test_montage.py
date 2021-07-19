@@ -22,4 +22,5 @@ def test_inject_header():
     hdu = fits.open(coadded_file)
     header = hdu[0].header
     assert header["EXPTIME"] == 1.0
-    assert np.round(header["GAIN"]) == 2 * 400 * 2 / 3
+    assert np.round(header["GAIN"]) == np.round(2 * 400 * 2 / 3)
+    assert header["NCOMBINE"] == 2

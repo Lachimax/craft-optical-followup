@@ -9,6 +9,21 @@ import astropy.io.fits as fits
 import craftutils.utils as u
 from craftutils.fits_files import fits_table_all
 from craftutils.photometry import gain_median_combine, gain_mean_combine
+import craftutils.observation.image as img
+
+
+def header_keys():
+    return {
+        "airmass": "AIRMASS",
+        "saturate": "SATURATE",
+        "object": "OBJECT",
+        "filter": "FILTER",
+        "mjd-obs": "MJD-OBS",
+        "date-obs": "DATE-OBS",
+        "gain": "GAIN",
+        "exptime": "EXPTIME",
+        "instrument": "INSTRUME"
+    }
 
 
 def image_table(input_directory: str, output_path: str = "images.tbl"):
@@ -33,6 +48,28 @@ def make_header(table_path: str, output_path: str):
     return u.system_command("mMakeHdr", [table_path, output_path])
 
 
+def check_input_images(input_directory: str):
+    table = fits_table_all(input_directory, science_only=False)
+    table.sort("ARCFILE")
+
+    keys = header_keys()
+    exptime_key = keys["exptime"]
+    instrument_key = keys["instrument"]
+    gain_key = keys["gain"]
+
+    template = table[0]
+    exptime = np.round(float(template[exptime_key]))
+    instrument = template[instrument_key]
+    gain = np.round(template[gain_key])
+    for file in table[1:]:
+        if np.round(float(file[exptime_key])) != exptime:
+            raise ValueError("Input files have different EXPTIME")
+        if file[instrument_key] != instrument:
+            raise ValueError("Input files were taken with different instruments.")
+        if np.round(file[gain_key]) != gain:
+            raise ValueError(f"Files specify different gains {gain, file[gain_key]}")
+
+
 def inject_header(file_path: str, input_directory: str,
                   extra_items: dict = None, keys: dict = None,
                   coadd_type: str = 'median', ext: int = 0,
@@ -40,34 +77,27 @@ def inject_header(file_path: str, input_directory: str,
     table = fits_table_all(input_directory, science_only=False)
     table.sort("ARCFILE")
 
-    important_keys = {
-        "airmass": "AIRMASS",
-        "saturate": "SATURATE",
-        "object": "OBJECT",
-        "filter": "FILTER",
-        "mjd-obs": "MJD-OBS",
-        "date-obs": "DATE-OBS",
-        "gain": "GAIN",
-    }
+    important_keys = header_keys()
 
     if keys is not None:
         important_keys.update(keys)
 
-    for key in important_keys:
-        important_keys[key] = important_keys[key]
+    template = img.ImagingImage.from_fits(table[0]["PATH"])
+    cls = type(template)
 
     insert_dict = {
         f"AIRMASS": np.nanmean(np.float64(table[important_keys['airmass']])),
         f"SATURATE": np.nanmean(np.float64(table[important_keys['saturate']])),
-        f"OBJECT": table[important_keys['object']][0],
+        f"OBJECT": template.extract_object(),
         f"MJD-OBS": float(np.nanmin(np.float64(table[important_keys["mjd-obs"]]))),
-        f"DATE-OBS": table[important_keys["date-obs"]][0]
+        f"DATE-OBS": template.extract_date_obs(),
+        f"EXPTIME": np.nanmean(table[important_keys["exptime"]]),
+        f"FILTER": template.extract_filter(),
+        f"INSTRUME": template.instrument
     }
 
-    if instrument == "vlt-fors2":
-        n_frames = np.sum(table["ESO DET CHIP1 ID"] == 1)
-    else:
-        raise ValueError(f"Instrument {instrument} is not recognised.")
+    frame_paths = list(map(lambda f: os.path.join(input_directory, f), table["PATH"]))
+    n_frames = cls.count_exposures(frame_paths)
 
     insert_dict["NCOMBINE"] = n_frames
 
@@ -222,12 +252,15 @@ def add(input_directory: str, table_path: str,
                             p=input_directory, a=coadd_type)
 
 
-def standard_script(input_directory: str, output_directory: str, output_file_path: str = None, instrument="vlt-fors2"):
+def standard_script(input_directory: str, output_directory: str, output_file_name: str = None,
+                    ignore_differences: bool = False):
     """
     Does a standard median coaddition of fits files in input_directory.
     Adapted from an example bash script found at http://montage.ipac.caltech.edu/docs/first_mosaic_tutorial.html
-    :param input_directory:
-    :param output_directory:
+    :param input_directory: path to directory containing input images.
+    :param output_directory: path to directory to write data products to; will be created if it doesn't exist.
+    :param output_file_name: Name of final coadded image file.
+    :param ignore_differences: If False, checks if input images have compatible exposure times, filter, etc. and raises ValueError if not.
     :return:
     """
     u.mkdir_check(output_directory)
@@ -244,6 +277,10 @@ def standard_script(input_directory: str, output_directory: str, output_file_pat
     proj_dir = "projdir"
     diff_dir = "diffdir"
     corr_dir = "corrdir"
+
+    if not ignore_differences:
+        print("Checking input images...")
+        check_input_images(input_directory=input_directory)
 
     print("Creating metadata tables of the input images.")
     table_path = "images.tbl"
@@ -282,13 +319,13 @@ def standard_script(input_directory: str, output_directory: str, output_file_pat
                        corr_dir=corr_dir)
 
     print("Coadding the images to create mosaics with background corrections.")
-    if output_file_path is None:
-        output_file_path = "coadded.fits"
+    if output_file_name is None:
+        output_file_name = "coadded.fits"
     add(input_directory=corr_dir, coadd_type='median', table_path=reprojected_table_path,
-        header_path=header_path, output_path=output_file_path)
+        header_path=header_path, output_path=output_file_name)
 
-    inject_header(file_path=output_file_path, input_directory=input_directory, instrument="vlt-fors2")
+    inject_header(file_path=output_file_name, input_directory=input_directory, instrument="vlt-fors2")
 
     os.chdir(old_dir)
 
-    return os.path.join(output_directory, output_file_path)
+    return os.path.join(output_directory, output_file_name)
