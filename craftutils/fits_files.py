@@ -1067,8 +1067,7 @@ def fits_table_all(input_path: str, output_path: str = "", science_only: bool = 
         if 'ESO TEL AIRM END' in data and 'ESO TEL AIRM START' in data:
             data['AIRMASS'] = (float(data['ESO TEL AIRM END']) + float(data['ESO TEL AIRM START'])) / 2
             output.append(data)
-        elif not science_only:
-            output.append(data)
+        data["PATH"] = file_path
 
     out_file = Table(output)
     out_file.write(output_path, format="ascii.csv", overwrite=True)
