@@ -2,9 +2,11 @@ from typing import Union, Tuple
 import os
 
 import numpy as np
+
 from astropy.coordinates import SkyCoord
 import astropy.units as units
 import astropy.table as table
+import astropy.cosmology as cosmo
 
 from craftutils import params as p
 from craftutils import astrometry as a
@@ -261,6 +263,15 @@ class Galaxy(Object):
                          position=position,
                          position_err=position_err)
         self.z = z
+        self.D_A = self.angular_size_distance()
+
+    def angular_size_distance(self, cosmology: cosmo.core.FlatLambdaCDM = cosmo.Planck18):
+        return cosmology.angular_diameter_distance(z=self.z)
+
+    def projected_distance(self, angle: units.Quantity):
+        angle = angle.to(units.rad).value
+        dist = angle * self.D_A
+        return dist
 
     @classmethod
     def default_params(cls):
