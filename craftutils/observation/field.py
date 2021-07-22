@@ -1101,14 +1101,23 @@ class ImagingEpoch(Epoch):
             calib_dir = os.path.join(self.data_path, "8-photometric_calibration")
             self.photometric_calibration(calib_dir)
             self.paths['calib_dir'] = calib_dir
-            self.stages_complete["7-photometric_calibration"] = Time.now()
+            self.stages_complete["8-photometric_calibration"] = Time.now()
+            self.update_output_file()
+
+    def proc_9_dual_mode_source_extraction(self, no_query: bool = False, **kwargs):
+        if no_query or self.query_stage("Do source extraction in dual-mode, using deepest image as footprint?",
+                                        stage="9-dual_mode_source_extraction"):
+            source_extraction_path = os.path.join(self.data_path, "9-dual_mode_source_extraction")
+            self.dual_mode_source_extraction(source_extraction_path)
+            self.stages_complete["9-dual_mode_source_extraction"] = Time.now()
             self.update_output_file()
 
     def proc_10_get_photometry(self, no_query: bool = False, **kwargs):
-        if no_query or self.query_stage("Get photometry?", stage="9-get_photometry"):
-            object_property_path = os.path.join(self.data_path, "9-object_properties")
+        if no_query or self.query_stage("Get photometry?", stage="10-get_photometry"):
+            object_property_path = os.path.join(self.data_path, "10-object_properties")
             self.get_photometry(object_property_path)
-            u.mkdir_check(object_property_path)
+            self.stages_complete["10-object_properties"] = Time.now()
+            self.update_output_file()
 
     def photometric_calibration(self, output_path: str):
         u.mkdir_check(output_path)
@@ -1119,13 +1128,14 @@ class ImagingEpoch(Epoch):
             for cat_name in retrieve.photometry_catalogues:
                 if cat_name == "gaia":
                     continue
-                fil_path = os.path.join(output_path, img.filter)
+                fil_path = os.path.join(output_path, fil)
                 u.mkdir_check(fil_path)
                 if f"in_{cat_name}" in self.field.cats and self.field.cats[f"in_{cat_name}"]:
                     img.zeropoint(cat_path=self.field.get_path(f"cat_csv_{cat_name}"),
                                   output_path=os.path.join(fil_path, cat_name),
                                   cat_name=cat_name,
-                                  dist_tol=0.5 * units.arcsec
+                                  dist_tol=1 * units.arcsec,
+                                  show=False
                                   )
 
             zeropoint = img.select_zeropoint()
@@ -1165,6 +1175,16 @@ class ImagingEpoch(Epoch):
                                                    output_file_name=f"{self.name}_{self.date}_{fil}_coadded.fits")
             self.add_coadded_image(coadded_path, key=fil, mode="imaging")
 
+    def dual_mode_source_extraction(self, path: str):
+        u.mkdir_check(path)
+        for fil in self.coadded:
+            img = self.coadded[fil]
+            self.set_path("source_extraction_dual_dir", path)
+            configs = self.source_extractor_config
+            img.source_extraction_psf(output_dir=path,
+                                      phot_autoparams=f"{configs['kron_factor']},{configs['kron_radius_min']}",
+                                      template=self.deepest)
+
     def get_photometry(self, path: str):
         """
         Retrieve photometric properties of key objects and write to disk.
@@ -1177,7 +1197,7 @@ class ImagingEpoch(Epoch):
             fil_output_path = os.path.join(path, fil)
             u.mkdir_check(fil_output_path)
             img = self.coadded[fil]
-            img.calibrate_magnitudes(zeropoint_name="panstarrs1", dual=True)
+            img.calibrate_magnitudes(zeropoint_name="best", dual=True)
             rows = []
             for obj in self.field.objects:
                 nearest = img.find_object(obj.position)
@@ -1615,7 +1635,8 @@ class PanSTARRS1ImagingEpoch(ImagingEpoch):
         if no_query or self.query_stage("Do source extraction?", stage='2-source_extraction'):
             source_extraction_path = os.path.join(self.data_path, "2-source_extraction")
             u.mkdir_check(source_extraction_path)
-            for img in self.frames_science:
+            for fil in self.coadded:
+                img = self.coadded[fil]
                 self.set_path("source_extraction_dir", source_extraction_path)
                 configs = self.source_extractor_config
                 img.source_extraction_psf(output_dir=source_extraction_path,
@@ -1634,14 +1655,7 @@ class PanSTARRS1ImagingEpoch(ImagingEpoch):
         if no_query or self.query_stage("Do source extraction in dual-mode, using deepest image as footprint?",
                                         stage="4-dual_mode_source_extraction"):
             source_extraction_path = os.path.join(self.data_path, "4-dual_mode_source_extraction")
-            u.mkdir_check(source_extraction_path)
-            for img in self.frames_science:
-                self.set_path("source_extraction_dual_dir", source_extraction_path)
-                configs = self.source_extractor_config
-                img.source_extraction_psf(output_dir=source_extraction_path,
-                                          phot_autoparams=f"{configs['kron_factor']},{configs['kron_radius_min']}",
-                                          template=self.deepest)
-
+            self.dual_mode_source_extraction(source_extraction_path)
             self.stages_complete["4-dual_mode_source_extraction"] = Time.now()
             self.update_output_file()
 
@@ -1664,11 +1678,8 @@ class PanSTARRS1ImagingEpoch(ImagingEpoch):
             path = os.path.join(imaging_dir, file)
             img = image.PanSTARRS1Cutout(path=path)
             img.extract_filter()
-            if img not in self.frames_science:
-                self.frames_science.append(img)
-            if img.filter not in self.filters:
-                self.filters.append(img.filter)
             self.coadded[img.filter] = img
+            self.check_filter(img.filter)
 
     def guess_data_path(self):
         if self.data_path is None and self.field is not None and self.field.data_path is not None:
@@ -1784,7 +1795,8 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
         self.proc_6_coadd(**kwargs)
         self.proc_7_source_extraction(**kwargs)
         self.proc_8_photometric_calibration(**kwargs)
-        # self.proc_10_get_photometry(**kwargs)
+        self.proc_9_dual_mode_source_extraction(**kwargs)
+        self.proc_10_get_photometry(**kwargs)
 
     def proc_1_initial_setup(self, no_query: bool = False, **kwargs):
         if super().proc_1_initial_setup(no_query, **kwargs):

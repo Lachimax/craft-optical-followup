@@ -459,7 +459,7 @@ class ImagingImage(Image):
             if "source_cat_sextractor_path" in outputs:
                 self.source_cat_sextractor_path = outputs["source_cat_sextractor_path"]
             if "source_cat_sextractor_dual_path" in outputs:
-                self.source_cat_sextractor_path = outputs["source_cat_sextractor_path"]
+                self.source_cat_sextractor_path = outputs["source_cat_sextractor_dual_path"]
             if "source_cat_path" in outputs:
                 self.source_cat_path = outputs["source_cat_path"]
             if "source_cat_dual_path" in outputs:
@@ -480,7 +480,7 @@ class ImagingImage(Image):
                 self.dual_mode_template = outputs["dual_mode_template"]
         return outputs
 
-    def select_zeropoint(self):
+    def select_zeropoint(self, no_user_input: bool = False):
         ranking = self.rank_photometric_cat()
         zps = {}
         best = None
@@ -492,9 +492,12 @@ class ImagingImage(Image):
                     best = zp
 
         print(f"We have selected {best['zeropoint']} +/- {best['zeropoint_err']}, from {best['catalogue']}.")
-        select_own = u.select_yn(message="Would you like to select another?", default=False)
-        if select_own:
-            best = u.select_option(message="Select best zeropoint:", options=zps)
+        if not no_user_input:
+            select_own = u.select_yn(message="Would you like to select another?", default=False)
+            if select_own:
+                best = u.select_option(message="Select best zeropoint:", options=zps)
+        self.zeropoint_best = best
+        self.update_output_file()
         return best
 
     def zeropoint(self,
@@ -557,7 +560,7 @@ class ImagingImage(Image):
                                                     cat_zeropoint=cat_zeropoint,
                                                     cat_zeropoint_err=cat_zeropoint_err,
                                                     snr_col='SNR',
-                                                    snr_cut=snr_cut
+                                                    snr_cut=snr_cut,
                                                     )
 
         if zp_dict is None:
@@ -582,10 +585,15 @@ class ImagingImage(Image):
         else:
             cat = self.source_cat
 
+        self.extract_exposure_time()
+
         if force or f"MAG_AUTO_ZP_{zeropoint_name}" not in cat:
-            if zeropoint_name not in self.zeropoints:
+            if zeropoint_name == "best":
+                zp_dict = self.zeropoint_best
+            elif zeropoint_name not in self.zeropoints:
                 raise KeyError(f"Zeropoint {zeropoint_name} does not exist.")
-            zp_dict = self.zeropoints[zeropoint_name]
+            else:
+                zp_dict = self.zeropoints[zeropoint_name]
             cat[f"MAG_AUTO_ZP_{zeropoint_name}"], cat[f"MAGERR_AUTO_ZP_{zeropoint_name}"] = ph.magnitude_complete(
                 flux=cat["FLUX_AUTO"],
                 flux_err=cat["FLUXERR_AUTO"],
