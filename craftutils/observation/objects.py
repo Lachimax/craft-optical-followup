@@ -8,6 +8,21 @@ import astropy.units as units
 import astropy.table as table
 import astropy.cosmology as cosmo
 
+ne2001_installed = True
+try:
+    from ne2001.density import NEobject
+except ImportError:
+    print("ne2001 is not installed; DM_ISM estimates will not be available.")
+    ne2001_installed = False
+
+frb_installed = True
+try:
+    import frb.halos as halos
+    import frb.dm.igm as igm
+except ImportError:
+    print("FRB is not installed; DM_ISM estimates will not be available.")
+    frb_installed = False
+
 from craftutils import params as p
 from craftutils import astrometry as a
 from craftutils import utils as u
@@ -148,6 +163,9 @@ class Object:
         self.position = a.attempt_skycoord(position)
         if type(position_err) is not PositionUncertainty:
             self.position_err = PositionUncertainty(uncertainty=position_err, position=self.position)
+        self.position_galactic = None
+        if isinstance(self.position, SkyCoord):
+            self.position_galactic = self.position.transform_to("galactic")
 
         self.cat_row = None
         self.photometry = {}
@@ -294,20 +312,57 @@ class Galaxy(Object):
                    z=dictionary['z'])
 
 
+dm_units = units.parsec * units.cm ** -3
+
+
 class FRB(Object):
     def __init__(self,
                  name: str = None,
                  position: Union[SkyCoord, str] = None,
                  position_err: Union[float, units.Quantity, dict, PositionUncertainty, tuple] = 0.0 * units.arcsec,
-                 host_galaxy: Galaxy = None):
+                 host_galaxy: Galaxy = None, dm: Union[float, units.Quantity] = None):
         super().__init__(name=name,
                          position=position,
                          position_err=position_err)
         self.host_galaxy = host_galaxy
+        self.dm = dm
+        if self.dm is not None:
+            self.dm = u.check_quantity(self.dm, unit=dm_units)
+
+    def estimate_dm_mw_ism(self):
+        if not frb_installed:
+            raise ImportError("FRB is not installed.")
+        if not ne2001_installed:
+            raise ImportError("ne2001 is not installed.")
+        mw = halos.MilkyWay()
+        # Declare MW parameters
+        params = dict(F=1., e_density=1.)
+        model_ne = NEobject(mw.ne, **params)
+        l = self.position_galactic.l.value
+        b = self.position_galactic.b.value
+        return model_ne.DM(l, b, mw.r200.value)
+
+    def estimate_dm_cosmic(self):
+        if not frb_installed:
+            raise ImportError("FRB is not installed.")
+        return igm.average_DM(self.host_galaxy.z, cosmo=cosmo.Planck18)
+
+    def estimate_dm_excess(self):
+        dm_ism = self.estimate_dm_mw_ism()
+        dm_cosmic = self.estimate_dm_cosmic()
+        dm_halo = 60 * dm_units
+        return self.dm - dm_ism - dm_cosmic - dm_halo
+
+    def estimate_dm_exgal(self):
+        dm_ism = self.estimate_dm_mw_ism()
+        dm_halo = 60 * dm_units
+        return self.dm - dm_ism - dm_halo
 
     @classmethod
     def from_dict(cls, dictionary: dict, name: str = None):
         frb = super().from_dict(dictionary=dictionary)
+        if "dm" in dictionary:
+            frb.dm = dictionary["dm"] * dm_units
         frb.host_galaxy = Galaxy.from_dict(dictionary=dictionary["host_galaxy"])
         return frb
 
@@ -316,6 +371,7 @@ class FRB(Object):
         default_params = super().default_params()
         default_params.update({
             "host_galaxy": Galaxy.default_params(),
-            "mjd": 58000
+            "mjd": 58000,
+            "dm": 0.0 * dm_units,
         })
         return default_params
