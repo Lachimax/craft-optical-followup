@@ -112,20 +112,33 @@ def trim_nan(hdu: fits.HDUList, second_hdu: fits.HDUList = None):
     return image, second_image
 
 
-def wcs_transfer(header_template: dict, header_update: dict):
-    keys = ['CRVAL1', 'CRVAL2', 'CRPIX1', 'CRPIX2', 'CDELT1', 'CDELT2', 'CROTA1', 'CROTA2', 'CTYPE1', 'CTYPE2', 'CD1_1',
-            'CD1_2', 'CD2_1', 'CD2_2', 'EQUINOX', 'CUNIT1', 'CUNIT2']
+wcs_keys = [
+    'AP_0_0', 'AP_0_1', 'AP_0_2', 'AP_1_0', 'AP_1_1', 'AP_2_0', 'AP_ORDER',
+    'A_0_0', 'A_0_1', 'A_0_2', 'A_1_0', 'A_1_1', 'A_2_0', 'A_ORDER',
+    'BP_0_0', 'BP_0_1', 'BP_0_2', 'BP_1_0', 'BP_1_1', 'BP_2_0', 'BP_ORDER',
+    'B_0_0', 'B_0_1', 'B_0_2', 'B_1_0', 'B_1_1', 'B_2_0', 'B_ORDER',
+    'CD1_1', 'CD1_2', 'CD2_1', 'CD2_2',
+    'CDELT1', 'CDELT2',
+    'CROTA1', 'CROTA2',
+    'CRPIX1', 'CRPIX2',
+    'CRVAL1', 'CRVAL2',
+    'CTYPE1', 'CTYPE2',
+    'CUNIT1', 'CUNIT2',
+    'EQUINOX',
+    'IMAGEH', 'IMAGEW',
+    'LONPOLE', 'LATPOLE',
+    'NAXIS', 'NAXIS1', 'NAXIS2',
+    'WCSAXES',
+]
 
+
+def wcs_transfer(header_template: dict, header_update: dict):
     update = {}
-    for key in keys:
+    for key in wcs_keys:
         if key in header_template:
             update[key] = header_template[key]
-        if key in header_update:
-            del header_update[key]
 
     header_update.update(update)
-
-    print(update)
 
     return header_update
 
@@ -194,14 +207,6 @@ def reproject(image_1: Union[fits.HDUList, str], image_2: Union[fits.HDUList, st
 
     return n_reprojected
 
-
-# def trim_nan(contains_nans: fits.HDUList, other: fits.HDUList):
-#     contains_nans_data = contains_nans[0].data
-#     other_data = other[0].data
-#
-#     col_mask = np.ones(dtype=bool)
-#     for col in contains_nans_data:
-#         if np.sum(np.isnan(col)) > 0:
 
 def align(comparison: Union[fits.hdu.hdulist.HDUList, str], template: Union[fits.hdu.hdulist.HDUList, str],
           comparison_output: str = 'comparison_shifted.fits', template_output: str = 'template_shifted.fits',
@@ -844,8 +849,9 @@ def trim_file(path: Union[str, fits.HDUList], left: int = None, right: int = Non
     print('Trimming: \n' + str(path))
     print('left', left, 'right', right, 'bottom', bottom, 'top', top)
     print('Moving to: \n' + str(new_path))
-    add_log(file=file, action='Trimmed using PyCRAFT.fits_files.trim() with borders at x = ' + str(left) + ', ' + str(
-        right) + '; y=' + str(bottom) + ', ' + str(top) + '; moved from ' + str(path) + ' to ' + str(new_path))
+    add_log(file=file,
+            action='Trimmed using craftutils.fits_files.trim() with borders at x = ' + str(left) + ', ' + str(
+                right) + '; y=' + str(bottom) + ', ' + str(top) + '; moved from ' + str(path) + ' to ' + str(new_path))
     print()
 
     print(new_path)
