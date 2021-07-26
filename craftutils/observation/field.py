@@ -12,6 +12,7 @@ from astropy.time import Time
 from astropy.coordinates import SkyCoord
 import astropy.units as units
 import astropy.table as table
+import astropy.wcs as wcs
 
 import craftutils.astrometry as am
 import craftutils.fits_files as ff
@@ -1056,6 +1057,8 @@ class ImagingEpoch(Epoch):
 
         self.std_pointings = {}
 
+        self.coadded_trimmed = {}
+
         self.load_output_file(mode="imaging")
 
     def proc_5_correct_astrometry_frames(self, no_query: bool = False, **kwargs):
@@ -1083,48 +1086,57 @@ class ImagingEpoch(Epoch):
             self.stages_complete["6-coadd"] = Time.now()
             self.update_output_file()
 
-    def proc_7_source_extraction(self, no_query: bool = False, **kwargs):
-        if no_query or self.query_stage("Do source extraction?", stage='7-source_extraction'):
-            source_extraction_path = os.path.join(self.data_path, "7-source_extraction")
+    def proc_7_trim_coadded(self, no_query: bool = False, **kwargs):
+        if no_query or self.query_stage(stage="7-trim_coadded",
+                                        message="Trim / reproject coadded images to same footprint?"):
+            trimmed_path = os.path.join(self.data_path, "7-trimmed_again")
+            self.trim_coadded(trimmed_path)
+            self.paths['trimmed_coadded_dir'] = trimmed_path
+            self.stages_complete["7-trim_coadded"] = Time.now()
+            self.update_output_file()
+
+    def proc_8_source_extraction(self, no_query: bool = False, **kwargs):
+        if no_query or self.query_stage("Do source extraction?", stage='8-source_extraction'):
+            source_extraction_path = os.path.join(self.data_path, "8-source_extraction")
             u.mkdir_check(source_extraction_path)
-            for fil in self.coadded:
-                img = self.coadded[fil]
+            for fil in self.coadded_trimmed:
+                img = self.coadded_trimmed[fil]
                 self.set_path("source_extraction_dir", source_extraction_path)
                 configs = self.source_extractor_config
                 img.source_extraction_psf(output_dir=source_extraction_path,
                                           phot_autoparams=f"{configs['kron_factor']},{configs['kron_radius_min']}")
-            self.stages_complete['7-source_extraction'] = Time.now()
+            self.stages_complete['8-source_extraction'] = Time.now()
             self.update_output_file()
 
-    def proc_8_photometric_calibration(self, no_query: bool = False, **kwargs):
-        if no_query or self.query_stage("Do photometric calibration?", stage="8-photometric_calibration"):
-            calib_dir = os.path.join(self.data_path, "8-photometric_calibration")
+    def proc_9_photometric_calibration(self, no_query: bool = False, **kwargs):
+        if no_query or self.query_stage("Do photometric calibration?", stage="9-photometric_calibration"):
+            calib_dir = os.path.join(self.data_path, "9-photometric_calibration")
             self.photometric_calibration(calib_dir)
             self.paths['calib_dir'] = calib_dir
-            self.stages_complete["8-photometric_calibration"] = Time.now()
+            self.stages_complete["9-photometric_calibration"] = Time.now()
             self.update_output_file()
 
-    def proc_9_dual_mode_source_extraction(self, no_query: bool = False, **kwargs):
+    def proc_10_dual_mode_source_extraction(self, no_query: bool = False, **kwargs):
         if no_query or self.query_stage("Do source extraction in dual-mode, using deepest image as footprint?",
-                                        stage="9-dual_mode_source_extraction"):
-            source_extraction_path = os.path.join(self.data_path, "9-dual_mode_source_extraction")
+                                        stage="10-dual_mode_source_extraction"):
+            source_extraction_path = os.path.join(self.data_path, "10-dual_mode_source_extraction")
             self.dual_mode_source_extraction(source_extraction_path)
-            self.stages_complete["9-dual_mode_source_extraction"] = Time.now()
+            self.stages_complete["10-dual_mode_source_extraction"] = Time.now()
             self.update_output_file()
 
-    def proc_10_get_photometry(self, no_query: bool = False, **kwargs):
-        if no_query or self.query_stage("Get photometry?", stage="10-get_photometry"):
-            object_property_path = os.path.join(self.data_path, "10-object_properties")
+    def proc_11_get_photometry(self, no_query: bool = False, **kwargs):
+        if no_query or self.query_stage("Get photometry?", stage="11-get_photometry"):
+            object_property_path = os.path.join(self.data_path, "11-object_properties")
             self.get_photometry(object_property_path)
-            self.stages_complete["10-object_properties"] = Time.now()
+            self.stages_complete["11-object_properties"] = Time.now()
             self.update_output_file()
 
     def photometric_calibration(self, output_path: str):
         u.mkdir_check(output_path)
 
-        deepest = self.coadded[self.filters[0]]
+        deepest = self.coadded_trimmed[self.filters[0]]
         for fil in self.filters:
-            img = self.coadded[fil]
+            img = self.coadded_trimmed[fil]
             for cat_name in retrieve.photometry_catalogues:
                 if cat_name == "gaia":
                     continue
@@ -1154,6 +1166,20 @@ class ImagingEpoch(Epoch):
 
         print("DEEPEST FILTER:", self.deepest_filter, self.deepest.depth)
 
+    def trim_coadded(self, output_dir: str):
+        u.mkdir_check(output_dir)
+        template = None
+        for fil in self.coadded:
+            img = self.coadded[fil]
+            output_path = os.path.join(output_dir, img.filename.replace(".fits", "_trimmed.fits"))
+            trimmed = img.trim_from_area(output_path=output_path)
+            if template is None:
+                template = trimmed
+            else:
+                # Using the first image as a template, reproject this one into the pixel space (for alignment)
+                trimmed = trimmed.reproject(other_image=template, output_path=output_path)
+            self.add_coadded_trimmed_image(trimmed, key=fil)
+
     def coadd(self, output_dir: str, frames: str = "astrometry"):
         """
         Use Montage to coadd individual frames.
@@ -1177,8 +1203,8 @@ class ImagingEpoch(Epoch):
 
     def dual_mode_source_extraction(self, path: str):
         u.mkdir_check(path)
-        for fil in self.coadded:
-            img = self.coadded[fil]
+        for fil in self.coadded_trimmed:
+            img = self.coadded_trimmed[fil]
             self.set_path("source_extraction_dual_dir", path)
             configs = self.source_extractor_config
             img.source_extraction_psf(output_dir=path,
@@ -1193,24 +1219,25 @@ class ImagingEpoch(Epoch):
         """
         u.mkdir_check(path)
         # Loop through filters
-        for fil in self.coadded:
+        for fil in self.coadded_trimmed:
             fil_output_path = os.path.join(path, fil)
             u.mkdir_check(fil_output_path)
-            img = self.coadded[fil]
+            img = self.coadded_trimmed[fil]
             img.calibrate_magnitudes(zeropoint_name="best", dual=True)
             rows = []
             for obj in self.field.objects:
+                plt.close()
                 nearest = img.find_object(obj.position)
                 rows.append(nearest)
-                err = nearest['MAGERR_AUTO_ZP_panstarrs1']
+                err = nearest[f'MAGERR_AUTO_ZP_best']
                 print("FILTER:", fil)
-                print(f"MAG_AUTO = {nearest['MAG_AUTO_ZP_panstarrs1']} +/- {err}")
+                print(f"MAG_AUTO = {nearest['MAG_AUTO_ZP_best']} +/- {err}")
                 print(f"A = {nearest['A_WORLD'].to(units.arcsec)}; B = {nearest['B_WORLD'].to(units.arcsec)}")
                 img.plot_source_extractor_object(nearest, output=os.path.join(fil_output_path, f"{obj.name}.png"),
                                                  show=False,
-                                                 title=f"{obj.name}, {fil}-band, {nearest['MAG_AUTO_ZP_panstarrs1'].round(3).value} ± {err.round(3)}")
+                                                 title=f"{obj.name}, {fil}-band, {nearest['MAG_AUTO_ZP_best'].round(3).value} ± {err.round(3)}")
                 obj.cat_row = nearest
-                obj.photometry[f"{fil}_panstarrs1_custom"] = {"mag": nearest['MAG_AUTO_ZP_panstarrs1'],
+                obj.photometry[f"{fil}_{self.instrument}"] = {"mag": nearest['MAG_AUTO_ZP_best'],
                                                               "mag_err": err,
                                                               "a": nearest['A_WORLD'],
                                                               "b": nearest['B_WORLD'],
@@ -1327,11 +1354,18 @@ class ImagingEpoch(Epoch):
                 coadded[fil] = self.coadded[fil].path
             elif isinstance(self.coadded[fil], str):
                 coadded[fil] = self.coadded[fil]
+        coadded_trimmed = {}
+        for fil in self.coadded_trimmed:
+            if isinstance(self.coadded_trimmed[fil], image.Image):
+                coadded_trimmed[fil] = self.coadded_trimmed[fil].path
+            elif isinstance(self.coadded_trimmed[fil], str):
+                coadded_trimmed[fil] = self.coadded_trimmed[fil]
 
         output_dict.update({"filters": self.filters,
                             "deepest": deepest,
                             "deepest_filter": self.deepest_filter,
                             "coadded": coadded,
+                            "coadded_trimmed": coadded_trimmed,
                             "frames_raw": frames_raw,
                             "frames_reduced": frames_reduced,
                             "frames_astrometry": frames_astrometry,
@@ -1377,6 +1411,10 @@ class ImagingEpoch(Epoch):
                 for fil in outputs["coadded"]:
                     if outputs["coadded"][fil] is not None:
                         self.add_coadded_image(img=outputs["coadded"][fil], key=fil, **kwargs)
+            if "coadded_trimmed" in outputs:
+                for fil in outputs["coadded_trimmed"]:
+                    if outputs["coadded_trimmed"][fil] is not None:
+                        self.add_coadded_trimmed_image(img=outputs["coadded_trimmed"][fil], key=fil, **kwargs)
 
         return outputs
 
@@ -1428,9 +1466,19 @@ class ImagingEpoch(Epoch):
         if isinstance(astrometry_frame, str):
             cls = image.ImagingImage.select_child_class(instrument=self.instrument)
             astrometry_frame = cls(path=astrometry_frame, frame_type="astrometry")
-        fil = astrometry_frame.extract_filter()
-        if self.check_filter(fil=fil):
-            self.frames_astrometry[fil].append(astrometry_frame)
+        try:
+            fil = astrometry_frame.extract_filter()
+            if self.check_filter(fil=fil):
+                self.frames_astrometry[fil].append(astrometry_frame)
+        except FileNotFoundError:
+            print(f"Astrometry file {astrometry_frame.path} not found.")
+
+    def add_coadded_trimmed_image(self, img: Union[str, image.Image], key: str, **kwargs):
+        if isinstance(img, str):
+            img = image.CoaddedImage(path=img)
+        img.epoch = self
+        self.coadded_trimmed[key] = img
+        return img
 
     def check_filter(self, fil: str):
         """
@@ -1451,6 +1499,8 @@ class ImagingEpoch(Epoch):
                 self.frames_astrometry[fil] = []
             if fil not in self.coadded:
                 self.coadded[fil] = None
+            if fil not in self.coadded_trimmed:
+                self.coadded_trimmed[fil] = None
             if fil not in self.exp_time_mean:
                 self.exp_time_mean[fil] = None
             if fil not in self.exp_time_err:
@@ -1502,10 +1552,11 @@ class ImagingEpoch(Epoch):
         stages = super().stages()
         stages.update({"5-correct_astrometry_frames": None,
                        "6-coadd": None,
-                       "7-source_extraction": None,
-                       "8-photometric_calibration": None,
-                       "9-dual_mode_source_extraction": None,
-                       "10-get_photometry": None
+                       "7-trim_coadded": None,
+                       "8-source_extraction": None,
+                       "9-photometric_calibration": None,
+                       "10-dual_mode_source_extraction": None,
+                       "11-get_photometry": None
                        })
         return stages
 
@@ -1793,10 +1844,11 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
         super().pipeline(**kwargs)
         self.proc_5_correct_astrometry_frames(**kwargs)
         self.proc_6_coadd(**kwargs)
-        self.proc_7_source_extraction(**kwargs)
-        self.proc_8_photometric_calibration(**kwargs)
-        self.proc_9_dual_mode_source_extraction(**kwargs)
-        self.proc_10_get_photometry(**kwargs)
+        self.proc_7_trim_coadded(**kwargs)
+        self.proc_8_source_extraction(**kwargs)
+        self.proc_9_photometric_calibration(**kwargs)
+        self.proc_10_dual_mode_source_extraction(**kwargs)
+        self.proc_11_get_photometry(**kwargs)
 
     def proc_1_initial_setup(self, no_query: bool = False, **kwargs):
         if super().proc_1_initial_setup(no_query, **kwargs):

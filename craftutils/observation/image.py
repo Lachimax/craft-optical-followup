@@ -14,6 +14,9 @@ import astropy.table as table
 import astropy.wcs as wcs
 import astropy.units as units
 from astropy.coordinates import SkyCoord
+from astropy.time import Time
+
+import reproject as rp
 
 import craftutils.utils as u
 import craftutils.astrometry as a
@@ -152,6 +155,14 @@ class Image:
         self.n_pix = self.n_y * self.n_x
         return self.n_pix
 
+    def extract_pixel_edges(self):
+        """
+        Using the FITS convention of origin = 1, 1, returns the pixel coordinates of the edges.
+        :return: tuple: left, right, bottom, top
+        """
+        self.extract_n_pix()
+        return 1, self.n_x, 1, self.n_y
+
     @classmethod
     def header_keys(cls):
         header_keys = {"exposure_time": "EXPTIME",
@@ -220,6 +231,9 @@ class ESOImage(Image):
 class ImagingImage(Image):
     def __init__(self, path: str, frame_type: str = None, instrument: str = None):
         super().__init__(path=path, frame_type=frame_type, instrument=instrument)
+
+        self.wcs = None
+
         self.filter = None
         self.filter_short = None
         self.pixel_scale_ra = None
@@ -310,6 +324,7 @@ class ImagingImage(Image):
         return self.load_psfex_output()
 
     def load_psfex_output(self, force: bool = False):
+        print(self.path)
         if force or self.psfex_output is None:
             self.psfex_output = fits.open(self.psfex_path)
 
@@ -389,6 +404,19 @@ class ImagingImage(Image):
                 self.source_cat_dual_path = self.path.replace(".fits", "_source_cat_dual.ecsv")
             print("Writing dual-mode source catalogue to", self.source_cat_dual_path)
             self.source_cat_dual.write(self.source_cat_dual_path, format="ascii.ecsv")
+
+    def load_wcs(self, ext: int = 0) -> wcs.WCS:
+        self.load_headers()
+        self.wcs = wcs.WCS(header=self.headers[ext])
+        return self.wcs
+
+    def extract_wcs_footprint(self):
+        """
+        Returns the RA & Dec of the corners of the image.
+        :return: tuple of SkyCoords, (top_left, top_right, bottom_left, bottom_right)
+        """
+        self.load_wcs()
+        return self.wcs.calc_footprint()
 
     def extract_pixel_scale(self, layer: int = 0, force: bool = False):
         if force or self.pixel_scale_ra is None or self.pixel_scale_dec is None:
@@ -710,10 +738,20 @@ class ImagingImage(Image):
         new_image = cls(path=final_file)
         return new_image
 
-    def correct_astrometry_from_other(self, other_image: 'ImagingImage', output_dir: str = None):
+    def transfer_wcs(self, other_image: 'ImagingImage', ext: int = 0):
+        other_image.load_headers()
+        self.load_headers()
+        self.headers[ext] = ff.wcs_transfer(header_template=other_image.headers[ext], header_update=self.headers[ext])
+        self.write_headers()
+
+    def correct_astrometry_from_other(self, other_image: 'ImagingImage', output_dir: str = None) -> 'ImagingImage':
         """
-        :param other_image: Must contain both _RVAL and CRVAL keywords.
-        :param output_dir:
+        Uses the header information from an image that has already been corrected by the Astrometry.net code to apply
+        the same tweak to this image.
+        This assumes that both images had the same astrometry to begin with, and is only really valid for use with an
+        image that represents the same exposure but on a different CCD chip.
+        :param other_image: Header must contain both _RVAL and CRVAL keywords.
+        :param output_dir: Path to write new fits file to.
         :return:
         """
         if not isinstance(other_image, ImagingImage):
@@ -736,15 +774,18 @@ class ImagingImage(Image):
         end_index = start_index + 269
         insert.update(other_header[start_index:end_index])
 
+        # Calculate offset, in other image and in world coordinates, of the new reference pixel from its old one.
         other_pointing = other_image.extract_pointing()
         other_old_pointing = other_image.extract_old_pointing()
         offset_ra = other_pointing.ra - other_old_pointing.ra
         offset_dec = other_pointing.dec - other_old_pointing.dec
 
+        # Calculate the offset, in the other image and in pixels, of the new reference frame from its old one.
         offset_crpix1 = other_header["CRPIX1"] - other_header["_RPIX1"]
         offset_crpix2 = other_header["CRPIX2"] - other_header["_RPIX2"]
 
         with fits.open(output_path, "update") as file:
+            # Apply the same offsets to this image, while keeping the old values as "_" keys
             insert["_RVAL1"] = file[0].header["CRVAL1"]
             insert["_RVAL2"] = file[0].header["CRVAL2"]
             insert["CRVAL1"] = insert["_RVAL1"] + offset_ra.value
@@ -755,6 +796,7 @@ class ImagingImage(Image):
             insert["CRPIX1"] = insert["_RPIX1"] + offset_crpix1
             insert["CRPIX2"] = insert["_RPIX2"] + offset_crpix2
 
+            # Insert all other astrometry info as previously extracted.
             file[0].header.update(insert)
 
         cls = ImagingImage.select_child_class(instrument=self.instrument)
@@ -781,6 +823,70 @@ class ImagingImage(Image):
             plt.colorbar(label="Offset of measured position from catalogue (arcseconds)")
             plt.show()
         return mean_offset, median_offset, rms_offset
+
+    def trim(self,
+             left: Union[int, units.Quantity] = None,
+             right: Union[int, units.Quantity] = None,
+             bottom: Union[int, units.Quantity] = None,
+             top: Union[int, units.Quantity] = None,
+             output_path: str = None):
+        left = u.dequantify(left, unit=units.pix)
+        right = u.dequantify(right, unit=units.pix)
+        bottom = u.dequantify(bottom, unit=units.pix)
+        top = u.dequantify(top, unit=units.pix)
+
+        if output_path is None:
+            output_path = self.path.replace(".fits", "_trimmed.fits")
+        ff.trim_file(path=self.path,
+                     left=left, right=right, bottom=bottom, top=top,
+                     new_path=output_path
+                     )
+        image = self.__class__(path=output_path)
+        return image
+
+    def reproject(self, other_image: 'ImagingImage', ext: int = 0, output_path: str = None):
+        if output_path is None:
+            output_path = self.path.replace(".fits", "_reprojected.fits")
+        other_image.load_headers()
+        print(f"Reprojecting {self.filename} into the pixel space of {other_image.filename}")
+        reprojected, footprint = rp.reproject_exact(self.path, other_image.headers[ext], parallel=True)
+        if output_path != self.path:
+            shutil.copyfile(self.path, output_path)
+        reprojected_image = deepcopy(self)
+        reprojected_image.path = output_path
+        reprojected_image.load_data()
+        reprojected_image.data[ext] = reprojected
+        reprojected_image.write_data()
+        reprojected_image.transfer_wcs(other_image=other_image)
+        reprojected_image.add_history(f"Reprojected into pixel space of {other_image.filename}")
+        return reprojected_image
+
+    def add_history(self, note: str, ext: int = 0, ):
+        self.headers[ext]["HISTORY"] = str(Time.now()) + ": " + note
+        self.write_headers()
+
+    def write_headers(self):
+        with fits.open(self.path, mode="update") as file:
+            for i, header in enumerate(self.headers):
+                file[i].header = header
+
+    def write_data(self):
+        with fits.open(self.path, mode="update") as file:
+            for i, data in enumerate(self.data):
+                file[i].data = data
+
+    def trim_to_wcs(self, bottom_left: SkyCoord, top_right: SkyCoord, output_path: str = None) -> 'ImagingImage':
+        """
+        Trims the image to a footprint defined by two RA/DEC coordinates
+        :param bottom_left:
+        :param top_right:
+        :param output_path:
+        :return:
+        """
+        self.load_wcs()
+        left, bottom = bottom_left.to_pixel(wcs=self.wcs, origin=0)
+        right, top = top_right.to_pixel(wcs=self.wcs, origin=0)
+        return self.trim(left=left, right=right, bottom=bottom, top=top, output_path=output_path)
 
     def match_to_cat(self, cat: Union[str, table.QTable],
                      ra_col: str = "ra", dec_col: str = "dec",
@@ -1001,7 +1107,38 @@ class ImagingImage(Image):
 
 
 class CoaddedImage(ImagingImage):
-    pass
+    def __init__(self, path: str, frame_type: str = None, instrument: str = None, area_file: str = None):
+        super().__init__(path=path, frame_type=frame_type, instrument=instrument)
+        self.area_file = area_file  # string
+        if self.area_file is None:
+            self.area_file = self.path.replace(".fits", "_area.fits")
+
+    def trim(self,
+             left: Union[int, units.Quantity] = None,
+             right: Union[int, units.Quantity] = None,
+             bottom: Union[int, units.Quantity] = None,
+             top: Union[int, units.Quantity] = None,
+             output_path: str = None):
+        trimmed = super().trim(left=left, right=right, bottom=bottom, top=top, output_path=output_path)
+        new_area_path = output_path.replace(".fits", "_area.fits")
+        ff.trim_file(path=self.area_file,
+                     left=left, right=right, bottom=bottom, top=top,
+                     new_path=new_area_path
+                     )
+        trimmed.area_file = new_area_path
+        return trimmed
+
+    def trim_from_area(self, output_path: str = None):
+        left, right, bottom, top = ff.detect_edges_area(self.area_file)
+        trimmed = self.trim(left=left, right=right, bottom=bottom, top=top, output_path=output_path)
+        return trimmed
+
+    def _output_dict(self):
+        outputs = super()._output_dict()
+        outputs.update({
+            "area_file": self.area_file
+        })
+        return outputs
 
 
 class PanSTARRS1Cutout(ImagingImage):
