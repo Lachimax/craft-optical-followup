@@ -24,18 +24,30 @@ from craftutils import utils as u
 def cat_columns(cat, f: str = None):
     cat = cat.lower()
     if f == "rank":
-        f = {"des": "r",
-             "sdss": "r",
-             "skymapper": "r",
-             "panstarrs1": "r",
-             "gaia": "g"
-             }[cat]
+        f = {
+            "delve": "r",
+            "des": "r",
+            "sdss": "r",
+            "skymapper": "r",
+            "panstarrs1": "r",
+            "gaia": "g"
+        }[cat]
     if f is not None:
         f = f[0]
     else:
         f = ""
 
-    if cat == 'des':
+    if cat == 'delve':
+        f = f.lower()
+        return {
+            'mag_auto': f"wavg_mag_auto_{f}",
+            'mag_auto_err': f"wavg_magerr_auto_{f}",
+            'mag_psf': f"wavg_mag_psf_{f}",
+            'mag_psf_err': f"wavg_magerr_psf_{f}",
+            'ra': f"ra",
+            'dec': f"dec",
+            'class_star': f"class_star_{f}"}
+    elif cat == 'des':
         f = f.upper()
         return {
             'mag_auto': f"MAG_AUTO_{f}",
@@ -45,6 +57,22 @@ def cat_columns(cat, f: str = None):
             'ra': f"RA",
             'dec': f"DEC",
             'class_star': f"CLASS_STAR_{f}"}
+    elif cat == 'gaia':
+        return {
+            'mag_auto': f"phot_{f}_mean_mag",
+            'ra': f"ra",
+            'dec': f"dec",
+        }
+    elif cat == 'panstarrs1':
+        f = f.lower()
+        return {
+            'mag_auto': f"{f}KronMag",
+            'mag_auto_err': f"{f}KronMagErr",
+            'mag_psf': f"{f}PSFMag",
+            'mag_psf_err': f"{f}PSFMagErr",
+            'ra': f"raStack",
+            'dec': f"decStack",
+            'class_star': f"psfLikelihood"}
     elif cat == 'sdss':
         f = f.lower()
         return {
@@ -61,22 +89,6 @@ def cat_columns(cat, f: str = None):
             'ra': f"raj2000",
             'dec': f"dej2000",
             'class_star': f"class_star_SkyMapper"}
-    elif cat == 'panstarrs1':
-        f = f.lower()
-        return {
-            'mag_auto': f"{f}KronMag",
-            'mag_auto_err': f"{f}KronMagErr",
-            'mag_psf': f"{f}PSFMag",
-            'mag_psf_err': f"{f}PSFMagErr",
-            'ra': f"raStack",
-            'dec': f"decStack",
-            'class_star': f"psfLikelihood"}
-    elif cat == 'gaia':
-        return {
-            'mag_auto': f"phot_{f}_mean_mag",
-            'ra': f"ra",
-            'dec': f"dec",
-        }
     else:
         raise ValueError(f"Catalogue {cat} not recognised.")
 
@@ -621,6 +633,39 @@ def update_frb_sdss_photometry(frb: str, force: bool = False):
         return True
     else:
         print("This field is not present in SDSS.")
+
+
+def retrieve_delve_photometry(ra: float, dec: float, radius: units.Quantity = 0.2 * units.deg):
+    print(f"\nQuerying DELVE DR1 archive for field centring on RA={ra}, DEC={dec}")
+    radius = u.dequantify(radius, unit=units.deg)
+    url = f"http://datalab.noao.edu/tap/sync?REQUEST=doQuery&lang=ADQL&FORMAT=csv&QUERY=SELECT%20q3c_dist" \
+          f"%28ra%2Cdec%2C%20247.725%2C-0.972%29%2A3600%20AS%20dist%2C%20%2A%20FROM%20delve_dr1.objects%20WHERE%20%27t" \
+          f"%27%20%3D%20Q3C_RADIAL_QUERY%28ra%2C%20dec%2C{ra}%2C{dec}%2C{radius}%29%20ORDER%20BY%20dist%20ASC"
+    try:
+        response = requests.get(url).content
+    except requests.exceptions.SSLError:
+        print('An SSL error occurred when retrieving DELVE data. Skipping.')
+        return "ERROR"
+    if b"ERROR" in response:
+        return "ERROR"
+    if response.count(b"\n") <= 1:
+        return None
+    else:
+        return response
+
+
+def save_delve_photometry(ra: float, dec: float, output: str, radius: units.Quantity = 0.2 * units.deg):
+    response = retrieve_delve_photometry(ra=ra, dec=dec, radius=radius)
+    if response == "ERROR":
+        return response
+    elif response is not None:
+        u.mkdir_check_nested(path=output)
+        print("Saving DELVE photometry to" + output)
+        with open(output, "wb") as file:
+            file.write(response)
+    else:
+        print('No data retrieved from SkyMapper.')
+    return response
 
 
 # Dark Energy Survey database functions adapted code by T. Andrew Manning, from
@@ -1350,6 +1395,7 @@ keys = p.keys()
 fors2_filters_retrievable = ["I_BESS", "R_SPEC", "b_HIGH", "v_HIGH"]
 mast_catalogues = ['panstarrs1']
 photometry_catalogues = {
+    'delve': save_delve_photometry,
     'des': save_des_photometry,
     'sdss': save_sdss_photometry,
     'skymapper': save_skymapper_photometry,
