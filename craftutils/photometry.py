@@ -516,10 +516,9 @@ def determine_zeropoint_sextractor(sextractor_cat: Union[str, table.QTable],
 
     # Match stars to catalogue.
     matches, matches_cat, _ = a.match_catalogs(cat_1=source_tbl, cat_2=cat,
-                                            ra_col_1=sex_ra_col, ra_col_2=cat_ra_col,
-                                            dec_col_1=sex_dec_col, dec_col_2=cat_dec_col,
-                                            tolerance=tolerance)
-
+                                               ra_col_1=sex_ra_col, ra_col_2=cat_ra_col,
+                                               dec_col_1=sex_dec_col, dec_col_2=cat_dec_col,
+                                               tolerance=tolerance)
 
     # Plot all matches with catalogue.
     plt.scatter(matches[sex_ra_col], matches[sex_dec_col], label='SExtractor MAG\\_AUTO')
@@ -591,6 +590,18 @@ def determine_zeropoint_sextractor(sextractor_cat: Union[str, table.QTable],
     params[f'matches_{n_match}_sex_mag_upper'] = int(sum(np.invert(remove)))
     n_match += 1
 
+    remove = remove + (matches[cat_mag_col] < -98 * units.mag)
+    print(sum(np.invert(remove)),
+          'matches after removing objects with mags < -98')
+    params[f'matches_{n_match}_sex_mag_upper'] = int(sum(np.invert(remove)))
+    n_match += 1
+
+    remove = remove + (matches[cat_mag_col] > 90 * units.mag)
+    print(sum(np.invert(remove)),
+          'matches after removing objects with mags > 98')
+    params[f'matches_{n_match}_sex_mag_upper'] = int(sum(np.invert(remove)))
+    n_match += 1
+
     remove = remove + (matches[snr_col] < snr_cut)
     print(sum(np.invert(remove)),
           f'matches after removing objects with {snr_col} < {snr_cut}')
@@ -645,7 +656,7 @@ def determine_zeropoint_sextractor(sextractor_cat: Union[str, table.QTable],
 
     delta = -np.inf
     rmse_prior = np.inf
-    mag_min = np.min(x[x > -98 * units.mag])
+    mag_min = np.min(x)
     x_iter = x[:]
     y_iter = y[:]
     y_uncertainty_iter = y_uncertainty[:]
@@ -692,7 +703,7 @@ def determine_zeropoint_sextractor(sextractor_cat: Union[str, table.QTable],
 
         mag_min += 0.1 * units.mag
 
-        print("Iterating min cat mag:", mag_min, rmse_prior, delta)
+        print("Iterating min cat mag:", mag_min, rmse_prior, delta, sum(keep))
 
         rmse_prior = rmse_this
         n += 1
