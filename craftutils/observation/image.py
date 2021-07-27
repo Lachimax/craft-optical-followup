@@ -517,16 +517,20 @@ class ImagingImage(Image):
                 zp = self.zeropoints[cat]
                 zps[f"{cat} {zp['zeropoint']} +/- {zp['zeropoint_err']} {zp['n_matches']}"] = zp
                 if best is None:
-                    best = zp
+                    best = cat
 
-        print(f"We have selected {best['zeropoint']} +/- {best['zeropoint_err']}, from {best['catalogue']}.")
+        zeropoint_best = self.zeropoints[best]
+        print(
+            f"We have selected {zeropoint_best['zeropoint']} +/- {zeropoint_best['zeropoint_err']}, "
+            f"from {zeropoint_best['catalogue']}.")
         if not no_user_input:
             select_own = u.select_yn(message="Would you like to select another?", default=False)
             if select_own:
-                best = u.select_option(message="Select best zeropoint:", options=zps)
-        self.zeropoint_best = best
+                _, zeropoint_best = u.select_option(message="Select best zeropoint:", options=zps)
+                best = zeropoint_best["catalogue"]
+        self.zeropoint_best = zeropoint_best
         self.update_output_file()
-        return best
+        return self.zeropoint_best, best
 
     def zeropoint(self,
                   cat_path: str,
@@ -1101,6 +1105,7 @@ class ImagingImage(Image):
         """
 
         return ["des",
+                "delve",
                 "panstarrs1",
                 "sdss",
                 "skymapper"]
