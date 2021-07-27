@@ -1146,13 +1146,13 @@ class ImagingEpoch(Epoch):
                     img.zeropoint(cat_path=self.field.get_path(f"cat_csv_{cat_name}"),
                                   output_path=os.path.join(fil_path, cat_name),
                                   cat_name=cat_name,
-                                  dist_tol=1 * units.arcsec,
+                                  dist_tol=0.2 * units.arcsec,
                                   show=False
                                   )
 
-            zeropoint = img.select_zeropoint()
+            zeropoint, cat = img.select_zeropoint()
 
-            img.estimate_depth(zeropoint_name=zeropoint["catalogue"])
+            img.estimate_depth(zeropoint_name=cat)
 
             if img.depth > deepest.depth:
                 deepest = img
