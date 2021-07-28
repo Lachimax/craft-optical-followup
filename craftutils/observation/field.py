@@ -958,7 +958,8 @@ class Epoch:
         self.sort_frame(raw_frame)
 
     def add_frame_reduced(self, reduced_frame: image.Image):
-        self.frames_reduced.append(reduced_frame)
+        if reduced_frame not in self.frames_reduced:
+            self.frames_reduced.append(reduced_frame)
 
     def add_coadded_image(self, img: Union[str, image.Image], key: str, **kwargs):
         if isinstance(img, str):
@@ -968,18 +969,18 @@ class Epoch:
         return img
 
     def sort_frame(self, frame: image.Image, sort_key: str = None):
-        if frame.frame_type == "bias":
+        if frame.frame_type == "bias" and frame not in self.frames_bias:
             self.frames_bias.append(frame)
-        elif frame.frame_type == "science":
+        elif frame.frame_type == "science" and frame not in self.frames_science:
             if isinstance(self.frames_science, list):
                 self.frames_science.append(frame)
             elif isinstance(self.frames_science, dict):
                 self.frames_science[sort_key].append(frame)
-        elif frame.frame_type == "standard":
+        elif frame.frame_type == "standard" and frame not in self.frames_standard:
             self.frames_standard.append(frame)
-        elif frame.frame_type == "dark":
+        elif frame.frame_type == "dark" and frame not in self.frames_dark:
             self.frames_dark.append(frame)
-        elif frame.frame_type == "flat":
+        elif frame.frame_type == "flat" and frame not in self.frames_flat:
             self.frames_flat.append(frame)
 
     @classmethod
@@ -1060,6 +1061,7 @@ class ImagingEpoch(Epoch):
         self.coadded_trimmed = {}
 
         self.load_output_file(mode="imaging")
+        self.update_output_file()
 
     def proc_5_correct_astrometry_frames(self, no_query: bool = False, **kwargs):
         if no_query or self.query_stage(stage="5-correct_astrometry_frames",
@@ -1459,7 +1461,7 @@ class ImagingEpoch(Epoch):
             cls = image.ImagingImage.select_child_class(instrument=self.instrument)
             reduced_frame = cls(path=reduced_frame, frame_type="reduced")
         fil = reduced_frame.extract_filter()
-        if self.check_filter(fil=fil):
+        if self.check_filter(fil=fil) and reduced_frame not in self.frames_reduced[fil]:
             self.frames_reduced[fil].append(reduced_frame)
 
     def add_frame_astrometry(self, astrometry_frame: Union[str, image.ImagingImage]):
@@ -1468,7 +1470,7 @@ class ImagingEpoch(Epoch):
             astrometry_frame = cls(path=astrometry_frame, frame_type="astrometry")
         try:
             fil = astrometry_frame.extract_filter()
-            if self.check_filter(fil=fil):
+            if self.check_filter(fil=fil) and astrometry_frame not in self.frames_astrometry[fil]:
                 self.frames_astrometry[fil].append(astrometry_frame)
         except FileNotFoundError:
             print(f"Astrometry file {astrometry_frame.path} not found.")
@@ -1865,17 +1867,41 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
             for fil in self.frames_reduced:
                 astrometry_fil_path = os.path.join(astrometry_path, fil)
                 pairs = self.pair_files(self.frames_reduced[fil])
+                reverse_pair = False
                 for img_1, img_2 in pairs:
-                    try:
-                        new_img_1 = img_1.correct_astrometry(output_dir=astrometry_fil_path)
-                        self.add_frame_astrometry(new_img_1)
-                        new_img_2 = img_2.correct_astrometry_from_other(new_img_1, output_dir=astrometry_fil_path)
-                        self.add_frame_astrometry(new_img_2)
-                    except SystemError:
-                        new_img_2 = img_2.correct_astrometry(output_dir=astrometry_fil_path)
-                        self.add_frame_astrometry(new_img_2)
-                        new_img_1 = img_1.correct_astrometry_from_other(new_img_2, output_dir=astrometry_fil_path)
-                        self.add_frame_astrometry(new_img_1)
+                    success = False
+                    failed_first = False
+                    while not success:  # The SystemError should stop this from looping indefinitely.
+                        if not reverse_pair:
+                            new_img_1 = img_1.correct_astrometry(output_dir=astrometry_fil_path)
+                            # Check if the first astrometry run was successful.
+                            # If it wasn't, we need to be running on the second image of the pair.
+                            if new_img_1 is None:
+                                reverse_pair = True
+                                failed_first = True
+                                print(f"Astrometry.net failed to solve {img_1}, trying on opposite chip {img_2}.")
+                            else:
+                                self.add_frame_astrometry(new_img_1)
+                                new_img_2 = img_2.correct_astrometry_from_other(new_img_1,
+                                                                                output_dir=astrometry_fil_path)
+                                self.add_frame_astrometry(new_img_2)
+                                success = True
+                        # We don't use an else statement here because reverse_pair can change within the above block,
+                        # and if it does the block below needs to execute.
+                        if reverse_pair:
+                            new_img_2 = img_2.correct_astrometry(output_dir=astrometry_fil_path)
+                            if new_img_2 is None:
+                                if failed_first:
+                                    raise SystemError(
+                                        f"Astrometry.net failed to solve both chips of this pair ({img_1}, {img_2})")
+                                else:
+                                    reverse_pair = False
+                            else:
+                                self.add_frame_astrometry(new_img_2)
+                                new_img_1 = img_1.correct_astrometry_from_other(new_img_2,
+                                                                                output_dir=astrometry_fil_path)
+                                self.add_frame_astrometry(new_img_1)
+                                success = True
             self.paths['astrometry_dir'] = astrometry_path
             self.stages_complete["5-correct_astrometry_frames"] = Time.now()
             self.update_output_file()
