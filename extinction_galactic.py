@@ -18,7 +18,6 @@ def main(obj: str):
     print("\nExecuting Python script extinction_galactic.py, with:")
     print(f"\tobj {obj}")
 
-    # TODO: Write something that gets these numbers automatically
     # TODO: Scriptify
 
     lambda_eff_interp = p.instrument_filters_single_param(param="lambda_eff", instrument='FORS2', sort_value=True)
