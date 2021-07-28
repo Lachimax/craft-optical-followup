@@ -27,6 +27,15 @@ def build_astrometry_index(input_fits_catalog: str, unique_id: int, output_index
 
 def solve_field(image_files: Union[str, list], base_filename: str = "astrometry",
                 overwrite: bool = True, *flags, **params):
+    """
+    Returns True if successful (by checking whether the corrected file is generated); False if not.
+    :param image_files:
+    :param base_filename:
+    :param overwrite:
+    :param flags:
+    :param params:
+    :return:
+    """
 
     params["o"] = base_filename
 
@@ -34,3 +43,11 @@ def solve_field(image_files: Union[str, list], base_filename: str = "astrometry"
     if overwrite:
         flags.append("O")
     system_command("solve-field", image_files, False, True, *flags, **params)
+    if isinstance(image_files, list):
+        image_path = image_files[0]
+    else:
+        image_path = image_files
+    check_dir = os.path.split(image_path)[0]
+    check_path = os.path.join(check_dir, f"{base_filename}.new")
+    print(f"Checking for result file at {check_path}...")
+    return os.path.isfile(check_path)

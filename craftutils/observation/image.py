@@ -3,7 +3,7 @@ import copy
 import os
 import shutil
 import warnings
-from typing import Union
+from typing import Union, Tuple
 from copy import deepcopy
 
 import numpy as np
@@ -447,6 +447,17 @@ class ImagingImage(Image):
         self.pointing = SkyCoord(ra, dec, unit=units.deg)
         return self.pointing
 
+    def extract_ref_pixel(self) -> Tuple[float]:
+        """
+        Retrieve the coordinates of the "reference pixel" from the header.
+        :return: Tuple containing the reference pixel coordinates as (x, y).
+        """
+        key = self.header_keys()["ref_pix_x"]
+        x = self.extract_header_item(key)
+        key = self.header_keys()["ref_pix_y"]
+        y = self.extract_header_item(key)
+        return x, y
+
     def extract_old_pointing(self):
         key = self.header_keys()["ra_old"]
         ra = self.extract_header_item(key)
@@ -723,7 +734,9 @@ class ImagingImage(Image):
         """
         u.mkdir_check(output_dir)
         base_filename = f"{self.name}_astrometry"
-        solve_field(image_files=self.path, base_filename=base_filename)
+        success = solve_field(image_files=self.path, base_filename=base_filename)
+        if not success:
+            return None
         new_path = os.path.join(self.data_path, f"{base_filename}.new")
         new_new_path = os.path.join(self.data_path, f"{base_filename}.fits")
         os.rename(new_path, new_new_path)
@@ -814,6 +827,7 @@ class ImagingImage(Image):
                                                                           ra_col=ra_col,
                                                                           dec_col=dec_col,
                                                                           tolerance=tolerance)
+
         mean_offset = np.mean(distance)
         median_offset = np.median(distance)
         rms_offset = np.sqrt(np.mean(distance ** 2))
@@ -826,6 +840,9 @@ class ImagingImage(Image):
             plt.ylabel("Declination (Catalogue)")
             plt.colorbar(label="Offset of measured position from catalogue (arcseconds)")
             plt.show()
+            plt.close()
+
+            plt.scatter()
         return mean_offset, median_offset, rms_offset
 
     def trim(self,
@@ -1087,6 +1104,8 @@ class ImagingImage(Image):
         header_keys.update({"filter": "FILTER",
                             "ra": "CRVAL1",
                             "dec": "CRVAL2",
+                            "ref_pix_x": "CRPIX1",
+                            "ref_pix_y": "CRPIX2",
                             "ra_old": "_RVAL1",
                             "dec_old": "_RVAL2",
                             "airmass": "AIRMASS"
