@@ -1198,9 +1198,10 @@ class ImagingEpoch(Epoch):
             input_directory_fil = os.path.join(input_directory, fil)
             output_directory_fil = os.path.join(output_dir, fil)
             u.mkdir_check(output_directory_fil)
-            coadded_path = montage.standard_script(input_directory=input_directory_fil,
-                                                   output_directory=output_directory_fil,
-                                                   output_file_name=f"{self.name}_{self.date}_{fil}_coadded.fits")
+            coadded_path = montage.standard_script(
+                input_directory=input_directory_fil,
+                output_directory=output_directory_fil,
+                output_file_name=f"{self.name}_{self.date.strftime('%Y-%m-%d')}_{fil}_coadded.fits")
             self.add_coadded_image(coadded_path, key=fil, mode="imaging")
 
     def dual_mode_source_extraction(self, path: str):
@@ -1868,40 +1869,45 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
                 astrometry_fil_path = os.path.join(astrometry_path, fil)
                 pairs = self.pair_files(self.frames_reduced[fil])
                 reverse_pair = False
-                for img_1, img_2 in pairs:
-                    success = False
-                    failed_first = False
-                    while not success:  # The SystemError should stop this from looping indefinitely.
-                        if not reverse_pair:
-                            new_img_1 = img_1.correct_astrometry(output_dir=astrometry_fil_path)
-                            # Check if the first astrometry run was successful.
-                            # If it wasn't, we need to be running on the second image of the pair.
-                            if new_img_1 is None:
-                                reverse_pair = True
-                                failed_first = True
-                                print(f"Astrometry.net failed to solve {img_1}, trying on opposite chip {img_2}.")
-                            else:
-                                self.add_frame_astrometry(new_img_1)
-                                new_img_2 = img_2.correct_astrometry_from_other(new_img_1,
-                                                                                output_dir=astrometry_fil_path)
-                                self.add_frame_astrometry(new_img_2)
-                                success = True
-                        # We don't use an else statement here because reverse_pair can change within the above block,
-                        # and if it does the block below needs to execute.
-                        if reverse_pair:
-                            new_img_2 = img_2.correct_astrometry(output_dir=astrometry_fil_path)
-                            if new_img_2 is None:
-                                if failed_first:
-                                    raise SystemError(
-                                        f"Astrometry.net failed to solve both chips of this pair ({img_1}, {img_2})")
+                for pair in pairs:
+                    if isinstance(pair, tuple):
+                        img_1, img_2 = pair
+                        success = False
+                        failed_first = False
+                        while not success:  # The SystemError should stop this from looping indefinitely.
+                            if not reverse_pair:
+                                new_img_1 = img_1.correct_astrometry(output_dir=astrometry_fil_path)
+                                # Check if the first astrometry run was successful.
+                                # If it wasn't, we need to be running on the second image of the pair.
+                                if new_img_1 is None:
+                                    reverse_pair = True
+                                    failed_first = True
+                                    print(f"Astrometry.net failed to solve {img_1}, trying on opposite chip {img_2}.")
                                 else:
-                                    reverse_pair = False
-                            else:
-                                self.add_frame_astrometry(new_img_2)
-                                new_img_1 = img_1.correct_astrometry_from_other(new_img_2,
-                                                                                output_dir=astrometry_fil_path)
-                                self.add_frame_astrometry(new_img_1)
-                                success = True
+                                    self.add_frame_astrometry(new_img_1)
+                                    new_img_2 = img_2.correct_astrometry_from_other(new_img_1,
+                                                                                    output_dir=astrometry_fil_path)
+                                    self.add_frame_astrometry(new_img_2)
+                                    success = True
+                            # We don't use an else statement here because reverse_pair can change within the above block,
+                            # and if it does the block below needs to execute.
+                            if reverse_pair:
+                                new_img_2 = img_2.correct_astrometry(output_dir=astrometry_fil_path)
+                                if new_img_2 is None:
+                                    if failed_first:
+                                        raise SystemError(
+                                            f"Astrometry.net failed to solve both chips of this pair ({img_1}, {img_2})")
+                                    else:
+                                        reverse_pair = False
+                                else:
+                                    self.add_frame_astrometry(new_img_2)
+                                    new_img_1 = img_1.correct_astrometry_from_other(new_img_2,
+                                                                                    output_dir=astrometry_fil_path)
+                                    self.add_frame_astrometry(new_img_1)
+                                    success = True
+                    else:
+                        new_img = pair.correct_astrometry(output_dir=astrometry_fil_path)
+                        self.add_frame_astrometry(new_img)
             self.paths['astrometry_dir'] = astrometry_path
             self.stages_complete["5-correct_astrometry_frames"] = Time.now()
             self.update_output_file()
@@ -1910,21 +1916,42 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
     def pair_files(cls, images: list):
         pairs = []
         images.sort(key=lambda im: im.name)
+        is_paired = True
         for i, img_1 in enumerate(images):
-            if i % 2 == 0:
-                chip = img_1.extract_chip_number()
-                img_2 = images[i + 1]
-                img_1.other_chip = img_2
-                img_1.update_output_file()
-                img_2.other_chip = img_1
-                img_2.update_output_file()
-                if chip == 1:
-                    pairs.append((img_1, img_2))
-                elif chip == 2:
-                    pairs.append((img_2, img_1))
+            # If the images are in pairs, it's sufficient to check only the even-numbered ones.
+            # If not, is_paired=False should be triggered by the case below.
+            if i % 2 == 0 or not is_paired:
+                chip_this = img_1.extract_chip_number()
+                # If we are at the end of the list and still checking, this must be unpaired.
+                if i + 1 == len(images):
+                    pair = img_1
                 else:
-                    raise ValueError("Image is missing chip.")
-                print(img_1, img_2)
+                    # Get the next image in the list.
+                    img_2 = images[i + 1]
+                    chip_other = img_2.extract_chip_number()
+                    # If we have chip
+                    if (chip_this == 1 and chip_other == 2) or (chip_this == 2 and chip_other == 1):
+                        img_1.other_chip = img_2
+                        img_1.update_output_file()
+                        img_2.other_chip = img_1
+                        img_2.update_output_file()
+                        if chip_this == 1:
+                            pair = (img_1, img_2)
+                        elif chip_this == 2:
+                            pair = (img_2, img_1)
+                        else:
+                            raise ValueError("Image is missing chip.")
+                        is_paired = True
+                    else:
+                        is_paired = False
+                        pair = img_1
+                print("PAIR:")
+                if isinstance(pair, tuple):
+                    print(str(pair[0]), ",", str(pair[1]))
+                else:
+                    print(pair)
+                pairs.append(pair)
+
         return pairs
 
     @classmethod

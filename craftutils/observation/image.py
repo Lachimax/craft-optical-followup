@@ -822,7 +822,8 @@ class ImagingImage(Image):
 
     def astrometry_diagnostics(self, reference_cat: Union[str, table.QTable],
                                ra_col: str = "ra", dec_col: str = "dec",
-                               tolerance: units.Quantity = 3 * units.arcsec, show_plots: bool = False):
+                               tolerance: units.Quantity = 3 * units.arcsec, show_plots: bool = False,
+                               ):
         matches_source_cat, matches_ext_cat, distance = self.match_to_cat(cat=reference_cat,
                                                                           ra_col=ra_col,
                                                                           dec_col=dec_col,
