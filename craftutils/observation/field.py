@@ -1579,6 +1579,9 @@ class ImagingEpoch(Epoch):
 
         name, param_file, param_dict = p.params_init(param_file)
 
+        if param_dict is None:
+            raise FileNotFoundError("Param file missing!")
+
         if old_format:
             instrument = "vlt-fors2"
         else:
@@ -1724,6 +1727,9 @@ class PanSTARRS1ImagingEpoch(ImagingEpoch):
 
     def _initial_setup(self):
         imaging_dir = os.path.join(self.data_path, "0-imaging")
+        u.mkdir_check(imaging_dir)
+        for file in filter(lambda f: f.endswith(".fits"), os.listdir(self.data_path)):
+            shutil.move(os.path.join(self.data_path, file), imaging_dir)
         self.set_path("imaging_dir", imaging_dir)
         # Write a table of fits files from the 0-imaging directory.
         table_path_all = os.path.join(self.data_path, f"{self.name}_fits_table_all.csv")
