@@ -110,12 +110,25 @@ class Image:
     def get_id(self):
         return self.filename[:self.filename.find(".fits")]
 
-    def extract_header_item(self, key: str, ext: int = 0):
+    def _extract_header_item(self, key: str, ext: int = 0):
         self.load_headers()
         if key in self.headers[ext]:
             return self.headers[ext][key]
         else:
             return None
+
+    def extract_header_item(self, key: str, ext: int = 0):
+        # Check in the given HDU, then check all headers.
+        value = self._extract_header_item(key=key, ext=ext)
+        if value is None:
+            for ext in range(len(self.headers)):
+                value = self._extract_header_item(key=key, ext=ext)
+                if value is not None:
+                    return value
+            # Then, if we get to the end of the loop, the item clearly doesn't exist.
+            return None
+        else:
+            return value
 
     def extract_gain(self):
         key = self.header_keys()["gain"]
@@ -1178,24 +1191,9 @@ class PanSTARRS1Cutout(ImagingImage):
         self.exposure_time = None
         self.extract_exposure_time()
 
-    def extract_header_item(self, key: str, ext: int = 1):
-        self.load_headers()
-        # Check in the given HDU, then check all headers.
-        value = super().extract_header_item(key=key, ext=ext)
-        if value is None:
-            for ext in range(len(self.headers)):
-                value = super().extract_header_item(key=key, ext=ext)
-                if value is not None:
-                    return value
-            # Then, if we get to the end of the loop, the item clearly doesn't exist.
-            return None
-        else:
-            return value
-
     def extract_filter(self):
         key = self.header_keys()["filter"]
         fil_string = self.extract_header_item(key)
-        print(fil_string)
         self.filter = fil_string[:fil_string.find(".")]
         self.filter_short = self.filter
         return self.filter

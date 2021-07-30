@@ -398,6 +398,10 @@ class Field:
         else:
             print("Could not load catalogue; field is outside footprint.")
 
+    def get_photometry(self):
+        for obj in self.objects:
+            pass
+
     def generate_astrometry_indices(self, cat_name: str = "gaia"):
         self.retrieve_catalogue(cat_name=cat_name)
         if not self.check_cat(cat_name=cat_name):
@@ -1204,32 +1208,44 @@ class ImagingEpoch(Epoch):
                 output_file_name=f"{self.name}_{self.date.strftime('%Y-%m-%d')}_{fil}_coadded.fits")
             self.add_coadded_image(coadded_path, key=fil, mode="imaging")
 
-    def dual_mode_source_extraction(self, path: str):
+    def _get_images(self, image_type: str):
+        if image_type == "coadded_trimmed":
+            image_dict = self.coadded_trimmed
+        elif image_type == "coadded":
+            image_dict = self.coadded
+        else:
+            raise ValueError(f"Images type '{image_type}' not recognised.")
+        return image_dict
+
+    def dual_mode_source_extraction(self, path: str, image_type: str = "coadded_trimmed"):
+        image_dict = self._get_images(image_type=image_type)
         u.mkdir_check(path)
-        for fil in self.coadded_trimmed:
-            img = self.coadded_trimmed[fil]
+        for fil in image_dict:
+            img = image_dict[fil]
             self.set_path("source_extraction_dual_dir", path)
             configs = self.source_extractor_config
             img.source_extraction_psf(output_dir=path,
                                       phot_autoparams=f"{configs['kron_factor']},{configs['kron_radius_min']}",
                                       template=self.deepest)
 
-    def get_photometry(self, path: str):
+    def get_photometry(self, path: str, image_type: str = "coadded_trimmed"):
         """
         Retrieve photometric properties of key objects and write to disk.
         :param path: Path to which to write the data products.
         :return:
         """
+        image_dict = self._get_images(image_type=image_type)
         u.mkdir_check(path)
         # Loop through filters
-        for fil in self.coadded_trimmed:
+        for fil in image_dict:
             fil_output_path = os.path.join(path, fil)
             u.mkdir_check(fil_output_path)
-            img = self.coadded_trimmed[fil]
+            img = image_dict[fil]
             img.calibrate_magnitudes(zeropoint_name="best", dual=True)
             rows = []
             for obj in self.field.objects:
                 plt.close()
+                # Get nearest Source-Extractor object:
                 nearest = img.find_object(obj.position)
                 rows.append(nearest)
                 err = nearest[f'MAGERR_AUTO_ZP_best']
@@ -1713,14 +1729,14 @@ class PanSTARRS1ImagingEpoch(ImagingEpoch):
         if no_query or self.query_stage("Do source extraction in dual-mode, using deepest image as footprint?",
                                         stage="4-dual_mode_source_extraction"):
             source_extraction_path = os.path.join(self.data_path, "4-dual_mode_source_extraction")
-            self.dual_mode_source_extraction(source_extraction_path)
+            self.dual_mode_source_extraction(source_extraction_path, image_type="coadded")
             self.stages_complete["4-dual_mode_source_extraction"] = Time.now()
             self.update_output_file()
 
     def proc_5_get_photometry(self, no_query: bool = False, **kwargs):
         if no_query or self.query_stage("Get photometry?", stage="5-get_photometry"):
             object_property_path = os.path.join(self.data_path, "5-object_properties")
-            self.get_photometry(object_property_path)
+            self.get_photometry(object_property_path, image_type="coadded")
 
             self.stages_complete["5-get_photometry"] = Time.now()
             self.update_output_file()
@@ -1738,6 +1754,14 @@ class PanSTARRS1ImagingEpoch(ImagingEpoch):
         for file in filter(lambda f: f.endswith(".fits"), os.listdir(imaging_dir)):
             path = os.path.join(imaging_dir, file)
             img = image.PanSTARRS1Cutout(path=path)
+
+            # img.open(mode="update")
+            # print(img.hdu_list.info())
+            # if len(img.hdu_list) == 2:
+            #     img.hdu_list[0] = img.hdu_list[1]
+            #     img.hdu_list.pop(1)
+            # img.close()
+
             img.extract_filter()
             self.coadded[img.filter] = img
             self.check_filter(img.filter)
@@ -1758,6 +1782,7 @@ class PanSTARRS1ImagingEpoch(ImagingEpoch):
                           cat_name="PanSTARRS1",
                           image_name="PanSTARRS Cutout",
                           )
+            img.zeropoint_best = img.zeropoints["panstarrs1"]
             img.estimate_depth(zeropoint_name="panstarrs1")
 
             if img.depth > deepest.depth:
@@ -1771,6 +1796,13 @@ class PanSTARRS1ImagingEpoch(ImagingEpoch):
         self.deepest = deepest
 
         print("DEEPEST FILTER:", self.deepest_filter, self.deepest.depth)
+
+    def add_coadded_image(self, img: Union[str, image.Image], key: str, **kwargs):
+        if isinstance(img, str):
+            img = image.PanSTARRS1Cutout(path=img)
+        img.epoch = self
+        self.coadded[key] = img
+        return img
 
     @classmethod
     def stages(cls):
@@ -1792,11 +1824,13 @@ class PanSTARRS1ImagingEpoch(ImagingEpoch):
         if field is None:
             field = param_dict["field"]
 
-        return cls(name=name,
-                   field=field,
-                   param_path=param_file,
-                   data_path=param_dict['data_path'],
-                   source_extractor_config=param_dict['sextractor'])
+        epoch = cls(name=name,
+                    field=field,
+                    param_path=param_file,
+                    data_path=param_dict['data_path'],
+                    source_extractor_config=param_dict['sextractor'])
+        epoch.instrument = cls.instrument
+        return epoch
 
 
 class ESOImagingEpoch(ImagingEpoch):

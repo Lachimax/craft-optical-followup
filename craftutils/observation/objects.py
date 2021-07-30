@@ -174,6 +174,14 @@ class Object:
         self.field = field
         self.load_output_file()
 
+    def get_photometry(self):
+        for cat in self.field.cats:
+            pass
+
+    def find_in_cat(self, cat_name: str):
+        cat = self.field.load_catalogue(cat_name=cat_name)
+        pass
+
     def _output_dict(self):
         return {"photometry": self.photometry}
 
