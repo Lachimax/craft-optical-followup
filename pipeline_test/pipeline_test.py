@@ -96,7 +96,7 @@ def main(field_name: str,
         else:
             if instrument is None:
                 instrument = fld.select_instrument(mode="imaging")
-            epoch = fld.ImagingEpoch.from_params(epoch_name, instrument=instrument)
+            epoch = fld.ImagingEpoch.from_params(epoch_name, instrument=instrument, field=field)
             epoch.field = field
 
     epoch.do = do
