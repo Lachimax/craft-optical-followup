@@ -1178,10 +1178,22 @@ class PanSTARRS1Cutout(ImagingImage):
         self.exposure_time = None
         self.extract_exposure_time()
 
+    def extract_header_item(self, key: str, ext: int = 1):
+        self.load_headers()
+        # Check in the given HDU, then check all headers.
+        value = super().extract_header_item(key=key, ext=ext)
+        if value is None:
+            for ext in range(len(self.headers)):
+                value = super().extract_header_item(key=key, ext=ext)
+                if value is not None:
+                    return value
+            # Then, if we get to the end of the loop, the item clearly doesn't exist.
+            return None
+
     def extract_filter(self):
         key = self.header_keys()["filter"]
         print(key)
-        fil_string = self.extract_header_item(key, ext=1)
+        fil_string = self.extract_header_item(key)
         print(self)
         self.filter = fil_string[:fil_string.find(".")]
         self.filter_short = self.filter
