@@ -181,10 +181,13 @@ class Image:
         # First, check for instrument information in each header.
         instrument = None
         i = 0
-        while instrument is None or i < len(hdu_list):
+        # Will need to add cases to the below instruments as you deal with new instruments.
+        while instrument is None and i < len(hdu_list):
             header = hdu_list[i].header
             if "INSTRUME" in header:
                 instrument = header["INSTRUME"]
+            elif "FPA.INSTRUMENT" in header:
+                instrument = "panstarrs1"
             i += 1
 
         if instrument is None:
@@ -1092,7 +1095,7 @@ class ImagingImage(Image):
         if instrument is None:
             return ImagingImage
         instrument = instrument.lower()
-        if instrument == "panstarrs":
+        if instrument == "panstarrs1":
             return PanSTARRS1Cutout
         elif instrument == "vlt-fors2":
             return FORS2Image

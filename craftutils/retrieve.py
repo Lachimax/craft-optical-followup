@@ -1189,7 +1189,7 @@ def construct_columns(cat="panstarrs1"):
 def retrieve_mast_photometry(ra: float, dec: float, cat: str = "panstarrs1", release="dr2", table="stack",
                              radius: units.Quantity = 0.2 * units.deg):
     if cat.lower() == "panstarrs1":
-        cat_str = "panstarrs"
+        cat_str = "panstarrs1"
     else:
         cat_str = cat.lower()
 

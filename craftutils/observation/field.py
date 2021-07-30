@@ -1638,7 +1638,7 @@ class ImagingEpoch(Epoch):
         instrument = instrument.lower()
         if instrument == "vlt-fors2":
             return FORS2ImagingEpoch
-        if instrument == "panstarrs":
+        if instrument == "panstarrs1":
             return PanSTARRS1ImagingEpoch
         elif instrument in instruments_imaging:
             return ImagingEpoch
@@ -1647,6 +1647,7 @@ class ImagingEpoch(Epoch):
 
 
 class PanSTARRS1ImagingEpoch(ImagingEpoch):
+    instrument = "panstarrs1"
 
     def __init__(self,
                  name: str = None,
@@ -1659,10 +1660,10 @@ class PanSTARRS1ImagingEpoch(ImagingEpoch):
                          field=field,
                          param_path=param_path,
                          data_path=data_path,
-                         source_extractor_config=source_extractor_config
+                         source_extractor_config=source_extractor_config,
+                         instrument="panstarrs1"
                          )
-        self.instrument = "panstarrs"
-        self.load_output_file()
+        # self.load_output_file()
         if isinstance(field, Field):
             self.field.retrieve_catalogue(cat_name="panstarrs1")
 
