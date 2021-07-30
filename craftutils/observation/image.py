@@ -1180,8 +1180,9 @@ class PanSTARRS1Cutout(ImagingImage):
 
     def extract_filter(self):
         key = self.header_keys()["filter"]
-        fil_string = self.extract_header_item(key)
-
+        print(key)
+        fil_string = self.extract_header_item(key, ext=1)
+        print(self)
         self.filter = fil_string[:fil_string.find(".")]
         self.filter_short = self.filter
         return self.filter
