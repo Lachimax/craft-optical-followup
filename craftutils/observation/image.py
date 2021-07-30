@@ -1189,12 +1189,13 @@ class PanSTARRS1Cutout(ImagingImage):
                     return value
             # Then, if we get to the end of the loop, the item clearly doesn't exist.
             return None
+        else:
+            return value
 
     def extract_filter(self):
         key = self.header_keys()["filter"]
-        print(key)
         fil_string = self.extract_header_item(key)
-        print(self)
+        print(fil_string)
         self.filter = fil_string[:fil_string.find(".")]
         self.filter_short = self.filter
         return self.filter
