@@ -1065,7 +1065,6 @@ class ImagingEpoch(Epoch):
         self.coadded_trimmed = {}
 
         self.load_output_file(mode="imaging")
-        self.update_output_file()
 
     def proc_5_correct_astrometry_frames(self, no_query: bool = False, **kwargs):
         if no_query or self.query_stage(stage="5-correct_astrometry_frames",
