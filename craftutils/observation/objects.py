@@ -236,8 +236,6 @@ class Object:
         else:
             selected = cls
 
-        print(selected)
-
         if selected in (Object, FRB):
             return selected(name=dictionary["name"],
                             position=f"{ra} {dec}",
