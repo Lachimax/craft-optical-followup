@@ -11,10 +11,7 @@ mjd: []
 name: null
 plotting_colour: null
 source: null
-source_filter_only: null
 zeropoint: []
 zeropoint_err: []
 transmissions: []
-transmissions_filter_only: []
 wavelengths: []
-wavelengths_filter_only: []

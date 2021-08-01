@@ -437,7 +437,7 @@ def update_fors2_calib():
             if fil == 'R_SPECIAL':
                 fil = 'R_SPEC'
             save_fors2_calib(output=path, fil=fil)
-            p.ingest_filter_properties(path=path, instrument='FORS2', update=True)
+            p.ingest_eso_filter_properties(path=path, instrument='FORS2', update=True)
 
 
 def retrieve_irsa_xml(ra: float, dec: float):

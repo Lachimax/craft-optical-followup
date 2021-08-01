@@ -8,7 +8,8 @@ from datetime import date
 import numpy as np
 
 import astropy.io.misc.yaml as yaml
-from astropy.table import Table
+import astropy.units as units
+from astropy.table import Table, QTable
 
 from craftutils import utils as u
 
@@ -240,7 +241,7 @@ def plotting_params(quiet: bool = False):
     return load_params(param_path + 'plotting', quiet=quiet)
 
 
-def ingest_filter_properties(path: str, instrument: str, update: bool = False, quiet: bool = False):
+def ingest_eso_filter_properties(path: str, instrument: str, update: bool = False, quiet: bool = False):
     """
     Imports a dataset from http://archive.eso.org/bin/qc1_cgi?action=qc1_browse_table&table=fors2_photometry into a
     filter properties .yaml file within this project.
@@ -274,66 +275,105 @@ def ingest_filter_properties(path: str, instrument: str, update: bool = False, q
     save_params(file=param_path + f'filters/{instrument}-{name}', dictionary=params)
 
 
-def ingest_filter_transmission(path: str, f: str, instrument: str, filter_only: bool = True, lambda_eff: float = None,
-                               fwhm: float = None, source: float = None, unit: str = 'nm', percentage: bool = False,
+def ingest_filter_transmission(path: str, fil_name: str, instrument: str,
+                               instrument_response: bool = False, atmosphere: bool = False,
+                               lambda_eff: units.Quantity = None,
+                               fwhm: float = None,
+                               source: str = None,
+                               wavelength_unit: units.Unit = units.Angstrom,
+                               percentage: bool = False,
                                quiet: bool = False):
-    units = ['nm', 'Angstrom']
-    if unit not in units:
-        raise ValueError('Units must be one of ', units)
+    """
 
-    params = filter_params(f=f, instrument=instrument, quiet=quiet)
+    :param path:
+    :param fil_name:
+    :param instrument:
+    :param instrument_response: Filter curve includes instrument response
+    :param atmosphere: Filter curve includes atmospheric transmission
+    :param lambda_eff:
+    :param fwhm:
+    :param source:
+    :param wavelength_unit:
+    :param percentage:
+    :param quiet:
+    :return:
+    """
+
+    if not wavelength_unit.is_equivalent(units.Angstrom):
+        raise units.UnitTypeError(f"Wavelength units must be of type length, not {wavelength_unit}")
+
+    type_str = "_filter"
+    if instrument_response:
+        type_str += "_instrument"
+    if atmosphere:
+        type_str += "_atmosphere"
+
+    params = filter_params(f=fil_name, instrument=instrument, quiet=quiet)
     if params is None:
         params = new_filter_params(quiet=quiet)
-        params['name'] = f
+        params['name'] = fil_name
         params['instrument'] = instrument
 
     if lambda_eff is not None:
+        lambda_eff = u.check_quantity(lambda_eff, unit=units.Angstrom, convert=True)
         params['lambda_eff'] = lambda_eff
         # TODO: If None, measure?
     if fwhm is not None:
         params['fwhm'] = fwhm
         # TODO: If None, measure?
     if source is not None:
-        if filter_only:
-            params['source_filter_only'] = source
-        else:
-            params['source'] = source
+        params[f'source{type_str}'] = source
 
-    data = np.genfromtxt(path)
-    wavelengths = data[:, 0]
-    transmissions = data[:, 1]
+    tbl = QTable.read(path, format="ascii")
+    tbl["col1"].name = "wavelength"
+    tbl["wavelength"] *= wavelength_unit
+    tbl["wavelength"] = tbl["wavelength"].to("Angstrom")
+
+    tbl["col2"].name = "transmission"
 
     if percentage:
-        transmissions /= 100
-    if unit == 'nm':
-        wavelengths *= 10
+        tbl["transmission"] /= 100
 
-    # Make sure the wavelengths increase instead of decrease; this assumes that the wavelengths are at least in order.
-    if wavelengths[0] > wavelengths[-1]:
-        wavelengths = np.flip(wavelengths)
-        transmissions = np.flip(transmissions)
+    tbl.sort("wavelength")
 
-    if filter_only:
-        params['wavelengths_filter_only'] = wavelengths.tolist()
-        params['transmissions_filter_only'] = transmissions.tolist()
-    else:
-        params['wavelengths'] = wavelengths.tolist()
-        params['transmissions'] = transmissions.tolist()
+    params[f'wavelengths{type_str}'] = tbl["wavelength"].value.tolist()
+    params[f'transmissions{type_str}'] = tbl["transmission"].value.tolist()
 
-    save_params(file=param_path + f'filters/{instrument}-{f}', dictionary=params, quiet=quiet)
+    save_params(file=os.path.join(param_path, 'filters', f'{instrument}-{fil_name}'), dictionary=params, quiet=quiet)
 
 
-def ingest_filter_set(path: str, instrument: str, filter_only: bool = True, source: float = None,
-                      unit: str = 'Angstrom',
+def ingest_filter_set(path: str, instrument: str,
+                      instrument_response: bool = False, atmosphere: bool = False,
+                      source: str = None,
+                      wavelength_unit: units.Unit = None,
                       percentage: bool = False, lambda_name='LAMBDA', quiet: bool = False):
-    units = ['nm', 'Angstrom']
-    if unit not in units:
-        raise ValueError('Units must be one of ', units)
+    """
 
-    data = Table.read(path, format='ascii')
-    wavelengths = data[lambda_name]
-    if unit == 'nm':
-        wavelengths *= 10
+    :param path:
+    :param instrument:
+    :param instrument_response: Filter curve includes instrument response
+    :param atmosphere: Filter curve includes atmospheric transmission
+    :param source:
+    :param wavelength_unit:
+    :param percentage:
+    :param lambda_name:
+    :param quiet:
+    :return:
+    """
+
+    if not wavelength_unit.is_equivalent(units.Angstrom):
+        raise units.UnitTypeError(f"Wavelength units must be of type length, not {wavelength_unit}")
+
+    type_str = "_filter"
+    if instrument_response:
+        type_str += "_instrument"
+    if atmosphere:
+        type_str += "_atmosphere"
+
+    data = QTable.read(path, format='ascii')
+    data.sort("col1")
+    wavelengths = data["col1"] * wavelength_unit
+    wavelengths = wavelengths.to("Angstrom")
     for f in data.colnames:
         if f != lambda_name:
             params = filter_params(f=f, instrument=instrument, quiet=quiet)
@@ -343,34 +383,24 @@ def ingest_filter_set(path: str, instrument: str, filter_only: bool = True, sour
                 params = new_filter_params(quiet=quiet)
             params['name'] = f
             if source is not None:
-                if filter_only:
-                    params['source_filter_only'] = source
-                else:
-                    params['source'] = source
+                params[f'source{type_str}'] = source
             if percentage:
                 transmissions /= 100
-            # Make sure the wavelengths increase instead of decrease; this assumes that the wavelengths are at least in
-            # order.
-            if wavelengths[0] > wavelengths[-1]:
-                wavelengths = np.flip(wavelengths)
-                transmissions = np.flip(transmissions)
-            if filter_only:
-                params['wavelengths_filter_only'] = wavelengths.tolist()
-                params['transmissions_filter_only'] = transmissions.tolist()
-            else:
-                params['wavelengths'] = wavelengths.tolist()
-                params['transmissions'] = transmissions.tolist()
+            params[f'wavelengths{type_str}'] = wavelengths
+            params[f'transmissions{type_str}'] = transmissions
 
             save_params(file=param_path + f'filters/{instrument}-{f}', dictionary=params, quiet=quiet)
     refresh_params_filters(quiet=quiet)
 
 
 def new_filter_params(quiet: bool = False):
-    return load_params(param_path + 'filters/filter_template.yaml', quiet=quiet)
+    return load_params(
+        os.path.join(project_path, 'param', 'filters', 'filter_template.yaml'),
+        quiet=quiet)
 
 
 def filter_params(f: str, instrument: str = 'FORS2', quiet: bool = False):
-    return load_params(param_path + f'filters/{instrument}-{f}', quiet=quiet)
+    return load_params(os.path.join(param_path, 'filters', f'{instrument}-{f}'), quiet=quiet)
 
 
 def instrument_all_filters(instrument: str = 'FORS2', quiet: bool = False):
