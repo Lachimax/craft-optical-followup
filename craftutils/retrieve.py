@@ -104,19 +104,16 @@ svo_instrument_names = {
 }
 
 
-def svo_filter_id(instrument: str, filter_name: str) -> str:
-    instrument = instrument.lower()
-    svo_facility = svo_facility_names[instrument]
-    svo_instrument = svo_instrument_names[instrument]
-    if instrument == "wise":
-        svo_filter = filter_name.upper()
-    else:
-        raise ValueError(f"Instrument {instrument} not recognised, or at least not properly set up.")
-    return f"{svo_facility}/{svo_instrument}.{svo_filter}"
+def svo_filter_id(facility_name: str, instrument_name: str, filter_name: str) -> str:
+    return f"{facility_name}/{instrument_name}.{filter_name}"
 
 
-def retrieve_svo_filter(instrument: str, filter_name: str):
-    filter_id = svo_filter_id(instrument=instrument, filter_name=filter_name)
+def retrieve_svo_filter(facility_name: str, instrument_name: str, filter_name: str):
+    filter_id = svo_filter_id(
+        facility_name=facility_name,
+        instrument_name=instrument_name,
+        filter_name=filter_name
+    )
     print(f"Attempting to retrieve SVO filter data for {filter_id}...")
     url = f"http://svo2.cab.inta-csic.es/svo/theory/fps3/fps.php?ID={filter_id}"
     try:
@@ -132,8 +129,12 @@ def retrieve_svo_filter(instrument: str, filter_name: str):
         return response
 
 
-def save_svo_filter(instrument: str, filter_name: str, output: str):
-    response = retrieve_svo_filter(instrument=instrument, filter_name=filter_name)
+def save_svo_filter(facility_name: str, instrument_name: str, filter_name: str, output: str):
+    response = retrieve_svo_filter(
+        facility_name=facility_name,
+        instrument_name=instrument_name,
+        filter_name=filter_name
+    )
     if response == "ERROR":
         return response
     elif response is not None:
