@@ -130,6 +130,7 @@ def yaml_to_json(yaml_file: str, output: str = None, quiet: bool = False):
 config = check_for_config()
 param_path = u.check_trailing_slash(config['param_dir'])
 project_path = u.check_trailing_slash(config['proj_dir'])
+data_path = u.check_trailing_slash(config["top_data_dir"])
 
 
 def path_or_params_obj(obj: Union[dict, str], instrument: str = 'FORS2', quiet: bool = False):
