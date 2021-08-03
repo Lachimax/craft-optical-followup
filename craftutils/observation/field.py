@@ -492,22 +492,26 @@ class Field:
 
     @classmethod
     def from_params(cls, name):
-        path = os.path.join(p.param_path, "fields", name, name)
+        path = cls.build_param_path(field_name=name)
         return cls.from_file(param_file=path)
 
     @classmethod
     def new_yaml(cls, name: str, path: str = None, quiet: bool = False):
         param_dict = cls.default_params()
         param_dict["name"] = name
-        param_dict["data_path"] = os.path.join(config["top_data_dir"], name, "")
+        param_dict["data_path"] = os.path.join(p.data_path, name, "")
         if path is not None:
             path = os.path.join(path, name)
             p.save_params(file=path, dictionary=param_dict, quiet=quiet)
         return param_dict
 
+    @classmethod
+    def build_param_path(cls, field_name: str):
+        return os.path.join(p.param_path, "fields", field_name, field_name)
+
 
 class StandardField(Field):
-    a = 0.0
+    pass
 
 
 class FRBField(Field):
@@ -1586,8 +1590,14 @@ class ImagingEpoch(Epoch):
             instrument = instrument.split("-")[-1]
             path = os.path.join(p.param_path, f"epochs_{instrument}", name)
         else:
-            path = os.path.join(p.param_path, "fields", field_name, "imaging", instrument, name)
+            path = cls.build_param_path(instrument_name=instrument,
+                                        field_name=field_name,
+                                        epoch_name=name)
         return cls.from_file(param_file=path, field=field)
+
+    @classmethod
+    def build_param_path(cls, instrument_name: str, field_name: str, epoch_name: str):
+        return os.path.join(p.param_path, "fields", field_name, "imaging", instrument_name, epoch_name)
 
     @classmethod
     def from_file(cls, param_file: Union[str, dict], old_format: bool = False, field: Field = None):
@@ -2426,8 +2436,14 @@ class SpectroscopyEpoch(Epoch):
     def from_params(cls, name, field: Union[Field, str] = None, instrument: str = None):
         instrument = instrument.lower()
         field_name, field = cls._from_params_setup(name=name, field=field)
-        path = os.path.join(p.param_path, "fields", field_name, "spectroscopy", instrument, name)
+        path = cls.build_param_path(field_name=field_name,
+                                    instrument_name=instrument,
+                                    epoch_name=name)
         return cls.from_file(param_file=path, field=field)
+
+    @classmethod
+    def build_param_path(cls, field_name: str, instrument_name: str, epoch_name: str):
+        return os.path.join(p.param_path, "fields", field_name, "spectroscopy", instrument_name, epoch_name)
 
 
 class ESOSpectroscopyEpoch(SpectroscopyEpoch):
