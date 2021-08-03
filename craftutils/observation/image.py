@@ -340,7 +340,6 @@ class ImagingImage(Image):
         return self.load_psfex_output()
 
     def load_psfex_output(self, force: bool = False):
-        print(self.path)
         if force or self.psfex_output is None:
             self.psfex_output = fits.open(self.psfex_path)
 

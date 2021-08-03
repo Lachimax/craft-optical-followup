@@ -1,6 +1,9 @@
 import os
 from typing import Union
 
+import astropy.table as table
+import astropy.io.votable as votable
+
 import craftutils.params as p
 import craftutils.utils as u
 from craftutils.retrieve import save_svo_filter
@@ -105,8 +108,14 @@ class Filter:
 
         self.lambda_eff = None
         self.lambda_fwhm = None
-        self.transmission_table = None
-        self.transmission_table_path = None
+        self.transmission_table_filter = None
+        self.transmission_table_filter_path = None
+        self.transmission_table_filter_instrument = None
+        self.transmission_table_filter_instrument_path = None
+        self.transmission_table_filter_instrument_atmosphere = None
+        self.transmission_table_filter_instrument_atmosphere_path = None
+        self.transmission_table_filter_atmosphere = None
+        self.transmission_table_filter_atmosphere_path = None
 
         self.load_output_file()
 
@@ -118,22 +127,93 @@ class Filter:
             filter_name=self.svo_id,
             output=path
         )
+        self.votable = votable.parse(path)
         self.votable_path = path
+
+        components = self.votable.get_field_by_id("components").value
+        if components == "Filter":
+            self.transmission_table_filter = self.votable.get_first_table().to_table()
+        elif components == "Filter + Instrument":
+            self.transmission_table_filter_instrument = self.votable.get_first_table().to_table()
+        elif components == "Filter + Instrument + Atmosphere":
+            self.transmission_table_filter_instrument_atmosphere = self.votable.get_first_table().to_table()
+        elif components == "Filter + Atmosphere":
+            self.transmission_table_filter_atmosphere = self.votable.get_first_table().to_table()
+
+        self.lambda_eff = self.votable.get_field_by_id("WavelengthEff")
+
+        self.write_transmission_tables()
         self.update_output_file()
 
-    def load_transmission_table(self):
-        pass
+    def write_transmission_tables(self):
+        if self.transmission_table_filter_path is None:
+            self.transmission_table_filter_path = os.path.join(
+                self.data_path,
+                f"{self.instrument}_{self.name}_transmission_filter.ecsv")
+        if self.transmission_table_filter is not None:
+            self.transmission_table_filter.write(
+                self.transmission_table_filter_path, format="ascii.ecsv")
+
+        if self.transmission_table_filter_instrument_path is None:
+            self.transmission_table_filter_instrument_path = os.path.join(
+                self.data_path,
+                f"{self.instrument}_{self.name}_transmission_filter_instrument.ecsv")
+        if self.transmission_table_filter_instrument is not None:
+            self.transmission_table_filter_instrument.write(
+                self.transmission_table_filter_instrument_path, format="ascii.ecsv")
+
+        if self.transmission_table_filter_instrument_atmosphere_path is None:
+            self.transmission_table_filter_instrument_atmosphere_path = os.path.join(
+                self.data_path,
+                f"{self.instrument}_{self.name}_transmission_filter_instrument_atmosphere.ecsv")
+        if self.transmission_table_filter_instrument_atmosphere is not None:
+            self.transmission_table_filter_instrument_atmosphere.write(
+                self.transmission_table_filter_instrument_atmosphere_path, format="ascii.ecsv")
+
+        if self.transmission_table_filter_atmosphere_path is None:
+            self.transmission_table_filter_atmosphere_path = os.path.join(
+                self.data_path,
+                f"{self.instrument}_{self.name}_transmission_filter_atmosphere.ecsv")
+        if self.transmission_table_filter_atmosphere is not None:
+            self.transmission_table_filter_atmosphere.write(
+                self.transmission_table_filter_atmosphere_path, format="ascii.ecsv")
+
+    def load_transmission_tables(self, force: bool = False):
+        if self.transmission_table_filter_path is not None:
+            if force:
+                self.transmission_table_filter = None
+            if self.transmission_table_filter is None:
+                self.transmission_table_filter = table.QTable.read(self.transmission_table_filter_path)
+        if self.transmission_table_filter_instrument_path is not None:
+            if force:
+                self.transmission_table_filter_instrument = None
+            if self.transmission_table_filter_instrument is None:
+                self.transmission_table_filter_instrument = table.QTable.read(self.transmission_table_filter_instrument_path)
+        if self.transmission_table_filter_instrument_atmosphere_path is not None:
+            if force:
+                self.transmission_table_filter_instrument_atmosphere = None
+            if self.transmission_table_filter_instrument_atmosphere is None:
+                self.transmission_table_filter_instrument_atmosphere = table.QTable.read(self.transmission_table_filter_instrument_atmosphere_path)
+        if self.transmission_table_filter_atmosphere_path is not None:
+            if force:
+                self.transmission_table_filter_atmosphere = None
+            if self.transmission_table_filter_atmosphere is None:
+                self.transmission_table_filter_atmosphere = table.QTable.read(self.transmission_table_filter_atmosphere_path)
 
     def _output_dict(self):
         return {
-            "votable_path": self.votable_path
+            "votable_path": self.votable_path,
+            "transmission_table_filter_path": self.transmission_table_filter_path,
+            "transmission_table_filter_instrument_path": self.transmission_table_filter_path,
+            "transmission_table_filter_instrument_atmosphere_path": self.transmission_table_filter_path,
+            "transmission_table_filter_atmospherepath": self.transmission_table_filter_path,
         }
 
     def update_output_file(self):
         p.update_output_file(self)
 
     def load_output_file(self):
-        p.load_output_file(self)
+        outputs = p.load_output_file(self)
 
     @classmethod
     def from_file(cls, param_file: Union[str, dict]):
