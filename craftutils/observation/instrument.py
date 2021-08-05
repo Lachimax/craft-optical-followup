@@ -203,8 +203,10 @@ class Filter:
         elif components == "Filter + Atmosphere":
             self.transmission_table_filter_atmosphere = self.votable.get_first_table().to_table()
 
-        self.lambda_eff = self.votable.get_field_by_id("WavelengthEff")
-        self.lambda_fwhm = self.votable.get_field_by_id("FWHM")
+        lambda_eff_vot = self.votable.get_field_by_id("WavelengthEff")
+        self.lambda_eff = lambda_eff_vot.value * lambda_eff_vot.unit
+        lambda_fwhm_vot = self.votable.get_field_by_id("FWHM")
+        self.lambda_fwhm = lambda_fwhm_vot.value * lambda_fwhm_vot.unit
 
         self.write_transmission_tables()
         self.update_output_file()
