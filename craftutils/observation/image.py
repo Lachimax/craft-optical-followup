@@ -305,7 +305,7 @@ class ImagingImage(Image):
                           parameters_file: str = None,
                           catalog_name: str = None,
                           template: 'ImagingImage' = None,
-                          **configs):
+                          **configs) -> str:
         if template is not None:
             template = template.path
             self.dual_mode_template = template
@@ -364,13 +364,21 @@ class ImagingImage(Image):
         self.load_source_cat_sextractor_dual()
         self.update_output_file()
 
+    def _load_source_cat_sextractor(self, path: str):
+        self.load_wcs()
+        print("Loading source catalogue from", path)
+        source_cat = table.QTable.read(path, format="ascii.sextractor")
+        source_cat["RA"], source_cat["DEC"] = self.wcs.all_pix2world(source_cat["X_IMAGE"],
+                                                                     source_cat["Y_IMAGE"], 1) * units.deg
+
+        return source_cat
+
     def load_source_cat_sextractor(self, force: bool = False):
         if self.source_cat_sextractor_path is not None:
             if force:
                 self.source_cat = None
             if self.source_cat is None:
-                print("Loading source_table from", self.source_cat_sextractor_path)
-                self.source_cat = table.QTable.read(self.source_cat_sextractor_path, format="ascii.sextractor")
+                self.source_cat = self._load_source_cat_sextractor(path=self.source_cat_sextractor_path)
         else:
             print("source_cat could not be loaded because source_cat_sextractor_path has not been set.")
 
@@ -379,9 +387,7 @@ class ImagingImage(Image):
             if force:
                 self.source_cat_dual = None
             if self.source_cat_dual is None:
-                print("Loading source_table from", self.source_cat_sextractor_dual_path)
-                self.source_cat_dual = table.QTable.read(self.source_cat_sextractor_dual_path,
-                                                         format="ascii.sextractor")
+                self.source_cat_dual = self._load_source_cat_sextractor(path=self.source_cat_sextractor_dual_path)
         else:
             print("source_cat_dual could not be loaded because source_cat_sextractor_dual_path has not been set.")
 
@@ -837,28 +843,51 @@ class ImagingImage(Image):
 
     def astrometry_diagnostics(self, reference_cat: Union[str, table.QTable],
                                ra_col: str = "ra", dec_col: str = "dec",
-                               tolerance: units.Quantity = 3 * units.arcsec, show_plots: bool = False,
+                               tolerance: units.Quantity = 1 * units.arcsec, show_plots: bool = False,
+                               output_path=None
                                ):
+
         matches_source_cat, matches_ext_cat, distance = self.match_to_cat(cat=reference_cat,
                                                                           ra_col=ra_col,
                                                                           dec_col=dec_col,
                                                                           tolerance=tolerance)
 
+        matches_coord = SkyCoord(matches_source_cat["RA"], matches_source_cat["DEC"])
+
         mean_offset = np.mean(distance)
         median_offset = np.median(distance)
         rms_offset = np.sqrt(np.mean(distance ** 2))
-        if show_plots:
-            plt.hist(distance.to(units.arcsec).value)
-            plt.xlabel("Offset (\")")
-            plt.show()
-            plt.scatter(matches_ext_cat[ra_col], matches_ext_cat[dec_col], c=distance.to(units.arcsec))
-            plt.xlabel("Right Ascension (Catalogue)")
-            plt.ylabel("Declination (Catalogue)")
-            plt.colorbar(label="Offset of measured position from catalogue (arcseconds)")
-            plt.show()
-            plt.close()
 
-            plt.scatter()
+        ref = self.extract_pointing()
+        ref_distance = ref.separation(matches_coord)
+
+        if output_path is None:
+            output_path = self.data_path
+
+        plt.scatter(ref_distance.to(units.arcsec), distance.to(units.arcsec))
+        plt.xlabel("Distance from reference pixel (\")")
+        plt.ylabel("Offset (\")")
+        if show_plots:
+            plt.show()
+        plt.savefig(os.path.join(output_path, f"{self.name}_astrometry_offset_v_ref.png"))
+        plt.close()
+
+        plt.hist(distance.to(units.arcsec).value)
+        plt.xlabel("Offset (\")")
+        if show_plots:
+            plt.show()
+        plt.savefig(os.path.join(output_path, f"{self.name}_astrometry_offset_hist.png"))
+        plt.close()
+
+        plt.scatter(matches_ext_cat[ra_col], matches_ext_cat[dec_col], c=distance.to(units.arcsec))
+        plt.xlabel("Right Ascension (Catalogue)")
+        plt.ylabel("Declination (Catalogue)")
+        plt.colorbar(label="Offset of measured position from catalogue (\")")
+        if show_plots:
+            plt.show()
+        plt.savefig(os.path.join(output_path, f"{self.name}_astrometry_offset_sky.png"))
+        plt.close()
+
         return mean_offset, median_offset, rms_offset
 
     def trim(self,
@@ -931,8 +960,8 @@ class ImagingImage(Image):
         self.load_source_cat()
         matches_source_cat, matches_ext_cat, distance = a.match_catalogs(cat_1=self.source_cat,
                                                                          cat_2=cat,
-                                                                         ra_col_1="ALPHAPSF_SKY",
-                                                                         dec_col_1="DELTAPSF_SKY",
+                                                                         ra_col_1="RA",
+                                                                         dec_col_1="DEC",
                                                                          ra_col_2=ra_col,
                                                                          dec_col_2=dec_col,
                                                                          tolerance=tolerance)
@@ -989,7 +1018,7 @@ class ImagingImage(Image):
         else:
             cat = self.source_cat
 
-        coord_cat = SkyCoord(cat["ALPHA_SKY"], cat["DELTA_SKY"])
+        coord_cat = SkyCoord(cat["RA"], cat["DEC"])
         separation = coord.separation(coord_cat)
         nearest = cat[np.argmin(separation)]
         return nearest
@@ -1070,8 +1099,8 @@ class ImagingImage(Image):
         norm = pl.nice_norm(image=image_cut[ext].data)
         plt.imshow(image_cut[0].data, origin='lower', norm=norm)
         pl.plot_gal_params(hdu=image_cut,
-                           ras=[row["ALPHA_SKY"].value],
-                           decs=[row["DELTA_SKY"].value],
+                           ras=[row["RA"].value],
+                           decs=[row["DEC"].value],
                            a=[row["A_WORLD"].value],
                            b=[row["B_WORLD"].value],
                            theta=[row["THETA_WORLD"].value],
@@ -1079,8 +1108,8 @@ class ImagingImage(Image):
                            show_centre=True
                            )
         pl.plot_gal_params(hdu=image_cut,
-                           ras=[row["ALPHA_SKY"].value],
-                           decs=[row["DELTA_SKY"].value],
+                           ras=[row["RA"].value],
+                           decs=[row["DEC"].value],
                            a=[kron_a.value],
                            b=[kron_b.value],
                            theta=[row["THETA_WORLD"].value],
