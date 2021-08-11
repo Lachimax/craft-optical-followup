@@ -1908,11 +1908,16 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
             for fil in self.filters:
                 self.pair_files(self.frames_science[fil])
 
+    # TODO: Make output_path keyword standard across all proc methods
     def proc_5_correct_astrometry_frames(self, no_query: bool = False, **kwargs):
         if no_query or self.query_stage(stage="5-correct_astrometry_frames",
                                         message="Correct astrometry of individual frames?"):
             self.generate_gaia_astrometry_indices()
-            astrometry_path = os.path.join(self.data_path, "5-astrometry_frames")
+
+            if "output_path" in kwargs:
+                astrometry_path = kwargs["output_path"]
+            else:
+                astrometry_path = os.path.join(self.data_path, "5-astrometry_frames")
             u.mkdir_check(astrometry_path)
             self.frames_astrometry = {}
 
