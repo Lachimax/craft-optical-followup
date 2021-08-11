@@ -1089,7 +1089,10 @@ class ImagingEpoch(Epoch):
     def proc_6_coadd(self, no_query: bool = False, **kwargs):
         if no_query or self.query_stage(stage="6-coadd",
                                         message="Coadd astrometry-corrected frames with Montage?"):
-            coadd_path = os.path.join(self.data_path, "6-coadded_with_montage")
+            if "output_path" in kwargs:
+                coadd_path = kwargs["output_path"]
+            else:
+                coadd_path = os.path.join(self.data_path, "6-coadded_with_montage")
             self.coadd(coadd_path)
             self.paths['coadd_dir'] = coadd_path
             self.stages_complete["6-coadd"] = Time.now()
