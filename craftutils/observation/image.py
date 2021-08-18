@@ -564,27 +564,28 @@ class ImagingImage(Image):
         self.update_output_file()
         return self.zeropoint_best, best
 
-    def zeropoint(self,
-                  cat_path: str,
-                  output_path: str,
-                  cat_name: str = 'Catalogue',
-                  cat_zeropoint: units.Quantity = 0.0 * units.mag,
-                  cat_zeropoint_err: units.Quantity = 0.0 * units.mag,
-                  image_name: str = None,
-                  show: bool = False,
-                  sex_x_col: str = 'XPSF_IMAGE',
-                  sex_y_col: str = 'YPSF_IMAGE',
-                  sex_ra_col: str = 'ALPHAPSF_SKY',
-                  sex_dec_col: str = 'DELTAPSF_SKY',
-                  sex_flux_col: str = 'FLUX_PSF',
-                  stars_only: bool = True,
-                  star_class_col: str = 'CLASS_STAR',
-                  star_class_tol: float = 0.95,
-                  mag_range_sex_lower: units.Quantity = -100. * units.mag,
-                  mag_range_sex_upper: units.Quantity = 100. * units.mag,
-                  dist_tol: units.Quantity = 2. * units.arcsec,
-                  snr_cut=200
-                  ):
+    def zeropoint(
+            self,
+            cat_path: str,
+            output_path: str,
+            cat_name: str = 'Catalogue',
+            cat_zeropoint: units.Quantity = 0.0 * units.mag,
+            cat_zeropoint_err: units.Quantity = 0.0 * units.mag,
+            image_name: str = None,
+            show: bool = False,
+            sex_x_col: str = 'XPSF_IMAGE',
+            sex_y_col: str = 'YPSF_IMAGE',
+            sex_ra_col: str = 'ALPHAPSF_SKY',
+            sex_dec_col: str = 'DELTAPSF_SKY',
+            sex_flux_col: str = 'FLUX_PSF',
+            stars_only: bool = True,
+            star_class_col: str = 'CLASS_STAR',
+            star_class_tol: float = 0.95,
+            mag_range_sex_lower: units.Quantity = -100. * units.mag,
+            mag_range_sex_upper: units.Quantity = 100. * units.mag,
+            dist_tol: units.Quantity = 2. * units.arcsec,
+            snr_cut=200
+    ):
         self.signal_to_noise()
         if image_name is None:
             image_name = self.name

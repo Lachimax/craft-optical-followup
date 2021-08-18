@@ -1070,18 +1070,21 @@ class ImagingEpoch(Epoch):
 
         self.load_output_file(mode="imaging")
 
+    # TODO: Make output_path keyword standard across all proc methods
+
     def proc_5_correct_astrometry_frames(self, no_query: bool = False, **kwargs):
         if no_query or self.query_stage(stage="5-correct_astrometry_frames",
                                         message="Correct astrometry of individual frames?"):
             self.generate_gaia_astrometry_indices()
-            astrometry_path = os.path.join(self.data_path, "5-astrometry_frames")
+
+            if "output_path" in kwargs:
+                astrometry_path = kwargs["output_path"]
+            else:
+                astrometry_path = os.path.join(self.data_path, "5-astrometry_frames")
             u.mkdir_check(astrometry_path)
-            self.frames_astrometry = {}
-            for fil in self.frames_reduced:
-                astrometry_fil_path = os.path.join(astrometry_path, fil)
-                for frame in self.frames_reduced[fil]:
-                    new_frame = frame.correct_astrometry(output_dir=astrometry_fil_path)
-                    self.add_frame_astrometry(new_frame)
+
+            self.correct_astrometry_frames(output_path=astrometry_path, **kwargs)
+
             self.paths['astrometry_dir'] = astrometry_path
             self.stages_complete["5-correct_astrometry_frames"] = Time.now()
             self.update_output_file()
@@ -1142,6 +1145,14 @@ class ImagingEpoch(Epoch):
             self.get_photometry(object_property_path)
             self.stages_complete["11-object_properties"] = Time.now()
             self.update_output_file()
+
+    def correct_astrometry_frames(self, output_path: str):
+        self.frames_astrometry = {}
+        for fil in self.frames_reduced:
+            astrometry_fil_path = os.path.join(output_path, fil)
+            for frame in self.frames_reduced[fil]:
+                new_frame = frame.correct_astrometry(output_dir=astrometry_fil_path)
+                self.add_frame_astrometry(new_frame)
 
     def photometric_calibration(self, output_path: str):
         u.mkdir_check(output_path)
@@ -1911,77 +1922,62 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
             for fil in self.filters:
                 self.pair_files(self.frames_science[fil])
 
-    # TODO: Make output_path keyword standard across all proc methods
-    def proc_5_correct_astrometry_frames(self, no_query: bool = False, **kwargs):
-        if no_query or self.query_stage(stage="5-correct_astrometry_frames",
-                                        message="Correct astrometry of individual frames?"):
-            self.generate_gaia_astrometry_indices()
+    def correct_astrometry_frames(self, output_path: str, **kwargs):
+        self.frames_astrometry = {}
+        method = True
+        if "method" in kwargs:
+            method = kwargs["method"]
 
-            if "output_path" in kwargs:
-                astrometry_path = kwargs["output_path"]
-            else:
-                astrometry_path = os.path.join(self.data_path, "5-astrometry_frames")
-            u.mkdir_check(astrometry_path)
-            self.frames_astrometry = {}
-
-            pairwise = True
-            if "pairwise" in kwargs:
-                pairwise = kwargs["pairwise"]
-
-            for fil in self.frames_reduced:
-                astrometry_fil_path = os.path.join(astrometry_path, fil)
-                if pairwise:
-                    pairs = self.pair_files(self.frames_reduced[fil])
-                    reverse_pair = False
-                    for pair in pairs:
-                        if isinstance(pair, tuple):
-                            img_1, img_2 = pair
-                            success = False
-                            failed_first = False
-                            while not success:  # The SystemError should stop this from looping indefinitely.
-                                if not reverse_pair:
-                                    new_img_1 = img_1.correct_astrometry(output_dir=astrometry_fil_path)
-                                    # Check if the first astrometry run was successful.
-                                    # If it wasn't, we need to be running on the second image of the pair.
-                                    if new_img_1 is None:
-                                        reverse_pair = True
-                                        failed_first = True
-                                        print(
-                                            f"Astrometry.net failed to solve {img_1}, trying on opposite chip {img_2}.")
+        for fil in self.frames_reduced:
+            astrometry_fil_path = os.path.join(output_path, fil)
+            if method == "pairwise":
+                pairs = self.pair_files(self.frames_reduced[fil])
+                reverse_pair = False
+                for pair in pairs:
+                    if isinstance(pair, tuple):
+                        img_1, img_2 = pair
+                        success = False
+                        failed_first = False
+                        while not success:  # The SystemError should stop this from looping indefinitely.
+                            if not reverse_pair:
+                                new_img_1 = img_1.correct_astrometry(output_dir=astrometry_fil_path)
+                                # Check if the first astrometry run was successful.
+                                # If it wasn't, we need to be running on the second image of the pair.
+                                if new_img_1 is None:
+                                    reverse_pair = True
+                                    failed_first = True
+                                    print(
+                                        f"Astrometry.net failed to solve {img_1}, trying on opposite chip {img_2}.")
+                                else:
+                                    self.add_frame_astrometry(new_img_1)
+                                    new_img_2 = img_2.correct_astrometry_from_other(new_img_1,
+                                                                                    output_dir=astrometry_fil_path)
+                                    self.add_frame_astrometry(new_img_2)
+                                    success = True
+                            # We don't use an else statement here because reverse_pair can change within the above block,
+                            # and if it does the block below needs to execute.
+                            if reverse_pair:
+                                new_img_2 = img_2.correct_astrometry(output_dir=astrometry_fil_path)
+                                if new_img_2 is None:
+                                    if failed_first:
+                                        raise SystemError(
+                                            f"Astrometry.net failed to solve both chips of this pair ({img_1}, {img_2})")
                                     else:
-                                        self.add_frame_astrometry(new_img_1)
-                                        new_img_2 = img_2.correct_astrometry_from_other(new_img_1,
-                                                                                        output_dir=astrometry_fil_path)
-                                        self.add_frame_astrometry(new_img_2)
-                                        success = True
-                                # We don't use an else statement here because reverse_pair can change within the above block,
-                                # and if it does the block below needs to execute.
-                                if reverse_pair:
-                                    new_img_2 = img_2.correct_astrometry(output_dir=astrometry_fil_path)
-                                    if new_img_2 is None:
-                                        if failed_first:
-                                            raise SystemError(
-                                                f"Astrometry.net failed to solve both chips of this pair ({img_1}, {img_2})")
-                                        else:
-                                            reverse_pair = False
-                                    else:
-                                        self.add_frame_astrometry(new_img_2)
-                                        new_img_1 = img_1.correct_astrometry_from_other(new_img_2,
-                                                                                        output_dir=astrometry_fil_path)
-                                        self.add_frame_astrometry(new_img_1)
-                                        success = True
-                        else:
-                            new_img = pair.correct_astrometry(output_dir=astrometry_fil_path)
-                            self.add_frame_astrometry(new_img)
-
-                else:
-                    for img in self.frames_reduced[fil]:
-                        new_img = img.correct_astrometry(output_dir=astrometry_fil_path)
+                                        reverse_pair = False
+                                else:
+                                    self.add_frame_astrometry(new_img_2)
+                                    new_img_1 = img_1.correct_astrometry_from_other(new_img_2,
+                                                                                    output_dir=astrometry_fil_path)
+                                    self.add_frame_astrometry(new_img_1)
+                                    success = True
+                    else:
+                        new_img = pair.correct_astrometry(output_dir=astrometry_fil_path)
                         self.add_frame_astrometry(new_img)
 
-            self.paths['astrometry_dir'] = astrometry_path
-            self.stages_complete["5-correct_astrometry_frames"] = Time.now()
-            self.update_output_file()
+            else:
+                for img in self.frames_reduced[fil]:
+                    new_img = img.correct_astrometry(output_dir=astrometry_fil_path)
+                    self.add_frame_astrometry(new_img)
 
     @classmethod
     def pair_files(cls, images: list):
