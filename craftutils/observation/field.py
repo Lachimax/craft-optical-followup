@@ -1688,6 +1688,61 @@ class ImagingEpoch(Epoch):
             raise ValueError(f"Unrecognised instrument {instrument}")
 
 
+class GSAOIImagingEpoch(ImagingEpoch):
+    instrument = "gs-aoi"
+
+    def _initial_setup(self):
+        raw_dir = epoch_stage_dirs["0-download"]
+        data_title = self.name
+
+
+
+
+    @classmethod
+    def sort_files(cls, input_dir: str, output_dir: str = None, tolerance: units.Quantity = 3 * units.arcmin):
+        """
+        A routine to sort through a directory containing an arbitrary number of GSAOI observations and assign epochs to
+        them.
+
+        :param input_dir:
+        :param tolerance: Images will be grouped if they are < tolerance from each other (or, specifically, from the
+        first encountered in that cluster).
+        :return:
+        """
+        pointings = {}
+        if output_dir is None:
+            output_dir = input_dir
+        u.mkdir_check(output_dir)
+        files = os.listdir(input_dir)
+        files.sort()
+        for file in filter(lambda f: f.endswith(".fits"), files):
+            # Since GSAOI science files cannot be relied upon to include the object/target in the header, we group
+            # images by RA and Dec.
+            path = os.path.join(input_dir, file)
+            img = image.GSAOIImage(path=path)
+            pointing = img.extract_pointing()
+            associated = False
+            for pointing_str in pointings:
+                pointings_list = pointings[pointing_str]
+                other_pointing = pointings_list[0]
+                if pointing.separation(other_pointing) <= tolerance:
+                    pointings_list.append(pointing)
+                    associated = True
+                    shutil.move(path, pointing_str)
+                    break
+
+            if not associated:
+                pointing_str = os.path.join(output_dir, pointing.to_string())
+                u.mkdir_check(pointing_str)
+                pointings[pointing_str] = [pointing]
+                shutil.move(path, pointing_str)
+
+        return pointings
+
+
+
+
+
 class PanSTARRS1ImagingEpoch(ImagingEpoch):
     instrument = "panstarrs1"
 

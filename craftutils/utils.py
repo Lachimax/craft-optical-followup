@@ -890,8 +890,10 @@ def print_nested_dict(dictionary, level: int = 0):
             print((level + 1) * "\t", dictionary[key])
 
 
-def system_command(command: str, arguments: Union[str, list] = None, suppress_print: bool = False,
-                   error_on_exit_code: bool = True, *flags, **params):
+def system_command(command: str, arguments: Union[str, list] = None,
+                   suppress_print: bool = False,
+                   error_on_exit_code: bool = True, pipe_to: str = None,
+                   *flags, **params):
     if command in [""]:
         raise ValueError("Empty command.")
     if " " in command:
@@ -909,6 +911,9 @@ def system_command(command: str, arguments: Union[str, list] = None, suppress_pr
             sys_str += f" -{flag}"
         elif len(flag) > 1:
             sys_str += f" --{flag}"
+
+    if pipe_to is not None:
+        sys_str += f" >> {pipe_to}"
 
     if not suppress_print:
         print()

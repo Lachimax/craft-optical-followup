@@ -1329,6 +1329,18 @@ class FORS2Image(ImagingImage, ESOImage):
                 "skymapper"]
 
 
+class GSAOIImage(ImagingImage):
+
+    def extract_pointing(self):
+        # GSAOI images keep the WCS information in the second HDU for some reason.
+        key = self.header_keys()["ra"]
+        ra = self.extract_header_item(key, 1)
+        key = self.header_keys()["dec"]
+        dec = self.extract_header_item(key, 1)
+        self.pointing = SkyCoord(ra, dec, unit=units.deg)
+        return self.pointing
+
+
 class Spectrum(Image):
     def __init__(self, path: str = None, frame_type: str = None, decker: str = None, binning: str = None,
                  grism: str = None):
