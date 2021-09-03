@@ -765,7 +765,7 @@ def check_subimage_edges(data: np.ndarray, bottom, top, left, right, quiet: bool
 
 
 def trim_frame_point(hdu: fits.hdu.hdulist.HDUList, ra: float, dec: float,
-                     frame: Union[int, float], world_frame: bool = False, quiet: bool = False):
+                     frame: Union[int, float], world_frame: bool = False, quiet: bool = False, ext: int = 0):
     """
     Trims a fits file to frame a single point.
     :param hdu:
@@ -775,14 +775,14 @@ def trim_frame_point(hdu: fits.hdu.hdulist.HDUList, ra: float, dec: float,
     :param world_frame:
     :return:
     """
-    wcs_image = wcs.WCS(header=hdu[0].header)
+    wcs_image = wcs.WCS(header=hdu[ext].header)
     x, y = wcs_image.all_world2pix(ra, dec, 0)
 
     if world_frame:
         _, scale = get_pixel_scale(hdu)
         frame = frame / scale
 
-    bottom, top, left, right = subimage_edges(data=hdu[0].data, x=x, y=y, frame=frame)
+    bottom, top, left, right = subimage_edges(data=hdu[ext].data, x=x, y=y, frame=frame)
 
     hdu_cut = trim(hdu=hdu, left=left, right=right, bottom=bottom, top=top, quiet=quiet)
     return hdu_cut
