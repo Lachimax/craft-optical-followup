@@ -17,20 +17,18 @@ setuptools.setup(
     url="https://github.com/Lachimax/craft-optical-followup",
     packages=setuptools.find_packages(),
     python_requires='>=3.6',
-#     install_requires=[
-#         "astropy",
-#         "astroquery",
-#         "matplotlib",
-#         "reproject",
-#         "requests",
-# #        "sncosmo",
-#         "numpy",
-#         "PyYAML"
-#     ],
+    #     install_requires=[
+    #         "astropy",
+    #         "astroquery",
+    #         "matplotlib",
+    #         "reproject",
+    #         "requests",
+    # #        "sncosmo",
+    #         "numpy",
+    #         "PyYAML"
+    #     ],
     license='Attribution-NonCommercial-ShareAlike 4.0 International'
 )
-
-import craftutils.params as p
 
 param_path = os.path.join(os.getcwd(), "param")
 config_path = os.path.join(param_path, "config.yaml")
@@ -45,7 +43,12 @@ if not os.path.isfile(config_path):
 
     input("\nOnce you have done this, press any key to proceed.")
 
+    import craftutils.params as p
+
     p.add_config_param(params={"proj_dir": os.getcwd()})
+
+else:
+    import craftutils.params as p
 
 import craftutils.utils as u
 
