@@ -4,6 +4,7 @@ import json
 import os
 from typing import Union
 from datetime import date
+from shutil import copy
 
 import numpy as np
 
@@ -49,9 +50,20 @@ def tabulate_output_values(path: str, output: str = None):
 
 
 def check_for_config():
-    p = load_params('param/config.yaml')
+    param_path = os.path.join(os.getcwd(), "param")
+    config_path = os.path.join(param_path, "config.yaml")
+    p = load_params(config_path)
     if p is None:
-        print("No config.yaml file found.")
+        copy(os.path.join(param_path, "config_template.yaml"), config_path)
+        add_config_param(params={"proj_dir": os.getcwd()})
+        print(f"No config file was detected at {config_path}.")
+        print(f"A fresh config file has been created at '{config_path}'")
+        print(
+            "In this file, please set 'top_data_dir' to a valid path in which to store all data products of this package.")
+        print("WARNING: This may require a large amount of space.")
+        print("You may also like to specify an alternate param_dir")
+
+        input("\nOnce you have done this, press any key to proceed.")
     else:
         for param in p:
             p[param] = u.check_trailing_slash(p[param])
