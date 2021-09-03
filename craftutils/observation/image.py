@@ -1332,7 +1332,7 @@ class FORS2Image(ImagingImage, ESOImage):
 class GSAOIImage(ImagingImage):
 
     def extract_pointing(self):
-        # GSAOI images keep the WCS information in the second HDU for some reason.
+        # GSAOI images keep the WCS information in the second HDU header.
         key = self.header_keys()["ra"]
         ra = self.extract_header_item(key, 1)
         key = self.header_keys()["dec"]

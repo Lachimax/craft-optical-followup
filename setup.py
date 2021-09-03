@@ -17,16 +17,16 @@ setuptools.setup(
     url="https://github.com/Lachimax/craft-optical-followup",
     packages=setuptools.find_packages(),
     python_requires='>=3.6',
-    install_requires=[
-        "astropy",
-        "astroquery",
-        "matplotlib",
-        "reproject",
-        "requests",
-        "sncosmo",
-        "numpy",
-        "PyYAML"
-    ],
+#     install_requires=[
+#         "astropy",
+#         "astroquery",
+#         "matplotlib",
+#         "reproject",
+#         "requests",
+# #        "sncosmo",
+#         "numpy",
+#         "PyYAML"
+#     ],
     license='Attribution-NonCommercial-ShareAlike 4.0 International'
 )
 
