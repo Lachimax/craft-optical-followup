@@ -689,7 +689,7 @@ def world_to_pix(ra: "float", dec: "float", header: "fits.header.Header"):
 def trim(hdu: fits.hdu.hdulist.HDUList,
          left: Union[int, units.Quantity] = None, right: Union[int, units.Quantity] = None,
          bottom: Union[int, units.Quantity] = None, top: Union[int, units.Quantity] = None,
-         update_wcs: bool = True, in_place: bool = False, quiet: bool = False):
+         update_wcs: bool = True, in_place: bool = False, quiet: bool = False, ext: int = 0):
     """
 
     :param hdu:
@@ -699,7 +699,7 @@ def trim(hdu: fits.hdu.hdulist.HDUList,
     :param top:
     :return:
     """
-    shape = hdu[0].data.shape
+    shape = hdu[ext].data.shape
     if left is None:
         left = 0
     else:
@@ -731,11 +731,11 @@ def trim(hdu: fits.hdu.hdulist.HDUList,
         new_hdu = deepcopy(hdu)
 
     if update_wcs:
-        new_hdu[0].header['CRPIX1'] = hdu[0].header['CRPIX1'] - left
-        new_hdu[0].header['CRPIX2'] = hdu[0].header['CRPIX2'] - bottom
+        new_hdu[ext].header['CRPIX1'] = hdu[ext].header['CRPIX1'] - left
+        new_hdu[ext].header['CRPIX2'] = hdu[ext].header['CRPIX2'] - bottom
     if not quiet:
         print(bottom, top, left, right)
-    new_hdu[0].data = hdu[0].data[bottom:top, left:right]
+    new_hdu[ext].data = hdu[ext].data[bottom:top, left:right]
 
     return new_hdu
 
@@ -784,7 +784,7 @@ def trim_frame_point(hdu: fits.hdu.hdulist.HDUList, ra: float, dec: float,
 
     bottom, top, left, right = subimage_edges(data=hdu[ext].data, x=x, y=y, frame=frame)
 
-    hdu_cut = trim(hdu=hdu, left=left, right=right, bottom=bottom, top=top, quiet=quiet)
+    hdu_cut = trim(hdu=hdu, left=left, right=right, bottom=bottom, top=top, quiet=quiet, ext=ext)
     return hdu_cut
 
 
