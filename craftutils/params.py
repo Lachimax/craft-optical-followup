@@ -55,7 +55,10 @@ def check_for_config():
     p = load_params(config_path)
     if p is None:
         copy(os.path.join(param_path, "config_template.yaml"), config_path)
-        add_config_param(params={"proj_dir": os.getcwd()})
+        with open(config_path, "rw") as config_file:
+            config_text = config_file.read()
+            config_text = config_text.replace("proj_dir: <some_directory>/craft-optical-followup/",
+                                              f"proj_dir: {os.getcwd()}/")
         print(f"No config file was detected at {config_path}.")
         print(f"A fresh config file has been created at '{config_path}'")
         print(
