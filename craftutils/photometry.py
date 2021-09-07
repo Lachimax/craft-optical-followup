@@ -1306,8 +1306,8 @@ def create_mask(file, left, right, bottom, top, plot=False):
     return mask
 
 
-def source_table(file: Union[fits.HDUList, str],
-                 bg_file: Union[fits.HDUList, str] = None, output: str = None,
+def source_table(file: Union[fits.hdu_list.hdulist.HDUList, str],
+                 bg_file: Union[fits.hdu_list.hdulist.HDUList, str] = None, output: str = None,
                  plot: bool = False,
                  algorithm: str = 'DAO',
                  exp_time: float = None, zeropoint: float = 0., ext: float = 0.0, airmass: float = None,
