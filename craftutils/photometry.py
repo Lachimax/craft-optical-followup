@@ -1405,7 +1405,7 @@ def source_table(file: Union[fits.HDUList, str],
 
 
 def find_sources(data: np.ndarray,
-                 mask: np.ndaraay = None,
+                 mask: np.ndarray = None,
                  algorithm: str = 'DAO',
                  fwhm: float = 2.0,
                  bg: float = None):
