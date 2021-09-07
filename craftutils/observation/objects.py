@@ -231,7 +231,7 @@ class Object:
         else:
             position_err = PositionUncertainty.default_params()
 
-        if "type" in dictionary:
+        if "type" in dictionary and dictionary["type"] is not None:
             selected = cls.select_child_class(obj_type=dictionary["type"])
         else:
             selected = cls

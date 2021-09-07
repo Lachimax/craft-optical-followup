@@ -641,6 +641,7 @@ class FRBField(Field):
     def new_yaml(cls, name: str, path: str = None, quiet: bool = False):
         param_dict = super().new_yaml(name=name, path=None)
         param_dict["frb"]["name"] = name
+        param_dict["frb"]["type"] = "FRB"
         param_dict["frb"]["host_galaxy"]["name"] = name.replace("FRB", "HG")
         if path is not None:
             path = os.path.join(path, name)

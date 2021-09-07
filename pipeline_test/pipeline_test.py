@@ -40,8 +40,7 @@ def main(field_name: str,
     if field is None:
         param_path = os.path.join(p.param_path, "fields", "")
         # Check for old format param file, and ask to convert if found.
-        old_field_name = field_name
-        field_name = f"FRB20{field_name[3:]}"
+        old_field_name = f"FRB{field_name[-8:]}"
         old_params = p.object_params_frb(obj=old_field_name)
         print()
         field_param_path = os.path.join(param_path, field_name)
@@ -53,7 +52,7 @@ def main(field_name: str,
             if u.select_yn(f"Create a new param file at '{field_param_path_yaml}'?"):
                 fld.FRBField.new_yaml(name=field_name, path=field_param_path)
                 print(f"Template parameter file created at '{field_param_path_yaml}'")
-                print("Please edit this file before proceeding.")
+                input("Please edit this file before proceeding, then press Enter to continue.")
             else:
                 print("Exiting.")
                 exit(0)
