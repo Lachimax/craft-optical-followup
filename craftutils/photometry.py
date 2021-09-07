@@ -1369,7 +1369,7 @@ def source_table(file: Union[fits.HDUList, str],
         if airmass is None:
             airmass = 0.0
 
-    sources = find_sources(algorithm=algorithm, data=data, mask=mask, fwhm=fwhm, bg=bg, fwhm_override=fwhm_override)
+    sources = find_sources(algorithm=algorithm, data=data, mask=mask, fwhm=fwhm, bg=bg)
 
     x = sources['xcentroid']
     y = sources['ycentroid']
@@ -1408,7 +1408,8 @@ def find_sources(data: np.ndarray,
                  mask: np.ndarray = None,
                  algorithm: str = 'DAO',
                  fwhm: float = 2.0,
-                 bg: float = None):
+                 bg: float = None,
+                 threshold: float = 5):
     if algorithm not in ['DAO', 'IRAF']:
         raise ValueError(str(algorithm) + " is not a recognised algorithm.")
 
@@ -1423,9 +1424,9 @@ def find_sources(data: np.ndarray,
 
     # Find star locations using photutils StarFinder
     if algorithm == 'DAO':
-        find = ph.DAOStarFinder(fwhm=fwhm, threshold=3. * std)
+        find = ph.DAOStarFinder(fwhm=fwhm, threshold=threshold * std)
     elif algorithm == 'IRAF':
-        find = ph.IRAFStarFinder(fwhm=fwhm, threshold=3. * std)
+        find = ph.IRAFStarFinder(fwhm=fwhm, threshold=threshold * std)
 
     if mask is None:
         mask = np.zeros(data.shape, dtype=bool)
