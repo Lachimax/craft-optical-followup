@@ -39,7 +39,7 @@ gain_unit = units.electron / units.ct
 
 def image_psf_diagnostics(hdu: Union[str, fits.HDUList], cat: Union[str, table.Table], star_class_tol: float = 0.9,
                           mag_max: float = 0.0 * units.mag, mag_min: float = -7.0 * units.mag,
-                          match_to: table.Table = None, frame: float = 15):
+                          match_to: table.Table = None, frame: float = 15, use_sextractor: bool = True):
     hdu, path = ff.path_or_hdu(hdu=hdu)
     hdu = copy.deepcopy(hdu)
     cat = u.path_or_table(cat)
@@ -1306,13 +1306,13 @@ def create_mask(file, left, right, bottom, top, plot=False):
     return mask
 
 
-def source_table(file: Union['fits.hdu_list.hdulist.HDUList', 'str'],
-                 bg_file: Union['fits.hdu_list.hdulist.HDUList', 'str'] = None, output: 'str' = None,
-                 plot: 'bool' = False,
-                 algorithm: 'str' = 'DAO',
-                 exp_time: 'float' = None, zeropoint: 'float' = 0., ext: 'float' = 0.0, airmass: 'float' = None,
-                 colour_coeff: 'float' = 0.0, colours=None, fwhm: 'float' = 2.0, fwhm_override: 'bool' = False,
-                 mask: 'np.ndarray' = None, r_ap: 'float' = None, r_ann_in: 'float' = None, r_ann_out: 'float' = None,
+def source_table(file: Union[fits.hdu_list.hdulist.HDUList, str],
+                 bg_file: Union[fits.hdu_list.hdulist.HDUList, str] = None, output: str = None,
+                 plot: bool = False,
+                 algorithm: str = 'DAO',
+                 exp_time: float = None, zeropoint: float = 0., ext: float = 0.0, airmass: float = None,
+                 colour_coeff: float = 0.0, colours=None, fwhm: float = 2.0, fwhm_override: bool = False,
+                 mask: np.ndarray = None, r_ap: float = None, r_ann_in: float = None, r_ann_out: float = None,
                  r_type='fwhm'):
     """
     Finds sources in a .fits file using photutils and returns a catalogue table. If output is given, writes the
@@ -1354,14 +1354,11 @@ def source_table(file: Union['fits.hdu_list.hdulist.HDUList', 'str'],
         file = fits.open(file)
 
     if bg_file is None:
-        bg = 0.0
+        bg = None
     else:
-        if type(file) is str:
+        if type(bg_file) is str:
             bg_file = fits.open(bg_file)
             bg = bg_file[0].data
-
-    if algorithm not in ['DAO', 'IRAF']:
-        raise ValueError(str(algorithm) + " is not a recognised algorithm.")
 
     data = file[0].data
     header = file[0].header
@@ -1372,32 +1369,16 @@ def source_table(file: Union['fits.hdu_list.hdulist.HDUList', 'str'],
         if airmass is None:
             airmass = 0.0
 
-    mean, median, std = stats.sigma_clipped_stats(data)
-
-    print("Mean: ", mean, " Median: ", median, " Std dev: ", std)
-
-    find = None
-
-    # Find star locations using photutils StarFinder
-
-    if algorithm == 'DAO':
-        find = ph.DAOStarFinder(fwhm=fwhm, threshold=5. * std)
-    elif algorithm == 'IRAF':
-        find = ph.IRAFStarFinder(fwhm=fwhm, threshold=5. * std)
-
-    if mask is None:
-        mask = np.zeros(data.shape, dtype=bool)
-
-    sources = find(data - bg, mask=mask)
+    sources = find_sources(algorithm=algorithm, data=data, mask=mask, fwhm=fwhm, bg=bg, fwhm_override=fwhm_override)
 
     x = sources['xcentroid']
     y = sources['ycentroid']
+
     if not fwhm_override and algorithm == 'IRAF':
         fwhm = np.mean(sources['fwhm'])
     print("FWHM:", fwhm)
 
     # Feed locations to our aperture photometry function.
-
     phot, _, _ = aperture_photometry(data=data, x=x, y=y, fwhm=fwhm, exp_time=exp_time, plot=plot,
                                      zeropoint=zeropoint, ext=ext, airmass=airmass, colour_term=colour_coeff,
                                      colours=colours,
@@ -1419,6 +1400,37 @@ def source_table(file: Union['fits.hdu_list.hdulist.HDUList', 'str'],
         file.close()
 
     # sources = np.array(sources)
+
+    return sources
+
+
+def find_sources(data: np.ndarray,
+                 mask: np.ndaraay = None,
+                 algorithm: str = 'DAO',
+                 fwhm: float = 2.0,
+                 bg: float = None):
+    if algorithm not in ['DAO', 'IRAF']:
+        raise ValueError(str(algorithm) + " is not a recognised algorithm.")
+
+    mean, median, std = stats.sigma_clipped_stats(data)
+
+    print("Mean: ", mean, " Median: ", median, " Std dev: ", std)
+
+    find = None
+
+    if bg is None:
+        bg = median
+
+    # Find star locations using photutils StarFinder
+    if algorithm == 'DAO':
+        find = ph.DAOStarFinder(fwhm=fwhm, threshold=3. * std)
+    elif algorithm == 'IRAF':
+        find = ph.IRAFStarFinder(fwhm=fwhm, threshold=3. * std)
+
+    if mask is None:
+        mask = np.zeros(data.shape, dtype=bool)
+
+    sources = find(data - bg, mask=mask)
 
     return sources
 
