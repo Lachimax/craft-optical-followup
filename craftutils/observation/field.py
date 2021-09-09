@@ -1080,6 +1080,7 @@ class ImagingEpoch(Epoch):
 
             if "output_path" in kwargs:
                 astrometry_path = kwargs["output_path"]
+                kwargs.pop("output_path")
             else:
                 astrometry_path = os.path.join(self.data_path, "5-astrometry_frames")
             u.mkdir_check(astrometry_path)
@@ -1479,7 +1480,8 @@ class ImagingEpoch(Epoch):
                                        fits_cat_output=gaia_csv_path.replace(".csv", ".fits"),
                                        p_lower=-1,
                                        p_upper=2,
-                                       unique_id_prefix=unique_id_prefix)
+                                       unique_id_prefix=unique_id_prefix,
+                                       )
         return gaia_cat
 
     def add_frame_raw(self, raw_frame: Union[image.ImagingImage, str]):
@@ -2033,7 +2035,8 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
             else:
                 for img in self.frames_reduced[fil]:
                     new_img = img.correct_astrometry(output_dir=astrometry_fil_path)
-                    self.add_frame_astrometry(new_img)
+                    if new_img is not None:
+                        self.add_frame_astrometry(new_img)
 
     @classmethod
     def pair_files(cls, images: list):

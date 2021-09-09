@@ -756,7 +756,7 @@ class ImagingImage(Image):
         """
         u.mkdir_check(output_dir)
         base_filename = f"{self.name}_astrometry"
-        success = solve_field(image_files=self.path, base_filename=base_filename)
+        success = solve_field(image_files=self.path, base_filename=base_filename, overwrite=True)
         if not success:
             return None
         new_path = os.path.join(self.data_path, f"{base_filename}.new")
