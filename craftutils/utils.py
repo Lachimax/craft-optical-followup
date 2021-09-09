@@ -892,7 +892,7 @@ def print_nested_dict(dictionary, level: int = 0):
 
 def system_command(command: str, arguments: Union[str, list] = None,
                    suppress_print: bool = False,
-                   error_on_exit_code: bool = True, pipe_to: str = None,
+                   error_on_exit_code: bool = True,
                    *flags, **params):
     if command in [""]:
         raise ValueError("Empty command.")
@@ -912,9 +912,6 @@ def system_command(command: str, arguments: Union[str, list] = None,
         elif len(flag) > 1:
             sys_str += f" --{flag}"
 
-    if pipe_to is not None:
-        sys_str += f" >> {pipe_to}"
-
     if not suppress_print:
         print()
         print("Executing:")
@@ -922,7 +919,7 @@ def system_command(command: str, arguments: Union[str, list] = None,
         print()
     result = os.system(sys_str)
     if result != 0 and error_on_exit_code:
-        raise SystemError("System command failed with exit code", result)
+        raise SystemError(f"System command failed with exit code {result}")
     if not suppress_print:
         print()
         print("Finished:")
