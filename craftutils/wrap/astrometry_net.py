@@ -38,6 +38,7 @@ def solve_field(image_files: Union[str, list], base_filename: str = "astrometry"
     """
 
     params["o"] = base_filename
+    params["l"] = "20"
 
     flags = list(flags)
     if overwrite:
