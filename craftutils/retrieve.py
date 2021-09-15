@@ -15,6 +15,8 @@ from astropy.coordinates import SkyCoord
 from astropy.table import Table, QTable
 from astropy.time import Time
 
+import astroquery.gemini as gemini
+
 from pyvo import dal
 
 from craftutils import params as p
@@ -1391,8 +1393,73 @@ def load_catalogue(cat_name: str, cat: str):
     return cat
 
 
-filters = \
-    {"gaia": ["g", "bp", "rp"]}
+def login_gemini():
+    gemini.Observations.login(keys["gemini_user"], keys["gemini_pwd"])
+
+
+def save_gemini_calibs(output: str, obs_date: Time, instrument: str = 'GSAOI', fil: str = "Kshort"):
+    fil = {
+        "H": "H",
+        "J": "J",
+        "Kshort": "K"}[fil]
+
+    flats = {}
+    date_early = obs_date.copy()
+    date_late = obs_date.copy()
+    while len(flats) == 0:
+        program_id = f"GS-CAL{date_early.strftime('%Y%m%d')}"
+        print(f"Searching for domeflats in {program_id}...")
+        flats = gemini.Observations.query_criteria(
+            instrument=instrument,
+            observation_class='dayCal',
+            program_id=program_id,
+        )
+        if len(flats) == 0:
+            program_id = f"GS-CAL{date_late.strftime('%Y%m%d')}"
+            print(f"Searching for domeflats in {program_id}...")
+            flats = gemini.Observations.query_criteria(
+                instrument=instrument,
+                observation_class='dayCal',
+                program_id=f"GS-CAL{date_late.strftime('%y%m%d')}",
+            )
+        date_early -= 1
+        date_late += 1
+
+    flats = flats[flats["wavelength_band"] == fil]
+
+    for row in flats:
+        name = row["filename"].replace(".bz2", "")
+        gemini.Observations.get_file(name, download_dir=output)
+
+    standards = gemini.Observations.query_criteria(
+        instrument=instrument,
+        observation_class="partnerCal",
+        program_id=f"GS-CAL{date_early.strftime('%y%m%d')}",
+    )
+
+    standards = standards[standards["wavelength_band"] == fil]
+
+    for row in standards:
+        name = row["filename"].replace(".bz2", "")
+        gemini.Observations.get_file(name, download_dir=output)
+
+
+def save_gemini_epoch(output: str, program_id: str, obs_date: Time, coord: SkyCoord,
+                      instrument: str = 'GSAOI'):
+    science_files = gemini.Observations.query_criteria(
+        instrument=instrument,
+        program_id=program_id,
+        observation_class='science',
+        coordinates=coord,
+    )
+
+    for row in science_files:
+        name = row["filename"].replace(".bz2", "")
+        gemini.Observations.get_file(name, download_dir=output)
+
+
+filters = {
+    "gaia": ["g", "bp", "rp"]}
 
 column_units = \
     {

@@ -1698,8 +1698,32 @@ class GSAOIImagingEpoch(ImagingEpoch):
         raw_dir = epoch_stage_dirs["0-download"]
         data_title = self.name
 
+    def proc_0_download(self, no_query: bool = False, **kwargs):
+        if no_query or self.query_stage("Download raw data from ESO archive?", stage='0-download'):
+            self.retrieve()
+            self.stages_complete['0-download'] = Time.now()
+            self.update_output_file()
 
+    def retrieve(self):
+        raw_dir = epoch_stage_dirs["0-download"]
+        raw_dir_full = self.paths["raw_dir"]
 
+        # Get the calibration files
+        retrieve.save_gemini_calibs(output=raw_dir_full, obs_date=self.date)
+
+        #
+        retrieve.save_gemini_epoch(output=raw_dir_full,
+                                   program_id=self.program_id,
+                                   coord=self.field.centre_coords,
+                                   obs_date=self.date)
+
+    # @classmethod
+    # def default_params(cls):
+    #     default_params = super().default_params()
+    #     default_params.update({
+    #         ""
+    #     })
+    #     return default_params
 
     @classmethod
     def sort_files(cls, input_dir: str, output_dir: str = None, tolerance: units.Quantity = 3 * units.arcmin):
@@ -1741,9 +1765,6 @@ class GSAOIImagingEpoch(ImagingEpoch):
                 shutil.move(path, pointing_str)
 
         return pointings
-
-
-
 
 
 class PanSTARRS1ImagingEpoch(ImagingEpoch):
