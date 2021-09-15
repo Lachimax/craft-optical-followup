@@ -115,10 +115,11 @@ if __name__ == '__main__':
     parser.add_argument("--do", help="Epoch processing stages to perform (overrides manual selection if provided). "
                                      "Numbers separated by space or comma.",
                         type=str)
-    parser.add_argument("--do_not_reuse_masters", help="If provided, PypeIt is asked to re-make master frames for every"
-                                                       "science reduction (including within a run). DRASTICALLY "
-                                                       "increases PypeIt runtime, especially for epochs with many "
-                                                       "science frames.",
+    parser.add_argument("--do_not_reuse_masters",
+                        help="If provided, PypeIt is asked to re-make master frames for every"
+                             "science reduction (including within a run). DRASTICALLY "
+                             "increases PypeIt runtime, especially for epochs with many "
+                             "science frames.",
                         action='store_true')
 
     # Load arguments
