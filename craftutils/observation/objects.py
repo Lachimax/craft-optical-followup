@@ -291,7 +291,10 @@ class Galaxy(Object):
 
     def angular_size_distance(self, cosmology: cosmo.core.FlatLambdaCDM = None):
         if cosmology is None:
-            cosmology = cosmo.Planck18
+            try:
+                cosmology = cosmo.Planck18
+            except AttributeError:
+                cosmology = cosmo.Planck15
         return cosmology.angular_diameter_distance(z=self.z)
 
     def projected_distance(self, angle: units.Quantity):
