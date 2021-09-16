@@ -1295,15 +1295,15 @@ class ImagingEpoch(Epoch):
         data_title = self.name
 
         # Write tables of fits files to main directory; firstly, science images only:
-        tbl = ff.fits_table(input_path=raw_dir,
+        tbl = image.fits_table(input_path=raw_dir,
                             output_path=os.path.join(data_dir, data_title + "_fits_table_science.csv"),
                             science_only=True)
         # Then including all calibration files
-        tbl_full = ff.fits_table(input_path=raw_dir,
+        tbl_full = image.fits_table(input_path=raw_dir,
                                  output_path=data_dir + data_title + "_fits_table_all.csv",
                                  science_only=False)
 
-        ff.fits_table_all(input_path=raw_dir,
+        image.fits_table_all(input_path=raw_dir,
                           output_path=data_dir + data_title + "_fits_table_detailed.csv",
                           science_only=False)
 
@@ -1852,7 +1852,7 @@ class PanSTARRS1ImagingEpoch(ImagingEpoch):
         # Write a table of fits files from the 0-imaging directory.
         table_path_all = os.path.join(self.data_path, f"{self.name}_fits_table_all.csv")
         self.set_path("fits_table", table_path_all)
-        ff.fits_table_all(input_path=imaging_dir, output_path=table_path_all, science_only=False)
+        image.fits_table_all(input_path=imaging_dir, output_path=table_path_all, science_only=False)
         for file in filter(lambda f: f.endswith(".fits"), os.listdir(imaging_dir)):
             path = os.path.join(imaging_dir, file)
             img = image.PanSTARRS1Cutout(path=path)
@@ -2578,9 +2578,9 @@ class ESOSpectroscopyEpoch(SpectroscopyEpoch):
         m_path = os.path.join(self.paths["raw_dir"], "M")
         u.mkdir_check(m_path)
         os.system(f"mv {os.path.join(self.paths['raw_dir'], 'M.')}* {m_path}")
-        ff.fits_table_all(input_path=self.paths["raw_dir"],
+        image.fits_table_all(input_path=self.paths["raw_dir"],
                           output_path=os.path.join(self.data_path, f"{self.name}_fits_table_science.csv"))
-        ff.fits_table_all(input_path=self.paths["raw_dir"],
+        image.fits_table_all(input_path=self.paths["raw_dir"],
                           output_path=os.path.join(self.data_path, f"{self.name}_fits_table_all.csv"),
                           science_only=False)
 

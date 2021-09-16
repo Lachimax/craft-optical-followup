@@ -1,5 +1,6 @@
 # Code by Lachlan Marnoch, 2021
 import copy
+import string
 import os
 import shutil
 import warnings
@@ -29,6 +30,176 @@ from craftutils.wrap.astrometry_net import solve_field
 from craftutils.retrieve import cat_columns
 
 instrument_header = {"FORS2": "vlt-fors2"}
+
+
+# TODO: Make this list all fits files, then write wrapper that eliminates non-science images and use that in scripts.
+def fits_table(input_path: str, output_path: str = "", science_only: bool = True):
+    """
+    Produces and writes to disk a table of .fits files in the given path, with the vital statistics of each. Intended
+    only for use with raw ESO data.
+    :param input_path:
+    :param output_path:
+    :param science_only: If True, we are writing a list for a folder that also contains calibration files, which we want
+     to ignore.
+    :return:
+    """
+
+    # If there's no trailing slash in the paths, add one.
+    input_path = u.check_trailing_slash(input_path)
+
+    if output_path == "":
+        output_path = input_path + "fits_table.csv"
+    elif output_path[-4:] != ".csv":
+        if output_path[-1] == "/":
+            output_path = output_path + "fits_table.csv"
+        else:
+            output_path = output_path + ".csv"
+
+    print('Writing table of fits files to: \n', output_path)
+
+    files = os.listdir(input_path)
+    files.sort()
+    files_fits = []
+
+    # Keep only the relevant fits files
+
+    for f in files:
+        if f[-5:] == ".fits":
+            files_fits.append(f)
+
+    # Create list of dictionaries to be used as the output data
+    output = []
+
+    ids = string.ascii_lowercase
+    if len(ids) < len(files_fits):
+        ids = ids + string.ascii_uppercase
+    if len(ids) < len(files_fits):
+        ids = ids + string.digits
+
+    for i, f in enumerate(files_fits):
+        data = {'identifier': f}
+        file_path = os.path.join(input_path, f)
+        image = Image.from_fits(path=file_path)
+        header = image.load_headers()[0]
+        if science_only:
+            frame_type = image.extract_frame_type()
+            if frame_type not in ("science", "science_reduced"):
+                continue
+        if len(ids) >= len(files_fits):
+            data['id'] = ids[i]
+        if "OBJECT" in header:
+            data['object'] = header["OBJECT"]
+        if "ESO OBS NAME" in header:
+            data['obs_name'] = header["ESO OBS NAME"]
+        if "EXPTIME" in header:
+            data['exp_time'] = header["EXPTIME"]
+        if "AIRMASS" in header:
+            data['airmass'] = header["AIRMASS"]
+        elif "ESO TEL AIRM START" in header and "ESO TEL AIRM END":
+            data['airmass'] = (header["ESO TEL AIRM START"] + header["ESO TEL AIRM END"]) / 2
+        if "CRVAL1" in header:
+            data['ref_ra'] = header["CRVAL1"]
+        if "CRVAL2" in header:
+            data['ref_dec'] = header["CRVAL2"]
+        if "CRPIX1" in header:
+            data['ref_pix_x'] = header["CRPIX1"]
+        if "CRPIX2" in header:
+            data['ref_pix_y'] = header["CRPIX2"]
+        if "EXTNAME" in header:
+            data['chip'] = header["EXTNAME"]
+        elif "ESO DET CHIP1 ID" in header:
+            if header["ESO DET CHIP1 ID"] == 'CCID20-14-5-3':
+                data['chip'] = 'CHIP1'
+            if header["ESO DET CHIP1 ID"] == 'CCID20-14-5-6':
+                data['chip'] = 'CHIP2'
+        if "GAIN" in header:
+            data['gain'] = header["GAIN"]
+        if "INSTRUME" in header:
+            data['instrument'] = header["INSTRUME"]
+        if "ESO TEL AIRM START" in header:
+            data['airmass_start'] = header["ESO TEL AIRM START"]
+        if "ESO TEL AIRM END" in header:
+            data['airmass_end'] = header["ESO TEL AIRM END"]
+        if "ESO INS OPTI3 NAME" in header:
+            data['collimater'] = header["ESO INS OPTI3 NAME"]
+        if "ESO INS OPTI5 NAME" in header:
+            data['filter1'] = header["ESO INS OPTI5 NAME"]
+        if "ESO INS OPTI6 NAME" in header:
+            data['filter2'] = header["ESO INS OPTI6 NAME"]
+        if "ESO INS OPTI7 NAME" in header:
+            data['filter3'] = header["ESO INS OPTI7 NAME"]
+        if "ESO INS OPTI9 NAME" in header:
+            data['filter4'] = header["ESO INS OPTI9 NAME"]
+        if "ESO INS OPTI10 NAME" in header:
+            data['filter5'] = header["ESO INS OPTI10 NAME"]
+        if "ESO INS OPTI8 NAME" in header:
+            data['camera'] = header["ESO INS OPTI8 NAME"]
+        if "NAXIS1" in header:
+            data['pixels_x'] = header["NAXIS1"]
+        if "NAXIS2" in header:
+            data['pixels_y'] = header["NAXIS2"]
+        if "SATURATE" in header:
+            data['saturate'] = header["SATURATE"]
+        if "MJD-OBS" in header:
+            data['mjd_obs'] = header["MJD-OBS"]
+        output.append(data)
+
+    out_file = table.Table(output)
+    out_file.write(output_path, format="ascii.csv", overwrite=True)
+
+    return out_file
+
+
+def fits_table_all(input_path: str, output_path: str = "", science_only: bool = True):
+    """
+    Produces and writes to disk a table of .fits files in the given path, with the vital statistics of each. Intended
+    only for use with raw ESO data.
+    :param input_path:
+    :param output_path:
+    :param science_only: If True, we are writing a list for a folder that also contains calibration files, which we want
+     to ignore.
+    :return:
+    """
+
+    if output_path == "":
+        output_path = os.path.join(input_path, "fits_table.csv")
+
+    if os.path.isdir(output_path):
+        output_path = output_path + "fits_table.csv"
+    else:
+        output_path = u.sanitise_file_ext(filename=output_path, ext="csv")
+
+    print('Writing table of fits files to: \n', output_path)
+
+    files = os.listdir(input_path)
+    files.sort()
+    files_fits = list(filter(lambda x: x[-5:] == '.fits', files))
+
+    # Create list of dictionaries to be used as the output data
+    output = []
+
+    for i, f in enumerate(files_fits):
+        data = {}
+        file_path = os.path.join(input_path, f)
+        image = Image.from_fits(path=file_path)
+        if science_only:
+            frame_type = image.extract_frame_type()
+            if frame_type not in ("science", "science_reduced"):
+                continue
+        header = image.load_headers()[0]
+        for key in header:
+            # Remove comments.
+            if key not in ["COMMENT", "HISTORY", '']:
+                data[key] = header[key]
+        if 'ESO TEL AIRM END' in data and 'ESO TEL AIRM START' in data:
+            data['AIRMASS'] = (float(data['ESO TEL AIRM END']) + float(data['ESO TEL AIRM START'])) / 2
+            output.append(data)
+        data["PATH"] = file_path
+
+    out_file = table.Table(output)
+    out_file.write(output_path, format="ascii.csv", overwrite=True)
+
+    return out_file
 
 
 class Image:

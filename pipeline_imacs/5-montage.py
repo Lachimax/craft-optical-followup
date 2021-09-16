@@ -8,7 +8,7 @@ import craftutils.fits_files as ff
 
 
 def main(data_dir, data_title, destination, fil, object):
-    table = ff.fits_table(destination + '/' + fil, science_only=False)
+    table = (destination + '/' + fil, science_only=False)
 
     fil = fil.replace('/', '')
 

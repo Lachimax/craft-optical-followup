@@ -1,7 +1,7 @@
 # Code by Lachlan Marnoch, 2019
 
 import craftutils.fits_files as ff
-from craftutils import params
+from craftutils.observation.image import fits_table
 
 
 def main(path, cat_path):
@@ -15,7 +15,7 @@ def main(path, cat_path):
     raw_path = path + '/0-data_with_raw_calibs/'
     table_path = raw_path + 'fits_table.csv'
 
-    ff.fits_table(input_path=raw_path, output_path=table_path, science_only=False)
+    fits_table(input_path=raw_path, output_path=table_path, science_only=False)
 
     # Write bias sof files.
     ff.write_sof(table_path=table_path,

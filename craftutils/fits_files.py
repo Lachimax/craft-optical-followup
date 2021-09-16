@@ -18,8 +18,6 @@ from astropy.table import Table
 from astropy.visualization import ImageNormalize, ZScaleInterval, SqrtStretch
 
 import craftutils.utils as u
-import craftutils.observation.image as img
-
 
 # TODO: Fill in docstrings.
 # TODO: Sanitise pipeline inputs (ie check if object name is valid)

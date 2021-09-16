@@ -3,6 +3,7 @@
 import craftutils.fits_files as ff
 import craftutils.params as p
 import craftutils.utils as u
+from craftutils.observation.image import fits_table, fits_table_all
 
 import shutil
 import numpy as np
@@ -19,17 +20,17 @@ def main(data_title: 'str'):
     output_dir = data_dir + "/0-data_with_raw_calibs/"
 
     # Write tables of fits files to main directory; firstly, science images only:
-    table = ff.fits_table(input_path=output_dir,
-                          output_path=data_dir + data_title + "_fits_table_science.csv",
-                          science_only=True)
+    table = fits_table(input_path=output_dir,
+                       output_path=data_dir + data_title + "_fits_table_science.csv",
+                       science_only=True)
     # Then including all calibration files
-    table_full = ff.fits_table(input_path=output_dir,
-                               output_path=data_dir + data_title + "_fits_table_all.csv",
-                               science_only=False)
+    table_full = fits_table(input_path=output_dir,
+                            output_path=data_dir + data_title + "_fits_table_all.csv",
+                            science_only=False)
 
-    ff.fits_table_all(input_path=output_dir,
-                      output_path=data_dir + data_title + "_fits_table_detailled.csv",
-                      science_only=False)
+    fits_table_all(input_path=output_dir,
+                   output_path=data_dir + data_title + "_fits_table_detailled.csv",
+                   science_only=False)
 
     # Clear output files for fresh start.
     u.rm_check(data_dir + '/output_values.yaml')

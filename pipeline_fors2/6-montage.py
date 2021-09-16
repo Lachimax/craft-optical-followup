@@ -5,7 +5,7 @@ import numpy as np
 
 import craftutils.params as p
 from craftutils.photometry import gain_median_combine
-import craftutils.fits_files as ff
+from craftutils.observation.image import fits_table
 
 
 def main(data_dir, data_title, origin, destination, fil):
@@ -18,7 +18,7 @@ def main(data_dir, data_title, origin, destination, fil):
     print(f"\tfilter {fil}")
     print()
 
-    table = ff.fits_table(origin + '/' + fil, science_only=False)
+    table = fits_table(origin + '/' + fil, science_only=False)
     table.sort('identifier')
 
     fil = fil.replace('/', '')

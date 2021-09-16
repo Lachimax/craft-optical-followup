@@ -6,10 +6,11 @@ import craftutils.utils as u
 import craftutils.params as p
 from craftutils.photometry import gain_median_combine
 import craftutils.fits_files as ff
+from craftutils.observation.image import fits_table
 
 
 def main(data_dir, data_title, destination, fil, object):
-    table = ff.fits_table(destination + '/' + fil, science_only=False)
+    table = fits_table(destination + '/' + fil, science_only=False)
 
     fil = fil.replace('/', '')
 
