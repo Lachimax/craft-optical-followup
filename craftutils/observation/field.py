@@ -1694,6 +1694,10 @@ class ImagingEpoch(Epoch):
 class GSAOIImagingEpoch(ImagingEpoch):
     instrument = "gs-aoi"
 
+    def pipeline(self, **kwargs):
+        super().pipeline(**kwargs)
+        self.proc_0_download(**kwargs)
+
     def _initial_setup(self):
         raw_dir = epoch_stage_dirs["0-download"]
         data_title = self.name
