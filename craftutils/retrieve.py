@@ -1427,9 +1427,7 @@ def save_gemini_calibs(output: str, obs_date: Time, instrument: str = 'GSAOI', f
 
     flats = flats[flats["wavelength_band"] == fil]
 
-    for row in flats:
-        name = row["filename"].replace(".bz2", "")
-        gemini.Observations.get_file(name, download_dir=output)
+    save_gemini_files(flats, output=output, overwrite=overwrite)
 
     standards = gemini.Observations.query_criteria(
         instrument=instrument,
@@ -1439,14 +1437,11 @@ def save_gemini_calibs(output: str, obs_date: Time, instrument: str = 'GSAOI', f
 
     standards = standards[standards["wavelength_band"] == fil]
 
-    for row in standards:
-        name = row["filename"].replace(".bz2", "")
-        if not os.path.isfile(os.path.join(output, name)) or overwrite:
-            gemini.Observations.get_file(name, download_dir=output)
+    save_gemini_files(standards, output=output, overwrite=overwrite)
 
 
-def save_gemini_epoch(output: str, program_id: str, obs_date: Time, coord: SkyCoord,
-                      instrument: str = 'GSAOI'):
+def save_gemini_epoch(output: str, program_id: str, coord: SkyCoord,
+                      instrument: str = 'GSAOI', , overwrite: bool = False):
     science_files = gemini.Observations.query_criteria(
         instrument=instrument,
         program_id=program_id,
@@ -1454,9 +1449,14 @@ def save_gemini_epoch(output: str, program_id: str, obs_date: Time, coord: SkyCo
         coordinates=coord,
     )
 
-    for row in science_files:
+    save_gemini_files(science_files, output=output, overwrite=overwrite)
+
+
+def save_gemini_files(file_list: Table, output: str, overwrite: bool = False):
+    for row in file_list:
         name = row["filename"].replace(".bz2", "")
-        gemini.Observations.get_file(name, download_dir=output)
+        if not os.path.isfile(os.path.join(output, name)) or overwrite:
+            gemini.Observations.get_file(name, download_dir=output)
 
 
 filters = {
