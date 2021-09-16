@@ -1397,7 +1397,7 @@ def login_gemini():
     gemini.Observations.login(keys["gemini_user"], keys["gemini_pwd"])
 
 
-def save_gemini_calibs(output: str, obs_date: Time, instrument: str = 'GSAOI', fil: str = "Kshort"):
+def save_gemini_calibs(output: str, obs_date: Time, instrument: str = 'GSAOI', fil: str = "Kshort", overwrite=False):
     fil = {
         "H": "H",
         "J": "J",
@@ -1441,7 +1441,8 @@ def save_gemini_calibs(output: str, obs_date: Time, instrument: str = 'GSAOI', f
 
     for row in standards:
         name = row["filename"].replace(".bz2", "")
-        gemini.Observations.get_file(name, download_dir=output)
+        if not os.path.isfile(os.path.join(output, name)) or overwrite:
+            gemini.Observations.get_file(name, download_dir=output)
 
 
 def save_gemini_epoch(output: str, program_id: str, obs_date: Time, coord: SkyCoord,
