@@ -13,7 +13,7 @@ def main(frb: str, new: bool):
         p.add_frb_param(obj=frb, params={"data_dir": data_dir + frb + "/"})
         print()
         print(
-            f"Enter the FRB coordinates. These can be changed later by editing the file {p.param_path}FRBs/{frb}.yaml")
+            f"Enter the FRB coordinates. These can be changed later by editing the file {p.param_dir}FRBs/{frb}.yaml")
         ra = input(f"Please enter the right ascension of {frb}:")
         try:
             ra = float(ra)

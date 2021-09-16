@@ -2,14 +2,13 @@
 
 import json
 import os
-from typing import Union
 from datetime import date
-from shutil import copy
-
-import numpy as np
+from typing import Union
 
 import astropy.io.misc.yaml as yaml
 import astropy.units as units
+import numpy as np
+import pkg_resources
 from astropy.table import Table, QTable
 
 from craftutils import utils as u
@@ -49,29 +48,39 @@ def tabulate_output_values(path: str, output: str = None):
     return outputs
 
 
+home_path = os.path.expanduser("~")
+config_dir = os.path.join(home_path, ".craftutils")
+config_file = os.path.join(config_dir, "config.yaml")
+
+
 def check_for_config():
-    param_path = os.path.join(os.getcwd(), "param")
-    config_path = os.path.join(param_path, "config.yaml")
-    p = load_params(config_path)
+    u.mkdir_check(config_dir)
+    p = load_params(config_file)
     if p is None:
-        copy(os.path.join(param_path, "config_template.yaml"), config_path)
-        with open(config_path, "rw") as config_file:
-            config_text = config_file.read()
-            config_text = config_text.replace("proj_dir: <some_directory>/craft-optical-followup/",
-                                              f"proj_dir: {os.getcwd()}/")
-        print(f"No config file was detected at {config_path}.")
-        print(f"A fresh config file has been created at '{config_path}'")
+        config_text = pkg_resources.resource_string(
+            __name__,
+            os.path.join("..", f"param", "config_template.yaml")).decode()
+        print(type(config_text))
+        config_text = config_text.replace("proj_dir: <some_directory>/craft-optical-followup/",
+                                          f"proj_dir: {os.getcwd()}/")
+
+        with open(config_file, "w") as cfg:
+            cfg.write(config_text)
+
+        print(f"No config file was detected at {config_file}.")
+        print(f"A fresh config file has been created at '{config_file}'")
         print(
-            "In this file, please set 'top_data_dir' to a valid path in which to store all data products of this package.")
-        print("WARNING: This may require a large amount of space.")
+            "In this file, please set 'top_data_dir' to a valid path in which to store all "
+            "data products of this package (This may require a large amount of space.).")
         print("You may also like to specify an alternate param_dir")
 
-        input("\nOnce you have done this, press any key to proceed.")
+        input("\nOnce you have edited this file, press any key to proceed.")
+        p = load_params(config_file)
     else:
         for param in p:
             p[param] = u.check_trailing_slash(p[param])
-        save_params('param/config.yaml', p)
-        yaml_to_json('param/config.yaml')
+        save_params(config_file, p)
+        yaml_to_json(config_file)
     return p
 
 
@@ -147,7 +156,7 @@ def yaml_to_json(yaml_file: str, output: str = None, quiet: bool = False):
 
 
 config = check_for_config()
-param_path = u.check_trailing_slash(config['param_dir'])
+param_dir = u.check_trailing_slash(config['param_dir'])
 project_path = u.check_trailing_slash(config['proj_dir'])
 data_path = u.check_trailing_slash(config["top_data_dir"])
 
@@ -199,11 +208,11 @@ def add_config_param(params: dict, quiet=False):
 
 
 def add_frb_param(obj: str, params: dict, quiet=False):
-    add_params(file=param_path + "FRBs/" + obj + ".yaml", params=params, quiet=quiet)
+    add_params(file=param_dir + "FRBs/" + obj + ".yaml", params=params, quiet=quiet)
 
 
 def add_epoch_param(obj: str, params: dict, instrument: str = 'FORS2', quiet=False):
-    add_params(file=param_path + "epochs_" + instrument.lower() + "/" + obj + ".yaml", params=params, quiet=quiet)
+    add_params(file=param_dir + "epochs_" + instrument.lower() + "/" + obj + ".yaml", params=params, quiet=quiet)
 
 
 def add_output_path(obj: str, key: str, path: str, instrument='fors2', quiet: bool = False):
@@ -238,27 +247,27 @@ def add_output_values_frb(obj: str, params: dict, quiet: bool = False):
 
 
 def apertures_fors(quiet: bool = False):
-    return load_params(param_path + '/aperture_diameters_fors2', quiet=quiet)
+    return load_params(param_dir + '/aperture_diameters_fors2', quiet=quiet)
 
 
 def apertures_des(quiet: bool = False):
-    return load_params(param_path + 'aperture_diameters_des', quiet=quiet)
+    return load_params(param_dir + 'aperture_diameters_des', quiet=quiet)
 
 
 def sextractor_names(quiet: bool = False):
-    return load_params(param_path + 'sextractor_names', quiet=quiet)
+    return load_params(param_dir + 'sextractor_names', quiet=quiet)
 
 
 def sextractor_names_psf(quiet: bool = False):
-    return load_params(param_path + 'sextractor_names_psf', quiet=quiet)
+    return load_params(param_dir + 'sextractor_names_psf', quiet=quiet)
 
 
 def sncosmo_models(quiet: bool = False):
-    return load_params(param_path + 'sncosmo_models', quiet=quiet)
+    return load_params(param_dir + 'sncosmo_models', quiet=quiet)
 
 
 def plotting_params(quiet: bool = False):
-    return load_params(param_path + 'plotting', quiet=quiet)
+    return load_params(param_dir + 'plotting', quiet=quiet)
 
 
 def ingest_eso_filter_properties(path: str, instrument: str, update: bool = False, quiet: bool = False):
@@ -292,7 +301,7 @@ def ingest_eso_filter_properties(path: str, instrument: str, update: bool = Fals
     params['extinction_err'] = u.numpy_to_list(data['extinction_err'])
     if update:
         params['calib_last_updated'] = str(date.today())
-    save_params(file=param_path + f'filters/{instrument}-{name}', dictionary=params)
+    save_params(file=param_dir + f'filters/{instrument}-{name}', dictionary=params)
 
 
 def ingest_filter_transmission(path: str, fil_name: str, instrument: str,
@@ -359,7 +368,7 @@ def ingest_filter_transmission(path: str, fil_name: str, instrument: str,
     params[f'wavelengths{type_str}'] = tbl["wavelength"].value.tolist()
     params[f'transmissions{type_str}'] = tbl["transmission"].value.tolist()
 
-    save_params(file=os.path.join(param_path, 'filters', f'{instrument}-{fil_name}'), dictionary=params, quiet=quiet)
+    save_params(file=os.path.join(param_dir, 'filters', f'{instrument}-{fil_name}'), dictionary=params, quiet=quiet)
 
 
 def ingest_filter_set(path: str, instrument: str,
@@ -409,7 +418,7 @@ def ingest_filter_set(path: str, instrument: str,
             params[f'wavelengths{type_str}'] = wavelengths
             params[f'transmissions{type_str}'] = transmissions
 
-            save_params(file=param_path + f'filters/{instrument}-{f}', dictionary=params, quiet=quiet)
+            save_params(file=param_dir + f'filters/{instrument}-{f}', dictionary=params, quiet=quiet)
     refresh_params_filters(quiet=quiet)
 
 
@@ -420,15 +429,15 @@ def new_filter_params(quiet: bool = False):
 
 
 def filter_params(f: str, instrument: str = 'FORS2', quiet: bool = False):
-    return load_params(os.path.join(param_path, 'filters', f'{instrument}-{f}'), quiet=quiet)
+    return load_params(os.path.join(param_dir, 'filters', f'{instrument}-{f}'), quiet=quiet)
 
 
 def instrument_all_filters(instrument: str = 'FORS2', quiet: bool = False):
     # refresh_params_filters()
     filters = {}
-    directory = param_path + 'filters/'
+    directory = param_dir + 'filters/'
     for file in filter(lambda f: instrument in f and f[-5:] == '.yaml', os.listdir(directory)):
-        params = load_params(param_path + f'filters/{file}', quiet=quiet)
+        params = load_params(param_dir + f'filters/{file}', quiet=quiet)
         filters[params['name']] = params
     return filters
 
@@ -451,36 +460,36 @@ def instrument_filters_single_param(param: str, instrument: str = 'FORS2', sort_
 
 def object_params_instrument(obj: str, instrument: str, quiet: bool = False):
     instrument = instrument.lower()
-    return load_params(os.path.join(param_path, f'epochs_{instrument}', obj), quiet=quiet)
+    return load_params(os.path.join(param_dir, f'epochs_{instrument}', obj), quiet=quiet)
 
 
 def object_params_fors2(obj: str, quiet: bool = False):
-    return load_params(param_path + 'epochs_fors2/' + obj, quiet=quiet)
+    return load_params(param_dir + 'epochs_fors2/' + obj, quiet=quiet)
 
 
 def object_params_xshooter(obj: str, quiet: bool = False):
-    return load_params(param_path + 'epochs_xshooter/' + obj, quiet=quiet)
+    return load_params(param_dir + 'epochs_xshooter/' + obj, quiet=quiet)
 
 
 def object_params_imacs(obj: str, quiet: bool = False):
-    return load_params(param_path + 'epochs_imacs/' + obj, quiet=quiet)
+    return load_params(param_dir + 'epochs_imacs/' + obj, quiet=quiet)
 
 
 def object_params_des(obj: str, quiet: bool = False):
-    return load_params(param_path + 'epochs_des/' + obj, quiet=quiet)
+    return load_params(param_dir + 'epochs_des/' + obj, quiet=quiet)
 
 
 def object_params_sdss(obj: str, quiet: bool = False):
-    return load_params(param_path + 'epochs_sdss/' + obj, quiet=quiet)
+    return load_params(param_dir + 'epochs_sdss/' + obj, quiet=quiet)
 
 
 def object_params_frb(obj: str, quiet: bool = False):
-    return load_params(param_path + 'FRBs/' + obj, quiet=quiet)
+    return load_params(param_dir + 'FRBs/' + obj, quiet=quiet)
 
 
 def object_params_all_epochs(obj: str, instrument: str = 'FORS2', quiet: bool = False):
     properties = {}
-    directory = param_path + 'epochs_' + instrument.lower() + '/'
+    directory = param_dir + 'epochs_' + instrument.lower() + '/'
     for file in os.listdir(directory):
         if file[-5:] == '.yaml':
             if obj + '_' in file:
@@ -491,7 +500,7 @@ def object_params_all_epochs(obj: str, instrument: str = 'FORS2', quiet: bool = 
 
 def params_all_epochs(instrument: str = 'FORS2', quiet: bool = False):
     properties = {}
-    directory = param_path + 'epochs_' + instrument.lower() + '/'
+    directory = param_dir + 'epochs_' + instrument.lower() + '/'
     for file in os.listdir(directory):
         if file[-5:] == '.yaml' and 'template' not in file:
             properties[file[:-5]] = load_params(directory + file, quiet=quiet)
@@ -603,7 +612,7 @@ def refresh_params_all(quiet=False):
 
 def refresh_params_folder(folder: str, template: str, quiet: bool = False):
     template = u.sanitise_file_ext(template, '.yaml')
-    user_dir = f"{param_path}/{folder}/"
+    user_dir = f"{param_dir}/{folder}/"
     proj_dir = f"param/{folder}/"
     # Get template file from within this project; use to update param files in param directory as specified in
     # config.yaml
@@ -666,9 +675,9 @@ def refresh_params_folder(folder: str, template: str, quiet: bool = False):
 
 
 def sanitise_wavelengths(quiet: bool = False):
-    files = filter(lambda x: x[-5:] == '.yaml', os.listdir(param_path + 'filters/'))
+    files = filter(lambda x: x[-5:] == '.yaml', os.listdir(param_dir + 'filters/'))
     for file in files:
-        file_params = load_params(param_path + 'filters/' + file, quiet=quiet)
+        file_params = load_params(param_dir + 'filters/' + file, quiet=quiet)
         wavelengths = file_params['wavelengths']
         transmissions = file_params['transmissions']
         if len(wavelengths) > 0 and wavelengths[0] > wavelengths[-1]:
@@ -685,14 +694,14 @@ def sanitise_wavelengths(quiet: bool = False):
         file_params['wavelengths_filter_only'] = wavelengths
         file_params['transmissions_filter_only'] = transmissions
 
-        save_params(param_path + 'filters/' + file, file_params, quiet=quiet)
+        save_params(param_dir + 'filters/' + file, file_params, quiet=quiet)
     refresh_params_filters()
 
 
 def convert_to_angstrom(quiet: bool = False):
-    files = filter(lambda x: x[-5:] == '.yaml', os.listdir(param_path + 'filters/'))
+    files = filter(lambda x: x[-5:] == '.yaml', os.listdir(param_dir + 'filters/'))
     for file in files:
-        file_params = load_params(param_path + 'filters/' + file, quiet=quiet)
+        file_params = load_params(param_dir + 'filters/' + file, quiet=quiet)
 
         wavelengths = np.array(file_params['wavelengths'])
         wavelengths *= 10
@@ -702,7 +711,7 @@ def convert_to_angstrom(quiet: bool = False):
         wavelengths *= 10
         file_params['wavelengths_filter_only'] = wavelengths.tolist()
 
-        save_params(param_path + 'filters/' + file, file_params, quiet=quiet)
+        save_params(param_dir + 'filters/' + file, file_params, quiet=quiet)
     refresh_params_filters(quiet=quiet)
 
 
@@ -727,17 +736,17 @@ def trim_transmission_curves(f: str, instrument: str, lambda_min: float, lambda_
         file_params['transmissions_filter_only'] = transmissions[arg_lambda_min:arg_lambda_max]
         file_params['wavelengths_filter_only'] = wavelengths[arg_lambda_min:arg_lambda_max]
 
-    save_params(param_path + f'filters/{instrument}-{f}.yaml', file_params, quiet=quiet)
+    save_params(param_dir + f'filters/{instrument}-{f}.yaml', file_params, quiet=quiet)
 
 
 def keys():
-    key_path = os.path.join(param_path, "keys.json")
+    key_path = os.path.join(param_dir, "keys.json")
     if os.path.isfile(key_path):
-        with open(param_path + "keys.json") as fp:
+        with open(param_dir + "keys.json") as fp:
             file = json.load(fp)
         return file
     else:
-        raise FileNotFoundError(f"keys.json does not exist at param_path={param_path}. "
+        raise FileNotFoundError(f"keys.json does not exist at param_path={param_dir}. "
                                 f"Please make a copy from {os.path.join(config['proj_dir'], 'param', 'keys.json')}")
 
 

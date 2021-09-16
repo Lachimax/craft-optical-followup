@@ -92,7 +92,7 @@ class Instrument:
 
     @classmethod
     def _build_param_dir(cls, instrument_name: str):
-        path = os.path.join(p.param_path, "instruments")
+        path = os.path.join(p.param_dir, "instruments")
         u.mkdir_check(path)
         path = os.path.join(path, instrument_name)
         u.mkdir_check(path)

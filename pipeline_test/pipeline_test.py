@@ -38,7 +38,7 @@ def main(field_name: str,
         field = None
     # If this field has no parameter file, ask to create one.
     if field is None:
-        param_path = os.path.join(p.param_path, "fields", "")
+        param_path = os.path.join(p.param_dir, "fields", "")
         # Check for old format param file, and ask to convert if found.
         old_field_name = f"FRB{field_name[-8:]}"
         old_params = p.object_params_frb(obj=old_field_name)

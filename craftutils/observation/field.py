@@ -507,7 +507,7 @@ class Field:
 
     @classmethod
     def build_param_path(cls, field_name: str):
-        return os.path.join(p.param_path, "fields", field_name, field_name)
+        return os.path.join(p.param_dir, "fields", field_name, field_name)
 
 
 class StandardField(Field):
@@ -735,7 +735,7 @@ class FRBField(Field):
         new_params["subtraction"]["template_epochs"]["sdss"] = old_params["template_epoch_sdss"]
         new_params["subtraction"]["template_epochs"]["xshooter"] = old_params["template_epoch_xshooter"]
 
-        param_path_upper = os.path.join(p.param_path, "fields", new_frb)
+        param_path_upper = os.path.join(p.param_dir, "fields", new_frb)
         u.mkdir_check(param_path_upper)
         p.save_params(file=os.path.join(param_path_upper, f"{new_frb}.yaml"), dictionary=new_params,
                       quiet=False)
@@ -743,7 +743,7 @@ class FRBField(Field):
     def gather_epochs_old(self):
         print("Searching for old-format imaging epoch param files...")
         epochs = {}
-        param_dir = p.param_path
+        param_dir = p.param_dir
         for instrument_path in filter(lambda d: d.startswith("epochs_"), os.listdir(param_dir)):
             instrument = instrument_path.split("_")[-1]
             instrument_path = os.path.join(param_dir, instrument_path)
@@ -1605,7 +1605,7 @@ class ImagingEpoch(Epoch):
         field_name, field = cls._from_params_setup(name=name, field=field)
         if old_format:
             instrument = instrument.split("-")[-1]
-            path = os.path.join(p.param_path, f"epochs_{instrument}", name)
+            path = os.path.join(p.param_dir, f"epochs_{instrument}", name)
         else:
             path = cls.build_param_path(instrument_name=instrument,
                                         field_name=field_name,
@@ -1614,7 +1614,7 @@ class ImagingEpoch(Epoch):
 
     @classmethod
     def build_param_path(cls, instrument_name: str, field_name: str, epoch_name: str):
-        return os.path.join(p.param_path, "fields", field_name, "imaging", instrument_name, epoch_name)
+        return os.path.join(p.param_dir, "fields", field_name, "imaging", instrument_name, epoch_name)
 
     @classmethod
     def from_file(cls, param_file: Union[str, dict], old_format: bool = False, field: Field = None):
@@ -2181,7 +2181,7 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
         new_params["skip"]["sextractor"] = not old_params["do_sextractor"]
         new_params["skip"]["esorex"] = old_params["skip_esorex"]
 
-        instrument_path = os.path.join(p.param_path, "fields", new_field, "imaging", "vlt-fors2")
+        instrument_path = os.path.join(p.param_dir, "fields", new_field, "imaging", "vlt-fors2")
         u.mkdir_check(instrument_path)
         output_path = os.path.join(instrument_path, new_epoch_name)
         p.save_params(file=output_path,
@@ -2527,7 +2527,7 @@ class SpectroscopyEpoch(Epoch):
 
     @classmethod
     def build_param_path(cls, field_name: str, instrument_name: str, epoch_name: str):
-        return os.path.join(p.param_path, "fields", field_name, "spectroscopy", instrument_name, epoch_name)
+        return os.path.join(p.param_dir, "fields", field_name, "spectroscopy", instrument_name, epoch_name)
 
 
 class ESOSpectroscopyEpoch(SpectroscopyEpoch):
