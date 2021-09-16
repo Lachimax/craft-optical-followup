@@ -17,7 +17,7 @@ from astropy.nddata import CCDData
 from astropy.table import Table
 
 import craftutils.utils as u
-import craftutils.plotting as pl
+from craftutils.plotting import nice_norm
 import craftutils.observation.image as img
 
 
@@ -1249,7 +1249,7 @@ def stack(files: list, output: str = None, directory: str = '', stack_type: str 
         if normalise:
             data_append = data_append / np.nanmedian(data_append[np.isfinite(data_append)])
         if show:
-            norm = pl.nice_norm(data_append)
+            norm = nice_norm(data_append)
             plt.imshow(data_append, origin='lower', norm=norm)
             plt.show()
 
@@ -1264,7 +1264,7 @@ def stack(files: list, output: str = None, directory: str = '', stack_type: str 
         stacked = np.sum(data, axis=0)
 
     if show:
-        norm = pl.nice_norm(stacked)
+        norm = nice_norm(stacked)
         plt.imshow(stacked, origin='lower', norm=norm)
         plt.show()
 
