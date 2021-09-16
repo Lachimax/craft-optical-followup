@@ -23,9 +23,9 @@ except ImportError:
     print("FRB is not installed; DM_ISM estimates will not be available.")
     frb_installed = False
 
-from craftutils import params as p
-from craftutils import astrometry as a
-from craftutils import utils as u
+import craftutils.params as p
+import craftutils.astrometry as a
+import craftutils.utils as u
 
 position_dictionary = {"ra": {"decimal": 0.0,
                               "hms": "00h00m00s"},
