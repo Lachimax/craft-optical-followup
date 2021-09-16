@@ -1724,8 +1724,7 @@ class GSAOIImagingEpoch(ImagingEpoch):
         # Get the science files
         retrieve.save_gemini_epoch(output=raw_dir_full,
                                    program_id=self.program_id,
-                                   coord=self.field.centre_coords,
-                                   obs_date=self.date)
+                                   coord=self.field.centre_coords)
 
     # @classmethod
     # def default_params(cls):
