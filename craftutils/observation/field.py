@@ -1732,6 +1732,30 @@ class GSAOIImagingEpoch(ImagingEpoch):
     #     return default_params
 
     @classmethod
+    def from_file(cls, param_file: Union[str, dict], name: str = None, field: Field = None):
+
+        name, param_file, param_dict = p.params_init(param_file)
+        if param_dict is None:
+            raise FileNotFoundError(f"No parameter file found at {param_file}.")
+
+        if field is None:
+            field = param_dict["field"]
+        if 'target' in param_dict:
+            target = param_dict['target']
+        else:
+            target = None
+
+        return cls(name=name,
+                   field=field,
+                   param_path=param_file,
+                   data_path=param_dict['data_path'],
+                   instrument='gs-aoi',
+                   program_id=param_dict['program_id'],
+                   date=param_dict['date'],
+                   target=target,
+                   source_extractor_config=param_dict['sextractor'])
+
+    @classmethod
     def sort_files(cls, input_dir: str, output_dir: str = None, tolerance: units.Quantity = 3 * units.arcmin):
         """
         A routine to sort through a directory containing an arbitrary number of GSAOI observations and assign epochs to
