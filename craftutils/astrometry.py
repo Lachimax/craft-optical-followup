@@ -12,11 +12,11 @@ import astropy.wcs as wcs
 from astropy.coordinates import SkyCoord
 import astropy.units as units
 import astropy.time as time
+from astropy.visualization import ImageNormalize, ZScaleInterval, SqrtStretch
 
 import craftutils.fits_files as ff
 import craftutils.params as p
 import craftutils.utils as u
-import craftutils.plotting as pl
 import craftutils.wrap.astrometry_net as astrometry_net
 from craftutils.retrieve import cat_columns, load_catalogue
 
@@ -277,7 +277,7 @@ def tweak(sextractor_path: str, destination: str, image_path: str, cat_path: str
         cat['x'], cat['y'] = wcs_info.all_world2pix(cat[ra_name], cat[dec_name], 0)
         x, y = wcs_info.all_world2pix(sextracted[sextractor_ra_name], sextracted[sextractor_dec_name], 0)
 
-    norm = pl.nice_norm(data)
+    norm = ImageNormalize(data, interval=ZScaleInterval(), stretch=SqrtStretch())
     if show:
         # plt.subplot(projection=wcs_info)
         plt.imshow(data, norm=norm, origin='lower', cmap='viridis')
