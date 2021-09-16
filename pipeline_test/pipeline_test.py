@@ -16,7 +16,8 @@ def main(field_name: str,
          spectroscopy: bool,
          instrument: str,
          do: str,
-         do_not_reuse_masters: bool):
+         do_not_reuse_masters: bool,
+         overwrite_download: bool):
     new_field = False
     print("Refreshing parameter files from templates...")
     p.refresh_params_all(quiet=True)
@@ -99,7 +100,7 @@ def main(field_name: str,
             epoch.field = field
 
     epoch.do = do
-    epoch.pipeline(do_not_reuse_masters=do_not_reuse_masters)
+    epoch.pipeline(do_not_reuse_masters=do_not_reuse_masters, overwrite_download=overwrite_download)
 
 
 if __name__ == '__main__':
@@ -121,6 +122,9 @@ if __name__ == '__main__':
                              "increases PypeIt runtime, especially for epochs with many "
                              "science frames.",
                         action='store_true')
+    parser.add_argument("-o",
+                        help="Overwrite existing files during download.",
+                        action='store_true')
 
     # Load arguments
 
@@ -132,4 +136,5 @@ if __name__ == '__main__':
          spectroscopy=args.s,
          instrument=args.instrument,
          do=args.do,
-         do_not_reuse_masters=args.do_not_reuse_masters)
+         do_not_reuse_masters=args.do_not_reuse_masters,
+         overwrite_download=args.o)

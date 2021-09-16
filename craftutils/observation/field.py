@@ -1710,11 +1710,15 @@ class GSAOIImagingEpoch(ImagingEpoch):
 
     def proc_0_download(self, no_query: bool = False, **kwargs):
         if no_query or self.query_stage("Download raw data from Gemini archive?", stage='0-download'):
-            self.retrieve()
+            if 'overwrite_download' in kwargs:
+                overwrite = kwargs['overwrite_download']
+            else:
+                overwrite = False
+            self.retrieve(overwrite=overwrite)
             self.stages_complete['0-download'] = Time.now()
             self.update_output_file()
 
-    def retrieve(self):
+    def retrieve(self, overwrite: bool = False):
         raw_dir_full = self.paths["raw_dir"]
         u.mkdir_check(raw_dir_full)
 
@@ -1724,7 +1728,8 @@ class GSAOIImagingEpoch(ImagingEpoch):
         # Get the science files
         retrieve.save_gemini_epoch(output=raw_dir_full,
                                    program_id=self.program_id,
-                                   coord=self.field.centre_coords)
+                                   coord=self.field.centre_coords,
+                                   overwrite=overwrite)
 
     # @classmethod
     # def default_params(cls):
