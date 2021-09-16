@@ -1723,7 +1723,9 @@ class GSAOIImagingEpoch(ImagingEpoch):
         u.mkdir_check(raw_dir_full)
 
         # Get the calibration files
-        retrieve.save_gemini_calibs(output=raw_dir_full, obs_date=self.date)
+        retrieve.save_gemini_calibs(output=raw_dir_full,
+                                    obs_date=self.date,
+                                    overwrite=overwrite)
 
         # Get the science files
         retrieve.save_gemini_epoch(output=raw_dir_full,
