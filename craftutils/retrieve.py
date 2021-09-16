@@ -1454,6 +1454,7 @@ def save_gemini_epoch(output: str, program_id: str, coord: SkyCoord,
 
 def save_gemini_files(file_list: Table, output: str, overwrite: bool = False):
     login_gemini()
+    print(f"overwrite == {overwrite}")
     for row in file_list:
         name = row["filename"].replace(".bz2", "")
         if not os.path.isfile(os.path.join(output, name)) or overwrite:
