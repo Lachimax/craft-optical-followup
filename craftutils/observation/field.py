@@ -1715,13 +1715,13 @@ class GSAOIImagingEpoch(ImagingEpoch):
             self.update_output_file()
 
     def retrieve(self):
-        raw_dir = epoch_stage_dirs["0-download"]
         raw_dir_full = self.paths["raw_dir"]
+        u.mkdir_check(raw_dir_full)
 
         # Get the calibration files
         retrieve.save_gemini_calibs(output=raw_dir_full, obs_date=self.date)
 
-        #
+        # Get the science files
         retrieve.save_gemini_epoch(output=raw_dir_full,
                                    program_id=self.program_id,
                                    coord=self.field.centre_coords,
