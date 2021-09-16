@@ -1441,7 +1441,7 @@ def save_gemini_calibs(output: str, obs_date: Time, instrument: str = 'GSAOI', f
 
 
 def save_gemini_epoch(output: str, program_id: str, coord: SkyCoord,
-                      instrument: str = 'GSAOI', , overwrite: bool = False):
+                      instrument: str = 'GSAOI', overwrite: bool = False):
     science_files = gemini.Observations.query_criteria(
         instrument=instrument,
         program_id=program_id,
