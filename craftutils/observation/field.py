@@ -483,7 +483,7 @@ class Field:
             return cls(name=name,
                        centre_coords=f"{centre_ra} {centre_dec}",
                        param_path=param_file,
-                       data_path=param_dict["data_path"],
+                       data_path=os.path.join(config["top_data_dir"], param_dict["data_path"]),
                        objs=param_dict["objects"],
                        extent=extent
                        )
@@ -663,7 +663,7 @@ class FRBField(Field):
         return cls(name=name,
                    centre_coords=f"{centre_ra} {centre_dec}",
                    param_path=param_file,
-                   data_path=param_dict["data_path"],
+                   data_path=os.path.join(config["top_data_dir"], param_dict["data_path"]),
                    objs=param_dict["objects"],
                    frb=frb,
                    extent=extent
@@ -1296,16 +1296,16 @@ class ImagingEpoch(Epoch):
 
         # Write tables of fits files to main directory; firstly, science images only:
         tbl = image.fits_table(input_path=raw_dir,
-                            output_path=os.path.join(data_dir, data_title + "_fits_table_science.csv"),
-                            science_only=True)
+                               output_path=os.path.join(data_dir, data_title + "_fits_table_science.csv"),
+                               science_only=True)
         # Then including all calibration files
         tbl_full = image.fits_table(input_path=raw_dir,
-                                 output_path=data_dir + data_title + "_fits_table_all.csv",
-                                 science_only=False)
+                                    output_path=data_dir + data_title + "_fits_table_all.csv",
+                                    science_only=False)
 
         image.fits_table_all(input_path=raw_dir,
-                          output_path=data_dir + data_title + "_fits_table_detailed.csv",
-                          science_only=False)
+                             output_path=data_dir + data_title + "_fits_table_detailed.csv",
+                             science_only=False)
 
         for row in tbl_full:
             path = os.path.join(self.paths["raw_dir"], row["identifier"])
@@ -2579,10 +2579,10 @@ class ESOSpectroscopyEpoch(SpectroscopyEpoch):
         u.mkdir_check(m_path)
         os.system(f"mv {os.path.join(self.paths['raw_dir'], 'M.')}* {m_path}")
         image.fits_table_all(input_path=self.paths["raw_dir"],
-                          output_path=os.path.join(self.data_path, f"{self.name}_fits_table_science.csv"))
+                             output_path=os.path.join(self.data_path, f"{self.name}_fits_table_science.csv"))
         image.fits_table_all(input_path=self.paths["raw_dir"],
-                          output_path=os.path.join(self.data_path, f"{self.name}_fits_table_all.csv"),
-                          science_only=False)
+                             output_path=os.path.join(self.data_path, f"{self.name}_fits_table_all.csv"),
+                             science_only=False)
 
     def retrieve(self):
         """
