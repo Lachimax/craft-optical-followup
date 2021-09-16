@@ -1637,7 +1637,7 @@ class ImagingEpoch(Epoch):
             return cls(name=name,
                        field=field,
                        param_path=param_file,
-                       data_path=param_dict['data_path'],
+                       data_path=os.path.join(config["top_data_dir"], param_dict['data_path']),
                        instrument=instrument,
                        date=param_dict['date'],
                        program_id=param_dict["program_id"],
@@ -1696,6 +1696,10 @@ class ImagingEpoch(Epoch):
 class GSAOIImagingEpoch(ImagingEpoch):
     instrument = "gs-aoi"
 
+    @classmethod
+    def stages(cls):
+        return {"0-download": None}
+
     def pipeline(self, **kwargs):
         super().pipeline(**kwargs)
         self.proc_0_download(**kwargs)
@@ -1705,7 +1709,7 @@ class GSAOIImagingEpoch(ImagingEpoch):
         data_title = self.name
 
     def proc_0_download(self, no_query: bool = False, **kwargs):
-        if no_query or self.query_stage("Download raw data from ESO archive?", stage='0-download'):
+        if no_query or self.query_stage("Download raw data from Gemini archive?", stage='0-download'):
             self.retrieve()
             self.stages_complete['0-download'] = Time.now()
             self.update_output_file()
@@ -1748,7 +1752,7 @@ class GSAOIImagingEpoch(ImagingEpoch):
         return cls(name=name,
                    field=field,
                    param_path=param_file,
-                   data_path=param_dict['data_path'],
+                   data_path=os.path.join(config["top_data_dir"], param_dict['data_path']),
                    instrument='gs-aoi',
                    program_id=param_dict['program_id'],
                    date=param_dict['date'],
@@ -1959,7 +1963,7 @@ class PanSTARRS1ImagingEpoch(ImagingEpoch):
         epoch = cls(name=name,
                     field=field,
                     param_path=param_file,
-                    data_path=param_dict['data_path'],
+                    data_path=os.path.join(config["top_data_dir"], param_dict['data_path']),
                     source_extractor_config=param_dict['sextractor'])
         epoch.instrument = cls.instrument
         return epoch
@@ -2152,7 +2156,7 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
         return cls(name=name,
                    field=field,
                    param_path=param_file,
-                   data_path=param_dict['data_path'],
+                   data_path=os.path.join(config["top_data_dir"], param_dict['data_path']),
                    instrument='vlt-fors2',
                    program_id=param_dict['program_id'],
                    date=param_dict['date'],
@@ -2537,7 +2541,7 @@ class SpectroscopyEpoch(Epoch):
         return sub_cls(name=name,
                        field=field,
                        param_path=param_file,
-                       data_path=param_dict["data_path"],
+                       data_path=os.path.join(config["top_data_dir"], param_dict['data_path']),
                        instrument=instrument,
                        date=param_dict["date"],
                        program_id=param_dict["program_id"],
