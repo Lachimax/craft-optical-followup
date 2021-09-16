@@ -1685,6 +1685,8 @@ class ImagingEpoch(Epoch):
             return FORS2ImagingEpoch
         if instrument == "panstarrs1":
             return PanSTARRS1ImagingEpoch
+        if instrument == "gs-aoi":
+            return GSAOIImagingEpoch
         elif instrument in instruments_imaging:
             return ImagingEpoch
         else:
