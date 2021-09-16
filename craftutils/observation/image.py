@@ -16,8 +16,6 @@ import astropy.units as units
 from astropy.coordinates import SkyCoord
 from astropy.time import Time
 
-import reproject as rp
-
 import craftutils.utils as u
 import craftutils.astrometry as a
 import craftutils.fits_files as ff
@@ -912,6 +910,7 @@ class ImagingImage(Image):
         return image
 
     def reproject(self, other_image: 'ImagingImage', ext: int = 0, output_path: str = None):
+        import reproject as rp
         if output_path is None:
             output_path = self.path.replace(".fits", "_reprojected.fits")
         other_image.load_headers()
