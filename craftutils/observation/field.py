@@ -33,6 +33,48 @@ instruments_spectroscopy = p.instruments_spectroscopy
 surveys = p.surveys
 
 
+def _output_img_list(lst: list):
+    """
+    Turns a list of images into a YAML-able list of paths.
+    :param lst:
+    :return:
+    """
+    out_list = []
+    for img in lst:
+        out_list.append(img.path)
+    out_list.sort()
+    return out_list
+
+
+def _output_img_dict_single(dictionary: dict):
+    """
+    Turns a dict of images into a YAML-able dict of paths.
+    :param dictionary:
+    :return:
+    """
+    out_dict = {}
+    for fil in dictionary:
+        img = dictionary[fil]
+        if isinstance(img, image.Image):
+            out_dict[fil] = img.path
+        elif isinstance(img, str):
+            out_dict[fil] = img
+    return out_dict
+
+
+def _output_img_dict_list(dictionary: dict):
+    """
+    Turns a dict of lists of images into a YAML-able dict of lists of paths.
+    :param dictionary:
+    :return:
+    """
+    out_dict = {}
+    for fil in dictionary:
+        out_dict[fil] = list(map(lambda f: f.path, dictionary[fil]))
+        out_dict[fil].sort()
+    return out_dict
+
+
 def select_instrument(mode: str):
     if mode == "imaging":
         options = instruments_imaging
@@ -861,26 +903,13 @@ class Epoch:
         return outputs
 
     def _output_dict(self):
-        science_frame_paths = {}
-        for fil in self.frames_science:
-            science_frame_paths[fil] = list(map(lambda f: f.path, self.frames_science[fil]))
-            science_frame_paths[fil].sort()
-        standard_frame_paths = {}
-        for fil in self.frames_standard:
-            standard_frame_paths[fil] = list(map(lambda f: f.path, self.frames_standard[fil]))
-            standard_frame_paths[fil].sort()
-        coadded = {}
-        for fil in self.coadded:
-            frame = self.coadded[fil]
-            if isinstance(frame, str):
-                coadded[fil] = self.coadded[fil]
-            elif isinstance(frame, image.ImagingImage):
-                coadded[fil] = self.coadded[fil].path
+
         return {
             "stages": self.stages_complete,
             "paths": self.paths,
-            "frames_science": science_frame_paths,
-            "coadded": coadded
+            "frames_science": _output_img_dict_list(self.frames_science),
+            "frames_std": _output_img_dict_list(self.frames_standard),
+            "coadded": _output_img_dict_list(self.coadded)
         }
 
     def update_output_file(self):
@@ -1378,44 +1407,22 @@ class ImagingEpoch(Epoch):
             deepest = self.deepest.path
         else:
             deepest = None
-        frames_raw = []
-        for frame in self.frames_raw:
-            frames_raw.append(frame.path)
-        frames_raw.sort()
-        frames_reduced = {}
-        for fil in self.frames_reduced:
-            frames_reduced[fil] = list(map(lambda f: f.path, self.frames_reduced[fil]))
-            frames_reduced[fil].sort()
-        frames_astrometry = {}
-        for fil in self.frames_reduced:
-            frames_astrometry[fil] = list(map(lambda f: f.path, self.frames_astrometry[fil]))
-            frames_astrometry[fil].sort()
-        coadded = {}
-        for fil in self.coadded:
-            if isinstance(self.coadded[fil], image.Image):
-                coadded[fil] = self.coadded[fil].path
-            elif isinstance(self.coadded[fil], str):
-                coadded[fil] = self.coadded[fil]
-        coadded_trimmed = {}
-        for fil in self.coadded_trimmed:
-            if isinstance(self.coadded_trimmed[fil], image.Image):
-                coadded_trimmed[fil] = self.coadded_trimmed[fil].path
-            elif isinstance(self.coadded_trimmed[fil], str):
-                coadded_trimmed[fil] = self.coadded_trimmed[fil]
 
-        output_dict.update({"filters": self.filters,
-                            "deepest": deepest,
-                            "deepest_filter": self.deepest_filter,
-                            "coadded": coadded,
-                            "coadded_trimmed": coadded_trimmed,
-                            "frames_raw": frames_raw,
-                            "frames_reduced": frames_reduced,
-                            "frames_astrometry": frames_astrometry,
-                            "exp_time_mean": self.exp_time_mean,
-                            "exp_time_err": self.exp_time_err,
-                            "airmass_mean": self.airmass_mean,
-                            "airmass_err": self.airmass_err
-                            })
+        output_dict.update({
+            "filters": self.filters,
+            "deepest": deepest,
+            "deepest_filter": self.deepest_filter,
+            "coadded": _output_img_dict_single(self.coadded),
+            "coadded_trimmed": _output_img_dict_single(self.coadded_trimmed),
+            "frames_raw": _output_img_list(self.frames_raw),
+            "frames_reduced": _output_img_dict_list(self.frames_reduced),
+            "frames_astrometry": _output_img_dict_list(self.frames_astrometry),
+            "exp_time_mean": self.exp_time_mean,
+            "exp_time_err": self.exp_time_err,
+            "airmass_mean": self.airmass_mean,
+            "airmass_err": self.airmass_err,
+            "flats": _output_img_dict_list(self.flats)
+        })
         return output_dict
 
     def load_output_file(self, **kwargs):
@@ -1879,6 +1886,15 @@ class GSAOIImagingEpoch(ImagingEpoch):
         if not_none:
             self.flats_lists[fil] = None
         return not_none
+
+    def _output_dict(self):
+        output_dict = super()._output_dict()
+        output_dict.update({
+            "science_table": self.science_table,
+            "flats_lists": self.flats_lists,
+            "std_lists": self.std_lists
+        })
+        return output_dict
 
     # def load_sc
 
