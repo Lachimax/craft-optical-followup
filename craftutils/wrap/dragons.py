@@ -67,6 +67,9 @@ def showd(input_filenames: Union[str, list],
         for line in input_filenames:
             sys_str += " " + line
 
+    if os.path.isfile(output):
+        os.remove(output)
+
     print()
     print(sys_str)
     print()

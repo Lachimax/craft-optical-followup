@@ -1785,7 +1785,7 @@ class GSAOIImagingEpoch(ImagingEpoch):
             raw_dir=raw_dir,
             expression="observation_class==\"science\"",
             output=science_list_name
-        ).splitlines(False)[:3]
+        ).splitlines(False)[3:]
         self.paths["science_list"] = os.path.join(redux_dir, science_list_name)
 
         science_tbl_name = "science.csv"
