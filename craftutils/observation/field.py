@@ -1743,7 +1743,9 @@ class GSAOIImagingEpoch(ImagingEpoch):
     def pipeline(self, **kwargs):
         super().pipeline(**kwargs)
         self.proc_0_download(**kwargs)
-        self.proc_1_initial_setup()
+        self.proc_1_initial_setup(**kwargs)
+        self.proc_2_reduce_flats(**kwargs)
+        self.proc_3_reduce_science(**kwargs)
 
     def proc_0_download(self, no_query: bool = False, **kwargs):
         if no_query or self.query_stage("Download raw data from Gemini archive?", stage='0-download'):
