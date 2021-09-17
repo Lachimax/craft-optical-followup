@@ -17,7 +17,7 @@ def data_select(redux_dir: str,
     os.chdir(redux_dir)
     sys_str = f"dataselect {raw_dir}/*.fits"
     if tags is not None:
-        sys_str += " --tags"
+        sys_str += " --tags "
         for tag in tags:
             sys_str += tag
             sys_str += ","
