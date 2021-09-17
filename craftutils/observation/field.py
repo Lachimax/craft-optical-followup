@@ -1896,6 +1896,15 @@ class GSAOIImagingEpoch(ImagingEpoch):
         })
         return output_dict
 
+    def load_output_file(self, **kwargs):
+        outputs = super().load_output_file(**kwargs)
+        if type(outputs) is dict:
+            self.science_table = outputs["science_table"]
+            self.flats_lists = outputs["flats_lists"]
+            self.std_lists = outputs["std"]
+            self.flats = outputs["flats"]
+        return outputs
+
     # def load_sc
 
     @classmethod
