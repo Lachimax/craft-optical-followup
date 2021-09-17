@@ -70,13 +70,16 @@ def _output_img_dict_list(dictionary: dict):
     """
     out_dict = {}
     for fil in dictionary:
-        if isinstance(dictionary[fil][0], image.Image):
-            out_dict[fil] = list(map(lambda f: f.path, dictionary[fil]))
-            out_dict[fil].sort()
-        elif isinstance(dictionary[fil][0], str):
-            out_dict[fil] = dictionary[fil]
-        elif dictionary[fil] is None:
-            out_dict[fil] = None
+        if len(dictionary[fil]) > 0:
+            if isinstance(dictionary[fil][0], image.Image):
+                out_dict[fil] = list(map(lambda f: f.path, dictionary[fil]))
+                out_dict[fil].sort()
+            elif isinstance(dictionary[fil][0], str):
+                out_dict[fil] = dictionary[fil]
+            elif dictionary[fil] is None:
+                out_dict[fil] = None
+        else:
+            out_dict[fil] = []
     return out_dict
 
 
