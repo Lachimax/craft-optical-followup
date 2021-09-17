@@ -25,7 +25,7 @@ def data_select(redux_dir: str,
     if expression is not None:
         sys_str += f" --expr '{expression}'"
     if output is not None:
-        sys_str += f" >> {output}"
+        sys_str += f" -o {output}"
     print()
     print(sys_str)
     print("In:", os.getcwd())
@@ -56,11 +56,12 @@ def showd(inp: str,
             descriptors_str += ","
         descriptors = descriptors_str[:-1]
 
-    sys_str = f"showd -d {descriptors} {inp}"
+    sys_str = f"showd -d {descriptors}"
     if csv:
         sys_str += f" --csv"
     if output is not None:
         sys_str += f" >> {output}"
+    sys_str += inp
     print()
     print(sys_str)
     print()
