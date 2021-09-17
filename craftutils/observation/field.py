@@ -1899,10 +1899,14 @@ class GSAOIImagingEpoch(ImagingEpoch):
     def load_output_file(self, **kwargs):
         outputs = super().load_output_file(**kwargs)
         if type(outputs) is dict:
-            self.science_table = outputs["science_table"]
-            self.flats_lists = outputs["flats_lists"]
-            self.std_lists = outputs["std"]
-            self.flats = outputs["flats"]
+            if outputs["science_table"] in outputs:
+                self.science_table = outputs["science_table"]
+            if outputs["flats_list"] in outputs:
+                self.flats_lists = outputs["flats_lists"]
+            if outputs["std"] in outputs:
+                self.std_lists = outputs["std"]
+            if outputs["flats"] in outputs:
+                self.flats = outputs["flats"]
         return outputs
 
     # def load_sc
