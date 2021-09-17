@@ -25,6 +25,8 @@ def data_select(redux_dir: str,
     if expression is not None:
         sys_str += f" --expr '{expression}'"
     if output is not None:
+        if os.path.isfile(output):
+            os.remove(output)
         sys_str += f" -o {output}"
     print()
     print(sys_str)

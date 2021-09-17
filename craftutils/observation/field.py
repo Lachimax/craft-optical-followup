@@ -1820,13 +1820,13 @@ class GSAOIImagingEpoch(ImagingEpoch):
         # Get list of standard observations:
         std_tbl_name = "std_objects.csv"
         self.paths["std_tbl"] = os.path.join(redux_dir, std_tbl_name)
-        if os.path.isfile(self.paths["std_list"]):
-            os.remove(self.paths["std_list"])
+        std_list_name = "std_objects.list"
+        self.paths["std_list"] = os.path.join(redux_dir, std_list_name)
         std_list = dragons.data_select(
             redux_dir=redux_dir,
             raw_dir=raw_dir,
             expression=f"observation_class==\"partnerCal\"",
-            output="std_objects.list"
+            output=std_list_name
         )
         std_tbl = dragons.showd(
             input_filenames=std_list,
