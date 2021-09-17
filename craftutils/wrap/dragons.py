@@ -28,6 +28,7 @@ def data_select(redux_dir: str,
         sys_str += f" -o {output}"
     print()
     print(sys_str)
+    print("In:", os.getcwd())
     print()
     os.system(sys_str)
 
