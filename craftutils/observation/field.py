@@ -1773,7 +1773,7 @@ class GSAOIImagingEpoch(ImagingEpoch):
     def _initial_setup(self):
         data_dir = self.data_path
         raw_dir = self.paths["raw_dir"]
-        self.paths["redux_dir"] = redux_dir = os.path.join(data_dir, raw_dir)
+        self.paths["redux_dir"] = redux_dir = os.path.join(data_dir, "1-reduced")
         u.mkdir_check(redux_dir)
         # DO the initial database setup for DRAGONS.
         dragons.caldb_init(redux_dir=redux_dir)
