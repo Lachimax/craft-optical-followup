@@ -24,6 +24,7 @@ import craftutils.retrieve as retrieve
 import craftutils.spectroscopy as spec
 import craftutils.utils as u
 import craftutils.wrap.montage as montage
+import craftutils.wrap.dragons as dragons
 
 config = p.config
 
@@ -1061,11 +1062,14 @@ class ImagingEpoch(Epoch):
         self.airmass_mean = {}
         self.airmass_err = {}
 
+        self.flats = {}
+
         self.frames_science = {}
         self.frames_reduced = {}
         self.frames_astrometry = {}
 
         self.std_pointings = {}
+        self.std_objects = {}
 
         self.coadded_trimmed = {}
 
@@ -1522,8 +1526,8 @@ class ImagingEpoch(Epoch):
     def check_filter(self, fil: str):
         """
         If a filter name is not present in the various lists and dictionaries that use it, adds it.
-        @param fil:
-        @return: False if None, True if not.
+        :param fil:
+        :return: False if None, True if not.
         """
         if fil is not None:
             if fil not in self.filters:
@@ -1550,6 +1554,8 @@ class ImagingEpoch(Epoch):
                 self.airmass_err[fil] = None
             if fil not in self.std_pointings:
                 self.std_pointings[fil] = None
+            if fil not in self.flats:
+                self.flats[fil] = []
             return True
         else:
             return False
@@ -1694,19 +1700,48 @@ class ImagingEpoch(Epoch):
 
 
 class GSAOIImagingEpoch(ImagingEpoch):
+    """
+    This class works a little differently to the other epochs; instead of keeping track of the files internally, we let
+    DRAGONS do that for us. Thus, many of the dictionaries and lists of files used in other Epoch classes
+    will be empty even if the files are actually being tracked correctly. See eg science_table instead.
+    """
     instrument = "gs-aoi"
+
+    def __init__(self,
+                 name: str = None,
+                 field: Union[str, Field] = None,
+                 param_path: str = None,
+                 data_path: str = None,
+                 instrument: str = None,
+                 date: Union[str, Time] = None,
+                 program_id: str = None,
+                 target: str = None,
+                 source_extractor_config: dict = None,
+                 ):
+        super().__init__(name=name,
+                         field=field,
+                         param_path=param_path,
+                         data_path=data_path,
+                         instrument=instrument,
+                         date=date,
+                         program_id=program_id,
+                         target=target,
+                         source_extractor_config=source_extractor_config)
+        self.science_table = None
+        self.flats_lists = {}
+        self.std_lists = {}
 
     @classmethod
     def stages(cls):
-        return {"0-download": None}
+        return super().stages().update({"0-download": None,
+                                        "2-reduce_flats": None,
+                                        "3-reduce_science": None
+                                        })
 
     def pipeline(self, **kwargs):
         super().pipeline(**kwargs)
         self.proc_0_download(**kwargs)
-
-    def _initial_setup(self):
-        raw_dir = epoch_stage_dirs["0-download"]
-        data_title = self.name
+        self.proc_1_initial_setup()
 
     def proc_0_download(self, no_query: bool = False, **kwargs):
         if no_query or self.query_stage("Download raw data from Gemini archive?", stage='0-download'):
@@ -1733,13 +1768,120 @@ class GSAOIImagingEpoch(ImagingEpoch):
                                    coord=self.field.centre_coords,
                                    overwrite=overwrite)
 
-    # @classmethod
-    # def default_params(cls):
-    #     default_params = super().default_params()
-    #     default_params.update({
-    #         ""
-    #     })
-    #     return default_params
+    def _initial_setup(self):
+        data_dir = self.data_path
+        raw_dir = self.paths["raw_dir"]
+        self.paths["redux_dir"] = redux_dir = os.path.join(data_dir, raw_dir)
+        # DO the initial database setup for DRAGONS.
+        dragons.caldb_init(redux_dir=redux_dir)
+
+        # Get a list of science files from the raw directory, using DRAGONS.
+        science_list_name = "science.list"
+        science_list = dragons.data_select(
+            redux_dir=redux_dir,
+            raw_dir=raw_dir,
+            expression="'observation_class==\"science\"'",
+            output=science_list_name
+        )
+        self.paths["science_list"] = os.path.join(redux_dir, science_list_name)
+
+        science_tbl_name = "science.csv"
+        science_tbl = dragons.showd(
+            inp=science_list,
+            descriptors="filter_name,exposure_time,object",
+            output=science_tbl_name,
+            csv=True,
+            working_dir=redux_dir
+        )
+        # Set up filters.
+        for img in science_tbl:
+            fil = img["filter_name"]
+            fil = fil[:fil.find("_")]
+            self.check_filter(fil)
+        print(self.filters)
+        self.science_table = science_tbl
+
+        # Get lists of flats for each filter.
+        for fil in self.flats_lists:
+            flats_list_name = f"flats_{fil}.list"
+            flats_list = dragons.data_select(
+                redux_dir=redux_dir,
+                raw_dir=raw_dir,
+                tags=["FLAT"],
+                expression=f"'filter_name==\"{fil}\"'",
+                output=flats_list_name
+            ).splitlines(False)[3:]
+            self.flats_lists[fil] = os.path.join(redux_dir, flats_list_name)
+            self.flats[fil] = flats_list
+
+        # Get list of standard observations:
+        std_tbl_name = "std_objects.csv"
+        self.paths["std_tbl"] = os.path.join(redux_dir, std_tbl_name)
+        if os.path.isfile(self.paths["std_list"]):
+            os.remove(self.paths["std_list"])
+        std_list = dragons.data_select(
+            redux_dir=redux_dir,
+            raw_dir=raw_dir,
+            expression=f"'observation_class==\"partnerCal\"'",
+            output="std_objects.list"
+        )
+        std_tbl = dragons.showd(
+            inp=std_list,
+            descriptors="object",
+            output=std_tbl_name,
+            csv=True,
+            working_dir=redux_dir
+        )
+
+        # Set up dictionary of standard objects
+        # TODO: ACCOUNT FOR MULTIPLE FILTERS.
+        for std in std_tbl:
+            if std["object"] not in self.std_objects:
+                self.std_objects[std["object"]] = None
+
+        for obj in self.std_objects:
+            # And get the individual objects imaged like so:
+            std_list_obj_name = f"std_{obj}.list"
+            std_list_obj = dragons.data_select(
+                redux_dir=redux_dir,
+                raw_dir=raw_dir,
+                expression=f"'object==\"{obj}\"'",
+                output=std_list_obj_name
+            ).splitlines(False)[3:]
+            self.std_objects[obj] = std_list_obj
+            self.std_lists[obj] = os.path.join(redux_dir, std_list_obj_name)
+
+    def proc_2_reduce_flats(self, no_query: bool = False, **kwargs):
+        if no_query or self.query_stage(stage="2-reduce_flats",
+                                        message="Reduce flat-field images?"):
+            for fil in self.flats_lists:
+                dragons.reduce(self.flats_lists[fil], redux_dir=self.paths["redux_dir"])
+            flat_dir = os.path.join(self.paths["redux_dir"], "calibrations", "processed_flat")
+            for flat in os.listdir(flat_dir):
+                os.system(f"caldb add {flat}")
+            self.stages_complete['2-reduce_flats'] = Time.now()
+            self.update_output_file()
+
+    def proc_3_reduce_science(self, no_query: bool = False, **kwargs):
+        if no_query or self.query_stage(stage="3-reduce_science",
+                                        message="Reduce science images?"):
+            dragons.reduce(self.paths["science_list"], redux_dir=self.paths["redux_dir"])
+            self.stages_complete['3-reduce_science'] = Time.now()
+            self.update_output_file()
+
+    def check_filter(self, fil: str):
+        not_none = super().check_filter(fil)
+        if not_none:
+            self.flats_lists[fil] = None
+        return not_none
+
+    # def load_sc
+
+    @classmethod
+    def default_params(cls):
+        default_params = super().default_params()
+        # default_params.update({})
+        return default_params
 
     @classmethod
     def from_file(cls, param_file: Union[str, dict], name: str = None, field: Field = None):
