@@ -1785,12 +1785,12 @@ class GSAOIImagingEpoch(ImagingEpoch):
             raw_dir=raw_dir,
             expression="observation_class==\"science\"",
             output=science_list_name
-        )
+        ).splitlines(False)[:3]
         self.paths["science_list"] = os.path.join(redux_dir, science_list_name)
 
         science_tbl_name = "science.csv"
         science_tbl = dragons.showd(
-            inp=science_list,
+            input_filenames=science_list,
             descriptors="filter_name,exposure_time,object",
             output=science_tbl_name,
             csv=True,
@@ -1829,7 +1829,7 @@ class GSAOIImagingEpoch(ImagingEpoch):
             output="std_objects.list"
         )
         std_tbl = dragons.showd(
-            inp=std_list,
+            input_filenames=std_list,
             descriptors="object",
             output=std_tbl_name,
             csv=True,

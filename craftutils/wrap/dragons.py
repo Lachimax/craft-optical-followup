@@ -40,7 +40,7 @@ def data_select(redux_dir: str,
     return data_list
 
 
-def showd(inp: str,
+def showd(input_filenames: Union[str, list],
           descriptors: Union[str, List[str]] = "filter_name,exposure_time,object",
           output: str = None,
           csv: bool = True,
@@ -61,7 +61,12 @@ def showd(inp: str,
         sys_str += f" --csv"
     if output is not None:
         sys_str += f" >> {output}"
-    sys_str += " " + f"\"{inp}\""
+    if isinstance(input_filenames, str):
+        sys_str += " " + input_filenames
+    else:
+        for line in input_filenames:
+            sys_str += " " + line
+
     print()
     print(sys_str)
     print()
