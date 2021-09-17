@@ -1783,7 +1783,7 @@ class GSAOIImagingEpoch(ImagingEpoch):
         science_list = dragons.data_select(
             redux_dir=redux_dir,
             raw_dir=raw_dir,
-            expression="'observation_class==\"science\"'",
+            expression="observation_class==\"science\"",
             output=science_list_name
         )
         self.paths["science_list"] = os.path.join(redux_dir, science_list_name)
@@ -1825,7 +1825,7 @@ class GSAOIImagingEpoch(ImagingEpoch):
         std_list = dragons.data_select(
             redux_dir=redux_dir,
             raw_dir=raw_dir,
-            expression=f"'observation_class==\"partnerCal\"'",
+            expression=f"observation_class==\"partnerCal\"",
             output="std_objects.list"
         )
         std_tbl = dragons.showd(
@@ -1848,7 +1848,7 @@ class GSAOIImagingEpoch(ImagingEpoch):
             std_list_obj = dragons.data_select(
                 redux_dir=redux_dir,
                 raw_dir=raw_dir,
-                expression=f"'object==\"{obj}\"'",
+                expression=f"object==\"{obj}\"",
                 output=std_list_obj_name
             ).splitlines(False)[3:]
             self.std_objects[obj] = std_list_obj
