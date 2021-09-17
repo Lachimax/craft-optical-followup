@@ -396,7 +396,7 @@ class Image:
             elif mode == 'spectroscopy':
                 return Spectrum.select_child_class(instrument=instrument, **kwargs)
             else:
-                raise ValueError(f"Unrecognised instrument {instrument}")
+                raise ValueError(f"Unrecognised mode {mode}")
         else:
             raise KeyError(f"mode must be provided for {cls}.select_child_class()")
 
@@ -1311,6 +1311,8 @@ class ImagingImage(Image):
             return PanSTARRS1Cutout
         elif instrument == "vlt-fors2":
             return FORS2Image
+        elif instrument == "gs-aoi":
+            return GSAOIImage
         else:
             raise ValueError(f"Unrecognised instrument {instrument}")
 
