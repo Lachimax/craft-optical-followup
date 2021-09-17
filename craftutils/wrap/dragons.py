@@ -25,7 +25,7 @@ def data_select(redux_dir: str,
     if expression is not None:
         sys_str += f" --expr '{expression}'"
     if output is not None:
-        sys_str += f" -o {output}"
+        sys_str += f" >> {output}"
     print()
     print(sys_str)
     print("In:", os.getcwd())
