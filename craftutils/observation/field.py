@@ -1073,7 +1073,7 @@ class ImagingEpoch(Epoch):
 
         self.coadded_trimmed = {}
 
-        self.load_output_file(mode="imaging")
+        # self.load_output_file(mode="imaging")
 
     # TODO: Make output_path keyword standard across all proc methods
 
@@ -1730,6 +1730,8 @@ class GSAOIImagingEpoch(ImagingEpoch):
         self.science_table = None
         self.flats_lists = {}
         self.std_lists = {}
+
+        self.load_output_file(mode="imaging")
 
     @classmethod
     def stages(cls):
