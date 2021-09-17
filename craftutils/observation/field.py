@@ -824,7 +824,7 @@ class Epoch:
 
         self.coadded = {}
 
-        # self.load_output_file()
+        self.load_output_file()
 
     def pipeline(self, **kwargs):
         self._pipeline_init()
@@ -1731,14 +1731,14 @@ class GSAOIImagingEpoch(ImagingEpoch):
         self.flats_lists = {}
         self.std_lists = {}
 
-        self.load_output_file(mode="imaging")
-
     @classmethod
     def stages(cls):
-        return super().stages().update({"0-download": None,
-                                        "2-reduce_flats": None,
-                                        "3-reduce_science": None
-                                        })
+        stages = super().stages()
+        stages.update({"0-download": None,
+                       "2-reduce_flats": None,
+                       "3-reduce_science": None
+                       })
+        return stages
 
     def pipeline(self, **kwargs):
         super().pipeline(**kwargs)
