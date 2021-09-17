@@ -1811,7 +1811,7 @@ class GSAOIImagingEpoch(ImagingEpoch):
                 redux_dir=redux_dir,
                 raw_dir=raw_dir,
                 tags=["FLAT"],
-                expression=f"'filter_name==\"{fil}\"'",
+                expression=f"filter_name==\"{fil}\"",
                 output=flats_list_name
             ).splitlines(False)[3:]
             self.flats_lists[fil] = os.path.join(redux_dir, flats_list_name)
