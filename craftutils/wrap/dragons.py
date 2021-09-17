@@ -61,7 +61,7 @@ def showd(inp: str,
         sys_str += f" --csv"
     if output is not None:
         sys_str += f" >> {output}"
-    sys_str += inp
+    sys_str += " " + inp
     print()
     print(sys_str)
     print()
