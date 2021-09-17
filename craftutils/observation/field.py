@@ -70,8 +70,11 @@ def _output_img_dict_list(dictionary: dict):
     """
     out_dict = {}
     for fil in dictionary:
-        out_dict[fil] = list(map(lambda f: f.path, dictionary[fil]))
-        out_dict[fil].sort()
+        if dictionary[fil] is not None:
+            out_dict[fil] = list(map(lambda f: f.path, dictionary[fil]))
+            out_dict[fil].sort()
+        else:
+            out_dict[fil] = None
     return out_dict
 
 
