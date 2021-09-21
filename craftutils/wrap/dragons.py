@@ -102,6 +102,10 @@ def caldb_init(redux_dir: str):
     os.system(sys_str)
 
 
+def caldb_add():
+    pass
+
+
 def reduce(data_list_path: str, redux_dir: str):
     # Switch working directory to reduction directory.
     pwd = os.getcwd()
@@ -112,3 +116,7 @@ def reduce(data_list_path: str, redux_dir: str):
     print()
     os.system(sys_str)
     os.chdir(pwd)
+
+
+def disco():
+    pass
