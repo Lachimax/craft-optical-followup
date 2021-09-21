@@ -17,7 +17,7 @@ from astropy.time import Time
 
 try:
     import astroquery.gemini as gemini
-except ImportError:
+except ModuleNotFoundError:
     print("This version of astroquery does not support Gemini. Gemini methods will not be available.")
 
 from pyvo import dal
