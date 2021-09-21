@@ -1913,7 +1913,7 @@ class GSAOIImagingEpoch(ImagingEpoch):
             if "flats" in outputs:
                 self.flats = outputs["flats"]
         return outputs
-    
+
     @classmethod
     def default_params(cls):
         default_params = super().default_params()

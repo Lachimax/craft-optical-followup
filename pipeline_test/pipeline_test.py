@@ -51,7 +51,13 @@ def main(field_name: str,
             if not new_field:
                 print(f"{field_name} not found in the param directory.")
             if u.select_yn(f"Create a new param file at '{field_param_path_yaml}'?"):
-                fld.FRBField.new_yaml(name=field_name, path=field_param_path)
+                field_class = u.select_option(
+                    message="Which type of field would you like to create?",
+                    options={"FRB field": fld.FRBField,
+                             "Standard (calibration) field": fld.StandardField,
+                             "Normal field": fld.Field
+                             })
+                field_class.new_yaml(name=field_name, path=field_param_path)
                 print(f"Template parameter file created at '{field_param_path_yaml}'")
                 input("Please edit this file before proceeding, then press Enter to continue.")
             else:
