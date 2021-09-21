@@ -18,9 +18,12 @@ from astropy.time import Time
 try:
     import astroquery.gemini as gemini
 except ModuleNotFoundError:
-    print("This version of astroquery does not support Gemini. Gemini methods will not be available.")
+    print("This version of astroquery does not support Gemini. Gemini functions will not be available.")
 
-from pyvo import dal
+try:
+    from pyvo import dal
+except ModuleNotFoundError:
+    print("Pyvo not installed. Functions using pyvo will not be available.")
 
 from craftutils import params as p
 from craftutils import utils as u
