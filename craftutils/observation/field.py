@@ -1762,6 +1762,7 @@ class GSAOIImagingEpoch(ImagingEpoch):
         self.proc_1_initial_setup(**kwargs)
         self.proc_2_reduce_flats(**kwargs)
         self.proc_3_reduce_science(**kwargs)
+        self.proc_4_stack_science(**kwargs)
 
     def proc_0_download(self, no_query: bool = False, **kwargs):
         if no_query or self.query_stage("Download raw data from Gemini archive?", stage='0-download'):
@@ -1813,7 +1814,7 @@ class GSAOIImagingEpoch(ImagingEpoch):
         science_list_name = "science.list"
         science_list = dragons.data_select(
             redux_dir=redux_dir,
-            raw_dir=raw_dir,
+            directory=raw_dir,
             expression="observation_class==\"science\"",
             output=science_list_name
         ).splitlines(False)[3:]
@@ -1843,7 +1844,7 @@ class GSAOIImagingEpoch(ImagingEpoch):
             flats_list_name = f"flats_{fil}.list"
             flats_list = dragons.data_select(
                 redux_dir=redux_dir,
-                raw_dir=raw_dir,
+                directory=raw_dir,
                 tags=["FLAT"],
                 expression=f"filter_name==\"{fil}\"",
                 output=flats_list_name
@@ -1862,7 +1863,7 @@ class GSAOIImagingEpoch(ImagingEpoch):
         self.paths["std_list"] = os.path.join(redux_dir, std_list_name)
         std_list = dragons.data_select(
             redux_dir=redux_dir,
-            raw_dir=raw_dir,
+            directory=raw_dir,
             expression=f"observation_class==\"partnerCal\"",
             output=std_list_name
         ).splitlines(False)[3:]
@@ -1889,7 +1890,7 @@ class GSAOIImagingEpoch(ImagingEpoch):
             std_list_obj_name = f"std_{obj}.list"
             std_list_obj = dragons.data_select(
                 redux_dir=redux_dir,
-                raw_dir=raw_dir,
+                directory=raw_dir,
                 expression=f"object==\"{obj}\"",
                 output=std_list_obj_name
             ).splitlines(False)[3:]
@@ -1917,6 +1918,19 @@ class GSAOIImagingEpoch(ImagingEpoch):
             dragons.reduce(self.paths["science_list"], redux_dir=self.paths["redux_dir"])
             self.stages_complete['3-reduce_science'] = Time.now()
             self.update_output_file()
+
+    def proc_4_stack_science(self, no_query: bool = False, **kwargs):
+        if no_query or self.query_stage(
+                stage="4-stack_science",
+                message="Stack science images with DISCO-STU?"):
+
+            for fil in self.filters:
+                dragons.disco(
+                    redux_dir=self.paths["redux_dir"],
+                    expression="(filter_name==\"Kshort\" and observation_class==\"science\")",
+                    output=f"{self.field.name}_{fil}_stacked.fits",
+                    file_glob="*_skySubtracted.fits"
+                )
 
     def check_filter(self, fil: str):
         not_none = super().check_filter(fil)

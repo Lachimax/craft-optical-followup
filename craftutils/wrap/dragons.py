@@ -7,15 +7,16 @@ from astropy.table import Table
 import craftutils.utils as u
 
 
-def data_select(redux_dir: str,
-                raw_dir: str,
-                tags: list = None,
-                expression: str = None,
-                output: str = None):
-    # Switch working directory to reduction directory.
-    pwd = os.getcwd()
-    os.chdir(redux_dir)
-    sys_str = f"dataselect {raw_dir}/*.fits"
+def build_data_select_str(
+        directory: str = None,
+        file_glob: str = "*.fits",
+        tags: list = None,
+        expression: str = None,
+        output: str = None):
+    sys_str = f"dataselect "
+    if directory is not None:
+        sys_str += f"{directory}/"
+    sys_str += file_glob
     if tags is not None:
         sys_str += " --tags "
         for tag in tags:
@@ -28,6 +29,26 @@ def data_select(redux_dir: str,
         if os.path.isfile(output):
             os.remove(output)
         sys_str += f" -o {output}"
+    return sys_str
+
+
+def data_select(
+        redux_dir: str,
+        directory: str,
+        file_glob: str = "*.fits",
+        tags: list = None,
+        expression: str = None,
+        output: str = None):
+    # Switch working directory to reduction directory.
+    pwd = os.getcwd()
+    os.chdir(redux_dir)
+    sys_str = build_data_select_str(
+        directory=directory,
+        file_glob=file_glob,
+        tags=tags,
+        expression=expression,
+        output=output
+    )
     print()
     print(sys_str)
     print("In:", os.getcwd())
@@ -118,5 +139,26 @@ def reduce(data_list_path: str, redux_dir: str):
     os.chdir(pwd)
 
 
-def disco():
-    pass
+def disco(redux_dir: str,
+          tags: list = None,
+          expression: str = None,
+          output: str = None,
+          file_glob: str = "*_skySubtracted.fits"):
+    # Switch working directory to reduction directory.
+    pwd = os.getcwd()
+    os.chdir(redux_dir)
+
+    ds_str = build_data_select_str(
+        directory=redux_dir,
+        tags=tags,
+        expression=expression,
+        file_glob=file_glob
+    )
+
+    sys_str = f"disco `{ds_str}`"
+    if output is not None:
+        if os.path.isfile(output):
+            os.remove(output)
+        sys_str += f" -o {output}"
+
+    os.chdir(pwd)
