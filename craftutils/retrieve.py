@@ -15,7 +15,10 @@ from astropy.coordinates import SkyCoord
 from astropy.table import Table, QTable
 from astropy.time import Time
 
-import astroquery.gemini as gemini
+try:
+    import astroquery.gemini as gemini
+except ImportError:
+    print("This version of astroquery does not support Gemini. Gemini methods will not be available.")
 
 from pyvo import dal
 
