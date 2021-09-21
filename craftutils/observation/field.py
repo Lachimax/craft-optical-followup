@@ -1839,7 +1839,7 @@ class GSAOIImagingEpoch(ImagingEpoch):
         self.science_table = science_tbl
 
         # Get lists of flats for each filter.
-        for fil in self.flats_lists:
+        for fil in self.filters:
             flats_list_name = f"flats_{fil}.list"
             flats_list = dragons.data_select(
                 redux_dir=redux_dir,
