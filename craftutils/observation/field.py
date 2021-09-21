@@ -1544,8 +1544,9 @@ class ImagingEpoch(Epoch):
         :param fil:
         :return: False if None, True if not.
         """
-        if fil is not None:
+        if fil not in (None, ""):
             if fil not in self.filters:
+                print(f"Adding {fil} to filter list")
                 self.filters.append(fil)
             if fil not in self.frames_science:
                 if isinstance(self.frames_science, dict):
@@ -1800,8 +1801,6 @@ class GSAOIImagingEpoch(ImagingEpoch):
                 obs_date=self.date,
                 fil=fil,
                 overwrite=overwrite)
-
-
 
     def _initial_setup(self):
         data_dir = self.data_path
