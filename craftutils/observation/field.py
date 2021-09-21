@@ -1805,6 +1805,9 @@ class GSAOIImagingEpoch(ImagingEpoch):
         ).splitlines(False)[3:]
         self.paths["science_list"] = os.path.join(redux_dir, science_list_name)
 
+        print("Science frames:")
+        print(science_list)
+
         science_tbl_name = "science.csv"
         science_tbl = dragons.showd(
             input_filenames=science_list,
@@ -1831,6 +1834,10 @@ class GSAOIImagingEpoch(ImagingEpoch):
                 expression=f"filter_name==\"{fil}\"",
                 output=flats_list_name
             ).splitlines(False)[3:]
+
+            print(f"Flats for {fil}:")
+            print(flats_list)
+
             self.flats_lists[fil] = os.path.join(redux_dir, flats_list_name)
             self.flats[fil] = flats_list
 
@@ -1844,7 +1851,11 @@ class GSAOIImagingEpoch(ImagingEpoch):
             raw_dir=raw_dir,
             expression=f"observation_class==\"partnerCal\"",
             output=std_list_name
-        )
+        ).splitlines(False)[3:]
+
+        print("Standard observation frames:")
+        print(std_list)
+
         std_tbl = dragons.showd(
             input_filenames=std_list,
             descriptors="object",

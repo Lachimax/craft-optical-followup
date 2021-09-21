@@ -61,13 +61,13 @@ def showd(input_filenames: Union[str, list],
     sys_str = f"showd -d {descriptors}"
     if csv:
         sys_str += f" --csv"
-    if output is not None:
-        sys_str += f" >> {output}"
     if isinstance(input_filenames, str):
         sys_str += " " + input_filenames
     else:
         for line in input_filenames:
             sys_str += " " + line
+    if output is not None:
+        sys_str += f" >> {output}"
 
     if os.path.isfile(output):
         os.remove(output)
