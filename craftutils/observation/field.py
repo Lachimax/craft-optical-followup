@@ -1903,7 +1903,9 @@ class GSAOIImagingEpoch(ImagingEpoch):
                 dragons.reduce(self.flats_lists[fil], redux_dir=self.paths["redux_dir"])
             flat_dir = os.path.join(self.paths["redux_dir"], "calibrations", "processed_flat")
             for flat in os.listdir(flat_dir):
-                os.system(f"caldb add {flat}")
+                print(f"Adding {flat} to database.")
+                sys_str = f"caldb add {flat}"
+                os.system(sys_str)
             self.stages_complete['2-reduce_flats'] = Time.now()
             self.update_output_file()
 
