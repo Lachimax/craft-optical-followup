@@ -1110,7 +1110,7 @@ class ImagingEpoch(Epoch):
 
         self.coadded_trimmed = {}
 
-        # self.load_output_file(mode="imaging")
+        self.load_output_file(mode="imaging")
 
     # TODO: Make output_path keyword standard across all proc methods
 
