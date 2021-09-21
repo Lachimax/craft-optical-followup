@@ -149,7 +149,6 @@ def disco(redux_dir: str,
     os.chdir(redux_dir)
 
     ds_str = build_data_select_str(
-        directory=redux_dir,
         tags=tags,
         expression=expression,
         file_glob=file_glob
