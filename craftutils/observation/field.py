@@ -1752,7 +1752,8 @@ class GSAOIImagingEpoch(ImagingEpoch):
         stages = super().stages()
         stages.update({"0-download": None,
                        "2-reduce_flats": None,
-                       "3-reduce_science": None
+                       "3-reduce_science": None,
+                       "4-stack_science": None
                        })
         return stages
 
@@ -1931,6 +1932,8 @@ class GSAOIImagingEpoch(ImagingEpoch):
                     output=f"{self.field.name}_{fil}_stacked.fits",
                     file_glob="*_skySubtracted.fits"
                 )
+            self.stages_complete['4-stack_science'] = Time.now()
+            self.update_output_file()
 
     def check_filter(self, fil: str):
         not_none = super().check_filter(fil)
