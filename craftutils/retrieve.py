@@ -702,6 +702,9 @@ def retrieve_delve_photometry(ra: float, dec: float, radius: units.Quantity = 0.
     except requests.exceptions.SSLError:
         print('An SSL error occurred when retrieving DELVE data. Skipping.')
         return "ERROR"
+    except requests.exceptions.ConnectionError:
+        print('A connection error occurred when retrieving DELVE data. Skipping.')
+        return "ERROR"
     if b"ERROR" in response:
         return "ERROR"
     if response.count(b"\n") <= 1:
