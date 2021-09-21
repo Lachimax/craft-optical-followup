@@ -1776,16 +1776,32 @@ class GSAOIImagingEpoch(ImagingEpoch):
         raw_dir_full = self.paths["raw_dir"]
         u.mkdir_check(raw_dir_full)
 
-        # Get the calibration files
-        retrieve.save_gemini_calibs(output=raw_dir_full,
-                                    obs_date=self.date,
-                                    overwrite=overwrite)
-
         # Get the science files
-        retrieve.save_gemini_epoch(output=raw_dir_full,
-                                   program_id=self.program_id,
-                                   coord=self.field.centre_coords,
-                                   overwrite=overwrite)
+        science_files = retrieve.save_gemini_epoch(
+            output=raw_dir_full,
+            program_id=self.program_id,
+            coord=self.field.centre_coords,
+            overwrite=overwrite)
+
+        # Set up filters from retrieved science files.
+        for img in science_files:
+            fil = img["wavelength_band"]
+            fil = fil[:fil.find("_")]
+            self.check_filter(fil)
+        print(self.filters)
+
+        # Get the calibration files for the retrieved filters
+        for fil in self.filters:
+            print()
+            print(f"Retrieving calibration files for {fil} band...")
+            print()
+            retrieve.save_gemini_calibs(
+                output=raw_dir_full,
+                obs_date=self.date,
+                fil=fil,
+                overwrite=overwrite)
+
+
 
     def _initial_setup(self):
         data_dir = self.data_path
@@ -1816,11 +1832,11 @@ class GSAOIImagingEpoch(ImagingEpoch):
             csv=True,
             working_dir=redux_dir
         )
-        # Set up filters.
-        for img in science_tbl:
-            fil = img["filter_name"]
-            fil = fil[:fil.find("_")]
-            self.check_filter(fil)
+        # # Set up filters.
+        # for img in science_tbl:
+        #     fil = img["filter_name"]
+        #     fil = fil[:fil.find("_")]
+        #     self.check_filter(fil)
         print(self.filters)
         self.science_table = science_tbl
 

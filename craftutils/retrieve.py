@@ -1453,6 +1453,7 @@ def save_gemini_epoch(output: str, program_id: str, coord: SkyCoord,
     )
 
     save_gemini_files(science_files, output=output, overwrite=overwrite)
+    return science_files
 
 
 def save_gemini_files(file_list: Table, output: str, overwrite: bool = False):
