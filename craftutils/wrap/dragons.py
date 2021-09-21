@@ -164,5 +164,6 @@ def disco(redux_dir: str,
     print()
     print(sys_str)
     print()
+    os.system(sys_str)
 
     os.chdir(pwd)
