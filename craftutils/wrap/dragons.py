@@ -161,4 +161,8 @@ def disco(redux_dir: str,
             os.remove(output)
         sys_str += f" -o {output}"
 
+    print()
+    print(sys_str)
+    print()
+
     os.chdir(pwd)
