@@ -1786,7 +1786,7 @@ class GSAOIImagingEpoch(ImagingEpoch):
 
         # Set up filters from retrieved science files.
         for img in science_files:
-            fil = img["wavelength_band"]
+            fil = str(img["wavelength_band"])
             self.check_filter(fil)
         print(self.filters)
 
