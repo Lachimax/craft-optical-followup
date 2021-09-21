@@ -3,7 +3,7 @@
 import math
 import os
 import sys
-from typing import List, Union
+from typing import List, Union, Tuple
 from datetime import datetime as dt
 
 import numpy as np
@@ -732,15 +732,20 @@ def enter_time(message: str):
     return date
 
 
-def select_option(message: str, options: Union[List[str], dict], default: Union[str, int] = None, sort: bool = False):
+def select_option(message: str,
+                  options: Union[List[str], dict],
+                  default: Union[str, int] = None,
+                  sort: bool = False) -> tuple:
     """
     Options can be a list of strings, or a dict in which the keys are the options to be printed and the values are the
-    represented options; that is, the returned object will be the value represented by the selected key.
-    :param message:
-    :param options:
-    :param default:
-    :param sort:
-    :return:
+    represented options. The returned object is a tuple, with the first entry being the number given by the user and
+    the second entry being the corresponding option. If a dict is passed to options, the second tuple entry will be the
+    dict value.
+    :param message: Message to display before options.
+    :param options: Options to display.
+    :param default: Option to return if no user input is given.
+    :param sort: Sort options?
+    :return: Tuple containing (user input, selection)
     """
     if type(default) is str:
         default = options.index(default)
