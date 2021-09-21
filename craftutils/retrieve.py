@@ -1404,7 +1404,8 @@ def save_gemini_calibs(output: str, obs_date: Time, instrument: str = 'GSAOI', f
     fil = {
         "H": "H",
         "J": "J",
-        "Kshort": "K"
+        "Kshort": "K",
+        "K": "K"
     }[fil]
 
     flats = {}
