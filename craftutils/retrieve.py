@@ -1401,12 +1401,6 @@ def login_gemini():
 
 
 def save_gemini_calibs(output: str, obs_date: Time, instrument: str = 'GSAOI', fil: str = "Kshort", overwrite=False):
-    fil = {
-        "H": "H",
-        "J": "J",
-        "Kshort": "K",
-        "K": "K"
-    }[fil]
 
     flats = {}
     date_early = obs_date.copy()
@@ -1430,7 +1424,7 @@ def save_gemini_calibs(output: str, obs_date: Time, instrument: str = 'GSAOI', f
         date_early -= 1
         date_late += 1
 
-    flats = flats[flats["wavelength_band"] == fil]
+    flats = flats[flats["filter_name"] == fil]
 
     save_gemini_files(flats, output=output, overwrite=overwrite)
 
@@ -1440,7 +1434,7 @@ def save_gemini_calibs(output: str, obs_date: Time, instrument: str = 'GSAOI', f
         program_id=f"GS-CAL{date_early.strftime('%y%m%d')}",
     )
 
-    standards = standards[standards["wavelength_band"] == fil]
+    standards = standards[standards["filter_name"] == fil]
 
     save_gemini_files(standards, output=output, overwrite=overwrite)
 
