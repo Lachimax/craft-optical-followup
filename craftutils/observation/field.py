@@ -467,7 +467,8 @@ class Field:
                                            cat=cat_path,
                                            fits_cat_output=cat_path.replace(".csv", ".fits"),
                                            output_file_prefix=prefix,
-                                           index_output_dir=cat_index_path
+                                           index_output_dir=cat_index_path,
+                                           unique_id_prefix=int(self.name.replace("FRB", ""))
                                            )
 
     def get_path(self, key):
@@ -874,7 +875,7 @@ class Epoch:
 
         self.coadded = {}
 
-        self.load_output_file()
+        # self.load_output_file()
 
     def pipeline(self, **kwargs):
         self._pipeline_init()
@@ -917,7 +918,7 @@ class Epoch:
             "paths": self.paths,
             "frames_science": _output_img_dict_list(self.frames_science),
             "frames_std": _output_img_dict_list(self.frames_standard),
-            "coadded": _output_img_dict_list(self.coadded)
+            "coadded": _output_img_dict_single(self.coadded)
         }
 
     def update_output_file(self):
@@ -1492,15 +1493,16 @@ class ImagingEpoch(Epoch):
 
         unique_id_prefix = int(self.field.name.replace("FRB", ""))
 
-        am.generate_astrometry_indices(cat_name="gaia",
-                                       cat=gaia_cat,
-                                       output_file_prefix=f"gaia_index_{self.field.name}",
-                                       index_output_dir=cat_index_path,
-                                       fits_cat_output=gaia_csv_path.replace(".csv", ".fits"),
-                                       p_lower=-1,
-                                       p_upper=2,
-                                       unique_id_prefix=unique_id_prefix,
-                                       )
+        am.generate_astrometry_indices(
+            cat_name="gaia",
+            cat=gaia_cat,
+            output_file_prefix=f"gaia_index_{self.field.name}",
+            index_output_dir=cat_index_path,
+            fits_cat_output=gaia_csv_path.replace(".csv", ".fits"),
+            p_lower=-1,
+            p_upper=2,
+            unique_id_prefix=unique_id_prefix,
+        )
         return gaia_cat
 
     def add_frame_raw(self, raw_frame: Union[image.ImagingImage, str]):
@@ -1929,7 +1931,7 @@ class GSAOIImagingEpoch(ImagingEpoch):
                 dragons.disco(
                     redux_dir=self.paths["redux_dir"],
                     expression=f"(filter_name==\"{fil}\" and observation_class==\"science\")",
-                    output=f"{self.field.name}_{fil}_stacked.fits",
+                    output=f"{self.name}_{fil}_stacked.fits",
                     file_glob="*_skySubtracted.fits"
                 )
             self.stages_complete['4-stack_science'] = Time.now()
@@ -2267,10 +2269,30 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
                 self.pair_files(self.frames_science[fil])
 
     def correct_astrometry_frames(self, output_path: str, **kwargs):
+        """
+
+        :param output_path:
+        :param kwargs:
+            method: method with which to solve astrometry of epoch. Allowed values are:
+                individual: each frame, including separate chips in the same exposure, will be passed to astrometry.net
+                    individually. Of the options, this is the most likely to result in an error, especially if the FOV
+                    is small; it will also slightly degrade the PSF of the stacked image, as although the accuracy of
+                    the WCS of the individual frames is increased, slight errors will be introduced between frames.
+                pairwise: the upper-chip image of each pair will first be passed to astrometry.net, and its solution
+                    propagated to the bottom chip. If a solution is not found for the top chip, the reverse will be
+                    attempted. This method is not recommended, as it will incorrectly capture distortions in the
+                    unsolved chip.
+                propagate_from_single: Each upper-chip image is passed to astrometry.net until a solution is found; this
+                    solution is then propagated to all other upper-chip images. The same is repeated for the lower chip.
+                    This is the recommended method for retaining a coherent
+        :return:
+        """
         self.frames_astrometry = {}
         method = True
         if "method" in kwargs:
             method = kwargs["method"]
+        else:
+            method = "propagate_from_single"
 
         for fil in self.frames_reduced:
             astrometry_fil_path = os.path.join(output_path, fil)
@@ -2310,19 +2332,64 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
                                         reverse_pair = False
                                 else:
                                     self.add_frame_astrometry(new_img_2)
-                                    new_img_1 = img_1.correct_astrometry_from_other(new_img_2,
-                                                                                    output_dir=astrometry_fil_path)
+                                    new_img_1 = img_1.correct_astrometry_from_other(
+                                        new_img_2,
+                                        output_dir=astrometry_fil_path)
                                     self.add_frame_astrometry(new_img_1)
                                     success = True
                     else:
                         new_img = pair.correct_astrometry(output_dir=astrometry_fil_path)
                         self.add_frame_astrometry(new_img)
 
-            else:
+            elif method == "propagate_from_single":
+                # Sort frames by upper or lower chip.
+                upper, lower = self.sort_by_chip(self.frames_reduced[fil])
+                for j, lst in enumerate((upper, lower)):
+                    successful = None
+                    i = 0
+                    while successful is None and i < len(upper):
+                        img = lst[i]
+                        i += 1
+                        new_img = img.correct_astrometry(output_dir=astrometry_fil_path)
+                        # Check if successful:
+                        if new_img is not None:
+                            lst.remove(img)
+                            successful = new_img
+
+                    # If we failed to find a solution on any frame in lst:
+                    if successful is None:
+                        print(f"Astrometry.net failed to solve any of the chip {j + 1} images. "
+                              f"Chip 2 will not be included in the co-addition.")
+
+                    # Now correct all of the other images in the list with the successful solution.
+                    else:
+                        for img in lst:
+                            img.correct_astrometry_from_other(
+                                successful,
+                                output_dir=astrometry_fil_path
+                            )
+
+            elif method == "individual":
                 for img in self.frames_reduced[fil]:
                     new_img = img.correct_astrometry(output_dir=astrometry_fil_path)
                     if new_img is not None:
                         self.add_frame_astrometry(new_img)
+
+    @classmethod
+    def sort_by_chip(cls, images: list):
+        upper = []
+        lower = []
+
+        for img in images:
+            chip_this = img.extract_chip_number()
+            if chip_this == 1:
+                upper.append(img)
+            elif chip_this == 2:
+                lower.append(img)
+            else:
+                print(f"The chip number for {img.name} could not be determined.")
+
+        return upper, lower
 
     @classmethod
     def pair_files(cls, images: list):
