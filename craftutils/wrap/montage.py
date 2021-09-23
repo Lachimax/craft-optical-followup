@@ -7,7 +7,7 @@ import numpy as np
 import astropy.io.fits as fits
 
 import craftutils.utils as u
-from craftutils.fits_files import fits_table_all
+from craftutils.observation.image import fits_table_all
 from craftutils.photometry import gain_median_combine, gain_mean_combine
 import craftutils.observation.image as img
 
