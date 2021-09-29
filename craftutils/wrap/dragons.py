@@ -146,7 +146,8 @@ def disco(redux_dir: str,
           file_glob: str = "*_skySubtracted.fits",
           refcat: str = None,
           refcat_format: str = None,
-          refcat_columns: str = None
+          refcat_columns: str = None,
+          ignore_objcat: bool = False
           ):
     # Switch working directory to reduction directory.
     pwd = os.getcwd()
@@ -170,6 +171,8 @@ def disco(redux_dir: str,
         sys_str += f" --refcat_format {refcat_format}"
     if refcat_columns is not None:
         sys_str += f" --refcat_columns {refcat_columns}"
+    if ignore_objcat:
+        sys_str += " --ignore_objcat"
 
     print()
     print(sys_str)

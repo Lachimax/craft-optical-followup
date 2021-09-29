@@ -1955,7 +1955,8 @@ class GSAOIImagingEpoch(ImagingEpoch):
                     file_glob="*_skySubtracted.fits",
                     refcat=self.field.paths["cat_csv_gaia"],
                     refcat_format="ascii.csv",
-                    refcat_columns="ra,dec"
+                    refcat_columns="ra,dec",
+                    ignore_objcat=True
                 )
             self.stages_complete['4-stack_science'] = Time.now()
             self.update_output_file()
