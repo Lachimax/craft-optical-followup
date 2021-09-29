@@ -170,7 +170,7 @@ def disco(redux_dir: str,
     if refcat is not None:
         if refcat_ra is not None or refcat_dec is not None:
             filename = os.path.split(refcat)[-1]
-            refcat_tbl = Table.read(os.path.join(refcat, filename), format=refcat_format)
+            refcat_tbl = Table.read(refcat, format=refcat_format)
             if refcat_ra is not None:
                 refcat_tbl["RA"] = refcat_tbl[refcat_ra]
             if refcat_dec is not None:
