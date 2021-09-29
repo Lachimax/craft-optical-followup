@@ -173,8 +173,10 @@ def disco(redux_dir: str,
             refcat_tbl = Table.read(refcat, format=refcat_format)
             if refcat_ra is not None:
                 refcat_tbl["RA"] = refcat_tbl[refcat_ra]
+                refcat_tbl.remove_column(refcat_ra)
             if refcat_dec is not None:
                 refcat_tbl["DEC"] = refcat_tbl[refcat_dec]
+                refcat_tbl.remove_column(refcat_dec)
             refcat_tbl.write(
                 os.path.join(redux_dir, filename),
                 overwrite=True)
