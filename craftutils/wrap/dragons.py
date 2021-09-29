@@ -179,6 +179,7 @@ def disco(redux_dir: str,
                 os.path.join(redux_dir, filename),
                 overwrite=True)
             refcat = filename
+            sys_str = f" --refcat_columns RA,DEC"
         sys_str += f" --refcat {refcat}"
     if refcat_format is not None:
         sys_str += f" --refcat_format {refcat_format}"
