@@ -604,12 +604,12 @@ def find_nearest(array, value, sorted: bool = False):
         return idx, array[idx]
 
 
-def round_to_sig_fig(x: float, n: int):
+def round_to_sig_fig(x: float, n: int) -> float:
     """
     https://stackoverflow.com/questions/3410976/how-to-round-a-number-to-significant-figures-in-python
     :param x: Number to round.
     :param n: Number of significant figures to round to.
-    :return:
+    :return: Rounded number
     """
 
     return round(x, (n - 1) - int(np.floor(np.log10(abs(x)))))

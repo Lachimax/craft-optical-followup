@@ -1170,7 +1170,7 @@ class ImagingEpoch(Epoch):
     def proc_9_photometric_calibration(self, no_query: bool = False, **kwargs):
         if no_query or self.query_stage("Do photometric calibration?", stage="9-photometric_calibration"):
             calib_dir = os.path.join(self.data_path, "9-photometric_calibration")
-            self.photometric_calibration(calib_dir)
+            self.photometric_calibration(calib_dir, **kwargs)
             self.paths['calib_dir'] = calib_dir
             self.stages_complete["9-photometric_calibration"] = Time.now()
             self.update_output_file()
@@ -1198,8 +1198,25 @@ class ImagingEpoch(Epoch):
                 new_frame = frame.correct_astrometry(output_dir=astrometry_fil_path)
                 self.add_frame_astrometry(new_frame)
 
-    def photometric_calibration(self, output_path: str):
+    def photometric_calibration(self, output_path: str, **kwargs):
         u.mkdir_check(output_path)
+
+        if "distance_tolerance" in kwargs and kwargs["distance_tolerance"] is not None:
+            dist_tol = float(kwargs["distance_tolerance"]) * units.arcsec
+        else:
+            dist_tol = 0.2 * units.arcsec
+
+        if "snr_tolerance" in kwargs and kwargs["snr_tolerance"] is not None:
+            snr_tol = float(kwargs["snr_tolerance"])
+        else:
+            snr_tol = 200
+
+        if "class_star_tolerance" in kwargs and kwargs["class_star_tolerance"] is not None:
+            star_class_tolerance = float(kwargs["class_star_tolerance"])
+        else:
+            star_class_tolerance = 0.95
+
+        print("DISTANCE TOLERANCE:", dist_tol)
 
         deepest = self.coadded_trimmed[self.filters[0]]
         for fil in self.filters:
@@ -1213,8 +1230,10 @@ class ImagingEpoch(Epoch):
                     img.zeropoint(cat_path=self.field.get_path(f"cat_csv_{cat_name}"),
                                   output_path=os.path.join(fil_path, cat_name),
                                   cat_name=cat_name,
-                                  dist_tol=0.2 * units.arcsec,
-                                  show=False
+                                  dist_tol=dist_tol,
+                                  show=False,
+                                  snr_cut=snr_tol,
+                                  star_class_tol=star_class_tolerance
                                   )
 
             zeropoint, cat = img.select_zeropoint()
@@ -1472,6 +1491,7 @@ class ImagingEpoch(Epoch):
             if "coadded_trimmed" in outputs:
                 for fil in outputs["coadded_trimmed"]:
                     if outputs["coadded_trimmed"][fil] is not None:
+                        print(f"Attempting to load coadded_trimmed[{fil}]")
                         self.add_coadded_trimmed_image(img=outputs["coadded_trimmed"][fil], key=fil, **kwargs)
 
         return outputs
@@ -1646,7 +1666,7 @@ class ImagingEpoch(Epoch):
         name, param_file, param_dict = p.params_init(param_file)
 
         if param_dict is None:
-            raise FileNotFoundError("Param file missing!")
+            raise FileNotFoundError(f"There is no param file at {param_file}")
 
         if old_format:
             instrument = "vlt-fors2"
@@ -2288,7 +2308,6 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
         :return:
         """
         self.frames_astrometry = {}
-        method = True
         if "method" in kwargs:
             method = kwargs["method"]
         else:
@@ -2354,6 +2373,7 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
                         # Check if successful:
                         if new_img is not None:
                             lst.remove(img)
+                            self.add_frame_astrometry(new_img)
                             successful = new_img
 
                     # If we failed to find a solution on any frame in lst:
@@ -2364,10 +2384,12 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
                     # Now correct all of the other images in the list with the successful solution.
                     else:
                         for img in lst:
-                            img.correct_astrometry_from_other(
+                            new_img = img.correct_astrometry_from_other(
                                 successful,
                                 output_dir=astrometry_fil_path
                             )
+
+                            self.add_frame_astrometry(new_img)
 
             elif method == "individual":
                 for img in self.frames_reduced[fil]:

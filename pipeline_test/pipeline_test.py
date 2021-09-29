@@ -17,10 +17,13 @@ def main(field_name: str,
          instrument: str,
          do: str,
          do_not_reuse_masters: bool,
-         overwrite_download: bool):
+         overwrite_download: bool,
+         distance_tolerance: float,
+         snr_tolerance: float,
+         class_star_tolerance: float):
     new_field = False
     print("Refreshing parameter files from templates...")
-    p.refresh_params_all(quiet=True)
+#    p.refresh_params_all(quiet=True)
     if field_name is None:
         fields = ["New field"]
         fields += fld.list_fields()
@@ -106,7 +109,13 @@ def main(field_name: str,
             epoch.field = field
 
     epoch.do = do
-    epoch.pipeline(do_not_reuse_masters=do_not_reuse_masters, overwrite_download=overwrite_download)
+    epoch.pipeline(
+        do_not_reuse_masters=do_not_reuse_masters,
+        overwrite_download=overwrite_download,
+        distance_tolerance=distance_tolerance,
+        snr_tolerance=snr_tolerance,
+        class_star_tolerance=class_star_tolerance
+    )
 
 
 if __name__ == '__main__':
@@ -131,6 +140,14 @@ if __name__ == '__main__':
     parser.add_argument("-o",
                         help="Overwrite existing files during download.",
                         action='store_true')
+    parser.add_argument("--distance_tolerance",
+                        help="Distance tolerance for object-matching.",
+                        type=float
+                        )
+    parser.add_argument("--snr_tolerance",
+                        help="Minimum SNR for photometric calibration")
+    parser.add_argument("--class_star_tolerance",
+                        help="Minimum class_star for object inclusion in photometric calibration.")
 
     # Load arguments
 
@@ -143,4 +160,7 @@ if __name__ == '__main__':
          instrument=args.instrument,
          do=args.do,
          do_not_reuse_masters=args.do_not_reuse_masters,
-         overwrite_download=args.o)
+         overwrite_download=args.o,
+         distance_tolerance=args.distance_tolerance,
+         snr_tolerance=args.snr_tolerance,
+         class_star_tolerance=args.class_star_tolerance)

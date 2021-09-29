@@ -490,7 +490,7 @@ class ImagingImage(Image):
                                    **configs
                                    )
 
-    def psfex(self, output_dir: str, force: str = False, **kwargs):
+    def psfex(self, output_dir: str, force: bool = False, **kwargs):
         if force or self.psfex_path is None:
             config = p.path_to_config_sextractor_config_pre_psfex()
             output_params = p.path_to_config_sextractor_param_pre_psfex()
@@ -512,8 +512,13 @@ class ImagingImage(Image):
         if force or self.psfex_output is None:
             self.psfex_output = fits.open(self.psfex_path)
 
-    def source_extraction_psf(self, output_dir: str, template: 'ImagingImage' = None, **configs):
-        self.psfex(output_dir=output_dir)
+    def source_extraction_psf(
+            self,
+            output_dir: str,
+            template: 'ImagingImage' = None,
+            force: bool = False,
+            **configs):
+        self.psfex(output_dir=output_dir, force=force)
         config = p.path_to_config_sextractor_config()
         output_params = p.path_to_config_sextractor_param()
         cat_path = self.source_extraction(configuration_file=config,
