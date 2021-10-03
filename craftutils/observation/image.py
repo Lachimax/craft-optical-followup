@@ -469,26 +469,28 @@ class ImagingImage(Image):
 
         self.load_output_file()
 
-    def source_extraction(self, configuration_file: str,
-                          output_dir: str,
-                          parameters_file: str = None,
-                          catalog_name: str = None,
-                          template: 'ImagingImage' = None,
-                          **configs) -> str:
+    def source_extraction(
+            self, configuration_file: str,
+            output_dir: str,
+            parameters_file: str = None,
+            catalog_name: str = None,
+            template: 'ImagingImage' = None,
+            **configs) -> str:
         if template is not None:
             template = template.path
             self.dual_mode_template = template
         self.extract_gain()
         print("TEMPLATE PATH:", template)
-        return se.source_extractor(image_path=self.path,
-                                   output_dir=output_dir,
-                                   configuration_file=configuration_file,
-                                   parameters_file=parameters_file,
-                                   catalog_name=catalog_name,
-                                   template_image_path=template,
-                                   gain=self.gain.value,
-                                   **configs
-                                   )
+        return se.source_extractor(
+            image_path=self.path,
+            output_dir=output_dir,
+            configuration_file=configuration_file,
+            parameters_file=parameters_file,
+            catalog_name=catalog_name,
+            template_image_path=template,
+            gain=self.gain.value,
+            **configs
+        )
 
     def psfex(self, output_dir: str, force: bool = False, **kwargs):
         if force or self.psfex_path is None:
@@ -518,32 +520,47 @@ class ImagingImage(Image):
             template: 'ImagingImage' = None,
             force: bool = False,
             **configs):
+        """
+        Uses a PSFEx-generated PSF model in conjunction with Source Extractor to generate a source catalog. The key
+        difference with source_extraction is that source_extraction uses only Source Extractor, and does not therefore
+        use PSF-fitting (ie, no MAG_PSF or FLUX_PSF columns are written).
+        :param output_dir: The directory in which to write the PSFEx and Source Extractor output files.
+        :param template: The path to the file to use as template, if dual mode is to be used.
+        :param force: If True, performs all functions regardless of whether source_catalogues already exist, and
+            overwrites them; if False, checks whether they exist first and skips some steps if so.
+        :param configs: A dictionary of Source Extractor arguments to pass to command line.
+        :return:
+        """
         self.psfex(output_dir=output_dir, force=force)
         config = p.path_to_config_sextractor_config()
         output_params = p.path_to_config_sextractor_param()
-        cat_path = self.source_extraction(configuration_file=config,
-                                          output_dir=output_dir,
-                                          parameters_file=output_params,
-                                          catalog_name=f"{self.name}_psf-fit.cat",
-                                          psf_name=self.psfex_path,
-                                          seeing_fwhm=self.fwhm_psfex.value,
-                                          template=template,
-                                          **configs
-                                          )
+        cat_path = self.source_extraction(
+            configuration_file=config,
+            output_dir=output_dir,
+            parameters_file=output_params,
+            catalog_name=f"{self.name}_psf-fit.cat",
+            psf_name=self.psfex_path,
+            seeing_fwhm=self.fwhm_psfex.value,
+            template=template,
+            **configs
+        )
         if template is not None:
             self.source_cat_sextractor_dual_path = cat_path
         else:
             self.source_cat_sextractor_path = cat_path
-        self.load_source_cat_sextractor()
-        self.load_source_cat_sextractor_dual()
+        self.load_source_cat_sextractor(force=True)
+        self.load_source_cat_sextractor_dual(force=True)
         self.update_output_file()
 
     def _load_source_cat_sextractor(self, path: str):
         self.load_wcs()
         print("Loading source catalogue from", path)
         source_cat = table.QTable.read(path, format="ascii.sextractor")
-        source_cat["RA"], source_cat["DEC"] = self.wcs.all_pix2world(source_cat["X_IMAGE"],
-                                                                     source_cat["Y_IMAGE"], 1) * units.deg
+        source_cat["RA"], source_cat["DEC"] = self.wcs.all_pix2world(
+            source_cat["X_IMAGE"],
+            source_cat["Y_IMAGE"],
+            1
+        ) * units.deg
 
         return source_cat
 
@@ -871,13 +888,14 @@ class ImagingImage(Image):
                         match_to: table.Table = None, frame: float = 15):
         self.open()
         self.load_source_cat()
-        stars_moffat, stars_gauss, stars_sex = ph.image_psf_diagnostics(hdu=self.hdu_list,
-                                                                        cat=self.source_cat,
-                                                                        star_class_tol=star_class_tol,
-                                                                        mag_max=mag_max,
-                                                                        mag_min=mag_min,
-                                                                        match_to=match_to,
-                                                                        frame=frame)
+        stars_moffat, stars_gauss, stars_sex = ph.image_psf_diagnostics(
+            hdu=self.hdu_list,
+            cat=self.source_cat,
+            star_class_tol=star_class_tol,
+            mag_max=mag_max,
+            mag_min=mag_min,
+            match_to=match_to,
+            frame=frame)
 
         fwhm_gauss = (stars_gauss["GAUSSIAN_FWHM_FITTED"]).to(units.arcsec)
         self.fwhm_median_gauss = np.nanmedian(fwhm_gauss)
@@ -886,14 +904,14 @@ class ImagingImage(Image):
         self.fwhm_sigma_gauss = np.nanstd(fwhm_gauss)
         self.fwhm_rms_gauss = np.sqrt(np.mean(fwhm_gauss ** 2))
 
-        fwhm_moffat = (stars_gauss["MOFFAT_FWHM_FITTED"]).to(units.arcsec)
+        fwhm_moffat = (stars_moffat["MOFFAT_FWHM_FITTED"]).to(units.arcsec)
         self.fwhm_median_moffat = np.nanmedian(fwhm_moffat)
         self.fwhm_max_moffat = np.nanmax(fwhm_moffat)
         self.fwhm_min_moffat = np.nanmin(fwhm_moffat)
         self.fwhm_sigma_moffat = np.nanstd(fwhm_moffat)
         self.fwhm_rms_moffat = np.sqrt(np.mean(fwhm_moffat ** 2))
 
-        fwhm_sextractor = (stars_gauss["FWHM_WORLD"]).to(units.arcsec)
+        fwhm_sextractor = (stars_sex["FWHM_WORLD"]).to(units.arcsec)
         self.fwhm_median_sextractor = np.nanmedian(fwhm_sextractor)
         self.fwhm_max_sextractor = np.nanmax(fwhm_sextractor)
         self.fwhm_min_sextractor = np.nanmin(fwhm_sextractor)

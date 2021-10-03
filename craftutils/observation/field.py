@@ -2344,8 +2344,8 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
                                                                                     output_dir=astrometry_fil_path)
                                     self.add_frame_astrometry(new_img_2)
                                     success = True
-                            # We don't use an else statement here because reverse_pair can change within the above block,
-                            # and if it does the block below needs to execute.
+                            # We don't use an else statement here because reverse_pair can change within the above
+                            # block, and if it does the block below needs to execute.
                             if reverse_pair:
                                 new_img_2 = img_2.correct_astrometry(output_dir=astrometry_fil_path)
                                 if new_img_2 is None:
