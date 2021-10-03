@@ -180,17 +180,6 @@ class Field:
 
         self.objects = []
 
-        if type(objs) is dict:
-            for obj_name in objs:
-                if obj_name != "<name>":
-                    obj_dict = objs[obj_name]
-                    if "position" not in obj_dict:
-                        obj_dict = {"position": obj_dict}
-                    if "name" not in obj_dict:
-                        obj_dict["name"] = obj_name
-                    obj = objects.Object.from_dict(obj_dict)
-                    self.add_object(obj)
-
         if centre_coords is None:
             if objs is not None:
                 centre_coords = objs[0].coords
@@ -218,6 +207,16 @@ class Field:
 
         self.cats = {}
         self.cat_gaia = None
+
+        if type(objs) is dict:
+            for obj_name in objs:
+                if obj_name != "<name>":
+                    obj_dict = objs[obj_name]
+                    if "position" not in obj_dict:
+                        obj_dict = {"position": obj_dict}
+                    if "name" not in obj_dict:
+                        obj_dict["name"] = obj_name
+                    self.add_object_from_dict(obj_dict)
 
         self.load_output_file()
 
@@ -506,6 +505,10 @@ class Field:
         self.objects.append(obj)
         obj.field = self
 
+    def add_object_from_dict(self, obj_dict: dict):
+        obj = objects.Object.from_dict(obj_dict, field=self)
+        self.add_object(obj=obj)
+
     @classmethod
     def default_params(cls):
         default_params = {"name": None,
@@ -573,7 +576,7 @@ class FRBField(Field):
                  param_path: str = None,
                  data_path: str = None,
                  objs: List[objects.Object] = None,
-                 frb: objects.FRB = None,
+                 frb: Union[objects.FRB, dict] = None,
                  extent: units.Quantity = None):
         if centre_coords is None:
             if frb is not None:
@@ -590,6 +593,10 @@ class FRBField(Field):
 
         self.frb = frb
         if self.frb is not None:
+
+            if isinstance(self.frb, dict):
+                self.frb = objects.FRB.from_dict(self.frb, field=self)
+
             self.frb.field = self
             if self.frb.host_galaxy is not None:
                 self.add_object(self.frb.host_galaxy)
@@ -707,19 +714,22 @@ class FRBField(Field):
         # Check data_dir path for relevant .yamls (output_values, etc.)
 
         centre_ra, centre_dec = p.select_coords(param_dict["centre"])
-        frb = objects.FRB.from_dict(param_dict["frb"])
+
         if "extent" in param_dict:
             extent = param_dict["extent"]
         else:
             extent = None
-        return cls(name=name,
-                   centre_coords=f"{centre_ra} {centre_dec}",
-                   param_path=param_file,
-                   data_path=os.path.join(config["top_data_dir"], param_dict["data_path"]),
-                   objs=param_dict["objects"],
-                   frb=frb,
-                   extent=extent
-                   )
+        field = cls(
+            name=name,
+            centre_coords=f"{centre_ra} {centre_dec}",
+            param_path=param_file,
+            data_path=os.path.join(config["top_data_dir"], param_dict["data_path"]),
+            objs=param_dict["objects"],
+            frb = param_dict["frb"],
+            extent=extent
+        )
+
+        return field
 
     @classmethod
     def convert_old_param(cls, frb: str):
@@ -1324,6 +1334,7 @@ class ImagingEpoch(Epoch):
             img.calibrate_magnitudes(zeropoint_name="best", dual=True)
             rows = []
             for obj in self.field.objects:
+                # obj.load_output_file()
                 plt.close()
                 # Get nearest Source-Extractor object:
                 nearest = img.find_object(obj.position)
@@ -1336,6 +1347,7 @@ class ImagingEpoch(Epoch):
                                                  show=False,
                                                  title=f"{obj.name}, {fil}-band, {nearest['MAG_AUTO_ZP_best'].round(3).value} ± {err.round(3)}")
                 obj.cat_row = nearest
+                print()
                 obj.photometry[f"{fil}_{self.instrument}"] = {"mag": nearest['MAG_AUTO_ZP_best'],
                                                               "mag_err": err,
                                                               "a": nearest['A_WORLD'],

@@ -154,11 +154,12 @@ class PositionUncertainty:
 
 
 class Object:
-    def __init__(self,
-                 name: str = None,
-                 position: Union[SkyCoord, str] = None,
-                 position_err: Union[float, units.Quantity, dict, PositionUncertainty, tuple] = 0.0 * units.arcsec,
-                 field=None):
+    def __init__(
+            self,
+            name: str = None,
+            position: Union[SkyCoord, str] = None,
+            position_err: Union[float, units.Quantity, dict, PositionUncertainty, tuple] = 0.0 * units.arcsec,
+            field=None):
         self.name = name
         self.position = a.attempt_skycoord(position)
         if type(position_err) is not PositionUncertainty:
@@ -186,11 +187,12 @@ class Object:
         return {"photometry": self.photometry}
 
     def load_output_file(self):
+        self.check_data_path()
         if self.data_path is not None:
             outputs = p.load_output_file(self)
             if outputs is not None:
                 if "photometry" in outputs and outputs["photometry"] is not None:
-                    self.photometry = outputs["frame_type"]
+                    self.photometry = outputs["photometry"]
             return outputs
 
     def check_data_path(self):
@@ -217,7 +219,7 @@ class Object:
         return default_params
 
     @classmethod
-    def from_dict(cls, dictionary: dict) -> 'Object':
+    def from_dict(cls, dictionary: dict, field=None) -> 'Object':
         """
         Construct an Object or appropriate child class (FRB, Galaxy...) from a passed dict.
         :param dictionary: dict with keys:
@@ -239,9 +241,11 @@ class Object:
         if selected in (Object, FRB):
             return selected(name=dictionary["name"],
                             position=f"{ra} {dec}",
-                            position_err=position_err)
+                            position_err=position_err,
+                            field=field
+                            )
         else:
-            return selected.from_dict(dictionary=dictionary)
+            return selected.from_dict(dictionary=dictionary, field=field)
 
     @classmethod
     def select_child_class(cls, obj_type: str):
@@ -278,14 +282,19 @@ class Object:
 
 
 class Galaxy(Object):
-    def __init__(self,
-                 name: str = None,
-                 position: Union[SkyCoord, str] = None,
-                 position_err: Union[float, units.Quantity, dict, PositionUncertainty, tuple] = 0.0 * units.arcsec,
-                 z: float = 0.0):
-        super().__init__(name=name,
-                         position=position,
-                         position_err=position_err)
+    def __init__(
+            self,
+            name: str = None,
+            position: Union[SkyCoord, str] = None,
+            position_err: Union[float, units.Quantity, dict, PositionUncertainty, tuple] = 0.0 * units.arcsec,
+            z: float = 0.0,
+            field=None
+    ):
+        super().__init__(
+            name=name,
+            position=position,
+            position_err=position_err,
+            field=field)
         self.z = z
         self.D_A = self.angular_size_distance()
 
@@ -311,7 +320,7 @@ class Galaxy(Object):
         return default_params
 
     @classmethod
-    def from_dict(cls, dictionary: dict):
+    def from_dict(cls, dictionary: dict, field=None):
         ra, dec = p.select_coords(dictionary["position"])
         if "position_err" in dictionary:
             position_err = dictionary["position_err"]
@@ -320,21 +329,27 @@ class Galaxy(Object):
         return cls(name=dictionary["name"],
                    position=f"{ra} {dec}",
                    position_err=position_err,
-                   z=dictionary['z'])
+                   z=dictionary['z'],
+                   field=field)
 
 
 dm_units = units.parsec * units.cm ** -3
 
 
 class FRB(Object):
-    def __init__(self,
-                 name: str = None,
-                 position: Union[SkyCoord, str] = None,
-                 position_err: Union[float, units.Quantity, dict, PositionUncertainty, tuple] = 0.0 * units.arcsec,
-                 host_galaxy: Galaxy = None, dm: Union[float, units.Quantity] = None):
+    def __init__(
+            self,
+            name: str = None,
+            position: Union[SkyCoord, str] = None,
+            position_err: Union[float, units.Quantity, dict, PositionUncertainty, tuple] = 0.0 * units.arcsec,
+            host_galaxy: Galaxy = None,
+            dm: Union[float, units.Quantity] = None,
+            field=None
+    ):
         super().__init__(name=name,
                          position=position,
-                         position_err=position_err)
+                         position_err=position_err,
+                         field=field)
         self.host_galaxy = host_galaxy
         self.dm = dm
         if self.dm is not None:
@@ -370,11 +385,11 @@ class FRB(Object):
         return self.dm - dm_ism - dm_halo
 
     @classmethod
-    def from_dict(cls, dictionary: dict, name: str = None):
+    def from_dict(cls, dictionary: dict, name: str = None, field=None):
         frb = super().from_dict(dictionary=dictionary)
         if "dm" in dictionary:
             frb.dm = dictionary["dm"] * dm_units
-        frb.host_galaxy = Galaxy.from_dict(dictionary=dictionary["host_galaxy"])
+        frb.host_galaxy = Galaxy.from_dict(dictionary=dictionary["host_galaxy"], field=field)
         return frb
 
     @classmethod
