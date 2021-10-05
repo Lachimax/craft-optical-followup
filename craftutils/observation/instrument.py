@@ -284,6 +284,7 @@ class Filter:
 
     def _output_dict(self):
         return {
+            "lambda_eff": self.lambda_eff,
             "votable_path": self.votable_path,
             "transmission_table_paths": {
                 "filter": self.transmission_table_filter_path,
@@ -299,6 +300,8 @@ class Filter:
         outputs = p.load_output_file(self)
         if outputs is None:
             return
+        if "lambda_eff" in outputs:
+            self.lambda_eff = outputs["lambda_eff"]
         if "votable_path" in outputs:
             self.votable_path = outputs["votable_path"]
         if "transmission_table_paths" in outputs:
