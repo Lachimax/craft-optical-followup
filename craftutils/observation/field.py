@@ -1362,78 +1362,6 @@ class ImagingEpoch(Epoch):
             tbl.write(os.path.join(fil_output_path, f"{self.field.name}_{self.name}_{fil}.ecsv"),
                       format="ascii.ecsv")
 
-    def _initial_setup(self):
-        data_dir = self.data_path
-        raw_dir = epoch_stage_dirs["0-download"]
-        data_title = self.name
-
-        # Write tables of fits files to main directory; firstly, science images only:
-        tbl = image.fits_table(input_path=raw_dir,
-                               output_path=os.path.join(data_dir, data_title + "_fits_table_science.csv"),
-                               science_only=True)
-        # Then including all calibration files
-        tbl_full = image.fits_table(input_path=raw_dir,
-                                    output_path=data_dir + data_title + "_fits_table_all.csv",
-                                    science_only=False)
-
-        image.fits_table_all(input_path=raw_dir,
-                             output_path=data_dir + data_title + "_fits_table_detailed.csv",
-                             science_only=False)
-
-        for row in tbl_full:
-            path = os.path.join(self.paths["raw_dir"], row["identifier"])
-            cls = image.ImagingImage.select_child_class(instrument=self.instrument, mode="imaging")
-            img = cls(path)
-            img.extract_frame_type()
-            img.extract_filter()
-            # The below will also update the filter list.
-            self.add_frame_raw(path)
-
-        # Collect pointings of standard-star observations.
-        for img in self.frames_standard:
-            pointing = img.extract_pointing
-            fil = img.extract_filter
-            if pointing not in self.std_pointings[fil]:
-                self.std_pointings[fil].append(pointing)
-
-        # Collect and save some stats on those filters:
-
-        template = self.frames_science[0]
-        if self.target is None:
-            self.target = template.object
-        if self.date is None:
-            self.set_date(self.frames_science[0].extract_date_obs())
-
-        std_dir = os.path.join(data_dir, 'standards')
-
-        for i, fil in enumerate(self.filters):
-
-            exp_times = list(map(lambda frame: frame.exposure_time, self.frames_science[fil]))
-            self.exp_time_mean[fil] = np.nanmean(exp_times)
-            self.exp_time_err[fil] = np.nanstd(exp_times)
-
-            airmasses = np.array(map(lambda frame: frame.airmass, self.frames_science[fil]))
-            self.airmass_mean[fil] = np.nanmean(airmasses)
-            self.airmass_err[fil] = max(np.nanmax(airmasses) - self.airmass_mean,
-                                        self.airmass_mean - np.nanmin(airmasses))
-
-            std_filter_dir = os.path.join(std_dir, fil)
-            self.set_path(f"standard_dir_{fil}", std_filter_dir)
-            u.mkdir_check(std_filter_dir)
-            print(f'Copying {fil} calibration data to standard folder...')
-
-            # Sort the STD files by filter, and within that by pointing.
-            for j, pointing in enumerate(self.std_pointings):
-                pointing_dir = os.path.join(std_filter_dir, f"RA{pointing.ra.value}_DEC{pointing.dec.value}")
-                u.mkdir_check(pointing_dir)
-                for std in self.frames_standard[fil]:
-                    path_dest = os.path.join(pointing_dir, std.filename)
-                    shutil.move(std.path, path_dest)
-                    std.path = path_dest
-                    std.update_output_file()
-
-        self.update_output_file()
-
     def guess_data_path(self):
         if self.data_path is None and self.field is not None and self.field.data_path is not None and \
                 self.instrument is not None and self.date is not None:
@@ -2304,6 +2232,78 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
         if super().proc_1_initial_setup(no_query, **kwargs):
             for fil in self.filters:
                 self.pair_files(self.frames_science[fil])
+
+    def _initial_setup(self):
+        data_dir = self.data_path
+        raw_dir = epoch_stage_dirs["0-download"]
+        data_title = self.name
+
+        # Write tables of fits files to main directory; firstly, science images only:
+        tbl = image.fits_table(input_path=raw_dir,
+                               output_path=os.path.join(data_dir, data_title + "_fits_table_science.csv"),
+                               science_only=True)
+        # Then including all calibration files
+        tbl_full = image.fits_table(input_path=raw_dir,
+                                    output_path=data_dir + data_title + "_fits_table_all.csv",
+                                    science_only=False)
+
+        image.fits_table_all(input_path=raw_dir,
+                             output_path=data_dir + data_title + "_fits_table_detailed.csv",
+                             science_only=False)
+
+        for row in tbl_full:
+            path = os.path.join(self.paths["raw_dir"], row["identifier"])
+            cls = image.ImagingImage.select_child_class(instrument=self.instrument, mode="imaging")
+            img = cls(path)
+            img.extract_frame_type()
+            img.extract_filter()
+            # The below will also update the filter list.
+            self.add_frame_raw(path)
+
+        # Collect pointings of standard-star observations.
+        for img in self.frames_standard:
+            pointing = img.extract_pointing
+            fil = img.extract_filter
+            if pointing not in self.std_pointings[fil]:
+                self.std_pointings[fil].append(pointing)
+
+        # Collect and save some stats on those filters:
+
+        template = self.frames_science[0]
+        if self.target is None:
+            self.target = template.object
+        if self.date is None:
+            self.set_date(self.frames_science[0].extract_date_obs())
+
+        std_dir = os.path.join(data_dir, 'standards')
+
+        for i, fil in enumerate(self.filters):
+
+            exp_times = list(map(lambda frame: frame.exposure_time, self.frames_science[fil]))
+            self.exp_time_mean[fil] = np.nanmean(exp_times)
+            self.exp_time_err[fil] = np.nanstd(exp_times)
+
+            airmasses = np.array(map(lambda frame: frame.airmass, self.frames_science[fil]))
+            self.airmass_mean[fil] = np.nanmean(airmasses)
+            self.airmass_err[fil] = max(np.nanmax(airmasses) - self.airmass_mean,
+                                        self.airmass_mean - np.nanmin(airmasses))
+
+            std_filter_dir = os.path.join(std_dir, fil)
+            self.set_path(f"standard_dir_{fil}", std_filter_dir)
+            u.mkdir_check(std_filter_dir)
+            print(f'Copying {fil} calibration data to standard folder...')
+
+            # Sort the STD files by filter, and within that by pointing.
+            for j, pointing in enumerate(self.std_pointings):
+                pointing_dir = os.path.join(std_filter_dir, f"RA{pointing.ra.value}_DEC{pointing.dec.value}")
+                u.mkdir_check(pointing_dir)
+                for std in self.frames_standard[fil]:
+                    path_dest = os.path.join(pointing_dir, std.filename)
+                    shutil.move(std.path, path_dest)
+                    std.path = path_dest
+                    std.update_output_file()
+
+        self.update_output_file()
 
     def correct_astrometry_frames(self, output_path: str, **kwargs):
         """
