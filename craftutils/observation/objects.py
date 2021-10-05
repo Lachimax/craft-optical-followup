@@ -17,7 +17,7 @@ except ImportError:
 
 frb_installed = True
 try:
-    import frb.halos as halos
+    import frb.halos.models as halos
     import frb.dm.igm as igm
 except ImportError:
     print("FRB is not installed; DM_ISM estimates will not be available.")
