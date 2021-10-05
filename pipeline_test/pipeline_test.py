@@ -155,7 +155,8 @@ if __name__ == '__main__':
                         type=float)
     parser.add_argument("-d",
                         help="Debug level for verbosity purposes.",
-                        type=int)
+                        type=int,
+                        default=0)
 
     # Load arguments
 
