@@ -20,10 +20,13 @@ def main(field_name: str,
          overwrite_download: bool,
          distance_tolerance: float,
          snr_tolerance: float,
-         class_star_tolerance: float):
+         class_star_tolerance: float,
+         debug_level: int):
+    u.debug_level = debug_level
+
     new_field = False
     print("Refreshing parameter files from templates...")
-#    p.refresh_params_all(quiet=True)
+    #    p.refresh_params_all(quiet=True)
     if field_name is None:
         fields = ["New field"]
         fields += fld.list_fields()
@@ -145,9 +148,14 @@ if __name__ == '__main__':
                         type=float
                         )
     parser.add_argument("--snr_tolerance",
-                        help="Minimum SNR for photometric calibration")
+                        help="Minimum SNR for photometric calibration",
+                        type=float)
     parser.add_argument("--class_star_tolerance",
-                        help="Minimum class_star for object inclusion in photometric calibration.")
+                        help="Minimum class_star for object inclusion in photometric calibration.",
+                        type=float)
+    parser.add_argument("-d",
+                        help="Debug level for verbosity purposes.",
+                        type=int)
 
     # Load arguments
 
@@ -163,4 +171,5 @@ if __name__ == '__main__':
          overwrite_download=args.o,
          distance_tolerance=args.distance_tolerance,
          snr_tolerance=args.snr_tolerance,
-         class_star_tolerance=args.class_star_tolerance)
+         class_star_tolerance=args.class_star_tolerance,
+         debug_level=args.d)

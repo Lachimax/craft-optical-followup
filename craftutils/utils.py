@@ -14,9 +14,16 @@ import astropy.units as units
 from astropy.coordinates import SkyCoord
 from astropy.time import Time
 
-
 # TODO: Arrange these into some kind of logical order.
 # TODO: Also comment.
+
+debug_level = 0
+
+
+def debug_print(statement: str, level: int = 1):
+    if debug_level >= level:
+        print(statement)
+
 
 def path_or_table(tbl: Union[str, table.QTable, table.Table], load_qtable: bool = True, fmt: str = "ascii.ecsv"):
     if isinstance(tbl, str):
