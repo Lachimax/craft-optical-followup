@@ -19,6 +19,7 @@ from astropy.visualization import ImageNormalize, ZScaleInterval, SqrtStretch
 
 import craftutils.utils as u
 
+
 # TODO: Fill in docstrings.
 # TODO: Sanitise pipeline inputs (ie check if object name is valid)
 
@@ -330,13 +331,13 @@ def divide_by_exp_time(file: Union['fits.hdu_list.hdulist.HDUList', 'str'], outp
     file[0].data = file[0].data / old_exp_time
 
     # Set header entries to match.
-    change_header(file=file, name='EXPTIME', entry=1.)
-    change_header(file=file, name='OLD_EXPTIME', entry=old_exp_time)
+    change_header(file=file, key='EXPTIME', value=1.)
+    change_header(file=file, key='OLD_EXPTIME', value=old_exp_time)
 
     old_gain = get_header_attribute(file=file, attribute='GAIN')
     if old_gain is None:
         old_gain = 0.8
-    change_header(file=file, name='GAIN', entry=old_gain * old_exp_time)
+    change_header(file=file, key='GAIN', value=old_gain * old_exp_time)
 
     old_saturate = get_header_attribute(file=file, attribute='SATURATE')
     if old_saturate is None:
@@ -344,7 +345,8 @@ def divide_by_exp_time(file: Union['fits.hdu_list.hdulist.HDUList', 'str'], outp
     # Set 'saturate' at 10% lower than stated value, as the detector frequently behaves non-linearly well below the
     # max value.
     new_saturate = 0.9 * old_saturate / old_exp_time
-    change_header(file=file, name='SATURATE', entry=new_saturate)
+    change_header(file=file, key='SATURATE', value=new_saturate)
+    change_header(file=file, key='BUNIT', value="ct / s")
 
     if output is not None:
         file.writeto(output, overwrite=True)
@@ -648,31 +650,31 @@ def get_pixel_scale(file: Union['fits.hdu_list.hdulist.HDUList', 'str'], layer: 
 
 
 def add_log(file: Union[fits.hdu.hdulist.HDUList, str], action: str):
-    change_header(file, name='history', entry=dt.now().strftime('%Y-%m-%dT%H:%M:%S'))
-    change_header(file, name='history', entry=action)
+    change_header(file, key='history', value=dt.now().strftime('%Y-%m-%dT%H:%M:%S'))
+    change_header(file, key='history', value=action)
 
 
-def change_header(file: Union[fits.hdu.hdulist.HDUList, str], name: str, entry):
+def change_header(file: Union[fits.hdu.hdulist.HDUList, str], key: str, value, ext: int = 0):
     """
     Changes the value of a header entry, if it already exists; if not, adds an entry to the bottom of a given fits
     header. Format is NAME: 'entry'
     :param file:
-    :param name:
-    :param entry:
+    :param key:
+    :param value:
     :return:
     """
-    name = name.upper()
+    key = key.upper()
     path = ''
     if type(file) is str:
         path = file
         file = fits.open(path, mode='update')
-    file[0].header[name] = entry
+    file[ext].header[key] = value
     if path != '':
         file.close(output_verify='ignore')
     return file
 
 
-def pix_to_world(x: "float", y: "float", header: "fits.header.Header"):
+def pix_to_world(x: float, y: float, header: fits.header.Header):
     w = wcs.WCS(header)
     ra, dec = w.all_pix2world(x, y, 0)
     return ra, dec
