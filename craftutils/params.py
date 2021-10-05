@@ -16,8 +16,11 @@ from craftutils import utils as u
 yaml.AstropyDumper.ignore_aliases = lambda *args: True
 
 instruments_imaging = [
-    "vlt-fors2", "vlt-xshooter",
+    "vlt-fors2",
+    "vlt-xshooter",
     "gs-aoi",
+    "hubble-wfc3_ir",
+    "hubble-wfc3_uvis2",
     "mgb-imacs",
     "panstarrs1"]
 instruments_spectroscopy = ["vlt-fors2", "vlt-xshooter"]

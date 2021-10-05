@@ -359,8 +359,11 @@ class Field:
                 '%Y-%m-%d')
             new_params["program_id"] = input("Enter the programmme ID for the observation:\n")
         new_params["instrument"] = instrument
-        new_params["data_path"] = self._epoch_data_path(mode=mode, instrument=instrument, date=new_params["date"],
-                                                        epoch_name=new_params["name"], survey=survey)
+        new_params["data_path"] = self._epoch_data_path(mode=mode,
+                                                        instrument=instrument,
+                                                        date=new_params["date"],
+                                                        epoch_name=new_params["name"],
+                                                        survey=survey)
         new_params["field"] = self.name
         param_path = self._epoch_param_path(mode=mode, instrument=instrument, epoch_name=new_params["name"])
 
@@ -411,7 +414,7 @@ class Field:
             path = self._instrument_data_path(mode=mode, instrument=instrument)
         else:
             path = os.path.join(self._instrument_data_path(mode=mode, instrument=instrument),
-                                f"{date.to_datetime().date()}-{epoch_name}")
+                                f"{date}-{epoch_name}")
         u.mkdir_check(path)
         return path
 
@@ -1123,6 +1126,7 @@ class ImagingEpoch(Epoch):
 
         self.frames_science = {}
         self.frames_reduced = {}
+        self.frames_normalised = {}
         self.frames_astrometry = {}
 
         self.std_pointings = {}
@@ -1130,7 +1134,7 @@ class ImagingEpoch(Epoch):
 
         self.coadded_trimmed = {}
 
-        self.load_output_file(mode="imaging")
+        # self.load_output_file(mode="imaging")
 
     # TODO: Make output_path keyword standard across all proc methods
 
@@ -1327,7 +1331,7 @@ class ImagingEpoch(Epoch):
                                       phot_autoparams=f"{configs['kron_factor']},{configs['kron_radius_min']}",
                                       template=self.deepest)
 
-    def get_photometry(self, path: str, image_type: str = "coadded_trimmed"):
+    def get_photometry(self, path: str, image_type: str = "coadded_trimmed", dual: bool = True):
         """
         Retrieve photometric properties of key objects and write to disk.
         :param path: Path to which to write the data products.
@@ -1340,13 +1344,13 @@ class ImagingEpoch(Epoch):
             fil_output_path = os.path.join(path, fil)
             u.mkdir_check(fil_output_path)
             img = image_dict[fil]
-            img.calibrate_magnitudes(zeropoint_name="best", dual=True)
+            img.calibrate_magnitudes(zeropoint_name="best")
             rows = []
             for obj in self.field.objects:
                 # obj.load_output_file()
                 plt.close()
                 # Get nearest Source-Extractor object:
-                nearest = img.find_object(obj.position)
+                nearest = img.find_object(obj.position, dual=dual)
                 rows.append(nearest)
                 err = nearest[f'MAGERR_AUTO_ZP_best']
                 print("FILTER:", fil)
@@ -1511,6 +1515,14 @@ class ImagingEpoch(Epoch):
         self.coadded_trimmed[key] = img
         return img
 
+    def add_frame_normalised(self, norm_frame: image.ImagingImage):
+        if isinstance(norm_frame, str):
+            cls = image.ImagingImage.select_child_class(instrument=self.instrument)
+            norm_frame = cls(path=norm_frame, frame_type="reduced")
+        fil = norm_frame.extract_filter()
+        if self.check_filter(fil=fil) and norm_frame not in self.frames_normalised[fil]:
+            self.frames_normalised[fil].append(norm_frame)
+
     def check_filter(self, fil: str):
         """
         If a filter name is not present in the various lists and dictionaries that use it, adds it.
@@ -1545,6 +1557,8 @@ class ImagingEpoch(Epoch):
                 self.std_pointings[fil] = []
             if fil not in self.flats:
                 self.flats[fil] = []
+            if fil not in self.frames_normalised:
+                self.frames_normalised[fil] = []
             return True
         else:
             return False
@@ -1628,6 +1642,7 @@ class ImagingEpoch(Epoch):
             field = param_dict["field"]
 
         sub_cls = cls.select_child_class(instrument=instrument)
+        u.debug_print(sub_cls)
         if sub_cls is ImagingEpoch:
             return cls(name=name,
                        field=field,
@@ -1682,6 +1697,8 @@ class ImagingEpoch(Epoch):
             return PanSTARRS1ImagingEpoch
         if instrument == "gs-aoi":
             return GSAOIImagingEpoch
+        if instrument in ["hubble-wfc3_ir", "hubble-wfc3_uvis2"]:
+            return HubbleImagingEpoch
         elif instrument in instruments_imaging:
             return ImagingEpoch
         else:
@@ -1719,6 +1736,8 @@ class GSAOIImagingEpoch(ImagingEpoch):
         self.science_table = None
         self.flats_lists = {}
         self.std_lists = {}
+
+        self.load_output_file(mode="imaging")
 
     @classmethod
     def stages(cls):
@@ -2010,6 +2029,124 @@ class GSAOIImagingEpoch(ImagingEpoch):
         return pointings
 
 
+class HubbleImagingEpoch(ImagingEpoch):
+
+    def __init__(
+            self,
+            name: str = None,
+            field: Field = None,
+            param_path: str = None,
+            data_path: str = None,
+            instrument: str = None,
+            program_id: str = None,
+            date: Union[str, Time] = None,
+            target: str = None,
+            standard_epochs: list = None,
+            source_extractor_config: dict = None):
+        super().__init__(
+            name=name,
+            field=field,
+            param_path=param_path,
+            data_path=data_path,
+            instrument=instrument,
+            date=date,
+            program_id=program_id,
+            target=target,
+            standard_epochs=standard_epochs, source_extractor_config=source_extractor_config)
+
+        self.load_output_file(mode="imaging")
+
+    def pipeline(self, **kwargs):
+        self.proc_1_initial_setup(**kwargs)
+        self.proc_2_photometric_calibration(**kwargs)
+        self.proc_3_source_extraction(**kwargs)
+        self.proc_4_get_photometry(**kwargs)
+
+    def _initial_setup(self):
+        coadd_dir = self.paths["coadd_dir"] = os.path.join(self.data_path, "1-coadded")
+        u.mkdir_check(coadd_dir)
+        for file in filter(lambda f: f.endswith(".fits"), os.listdir(self.data_path)):
+            shutil.move(os.path.join(self.data_path, file), coadd_dir)
+        for file in filter(lambda f: f.endswith(".fits"), os.listdir(coadd_dir)):
+            img = image.HubbleImage(os.path.join(coadd_dir, file))
+            self.add_coadded_image(img, key=img.extract_filter())
+
+    def proc_2_photometric_calibration(self, no_query: bool = False, **kwargs):
+        if no_query or self.query_stage("Do photometric calibration?", stage="2-photometric_calibration"):
+            calib_dir = os.path.join(self.data_path, "2-photometric_calibration")
+            self.photometric_calibration(calib_dir)
+            self.stages_complete['2-photometric_calibration'] = Time.now()
+            self.update_output_file()
+
+    def photometric_calibration(self, output_path: str, **kwargs):
+        for fil in self.coadded:
+            self.coadded[fil].zeropoint()
+
+    def proc_3_source_extraction(self, no_query: bool = False, **kwargs):
+        if no_query or self.query_stage("Do source extraction?",
+                                        stage="3-source_extraction"):
+            source_extraction_path = os.path.join(self.data_path, "3-source_extraction")
+            u.mkdir_check(source_extraction_path)
+            for fil in self.coadded:
+                img = self.coadded[fil]
+                self.set_path("source_extraction_dir", source_extraction_path)
+                configs = self.source_extractor_config
+                img.source_extraction_psf(
+                    output_dir=source_extraction_path,
+                    phot_autoparams=f"{configs['kron_factor']},{configs['kron_radius_min']}")
+            self.stages_complete["3-source_extraction"] = Time.now()
+            self.update_output_file()
+
+    def proc_4_get_photometry(self, no_query: bool = False, **kwargs):
+        if no_query or self.query_stage("Get photometry?", stage="4-get_photometry"):
+            object_property_path = os.path.join(self.data_path, "4-object_properties")
+            self.get_photometry(object_property_path, image_type="coadded", dual=False)
+
+            self.stages_complete["4-get_photometry"] = Time.now()
+            self.update_output_file()
+
+    def add_coadded_image(self, img: Union[str, image.Image], key: str, **kwargs):
+        if isinstance(img, str):
+            img = image.HubbleImage(path=img)
+        img.epoch = self
+        self.coadded[key] = img
+        return img
+
+    @classmethod
+    def stages(cls):
+        param_dict = super().stages()
+        param_dict.update({"0-download": None,
+                           "2-photometric_calibration": None,
+                           "3-source_extraction": None,
+                           "4-get_photometry": None
+                           })
+        return param_dict
+
+    @classmethod
+    def from_file(cls, param_file: Union[str, dict], name: str = None, field: Field = None):
+
+        name, param_file, param_dict = p.params_init(param_file)
+        if param_dict is None:
+            raise FileNotFoundError(f"No parameter file found at {param_file}.")
+
+        if field is None:
+            field = param_dict["field"]
+        if 'target' in param_dict:
+            target = param_dict['target']
+        else:
+            target = None
+
+        return cls(name=name,
+                   field=field,
+                   param_path=param_file,
+                   data_path=os.path.join(config["top_data_dir"], param_dict['data_path']),
+                   instrument=param_dict["instrument"],
+                   program_id=param_dict['program_id'],
+                   date=param_dict['date'],
+                   target=target,
+                   source_extractor_config=param_dict['sextractor'])
+
+
 class PanSTARRS1ImagingEpoch(ImagingEpoch):
     instrument = "panstarrs1"
 
@@ -2027,7 +2164,7 @@ class PanSTARRS1ImagingEpoch(ImagingEpoch):
                          source_extractor_config=source_extractor_config,
                          instrument="panstarrs1"
                          )
-        # self.load_output_file()
+        self.load_output_file(mode="imaging")
         if isinstance(field, Field):
             self.field.retrieve_catalogue(cat_name="panstarrs1")
 
@@ -2180,26 +2317,42 @@ class PanSTARRS1ImagingEpoch(ImagingEpoch):
 
 class ESOImagingEpoch(ImagingEpoch):
 
-    def __init__(self,
-                 name: str = None,
-                 field: Field = None,
-                 param_path: str = None,
-                 data_path: str = None,
-                 instrument: str = None,
-                 program_id: str = None,
-                 date: Union[str, Time] = None,
-                 target: str = None,
-                 standard_epochs: list = None,
-                 source_extractor_config: dict = None):
-        super().__init__(name=name, field=field, param_path=param_path, data_path=data_path, instrument=instrument,
-                         date=date, program_id=program_id, target=target,
-                         standard_epochs=standard_epochs, source_extractor_config=source_extractor_config)
+    def __init__(
+            self,
+            name: str = None,
+            field: Field = None,
+            param_path: str = None,
+            data_path: str = None,
+            instrument: str = None,
+            program_id: str = None,
+            date: Union[str, Time] = None,
+            target: str = None,
+            standard_epochs: list = None,
+            source_extractor_config: dict = None):
+        super().__init__(
+            name=name,
+            field=field,
+            param_path=param_path,
+            data_path=data_path,
+            instrument=instrument,
+            date=date,
+            program_id=program_id,
+            target=target,
+            standard_epochs=standard_epochs,
+            source_extractor_config=source_extractor_config)
+
+        self.frames_esoreflex_backgrounds = {}
+        self.frames_trimmed = {}
+
+        self.load_output_file(mode="imaging")
 
     def pipeline(self, **kwargs):
         super().pipeline(**kwargs)
         self.proc_0_download(**kwargs)
         self.proc_1_initial_setup(**kwargs)
-        self.proc_2_sort_after_esoreflex()
+        self.proc_2_sort_after_esoreflex(**kwargs)
+        self.proc_3_trim_reduced(**kwargs)
+        self.proc_4_divide_by_exp_time(**kwargs)
 
     def proc_0_download(self, no_query: bool = False, **kwargs):
         if no_query or self.query_stage("Download raw data from ESO archive?", stage='0-download'):
@@ -2224,7 +2377,6 @@ class ESOImagingEpoch(ImagingEpoch):
         if no_query or self.query_stage(
                 "Sort ESOReflex products? Requires reducing data with ESOReflex first.",
                 stage='2-sort_after_esoreflex'):
-
             self._sort_after_esoreflex()
             self.stages_complete['0-download'] = Time.now()
             self.update_output_file()
@@ -2269,25 +2421,27 @@ class ESOImagingEpoch(ImagingEpoch):
                         file_path = os.path.join(subpath, file_name)
                         file = image.FORS2Image(file_path)
                         file_obj = file.extract_object()
-                        file_mjd = file.extract_header_item('MJD-OBS')
+                        file_mjd = int(file.extract_header_item('MJD-OBS'))
                         file_filter = file.extract_filter()
                         # Check the object name and observation date against those of the epoch we're concerned with.
                         if file_obj == obj and file_mjd == mjd:
                             # Check which type of file we have.
-                            science_image = False
                             if file_name.endswith("PHOT_BACKGROUND_SCI_IMG.fits"):
                                 file_destination = os.path.join(destination, "backgrounds")
                                 suffix = "PHOT_BACKGROUND_SCI_IMG.fits"
+                                file_type = "background"
                             elif file_name.endswith("OBJECT_TABLE_SCI_IMG.fits"):
                                 file_destination = os.path.join(destination, "obj_tbls")
                                 suffix = "OBJECT_TABLE_SCI_IMG.fits"
+                                file_type = "object_table"
                             elif file_name.endswith("SCIENCE_REDUCED_IMG.fits"):
                                 file_destination = os.path.join(destination, "science")
                                 suffix = "SCIENCE_REDUCED_IMG.fits"
-                                science_image = True
+                                file_type = "science"
                             else:
                                 file_destination = os.path.join(destination, "sources")
                                 suffix = "SOURCES_SCI_IMG.fits"
+                                file_type = "sources"
                             # Make this directory, if it doesn't already exist.
                             u.mkdir_check(file_destination)
                             # Make a subdirectory by filter.
@@ -2296,27 +2450,128 @@ class ESOImagingEpoch(ImagingEpoch):
                             # Title new file.
                             file_destination = os.path.join(
                                 file_destination,
-                                f"{self.name}_{subdirectory[:-1]}_{suffix}")
+                                f"{self.name}_{subdirectory}_{suffix}")
                             # Copy file to new location.
                             print(f"Copying: {file_path} to \n\t {file_destination}")
                             file.copy(file_destination)
                             if delete_output and os.path.isfile(file_destination):
                                 os.remove(file_path)
-                            if science_image:
-                                img = image.FORS2Image(file_destination)
+                            img = image.FORS2Image(file_destination)
+                            u.debug_print("FILE_TYPE:")
+                            u.debug_print(file_type)
+                            if file_type == "science":
                                 self.add_frame_reduced(img)
+                            elif file_type == "background":
+                                self.add_frame_background(img)
 
         else:
             raise IOError(f"ESO output directory '{eso_dir}' not found.")
 
+    def proc_3_trim_reduced(self, no_query: bool = False, **kwargs):
+        if no_query or self.query_stage(
+                "Trim reduced images?",
+                stage='3-trim_reduced'):
+            self.trim_reduced(
+                output_dir=os.path.join(self.data_path, "3-trimmed"),
+                **kwargs)
+            self.stages_complete['3-trim_reduced'] = Time.now()
+            self.update_output_file()
 
+    def trim_reduced(self, output_dir, **kwargs):
+        pass
+
+    def proc_4_divide_by_exp_time(self, no_query: bool = False, **kwargs):
+        if no_query or self.query_stage(
+                "Divide trimmed images by exposure time?",
+                stage="4-divide_by_exp_time"):
+            self.divide_by_exp_time(
+                output_dir=os.path.join(self.data_path, "4-divided_by_exp_time"),
+                **kwargs)
+            self.stages_complete['4-divide_by_exp_time'] = Time.now()
+            self.update_output_file()
+
+    def divide_by_exp_time(self, output_dir: str, **kwargs):
+
+        u.mkdir_check(output_dir)
+        u.mkdir_check(os.path.join(output_dir, "science"))
+        u.mkdir_check(os.path.join(output_dir, "backgrounds"))
+
+        for fil in self.filters:
+            fil_path_science = os.path.join(output_dir, "science", fil)
+            fil_path_back = os.path.join(output_dir, "backgrounds", fil)
+            u.mkdir_check(fil_path_science)
+            u.mkdir_check(fil_path_back)
+            for frame in self.frames_trimmed[fil]:
+                science_destination = os.path.join(
+                    output_dir,
+                    "science",
+                    fil,
+                    frame.filename.replace("trim", "norm"))
+
+                # Divide by exposure time to get an image in counts/second.
+                normed = frame.divide_by_exp_time(output_path=science_destination)
+                self.add_frame_normalised(normed)
+
+    def add_frame_background(self, background_frame: Union[image.ImagingImage, str]):
+        if isinstance(background_frame, str):
+            cls = image.ImagingImage.select_child_class(instrument=self.instrument)
+            background_frame = cls(path=background_frame, frame_type="reduced")
+        fil = background_frame.extract_filter()
+        if self.check_filter(fil=fil) and background_frame not in self.frames_esoreflex_backgrounds[fil]:
+            self.frames_esoreflex_backgrounds[fil].append(background_frame)
+
+    def add_frame_trimmed(self, trimmed_frame: image.ImagingImage):
+        if isinstance(trimmed_frame, str):
+            cls = image.ImagingImage.select_child_class(instrument=self.instrument)
+            trimmed_frame = cls(path=trimmed_frame, frame_type="reduced")
+        fil = trimmed_frame.extract_filter()
+        if self.check_filter(fil=fil) and trimmed_frame not in self.frames_trimmed[fil]:
+            self.frames_trimmed[fil].append(trimmed_frame)
+
+    def check_filter(self, fil: str):
+        not_none = super().check_filter(fil)
+        if not_none:
+            if fil not in self.frames_esoreflex_backgrounds:
+                self.frames_esoreflex_backgrounds[fil] = []
+            if fil not in self.frames_trimmed:
+                self.frames_trimmed[fil] = []
+        return not_none
+
+    def _output_dict(self):
+        output_dict = super()._output_dict()
+
+        output_dict.update({
+            "frames_trimmed": _output_img_dict_list(self.frames_trimmed),
+            "frames_esoreflex_backgrounds": _output_img_dict_list(self.frames_esoreflex_backgrounds)
+        })
+        return output_dict
+
+    def load_output_file(self, **kwargs):
+        outputs = super().load_output_file(**kwargs)
+        if type(outputs) is dict:
+            cls = image.Image.select_child_class(instrument=self.instrument, mode='imaging')
+            if "frames_trimmed" in outputs:
+                for fil in outputs["frames_trimmed"]:
+                    if outputs["frames_trimmed"][fil] is not None:
+                        for frame in outputs["frames_trimmed"][fil]:
+                            self.add_frame_trimmed(trimmed_frame=frame)
+            if "frames_esoreflex_backgrounds" in outputs:
+                for fil in outputs["frames_esoreflex_backgrounds"]:
+                    if outputs["frames_esoreflex_backgrounds"][fil] is not None:
+                        for frame in outputs["frames_esoreflex_backgrounds"][fil]:
+                            self.add_frame_background(background_frame=frame)
+
+        return outputs
 
     @classmethod
     def stages(cls):
         param_dict = super().stages()
-        param_dict.update({"0-download": None,
-                           "2-sort_after_esoreflex": None
-                           })
+        param_dict.update({
+            "0-download": None,
+            "2-sort_after_esoreflex": None,
+            "3-trim_reduced": None,
+            "4-divide_by_exp_time": None
+        })
         return param_dict
 
 
@@ -2413,6 +2668,114 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
             print("Done.")
 
         self.update_output_file()
+
+    def trim_reduced(self, output_dir, **kwargs):
+
+        u.mkdir_check(output_dir)
+        u.mkdir_check(os.path.join(output_dir, "backgrounds"))
+        u.mkdir_check(os.path.join(output_dir, "science"))
+
+        u.debug_print(self.frames_esoreflex_backgrounds)
+
+        edged = False
+
+        up_left = 0
+        up_right = 0
+        up_bottom = 0
+        up_top = 0
+
+        dn_left = 0
+        dn_right = 0
+        dn_bottom = 0
+        dn_top = 0
+
+        for fil in self.filters:
+            fil_path_back = os.path.join(output_dir, "backgrounds", fil)
+            fil_path_science = os.path.join(output_dir, "science", fil)
+            u.mkdir_check(fil_path_back)
+            u.mkdir_check(fil_path_science)
+
+            if not edged:
+                # Find borders of noise frame using backgrounds.
+                # First, make sure that the background we're using is for the top chip.
+                i = 0
+                img = self.frames_esoreflex_backgrounds[fil][i]
+                while img.extract_chip_number() != 1:
+                    u.debug_print(i, img.extract_chip_number())
+                    i += 1
+                    img = self.frames_esoreflex_backgrounds[fil][i]
+                up_left, up_right, up_bottom, up_top = ff.detect_edges(img.path)
+                # Ditto for the bottom chip.
+                i = 0
+                img = self.frames_esoreflex_backgrounds[fil][i]
+                while img.extract_chip_number() != 2:
+                    i += 1
+                    img = self.frames_esoreflex_backgrounds[fil][i]
+                dn_left, dn_right, dn_bottom, dn_top = ff.detect_edges(img.path)
+                up_left = up_left + 5
+                up_right = up_right - 5
+                up_top = up_top - 5
+                dn_left = dn_left + 5
+                dn_right = dn_right - 5
+                dn_bottom = dn_bottom + 5
+                print('Upper chip:')
+                print(up_left, up_right, up_top, up_bottom)
+                print('Lower:')
+                print(dn_left, dn_right, dn_top, dn_bottom)
+
+                edged = True
+
+            for i, frame in enumerate(self.frames_esoreflex_backgrounds[fil]):
+                new_path = os.path.join(fil_path_back,
+                                        frame.filename.replace(".fits", "_trim.fits"))
+
+                print(f'{i} {frame}')
+
+                # Split the files into upper CCD and lower CCD
+                if frame.extract_chip_number() == 1:
+                    print('Upper Chip:')
+                    frame.trim(left=up_left, right=up_right, top=up_top, bottom=up_bottom, output_path=new_path)
+                elif frame.extract_chip_number() == 2:
+                    print('Lower Chip:')
+                    frame.trim(left=dn_left, right=dn_right, top=dn_top, bottom=dn_bottom, output_path=new_path)
+                else:
+                    raise ValueError('Invalid chip ID; could not trim based on upper or lower chip.')
+
+            # Repeat for science images
+
+            for i, frame in enumerate(self.frames_reduced[fil]):
+                # Split the files into upper CCD and lower CCD
+                new_file = frame.filename.replace(".fits", "_trim.fits")
+                new_path = os.path.join(fil_path_science, new_file)
+                frame.set_header_item(
+                    key='GAIN',
+                    value=frame.extract_gain())
+                frame.set_header_item(
+                    key='SATURATE',
+                    value=65535.)
+                frame.set_header_item(
+                    key='BUNIT',
+                    value="cts"
+                )
+                if frame.extract_chip_number() == 1:
+                    print('Upper Chip:')
+                    trimmed = frame.trim(
+                        left=up_left,
+                        right=up_right,
+                        top=up_top,
+                        bottom=up_bottom,
+                        output_path=new_path)
+                    self.add_frame_trimmed(trimmed)
+
+                elif frame.extract_chip_number() == 2:
+                    print('Lower Chip:')
+                    trimmed = frame.trim(
+                        left=dn_left,
+                        right=dn_right,
+                        top=dn_top,
+                        bottom=dn_bottom,
+                        output_path=new_path)
+                    self.add_frame_trimmed(trimmed)
 
     def correct_astrometry_frames(self, output_path: str, **kwargs):
         """

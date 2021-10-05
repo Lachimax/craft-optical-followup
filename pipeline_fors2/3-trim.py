@@ -130,8 +130,8 @@ def main(origin_dir, output_dir, data_title, sextractor_path):
             new_file = file.replace(".fits", "_trim.fits")
             new_path = output_dir + "science/" + fil + "/" + new_file
             path = wdir + fil + "/" + file
-            f.change_header(file=path, name='GAIN', entry=0.8)
-            f.change_header(file=path, name='SATURATE', entry=65535.)
+            f.change_header(file=path, key='GAIN', value=0.8)
+            f.change_header(file=path, key='SATURATE', value=65535.)
             if f.get_chip_num(path) == 1:
                 print('Upper Chip:')
                 f.trim_file(path, left=up_left, right=up_right, top=up_top, bottom=up_bottom,
@@ -143,9 +143,6 @@ def main(origin_dir, output_dir, data_title, sextractor_path):
                 print('Lower Chip:')
                 f.trim_file(path, left=dn_left, right=dn_right, top=dn_top, bottom=dn_bottom,
                             new_path=new_path)
-
-        exp_time, _ = f.mean_exp_time(path=output_dir + "science/" + fil)
-        gain = 0.8
 
     try:
         copyfile(origin_dir + data_title + ".log", output_dir + data_title + ".log")

@@ -1,5 +1,6 @@
 # Code by Lachlan Marnoch, 2021
 import copy
+import math
 import string
 import os
 import shutil
@@ -282,6 +283,12 @@ class Image:
     def get_id(self):
         return self.filename[:self.filename.find(".fits")]
 
+    def set_header_item(self, key: str, value, ext: int = 0):
+        self.close()
+        value = u.dequantify(value)
+        ff.change_header(file=self.path, key=key, value=value, ext=ext)
+        self.load_headers(force=True)
+
     def _extract_header_item(self, key: str, ext: int = 0):
         self.load_headers()
         if key in self.headers[ext]:
@@ -292,12 +299,12 @@ class Image:
     def extract_header_item(self, key: str, ext: int = 0):
         # Check in the given HDU, then check all headers.
         value = self._extract_header_item(key=key, ext=ext)
-        u.debug_print("")
-        u.debug_print("INSIDE extract_header_item()")
-        u.debug_print(self.path)
-        u.debug_print(key)
-        u.debug_print(value)
-        u.debug_print("")
+        u.debug_print("", 2)
+        u.debug_print("INSIDE Image.extract_header_item()", 2)
+        u.debug_print(self.path, 2)
+        u.debug_print(key, 2)
+        u.debug_print(value, 2)
+        u.debug_print("", 2)
         if value is None:
             for ext in range(len(self.headers)):
                 value = self._extract_header_item(key=key, ext=ext)
@@ -560,6 +567,7 @@ class ImagingImage(Image):
             self.source_cat_sextractor_path = cat_path
         self.load_source_cat_sextractor(force=True)
         self.load_source_cat_sextractor_dual(force=True)
+        self.write_source_cat()
         self.update_output_file()
 
     def _load_source_cat_sextractor(self, path: str):
@@ -1115,6 +1123,11 @@ class ImagingImage(Image):
         image = self.__class__(path=output_path)
         return image
 
+    def divide_by_exp_time(self, output_path: str):
+        ff.divide_by_exp_time(file=self.path, output=output_path)
+        image = self.__class__(path=output_path)
+        return image
+
     def reproject(self, other_image: 'ImagingImage', ext: int = 0, output_path: str = None):
         import reproject as rp
         if output_path is None:
@@ -1348,6 +1361,8 @@ class ImagingImage(Image):
             return FORS2Image
         elif instrument == "gs-aoi":
             return GSAOIImage
+        elif "hubble" in instrument:
+            return HubbleImage
         else:
             raise ValueError(f"Unrecognised instrument {instrument}")
 
@@ -1558,6 +1573,30 @@ class GSAOIImage(ImagingImage):
         self.pointing = SkyCoord(ra, dec, unit=units.deg)
         return self.pointing
 
+
+class HubbleImage(ImagingImage):
+
+    def zeropoint(self):
+        """
+        Returns the AB mag zeropoint according to
+        https://hst-docs.stsci.edu/acsdhb/chapter-5-acs-data-analysis/5-1-photometry#id-5.1Photometry-5.1.1PhotometricSystems,Units,andZeropoints
+        :return:
+        """
+        photflam = self.extract_header_item("PHOTFLAM")
+        photplam = self.extract_header_item("PHOTPLAM")
+        self.zeropoint_best = {
+            "zeropoint": (-2.5 * math.log10(photflam) - 21.1 - 5 * math.log10(photplam) + 18.6921) * units.mag,
+            "zeropoint_err": 0.0 * units.mag,
+            "airmass": 0.0,
+        }
+        self.update_output_file()
+        return self.zeropoint_best
+
+    @classmethod
+    def header_keys(cls):
+        header_keys = super().header_keys()
+        header_keys.update({"gain": "CCDGAIN"})
+        return header_keys
 
 class Spectrum(Image):
     def __init__(self, path: str = None, frame_type: str = None, decker: str = None, binning: str = None,
