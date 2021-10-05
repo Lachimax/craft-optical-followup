@@ -1,5 +1,6 @@
 # Code by Lachlan Marnoch, 2021
 import copy
+import datetime
 import os
 import warnings
 from typing import Union, List
@@ -134,9 +135,13 @@ def _retrieve_eso_epoch(epoch: Union['ESOImagingEpoch', 'ESOSpectroscopyEpoch'],
 
     u.mkdir_check(path)
     instrument = epoch.instrument.split('-')[-1]
-    r = retrieve.save_eso_raw_data_and_calibs(output=path, date_obs=epoch.date,
-                                              program_id=epoch.program_id, instrument=instrument, mode=mode,
-                                              obj=epoch.target)
+    r = retrieve.save_eso_raw_data_and_calibs(
+        output=path,
+        date_obs=epoch.date,
+        program_id=epoch.program_id,
+        instrument=instrument,
+        mode=mode,
+        obj=epoch.target)
     if r:
         os.system(f"uncompress {path}/*.Z -f")
     return r
@@ -286,7 +291,7 @@ class Field:
                 if isinstance(epoch["date"], str):
                     date_string = f" {epoch['date']}"
                 else:
-                    date_string = f" {epoch['date'].to_datetime().date()}"
+                    date_string = f" {epoch['date']}"
             options[f'{epoch["name"]}\t{date_string}\t{epoch["instrument"]}'] = epoch
         for epoch in self.epochs_imaging_loaded:
             # If epoch is already instantiated.
@@ -349,7 +354,8 @@ class Field:
         else:
             survey = False
             new_params["name"] = u.user_input("Please enter a name for the epoch.")
-            new_params["date"] = u.enter_time(message="Enter UTC observation date, in iso or isot format:")
+            new_params["date"] = u.enter_time(message="Enter UTC observation date, in iso or isot format:").strftime(
+                '%Y-%m-%d')
             new_params["program_id"] = input("Enter the programmme ID for the observation:\n")
         new_params["instrument"] = instrument
         new_params["data_path"] = self._epoch_data_path(mode=mode, instrument=instrument, date=new_params["date"],
@@ -725,7 +731,7 @@ class FRBField(Field):
             param_path=param_file,
             data_path=os.path.join(config["top_data_dir"], param_dict["data_path"]),
             objs=param_dict["objects"],
-            frb = param_dict["frb"],
+            frb=param_dict["frb"],
             extent=extent
         )
 
@@ -854,8 +860,10 @@ class Epoch:
             u.mkdir_check_nested(data_path)
         self.instrument = instrument
         self.date = date
-        if type(self.date) is str:
-            self.date = Time(date, out_subfmt="date")
+        if isinstance(self.date, datetime.date):
+            self.date = str(self.date)
+        if isinstance(self.date, str):
+            self.date = Time(self.date, out_subfmt="date")
         self.program_id = program_id
         self.target = target
 
