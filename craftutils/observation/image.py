@@ -245,6 +245,9 @@ class Image:
             self.hdu_list.close()
             self.hdu_list = None
 
+    def copy(self, destination):
+        shutil.copy(self.path, destination)
+
     def load_output_file(self):
         outputs = p.load_output_file(self)
         if outputs is not None:
@@ -650,7 +653,8 @@ class ImagingImage(Image):
     def extract_filter(self):
         key = self.header_keys()["filter"]
         self.filter = self.extract_header_item(key)
-        self.filter_short = self.filter[0]
+        if self.filter is not None:
+            self.filter_short = self.filter[0]
 
         return self.filter
 
