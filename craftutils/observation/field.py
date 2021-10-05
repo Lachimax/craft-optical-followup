@@ -14,6 +14,7 @@ from astropy.coordinates import SkyCoord
 import astropy.units as units
 import astropy.table as table
 import astropy.wcs as wcs
+import astropy.io.fits as fits
 
 import craftutils.astrometry as am
 import craftutils.fits_files as ff
@@ -2198,6 +2199,7 @@ class ESOImagingEpoch(ImagingEpoch):
         super().pipeline(**kwargs)
         self.proc_0_download(**kwargs)
         self.proc_1_initial_setup(**kwargs)
+        self.proc_2_sort_after_esoreflex()
 
     def proc_0_download(self, no_query: bool = False, **kwargs):
         if no_query or self.query_stage("Download raw data from ESO archive?", stage='0-download'):
@@ -2218,10 +2220,102 @@ class ESOImagingEpoch(ImagingEpoch):
             warnings.warn("raw_dir has not been set. Retrieve could not be run.")
         return r
 
+    def proc_2_sort_after_esoreflex(self, no_query: bool = False, **kwargs):
+        if no_query or self.query_stage(
+                "Sort ESOReflex products? Requires reducing data with ESOReflex first.",
+                stage='2-sort_after_esoreflex'):
+
+            self._sort_after_esoreflex()
+            self.stages_complete['0-download'] = Time.now()
+            self.update_output_file()
+
+    def _sort_after_esoreflex(self, **kwargs):
+        if "delete_eso_output" in kwargs:
+            delete_output = kwargs["delete_eso_output"]
+        else:
+            delete_output = False
+
+        eso_dir = p.config['esoreflex_output_dir']
+        if os.path.isdir(eso_dir):
+            data_dir = self.data_path
+            destination = os.path.join(data_dir, "2-reduced/")
+            u.mkdir_check(destination)
+
+            mjd = int(self.date.mjd)
+            obj = self.target
+
+            print(f"Looking for data with object '{obj}' and MJD of observation {mjd} inside {eso_dir}")
+            # Look for files with the appropriate object and MJD, as recorded in output_values
+
+            # List directories in eso_output_dir; these are dates on which data was reduced using ESOReflex.
+            date_dirs = filter(lambda d: os.path.isdir(os.path.join(eso_dir, d)), os.listdir(eso_dir))
+            date_dirs = map(lambda d: os.path.join(eso_dir, d), date_dirs)
+            for date_dir in date_dirs:
+                # List directories within 'reduction date' directories.
+                # These should represent individual images reduced.
+
+                print(f"Searching {date_dir}")
+                eso_subdirs = filter(
+                    lambda d: os.path.isdir(os.path.join(date_dir, d)),
+                    os.listdir(date_dir))
+                for subdirectory in eso_subdirs:
+                    subpath = os.path.join(date_dir, subdirectory)
+                    print(f"\tSearching {subpath}")
+                    # Get the files within the image directory.
+                    files = filter(lambda d: os.path.isfile(os.path.join(subpath, d)),
+                                   os.listdir(subpath))
+                    for file_name in files:
+                        # Retrieve the target object name from the fits file.
+                        file_path = os.path.join(subpath, file_name)
+                        file = image.FORS2Image(file_path)
+                        file_obj = file.extract_object()
+                        file_mjd = file.extract_header_item('MJD-OBS')
+                        file_filter = file.extract_filter()
+                        # Check the object name and observation date against those of the epoch we're concerned with.
+                        if file_obj == obj and file_mjd == mjd:
+                            # Check which type of file we have.
+                            science_image = False
+                            if file_name.endswith("PHOT_BACKGROUND_SCI_IMG.fits"):
+                                file_destination = os.path.join(destination, "backgrounds")
+                                suffix = "PHOT_BACKGROUND_SCI_IMG.fits"
+                            elif file_name.endswith("OBJECT_TABLE_SCI_IMG.fits"):
+                                file_destination = os.path.join(destination, "obj_tbls")
+                                suffix = "OBJECT_TABLE_SCI_IMG.fits"
+                            elif file_name.endswith("SCIENCE_REDUCED_IMG.fits"):
+                                file_destination = os.path.join(destination, "science")
+                                suffix = "SCIENCE_REDUCED_IMG.fits"
+                                science_image = True
+                            else:
+                                file_destination = os.path.join(destination, "sources")
+                                suffix = "SOURCES_SCI_IMG.fits"
+                            # Make this directory, if it doesn't already exist.
+                            u.mkdir_check(file_destination)
+                            # Make a subdirectory by filter.
+                            file_destination = os.path.join(file_destination, file_filter)
+                            u.mkdir_check(file_destination)
+                            # Title new file.
+                            file_destination = os.path.join(
+                                file_destination,
+                                f"{self.name}_{subdirectory[:-1]}_{suffix}")
+                            # Copy file to new location.
+                            print(f"Copying: {file_path} to \n\t {file_destination}")
+                            file.copy(file_destination)
+                            if delete_output and os.path.isfile(file_destination):
+                                os.remove(file_path)
+                            if science_image:
+                                img = image.FORS2Image(file_destination)
+                                self.add_frame_reduced(img)
+
+        else:
+            raise IOError(f"ESO output directory '{eso_dir}' not found.")
+
+
+
     @classmethod
     def stages(cls):
         param_dict = super().stages()
         param_dict.update({"0-download": None,
+                           "2-sort_after_esoreflex": None
                            })
         return param_dict
 
