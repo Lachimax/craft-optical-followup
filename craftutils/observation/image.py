@@ -64,7 +64,7 @@ def fits_table(input_path: str, output_path: str = "", science_only: bool = True
     # Keep only the relevant fits files
 
     for f in files:
-        if f[-5:] == ".fits":
+        if f.endswith(".fits") and not f.startswith("M."):
             files_fits.append(f)
 
     # Create list of dictionaries to be used as the output data
@@ -259,13 +259,13 @@ class Image:
         return {"frame_type": self.frame_type,
                 }
 
-    def load_headers(self, force: bool = False):
+    def load_headers(self, force: bool = False, **kwargs):
         if self.headers is None or force:
             self.open()
             self.headers = list(map(lambda h: h.header, self.hdu_list))
             self.close()
         else:
-            print("Headers already loaded.")
+            u.debug_print("Headers already loaded.", 2)
         return self.headers
 
     def load_data(self, force: bool = False):
@@ -289,6 +289,12 @@ class Image:
     def extract_header_item(self, key: str, ext: int = 0):
         # Check in the given HDU, then check all headers.
         value = self._extract_header_item(key=key, ext=ext)
+        u.debug_print("")
+        u.debug_print("INSIDE extract_header_item()")
+        u.debug_print(self.path)
+        u.debug_print(key)
+        u.debug_print(value)
+        u.debug_print("")
         if value is None:
             for ext in range(len(self.headers)):
                 value = self._extract_header_item(key=key, ext=ext)
@@ -329,6 +335,7 @@ class Image:
     def extract_object(self):
         key = self.header_keys()["object"]
         self.object = self.extract_header_item(key)
+
         return self.object
 
     def extract_n_pix(self, ext: int = 0):
@@ -644,6 +651,7 @@ class ImagingImage(Image):
         key = self.header_keys()["filter"]
         self.filter = self.extract_header_item(key)
         self.filter_short = self.filter[0]
+
         return self.filter
 
     def extract_airmass(self):
@@ -1444,7 +1452,7 @@ class PanSTARRS1Cutout(ImagingImage):
 
 
 class FORS2Image(ImagingImage, ESOImage):
-    def __init__(self, path: str, frame_type: str = None):
+    def __init__(self, path: str, frame_type: str = None, **kwargs):
         super().__init__(path=path, frame_type=frame_type, instrument="vlt-fors2")
         self.other_chip = None
         self.chip_number = None
@@ -1475,6 +1483,17 @@ class FORS2Image(ImagingImage, ESOImage):
             chip = 2
         self.chip_number = chip
         return chip
+
+    def extract_airmass(self):
+        key = self.header_keys()["airmass"]
+        self.airmass = self.extract_header_item(key)
+
+        if self.airmass is None:
+            airmass_start = self.extract_header_item("ESO TEL AIRM START")
+            airmass_end = self.extract_header_item("ESO TEL AIRM END")
+            self.airmass = (airmass_start + airmass_end) / 2
+
+        return self.airmass
 
     def _output_dict(self):
         outputs = super()._output_dict()

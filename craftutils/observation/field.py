@@ -1476,10 +1476,12 @@ class ImagingEpoch(Epoch):
     def add_frame_raw(self, raw_frame: Union[image.ImagingImage, str]):
         if isinstance(raw_frame, str):
             cls = image.ImagingImage.select_child_class(instrument=self.instrument)
+            u.debug_print(f"{cls} {self.instrument}")
             raw_frame = cls(path=raw_frame, frame_type="raw", instrument=self.instrument)
+        self.frames_raw.append(raw_frame)
         fil = raw_frame.extract_filter()
         if self.check_filter(fil=fil):
-            self.frames_raw[fil].append(raw_frame)
+            self.frames_science[fil].append(raw_frame)
         self.sort_frame(raw_frame)
 
     def add_frame_reduced(self, reduced_frame: image.ImagingImage):
@@ -1539,7 +1541,7 @@ class ImagingEpoch(Epoch):
             if fil not in self.airmass_err:
                 self.airmass_err[fil] = None
             if fil not in self.std_pointings:
-                self.std_pointings[fil] = None
+                self.std_pointings[fil] = []
             if fil not in self.flats:
                 self.flats[fil] = []
             return True
@@ -2236,14 +2238,15 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
         self.proc_10_dual_mode_source_extraction(**kwargs)
         self.proc_11_get_photometry(**kwargs)
 
-    def proc_1_initial_setup(self, no_query: bool = False, **kwargs):
-        if super().proc_1_initial_setup(no_query, **kwargs):
-            for fil in self.filters:
-                self.pair_files(self.frames_science[fil])
+    # def proc_1_initial_setup(self, no_query: bool = False, **kwargs):
+    #     if super().proc_1_initial_setup(no_query, **kwargs):
+    #         for fil in self.filters:
+    #             self.pair_files(self.frames_science[fil])
 
     def _initial_setup(self):
         data_dir = self.data_path
-        raw_dir = epoch_stage_dirs["0-download"]
+        raw_dir = os.path.join(data_dir, epoch_stage_dirs["0-download"])
+        self.paths["raw_dir"] = raw_dir
         data_title = self.name
 
         # Write tables of fits files to main directory; firstly, science images only:
@@ -2259,7 +2262,7 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
                              output_path=data_dir + data_title + "_fits_table_detailed.csv",
                              science_only=False)
 
-        for row in tbl_full:
+        for row in tbl:
             path = os.path.join(self.paths["raw_dir"], row["identifier"])
             cls = image.ImagingImage.select_child_class(instrument=self.instrument, mode="imaging")
             img = cls(path)
@@ -2277,24 +2280,21 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
 
         # Collect and save some stats on those filters:
 
-        template = self.frames_science[0]
-        if self.target is None:
-            self.target = template.object
-        if self.date is None:
-            self.set_date(self.frames_science[0].extract_date_obs())
-
         std_dir = os.path.join(data_dir, 'standards')
+        u.mkdir_check(std_dir)
 
         for i, fil in enumerate(self.filters):
 
-            exp_times = list(map(lambda frame: frame.exposure_time, self.frames_science[fil]))
-            self.exp_time_mean[fil] = np.nanmean(exp_times)
-            self.exp_time_err[fil] = np.nanstd(exp_times)
+            exp_times = list(map(lambda frame: frame.extract_exposure_time().value, self.frames_science[fil]))
+            u.debug_print("exposure times:")
+            u.debug_print(exp_times)
+            self.exp_time_mean[fil] = np.nanmean(exp_times) * units.second
+            self.exp_time_err[fil] = np.nanstd(exp_times) * units.second
 
-            airmasses = np.array(map(lambda frame: frame.airmass, self.frames_science[fil]))
+            airmasses = list(map(lambda frame: frame.extract_airmass(), self.frames_science[fil]))
             self.airmass_mean[fil] = np.nanmean(airmasses)
-            self.airmass_err[fil] = max(np.nanmax(airmasses) - self.airmass_mean,
-                                        self.airmass_mean - np.nanmin(airmasses))
+            self.airmass_err[fil] = max(np.nanmax(airmasses) - self.airmass_mean[fil],
+                                        self.airmass_mean[fil] - np.nanmin(airmasses))
 
             std_filter_dir = os.path.join(std_dir, fil)
             self.set_path(f"standard_dir_{fil}", std_filter_dir)
@@ -2302,14 +2302,21 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
             print(f'Copying {fil} calibration data to standard folder...')
 
             # Sort the STD files by filter, and within that by pointing.
-            for j, pointing in enumerate(self.std_pointings):
+            for j, pointing in enumerate(self.std_pointings[fil]):
                 pointing_dir = os.path.join(std_filter_dir, f"RA{pointing.ra.value}_DEC{pointing.dec.value}")
+                u.mkdir_check(pointing_dir)
+                pointing_dir = os.path.join(pointing_dir, "0-data_with_raw_calibs")
                 u.mkdir_check(pointing_dir)
                 for std in self.frames_standard[fil]:
                     path_dest = os.path.join(pointing_dir, std.filename)
                     shutil.move(std.path, path_dest)
                     std.path = path_dest
                     std.update_output_file()
+
+        for file in os.listdir(raw_dir):
+            print("Copying to ESOReflex input directory...")
+            shutil.copy(os.path.join(raw_dir, file), config["esoreflex_input_dir"])
+            print("Done.")
 
         self.update_output_file()
 
