@@ -151,7 +151,7 @@ def save_svo_filter(facility_name: str, instrument_name: str, filter_name: str, 
         with open(output, "wb") as file:
             file.write(response)
     else:
-        print('No data retrieved from SkyMapper.')
+        print('No data retrieved from SVO.')
     return response
 
 
@@ -729,7 +729,7 @@ def save_delve_photometry(ra: float, dec: float, output: str, radius: units.Quan
         with open(output, "wb") as file:
             file.write(response)
     else:
-        print('No data retrieved from SkyMapper.')
+        print('No data retrieved from DELVE.')
     return response
 
 
