@@ -20,9 +20,9 @@ from astropy.time import Time
 debug_level = 0
 
 
-def debug_print(statement: str, level: int = 1):
+def debug_print(level: int = 1, *args):
     if debug_level >= level:
-        print(statement)
+        print(*args)
 
 
 def path_or_table(tbl: Union[str, table.QTable, table.Table], load_qtable: bool = True, fmt: str = "ascii.ecsv"):

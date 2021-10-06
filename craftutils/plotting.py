@@ -279,7 +279,7 @@ def plot_galaxy(fig: plt.Figure, data_title: str, instrument: str, f: str, ra: f
                 line_width=1.):
     instrument = instrument.lower()
     instruments = {'fors2': 'FORS2', 'imacs': 'IMACS', 'xshooter': 'X-shooter', 'gmos': 'GMOS',
-                   'hubble': 'Hubble Space Telescope'}
+                   'hst': 'Hubble Space Telescope'}
 
     if instrument == 'imacs':
         f_0 = f

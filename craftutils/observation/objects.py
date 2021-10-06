@@ -1,12 +1,15 @@
 from typing import Union, Tuple
 import os
 
+import matplotlib.figure
+import matplotlib.pyplot as plt
 import numpy as np
 
 from astropy.coordinates import SkyCoord
 import astropy.units as units
 import astropy.table as table
 import astropy.cosmology as cosmo
+from astropy.visualization import quantity_support
 
 ne2001_installed = True
 try:
@@ -26,6 +29,9 @@ except ImportError:
 import craftutils.params as p
 import craftutils.astrometry as a
 import craftutils.utils as u
+import craftutils.observation.instrument as inst
+
+quantity_support()
 
 position_dictionary = {"ra": {"decimal": 0.0,
                               "hms": "00h00m00s"},
@@ -207,6 +213,66 @@ class Object:
     def update_output_file(self):
         if self.check_data_path():
             p.update_output_file(self)
+
+    def plot_photometry(self, ax=None, **kwargs):
+        if ax is None:
+            fig, ax = plt.subplots()
+        if "ls" not in kwargs:
+            kwargs["ls"] = ""
+        if "marker" not in kwargs:
+            kwargs["marker"] = "x"
+        if "ecolor" not in kwargs:
+            kwargs["ecolor"] = "black"
+
+        with quantity_support():
+            for instrument_name in self.photometry:
+                instrument = inst.Instrument.from_params(instrument_name)
+                lambda_eff = units.Quantity(list(map(
+                    lambda f: instrument.filters[f].lambda_eff,
+                    self.photometry[instrument_name]
+                ))).to(units.Angstrom)
+                mag = units.Quantity(list(map(
+                    lambda f: self.photometry[instrument_name][f]["mag"],
+                    self.photometry[instrument_name]
+                )))
+                mag_err = units.Quantity(list(map(
+                    lambda f: self.photometry[instrument_name][f]["mag_err"],
+                    self.photometry[instrument_name]
+                )))
+
+                ax.errorbar(
+                    lambda_eff,
+                    mag,
+                    yerr=mag_err,
+                    label=instrument_name,
+                    **kwargs
+                )
+                ax.set_ylabel("Apparent magnitude")
+                ax.set_xlabel("$\lambda_\mathrm{eff}$ (\AA)")
+            ax.invert_yaxis()
+        return ax
+
+    def photometry_to_table(self, output: str = None):
+        """
+        Converts the photometry information, which is stored internally as a dictionary, into an astropy QTable.
+        :param output: Where to write table.
+        :return:
+        """
+        tbls = []
+        for instrument_name in self.photometry:
+            instrument = inst.Instrument.from_params(instrument_name)
+            for filter_name in self.photometry[instrument_name]:
+                phot_dict = self.photometry[instrument_name][filter_name].copy()
+                phot_dict["band"] = filter_name
+                phot_dict["instrument"] = instrument_name
+                phot_dict["lambda_eff"] = instrument.filters[filter_name].lambda_eff
+                tbl = table.QTable([phot_dict])
+                tbls.append(tbl)
+        tbl = table.vstack(tbls)
+
+        if output is not None:
+            tbl.write(output, format="csv")
+        return tbl
 
     @classmethod
     def default_params(cls):

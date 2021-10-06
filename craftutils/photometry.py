@@ -322,6 +322,10 @@ def magnitude_complete(flux: units.Quantity,
     if airmass is None:
         airmass = 0.0
 
+    u.debug_print(1, "INSIDE magnitude_complete()")
+    u.debug_print(1, "EXP_TIME", exp_time)
+    u.debug_print(1, "ZEROPOINT", zeropoint)
+
     mag_inst, mag_error = magnitude_uncertainty(flux=flux, flux_err=flux_err,
                                                 exp_time=exp_time, exp_time_err=exp_time_err)
     magnitude = mag_inst + zeropoint - ext * airmass - colour_term * colour

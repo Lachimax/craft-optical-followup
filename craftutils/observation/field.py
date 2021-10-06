@@ -1356,22 +1356,27 @@ class ImagingEpoch(Epoch):
                 print("FILTER:", fil)
                 print(f"MAG_AUTO = {nearest['MAG_AUTO_ZP_best']} +/- {err}")
                 print(f"A = {nearest['A_WORLD'].to(units.arcsec)}; B = {nearest['B_WORLD'].to(units.arcsec)}")
-                img.plot_source_extractor_object(nearest, output=os.path.join(fil_output_path, f"{obj.name}.png"),
-                                                 show=False,
-                                                 title=f"{obj.name}, {fil}-band, {nearest['MAG_AUTO_ZP_best'].round(3).value} ± {err.round(3)}")
+                img.plot_source_extractor_object(
+                    nearest,
+                    output=os.path.join(fil_output_path, f"{obj.name}.png"),
+                    show=False,
+                    title=f"{obj.name}, {fil}-band, {nearest['MAG_AUTO_ZP_best'].round(3).value} ± {err.round(3)}")
                 obj.cat_row = nearest
                 print()
-                obj.photometry[f"{fil}_{self.instrument}"] = {"mag": nearest['MAG_AUTO_ZP_best'],
-                                                              "mag_err": err,
-                                                              "a": nearest['A_WORLD'],
-                                                              "b": nearest['B_WORLD'],
-                                                              "ra": nearest['ALPHA_SKY'],
-                                                              "ra_err": np.sqrt(nearest["ERRX2_WORLD"]),
-                                                              "dec": nearest['DELTA_SKY'],
-                                                              "dec_err": np.sqrt(nearest["ERRY2_WORLD"]),
-                                                              "kron_radius": nearest["KRON_RADIUS"]}
+                if self.instrument not in obj.photometry:
+                    obj.photometry[self.instrument] = {}
+                obj.photometry[self.instrument][fil] = {
+                    "mag": nearest['MAG_AUTO_ZP_best'],
+                    "mag_err": err,
+                    "a": nearest['A_WORLD'],
+                    "b": nearest['B_WORLD'],
+                    "ra": nearest['ALPHA_SKY'],
+                    "ra_err": np.sqrt(nearest["ERRX2_WORLD"]),
+                    "dec": nearest['DELTA_SKY'],
+                    "dec_err": np.sqrt(nearest["ERRY2_WORLD"]),
+                    "kron_radius": nearest["KRON_RADIUS"]}
                 obj.update_output_file()
-            tbl = table.hstack(rows)
+            tbl = table.vstack(rows)
             tbl.write(os.path.join(fil_output_path, f"{self.field.name}_{self.name}_{fil}.ecsv"),
                       format="ascii.ecsv")
 
@@ -1481,7 +1486,7 @@ class ImagingEpoch(Epoch):
     def add_frame_raw(self, raw_frame: Union[image.ImagingImage, str]):
         if isinstance(raw_frame, str):
             cls = image.ImagingImage.select_child_class(instrument=self.instrument)
-            u.debug_print(f"{cls} {self.instrument}")
+            u.debug_print(1, f"{cls} {self.instrument}")
             raw_frame = cls(path=raw_frame, frame_type="raw", instrument=self.instrument)
         self.frames_raw.append(raw_frame)
         fil = raw_frame.extract_filter()
@@ -1642,7 +1647,7 @@ class ImagingEpoch(Epoch):
             field = param_dict["field"]
 
         sub_cls = cls.select_child_class(instrument=instrument)
-        u.debug_print(sub_cls)
+        u.debug_print(1, sub_cls)
         if sub_cls is ImagingEpoch:
             return cls(name=name,
                        field=field,
@@ -1697,7 +1702,7 @@ class ImagingEpoch(Epoch):
             return PanSTARRS1ImagingEpoch
         if instrument == "gs-aoi":
             return GSAOIImagingEpoch
-        if instrument in ["hubble-wfc3_ir", "hubble-wfc3_uvis2"]:
+        if instrument in ["hst-wfc3_ir", "hst-wfc3_uvis2"]:
             return HubbleImagingEpoch
         elif instrument in instruments_imaging:
             return ImagingEpoch
@@ -2457,8 +2462,8 @@ class ESOImagingEpoch(ImagingEpoch):
                             if delete_output and os.path.isfile(file_destination):
                                 os.remove(file_path)
                             img = image.FORS2Image(file_destination)
-                            u.debug_print("FILE_TYPE:")
-                            u.debug_print(file_type)
+                            u.debug_print(1, "FILE_TYPE:")
+                            u.debug_print(1, file_type)
                             if file_type == "science":
                                 self.add_frame_reduced(img)
                             elif file_type == "background":
@@ -2635,8 +2640,8 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
         for i, fil in enumerate(self.filters):
 
             exp_times = list(map(lambda frame: frame.extract_exposure_time().value, self.frames_science[fil]))
-            u.debug_print("exposure times:")
-            u.debug_print(exp_times)
+            u.debug_print(1, "exposure times:")
+            u.debug_print(1, exp_times)
             self.exp_time_mean[fil] = np.nanmean(exp_times) * units.second
             self.exp_time_err[fil] = np.nanstd(exp_times) * units.second
 
@@ -2675,7 +2680,7 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
         u.mkdir_check(os.path.join(output_dir, "backgrounds"))
         u.mkdir_check(os.path.join(output_dir, "science"))
 
-        u.debug_print(self.frames_esoreflex_backgrounds)
+        u.debug_print(1, self.frames_esoreflex_backgrounds)
 
         edged = False
 
@@ -2701,7 +2706,7 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
                 i = 0
                 img = self.frames_esoreflex_backgrounds[fil][i]
                 while img.extract_chip_number() != 1:
-                    u.debug_print(i, img.extract_chip_number())
+                    u.debug_print(1, i, img.extract_chip_number())
                     i += 1
                     img = self.frames_esoreflex_backgrounds[fil][i]
                 up_left, up_right, up_bottom, up_top = ff.detect_edges(img.path)

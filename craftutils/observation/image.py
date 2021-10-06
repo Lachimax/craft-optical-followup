@@ -269,7 +269,7 @@ class Image:
             self.headers = list(map(lambda h: h.header, self.hdu_list))
             self.close()
         else:
-            u.debug_print("Headers already loaded.", 2)
+            u.debug_print(2, "Headers already loaded.")
         return self.headers
 
     def load_data(self, force: bool = False):
@@ -299,12 +299,12 @@ class Image:
     def extract_header_item(self, key: str, ext: int = 0):
         # Check in the given HDU, then check all headers.
         value = self._extract_header_item(key=key, ext=ext)
-        u.debug_print("", 2)
-        u.debug_print("INSIDE Image.extract_header_item()", 2)
-        u.debug_print(self.path, 2)
-        u.debug_print(key, 2)
-        u.debug_print(value, 2)
-        u.debug_print("", 2)
+        u.debug_print(2, "")
+        u.debug_print(2, "INSIDE Image.extract_header_item()")
+        u.debug_print(2, self.path)
+        u.debug_print(2, key)
+        u.debug_print(2, value)
+        u.debug_print(2, "")
         if value is None:
             for ext in range(len(self.headers)):
                 value = self._extract_header_item(key=key, ext=ext)
@@ -541,7 +541,7 @@ class ImagingImage(Image):
         """
         Uses a PSFEx-generated PSF model in conjunction with Source Extractor to generate a source catalog. The key
         difference with source_extraction is that source_extraction uses only Source Extractor, and does not therefore
-        use PSF-fitting (ie, no MAG_PSF or FLUX_PSF columns are written).
+        use PSF-fitting (ie, no CLASS_STAR, MAG_PSF or FLUX_PSF columns are written).
         :param output_dir: The directory in which to write the PSFEx and Source Extractor output files.
         :param template: The path to the file to use as template, if dual mode is to be used.
         :param force: If True, performs all functions regardless of whether source_catalogues already exist, and
@@ -679,7 +679,7 @@ class ImagingImage(Image):
             self.close()
             return self.pixel_scale_ra, self.pixel_scale_dec
         else:
-            warnings.warn("Pixel scale already set.")
+            u.debug_print(2, "Pixel scale already set.")
 
     def extract_filter(self):
         key = self.header_keys()["filter"]
@@ -731,11 +731,12 @@ class ImagingImage(Image):
             "source_cat_dual_path": self.source_cat_dual_path,
             "fwhm_pix_psfex": self.fwhm_pix_psfex,
             "fwhm_psfex": self.fwhm_psfex,
+            "psfex_succesful": self.psfex_successful,
             "zeropoints": self.zeropoints,
             "zeropoint_output_paths": self.zeropoint_output_paths,
             "zeropoint_best": self.zeropoint_best,
             "depth": self.depth,
-            "dual_mode_template": self.dual_mode_template
+            "dual_mode_template": self.dual_mode_template,
         })
         return outputs
 
@@ -880,7 +881,7 @@ class ImagingImage(Image):
         self.source_cat["KRON_AREA_IMAGE"] = self.source_cat["A_IMAGE"] * self.source_cat["B_IMAGE"] * np.pi
 
     def calibrate_magnitudes(self, zeropoint_name: str, force: bool = False, dual: bool = False):
-        self.load_source_cat()
+        self.load_source_cat(force=True)
         if dual:
             cat = self.source_cat_dual
         else:
@@ -1324,12 +1325,15 @@ class ImagingImage(Image):
                                      show: bool = False, title: str = None):
 
         self.extract_pixel_scale()
+        self.load_headers()
         self.open()
         kron_a = row['KRON_RADIUS'] * row['A_WORLD']
         kron_b = row['KRON_RADIUS'] * row['B_WORLD']
         pix_scale = self.pixel_scale_dec
         kron_theta = row['THETA_WORLD']
-        kron_theta = -kron_theta + ff.get_rotation_angle(header=self.headers[ext], astropy_units=True)
+        kron_theta = -kron_theta + ff.get_rotation_angle(
+            header=self.headers[ext],
+            astropy_units=True)
         this_frame = max(kron_a.to(units.pixel, pix_scale) * np.cos(kron_theta) + 10 * units.pix,
                          kron_a.to(units.pixel, pix_scale) * np.sin(kron_theta) + 10 * units.pix,
                          frame)
@@ -1386,7 +1390,7 @@ class ImagingImage(Image):
             return FORS2Image
         elif instrument == "gs-aoi":
             return GSAOIImage
-        elif "hubble" in instrument:
+        elif "hst" in instrument:
             return HubbleImage
         else:
             raise ValueError(f"Unrecognised instrument {instrument}")
@@ -1601,6 +1605,10 @@ class GSAOIImage(ImagingImage):
 
 class HubbleImage(ImagingImage):
 
+    def extract_exposure_time(self):
+        self.exposure_time = 1.0 * units.second
+        return self.exposure_time
+
     def zeropoint(self):
         """
         Returns the AB magnitude zeropoint of the image, according to
@@ -1622,6 +1630,7 @@ class HubbleImage(ImagingImage):
         header_keys = super().header_keys()
         header_keys.update({"gain": "CCDGAIN"})
         return header_keys
+
 
 class Spectrum(Image):
     def __init__(self, path: str = None, frame_type: str = None, decker: str = None, binning: str = None,
