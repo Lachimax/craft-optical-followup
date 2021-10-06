@@ -757,6 +757,14 @@ def path_to_config_sextractor_config_pre_psfex():
     return os.path.join(path_to_config_psfex(), "pre-psfex.sex")
 
 
+def path_to_config_sextractor_failed_psfex_config():
+    return os.path.join(path_to_source_extractor(), "failed-psf-fit.sex")
+
+
+def path_to_config_sextractor_failed_psfex_param():
+    return os.path.join(path_to_source_extractor(), "failed-psf-fit.param")
+
+
 def path_to_config_sextractor_config():
     return os.path.join(path_to_config_psfex(), "psf-fit.sex")
 
@@ -771,6 +779,9 @@ def path_to_config_sextractor_param():
 
 def path_to_config_psfex():
     return os.path.join(project_path, "param", "psfex")
+
+def path_to_source_extractor():
+    return os.path.join(project_path, "param", "sextractor")
 
 
 def params_init(param_file: Union[str, dict]):

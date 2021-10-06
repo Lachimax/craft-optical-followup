@@ -443,6 +443,7 @@ class ImagingImage(Image):
 
         self.psfex_path = None
         self.psfex_output = None
+        self.psfex_successful = None
         self.source_cat_sextractor_path = None
         self.source_cat_sextractor_dual_path = None
         self.source_cat_path = None
@@ -567,6 +568,28 @@ class ImagingImage(Image):
             self.source_cat_sextractor_path = cat_path
         self.load_source_cat_sextractor(force=True)
         self.load_source_cat_sextractor_dual(force=True)
+        if len(self.source_cat) == 0:
+            print()
+            print("PSF source extraction was unsuccessful, probably due to lack of viable sources. Trying again without"
+                  " PSFEx.")
+            print()
+            self.psfex_successful = False
+            cat_path = self.source_extraction(
+                configuration_file=p.path_to_config_sextractor_failed_psfex_config(),
+                output_dir=output_dir,
+                parameters_file=p.path_to_config_sextractor_failed_psfex_param(),
+                catalog_name=f"{self.name}.cat",
+                template=template,
+                **configs
+            )
+            if template is not None:
+                self.source_cat_sextractor_dual_path = cat_path
+            else:
+                self.source_cat_sextractor_path = cat_path
+            self.load_source_cat_sextractor(force=True)
+            self.load_source_cat_sextractor_dual(force=True)
+        else:
+            self.psfex_successful = True
         self.write_source_cat()
         self.update_output_file()
 
@@ -739,6 +762,8 @@ class ImagingImage(Image):
                 self.fwhm_psfex = outputs["fwhm_psfex"]
             if "fwhm_psfex" in outputs:
                 self.fwhm_pix_psfex = outputs["fwhm_pix_psfex"]
+            if "psfex_successful" in outputs:
+                self.psfex_successful = outputs["psfex_successful"]
             if "zeropoints" in outputs:
                 self.zeropoints = outputs["zeropoints"]
             if "zeropoint_output_paths" in outputs:
@@ -1578,14 +1603,14 @@ class HubbleImage(ImagingImage):
 
     def zeropoint(self):
         """
-        Returns the AB mag zeropoint according to
-        https://hst-docs.stsci.edu/acsdhb/chapter-5-acs-data-analysis/5-1-photometry#id-5.1Photometry-5.1.1PhotometricSystems,Units,andZeropoints
+        Returns the AB magnitude zeropoint of the image, according to
+        https://www.stsci.edu/hst/instrumentation/acs/data-analysis/zeropoints
         :return:
         """
         photflam = self.extract_header_item("PHOTFLAM")
         photplam = self.extract_header_item("PHOTPLAM")
         self.zeropoint_best = {
-            "zeropoint": (-2.5 * math.log10(photflam) - 21.1 - 5 * math.log10(photplam) + 18.6921) * units.mag,
+            "zeropoint": (-2.5 * math.log10(photflam) - 5 * math.log10(photplam) - 2.408) * units.mag,
             "zeropoint_err": 0.0 * units.mag,
             "airmass": 0.0,
         }
