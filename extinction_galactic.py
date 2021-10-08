@@ -18,8 +18,6 @@ def main(obj: str):
     print("\nExecuting Python script extinction_galactic.py, with:")
     print(f"\tobj {obj}")
 
-    # TODO: Scriptify
-
     lambda_eff_interp = p.instrument_filters_single_param(param="lambda_eff", instrument='FORS2', sort_value=True)
     filters_interp = list(lambda_eff_interp.keys())
     lambda_eff_interp = list(lambda_eff_interp.values())

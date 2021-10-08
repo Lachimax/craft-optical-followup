@@ -31,6 +31,11 @@ import craftutils.astrometry as a
 import craftutils.utils as u
 import craftutils.observation.instrument as inst
 
+try:
+    cosmology = cosmo.Planck18
+except AttributeError:
+    cosmology = cosmo.Planck15
+
 quantity_support()
 
 position_dictionary = {"ra": {"decimal": 0.0,
@@ -354,7 +359,8 @@ class Galaxy(Object):
             position: Union[SkyCoord, str] = None,
             position_err: Union[float, units.Quantity, dict, PositionUncertainty, tuple] = 0.0 * units.arcsec,
             z: float = 0.0,
-            field=None
+            field=None,
+            **kwargs
     ):
         super().__init__(
             name=name,
@@ -364,12 +370,16 @@ class Galaxy(Object):
         self.z = z
         self.D_A = self.angular_size_distance()
 
-    def angular_size_distance(self, cosmology: cosmo.core.FlatLambdaCDM = None):
-        if cosmology is None:
-            try:
-                cosmology = cosmo.Planck18
-            except AttributeError:
-                cosmology = cosmo.Planck15
+        if "mass" in kwargs:
+            self.mass = kwargs["mass"]
+        else:
+            self.mass = None
+        if "mass_stellar" in kwargs:
+            self.mass_stellar = kwargs["mass_stellar"]
+        else:
+            self.mass_stellar = None
+
+    def angular_size_distance(self):
         return cosmology.angular_diameter_distance(z=self.z)
 
     def projected_distance(self, angle: units.Quantity):
@@ -387,16 +397,17 @@ class Galaxy(Object):
 
     @classmethod
     def from_dict(cls, dictionary: dict, field=None):
-        ra, dec = p.select_coords(dictionary["position"])
+        ra, dec = p.select_coords(dictionary.pop("position"))
         if "position_err" in dictionary:
-            position_err = dictionary["position_err"]
+            position_err = dictionary.pop("position_err")
         else:
             position_err = PositionUncertainty.default_params()
-        return cls(name=dictionary["name"],
+        return cls(name=dictionary.pop("name"),
                    position=f"{ra} {dec}",
                    position_err=position_err,
-                   z=dictionary['z'],
-                   field=field)
+                   z=dictionary.pop("z"),
+                   field=field,
+                   **dictionary)
 
 
 dm_units = units.parsec * units.cm ** -3
@@ -412,10 +423,11 @@ class FRB(Object):
             dm: Union[float, units.Quantity] = None,
             field=None
     ):
-        super().__init__(name=name,
-                         position=position,
-                         position_err=position_err,
-                         field=field)
+        super().__init__(
+            name=name,
+            position=position,
+            position_err=position_err,
+            field=field)
         self.host_galaxy = host_galaxy
         self.dm = dm
         if self.dm is not None:
