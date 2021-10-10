@@ -369,6 +369,8 @@ class Galaxy(Object):
             field=field)
         self.z = z
         self.D_A = self.angular_size_distance()
+        self.D_L = self.luminosity_distance()
+        self.mu = self.distance_modulus()
 
         if "mass" in kwargs:
             self.mass = kwargs["mass"]
@@ -381,6 +383,36 @@ class Galaxy(Object):
 
     def angular_size_distance(self):
         return cosmology.angular_diameter_distance(z=self.z)
+
+    def luminosity_distance(self):
+        return cosmology.luminosity_distance(z=self.z)
+
+    def distance_modulus(self):
+        d = self.luminosity_distance()
+        mu = (5 * np.log10(d / units.pc) - 5) * units.mag
+        return mu
+
+    def absolute_magnitude(
+            self,
+            apparent_magnitude: units.Quantity,
+            internal_extinction: units.Quantity = 0 * units.mag,
+            galactic_extinction: units.Quantity = 0 * units.mag
+    ):
+        mu = self.distance_modulus()
+        return apparent_magnitude - mu - internal_extinction - galactic_extinction
+
+    def absolute_photometry(self, internal_extinction: units.Quantity = 0.0 * units.mag):
+        for instrument in self.photometry:
+            for fil in self.photometry[instrument]:
+                abs_mag = self.absolute_magnitude(
+                    apparent_magnitude=self.photometry[instrument][fil]["mag"],
+                    internal_extinction=internal_extinction
+                )
+                self.photometry[instrument][fil]["abs_mag"] = abs_mag
+        self.update_output_file()
+
+
+
 
     def projected_distance(self, angle: units.Quantity):
         angle = angle.to(units.rad).value

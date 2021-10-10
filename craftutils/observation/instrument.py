@@ -90,6 +90,7 @@ class Instrument:
     @classmethod
     def from_params(cls, instrument_name: str):
         path = cls._build_param_path(instrument_name=instrument_name)
+        u.debug_print(1, instrument_name, path)
         return cls.from_file(param_file=path)
 
     @classmethod
