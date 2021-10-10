@@ -20,6 +20,7 @@ import craftutils.astrometry as am
 import craftutils.fits_files as ff
 import craftutils.observation.objects as objects
 import craftutils.observation.image as image
+import craftutils.observation.instrument as inst
 import craftutils.params as p
 import craftutils.plotting as pl
 import craftutils.retrieve as retrieve
@@ -135,7 +136,7 @@ def _retrieve_eso_epoch(epoch: Union['ESOImagingEpoch', 'ESOSpectroscopyEpoch'],
             epoch.set_target(obj)
 
     u.mkdir_check(path)
-    instrument = epoch.instrument.split('-')[-1]
+    instrument = epoch.instrument_name.split('-')[-1]
     r = retrieve.save_eso_raw_data_and_calibs(
         output=path,
         date_obs=epoch.date,
@@ -297,7 +298,7 @@ class Field:
         for epoch in self.epochs_imaging_loaded:
             # If epoch is already instantiated.
             epoch = self.epochs_spectroscopy_loaded[epoch]
-            options[f'*{epoch.name}\t{epoch.date.isot}\t{epoch.instrument}'] = epoch
+            options[f'*{epoch.name}\t{epoch.date.isot}\t{epoch.instrument_name}'] = epoch
         options["New epoch"] = "new"
         j, epoch = u.select_option(message="Select epoch.", options=options, sort=True)
         if epoch == "new":
@@ -317,7 +318,7 @@ class Field:
             options[f"{epoch['name']}\t{epoch['date'].to_datetime().date()}\t{epoch['instrument']}"] = epoch
         for epoch in self.epochs_spectroscopy_loaded:
             epoch = self.epochs_spectroscopy_loaded[epoch]
-            options[f'*{epoch.name}\t{epoch.date.isot}\t{epoch.instrument}'] = epoch
+            options[f'*{epoch.name}\t{epoch.date.isot}\t{epoch.instrument_name}'] = epoch
         options["New epoch"] = "new"
         j, epoch = u.select_option(message="Select epoch.", options=options)
         if epoch == "new":
@@ -862,7 +863,12 @@ class Epoch:
         self.data_path = data_path
         if data_path is not None:
             u.mkdir_check_nested(data_path)
-        self.instrument = instrument
+        self.instrument_name = instrument
+        try:
+            self.instrument = inst.Instrument.from_params(instrument_name=instrument)
+        except FileNotFoundError:
+            self.instrument = None
+
         self.date = date
         if isinstance(self.date, datetime.date):
             self.date = str(self.date)
@@ -909,7 +915,7 @@ class Epoch:
             raise ValueError(f"data_path has not been set for {self}")
         self.do = _check_do_list(self.do)
 
-    def proc_1_initial_setup(self, no_query: bool = False, **kwargs):
+    def proc_initial_setup(self, no_query: bool = False, **kwargs):
         if no_query or self.query_stage("Do initial setup of files?", stage='1-initial_setup'):
             self._initial_setup()
             self.stages_complete['1-initial_setup'] = Time.now()
@@ -1105,7 +1111,8 @@ class ImagingEpoch(Epoch):
                  program_id: str = None,
                  target: str = None,
                  source_extractor_config: dict = None,
-                 standard_epochs: list = None):
+                 standard_epochs: list = None,
+                 **kwargs):
         super().__init__(name=name, field=field, param_path=param_path, data_path=data_path, instrument=instrument,
                          date=date, program_id=program_id, target=target)
         self.guess_data_path()
@@ -1128,17 +1135,27 @@ class ImagingEpoch(Epoch):
         self.frames_reduced = {}
         self.frames_normalised = {}
         self.frames_astrometry = {}
+        self.astrometry_successful = {}
 
         self.std_pointings = {}
         self.std_objects = {}
 
         self.coadded_trimmed = {}
 
+        self.astrometry_params = {}
+        if "astrometry" in kwargs:
+            self.astrometry_params = kwargs["astrometry"]
+        self.coadd_params = {}
+        if "coadd" in kwargs:
+            self.coadd_params = kwargs["coadd"]
+
+        u.debug_print(1, self.astrometry_params)
+
         # self.load_output_file(mode="imaging")
 
     # TODO: Make output_path keyword standard across all proc methods
 
-    def proc_5_correct_astrometry_frames(self, no_query: bool = False, **kwargs):
+    def proc_correct_astrometry_frames(self, no_query: bool = False, **kwargs):
         if no_query or self.query_stage(stage="5-correct_astrometry_frames",
                                         message="Correct astrometry of individual frames?"):
             self.generate_gaia_astrometry_indices()
@@ -1150,25 +1167,27 @@ class ImagingEpoch(Epoch):
                 astrometry_path = os.path.join(self.data_path, "5-astrometry_frames")
             u.mkdir_check(astrometry_path)
 
+            self.frames_astrometry = {}
+
             self.correct_astrometry_frames(output_path=astrometry_path, **kwargs)
 
             self.paths['astrometry_dir'] = astrometry_path
             self.stages_complete["5-correct_astrometry_frames"] = Time.now()
             self.update_output_file()
 
-    def proc_6_coadd(self, no_query: bool = False, **kwargs):
+    def proc_coadd(self, no_query: bool = False, **kwargs):
         if no_query or self.query_stage(stage="6-coadd",
                                         message="Coadd astrometry-corrected frames with Montage?"):
             if "output_path" in kwargs:
                 coadd_path = kwargs["output_path"]
             else:
                 coadd_path = os.path.join(self.data_path, "6-coadded_with_montage")
-            self.coadd(coadd_path)
+            self.coadd(coadd_path, **self.coadd_params)
             self.paths['coadd_dir'] = coadd_path
             self.stages_complete["6-coadd"] = Time.now()
             self.update_output_file()
 
-    def proc_7_trim_coadded(self, no_query: bool = False, **kwargs):
+    def proc_trim_coadded(self, no_query: bool = False, **kwargs):
         if no_query or self.query_stage(stage="7-trim_coadded",
                                         message="Trim / reproject coadded images to same footprint?"):
             trimmed_path = os.path.join(self.data_path, "7-trimmed_again")
@@ -1177,7 +1196,7 @@ class ImagingEpoch(Epoch):
             self.stages_complete["7-trim_coadded"] = Time.now()
             self.update_output_file()
 
-    def proc_8_source_extraction(self, no_query: bool = False, **kwargs):
+    def proc_source_extraction(self, no_query: bool = False, **kwargs):
         if no_query or self.query_stage("Do source extraction?", stage='8-source_extraction'):
             source_extraction_path = os.path.join(self.data_path, "8-source_extraction")
             u.mkdir_check(source_extraction_path)
@@ -1190,7 +1209,7 @@ class ImagingEpoch(Epoch):
             self.stages_complete['8-source_extraction'] = Time.now()
             self.update_output_file()
 
-    def proc_9_photometric_calibration(self, no_query: bool = False, **kwargs):
+    def proc_photometric_calibration(self, no_query: bool = False, **kwargs):
         if no_query or self.query_stage("Do photometric calibration?", stage="9-photometric_calibration"):
             calib_dir = os.path.join(self.data_path, "9-photometric_calibration")
             self.photometric_calibration(calib_dir, **kwargs)
@@ -1198,7 +1217,7 @@ class ImagingEpoch(Epoch):
             self.stages_complete["9-photometric_calibration"] = Time.now()
             self.update_output_file()
 
-    def proc_10_dual_mode_source_extraction(self, no_query: bool = False, **kwargs):
+    def proc_dual_mode_source_extraction(self, no_query: bool = False, **kwargs):
         if no_query or self.query_stage("Do source extraction in dual-mode, using deepest image as footprint?",
                                         stage="10-dual_mode_source_extraction"):
             source_extraction_path = os.path.join(self.data_path, "10-dual_mode_source_extraction")
@@ -1206,20 +1225,24 @@ class ImagingEpoch(Epoch):
             self.stages_complete["10-dual_mode_source_extraction"] = Time.now()
             self.update_output_file()
 
-    def proc_11_get_photometry(self, no_query: bool = False, **kwargs):
+    def proc_get_photometry(self, no_query: bool = False, **kwargs):
         if no_query or self.query_stage("Get photometry?", stage="11-get_photometry"):
             object_property_path = os.path.join(self.data_path, "11-object_properties")
             self.get_photometry(object_property_path)
             self.stages_complete["11-object_properties"] = Time.now()
             self.update_output_file()
 
-    def correct_astrometry_frames(self, output_path: str):
+    def correct_astrometry_frames(self, output_path: str, **kwargs):
         self.frames_astrometry = {}
         for fil in self.frames_reduced:
             astrometry_fil_path = os.path.join(output_path, fil)
             for frame in self.frames_reduced[fil]:
-                new_frame = frame.correct_astrometry(output_dir=astrometry_fil_path)
-                self.add_frame_astrometry(new_frame)
+                new_frame = frame.correct_astrometry(output_dir=astrometry_fil_path, **self.astrometry_params)
+                if new_frame is not None:
+                    self.add_frame_astrometry(new_frame)
+                    self.astrometry_successful[frame.name] = True
+                else:
+                    self.astrometry_successful[frame.name] = False
 
     def photometric_calibration(self, output_path: str, **kwargs):
         u.mkdir_check(output_path)
@@ -1299,11 +1322,16 @@ class ImagingEpoch(Epoch):
         u.mkdir_check(output_dir)
         if frames == "astrometry":
             input_directory = self.paths['astrometry_dir']
+        elif frames == "normalised":
+            input_directory = os.path.join(self.paths['normalised_dir'], "science")
         else:
             raise ValueError(f"{frames} not recognised as frame type.")
+
+        print(f"Coadding {frames} frames, with input directory {input_directory}")
         for fil in self.filters:
             input_directory_fil = os.path.join(input_directory, fil)
             output_directory_fil = os.path.join(output_dir, fil)
+            shutil.rmtree(output_directory_fil)
             u.mkdir_check(output_directory_fil)
             coadded_path = montage.standard_script(
                 input_directory=input_directory_fil,
@@ -1363,9 +1391,9 @@ class ImagingEpoch(Epoch):
                     title=f"{obj.name}, {fil}-band, {nearest['MAG_AUTO_ZP_best'].round(3).value} ± {err.round(3)}")
                 obj.cat_row = nearest
                 print()
-                if self.instrument not in obj.photometry:
-                    obj.photometry[self.instrument] = {}
-                obj.photometry[self.instrument][fil] = {
+                if self.instrument_name not in obj.photometry:
+                    obj.photometry[self.instrument_name] = {}
+                obj.photometry[self.instrument_name][fil] = {
                     "mag": nearest['MAG_AUTO_ZP_best'],
                     "mag_err": err,
                     "a": nearest['A_WORLD'],
@@ -1382,8 +1410,8 @@ class ImagingEpoch(Epoch):
 
     def guess_data_path(self):
         if self.data_path is None and self.field is not None and self.field.data_path is not None and \
-                self.instrument is not None and self.date is not None:
-            self.data_path = os.path.join(self.field.data_path, "imaging", self.instrument,
+                self.instrument_name is not None and self.date is not None:
+            self.data_path = os.path.join(self.field.data_path, "imaging", self.instrument_name,
                                           f"{self.date.isot}-{self.name}")
         return self.data_path
 
@@ -1407,14 +1435,15 @@ class ImagingEpoch(Epoch):
             "exp_time_err": self.exp_time_err,
             "airmass_mean": self.airmass_mean,
             "airmass_err": self.airmass_err,
-            "flats": _output_img_dict_list(self.flats)
+            "flats": _output_img_dict_list(self.flats),
+            "astrometry_successful": self.astrometry_successful
         })
         return output_dict
 
     def load_output_file(self, **kwargs):
         outputs = super().load_output_file(**kwargs)
         if type(outputs) is dict:
-            cls = image.Image.select_child_class(instrument=self.instrument, mode='imaging')
+            cls = image.Image.select_child_class(instrument=self.instrument_name, mode='imaging')
             if "filters" in outputs:
                 self.filters = outputs["filters"]
             if "deepest" in outputs and outputs["deepest"] is not None:
@@ -1485,9 +1514,9 @@ class ImagingEpoch(Epoch):
 
     def add_frame_raw(self, raw_frame: Union[image.ImagingImage, str]):
         if isinstance(raw_frame, str):
-            cls = image.ImagingImage.select_child_class(instrument=self.instrument)
-            u.debug_print(1, f"{cls} {self.instrument}")
-            raw_frame = cls(path=raw_frame, frame_type="raw", instrument=self.instrument)
+            cls = image.ImagingImage.select_child_class(instrument=self.instrument_name)
+            u.debug_print(1, f"{cls} {self.instrument_name}")
+            raw_frame = cls(path=raw_frame, frame_type="raw", instrument=self.instrument_name)
         self.frames_raw.append(raw_frame)
         fil = raw_frame.extract_filter()
         if self.check_filter(fil=fil):
@@ -1496,7 +1525,7 @@ class ImagingEpoch(Epoch):
 
     def add_frame_reduced(self, reduced_frame: image.ImagingImage):
         if isinstance(reduced_frame, str):
-            cls = image.ImagingImage.select_child_class(instrument=self.instrument)
+            cls = image.ImagingImage.select_child_class(instrument=self.instrument_name)
             reduced_frame = cls(path=reduced_frame, frame_type="reduced")
         fil = reduced_frame.extract_filter()
         if self.check_filter(fil=fil) and reduced_frame not in self.frames_reduced[fil]:
@@ -1504,7 +1533,7 @@ class ImagingEpoch(Epoch):
 
     def add_frame_astrometry(self, astrometry_frame: Union[str, image.ImagingImage]):
         if isinstance(astrometry_frame, str):
-            cls = image.ImagingImage.select_child_class(instrument=self.instrument)
+            cls = image.ImagingImage.select_child_class(instrument=self.instrument_name)
             astrometry_frame = cls(path=astrometry_frame, frame_type="astrometry")
         try:
             fil = astrometry_frame.extract_filter()
@@ -1522,7 +1551,7 @@ class ImagingEpoch(Epoch):
 
     def add_frame_normalised(self, norm_frame: image.ImagingImage):
         if isinstance(norm_frame, str):
-            cls = image.ImagingImage.select_child_class(instrument=self.instrument)
+            cls = image.ImagingImage.select_child_class(instrument=self.instrument_name)
             norm_frame = cls(path=norm_frame, frame_type="reduced")
         fil = norm_frame.extract_filter()
         if self.check_filter(fil=fil) and norm_frame not in self.frames_normalised[fil]:
@@ -1583,9 +1612,14 @@ class ImagingEpoch(Epoch):
                     reverse_y=False,
                     **kwargs):
         if img == "coadded":
+            u.debug_print(1, self.name, type(self))
+            u.debug_print(1, self.coadded)
             to_plot = self.coadded[fil]
         else:
             raise ValueError(f"img type {img} not recognised.")
+
+        u.debug_print(1, f"PIXEL SCALE: {to_plot.extract_pixel_scale()}")
+
         subplot, hdu_cut = to_plot.plot_subimage(fig=fig, frame=frame,
                                                  centre=centre,
                                                  n=n, n_x=n_x, n_y=n_y,
@@ -1668,6 +1702,11 @@ class ImagingEpoch(Epoch):
     def default_params(cls):
         default_params = super().default_params()
         default_params.update({
+            "astrometry":
+                {"tweak": True
+                 },
+            "coadd":
+                {"frames": "astrometry"},
             "sextractor":
                 {"aperture_diameters": [7.72],
                  "dual_mode": True,
@@ -1716,7 +1755,7 @@ class GSAOIImagingEpoch(ImagingEpoch):
     DRAGONS do that for us. Thus, many of the dictionaries and lists of files used in other Epoch classes
     will be empty even if the files are actually being tracked correctly. See eg science_table instead.
     """
-    instrument = "gs-aoi"
+    instrument_name = "gs-aoi"
 
     def __init__(self,
                  name: str = None,
@@ -1757,7 +1796,7 @@ class GSAOIImagingEpoch(ImagingEpoch):
     def pipeline(self, **kwargs):
         super().pipeline(**kwargs)
         self.proc_0_download(**kwargs)
-        self.proc_1_initial_setup(**kwargs)
+        self.proc_initial_setup(**kwargs)
         self.proc_2_reduce_flats(**kwargs)
         self.proc_3_reduce_science(**kwargs)
         self.proc_4_stack_science(**kwargs)
@@ -2062,8 +2101,8 @@ class HubbleImagingEpoch(ImagingEpoch):
         self.load_output_file(mode="imaging")
 
     def pipeline(self, **kwargs):
-        self.proc_1_initial_setup(**kwargs)
-        self.proc_2_photometric_calibration(**kwargs)
+        self.proc_initial_setup(**kwargs)
+        self.proc_photometric_calibration(**kwargs)
         self.proc_3_source_extraction(**kwargs)
         self.proc_4_get_photometry(**kwargs)
 
@@ -2076,7 +2115,7 @@ class HubbleImagingEpoch(ImagingEpoch):
             img = image.HubbleImage(os.path.join(coadd_dir, file))
             self.add_coadded_image(img, key=img.extract_filter())
 
-    def proc_2_photometric_calibration(self, no_query: bool = False, **kwargs):
+    def proc_photometric_calibration(self, no_query: bool = False, **kwargs):
         if no_query or self.query_stage("Do photometric calibration?", stage="2-photometric_calibration"):
             calib_dir = os.path.join(self.data_path, "2-photometric_calibration")
             self.photometric_calibration(calib_dir)
@@ -2153,7 +2192,7 @@ class HubbleImagingEpoch(ImagingEpoch):
 
 
 class PanSTARRS1ImagingEpoch(ImagingEpoch):
-    instrument = "panstarrs1"
+    instrument_name = "panstarrs1"
 
     def __init__(self,
                  name: str = None,
@@ -2178,7 +2217,7 @@ class PanSTARRS1ImagingEpoch(ImagingEpoch):
     def pipeline(self, **kwargs):
         super().pipeline(**kwargs)
         self.proc_0_download(**kwargs)
-        self.proc_1_initial_setup(**kwargs)
+        self.proc_initial_setup(**kwargs)
         self.proc_2_source_extraction(**kwargs)
         self.proc_3_photometric_calibration(**kwargs)
         self.proc_4_dual_mode_source_extraction(**kwargs)
@@ -2333,7 +2372,8 @@ class ESOImagingEpoch(ImagingEpoch):
             date: Union[str, Time] = None,
             target: str = None,
             standard_epochs: list = None,
-            source_extractor_config: dict = None):
+            source_extractor_config: dict = None,
+            **kwargs):
         super().__init__(
             name=name,
             field=field,
@@ -2344,7 +2384,8 @@ class ESOImagingEpoch(ImagingEpoch):
             program_id=program_id,
             target=target,
             standard_epochs=standard_epochs,
-            source_extractor_config=source_extractor_config)
+            source_extractor_config=source_extractor_config,
+            **kwargs)
 
         self.frames_esoreflex_backgrounds = {}
         self.frames_trimmed = {}
@@ -2353,13 +2394,13 @@ class ESOImagingEpoch(ImagingEpoch):
 
     def pipeline(self, **kwargs):
         super().pipeline(**kwargs)
-        self.proc_0_download(**kwargs)
-        self.proc_1_initial_setup(**kwargs)
-        self.proc_2_sort_after_esoreflex(**kwargs)
-        self.proc_3_trim_reduced(**kwargs)
-        self.proc_4_divide_by_exp_time(**kwargs)
+        self.proc_download(**kwargs)
+        self.proc_initial_setup(**kwargs)
+        self.proc_sort_after_esoreflex(**kwargs)
+        self.proc_trim_reduced(**kwargs)
+        self.proc_divide_by_exp_time(**kwargs)
 
-    def proc_0_download(self, no_query: bool = False, **kwargs):
+    def proc_download(self, no_query: bool = False, **kwargs):
         if no_query or self.query_stage("Download raw data from ESO archive?", stage='0-download'):
             r = self.retrieve()
             if r:
@@ -2378,7 +2419,7 @@ class ESOImagingEpoch(ImagingEpoch):
             warnings.warn("raw_dir has not been set. Retrieve could not be run.")
         return r
 
-    def proc_2_sort_after_esoreflex(self, no_query: bool = False, **kwargs):
+    def proc_sort_after_esoreflex(self, no_query: bool = False, **kwargs):
         if no_query or self.query_stage(
                 "Sort ESOReflex products? Requires reducing data with ESOReflex first.",
                 stage='2-sort_after_esoreflex'):
@@ -2399,7 +2440,7 @@ class ESOImagingEpoch(ImagingEpoch):
             u.mkdir_check(destination)
 
             mjd = int(self.date.mjd)
-            obj = self.target
+            obj = self.target.lower()
 
             print(f"Looking for data with object '{obj}' and MJD of observation {mjd} inside {eso_dir}")
             # Look for files with the appropriate object and MJD, as recorded in output_values
@@ -2425,7 +2466,7 @@ class ESOImagingEpoch(ImagingEpoch):
                         # Retrieve the target object name from the fits file.
                         file_path = os.path.join(subpath, file_name)
                         file = image.FORS2Image(file_path)
-                        file_obj = file.extract_object()
+                        file_obj = file.extract_object().lower()
                         file_mjd = int(file.extract_header_item('MJD-OBS'))
                         file_filter = file.extract_filter()
                         # Check the object name and observation date against those of the epoch we're concerned with.
@@ -2472,7 +2513,7 @@ class ESOImagingEpoch(ImagingEpoch):
         else:
             raise IOError(f"ESO output directory '{eso_dir}' not found.")
 
-    def proc_3_trim_reduced(self, no_query: bool = False, **kwargs):
+    def proc_trim_reduced(self, no_query: bool = False, **kwargs):
         if no_query or self.query_stage(
                 "Trim reduced images?",
                 stage='3-trim_reduced'):
@@ -2485,12 +2526,14 @@ class ESOImagingEpoch(ImagingEpoch):
     def trim_reduced(self, output_dir, **kwargs):
         pass
 
-    def proc_4_divide_by_exp_time(self, no_query: bool = False, **kwargs):
+    def proc_divide_by_exp_time(self, no_query: bool = False, **kwargs):
         if no_query or self.query_stage(
                 "Divide trimmed images by exposure time?",
                 stage="4-divide_by_exp_time"):
+            output_dir = os.path.join(self.data_path, "4-divided_by_exp_time")
+            self.paths["normalised_dir"] = output_dir
             self.divide_by_exp_time(
-                output_dir=os.path.join(self.data_path, "4-divided_by_exp_time"),
+                output_dir=output_dir,
                 **kwargs)
             self.stages_complete['4-divide_by_exp_time'] = Time.now()
             self.update_output_file()
@@ -2519,7 +2562,7 @@ class ESOImagingEpoch(ImagingEpoch):
 
     def add_frame_background(self, background_frame: Union[image.ImagingImage, str]):
         if isinstance(background_frame, str):
-            cls = image.ImagingImage.select_child_class(instrument=self.instrument)
+            cls = image.ImagingImage.select_child_class(instrument=self.instrument_name)
             background_frame = cls(path=background_frame, frame_type="reduced")
         fil = background_frame.extract_filter()
         if self.check_filter(fil=fil) and background_frame not in self.frames_esoreflex_backgrounds[fil]:
@@ -2527,7 +2570,7 @@ class ESOImagingEpoch(ImagingEpoch):
 
     def add_frame_trimmed(self, trimmed_frame: image.ImagingImage):
         if isinstance(trimmed_frame, str):
-            cls = image.ImagingImage.select_child_class(instrument=self.instrument)
+            cls = image.ImagingImage.select_child_class(instrument=self.instrument_name)
             trimmed_frame = cls(path=trimmed_frame, frame_type="reduced")
         fil = trimmed_frame.extract_filter()
         if self.check_filter(fil=fil) and trimmed_frame not in self.frames_trimmed[fil]:
@@ -2554,7 +2597,7 @@ class ESOImagingEpoch(ImagingEpoch):
     def load_output_file(self, **kwargs):
         outputs = super().load_output_file(**kwargs)
         if type(outputs) is dict:
-            cls = image.Image.select_child_class(instrument=self.instrument, mode='imaging')
+            cls = image.Image.select_child_class(instrument=self.instrument_name, mode='imaging')
             if "frames_trimmed" in outputs:
                 for fil in outputs["frames_trimmed"]:
                     if outputs["frames_trimmed"][fil] is not None:
@@ -2584,13 +2627,13 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
 
     def pipeline(self, **kwargs):
         super().pipeline(**kwargs)
-        self.proc_5_correct_astrometry_frames(**kwargs)
-        self.proc_6_coadd(**kwargs)
-        self.proc_7_trim_coadded(**kwargs)
-        self.proc_8_source_extraction(**kwargs)
-        self.proc_9_photometric_calibration(**kwargs)
-        self.proc_10_dual_mode_source_extraction(**kwargs)
-        self.proc_11_get_photometry(**kwargs)
+        self.proc_correct_astrometry_frames(**kwargs)
+        self.proc_coadd(**kwargs)
+        self.proc_trim_coadded(**kwargs)
+        self.proc_source_extraction(**kwargs)
+        self.proc_photometric_calibration(**kwargs)
+        self.proc_dual_mode_source_extraction(**kwargs)
+        self.proc_get_photometry(**kwargs)
 
     # def proc_1_initial_setup(self, no_query: bool = False, **kwargs):
     #     if super().proc_1_initial_setup(no_query, **kwargs):
@@ -2609,16 +2652,16 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
                                science_only=True)
         # Then including all calibration files
         tbl_full = image.fits_table(input_path=raw_dir,
-                                    output_path=data_dir + data_title + "_fits_table_all.csv",
+                                    output_path=os.path.join(data_dir, data_title + "_fits_table_all.csv"),
                                     science_only=False)
 
         image.fits_table_all(input_path=raw_dir,
-                             output_path=data_dir + data_title + "_fits_table_detailed.csv",
+                             output_path=os.path.join(data_dir, data_title + "_fits_table_detailed.csv"),
                              science_only=False)
 
         for row in tbl:
             path = os.path.join(self.paths["raw_dir"], row["identifier"])
-            cls = image.ImagingImage.select_child_class(instrument=self.instrument, mode="imaging")
+            cls = image.ImagingImage.select_child_class(instrument=self.instrument_name, mode="imaging")
             img = cls(path)
             img.extract_frame_type()
             img.extract_filter()
@@ -2798,14 +2841,17 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
                     unsolved chip.
                 propagate_from_single: Each upper-chip image is passed to astrometry.net until a solution is found; this
                     solution is then propagated to all other upper-chip images. The same is repeated for the lower chip.
-                    This is the recommended method for retaining a coherent
         :return:
         """
         self.frames_astrometry = {}
         if "method" in kwargs:
             method = kwargs["method"]
         else:
-            method = "propagate_from_single"
+            method = "individual"
+
+        print()
+        print(f"Solving astrometry using method '{method}'")
+        print()
 
         for fil in self.frames_reduced:
             astrometry_fil_path = os.path.join(output_path, fil)
@@ -2819,25 +2865,34 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
                         failed_first = False
                         while not success:  # The SystemError should stop this from looping indefinitely.
                             if not reverse_pair:
-                                new_img_1 = img_1.correct_astrometry(output_dir=astrometry_fil_path)
+                                new_img_1 = img_1.correct_astrometry(
+                                    output_dir=astrometry_fil_path,
+                                    **self.astrometry_params)
                                 # Check if the first astrometry run was successful.
                                 # If it wasn't, we need to be running on the second image of the pair.
                                 if new_img_1 is None:
                                     reverse_pair = True
                                     failed_first = True
+                                    self.astrometry_successful[img_1.name] = False
                                     print(
                                         f"Astrometry.net failed to solve {img_1}, trying on opposite chip {img_2}.")
                                 else:
                                     self.add_frame_astrometry(new_img_1)
-                                    new_img_2 = img_2.correct_astrometry_from_other(new_img_1,
-                                                                                    output_dir=astrometry_fil_path)
+                                    self.astrometry_successful[img_1.name] = True
+                                    new_img_2 = img_2.correct_astrometry_from_other(
+                                        new_img_1,
+                                        output_dir=astrometry_fil_path)
                                     self.add_frame_astrometry(new_img_2)
+
                                     success = True
                             # We don't use an else statement here because reverse_pair can change within the above
                             # block, and if it does the block below needs to execute.
                             if reverse_pair:
-                                new_img_2 = img_2.correct_astrometry(output_dir=astrometry_fil_path)
+                                new_img_2 = img_2.correct_astrometry(
+                                    output_dir=astrometry_fil_path,
+                                    **self.astrometry_params)
                                 if new_img_2 is None:
+                                    self.astrometry_successful[img_2.name] = False
                                     if failed_first:
                                         raise SystemError(
                                             f"Astrometry.net failed to solve both chips of this pair ({img_1}, {img_2})")
@@ -2845,13 +2900,15 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
                                         reverse_pair = False
                                 else:
                                     self.add_frame_astrometry(new_img_2)
+                                    self.astrometry_successful[img_2.name] = True
                                     new_img_1 = img_1.correct_astrometry_from_other(
                                         new_img_2,
                                         output_dir=astrometry_fil_path)
                                     self.add_frame_astrometry(new_img_1)
                                     success = True
                     else:
-                        new_img = pair.correct_astrometry(output_dir=astrometry_fil_path)
+                        new_img = pair.correct_astrometry(output_dir=astrometry_fil_path,
+                                                          **self.astrometry_params)
                         self.add_frame_astrometry(new_img)
 
             elif method == "propagate_from_single":
@@ -2863,12 +2920,17 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
                     while successful is None and i < len(upper):
                         img = lst[i]
                         i += 1
-                        new_img = img.correct_astrometry(output_dir=astrometry_fil_path)
+                        new_img = img.correct_astrometry(output_dir=astrometry_fil_path,
+                                                         **self.astrometry_params)
                         # Check if successful:
                         if new_img is not None:
                             lst.remove(img)
                             self.add_frame_astrometry(new_img)
                             successful = new_img
+                            self.astrometry_successful[img.name] = True
+                        else:
+                            self.astrometry_successful[img.name] = False
+
 
                     # If we failed to find a solution on any frame in lst:
                     if successful is None:
@@ -2886,10 +2948,16 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
                             self.add_frame_astrometry(new_img)
 
             elif method == "individual":
+
                 for img in self.frames_reduced[fil]:
-                    new_img = img.correct_astrometry(output_dir=astrometry_fil_path)
+                    new_img = img.correct_astrometry(output_dir=astrometry_fil_path,
+                                                     **self.astrometry_params)
                     if new_img is not None:
+                        print(f"{new_img} astrometry successful.")
                         self.add_frame_astrometry(new_img)
+                        self.astrometry_successful[img.name] = True
+                    else:
+                        self.astrometry_successful[img.name] = False
 
     @classmethod
     def sort_by_chip(cls, images: list):
@@ -2961,21 +3029,33 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
             raise FileNotFoundError(f"No parameter file found at {param_file}.")
 
         if field is None:
-            field = param_dict["field"]
+            field = param_dict.pop("field")
         if 'target' in param_dict:
-            target = param_dict['target']
+            target = param_dict.pop('target')
         else:
             target = None
+
+        if "field" in param_dict:
+            param_dict.pop("field")
+        if "instrument" in param_dict:
+            param_dict.pop("instrument")
+        if "name" in param_dict:
+            param_dict.pop("name")
+        if "param_path" in param_dict:
+            param_dict.pop("param_path")
+
+        u.debug_print(2, "FORS2ImagingEpoch.from_file(), cls ==", cls)
 
         return cls(name=name,
                    field=field,
                    param_path=param_file,
-                   data_path=os.path.join(config["top_data_dir"], param_dict['data_path']),
+                   data_path=os.path.join(config["top_data_dir"], param_dict.pop('data_path')),
                    instrument='vlt-fors2',
-                   program_id=param_dict['program_id'],
-                   date=param_dict['date'],
+                   program_id=param_dict.pop('program_id'),
+                   date=param_dict.pop('date'),
                    target=target,
-                   source_extractor_config=param_dict['sextractor'])
+                   source_extractor_config=param_dict['sextractor'],
+                   **param_dict)
 
     @classmethod
     def convert_old_params(cls, old_epoch_name: str):
@@ -3066,7 +3146,7 @@ class SpectroscopyEpoch(Epoch):
 
         self._path_2_pypeit()
         self.standards_raw = []
-        self._instrument_pypeit = self.instrument.replace('-', '_')
+        self._instrument_pypeit = self.instrument_name.replace('-', '_')
 
         self._pypeit_file = None
         self._pypeit_sorted_file = None
@@ -3406,7 +3486,7 @@ class ESOSpectroscopyEpoch(SpectroscopyEpoch):
         else:
             do_not_reuse_masters = False
         self.proc_0_raw()
-        self.proc_1_initial_setup()
+        self.proc_initial_setup()
         self.proc_2_pypeit_setup()
         self.proc_3_pypeit_run(do_not_reuse_masters=do_not_reuse_masters)
         self.proc_4_pypeit_flux()

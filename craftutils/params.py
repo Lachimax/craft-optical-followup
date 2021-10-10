@@ -88,6 +88,8 @@ def check_for_config():
 
 
 def load_params(file: str, quiet: bool = False):
+    if u.debug_level < 1:
+        quiet = True
     file = u.sanitise_file_ext(file, '.yaml')
 
     if not quiet:

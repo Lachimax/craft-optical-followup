@@ -214,7 +214,7 @@ class Image:
         self.frame_type = frame_type
         self.headers = None
         self.data = None
-        self.instrument = instrument
+        self.instrument_name = instrument
         self.epoch = None
 
         # Header attributes
@@ -400,7 +400,7 @@ class Image:
             else:
                 child = ImagingImage
         img = child(path=path)
-        img.instrument = instrument
+        img.instrument_name = instrument
         return img
 
     @classmethod
@@ -986,15 +986,16 @@ class ImagingImage(Image):
 
         return results
 
-    def correct_astrometry(self, output_dir: str = None):
+    def correct_astrometry(self, output_dir: str = None, tweak: bool = True):
         """
         Uses astrometry.net to solve the astrometry of the image. Solved image is output as a separate file.
-        @param output_dir: Directory in which to output
-        @return: Path of corrected file.
+        :param output_dir: Directory in which to output
+        :return: Path of corrected file.
         """
+        u.debug_print(1, "image.correct_astrometry(): tweak ==", tweak)
         u.mkdir_check(output_dir)
         base_filename = f"{self.name}_astrometry"
-        success = solve_field(image_files=self.path, base_filename=base_filename, overwrite=True)
+        success = solve_field(image_files=self.path, base_filename=base_filename, overwrite=True, tweak=tweak)
         if not success:
             return None
         new_path = os.path.join(self.data_path, f"{base_filename}.new")
@@ -1011,7 +1012,7 @@ class ImagingImage(Image):
             output_dir = self.data_path
         final_file = os.path.join(output_dir, f"{base_filename}.fits")
         self.astrometry_corrected_path = final_file
-        cls = ImagingImage.select_child_class(instrument=self.instrument)
+        cls = ImagingImage.select_child_class(instrument=self.instrument_name)
         new_image = cls(path=final_file)
         return new_image
 
@@ -1076,7 +1077,7 @@ class ImagingImage(Image):
             # Insert all other astrometry info as previously extracted.
             file[0].header.update(insert)
 
-        cls = ImagingImage.select_child_class(instrument=self.instrument)
+        cls = ImagingImage.select_child_class(instrument=self.instrument_name)
         new_image = cls(path=output_path)
         return new_image
 
@@ -1467,7 +1468,7 @@ class PanSTARRS1Cutout(ImagingImage):
     def __init__(self, path: str):
         super().__init__(path=path)
         self.extract_filter()
-        self.instrument = "panstarrs1"
+        self.instrument_name = "panstarrs1"
         self.exposure_time = None
         self.extract_exposure_time()
 

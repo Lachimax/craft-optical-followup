@@ -2,7 +2,7 @@ import os
 
 from typing import Union
 
-from craftutils.utils import system_command
+from craftutils.utils import system_command, debug_print
 
 
 def build_astrometry_index(input_fits_catalog: str, unique_id: int, output_index: str = None,
@@ -25,8 +25,13 @@ def build_astrometry_index(input_fits_catalog: str, unique_id: int, output_index
     system_command("build-astrometry-index", None, False, True, *flags, **params)
 
 
-def solve_field(image_files: Union[str, list], base_filename: str = "astrometry",
-                overwrite: bool = True, *flags, **params):
+def solve_field(
+        image_files: Union[str, list],
+        base_filename: str = "astrometry",
+        overwrite: bool = True,
+        tweak: bool = True,
+        *flags,
+        **params):
     """
     Returns True if successful (by checking whether the corrected file is generated); False if not.
     :param image_files:
@@ -40,9 +45,13 @@ def solve_field(image_files: Union[str, list], base_filename: str = "astrometry"
     params["o"] = base_filename
     params["l"] = "20"
 
+    debug_print(1, "solve_field(): tweak ==", tweak)
+
     flags = list(flags)
     if overwrite:
         flags.append("O")
+    if not tweak:
+        flags.append("T")
     system_command("solve-field", image_files, False, True, *flags, **params)
     if isinstance(image_files, list):
         image_path = image_files[0]

@@ -14,6 +14,9 @@ class Instrument:
         self.name = None
         if "name" in kwargs:
             self.name = kwargs["name"]
+        self.formatted_name = None
+        if "formatted_name" in kwargs:
+            self.formatted_name = kwargs["formatted_name"]
         self.svo_facility = None
         self.svo_instrument = None
         if "svo_service" in kwargs:
@@ -41,6 +44,13 @@ class Instrument:
 
     def guess_filter_dir(self):
         return self._build_filter_dir(instrument_name=self.name)
+
+    def nice_name(self):
+        if self.formatted_name is not None:
+            name = self.formatted_name
+        else:
+            name = self.name
+        return name
 
     @classmethod
     def default_params(cls):
@@ -135,6 +145,9 @@ class Filter:
         self.name = None
         if "name" in kwargs:
             self.name = kwargs["name"]
+        self.formatted_name = None
+        if "formatted_name" in kwargs:
+            self.formatted_name = kwargs["formatted_name"]
 
         self.svo_id = None
         self.svo_instrument = None
@@ -170,6 +183,13 @@ class Filter:
 
     def __str__(self):
         return f"{self.instrument}.{self.name}"
+
+    def nice_name(self):
+        if self.formatted_name is not None:
+            name = self.formatted_name
+        else:
+            name = self.name
+        return name
 
     def load_instrument(self):
         if isinstance(self.instrument, str):

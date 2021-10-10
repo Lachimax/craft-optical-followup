@@ -93,7 +93,7 @@ def inject_header(file_path: str, input_directory: str,
         f"DATE-OBS": template.extract_date_obs(),
         f"EXPTIME": np.nanmean(table[important_keys["exptime"]]),
         f"FILTER": template.extract_filter(),
-        f"INSTRUME": template.instrument,
+        f"INSTRUME": template.instrument_name,
         f"RON": template.extract_noise_read().value
     }
 
