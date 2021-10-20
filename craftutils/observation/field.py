@@ -2561,6 +2561,22 @@ class ESOImagingEpoch(ImagingEpoch):
                 normed = frame.divide_by_exp_time(output_path=science_destination)
                 self.add_frame_normalised(normed)
 
+    def proc_register(self, no_query: bool, **kwargs):
+        if no_query or self.query_stage(
+                "Register frames using astroalign?",
+                stage="4.5-register"):
+            output_dir = os.path.join(self.data_path, "4.5-registered")
+            self.paths["registered_dir"] = output_dir
+            self.register(
+                output_dir=output_dir,
+                **kwargs)
+            self.stages_complete['4.5-align'] = Time.now()
+            self.update_output_file()
+
+    def register(self):
+        pass
+
+
     def add_frame_background(self, background_frame: Union[image.ImagingImage, str]):
         if isinstance(background_frame, str):
             cls = image.ImagingImage.select_child_class(instrument=self.instrument_name)
@@ -2628,6 +2644,8 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
 
     def pipeline(self, **kwargs):
         super().pipeline(**kwargs)
+        if "register" in kwargs and kwargs["register"]:
+            self.proc_register(**kwargs)
         self.proc_correct_astrometry_frames(**kwargs)
         self.proc_coadd(**kwargs)
         self.proc_trim_coadded(**kwargs)
@@ -2825,6 +2843,7 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
                         bottom=dn_bottom,
                         output_path=new_path)
                     self.add_frame_trimmed(trimmed)
+
 
     def correct_astrometry_frames(self, output_path: str, **kwargs):
         """
