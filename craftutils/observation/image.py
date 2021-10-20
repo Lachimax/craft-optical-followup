@@ -15,8 +15,12 @@ import astropy.io.fits as fits
 import astropy.table as table
 import astropy.wcs as wcs
 import astropy.units as units
+from astropy.visualization import (ImageNormalize, LogStretch, SqrtStretch, ZScaleInterval, MinMaxInterval,
+                                   PowerStretch, wcsaxes)
 from astropy.coordinates import SkyCoord
 from astropy.time import Time
+
+from astroalign import register
 
 import craftutils.utils as u
 import craftutils.astrometry as a
@@ -27,7 +31,6 @@ import craftutils.plotting as pl
 import craftutils.wrap.source_extractor as se
 import craftutils.wrap.psfex as psfex
 from craftutils.wrap.astrometry_net import solve_field
-
 from craftutils.retrieve import cat_columns
 
 instrument_header = {"FORS2": "vlt-fors2"}
@@ -986,6 +989,29 @@ class ImagingImage(Image):
 
         return results
 
+    def register(self, target: 'ImagingImage', output: str, ext: int = 0):
+        self.load_data()
+        target.load_data()
+
+        u.debug_print(2, target.data)
+        u.debug_print(2, self.data)
+
+        registered, footprint = register(self.data[ext], target.data[ext])
+
+        left = 650
+        right = 700
+        bottom = 45
+        top = 100
+
+        self.copy(output)
+        with fits.open(output, mode="update") as new_file:
+            new_file[0].data = registered
+            new_file.writeto(output, overwrite=True)
+
+        new_image = self.new_image(path=output)
+        new_image.transfer_wcs(target)
+        return new_image
+
     def correct_astrometry(self, output_dir: str = None, tweak: bool = True):
         """
         Uses astrometry.net to solve the astrometry of the image. Solved image is output as a separate file.
@@ -1012,8 +1038,14 @@ class ImagingImage(Image):
             output_dir = self.data_path
         final_file = os.path.join(output_dir, f"{base_filename}.fits")
         self.astrometry_corrected_path = final_file
-        cls = ImagingImage.select_child_class(instrument=self.instrument_name)
-        new_image = cls(path=final_file)
+        new_image = self.new_image(
+            path=final_file
+        )
+        return new_image
+
+    def new_image(self, path: str):
+        c = ImagingImage.select_child_class(instrument=self.instrument_name)
+        new_image = c(path=path)
         return new_image
 
     def transfer_wcs(self, other_image: 'ImagingImage', ext: int = 0):

@@ -130,7 +130,14 @@ wcs_keys = [
 ]
 
 
-def wcs_transfer(header_template: dict, header_update: dict):
+def wcs_transfer(header_template: Union[dict, fits.Header], header_update: dict):
+    """
+    Using the list of header keys in fits_files.wcs_keys, overwrites the WCS header elements of header_update with those
+    in header_template.
+    :param header_template: Header from which to copy WCS.
+    :param header_update: Header to which to copy WCS.
+    :return: Update header_update.
+    """
     update = {}
     for key in wcs_keys:
         if key in header_template:

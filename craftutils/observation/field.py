@@ -199,7 +199,8 @@ class Field:
         if self.param_path is not None:
             self.param_dir = os.path.split(self.param_path)[0]
         self.mkdir_params()
-        self.data_path = data_path
+        self.data_path = os.path.join(p.data_path, data_path)
+        u.debug_print(1, self.name, "self.data_path", self.data_path)
         self.mkdir()
         self.output_file = None
 
@@ -565,7 +566,7 @@ class Field:
     def new_yaml(cls, name: str, path: str = None, quiet: bool = False):
         param_dict = cls.default_params()
         param_dict["name"] = name
-        param_dict["data_path"] = os.path.join(p.data_path, name, "")
+        param_dict["data_path"] = os.path.join(name, "")
         if path is not None:
             path = os.path.join(path, name)
             p.save_params(file=path, dictionary=param_dict, quiet=quiet)
@@ -860,7 +861,7 @@ class Epoch:
         self.param_path = param_path
         self.name = name
         self.field = field
-        self.data_path = data_path
+        self.data_path = os.path.join(p.data_path, data_path)
         if data_path is not None:
             u.mkdir_check_nested(data_path)
         self.instrument_name = instrument
