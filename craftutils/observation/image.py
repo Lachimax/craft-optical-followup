@@ -10,6 +10,7 @@ from copy import deepcopy
 
 import numpy as np
 import matplotlib.pyplot as plt
+from skimage import img_as_float64
 
 import astropy.io.fits as fits
 import astropy.table as table
@@ -995,17 +996,15 @@ class ImagingImage(Image):
 
         u.debug_print(2, target.data)
         u.debug_print(2, self.data)
-
-        registered, footprint = register(self.data[ext], target.data[ext])
-
-        left = 650
-        right = 700
-        bottom = 45
-        top = 100
+        u.debug_print(2, type(self.data[ext]), type(target.data[ext]))
+        data_source = img_as_float64(self.data[ext])
+        data_target = img_as_float64(target.data[ext])
+        registered, footprint = register(data_source, data_target)
 
         self.copy(output)
         with fits.open(output, mode="update") as new_file:
             new_file[0].data = registered
+            u.debug_print(1, "Writing registered image to", output)
             new_file.writeto(output, overwrite=True)
 
         new_image = self.new_image(path=output)
@@ -1047,6 +1046,11 @@ class ImagingImage(Image):
         c = ImagingImage.select_child_class(instrument=self.instrument_name)
         new_image = c(path=path)
         return new_image
+
+    def copy(self, destination):
+        u.debug_print(1, "Copying", self.path, "to", destination)
+        shutil.copy(self.path, destination)
+        return self.new_image(path=destination)
 
     def transfer_wcs(self, other_image: 'ImagingImage', ext: int = 0):
         other_image.load_headers()

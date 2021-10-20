@@ -908,6 +908,7 @@ class Epoch:
 
     def pipeline(self, **kwargs):
         self._pipeline_init()
+        u.debug_print(1, kwargs)
 
     def _pipeline_init(self, ):
         if self.data_path is not None:
@@ -1135,6 +1136,7 @@ class ImagingEpoch(Epoch):
         self.frames_science = {}
         self.frames_reduced = {}
         self.frames_normalised = {}
+        self.frames_registered = {}
         self.frames_astrometry = {}
         self.astrometry_successful = {}
 
@@ -1149,6 +1151,9 @@ class ImagingEpoch(Epoch):
         self.coadd_params = {}
         if "coadd" in kwargs:
             self.coadd_params = kwargs["coadd"]
+        self.registration_params = {}
+        if "registration" in kwargs:
+            self.registration_params = kwargs["registration"]
 
         u.debug_print(1, self.astrometry_params)
 
@@ -1156,7 +1161,58 @@ class ImagingEpoch(Epoch):
 
     # TODO: Make output_path keyword standard across all proc methods
 
+    def proc_register(self, no_query: bool = False, **kwargs):
+        u.debug_print(1, self.registration_params)
+        if "register" in self.registration_params and self.registration_params["register"]:
+            if no_query or self.query_stage(
+                    "Register frames using astroalign?",
+                    stage="4.5-register_frames"):
+                output_dir = os.path.join(self.data_path, "4.5-registered")
+                self.paths["registered_dir"] = output_dir
+                self.frames_registered = {}
+                self.register(
+                    output_dir=output_dir,
+                    **self.registration_params)
+                self.stages_complete['4.5-align'] = Time.now()
+                self.update_output_file()
+
+    def register(self, output_dir: str, frames: dict = None, n_template: Union[int, dict] = 0, **kwargs):
+        """
+
+        :param output_dir:
+        :param frames:
+        :param n_template: Either an integer specifying the position of the image in the list to use as the template for
+            alignment, or a dictionary with keys reflecting the filter names and values being the list position of the
+            respective templates.
+        :param kwargs:
+        :return:
+        """
+
+        if frames is None:
+            frames = self.frames_normalised
+
+        for fil in frames:
+            if isinstance(n_template, int):
+                template = frames[fil][n_template]
+            else:
+                template = frames[fil][n_template[fil]]
+
+            for i, frame in enumerate(frames[fil]):
+                output_dir_fil = os.path.join(output_dir, fil)
+                u.mkdir_check(output_dir_fil)
+                if i != n_template:
+                    registered = frame.register(
+                        target=template,
+                        output=os.path.join(output_dir_fil, frame.name.replace(".fits", "_registered.fits"))
+                    )
+                    self.add_frame_registered(registered)
+                else:
+                    registered = frame.copy(
+                        os.path.join(output_dir_fil, template.name.replace(".fits", "_registered.fits")))
+                    self.add_frame_registered(registered)
+
     def proc_correct_astrometry_frames(self, no_query: bool = False, **kwargs):
+
         if no_query or self.query_stage(stage="5-correct_astrometry_frames",
                                         message="Correct astrometry of individual frames?"):
             self.generate_gaia_astrometry_indices()
@@ -1166,11 +1222,16 @@ class ImagingEpoch(Epoch):
                 kwargs.pop("output_path")
             else:
                 astrometry_path = os.path.join(self.data_path, "5-astrometry_frames")
+
+            shutil.rmtree(astrometry_path)
             u.mkdir_check(astrometry_path)
 
             self.frames_astrometry = {}
 
-            self.correct_astrometry_frames(output_path=astrometry_path, **kwargs)
+            if "register" in self.registration_params and self.registration_params["register"]:
+                self.correct_astrometry_frames(output_dir=astrometry_path, frames=self.frames_registered, **kwargs)
+            else:
+                self.correct_astrometry_frames(output_dir=astrometry_path, frames=self.frames_reduced, **kwargs)
 
             self.paths['astrometry_dir'] = astrometry_path
             self.stages_complete["5-correct_astrometry_frames"] = Time.now()
@@ -1233,11 +1294,13 @@ class ImagingEpoch(Epoch):
             self.stages_complete["11-object_properties"] = Time.now()
             self.update_output_file()
 
-    def correct_astrometry_frames(self, output_path: str, **kwargs):
+    def correct_astrometry_frames(self, output_dir: str, frames: dict = None, **kwargs):
         self.frames_astrometry = {}
-        for fil in self.frames_reduced:
-            astrometry_fil_path = os.path.join(output_path, fil)
-            for frame in self.frames_reduced[fil]:
+        if frames is None:
+            frames = self.frames_reduced
+        for fil in frames:
+            astrometry_fil_path = os.path.join(output_dir, fil)
+            for frame in frames[fil]:
                 new_frame = frame.correct_astrometry(output_dir=astrometry_fil_path, **self.astrometry_params)
                 if new_frame is not None:
                     self.add_frame_astrometry(new_frame)
@@ -1431,6 +1494,8 @@ class ImagingEpoch(Epoch):
             "coadded_trimmed": _output_img_dict_single(self.coadded_trimmed),
             "frames_raw": _output_img_list(self.frames_raw),
             "frames_reduced": _output_img_dict_list(self.frames_reduced),
+            "frames_normalised": _output_img_dict_list(self.frames_normalised),
+            "frames_registered": _output_img_dict_list(self.frames_registered),
             "frames_astrometry": _output_img_dict_list(self.frames_astrometry),
             "exp_time_mean": self.exp_time_mean,
             "exp_time_err": self.exp_time_err,
@@ -1467,6 +1532,16 @@ class ImagingEpoch(Epoch):
                     if outputs["frames_reduced"][fil] is not None:
                         for frame in outputs["frames_reduced"][fil]:
                             self.add_frame_reduced(reduced_frame=frame)
+            if "frames_normalised" in outputs:
+                for fil in outputs["frames_normalised"]:
+                    if outputs["frames_normalised"][fil] is not None:
+                        for frame in outputs["frames_normalised"][fil]:
+                            self.add_frame_normalised(norm_frame=frame)
+            if "frames_registered" in outputs:
+                for fil in outputs["frames_registered"]:
+                    if outputs["frames_registered"][fil] is not None:
+                        for frame in outputs["frames_registered"][fil]:
+                            self.add_frame_registered(registered_frame=frame)
             if "frames_astrometry" in outputs:
                 for fil in outputs["frames_astrometry"]:
                     if outputs["frames_astrometry"][fil] is not None:
@@ -1532,6 +1607,14 @@ class ImagingEpoch(Epoch):
         if self.check_filter(fil=fil) and reduced_frame not in self.frames_reduced[fil]:
             self.frames_reduced[fil].append(reduced_frame)
 
+    def add_frame_registered(self, registered_frame: image.ImagingImage):
+        if isinstance(registered_frame, str):
+            cls = image.ImagingImage.select_child_class(instrument=self.instrument_name)
+            registered_frame = cls(path=registered_frame, frame_type="registered")
+        fil = registered_frame.extract_filter()
+        if self.check_filter(fil=fil) and registered_frame not in self.frames_registered[fil]:
+            self.frames_registered[fil].append(registered_frame)
+
     def add_frame_astrometry(self, astrometry_frame: Union[str, image.ImagingImage]):
         if isinstance(astrometry_frame, str):
             cls = image.ImagingImage.select_child_class(instrument=self.instrument_name)
@@ -1574,6 +1657,12 @@ class ImagingEpoch(Epoch):
             if fil not in self.frames_reduced:
                 if isinstance(self.frames_reduced, dict):
                     self.frames_reduced[fil] = []
+            if fil not in self.frames_normalised:
+                if isinstance(self.frames_normalised, dict):
+                    self.frames_normalised[fil] = []
+            if fil not in self.frames_registered:
+                if isinstance(self.frames_registered, dict):
+                    self.frames_registered[fil] = []
             if fil not in self.frames_astrometry:
                 self.frames_astrometry[fil] = []
             if fil not in self.coadded:
@@ -1592,8 +1681,6 @@ class ImagingEpoch(Epoch):
                 self.std_pointings[fil] = []
             if fil not in self.flats:
                 self.flats[fil] = []
-            if fil not in self.frames_normalised:
-                self.frames_normalised[fil] = []
             return True
         else:
             return False
@@ -1638,14 +1725,16 @@ class ImagingEpoch(Epoch):
     @classmethod
     def stages(cls):
         stages = super().stages()
-        stages.update({"5-correct_astrometry_frames": None,
-                       "6-coadd": None,
-                       "7-trim_coadded": None,
-                       "8-source_extraction": None,
-                       "9-photometric_calibration": None,
-                       "10-dual_mode_source_extraction": None,
-                       "11-get_photometry": None
-                       })
+        stages.update({
+            "4.5-register_frames": None,
+            "5-correct_astrometry_frames": None,
+            "6-coadd": None,
+            "7-trim_coadded": None,
+            "8-source_extraction": None,
+            "9-photometric_calibration": None,
+            "10-dual_mode_source_extraction": None,
+            "11-get_photometry": None
+        })
         return stages
 
     @classmethod
@@ -2561,22 +2650,6 @@ class ESOImagingEpoch(ImagingEpoch):
                 normed = frame.divide_by_exp_time(output_path=science_destination)
                 self.add_frame_normalised(normed)
 
-    def proc_register(self, no_query: bool, **kwargs):
-        if no_query or self.query_stage(
-                "Register frames using astroalign?",
-                stage="4.5-register"):
-            output_dir = os.path.join(self.data_path, "4.5-registered")
-            self.paths["registered_dir"] = output_dir
-            self.register(
-                output_dir=output_dir,
-                **kwargs)
-            self.stages_complete['4.5-align'] = Time.now()
-            self.update_output_file()
-
-    def register(self):
-        pass
-
-
     def add_frame_background(self, background_frame: Union[image.ImagingImage, str]):
         if isinstance(background_frame, str):
             cls = image.ImagingImage.select_child_class(instrument=self.instrument_name)
@@ -2644,8 +2717,7 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
 
     def pipeline(self, **kwargs):
         super().pipeline(**kwargs)
-        if "register" in kwargs and kwargs["register"]:
-            self.proc_register(**kwargs)
+        self.proc_register(**kwargs)
         self.proc_correct_astrometry_frames(**kwargs)
         self.proc_coadd(**kwargs)
         self.proc_trim_coadded(**kwargs)
@@ -2844,11 +2916,52 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
                         output_path=new_path)
                     self.add_frame_trimmed(trimmed)
 
-
-    def correct_astrometry_frames(self, output_path: str, **kwargs):
+    def register(self, output_dir: str, frames: dict = None, n_template: Union[int, dict] = 0, **kwargs):
         """
 
-        :param output_path:
+          :param output_dir:
+          :param frames:
+          :param n_template: Either an integer specifying the position of the image in the list to use as the template for
+              alignment, or a dictionary with keys reflecting the filter names and values being the list position of the
+              respective templates.
+          :param kwargs:
+          :return:
+          """
+
+        u.mkdir_check(output_dir)
+
+        if frames is None:
+            frames = self.frames_normalised
+
+        for fil in frames:
+            output_dir_fil = os.path.join(output_dir, fil)
+            u.mkdir_check(output_dir_fil)
+            pairs = self.pair_files(images=frames[fil])
+            u.debug_print(2, pairs)
+            if isinstance(n_template, int):
+                template = pairs[n_template]
+            else:
+                template = pairs[n_template[fil]]
+
+            for i, pair in enumerate(pairs):
+                if i != n_template:
+                    for j, frame in enumerate(pair):
+                        u.debug_print(2, frame.filename.replace("_norm.fits", "_registered.fits"))
+                        registered = frame.register(
+                            target=template[j],
+                            output=os.path.join(output_dir_fil, frame.filename.replace("_norm.fits", "_registered.fits"))
+                        )
+                        self.add_frame_registered(registered)
+                else:
+                    for j, frame in enumerate(pair):
+                        registered = frame.copy(
+                            os.path.join(output_dir_fil, frame.filename.replace("_norm.fits", "_registered.fits")))
+                        self.add_frame_registered(registered)
+
+    def correct_astrometry_frames(self, output_dir: str, frames: dict = None, **kwargs):
+        """
+
+        :param output_dir:
         :param kwargs:
             method: method with which to solve astrometry of epoch. Allowed values are:
                 individual: each frame, including separate chips in the same exposure, will be passed to astrometry.net
@@ -2869,14 +2982,17 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
         else:
             method = "individual"
 
+        if frames is None:
+            frames = self.frames_reduced
+
         print()
         print(f"Solving astrometry using method '{method}'")
         print()
 
-        for fil in self.frames_reduced:
-            astrometry_fil_path = os.path.join(output_path, fil)
+        for fil in frames:
+            astrometry_fil_path = os.path.join(output_dir, fil)
             if method == "pairwise":
-                pairs = self.pair_files(self.frames_reduced[fil])
+                pairs = self.pair_files(frames[fil])
                 reverse_pair = False
                 for pair in pairs:
                     if isinstance(pair, tuple):
@@ -2933,7 +3049,7 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
 
             elif method == "propagate_from_single":
                 # Sort frames by upper or lower chip.
-                upper, lower = self.sort_by_chip(self.frames_reduced[fil])
+                upper, lower = self.sort_by_chip(frames[fil])
                 for j, lst in enumerate((upper, lower)):
                     successful = None
                     i = 0
@@ -2950,7 +3066,6 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
                             self.astrometry_successful[img.name] = True
                         else:
                             self.astrometry_successful[img.name] = False
-
 
                     # If we failed to find a solution on any frame in lst:
                     if successful is None:
@@ -2969,7 +3084,7 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
 
             elif method == "individual":
 
-                for img in self.frames_reduced[fil]:
+                for img in frames[fil]:
                     new_img = img.correct_astrometry(output_dir=astrometry_fil_path,
                                                      **self.astrometry_params)
                     if new_img is not None:
@@ -3028,11 +3143,11 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
                     else:
                         is_paired = False
                         pair = img_1
-                print("PAIR:")
+                u.debug_print(1, "PAIR:")
                 if isinstance(pair, tuple):
-                    print(str(pair[0]), ",", str(pair[1]))
+                    u.debug_print(1, str(pair[0]), ",", str(pair[1]))
                 else:
-                    print(pair)
+                    u.debug_print(1, pair)
                 pairs.append(pair)
 
         return pairs
