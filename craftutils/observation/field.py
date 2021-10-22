@@ -1145,6 +1145,10 @@ class ImagingEpoch(Epoch):
 
         self.coadded_trimmed = {}
 
+        self.gaia_catalogue = None
+
+        self.astrometry_stats = {}
+
         self.astrometry_params = {}
         if "astrometry" in kwargs:
             self.astrometry_params = kwargs["astrometry"]
@@ -1215,7 +1219,7 @@ class ImagingEpoch(Epoch):
 
         if no_query or self.query_stage(stage="5-correct_astrometry_frames",
                                         message="Correct astrometry of individual frames?"):
-            self.generate_gaia_astrometry_indices()
+            self.generate_astrometry_indices()
 
             if "output_path" in kwargs:
                 astrometry_path = kwargs["output_path"]
@@ -1274,6 +1278,8 @@ class ImagingEpoch(Epoch):
     def proc_photometric_calibration(self, no_query: bool = False, **kwargs):
         if no_query or self.query_stage("Do photometric calibration?", stage="9-photometric_calibration"):
             calib_dir = os.path.join(self.data_path, "9-photometric_calibration")
+            self.astrometry_diagnostics()
+            # self.psf_diagnostics()
             self.photometric_calibration(calib_dir, **kwargs)
             self.paths['calib_dir'] = calib_dir
             self.stages_complete["9-photometric_calibration"] = Time.now()
@@ -1307,6 +1313,22 @@ class ImagingEpoch(Epoch):
                     self.astrometry_successful[frame.name] = True
                 else:
                     self.astrometry_successful[frame.name] = False
+
+    def astrometry_diagnostics(self, images: dict = None, reference_cat: table.QTable = None):
+
+        if images is None:
+            images = self.coadded
+
+        if reference_cat is None:
+            reference_cat = self.epoch_gaia_catalogue()
+
+        for fil in images:
+            img = images[fil]
+            mean, median, rms = img.astrometry_diagnostics(
+                reference_cat=reference_cat)
+            self.astrometry_stats[fil]["mean"] = mean.to(units.arcsec)
+            self.astrometry_stats[fil]["median"] = median.to(units.arcsec)
+            self.astrometry_stats[fil]["rms"] = rms.to(units.arcsec)
 
     def photometric_calibration(self, output_path: str, **kwargs):
         u.mkdir_check(output_path)
@@ -1502,7 +1524,8 @@ class ImagingEpoch(Epoch):
             "airmass_mean": self.airmass_mean,
             "airmass_err": self.airmass_err,
             "flats": _output_img_dict_list(self.flats),
-            "astrometry_successful": self.astrometry_successful
+            "astrometry_successful": self.astrometry_successful,
+            "astrometry_stats": self.astrometry_stats
         })
         return output_dict
 
@@ -1559,34 +1582,48 @@ class ImagingEpoch(Epoch):
 
         return outputs
 
-    def generate_gaia_astrometry_indices(self, correct_to_epoch: bool = True):
+    def generate_astrometry_indices(
+            self,
+            cat_name="gaia",
+            correct_to_epoch: bool = True):
         if not isinstance(self.field, Field):
             raise ValueError("field has not been set for this observation.")
-        self.field.retrieve_catalogue(cat_name="gaia")
+        self.field.retrieve_catalogue(cat_name=cat_name)
         index_path = os.path.join(config["top_data_dir"], "astrometry_index_files")
         u.mkdir_check(index_path)
-        cat_index_path = os.path.join(index_path, "gaia")
-        gaia_csv_path = self.field.get_path(f"cat_csv_gaia")
+        cat_index_path = os.path.join(index_path, cat_name)
+        csv_path = self.field.get_path(f"cat_csv_{cat_name}")
 
-        if correct_to_epoch:
-            gaia_cat = am.correct_gaia_to_epoch(gaia_cat=gaia_csv_path,
-                                                new_epoch=self.date)
+        if cat_name == "gaia" and correct_to_epoch:
+            cat = self.epoch_gaia_catalogue()
         else:
-            gaia_cat = retrieve.load_catalogue(cat_name="gaia", cat=gaia_csv_path)
+            cat = retrieve.load_catalogue(
+                cat_name=cat_name,
+                cat=csv_path
+            )
 
         unique_id_prefix = int(self.field.name.replace("FRB", ""))
 
         am.generate_astrometry_indices(
-            cat_name="gaia",
-            cat=gaia_cat,
-            output_file_prefix=f"gaia_index_{self.field.name}",
+            cat_name=cat_name,
+            cat=cat,
+            output_file_prefix=f"{cat_name}_index_{self.field.name}",
             index_output_dir=cat_index_path,
-            fits_cat_output=gaia_csv_path.replace(".csv", ".fits"),
+            fits_cat_output=csv_path.replace(".csv", ".fits"),
             p_lower=-1,
             p_upper=2,
             unique_id_prefix=unique_id_prefix,
         )
-        return gaia_cat
+
+        return cat
+
+    def epoch_gaia_catalogue(self):
+        if self.gaia_catalogue is None:
+            self.gaia_catalogue = am.correct_gaia_to_epoch(
+                self.field.get_path(f"cat_csv_gaia"),
+                new_epoch=self.date
+            )
+        return self.gaia_catalogue
 
     def add_frame_raw(self, raw_frame: Union[image.ImagingImage, str]):
         if isinstance(raw_frame, str):
@@ -1681,6 +1718,8 @@ class ImagingEpoch(Epoch):
                 self.std_pointings[fil] = []
             if fil not in self.flats:
                 self.flats[fil] = []
+            if fil not in self.astrometry_stats:
+                self.astrometry_stats[fil] = {}
             return True
         else:
             return False
@@ -2949,7 +2988,8 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
                         u.debug_print(2, frame.filename.replace("_norm.fits", "_registered.fits"))
                         registered = frame.register(
                             target=template[j],
-                            output=os.path.join(output_dir_fil, frame.filename.replace("_norm.fits", "_registered.fits"))
+                            output=os.path.join(output_dir_fil,
+                                                frame.filename.replace("_norm.fits", "_registered.fits"))
                         )
                         self.add_frame_registered(registered)
                 else:

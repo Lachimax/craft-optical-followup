@@ -105,6 +105,8 @@ class PositionUncertainty:
                     b_sys = uncertainty["b"]["sys"]
                 if "stat" in uncertainty["b"] and uncertainty["a"]["stat"] is not None:
                     b_stat = uncertainty["b"]["stat"]
+            if "theta" in uncertainty and uncertainty["theta"] is not None:
+                theta = uncertainty["theta"]
 
         # If uncertainty is a single value, assume a circular uncertainty region without distinction between systematic
         # and statistical.
@@ -116,6 +118,8 @@ class PositionUncertainty:
             theta = 0.0
 
         # Check whether we're specifying uncertainty using equatorial coordinates or ellipse parameters.
+        u.debug_print(1, a_stat, a_sys, b_stat, b_sys, theta, position)
+        u.debug_print(1, ra_err_sys, ra_err_stat, dec_err_sys, dec_err_stat)
         if a_stat is not None and a_sys is not None and b_stat is not None and b_sys is not None and theta is not None and position is not None:
             ellipse = True
         elif ra_err_sys is not None and ra_err_stat is not None and dec_err_sys is not None and dec_err_stat is not None:

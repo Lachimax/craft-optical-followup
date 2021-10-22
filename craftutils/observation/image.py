@@ -1122,6 +1122,8 @@ class ImagingImage(Image):
                                tolerance: units.Quantity = 1 * units.arcsec, show_plots: bool = False,
                                output_path=None
                                ):
+        if isinstance(reference_cat, str):
+            reference_cat = table.QTable.read(reference_cat)
 
         matches_source_cat, matches_ext_cat, distance = self.match_to_cat(cat=reference_cat,
                                                                           ra_col=ra_col,
