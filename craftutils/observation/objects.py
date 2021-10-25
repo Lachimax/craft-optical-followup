@@ -9,6 +9,7 @@ from astropy.coordinates import SkyCoord
 import astropy.units as units
 import astropy.table as table
 import astropy.cosmology as cosmo
+from astropy.modeling import models, fitting
 from astropy.visualization import quantity_support
 
 ne2001_installed = True
@@ -191,6 +192,7 @@ class Object:
         self.field = field
         self.irsa_extinction_path = None
         self.irsa_extinction = None
+        self.extinction_law = None
         self.paths = {}
         self.load_output_file()
 
@@ -203,8 +205,11 @@ class Object:
         pass
 
     def _output_dict(self):
-        return {"photometry": self.photometry,
-                "irsa_extinction_path": self.irsa_extinction_path}
+        return {
+            "photometry": self.photometry,
+            "irsa_extinction_path": self.irsa_extinction_path,
+            "extinction_law": self.extinction_law
+        }
 
     def load_output_file(self):
         self.check_data_path()
@@ -263,11 +268,21 @@ class Object:
                     self.photometry[instrument_name]
                 )))
 
+                mag_corrected = units.Quantity(list(map(
+                    lambda f: self.photometry[instrument_name][f]["mag_ext_corrected"],
+                    self.photometry[instrument_name]
+                )))
+
                 ax.errorbar(
                     lambda_eff,
                     mag,
                     yerr=mag_err,
                     label=instrument_name,
+                    **kwargs,
+                )
+                ax.scatter(
+                    lambda_eff,
+                    mag_corrected,
                     **kwargs
                 )
                 ax.set_ylabel("Apparent magnitude")
@@ -302,7 +317,31 @@ class Object:
 
     def estimate_galactic_extinction(self):
         self.retrieve_extinction_table()
+        lambda_eff_tbl = self.irsa_extinction["LamEff"].to(
+            units.Angstrom)
+        power_law = models.PowerLaw1D()
+        fitter = fitting.LevMarLSQFitter()
+        fitted = fitter(power_law, lambda_eff_tbl, self.irsa_extinction["A_SandF"].value)
 
+        sort = lambda_eff_tbl.copy()
+        sort.sort()
+
+        tbl = self.photometry_to_table()
+
+        plt.plot(sort, fitted(sort))
+        plt.scatter(lambda_eff_tbl, self.irsa_extinction["A_SandF"].value, label="")
+        plt.scatter(tbl["lambda_eff"], fitted(tbl["lambda_eff"]), label="interpolated")
+        plt.legend()
+        plt.savefig(os.path.join(self.data_path, f"{self.name}_irsa_extinction.pdf"))
+        self.extinction_law = fitted
+
+        tbl["ext_gal"] = fitted(tbl["lambda_eff"]) * units.mag
+        tbl["mag_ext_corrected"] = tbl["mag"] - tbl["ext_gal"]
+
+        for row in tbl:
+            self.photometry[row["instrument"]][row["band"]]["ext_gal"] = row["ext_gal"]
+            self.photometry[row["instrument"]][row["band"]]["mag_ext_corrected"] = row["mag_ext_corrected"]
+        self.photometry_to_table()
 
     def retrieve_extinction_table(self, force: bool = False):
         self.load_extinction_table()
@@ -314,10 +353,9 @@ class Object:
                 output=raw_path
             )
             ext_tbl = table.QTable.read(raw_path, format="ascii")
-            tbl_path = os.path.join(self.data_path, "galactic_extinction.ecsv")
+            tbl_path = os.path.join(self.data_path, f"{self.name}_galactic_extinction.ecsv")
             ext_tbl.writeto(tbl_path, overwrite=True, format="ascii.ecsv")
             self.irsa_extinction = ext_tbl
-            self.irsa_extinction["interpolated"] = [False] * len(ext_tbl)
             self.irsa_extinction_path = tbl_path
 
     def load_extinction_table(self, force: bool = False):

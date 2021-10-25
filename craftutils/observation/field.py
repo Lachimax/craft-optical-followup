@@ -1493,7 +1493,7 @@ class ImagingEpoch(Epoch):
                     "dec_err": np.sqrt(nearest["ERRY2_WORLD"]),
                     "kron_radius": nearest["KRON_RADIUS"]}
                 obj.update_output_file()
-                obj.photometry_to_table()
+                obj.estimate_galactic_extinction()
                 obj.write_plot_photometry()
             tbl = table.vstack(rows)
             tbl.write(os.path.join(fil_output_path, f"{self.field.name}_{self.name}_{fil}.ecsv"),

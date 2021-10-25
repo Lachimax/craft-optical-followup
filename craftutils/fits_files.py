@@ -496,7 +496,7 @@ def detect_edges_area(file: Union['fits.hdu_list.hdulist.HDUList', 'str']):
     return left, right, bottom, top
 
 
-def get_filter(file: Union['fits.hdu_list.hdulist.HDUList', 'str']):
+def get_filter(file: Union['fits.hdu_list.hdulist.HDUList', str]):
     path = False
     if type(file) is str:
         path = True
