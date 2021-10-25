@@ -1317,13 +1317,14 @@ class ImagingEpoch(Epoch):
     def astrometry_diagnostics(self, images: dict = None, reference_cat: table.QTable = None):
 
         if images is None:
-            images = self.coadded
+            images = self.coadded_trimmed
 
         if reference_cat is None:
             reference_cat = self.epoch_gaia_catalogue()
 
         for fil in images:
             img = images[fil]
+            img.load_source_cat()
             mean, median, rms = img.astrometry_diagnostics(
                 reference_cat=reference_cat)
             self.astrometry_stats[fil]["mean"] = mean.to(units.arcsec)
@@ -1493,6 +1494,8 @@ class ImagingEpoch(Epoch):
             tbl = table.vstack(rows)
             tbl.write(os.path.join(fil_output_path, f"{self.field.name}_{self.name}_{fil}.ecsv"),
                       format="ascii.ecsv")
+            tbl.write(os.path.join(fil_output_path, f"{self.field.name}_{self.name}_{fil}.csv"),
+                      format="ascii.csv")
 
     def guess_data_path(self):
         if self.data_path is None and self.field is not None and self.field.data_path is not None and \
@@ -2426,7 +2429,7 @@ class PanSTARRS1ImagingEpoch(ImagingEpoch):
             self.data_path = os.path.join(self.field.data_path, "imaging", "panstarrs1")
         return self.data_path
 
-    def photometric_calibration(self, output_path: str):
+    def photometric_calibration(self, output_path: str, **kwargs):
         u.mkdir_check(output_path)
 
         deepest = self.coadded[self.filters[0]]
@@ -2479,12 +2482,13 @@ class PanSTARRS1ImagingEpoch(ImagingEpoch):
         if field is None:
             field = param_dict["field"]
 
-        epoch = cls(name=name,
-                    field=field,
-                    param_path=param_file,
-                    data_path=os.path.join(config["top_data_dir"], param_dict['data_path']),
-                    source_extractor_config=param_dict['sextractor'])
-        epoch.instrument = cls.instrument
+        epoch = cls(
+            name=name,
+            field=field,
+            param_path=param_file,
+            data_path=os.path.join(config["top_data_dir"], param_dict['data_path']),
+            source_extractor_config=param_dict['sextractor'])
+        epoch.instrument = cls.instrument_name
         return epoch
 
 

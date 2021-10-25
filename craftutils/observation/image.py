@@ -628,6 +628,8 @@ class ImagingImage(Image):
             print("source_cat_dual could not be loaded because source_cat_sextractor_dual_path has not been set.")
 
     def load_source_cat(self, force: bool = False):
+        u.debug_print(1, self.name)
+        u.debug_print(1, "SELF.SOURCE_CAT_PATH", self.source_cat_path)
         if force or self.source_cat is None:
             if self.source_cat_path is not None:
                 print("Loading source_table from", self.source_cat_path)
@@ -779,6 +781,7 @@ class ImagingImage(Image):
                 self.depth = outputs["depth"]
             if "dual_mode_template" in outputs and outputs["dual_mode_template"] is not None:
                 self.dual_mode_template = outputs["dual_mode_template"]
+        u.debug_print(1, "SELF.SOURCE_CAT_PATH", self.source_cat_path)
         return outputs
 
     def select_zeropoint(self, no_user_input: bool = False):
@@ -1122,8 +1125,14 @@ class ImagingImage(Image):
                                tolerance: units.Quantity = 1 * units.arcsec, show_plots: bool = False,
                                output_path=None
                                ):
+
+        self.load_source_cat()
+
         if isinstance(reference_cat, str):
             reference_cat = table.QTable.read(reference_cat)
+
+        u.debug_print(1, "REFERENCE_CAT", reference_cat)
+        u.debug_print(1, "SELF.SOURCE_CAT", self.source_cat)
 
         matches_source_cat, matches_ext_cat, distance = self.match_to_cat(cat=reference_cat,
                                                                           ra_col=ra_col,
