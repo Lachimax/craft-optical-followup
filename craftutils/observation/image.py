@@ -632,20 +632,20 @@ class ImagingImage(Image):
         u.debug_print(1, "SELF.SOURCE_CAT_PATH", self.source_cat_path)
         if force or self.source_cat is None:
             if self.source_cat_path is not None:
-                print("Loading source_table from", self.source_cat_path)
+                u.debug_print(1, "Loading source_table from", self.source_cat_path)
                 self.source_cat = table.QTable.read(self.source_cat_path, format="ascii.ecsv")
             elif self.source_cat_sextractor_path is not None:
                 self.load_source_cat_sextractor(force=force)
             else:
-                print("No valid source_cat_path found. Could not load source_table.")
+                u.debug_print(1, "No valid source_cat_path found. Could not load source_table.")
 
             if self.source_cat_dual_path is not None:
-                print("Loading source_table from", self.source_cat_dual_path)
+                u.debug_print(1, "Loading source_table from", self.source_cat_dual_path)
                 self.source_cat_dual = table.QTable.read(self.source_cat_dual_path, format="ascii.ecsv")
             elif self.source_cat_sextractor_dual_path is not None:
                 self.load_source_cat_sextractor_dual(force=force)
             else:
-                print("No valid source_cat_dual_path found. Could not load source_table.")
+                u.debug_print(1, "No valid source_cat_dual_path found. Could not load source_table.")
 
     def write_source_cat(self):
         if self.source_cat is None:
@@ -1306,11 +1306,13 @@ class ImagingImage(Image):
 
     def find_object(self, coord: SkyCoord, dual: bool = True):
         self.load_source_cat()
+        u.debug_print(1, "FIND_OBJECT: dual", dual)
         if dual:
             cat = self.source_cat_dual
         else:
             cat = self.source_cat
 
+        u.debug_print(1, "FIND_OBJECT: cat.colnames", cat.colnames)
         coord_cat = SkyCoord(cat["RA"], cat["DEC"])
         separation = coord.separation(coord_cat)
         nearest = cat[np.argmin(separation)]

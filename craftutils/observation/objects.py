@@ -30,6 +30,7 @@ import craftutils.params as p
 import craftutils.astrometry as a
 import craftutils.utils as u
 import craftutils.observation.instrument as inst
+import craftutils.retrieve as r
 
 try:
     cosmology = cosmo.Planck18
@@ -188,6 +189,9 @@ class Object:
         self.data_path = None
         self.output_file = None
         self.field = field
+        self.irsa_extinction_path = None
+        self.irsa_extinction = None
+        self.paths = {}
         self.load_output_file()
 
     def get_photometry(self):
@@ -199,7 +203,8 @@ class Object:
         pass
 
     def _output_dict(self):
-        return {"photometry": self.photometry}
+        return {"photometry": self.photometry,
+                "irsa_extinction_path": self.irsa_extinction_path}
 
     def load_output_file(self):
         self.check_data_path()
@@ -208,6 +213,8 @@ class Object:
             if outputs is not None:
                 if "photometry" in outputs and outputs["photometry"] is not None:
                     self.photometry = outputs["photometry"]
+                if "irsa_extinction_path" in outputs and outputs["irsa_extinction_path"] is not None:
+                    self.irsa_extinction_path = outputs["irsa_extinction_path"]
             return outputs
 
     def check_data_path(self):
@@ -222,6 +229,13 @@ class Object:
     def update_output_file(self):
         if self.check_data_path():
             p.update_output_file(self)
+
+    def write_plot_photometry(self, output: str = None):
+        if output is None:
+            output = os.path.join(self.data_path, f"{self.name}_photometry.pdf")
+
+        self.plot_photometry()
+        plt.savefig(output)
 
     def plot_photometry(self, ax=None, **kwargs):
         if ax is None:
@@ -267,6 +281,10 @@ class Object:
         :param output: Where to write table.
         :return:
         """
+
+        if output is None:
+            output = os.path.join(self.data_path, f"{self.name}_photometry.csv")
+
         tbls = []
         for instrument_name in self.photometry:
             instrument = inst.Instrument.from_params(instrument_name)
@@ -279,9 +297,34 @@ class Object:
                 tbls.append(tbl)
         tbl = table.vstack(tbls)
 
-        if output is not None:
-            tbl.write(output, format="csv")
+        tbl.write(output, format="csv", overwrite=True)
         return tbl
+
+    def estimate_galactic_extinction(self):
+        self.retrieve_extinction_table()
+
+
+    def retrieve_extinction_table(self, force: bool = False):
+        self.load_extinction_table()
+        if force or self.irsa_extinction is None:
+            raw_path = os.path.join(self.data_path, f"{self.name}_irsa_extinction.tbl")
+            r.save_irsa_extinction(
+                ra=self.position.ra,
+                dec=self.position.dec,
+                output=raw_path
+            )
+            ext_tbl = table.QTable.read(raw_path, format="ascii")
+            tbl_path = os.path.join(self.data_path, "galactic_extinction.ecsv")
+            ext_tbl.writeto(tbl_path, overwrite=True, format="ascii.ecsv")
+            self.irsa_extinction = ext_tbl
+            self.irsa_extinction["interpolated"] = [False] * len(ext_tbl)
+            self.irsa_extinction_path = tbl_path
+
+    def load_extinction_table(self, force: bool = False):
+        if force or self.irsa_extinction is None:
+            if self.irsa_extinction_path is not None:
+                u.debug_print(1, "Loading irsa_extinction from", self.irsa_extinction_path)
+                self.irsa_extinction = table.QTable.read(self.irsa_extinction_path, format="ascii.ecsv")
 
     @classmethod
     def default_params(cls):
@@ -414,9 +457,6 @@ class Galaxy(Object):
                 )
                 self.photometry[instrument][fil]["abs_mag"] = abs_mag
         self.update_output_file()
-
-
-
 
     def projected_distance(self, angle: units.Quantity):
         angle = angle.to(units.rad).value

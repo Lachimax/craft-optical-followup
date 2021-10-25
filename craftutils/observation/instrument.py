@@ -81,8 +81,9 @@ class Instrument:
 
     @classmethod
     def from_file(cls, param_file: Union[str, dict]):
+        u.debug_print(1, "INSTRUMENT.FROM_FILE(): param_file", param_file)
         name, param_file, param_dict = p.params_init(param_file)
-
+        u.debug_print(1, "INSTRUMENT.FROM_FILE(): name", name)
         if param_dict is None:
             raise FileNotFoundError("Param file missing!")
         return cls(**param_dict)

@@ -215,6 +215,7 @@ class Field:
 
         self.cats = {}
         self.cat_gaia = None
+        self.irsa_extinction = None
 
         if type(objs) is dict:
             for obj_name in objs:
@@ -1459,7 +1460,7 @@ class ImagingEpoch(Epoch):
             fil_output_path = os.path.join(path, fil)
             u.mkdir_check(fil_output_path)
             img = image_dict[fil]
-            img.calibrate_magnitudes(zeropoint_name="best")
+            img.calibrate_magnitudes(zeropoint_name="best", dual=dual)
             rows = []
             for obj in self.field.objects:
                 # obj.load_output_file()
@@ -1467,6 +1468,7 @@ class ImagingEpoch(Epoch):
                 # Get nearest Source-Extractor object:
                 nearest = img.find_object(obj.position, dual=dual)
                 rows.append(nearest)
+                u.debug_print(1, "NEAREST", nearest.colnames)
                 err = nearest[f'MAGERR_AUTO_ZP_best']
                 print("FILTER:", fil)
                 print(f"MAG_AUTO = {nearest['MAG_AUTO_ZP_best']} +/- {err}")
@@ -1491,6 +1493,8 @@ class ImagingEpoch(Epoch):
                     "dec_err": np.sqrt(nearest["ERRY2_WORLD"]),
                     "kron_radius": nearest["KRON_RADIUS"]}
                 obj.update_output_file()
+                obj.photometry_to_table()
+                obj.write_plot_photometry()
             tbl = table.vstack(rows)
             tbl.write(os.path.join(fil_output_path, f"{self.field.name}_{self.name}_{fil}.ecsv"),
                       format="ascii.ecsv")
@@ -2343,6 +2347,7 @@ class PanSTARRS1ImagingEpoch(ImagingEpoch):
         self.load_output_file(mode="imaging")
         if isinstance(field, Field):
             self.field.retrieve_catalogue(cat_name="panstarrs1")
+        u.debug_print(1, "INIT; self.filters", self.filters)
 
     # TODO: Automatic cutout download; don't worry for now.
 
@@ -2379,6 +2384,7 @@ class PanSTARRS1ImagingEpoch(ImagingEpoch):
     def proc_3_photometric_calibration(self, no_query: bool = False, **kwargs):
         if no_query or self.query_stage("Do photometric calibration?", stage="3-photometric_calibration"):
             calib_dir = os.path.join(self.data_path, "3-photometric_calibration")
+            u.debug_print(1, "PROC_3_PHOTOMETRIC_CALIBRATION; self.filters", self.filters)
             self.photometric_calibration(calib_dir)
             self.stages_complete['3-photometric_calibration'] = Time.now()
             self.update_output_file()
@@ -2431,7 +2437,7 @@ class PanSTARRS1ImagingEpoch(ImagingEpoch):
 
     def photometric_calibration(self, output_path: str, **kwargs):
         u.mkdir_check(output_path)
-
+        u.debug_print(1, self.filters)
         deepest = self.coadded[self.filters[0]]
         for fil in self.filters:
             img = self.coadded[fil]
