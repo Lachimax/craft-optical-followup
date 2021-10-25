@@ -40,7 +40,7 @@ def main(obj: str):
     plt.xlabel(r'Filter $\lambda_\mathrm{eff}}$ (nm)')
     plt.ylabel(r'Extinction (magnitude)')
     plt.legend()
-    plt.show()
+    plt.close()
 
     to_write = {}
     for i, f in enumerate(filters_interp):

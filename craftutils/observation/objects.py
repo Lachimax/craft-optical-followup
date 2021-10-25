@@ -283,7 +283,7 @@ class Object:
                 ax.scatter(
                     lambda_eff,
                     mag_corrected,
-                    **kwargs
+                    marker="x"
                 )
                 ax.set_ylabel("Apparent magnitude")
                 ax.set_xlabel("$\lambda_\mathrm{eff}$ (\AA)")
@@ -315,7 +315,13 @@ class Object:
         tbl.write(output, format="csv", overwrite=True)
         return tbl
 
-    def estimate_galactic_extinction(self):
+    def estimate_galactic_extinction(self, ax=None, **kwargs):
+
+        if ax is None:
+            fig, ax = plt.subplots()
+        if "marker" not in kwargs:
+            kwargs["marker"] = "x"
+
         self.retrieve_extinction_table()
         lambda_eff_tbl = self.irsa_extinction["LamEff"].to(
             units.Angstrom)
@@ -323,24 +329,40 @@ class Object:
         fitter = fitting.LevMarLSQFitter()
         fitted = fitter(power_law, lambda_eff_tbl, self.irsa_extinction["A_SandF"].value)
 
-        sort = lambda_eff_tbl.copy()
-        sort.sort()
+        x = np.linspace(min(lambda_eff_tbl), max(lambda_eff_tbl))
 
         tbl = self.photometry_to_table()
 
-        plt.plot(sort, fitted(sort))
-        plt.scatter(lambda_eff_tbl, self.irsa_extinction["A_SandF"].value, label="")
-        plt.scatter(tbl["lambda_eff"], fitted(tbl["lambda_eff"]), label="interpolated")
+        tbl["ext_gal_pl"] = fitted(tbl["lambda_eff"]) * units.mag
+        tbl["ext_gal_interp"] = np.interp(tbl["lambda_eff"],
+                                          lambda_eff_tbl,
+                                          self.irsa_extinction["A_SandF"].value
+                                          ) * units.mag
+
+        plt.plot(x, fitted(x), label="power law")
+        plt.scatter(tbl["lambda_eff"], tbl["ext_gal_pl"].value, label="power law fit", **kwargs)
+        plt.scatter(lambda_eff_tbl, self.irsa_extinction["A_SandF"].value, label="from IRSA", **kwargs)
+        plt.scatter(tbl["lambda_eff"], tbl["ext_gal_interp"].value, label="interpolated", **kwargs)
         plt.legend()
         plt.savefig(os.path.join(self.data_path, f"{self.name}_irsa_extinction.pdf"))
-        self.extinction_law = fitted
-
-        tbl["ext_gal"] = fitted(tbl["lambda_eff"]) * units.mag
-        tbl["mag_ext_corrected"] = tbl["mag"] - tbl["ext_gal"]
+        plt.close()
+        self.extinction_law = {"amplitude": fitted.amplitude.value * fitted.amplitude.unit,
+                               "x_0": fitted.x_0.value,
+                               "alpha": fitted.alpha.value}
 
         for row in tbl:
-            self.photometry[row["instrument"]][row["band"]]["ext_gal"] = row["ext_gal"]
-            self.photometry[row["instrument"]][row["band"]]["mag_ext_corrected"] = row["mag_ext_corrected"]
+            instrument = row["instrument"]
+            band = row["band"]
+            if row["lambda_eff"] > max(lambda_eff_tbl) or row["lambda_eff"] < min(lambda_eff_tbl):
+                key = "ext_gal_pl"
+                self.photometry[instrument][band]["ext_gal_type"] = "power_law_fit"
+            else:
+                key = "ext_gal_interp"
+                self.photometry[instrument][band]["ext_gal_type"] = "interpolated"
+            self.photometry[instrument][band]["ext_gal"] = row[key]
+            u.debug_print(1, key, row['mag'], row[key])
+            self.photometry[instrument][band]["mag_ext_corrected"] = row["mag"] - row[key]
+
         self.photometry_to_table()
 
     def retrieve_extinction_table(self, force: bool = False):
@@ -348,13 +370,13 @@ class Object:
         if force or self.irsa_extinction is None:
             raw_path = os.path.join(self.data_path, f"{self.name}_irsa_extinction.tbl")
             r.save_irsa_extinction(
-                ra=self.position.ra,
-                dec=self.position.dec,
+                ra=self.position.ra.value,
+                dec=self.position.dec.value,
                 output=raw_path
             )
             ext_tbl = table.QTable.read(raw_path, format="ascii")
             tbl_path = os.path.join(self.data_path, f"{self.name}_galactic_extinction.ecsv")
-            ext_tbl.writeto(tbl_path, overwrite=True, format="ascii.ecsv")
+            ext_tbl.write(tbl_path, overwrite=True, format="ascii.ecsv")
             self.irsa_extinction = ext_tbl
             self.irsa_extinction_path = tbl_path
 

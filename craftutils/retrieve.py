@@ -510,6 +510,7 @@ def retrieve_irsa_xml(ra: float, dec: float):
     :param dec: Declination of the desired field, in degrees.
     :return: XML-formatted string.
     """
+    u.debug_print(1, "Retrieving IRSA data for position:", ra, dec)
     url = f"https://irsa.ipac.caltech.edu/cgi-bin/DUST/nph-dust?locstr={ra}+{dec}+equ+j2000"
     print("\nRetrieving IRSA Dust Tool XML from", url)
     irsa_xml = urllib.request.urlopen(url)
