@@ -1159,6 +1159,9 @@ class ImagingEpoch(Epoch):
         self.registration_params = {}
         if "registration" in kwargs:
             self.registration_params = kwargs["registration"]
+        self.normalisation_params = {}
+        if "normalisation" in kwargs:
+            self.normalisation_params = kwargs["normalisation"]
 
         u.debug_print(1, self.astrometry_params)
 
@@ -1188,7 +1191,7 @@ class ImagingEpoch(Epoch):
 
         :param output_dir:
         :param frames:
-        :param template: There are three options for this parameter:
+        :param tmp: There are three options for this parameter:
             int: An integer specifying the position of the image in the list to use as the template for
             alignment (ie, each filter will use the same list position)
             dict: a dictionary with keys reflecting the filter names, with values specifying the list position as above
@@ -1198,32 +1201,50 @@ class ImagingEpoch(Epoch):
         :return:
         """
 
+        u.mkdir_check(output_dir)
+        u.debug_print(1, "SELF.REGISTER: template", template)
+
         if frames is None:
             frames = self.frames_normalised
 
         for fil in frames:
             if isinstance(template, int):
-                template = frames[fil][template]
+                tmp = frames[fil][template]
+                n_template = template
             elif isinstance(template, image.ImagingImage):
-                template = template
+                # When
+                tmp = template
+                n_template = -1
             elif isinstance(template, str):
-                template = image.ImagingImage(path=template)
+                tmp = image.ImagingImage(path=template)
+                n_template = -1
             else:
-                template = frames[fil][template[fil]]
+                tmp = frames[fil][template[fil]]
+                n_template = template[fil]
+            u.debug_print(1, "SELF.REGISTER: tmp", tmp)
 
-            for i, frame in enumerate(frames[fil]):
-                output_dir_fil = os.path.join(output_dir, fil)
-                u.mkdir_check(output_dir_fil)
-                if i != template:
-                    registered = frame.register(
-                        target=template,
-                        output=os.path.join(output_dir_fil, frame.name.replace(".fits", "_registered.fits"))
-                    )
-                    self.add_frame_registered(registered)
-                else:
-                    registered = frame.copy(
-                        os.path.join(output_dir_fil, template.name.replace(".fits", "_registered.fits")))
-                    self.add_frame_registered(registered)
+            output_dir_fil = os.path.join(output_dir, fil)
+            u.mkdir_check(output_dir_fil)
+
+            self._register(frames=frames, fil=fil, tmp=tmp, output_dir=output_dir_fil, n_template=n_template)
+
+    def _register(self, frames: dict, fil: str, tmp: image.ImagingImage, n_template: int, output_dir: str):
+        for i, frame in enumerate(frames[fil]):
+
+            if i != n_template:
+                registered = frame.register(
+                    target=tmp,
+                    output=os.path.join(
+                        output_dir,
+                        frame.name.replace(".fits", "_registered.fits"))
+                )
+                self.add_frame_registered(registered)
+            else:
+                registered = frame.copy(
+                    os.path.join(
+                        output_dir,
+                        tmp.name.replace(".fits", "_registered.fits")))
+                self.add_frame_registered(registered)
 
     def proc_correct_astrometry_frames(self, no_query: bool = False, **kwargs):
 
@@ -1236,8 +1257,7 @@ class ImagingEpoch(Epoch):
                 kwargs.pop("output_path")
             else:
                 astrometry_path = os.path.join(self.data_path, "5-astrometry_frames")
-
-            shutil.rmtree(astrometry_path)
+            u.rmtree_check(astrometry_path)
             u.mkdir_check(astrometry_path)
 
             self.frames_astrometry = {}
@@ -1245,7 +1265,7 @@ class ImagingEpoch(Epoch):
             if "register" in self.registration_params and self.registration_params["register"]:
                 self.correct_astrometry_frames(output_dir=astrometry_path, frames=self.frames_registered, **kwargs)
             else:
-                self.correct_astrometry_frames(output_dir=astrometry_path, frames=self.frames_reduced, **kwargs)
+                self.correct_astrometry_frames(output_dir=astrometry_path, frames=self.frames_normalised, **kwargs)
 
             self.paths['astrometry_dir'] = astrometry_path
             self.stages_complete["5-correct_astrometry_frames"] = Time.now()
@@ -1428,7 +1448,7 @@ class ImagingEpoch(Epoch):
         for fil in self.filters:
             input_directory_fil = os.path.join(input_directory, fil)
             output_directory_fil = os.path.join(output_dir, fil)
-            shutil.rmtree(output_directory_fil)
+            u.rmtree_check(output_directory_fil)
             u.mkdir_check(output_directory_fil)
             coadded_path = montage.standard_script(
                 input_directory=input_directory_fil,
@@ -2576,6 +2596,10 @@ class ESOImagingEpoch(ImagingEpoch):
             self.update_output_file()
 
     def _sort_after_esoreflex(self, **kwargs):
+
+        self.frames_reduced = {}
+        self.frames_esoreflex_backgrounds = {}
+
         if "delete_eso_output" in kwargs:
             delete_output = kwargs["delete_eso_output"]
         else:
@@ -2682,11 +2706,18 @@ class ESOImagingEpoch(ImagingEpoch):
             self.paths["normalised_dir"] = output_dir
             self.divide_by_exp_time(
                 output_dir=output_dir,
-                **kwargs)
+                **self.normalisation_params)
             self.stages_complete['4-divide_by_exp_time'] = Time.now()
             self.update_output_file()
 
     def divide_by_exp_time(self, output_dir: str, **kwargs):
+
+        self.frames_normalised = {}
+
+        if "upper_only" in kwargs:
+            upper_only = kwargs["upper_only"]
+        else:
+            upper_only = False
 
         u.mkdir_check(output_dir)
         u.mkdir_check(os.path.join(output_dir, "science"))
@@ -2698,15 +2729,21 @@ class ESOImagingEpoch(ImagingEpoch):
             u.mkdir_check(fil_path_science)
             u.mkdir_check(fil_path_back)
             for frame in self.frames_trimmed[fil]:
-                science_destination = os.path.join(
-                    output_dir,
-                    "science",
-                    fil,
-                    frame.filename.replace("trim", "norm"))
+                do = True
+                if upper_only:
+                    if frame.extract_chip_number() != 1:
+                        do = False
 
-                # Divide by exposure time to get an image in counts/second.
-                normed = frame.divide_by_exp_time(output_path=science_destination)
-                self.add_frame_normalised(normed)
+                if do:
+                    science_destination = os.path.join(
+                        output_dir,
+                        "science",
+                        fil,
+                        frame.filename.replace("trim", "norm"))
+
+                    # Divide by exposure time to get an image in counts/second.
+                    normed = frame.divide_by_exp_time(output_path=science_destination)
+                    self.add_frame_normalised(normed)
 
     def add_frame_background(self, background_frame: Union[image.ImagingImage, str]):
         if isinstance(background_frame, str):
@@ -2974,48 +3011,32 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
                         output_path=new_path)
                     self.add_frame_trimmed(trimmed)
 
-    def register(self, output_dir: str, frames: dict = None, template: Union[int, dict] = 0, **kwargs):
-        """
+    def _register(self, frames: dict, fil: str, tmp: image.ImagingImage, n_template: int, output_dir: str):
+        pairs = self.pair_files(images=frames[fil])
+        u.debug_print(2, pairs)
 
-          :param output_dir:
-          :param frames:
-          :param template: Either an integer specifying the position of the image in the list to use as the template for
-              alignment, or a dictionary with keys reflecting the filter names and values being the list position of the
-              respective templates.
-          :param kwargs:
-          :return:
-          """
-
-        u.mkdir_check(output_dir)
-
-        if frames is None:
-            frames = self.frames_normalised
-
-        for fil in frames:
-            output_dir_fil = os.path.join(output_dir, fil)
-            u.mkdir_check(output_dir_fil)
-            pairs = self.pair_files(images=frames[fil])
-            u.debug_print(2, pairs)
-            if isinstance(template, int):
-                template = pairs[template]
+        for i, pair in enumerate(pairs):
+            if not isinstance(pair, tuple):
+                pair = [pair]
+            if i != n_template:
+                for j, frame in enumerate(pair):
+                    if isinstance(tmp, tuple):
+                        template = tmp[j]
+                    else:
+                        template=tmp
+                    u.debug_print(2, frame.filename.replace("_norm.fits", "_registered.fits"))
+                    registered = frame.register(
+                        target=template,
+                        output=os.path.join(
+                            output_dir,
+                            frame.filename.replace("_norm.fits", "_registered.fits"))
+                    )
+                    self.add_frame_registered(registered)
             else:
-                template = pairs[template[fil]]
-
-            for i, pair in enumerate(pairs):
-                if i != template:
-                    for j, frame in enumerate(pair):
-                        u.debug_print(2, frame.filename.replace("_norm.fits", "_registered.fits"))
-                        registered = frame.register(
-                            target=template[j],
-                            output=os.path.join(output_dir_fil,
-                                                frame.filename.replace("_norm.fits", "_registered.fits"))
-                        )
-                        self.add_frame_registered(registered)
-                else:
-                    for j, frame in enumerate(pair):
-                        registered = frame.copy(
-                            os.path.join(output_dir_fil, frame.filename.replace("_norm.fits", "_registered.fits")))
-                        self.add_frame_registered(registered)
+                for j, frame in enumerate(pair):
+                    registered = frame.copy(
+                        os.path.join(output_dir, frame.filename.replace("_norm.fits", "_registered.fits")))
+                    self.add_frame_registered(registered)
 
     def correct_astrometry_frames(self, output_dir: str, frames: dict = None, **kwargs):
         """
@@ -3042,7 +3063,7 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
             method = "individual"
 
         if frames is None:
-            frames = self.frames_reduced
+            frames = self.frames_normalised
 
         print()
         print(f"Solving astrometry using method '{method}'")

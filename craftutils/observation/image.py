@@ -234,6 +234,8 @@ class Image:
         self.pointing = None
 
     def __eq__(self, other):
+        if not isinstance(other, Image):
+            raise TypeError("Can only compare Image instance to another Image instance.")
         return self.path == other.path
 
     def __str__(self):
@@ -649,19 +651,19 @@ class ImagingImage(Image):
 
     def write_source_cat(self):
         if self.source_cat is None:
-            print("source_cat not yet loaded.")
+            u.debug_print(1, "source_cat not yet loaded.")
         else:
             if self.source_cat_path is None:
                 self.source_cat_path = self.path.replace(".fits", "_source_cat.ecsv")
-            print("Writing source catalogue to", self.source_cat_path)
+            u.debug_print(1, "Writing source catalogue to", self.source_cat_path)
             self.source_cat.write(self.source_cat_path, format="ascii.ecsv")
 
         if self.source_cat_dual is None:
-            print("source_cat_dual not yet loaded.")
+            u.debug_print(1, "source_cat_dual not yet loaded.")
         else:
             if self.source_cat_dual_path is None:
                 self.source_cat_dual_path = self.path.replace(".fits", "_source_cat_dual.ecsv")
-            print("Writing dual-mode source catalogue to", self.source_cat_dual_path)
+            u.debug_print(1, "Writing dual-mode source catalogue to", self.source_cat_dual_path)
             self.source_cat_dual.write(self.source_cat_dual_path, format="ascii.ecsv")
 
     def load_wcs(self, ext: int = 0) -> wcs.WCS:
@@ -1001,7 +1003,10 @@ class ImagingImage(Image):
         u.debug_print(2, self.data)
         u.debug_print(2, type(self.data[ext]), type(target.data[ext]))
         data_source = img_as_float64(self.data[ext])
+        data_source = u.sanitise_endianness(data_source)
         data_target = img_as_float64(target.data[ext])
+        data_target = u.sanitise_endianness(data_target)
+        u.debug_print(1, f"Attempting registration of {self.name} against {target.name}")
         registered, footprint = register(data_source, data_target)
 
         self.copy(output)

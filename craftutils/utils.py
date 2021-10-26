@@ -2,6 +2,7 @@
 
 import math
 import os
+import shutil
 import sys
 from typing import List, Union, Tuple
 from datetime import datetime as dt
@@ -18,6 +19,17 @@ from astropy.time import Time
 # TODO: Also comment.
 
 debug_level = 0
+
+
+def sanitise_endianness(array: np.ndarray):
+    """
+    If the data is big endian, swap the byte order to make it little endian. Special thanks to this link:
+    https://stackoverflow.com/questions/60161759/valueerror-big-endian-buffer-not-supported-on-little-endian-compiler
+    :return: A little-endian version of the input array.
+    """
+    if array.dtype.byteorder == '>':
+        array = array.byteswap().newbyteorder()
+    return array
 
 
 def debug_print(level: int = 1, *args):
@@ -231,6 +243,15 @@ def rm_check(path):
     """
     if os.path.isfile(path):
         os.remove(path)
+
+def rmtree_check(path):
+    """
+    Checks if a directory exists, and removes it if so. USE WITH CAUTION; WILL DELETE ENTIRE TREE WITHOUT WARNING.
+    :param path:
+    :return:
+    """
+    if os.path.isdir(path):
+        shutil.rmtree(path)
 
 
 def mkdir_check(*paths: str):
