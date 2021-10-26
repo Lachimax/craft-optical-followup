@@ -25,8 +25,6 @@ def main(field_name: str,
     u.debug_level = debug_level
 
     new_field = False
-    print("Refreshing parameter files from templates...")
-    #    p.refresh_params_all(quiet=True)
     if field_name is None:
         fields = ["New field"]
         fields += fld.list_fields()

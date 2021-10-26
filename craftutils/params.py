@@ -109,8 +109,7 @@ def load_params(file: str, quiet: bool = False):
 def save_params(file: str, dictionary: dict, quiet: bool = False):
     file = u.sanitise_file_ext(filename=file, ext=".yaml")
 
-    if not quiet:
-        print('Saving parameter file to ' + str(file))
+    u.debug_print(1, 'Saving parameter file to ' + str(file))
 
     with open(file, 'w') as f:
         yaml.dump(dictionary, f)
@@ -148,7 +147,7 @@ def yaml_to_json(yaml_file: str, output: str = None, quiet: bool = False):
     p = load_params(file=yaml_file, quiet=quiet)
 
     if not quiet:
-        print('Saving parameter file to ' + output)
+        u.debug_print(1, 'Saving parameter file to ' + output)
 
     for param in p:
         if type(p[param]) is date:

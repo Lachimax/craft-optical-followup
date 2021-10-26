@@ -423,7 +423,7 @@ class Field:
 
     def retrieve_catalogues(self, force_update: bool = False):
         for cat_name in retrieve.photometry_catalogues:
-            print(f"Checking for photometry in {cat_name}")
+            u.debug_print(1, f"Checking for photometry in {cat_name}")
             self.retrieve_catalogue(cat_name=cat_name, force_update=force_update)
 
     def retrieve_catalogue(self, cat_name: str, force_update: bool = False):
@@ -450,10 +450,10 @@ class Field:
                 self.update_output_file()
             return response
         elif self.cats[f"in_{cat_name}"] is True:
-            print(f"There is already {cat_name} data present for this field.")
+            u.debug_print(1, f"There is already {cat_name} data present for this field.")
             return True
         else:
-            print(f"This field is not present in {cat_name}.")
+            u.debug_print(1, f"This field is not present in {cat_name}.")
 
     def load_catalogue(self, cat_name: str):
         if self.retrieve_catalogue(cat_name):
@@ -1177,18 +1177,23 @@ class ImagingEpoch(Epoch):
                 self.frames_registered = {}
                 self.register(
                     output_dir=output_dir,
-                    **self.registration_params)
+                    **self.registration_params
+                )
                 self.stages_complete['4.5-align'] = Time.now()
                 self.update_output_file()
 
-    def register(self, output_dir: str, frames: dict = None, n_template: Union[int, dict] = 0, **kwargs):
+    def register(self, output_dir: str, frames: dict = None, template: Union[int, dict, image.ImagingImage, str] = 0,
+                 **kwargs):
         """
 
         :param output_dir:
         :param frames:
-        :param n_template: Either an integer specifying the position of the image in the list to use as the template for
-            alignment, or a dictionary with keys reflecting the filter names and values being the list position of the
-            respective templates.
+        :param template: There are three options for this parameter:
+            int: An integer specifying the position of the image in the list to use as the template for
+            alignment (ie, each filter will use the same list position)
+            dict: a dictionary with keys reflecting the filter names, with values specifying the list position as above
+            ImagingImage: an image from outside this epoch to use as template. You can also pass the path to the image
+                as a string.
         :param kwargs:
         :return:
         """
@@ -1197,15 +1202,19 @@ class ImagingEpoch(Epoch):
             frames = self.frames_normalised
 
         for fil in frames:
-            if isinstance(n_template, int):
-                template = frames[fil][n_template]
+            if isinstance(template, int):
+                template = frames[fil][template]
+            elif isinstance(template, image.ImagingImage):
+                template = template
+            elif isinstance(template, str):
+                template = image.ImagingImage(path=template)
             else:
-                template = frames[fil][n_template[fil]]
+                template = frames[fil][template[fil]]
 
             for i, frame in enumerate(frames[fil]):
                 output_dir_fil = os.path.join(output_dir, fil)
                 u.mkdir_check(output_dir_fil)
-                if i != n_template:
+                if i != template:
                     registered = frame.register(
                         target=template,
                         output=os.path.join(output_dir_fil, frame.name.replace(".fits", "_registered.fits"))
@@ -1584,7 +1593,7 @@ class ImagingEpoch(Epoch):
             if "coadded_trimmed" in outputs:
                 for fil in outputs["coadded_trimmed"]:
                     if outputs["coadded_trimmed"][fil] is not None:
-                        print(f"Attempting to load coadded_trimmed[{fil}]")
+                        u.debug_print(1, f"Attempting to load coadded_trimmed[{fil}]")
                         self.add_coadded_trimmed_image(img=outputs["coadded_trimmed"][fil], key=fil, **kwargs)
 
         return outputs
@@ -2965,12 +2974,12 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
                         output_path=new_path)
                     self.add_frame_trimmed(trimmed)
 
-    def register(self, output_dir: str, frames: dict = None, n_template: Union[int, dict] = 0, **kwargs):
+    def register(self, output_dir: str, frames: dict = None, template: Union[int, dict] = 0, **kwargs):
         """
 
           :param output_dir:
           :param frames:
-          :param n_template: Either an integer specifying the position of the image in the list to use as the template for
+          :param template: Either an integer specifying the position of the image in the list to use as the template for
               alignment, or a dictionary with keys reflecting the filter names and values being the list position of the
               respective templates.
           :param kwargs:
@@ -2987,13 +2996,13 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
             u.mkdir_check(output_dir_fil)
             pairs = self.pair_files(images=frames[fil])
             u.debug_print(2, pairs)
-            if isinstance(n_template, int):
-                template = pairs[n_template]
+            if isinstance(template, int):
+                template = pairs[template]
             else:
-                template = pairs[n_template[fil]]
+                template = pairs[template[fil]]
 
             for i, pair in enumerate(pairs):
-                if i != n_template:
+                if i != template:
                     for j, frame in enumerate(pair):
                         u.debug_print(2, frame.filename.replace("_norm.fits", "_registered.fits"))
                         registered = frame.register(
