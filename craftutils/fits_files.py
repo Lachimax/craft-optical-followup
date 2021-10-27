@@ -415,34 +415,58 @@ def subtract_file(file: Union[str, fits.HDUList], sub_file: Union[str, fits.HDUL
     return subbed
 
 
-def detect_edges(file: Union['fits.hdu_list.hdulist.HDUList', 'str']):
+def detect_frame_value(file: Union['fits.HDUList', 'str'], ext: int = 0):
     """
-    Detects the edges of a rectangular non-zero block, where the frame consists of zeroed pixels. For use with
+    For images that have
+    :param file:
+    :param value:
+    :param ext:
+    :return:
+    """
+    file, path = path_or_hdu(file)
+    data = file[ext].data
+    outer = (data[:, 0], data[:, -1], data[0], data[-1])
+
+    value = None
+    for edge in outer:
+        is_uniform = np.all(edge == edge[0])
+        if is_uniform:
+            value = edge[0]
+
+    if path:
+        file.close()
+
+    return value
+
+
+def detect_edges(file: Union['fits.HDUList', 'str'], value: float = 0.0, ext: int = 0):
+    """
+    Detects the edges of a rectangular non-zero block, where the frame consists of a single value. For use with
     background files with an obvious frame.
     :param file:
+    :param value: the value of the frame.
     :return:
     """
 
-    if type(file) is str:
-        file = fits.open(file)
+    file, path = path_or_hdu(file)
 
-    data = file[0].data
+    data = file[ext].data
 
     height = data.shape[0]
     mid_y = int(height / 2)
     slice_hor = data[mid_y]
-    slice_hor_nonzero = np.nonzero(slice_hor)[0]
+    slice_hor_nonzero = np.nonzero(slice_hor - value)[0]
     left = slice_hor_nonzero[0]
     right = slice_hor_nonzero[-1]
 
     width = data.shape[1]
     mid_x = int(width / 2)
     slice_vert = data[:, mid_x]
-    slice_vert_nonzero = np.nonzero(slice_vert)[0]
+    slice_vert_nonzero = np.nonzero(slice_vert - value)[0]
     bottom = slice_vert_nonzero[0]
     top = slice_vert_nonzero[-1]
 
-    if type(file) is str:
+    if path:
         file.close()
 
     print(left, right, bottom, top)
@@ -450,7 +474,7 @@ def detect_edges(file: Union['fits.hdu_list.hdulist.HDUList', 'str']):
     return left, right, bottom, top
 
 
-def detect_edges_area(file: Union['fits.hdu_list.hdulist.HDUList', 'str']):
+def detect_edges_area(file: Union['fits.HDUList', 'str']):
     if type(file) is str:
         file = fits.open(file)
 
