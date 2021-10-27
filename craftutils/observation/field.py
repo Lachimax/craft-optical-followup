@@ -1145,6 +1145,7 @@ class ImagingEpoch(Epoch):
         self.std_objects = {}
 
         self.coadded_trimmed = {}
+        self.coadded_astrometry = {}
 
         self.gaia_catalogue = None
 
@@ -1299,24 +1300,66 @@ class ImagingEpoch(Epoch):
             self.stages_complete["7-trim_coadded"] = Time.now()
             self.update_output_file()
 
+    def proc_correct_astrometry_coadded(self, no_query: bool = False, **kwargs):
+        if "do_coadded" in self.astrometry_params and self.astrometry_params["do_coadded"]:
+            if no_query or self.query_stage(stage="7.5-correct_astrometry_coadded",
+                                            message="Correct astrometry of coadded images?"):
+                self.generate_astrometry_indices()
+
+                if "output_path" in kwargs:
+                    astrometry_path = kwargs["output_path"]
+                    kwargs.pop("output_path")
+                else:
+                    astrometry_path = os.path.join(self.data_path, "7.5-astrometry_coadded")
+                u.rmtree_check(astrometry_path)
+                u.mkdir_check(astrometry_path)
+
+                self.correct_astrometry_coadded(
+                    output_dir=astrometry_path,
+                    images=self.coadded_trimmed,
+                    **self.astrometry_params)
+
+                self.paths['astrometry_coadded_dir'] = astrometry_path
+                self.stages_complete["7.5-correct_astrometry_coadded"] = Time.now()
+                self.update_output_file()
+
+    def correct_astrometry_coadded(self, output_dir: str, images: dict, **kwargs):
+        self.coadded_astrometry = {}
+
+        if images is None:
+            images = self.coadded_trimmed
+
+        for fil in images:
+            img = images[fil]
+            new_img = img.correct_astrometry(
+                output_dir=output_dir,
+                tweak=True
+            )
+            self.add_coadded_astrometry_image(new_img, key=fil)
+
     def proc_source_extraction(self, no_query: bool = False, **kwargs):
-        if no_query or self.query_stage("Do source extraction?", stage='8-source_extraction'):
+        if no_query or self.query_stage("Do source extraction and diagnostics?", stage='8-source_extraction'):
             source_extraction_path = os.path.join(self.data_path, "8-source_extraction")
             u.mkdir_check(source_extraction_path)
-            for fil in self.coadded_trimmed:
-                img = self.coadded_trimmed[fil]
+            if "do_coadded" in self.astrometry_params and self.astrometry_params["do_coadded"]:
+                images = self.coadded_astrometry
+            else:
+                images = self.coadded_trimmed
+            for fil in images:
+                img = images[fil]
                 self.set_path("source_extraction_dir", source_extraction_path)
                 configs = self.source_extractor_config
-                img.source_extraction_psf(output_dir=source_extraction_path,
-                                          phot_autoparams=f"{configs['kron_factor']},{configs['kron_radius_min']}")
+                img.source_extraction_psf(
+                    output_dir=source_extraction_path,
+                    phot_autoparams=f"{configs['kron_factor']},{configs['kron_radius_min']}")
+            self.astrometry_diagnostics(images=images)
+            # self.psf_diagnostics()
             self.stages_complete['8-source_extraction'] = Time.now()
             self.update_output_file()
 
     def proc_photometric_calibration(self, no_query: bool = False, **kwargs):
         if no_query or self.query_stage("Do photometric calibration?", stage="9-photometric_calibration"):
             calib_dir = os.path.join(self.data_path, "9-photometric_calibration")
-            self.astrometry_diagnostics()
-            # self.psf_diagnostics()
             self.photometric_calibration(calib_dir, **kwargs)
             self.paths['calib_dir'] = calib_dir
             self.stages_complete["9-photometric_calibration"] = Time.now()
@@ -1376,6 +1419,8 @@ class ImagingEpoch(Epoch):
             self.astrometry_stats[fil]["mean_local"] = mean_local.to(units.arcsec)
             self.astrometry_stats[fil]["median_local"] = median_local.to(units.arcsec)
             self.astrometry_stats[fil]["rms_local"] = rms_local.to(units.arcsec)
+
+        self.update_output_file()
 
     def photometric_calibration(self, output_path: str, **kwargs):
         u.mkdir_check(output_path)
@@ -1566,6 +1611,7 @@ class ImagingEpoch(Epoch):
             "deepest_filter": self.deepest_filter,
             "coadded": _output_img_dict_single(self.coadded),
             "coadded_trimmed": _output_img_dict_single(self.coadded_trimmed),
+            "coadded_astrometry": _output_img_dict_single(self.coadded_astrometry),
             "frames_raw": _output_img_list(self.frames_raw),
             "frames_reduced": _output_img_dict_list(self.frames_reduced),
             "frames_normalised": _output_img_dict_list(self.frames_normalised),
@@ -1631,6 +1677,11 @@ class ImagingEpoch(Epoch):
                     if outputs["coadded_trimmed"][fil] is not None:
                         u.debug_print(1, f"Attempting to load coadded_trimmed[{fil}]")
                         self.add_coadded_trimmed_image(img=outputs["coadded_trimmed"][fil], key=fil, **kwargs)
+            if "coadded_astrometry" in outputs:
+                for fil in outputs["coadded_astrometry"]:
+                    if outputs["coadded_astrometry"][fil] is not None:
+                        u.debug_print(1, f"Attempting to load coadded_astrometry[{fil}]")
+                        self.add_coadded_astrometry_image(img=outputs["coadded_astrometry"][fil], key=fil, **kwargs)
 
         return outputs
 
@@ -1722,6 +1773,13 @@ class ImagingEpoch(Epoch):
         self.coadded_trimmed[key] = img
         return img
 
+    def add_coadded_astrometry_image(self, img: Union[str, image.Image], key: str, **kwargs):
+        if isinstance(img, str):
+            img = image.CoaddedImage(path=img)
+        img.epoch = self
+        self.coadded_astrometry[key] = img
+        return img
+
     def add_frame_normalised(self, norm_frame: image.ImagingImage):
         if isinstance(norm_frame, str):
             cls = image.ImagingImage.select_child_class(instrument=self.instrument_name)
@@ -1758,6 +1816,8 @@ class ImagingEpoch(Epoch):
                 self.coadded[fil] = None
             if fil not in self.coadded_trimmed:
                 self.coadded_trimmed[fil] = None
+            if fil not in self.coadded_astrometry:
+                self.coadded_astrometry[fil] = None
             if fil not in self.exp_time_mean:
                 self.exp_time_mean[fil] = None
             if fil not in self.exp_time_err:
@@ -1821,6 +1881,7 @@ class ImagingEpoch(Epoch):
             "5-correct_astrometry_frames": None,
             "6-coadd": None,
             "7-trim_coadded": None,
+            "7.5-correct_astrometry_coadded": None,
             "8-source_extraction": None,
             "9-photometric_calibration": None,
             "10-dual_mode_source_extraction": None,
@@ -2832,6 +2893,7 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
         self.proc_correct_astrometry_frames(**kwargs)
         self.proc_coadd(**kwargs)
         self.proc_trim_coadded(**kwargs)
+        self.proc_correct_astrometry_coadded(**kwargs)
         self.proc_source_extraction(**kwargs)
         self.proc_photometric_calibration(**kwargs)
         self.proc_dual_mode_source_extraction(**kwargs)

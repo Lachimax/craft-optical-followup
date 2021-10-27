@@ -797,6 +797,9 @@ class ImagingImage(Image):
                 if best is None:
                     best = cat
 
+        if best is None:
+            raise ValueError("No zeropoints are present to select from.")
+
         zeropoint_best = self.zeropoints[best]
         print(
             f"We have selected {zeropoint_best['zeropoint']} +/- {zeropoint_best['zeropoint_err']}, "
@@ -1156,6 +1159,10 @@ class ImagingImage(Image):
         if local_coord is None:
             local_coord = self.extract_pointing()
 
+        if output_path is None:
+            output_path = self.data_path
+
+
         self.load_source_cat()
 
         if isinstance(reference_cat, str):
@@ -1163,6 +1170,15 @@ class ImagingImage(Image):
 
         u.debug_print(1, "REFERENCE_CAT", reference_cat)
         u.debug_print(1, "SELF.SOURCE_CAT", self.source_cat)
+
+        plt.scatter(self.source_cat["RA"], self.source_cat["DEC"])
+        plt.xlabel("Right Ascension (Catalogue)")
+        plt.ylabel("Declination (Catalogue)")
+        # plt.colorbar(label="Offset of measured position from catalogue (\")")
+        if show_plots:
+            plt.show()
+        plt.savefig(os.path.join(output_path, f"{self.name}_sourcecat_sky.png"))
+        plt.close()
 
         matches_source_cat, matches_ext_cat, distance = self.match_to_cat(cat=reference_cat,
                                                                           ra_col=ra_col,
@@ -1184,9 +1200,6 @@ class ImagingImage(Image):
         mean_offset_local = np.mean(distance_local)
         median_offset_local = np.median(distance_local)
         rms_offset_local = np.sqrt(np.mean(distance_local ** 2))
-
-        if output_path is None:
-            output_path = self.data_path
 
         plt.scatter(ref_distance.to(units.arcsec), distance.to(units.arcsec))
         plt.xlabel("Distance from reference pixel (\")")
