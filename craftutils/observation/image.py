@@ -995,7 +995,7 @@ class ImagingImage(Image):
 
         return results
 
-    def register(self, target: 'ImagingImage', output: str, ext: int = 0):
+    def register(self, target: 'ImagingImage', output_path: str, ext: int = 0, trim: bool = True):
         self.load_data()
         target.load_data()
 
@@ -1009,15 +1009,33 @@ class ImagingImage(Image):
         u.debug_print(1, f"Attempting registration of {self.name} against {target.name}")
         registered, footprint = register(data_source, data_target)
 
-        self.copy(output)
-        with fits.open(output, mode="update") as new_file:
+        self.copy(output_path)
+        with fits.open(output_path, mode="update") as new_file:
             new_file[0].data = registered
-            u.debug_print(1, "Writing registered image to", output)
-            new_file.writeto(output, overwrite=True)
+            u.debug_print(1, "Writing registered image to", output_path)
+            new_file.writeto(output_path, overwrite=True)
 
-        new_image = self.new_image(path=output)
+        new_image = self.new_image(path=output_path)
         new_image.transfer_wcs(target)
+
+        if trim:
+            frame_value = new_image.detect_frame_value(ext=ext)
+            left, right, bottom, top = new_image.detect_edges(frame_value=frame_value)
+            new_image.trim(left=left, right=right, bottom=bottom, top=top, output_path=output_path)
+
         return new_image
+
+    def detect_frame_value(self, ext: int = 0):
+        self.open()
+        frame_value = ff.detect_frame_value(file=self.hdu_list, ext=ext)
+        self.close()
+        return frame_value
+
+    def detect_edges(self, frame_value: float, ext: int = 0):
+        self.open()
+        left, right, bottom, top = ff.detect_edges(file=self.hdu_list, value=frame_value, ext=ext)
+        self.close()
+        return left, right, bottom, top
 
     def correct_astrometry(self, output_dir: str = None, tweak: bool = True):
         """
@@ -1125,11 +1143,18 @@ class ImagingImage(Image):
         new_image = cls(path=output_path)
         return new_image
 
-    def astrometry_diagnostics(self, reference_cat: Union[str, table.QTable],
-                               ra_col: str = "ra", dec_col: str = "dec",
-                               tolerance: units.Quantity = 1 * units.arcsec, show_plots: bool = False,
-                               output_path=None
-                               ):
+    def astrometry_diagnostics(
+            self,
+            reference_cat: Union[str, table.QTable],
+            ra_col: str = "ra", dec_col: str = "dec",
+            tolerance: units.Quantity = 1 * units.arcsec,
+            local_coord: SkyCoord = None,
+            local_radius: units.Quantity = 0.5 * units.arcmin,
+            show_plots: bool = False,
+            output_path=None
+    ):
+        if local_coord is None:
+            local_coord = self.extract_pointing()
 
         self.load_source_cat()
 
@@ -1152,6 +1177,13 @@ class ImagingImage(Image):
 
         ref = self.extract_pointing()
         ref_distance = ref.separation(matches_coord)
+
+        local_distance = local_coord.separation(matches_coord)
+        distance_local = distance[local_distance <= local_radius]
+        u.debug_print(2, distance_local)
+        mean_offset_local = np.mean(distance_local)
+        median_offset_local = np.median(distance_local)
+        rms_offset_local = np.sqrt(np.mean(distance_local ** 2))
 
         if output_path is None:
             output_path = self.data_path
@@ -1180,14 +1212,15 @@ class ImagingImage(Image):
         plt.savefig(os.path.join(output_path, f"{self.name}_astrometry_offset_sky.png"))
         plt.close()
 
-        return mean_offset, median_offset, rms_offset
+        return (mean_offset, median_offset, rms_offset), (mean_offset_local, median_offset_local, rms_offset_local)
 
-    def trim(self,
-             left: Union[int, units.Quantity] = None,
-             right: Union[int, units.Quantity] = None,
-             bottom: Union[int, units.Quantity] = None,
-             top: Union[int, units.Quantity] = None,
-             output_path: str = None):
+    def trim(
+            self,
+            left: Union[int, units.Quantity] = None,
+            right: Union[int, units.Quantity] = None,
+            bottom: Union[int, units.Quantity] = None,
+            top: Union[int, units.Quantity] = None,
+            output_path: str = None):
         left = u.dequantify(left, unit=units.pix)
         right = u.dequantify(right, unit=units.pix)
         bottom = u.dequantify(bottom, unit=units.pix)
