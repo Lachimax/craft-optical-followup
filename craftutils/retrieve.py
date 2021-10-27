@@ -1255,7 +1255,7 @@ def construct_columns(cat="panstarrs1"):
 def retrieve_mast_photometry(ra: float, dec: float, cat: str = "panstarrs1", release="dr2", table="stack",
                              radius: units.Quantity = 0.2 * units.deg):
     if cat.lower() == "panstarrs1":
-        cat_str = "panstarrs1"
+        cat_str = "panstarrs"
     else:
         cat_str = cat.lower()
 
@@ -1278,13 +1278,13 @@ def save_mast_photometry(ra: float, dec: float, output: str, cat: str = "panstar
     response = retrieve_mast_photometry(ra=ra, dec=dec, cat=cat, radius=radius)
     if response == "ERROR":
         return response
+    elif isinstance(response, str) and "404 Not Found" in response:
+        return "ERROR"
     elif response is not None:
         u.mkdir_check_nested(path=output)
         print(f"Saving {cat} photometry to {output}")
         with open(output, "w") as file:
             file.write(response)
-    elif isinstance(response, str) and "404 Not Found" in response:
-        return "ERROR"
     else:
         print(f'No data retrieved from {cat}.')
     return response
