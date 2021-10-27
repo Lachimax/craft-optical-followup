@@ -1178,6 +1178,7 @@ class ImagingEpoch(Epoch):
                 output_dir = os.path.join(self.data_path, "4.5-registered")
                 self.paths["registered_dir"] = output_dir
                 self.frames_registered = {}
+                u.rmtree_check(output_dir)
                 self.register(
                     output_dir=output_dir,
                     **self.registration_params
@@ -1234,7 +1235,7 @@ class ImagingEpoch(Epoch):
             if i != n_template:
                 registered = frame.register(
                     target=tmp,
-                    output=os.path.join(
+                    output_path=os.path.join(
                         output_dir,
                         frame.name.replace(".fits", "_registered.fits"))
                 )
@@ -1263,9 +1264,15 @@ class ImagingEpoch(Epoch):
             self.frames_astrometry = {}
 
             if "register" in self.registration_params and self.registration_params["register"]:
-                self.correct_astrometry_frames(output_dir=astrometry_path, frames=self.frames_registered, **kwargs)
+                self.correct_astrometry_frames(
+                    output_dir=astrometry_path,
+                    frames=self.frames_registered,
+                    **self.astrometry_params)
             else:
-                self.correct_astrometry_frames(output_dir=astrometry_path, frames=self.frames_normalised, **kwargs)
+                self.correct_astrometry_frames(
+                    output_dir=astrometry_path,
+                    frames=self.frames_normalised,
+                    **self.astrometry_params)
 
             self.paths['astrometry_dir'] = astrometry_path
             self.stages_complete["5-correct_astrometry_frames"] = Time.now()
@@ -1355,11 +1362,20 @@ class ImagingEpoch(Epoch):
         for fil in images:
             img = images[fil]
             img.load_source_cat()
-            mean, median, rms = img.astrometry_diagnostics(
-                reference_cat=reference_cat)
+            glob, local = img.astrometry_diagnostics(
+                reference_cat=reference_cat,
+                local_coord=self.field.centre_coords
+            )
+
+            mean, median, rms = glob
             self.astrometry_stats[fil]["mean"] = mean.to(units.arcsec)
             self.astrometry_stats[fil]["median"] = median.to(units.arcsec)
             self.astrometry_stats[fil]["rms"] = rms.to(units.arcsec)
+
+            mean_local, median_local, rms_local = local
+            self.astrometry_stats[fil]["mean_local"] = mean_local.to(units.arcsec)
+            self.astrometry_stats[fil]["median_local"] = median_local.to(units.arcsec)
+            self.astrometry_stats[fil]["rms_local"] = rms_local.to(units.arcsec)
 
     def photometric_calibration(self, output_path: str, **kwargs):
         u.mkdir_check(output_path)
@@ -3014,6 +3030,9 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
     def _register(self, frames: dict, fil: str, tmp: image.ImagingImage, n_template: int, output_dir: str):
         pairs = self.pair_files(images=frames[fil])
         u.debug_print(2, pairs)
+        if n_template >= 0:
+            tmp = pairs[n_template]
+        u.debug_print(1, "TMP", tmp)
 
         for i, pair in enumerate(pairs):
             if not isinstance(pair, tuple):
@@ -3023,11 +3042,11 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
                     if isinstance(tmp, tuple):
                         template = tmp[j]
                     else:
-                        template=tmp
+                        template = tmp
                     u.debug_print(2, frame.filename.replace("_norm.fits", "_registered.fits"))
                     registered = frame.register(
                         target=template,
-                        output=os.path.join(
+                        output_path=os.path.join(
                             output_dir,
                             frame.filename.replace("_norm.fits", "_registered.fits"))
                     )
@@ -3057,11 +3076,14 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
         :return:
         """
         self.frames_astrometry = {}
+        method = "individual"
         if "method" in kwargs:
             method = kwargs["method"]
-        else:
+        upper_only = False
+        if "upper_only" in kwargs:
+            upper_only = kwargs.pop("upper_only")
+        if upper_only and method == "pairwise":
             method = "individual"
-
         if frames is None:
             frames = self.frames_normalised
 
@@ -3083,7 +3105,7 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
                             if not reverse_pair:
                                 new_img_1 = img_1.correct_astrometry(
                                     output_dir=astrometry_fil_path,
-                                    **self.astrometry_params)
+                                    **kwargs)
                                 # Check if the first astrometry run was successful.
                                 # If it wasn't, we need to be running on the second image of the pair.
                                 if new_img_1 is None:
@@ -3097,7 +3119,8 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
                                     self.astrometry_successful[img_1.name] = True
                                     new_img_2 = img_2.correct_astrometry_from_other(
                                         new_img_1,
-                                        output_dir=astrometry_fil_path)
+                                        output_dir=astrometry_fil_path,
+                                    )
                                     self.add_frame_astrometry(new_img_2)
 
                                     success = True
@@ -3106,7 +3129,7 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
                             if reverse_pair:
                                 new_img_2 = img_2.correct_astrometry(
                                     output_dir=astrometry_fil_path,
-                                    **self.astrometry_params)
+                                    **kwargs)
                                 if new_img_2 is None:
                                     self.astrometry_successful[img_2.name] = False
                                     if failed_first:
@@ -3119,17 +3142,21 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
                                     self.astrometry_successful[img_2.name] = True
                                     new_img_1 = img_1.correct_astrometry_from_other(
                                         new_img_2,
-                                        output_dir=astrometry_fil_path)
+                                        output_dir=astrometry_fil_path,
+                                    )
                                     self.add_frame_astrometry(new_img_1)
                                     success = True
                     else:
-                        new_img = pair.correct_astrometry(output_dir=astrometry_fil_path,
-                                                          **self.astrometry_params)
+                        new_img = pair.correct_astrometry(
+                            output_dir=astrometry_fil_path,
+                            **kwargs)
                         self.add_frame_astrometry(new_img)
 
             elif method == "propagate_from_single":
                 # Sort frames by upper or lower chip.
                 upper, lower = self.sort_by_chip(frames[fil])
+                if upper_only:
+                    lower = []
                 for j, lst in enumerate((upper, lower)):
                     successful = None
                     i = 0
@@ -3137,7 +3164,7 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
                         img = lst[i]
                         i += 1
                         new_img = img.correct_astrometry(output_dir=astrometry_fil_path,
-                                                         **self.astrometry_params)
+                                                         **kwargs)
                         # Check if successful:
                         if new_img is not None:
                             lst.remove(img)
@@ -3165,14 +3192,18 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
             elif method == "individual":
 
                 for img in frames[fil]:
-                    new_img = img.correct_astrometry(output_dir=astrometry_fil_path,
-                                                     **self.astrometry_params)
-                    if new_img is not None:
-                        print(f"{new_img} astrometry successful.")
-                        self.add_frame_astrometry(new_img)
-                        self.astrometry_successful[img.name] = True
-                    else:
-                        self.astrometry_successful[img.name] = False
+                    do = True
+                    if upper_only and img.extract_chip_number() != 1:
+                        do = False
+                    if do:
+                        new_img = img.correct_astrometry(output_dir=astrometry_fil_path,
+                                                         **kwargs)
+                        if new_img is not None:
+                            print(f"{new_img} astrometry successful.")
+                            self.add_frame_astrometry(new_img)
+                            self.astrometry_successful[img.name] = True
+                        else:
+                            self.astrometry_successful[img.name] = False
 
     @classmethod
     def sort_by_chip(cls, images: list):
