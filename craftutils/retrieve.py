@@ -1349,8 +1349,9 @@ def update_frb_mast_photometry(frb: str, cat: str = "panstarrs1", force: bool = 
         print(f"This field is not present in {cat}.")
 
 
-def retrieve_gaia(ra: float, dec: float, radius: units.Quantity = 0.1 * units.deg):
+def retrieve_gaia(ra: float, dec: float, radius: units.Quantity = 0.5 * units.deg):
     from astroquery.gaia import Gaia
+    Gaia.ROW_LIMIT = -1
     print(f"\nQuerying Gaia DR2 archive for field centring on RA={ra}, DEC={dec}")
     coord = SkyCoord(ra=ra, dec=dec, unit=(units.degree, units.degree), frame='icrs')
     j = Gaia.cone_search_async(coordinate=coord, radius=radius)
@@ -1358,7 +1359,7 @@ def retrieve_gaia(ra: float, dec: float, radius: units.Quantity = 0.1 * units.de
     return r
 
 
-def save_gaia(ra: float, dec: float, output: str, radius: units.Quantity = 0.2 * units.deg):
+def save_gaia(ra: float, dec: float, output: str, radius: units.Quantity = 0.5 * units.deg):
     table = retrieve_gaia(ra=ra, dec=dec, radius=radius)
     if len(table) > 0:
         u.mkdir_check_nested(path=output)

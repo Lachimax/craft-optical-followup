@@ -490,6 +490,7 @@ class ImagingImage(Image):
         self.depth = None
 
         self.astrometry_corrected_path = None
+        self.astrometry_stats = {}
 
         self.load_output_file()
 
@@ -731,6 +732,7 @@ class ImagingImage(Image):
     def _output_dict(self):
         outputs = super()._output_dict()
         outputs.update({
+            "astrometry_stats": self.astrometry_stats,
             "filter": self.filter,
             "psfex_path": self.psfex_path,
             "source_cat_sextractor_path": self.source_cat_sextractor_path,
@@ -755,6 +757,8 @@ class ImagingImage(Image):
     def load_output_file(self):
         outputs = super().load_output_file()
         if outputs is not None:
+            if "astrometry_stats" in outputs:
+                self.astrometry_stats = outputs["astrometry_stats"]
             if "filter" in outputs:
                 self.filter = outputs["filter"]
             if "psfex_path" in outputs:
@@ -1149,7 +1153,7 @@ class ImagingImage(Image):
     def astrometry_diagnostics(
             self,
             reference_cat: Union[str, table.QTable],
-            ra_col: str = "ra", dec_col: str = "dec",
+            ra_col: str = "ra", dec_col: str = "dec", mag_col: str = "phot_g_mean_mag",
             tolerance: units.Quantity = 1 * units.arcsec,
             local_coord: SkyCoord = None,
             local_radius: units.Quantity = 0.5 * units.arcmin,
@@ -1161,7 +1165,6 @@ class ImagingImage(Image):
 
         if output_path is None:
             output_path = self.data_path
-
 
         self.load_source_cat()
 
@@ -1177,8 +1180,29 @@ class ImagingImage(Image):
         # plt.colorbar(label="Offset of measured position from catalogue (\")")
         if show_plots:
             plt.show()
-        plt.savefig(os.path.join(output_path, f"{self.name}_sourcecat_sky.png"))
+        plt.savefig(os.path.join(output_path, f"{self.name}_sourcecat_sky.pdf"))
         plt.close()
+
+        plt.scatter(reference_cat[ra_col], reference_cat[dec_col])
+        plt.xlabel("Right Ascension (Catalogue)")
+        plt.ylabel("Declination (Catalogue)")
+        # plt.colorbar(label="Offset of measured position from catalogue (\")")
+        if show_plots:
+            plt.show()
+        plt.savefig(os.path.join(output_path, f"{self.name}_referencecat_sky.pdf"))
+        plt.close()
+
+        plt.scatter(self.source_cat["RA"], self.source_cat["DEC"])
+        plt.scatter(reference_cat[ra_col], reference_cat[dec_col])
+        plt.xlabel("Right Ascension (Catalogue)")
+        plt.ylabel("Declination (Catalogue)")
+        # plt.colorbar(label="Offset of measured position from catalogue (\")")
+        if show_plots:
+            plt.show()
+        plt.savefig(os.path.join(output_path, f"{self.name}_bothcats_sky.pdf"))
+        plt.close()
+
+        ref_cat_coords = SkyCoord(reference_cat[ra_col], reference_cat[dec_col])
 
         matches_source_cat, matches_ext_cat, distance = self.match_to_cat(cat=reference_cat,
                                                                           ra_col=ra_col,
@@ -1206,14 +1230,14 @@ class ImagingImage(Image):
         plt.ylabel("Offset (\")")
         if show_plots:
             plt.show()
-        plt.savefig(os.path.join(output_path, f"{self.name}_astrometry_offset_v_ref.png"))
+        plt.savefig(os.path.join(output_path, f"{self.name}_astrometry_offset_v_ref.pdf"))
         plt.close()
 
         plt.hist(distance.to(units.arcsec).value)
         plt.xlabel("Offset (\")")
         if show_plots:
             plt.show()
-        plt.savefig(os.path.join(output_path, f"{self.name}_astrometry_offset_hist.png"))
+        plt.savefig(os.path.join(output_path, f"{self.name}_astrometry_offset_hist.pdf"))
         plt.close()
 
         plt.scatter(matches_ext_cat[ra_col], matches_ext_cat[dec_col], c=distance.to(units.arcsec))
@@ -1222,10 +1246,31 @@ class ImagingImage(Image):
         plt.colorbar(label="Offset of measured position from catalogue (\")")
         if show_plots:
             plt.show()
-        plt.savefig(os.path.join(output_path, f"{self.name}_astrometry_offset_sky.png"))
+        plt.savefig(os.path.join(output_path, f"{self.name}_astrometry_offset_sky.pdf"))
         plt.close()
 
-        return (mean_offset, median_offset, rms_offset), (mean_offset_local, median_offset_local, rms_offset_local)
+        fig = plt.figure(figsize=(12, 12), dpi=1000)
+        self.plot_catalogue(cat=reference_cat, ra_col=ra_col, dec_col=dec_col, fig=fig, colour_column=mag_col)
+        fig.savefig(os.path.join(output_path, f"{self.name}_cat_overplot.pdf"))
+        fig.show()
+
+        in_footprint = self.wcs.footprint_contains(ref_cat_coords)
+
+        self.astrometry_stats["mean_offset"] = mean_offset.to(units.arcsec)
+        self.astrometry_stats["median_offset"] = median_offset.to(units.arcsec)
+        self.astrometry_stats["rms_offset"] = rms_offset.to(units.arcsec)
+
+        self.astrometry_stats["mean_offset_local"] = mean_offset_local.to(units.arcsec)
+        self.astrometry_stats["median_offset_local"] = median_offset_local.to(units.arcsec)
+        self.astrometry_stats["rms_offset_local"] = rms_offset_local.to(units.arcsec)
+
+        self.astrometry_stats["n_matches"] = len(matches_source_cat)
+        self.astrometry_stats["n_cat"] = sum(in_footprint)
+        self.astrometry_stats["local_coord"] = local_coord
+
+        self.update_output_file()
+
+        return self.astrometry_stats
 
     def trim(
             self,
@@ -1379,7 +1424,8 @@ class ImagingImage(Image):
         """
         pass
 
-    def plot_subimage(self, fig: plt.Figure, centre: SkyCoord,
+    def plot_subimage(self, fig: plt.Figure,
+                      centre: SkyCoord,
                       frame: units.Quantity,
                       n: int = 1, n_x: int = 1, n_y: int = 1,
                       cmap: str = 'viridis', show_cbar: bool = False,
@@ -1419,11 +1465,12 @@ class ImagingImage(Image):
         self.close()
         return subplot, hdu_cut
 
-    def plot_source_extractor_object(self, row: table.Row,
-                                     ext: int = 0,
-                                     frame: units.Quantity = 10 * units.pix,
-                                     output: str = None,
-                                     show: bool = False, title: str = None):
+    def plot_source_extractor_object(
+            self, row: table.Row,
+            ext: int = 0,
+            frame: units.Quantity = 10 * units.pix,
+            output: str = None,
+            show: bool = False, title: str = None):
 
         self.extract_pixel_scale()
         self.load_headers()
@@ -1474,11 +1521,55 @@ class ImagingImage(Image):
         self.close()
         return
 
-    def plot(self, ext: int = 0, **kwargs):
-        self.open()
-        data = self.hdu_list[ext]
-        plt.imshow(data, **kwargs)
-        self.close()
+    def plot(self, fig: plt.Figure = None, ext: int = 0, **kwargs):
+        if fig is None:
+            fig = plt.figure(figsize=(12, 12), dpi=1000)
+        ax, fig = self.wcs_axes(fig=fig)
+        self.load_data()
+        data = self.data[ext]
+        ax.imshow(
+            data, **kwargs,
+            norm=ImageNormalize(
+                interval=MinMaxInterval(),
+                stretch=SqrtStretch(),
+                vmin=np.median(data),
+            ),
+            origin='lower',
+        )
+        return ax, fig
+
+    def wcs_axes(self, fig: plt.Figure = None):
+        if fig is None:
+            fig = plt.figure(figsize=(12, 12), dpi=1000)
+        ax = fig.add_subplot(
+            projection=self.load_wcs()
+        )
+        return ax, fig
+
+    def plot_catalogue(self,
+                       cat: table.QTable,
+                       ra_col: str = "ra",
+                       dec_col: str = "dec",
+                       colour_column: str = None,
+                       fig: plt.Figure = None,
+                       ext: int = 0,
+                       **kwargs):
+        if fig is None:
+            fig = plt.figure(figsize=(12, 12), dpi=1000)
+        if colour_column is not None:
+            c = cat[colour_column]
+        else:
+            c = None
+
+        ax, fig = self.plot(fig=fig, ext=ext, zorder=0, **kwargs)
+        x, y = self.wcs.all_world2pix(cat[ra_col], cat[dec_col], 0)
+        pcm = plt.scatter(x, y, c=c, cmap="plasma", marker="x", zorder=10)
+        if colour_column is not None:
+            fig.colorbar(pcm, ax=ax)
+
+        u.debug_print(1, "CATALOGUE SIZE:", len(cat))
+
+        return ax, fig
 
     @classmethod
     def select_child_class(cls, instrument: str, **kwargs):

@@ -430,7 +430,7 @@ class Field:
         if isinstance(self.extent, units.Quantity):
             radius = self.extent
         else:
-            radius = 0.2 * units.deg
+            radius = 0.5 * units.deg
         output = self._cat_data_path(cat=cat_name)
         ra = self.centre_coords.ra.value
         dec = self.centre_coords.dec.value
@@ -528,7 +528,7 @@ class Field:
                           "type": "Field",
                           "centre": objects.position_dictionary.copy(),
                           "objects": [objects.Object.default_params()],
-                          "extent": 0.2 * units.deg
+                          "extent": 0.5 * units.deg
                           }
         return default_params
 
@@ -1333,9 +1333,10 @@ class ImagingEpoch(Epoch):
             img = images[fil]
             new_img = img.correct_astrometry(
                 output_dir=output_dir,
-                tweak=True
+                tweak=False
             )
             self.add_coadded_astrometry_image(new_img, key=fil)
+            # self.astrometry_diagnostics(images=self.coadded_astrometry)
 
     def proc_source_extraction(self, no_query: bool = False, **kwargs):
         if no_query or self.query_stage("Do source extraction and diagnostics?", stage='8-source_extraction'):
@@ -1345,13 +1346,13 @@ class ImagingEpoch(Epoch):
                 images = self.coadded_astrometry
             else:
                 images = self.coadded_trimmed
-            for fil in images:
-                img = images[fil]
-                self.set_path("source_extraction_dir", source_extraction_path)
-                configs = self.source_extractor_config
-                img.source_extraction_psf(
-                    output_dir=source_extraction_path,
-                    phot_autoparams=f"{configs['kron_factor']},{configs['kron_radius_min']}")
+            # for fil in images:
+            #     img = images[fil]
+            #     self.set_path("source_extraction_dir", source_extraction_path)
+            #     configs = self.source_extractor_config
+            #     img.source_extraction_psf(
+            #         output_dir=source_extraction_path,
+            #         phot_autoparams=f"{configs['kron_factor']},{configs['kron_radius_min']}")
             self.astrometry_diagnostics(images=images)
             # self.psf_diagnostics()
             self.stages_complete['8-source_extraction'] = Time.now()
@@ -1405,22 +1406,13 @@ class ImagingEpoch(Epoch):
         for fil in images:
             img = images[fil]
             img.load_source_cat()
-            glob, local = img.astrometry_diagnostics(
+            self.astrometry_stats[fil] = img.astrometry_diagnostics(
                 reference_cat=reference_cat,
                 local_coord=self.field.centre_coords
             )
 
-            mean, median, rms = glob
-            self.astrometry_stats[fil]["mean"] = mean.to(units.arcsec)
-            self.astrometry_stats[fil]["median"] = median.to(units.arcsec)
-            self.astrometry_stats[fil]["rms"] = rms.to(units.arcsec)
-
-            mean_local, median_local, rms_local = local
-            self.astrometry_stats[fil]["mean_local"] = mean_local.to(units.arcsec)
-            self.astrometry_stats[fil]["median_local"] = median_local.to(units.arcsec)
-            self.astrometry_stats[fil]["rms_local"] = rms_local.to(units.arcsec)
-
         self.update_output_file()
+        return self.astrometry_stats
 
     def photometric_calibration(self, output_path: str, **kwargs):
         u.mkdir_check(output_path)
