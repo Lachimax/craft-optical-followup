@@ -657,7 +657,7 @@ class ImagingImage(Image):
             if self.source_cat_path is None:
                 self.source_cat_path = self.path.replace(".fits", "_source_cat.ecsv")
             u.debug_print(1, "Writing source catalogue to", self.source_cat_path)
-            self.source_cat.write(self.source_cat_path, format="ascii.ecsv")
+            self.source_cat.write(self.source_cat_path, format="ascii.ecsv", overwrite=True)
 
         if self.source_cat_dual is None:
             u.debug_print(1, "source_cat_dual not yet loaded.")
@@ -665,7 +665,7 @@ class ImagingImage(Image):
             if self.source_cat_dual_path is None:
                 self.source_cat_dual_path = self.path.replace(".fits", "_source_cat_dual.ecsv")
             u.debug_print(1, "Writing dual-mode source catalogue to", self.source_cat_dual_path)
-            self.source_cat_dual.write(self.source_cat_dual_path, format="ascii.ecsv")
+            self.source_cat_dual.write(self.source_cat_dual_path, format="ascii.ecsv", overwrite=True)
 
     def load_wcs(self, ext: int = 0) -> wcs.WCS:
         self.load_headers()
@@ -1044,7 +1044,7 @@ class ImagingImage(Image):
         self.close()
         return left, right, bottom, top
 
-    def correct_astrometry(self, output_dir: str = None, tweak: bool = True):
+    def correct_astrometry(self, output_dir: str = None, tweak: bool = True, **kwargs):
         """
         Uses astrometry.net to solve the astrometry of the image. Solved image is output as a separate file.
         :param output_dir: Directory in which to output
@@ -1154,7 +1154,8 @@ class ImagingImage(Image):
             self,
             reference_cat: Union[str, table.QTable],
             ra_col: str = "ra", dec_col: str = "dec", mag_col: str = "phot_g_mean_mag",
-            tolerance: units.Quantity = 1 * units.arcsec,
+            offset_tolerance: units.Quantity = 1 * units.arcsec,
+            star_tolerance: float = 0.8,
             local_coord: SkyCoord = None,
             local_radius: units.Quantity = 0.5 * units.arcmin,
             show_plots: bool = False,
@@ -1174,7 +1175,7 @@ class ImagingImage(Image):
         u.debug_print(1, "REFERENCE_CAT", reference_cat)
         u.debug_print(1, "SELF.SOURCE_CAT", self.source_cat)
 
-        plt.scatter(self.source_cat["RA"], self.source_cat["DEC"])
+        plt.scatter(self.source_cat["RA"], self.source_cat["DEC"], marker='x')
         plt.xlabel("Right Ascension (Catalogue)")
         plt.ylabel("Declination (Catalogue)")
         # plt.colorbar(label="Offset of measured position from catalogue (\")")
@@ -1183,7 +1184,7 @@ class ImagingImage(Image):
         plt.savefig(os.path.join(output_path, f"{self.name}_sourcecat_sky.pdf"))
         plt.close()
 
-        plt.scatter(reference_cat[ra_col], reference_cat[dec_col])
+        plt.scatter(reference_cat[ra_col], reference_cat[dec_col], marker='x')
         plt.xlabel("Right Ascension (Catalogue)")
         plt.ylabel("Declination (Catalogue)")
         # plt.colorbar(label="Offset of measured position from catalogue (\")")
@@ -1192,8 +1193,16 @@ class ImagingImage(Image):
         plt.savefig(os.path.join(output_path, f"{self.name}_referencecat_sky.pdf"))
         plt.close()
 
-        plt.scatter(self.source_cat["RA"], self.source_cat["DEC"])
-        plt.scatter(reference_cat[ra_col], reference_cat[dec_col])
+        self.load_wcs()
+        ref_cat_coords = SkyCoord(reference_cat[ra_col], reference_cat[dec_col])
+        in_footprint = self.wcs.footprint_contains(ref_cat_coords)
+
+        plt.scatter(self.source_cat["RA"],
+                    self.source_cat["DEC"],
+                    marker='x')
+        plt.scatter(reference_cat[ra_col][in_footprint],
+                    reference_cat[dec_col][in_footprint],
+                    marker='x')
         plt.xlabel("Right Ascension (Catalogue)")
         plt.ylabel("Declination (Catalogue)")
         # plt.colorbar(label="Offset of measured position from catalogue (\")")
@@ -1202,12 +1211,13 @@ class ImagingImage(Image):
         plt.savefig(os.path.join(output_path, f"{self.name}_bothcats_sky.pdf"))
         plt.close()
 
-        ref_cat_coords = SkyCoord(reference_cat[ra_col], reference_cat[dec_col])
-
-        matches_source_cat, matches_ext_cat, distance = self.match_to_cat(cat=reference_cat,
-                                                                          ra_col=ra_col,
-                                                                          dec_col=dec_col,
-                                                                          tolerance=tolerance)
+        matches_source_cat, matches_ext_cat, distance = self.match_to_cat(
+            cat=reference_cat,
+            ra_col=ra_col,
+            dec_col=dec_col,
+            offset_tolerance=offset_tolerance,
+            star_tolerance=star_tolerance
+        )
 
         matches_coord = SkyCoord(matches_source_cat["RA"], matches_source_cat["DEC"])
 
@@ -1240,7 +1250,7 @@ class ImagingImage(Image):
         plt.savefig(os.path.join(output_path, f"{self.name}_astrometry_offset_hist.pdf"))
         plt.close()
 
-        plt.scatter(matches_ext_cat[ra_col], matches_ext_cat[dec_col], c=distance.to(units.arcsec))
+        plt.scatter(matches_ext_cat[ra_col], matches_ext_cat[dec_col], c=distance.to(units.arcsec), marker='x')
         plt.xlabel("Right Ascension (Catalogue)")
         plt.ylabel("Declination (Catalogue)")
         plt.colorbar(label="Offset of measured position from catalogue (\")")
@@ -1250,11 +1260,9 @@ class ImagingImage(Image):
         plt.close()
 
         fig = plt.figure(figsize=(12, 12), dpi=1000)
-        self.plot_catalogue(cat=reference_cat, ra_col=ra_col, dec_col=dec_col, fig=fig, colour_column=mag_col)
+        self.plot_catalogue(cat=reference_cat[in_footprint], ra_col=ra_col, dec_col=dec_col, fig=fig,
+                            colour_column=mag_col)
         fig.savefig(os.path.join(output_path, f"{self.name}_cat_overplot.pdf"))
-        fig.show()
-
-        in_footprint = self.wcs.footprint_contains(ref_cat_coords)
 
         self.astrometry_stats["mean_offset"] = mean_offset.to(units.arcsec)
         self.astrometry_stats["median_offset"] = median_offset.to(units.arcsec)
@@ -1266,7 +1274,10 @@ class ImagingImage(Image):
 
         self.astrometry_stats["n_matches"] = len(matches_source_cat)
         self.astrometry_stats["n_cat"] = sum(in_footprint)
+        self.astrometry_stats["n_local"] = sum(distance_local)
         self.astrometry_stats["local_coord"] = local_coord
+        self.astrometry_stats["star_tolerance"] = star_tolerance
+        self.astrometry_stats["offset_tolerance"] = offset_tolerance
 
         self.update_output_file()
 
@@ -1345,15 +1356,21 @@ class ImagingImage(Image):
 
     def match_to_cat(self, cat: Union[str, table.QTable],
                      ra_col: str = "ra", dec_col: str = "dec",
-                     tolerance: units.Quantity = 1 * units.arcsec):
+                     offset_tolerance: units.Quantity = 1 * units.arcsec,
+                     star_tolerance: float = None):
         self.load_source_cat()
-        matches_source_cat, matches_ext_cat, distance = a.match_catalogs(cat_1=self.source_cat,
-                                                                         cat_2=cat,
-                                                                         ra_col_1="RA",
-                                                                         dec_col_1="DEC",
-                                                                         ra_col_2=ra_col,
-                                                                         dec_col_2=dec_col,
-                                                                         tolerance=tolerance)
+        source_cat = self.source_cat
+        if star_tolerance is not None:
+            source_cat = source_cat[source_cat["CLASS_STAR"] > star_tolerance]
+
+        matches_source_cat, matches_ext_cat, distance = a.match_catalogs(
+            cat_1=source_cat,
+            cat_2=cat,
+            ra_col_1="RA",
+            dec_col_1="DEC",
+            ra_col_2=ra_col,
+            dec_col_2=dec_col,
+            tolerance=offset_tolerance)
         return matches_source_cat, matches_ext_cat, distance
 
     def signal_to_noise(self):

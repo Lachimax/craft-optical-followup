@@ -1172,7 +1172,7 @@ class ImagingEpoch(Epoch):
 
     def proc_register(self, no_query: bool = False, **kwargs):
         u.debug_print(1, self.registration_params)
-        if "register" in self.registration_params and self.registration_params["register"]:
+        if "register_frames" in self.registration_params and self.registration_params["register_frames"]:
             if no_query or self.query_stage(
                     "Register frames using astroalign?",
                     stage="4.5-register_frames"):
@@ -1249,37 +1249,44 @@ class ImagingEpoch(Epoch):
                 self.add_frame_registered(registered)
 
     def proc_correct_astrometry_frames(self, no_query: bool = False, **kwargs):
+        do = True
+        if "do_frames" in self.astrometry_params:
+            do = self.astrometry_params["do_frames"]
 
-        if no_query or self.query_stage(stage="5-correct_astrometry_frames",
-                                        message="Correct astrometry of individual frames?"):
-            self.generate_astrometry_indices()
+        if do:
 
-            if "output_path" in kwargs:
-                astrometry_path = kwargs["output_path"]
-                kwargs.pop("output_path")
-            else:
-                astrometry_path = os.path.join(self.data_path, "5-astrometry_frames")
-            u.rmtree_check(astrometry_path)
-            u.mkdir_check(astrometry_path)
+            if no_query or self.query_stage(
+                    stage="5-correct_astrometry_frames",
+                    message="Correct astrometry of individual frames?"):
+                self.generate_astrometry_indices()
 
-            self.frames_astrometry = {}
+                if "output_path" in kwargs:
+                    astrometry_path = kwargs["output_path"]
+                    kwargs.pop("output_path")
+                else:
+                    astrometry_path = os.path.join(self.data_path, "5-astrometry_frames")
+                u.rmtree_check(astrometry_path)
+                u.mkdir_check(astrometry_path)
 
-            if "register" in self.registration_params and self.registration_params["register"]:
-                self.correct_astrometry_frames(
-                    output_dir=astrometry_path,
-                    frames=self.frames_registered,
-                    **self.astrometry_params)
-            else:
-                self.correct_astrometry_frames(
-                    output_dir=astrometry_path,
-                    frames=self.frames_normalised,
-                    **self.astrometry_params)
+                self.frames_astrometry = {}
 
-            self.paths['astrometry_dir'] = astrometry_path
-            self.stages_complete["5-correct_astrometry_frames"] = Time.now()
-            self.update_output_file()
+                if "register_frames" in self.registration_params and self.registration_params["register_frames"]:
+                    self.correct_astrometry_frames(
+                        output_dir=astrometry_path,
+                        frames=self.frames_registered,
+                        **self.astrometry_params)
+                else:
+                    self.correct_astrometry_frames(
+                        output_dir=astrometry_path,
+                        frames=self.frames_normalised,
+                        **self.astrometry_params)
+
+                self.paths['astrometry_dir'] = astrometry_path
+                self.stages_complete["5-correct_astrometry_frames"] = Time.now()
+                self.update_output_file()
 
     def proc_coadd(self, no_query: bool = False, **kwargs):
+
         if no_query or self.query_stage(stage="6-coadd",
                                         message="Coadd astrometry-corrected frames with Montage?"):
             if "output_path" in kwargs:
@@ -1346,13 +1353,13 @@ class ImagingEpoch(Epoch):
                 images = self.coadded_astrometry
             else:
                 images = self.coadded_trimmed
-            # for fil in images:
-            #     img = images[fil]
-            #     self.set_path("source_extraction_dir", source_extraction_path)
-            #     configs = self.source_extractor_config
-            #     img.source_extraction_psf(
-            #         output_dir=source_extraction_path,
-            #         phot_autoparams=f"{configs['kron_factor']},{configs['kron_radius_min']}")
+            for fil in images:
+                img = images[fil]
+                self.set_path("source_extraction_dir", source_extraction_path)
+                configs = self.source_extractor_config
+                img.source_extraction_psf(
+                    output_dir=source_extraction_path,
+                    phot_autoparams=f"{configs['kron_factor']},{configs['kron_radius_min']}")
             self.astrometry_diagnostics(images=images)
             # self.psf_diagnostics()
             self.stages_complete['8-source_extraction'] = Time.now()
@@ -3250,8 +3257,9 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
                     if upper_only and img.extract_chip_number() != 1:
                         do = False
                     if do:
-                        new_img = img.correct_astrometry(output_dir=astrometry_fil_path,
-                                                         **kwargs)
+                        new_img = img.correct_astrometry(
+                            output_dir=astrometry_fil_path,
+                            **kwargs)
                         if new_img is not None:
                             print(f"{new_img} astrometry successful.")
                             self.add_frame_astrometry(new_img)
