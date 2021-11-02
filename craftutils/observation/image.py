@@ -10,7 +10,6 @@ from copy import deepcopy
 
 import numpy as np
 import matplotlib.pyplot as plt
-from skimage import img_as_float64
 
 import astropy.io.fits as fits
 import astropy.table as table
