@@ -1309,7 +1309,7 @@ class ImagingImage(Image):
                      left=left, right=right, bottom=bottom, top=top,
                      new_path=output_path
                      )
-        image = self.__class__(path=output_path)
+        image = self.__class__(path=output_path, instrument_name=self.instrument_name)
         return image
 
     def divide_by_exp_time(self, output_path: str):
