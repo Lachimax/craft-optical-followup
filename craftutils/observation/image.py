@@ -10,7 +10,6 @@ from copy import deepcopy
 
 import numpy as np
 import matplotlib.pyplot as plt
-from skimage import img_as_float64
 
 import astropy.io.fits as fits
 import astropy.table as table
@@ -1018,9 +1017,7 @@ class ImagingImage(Image):
         u.debug_print(2, target.data)
         u.debug_print(2, self.data)
         u.debug_print(2, type(self.data[ext]), type(target.data[ext]))
-        data_source = img_as_float64(self.data[ext])
         data_source = u.sanitise_endianness(data_source)
-        data_target = img_as_float64(target.data[ext])
         data_target = u.sanitise_endianness(data_target)
         u.debug_print(1, f"Attempting registration of {self.name} against {target.name}")
         registered, footprint = register(data_source, data_target)
