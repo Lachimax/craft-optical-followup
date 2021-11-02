@@ -39,8 +39,10 @@ def correct_gaia_to_epoch(gaia_cat: Union[str, table.QTable], new_epoch: time.Ti
 def generate_astrometry_indices(cat_name: str, cat: Union[str, table.Table],
                                 output_file_prefix: str,
                                 unique_id_prefix: int,
-                                index_output_dir: str, fits_cat_output: str = None,
+                                index_output_dir: str,
+                                fits_cat_output: str = None,
                                 p_lower: int = 0, p_upper: int = 2):
+    u.mkdir_check(index_output_dir)
     cat_name = cat_name.lower()
     if fits_cat_output is None and isinstance(cat, str):
         if cat.endswith(".csv"):
