@@ -1040,12 +1040,15 @@ class Epoch:
         if reduced_frame not in self.frames_reduced:
             self.frames_reduced.append(reduced_frame)
 
-    def add_coadded_image(self, img: Union[str, image.Image], key: str, **kwargs):
+    def _add_coadded(self, img: Union[str, image.Image], key: str, image_dict: dict):
         if isinstance(img, str):
             img = image.CoaddedImage(path=img)
         img.epoch = self
-        self.coadded[key] = img
+        image_dict[key] = img
         return img
+
+    def add_coadded_image(self, img: Union[str, image.Image], key: str, **kwargs):
+        return self._add_coadded(img=img, key=key, image_dict=self.coadded)
 
     def sort_frame(self, frame: image.Image, sort_key: str = None):
         if frame.frame_type == "bias" and frame not in self.frames_bias:
@@ -1742,65 +1745,52 @@ class ImagingEpoch(Epoch):
             )
         return self.gaia_catalogue
 
+    def _check_frame(self, frame: Union[image.ImagingImage, str], frame_type: str):
+        if isinstance(frame, str):
+            if os.path.isfile(frame):
+                cls = image.ImagingImage.select_child_class(instrument=self.instrument_name)
+                u.debug_print(1, f"{cls} {self.instrument_name}")
+                frame = cls(path=frame, frame_type=frame_type)
+            else:
+                u.debug_print(1, f"File {frame} not found.")
+                return None, None
+        fil = frame.extract_filter()
+        frame.epoch = self
+        return frame, fil
+
+    def _add_frame(self, frame: Union[image.ImagingImage, str], frames_dict: dict, frame_type: str):
+        frame, fil = self._check_frame(frame=frame, frame_type=frame_type)
+        if frame is None:
+            return None
+        if self.check_filter(fil=fil) and frame not in self.frames_reduced[fil]:
+            frames_dict[fil].append(frame)
+        return frame
+
     def add_frame_raw(self, raw_frame: Union[image.ImagingImage, str]):
-        if isinstance(raw_frame, str):
-            cls = image.ImagingImage.select_child_class(instrument=self.instrument_name)
-            u.debug_print(1, f"{cls} {self.instrument_name}")
-            raw_frame = cls(path=raw_frame, frame_type="raw", instrument=self.instrument_name)
+        raw_frame, fil = self._check_frame(frame=raw_frame, frame_type="raw")
+        if raw_frame is None:
+            return None
         self.frames_raw.append(raw_frame)
-        fil = raw_frame.extract_filter()
-        if self.check_filter(fil=fil):
-            self.frames_science[fil].append(raw_frame)
-        self.sort_frame(raw_frame)
+        self.sort_frame(raw_frame, sort_key=fil)
+        return raw_frame
 
-    def add_frame_reduced(self, reduced_frame: image.ImagingImage):
-        if isinstance(reduced_frame, str):
-            cls = image.ImagingImage.select_child_class(instrument=self.instrument_name)
-            reduced_frame = cls(path=reduced_frame, frame_type="reduced")
-        fil = reduced_frame.extract_filter()
-        if self.check_filter(fil=fil) and reduced_frame not in self.frames_reduced[fil]:
-            self.frames_reduced[fil].append(reduced_frame)
+    def add_frame_reduced(self, reduced_frame: Union[str, image.ImagingImage]):
+        return self._add_frame(frame=reduced_frame, frames_dict=self.frames_reduced, frame_type="reduced")
 
-    def add_frame_registered(self, registered_frame: image.ImagingImage):
-        if isinstance(registered_frame, str):
-            cls = image.ImagingImage.select_child_class(instrument=self.instrument_name)
-            registered_frame = cls(path=registered_frame, frame_type="registered")
-        fil = registered_frame.extract_filter()
-        if self.check_filter(fil=fil) and registered_frame not in self.frames_registered[fil]:
-            self.frames_registered[fil].append(registered_frame)
+    def add_frame_registered(self, registered_frame: Union[str, image.ImagingImage]):
+        return self._add_frame(frame=registered_frame, frames_dict=self.frames_registered, frame_type="registered")
 
     def add_frame_astrometry(self, astrometry_frame: Union[str, image.ImagingImage]):
-        if isinstance(astrometry_frame, str):
-            cls = image.ImagingImage.select_child_class(instrument=self.instrument_name)
-            astrometry_frame = cls(path=astrometry_frame, frame_type="astrometry")
-        try:
-            fil = astrometry_frame.extract_filter()
-            if self.check_filter(fil=fil) and astrometry_frame not in self.frames_astrometry[fil]:
-                self.frames_astrometry[fil].append(astrometry_frame)
-        except FileNotFoundError:
-            print(f"Astrometry file {astrometry_frame.path} not found.")
+        return self._add_frame(frame=astrometry_frame, frames_dict=self.frames_astrometry, frame_type="astrometry")
+
+    def add_frame_normalised(self, norm_frame: Union[str, image.ImagingImage]):
+        return self._add_frame(frame=norm_frame, frames_dict=self.frames_normalised, frame_type="reduced")
 
     def add_coadded_trimmed_image(self, img: Union[str, image.Image], key: str, **kwargs):
-        if isinstance(img, str):
-            img = image.CoaddedImage(path=img)
-        img.epoch = self
-        self.coadded_trimmed[key] = img
-        return img
+        return self._add_coadded(img=img, key=key, image_dict=self.coadded_trimmed)
 
     def add_coadded_astrometry_image(self, img: Union[str, image.Image], key: str, **kwargs):
-        if isinstance(img, str):
-            img = image.CoaddedImage(path=img)
-        img.epoch = self
-        self.coadded_astrometry[key] = img
-        return img
-
-    def add_frame_normalised(self, norm_frame: image.ImagingImage):
-        if isinstance(norm_frame, str):
-            cls = image.ImagingImage.select_child_class(instrument=self.instrument_name)
-            norm_frame = cls(path=norm_frame, frame_type="reduced")
-        fil = norm_frame.extract_filter()
-        if self.check_filter(fil=fil) and norm_frame not in self.frames_normalised[fil]:
-            self.frames_normalised[fil].append(norm_frame)
+        return self._add_coadded(img=img, key=key, image_dict=self.coadded_astrometry)
 
     def check_filter(self, fil: str):
         """
@@ -1808,7 +1798,7 @@ class ImagingEpoch(Epoch):
         :param fil:
         :return: False if None, True if not.
         """
-        if fil not in (None, ""):
+        if fil not in (None, "", " "):
             if fil not in self.filters:
                 print(f"Adding {fil} to filter list")
                 self.filters.append(fil)
