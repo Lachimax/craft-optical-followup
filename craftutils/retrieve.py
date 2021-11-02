@@ -455,6 +455,7 @@ def retrieve_fors2_calib(fil: str = 'I_BESS', date_from: str = '2017-01-01', dat
     }
     request = urllib.parse.urlencode(request)
     request = bytes(request, 'utf-8')
+    print("Retrieving calibration parameters from FORS2 QC1 archive...")
     page = urllib.request.urlopen("http://archive.eso.org/qc1/qc1_cgi", request)
     return str(page.read().replace(b'!', b''), 'utf-8')
 
@@ -485,7 +486,6 @@ def update_fors2_calib():
     """
     Runs save_fors2_calib() for all four retrievable FORS2 filters.
     """
-    print("Retrieving calibration parameters from FORS2 QC1 archive...")
     for fil in fors2_filters_retrievable:
         if fil == 'R_SPEC':
             fil = 'R_SPECIAL'

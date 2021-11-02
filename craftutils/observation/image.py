@@ -29,6 +29,7 @@ import craftutils.fits_files as ff
 import craftutils.photometry as ph
 import craftutils.params as p
 import craftutils.plotting as pl
+import craftutils.observation.instrument as inst
 import craftutils.wrap.source_extractor as se
 import craftutils.wrap.psfex as psfex
 from craftutils.wrap.astrometry_net import solve_field
@@ -219,6 +220,10 @@ class Image:
         self.headers = None
         self.data = None
         self.instrument_name = instrument
+        try:
+            self.instrument = inst.Instrument.from_params(instrument_name=instrument)
+        except FileNotFoundError:
+            self.instrument = None
         self.epoch = None
 
         # Header attributes
@@ -442,7 +447,7 @@ class ImagingImage(Image):
 
         self.wcs = None
 
-        self.filter = None
+        self.filter_name = None
         self.filter_short = None
         self.pixel_scale_ra = None
         self.pixel_scale_dec = None
@@ -486,6 +491,9 @@ class ImagingImage(Image):
         self.zeropoints = {}
         self.zeropoint_output_paths = {}
         self.zeropoint_best = None
+
+        self.extinction_atmospheric = None
+        self.extinction_atmospheric_err = None
 
         self.depth = None
 
@@ -633,7 +641,7 @@ class ImagingImage(Image):
     def load_source_cat(self, force: bool = False):
         u.debug_print(1, self.name)
         u.debug_print(1, "SELF.SOURCE_CAT_PATH", self.source_cat_path)
-        if force or self.source_cat is None:
+        if force or self.source_cat is None or self.source_cat_dual is None:
             if self.source_cat_path is not None:
                 u.debug_print(1, "Loading source_table from", self.source_cat_path)
                 self.source_cat = table.QTable.read(self.source_cat_path, format="ascii.ecsv")
@@ -692,11 +700,11 @@ class ImagingImage(Image):
 
     def extract_filter(self):
         key = self.header_keys()["filter"]
-        self.filter = self.extract_header_item(key)
-        if self.filter is not None:
-            self.filter_short = self.filter[0]
+        self.filter_name = self.extract_header_item(key)
+        if self.filter_name is not None:
+            self.filter_short = self.filter_name[0]
 
-        return self.filter
+        return self.filter_name
 
     def extract_airmass(self):
         key = self.header_keys()["airmass"]
@@ -733,7 +741,7 @@ class ImagingImage(Image):
         outputs = super()._output_dict()
         outputs.update({
             "astrometry_stats": self.astrometry_stats,
-            "filter": self.filter,
+            "filter": self.filter_name,
             "psfex_path": self.psfex_path,
             "source_cat_sextractor_path": self.source_cat_sextractor_path,
             "source_cat_sextractor_dual_path": self.source_cat_sextractor_dual_path,
@@ -760,7 +768,7 @@ class ImagingImage(Image):
             if "astrometry_stats" in outputs:
                 self.astrometry_stats = outputs["astrometry_stats"]
             if "filter" in outputs:
-                self.filter = outputs["filter"]
+                self.filter_name = outputs["filter"]
             if "psfex_path" in outputs:
                 self.psfex_path = outputs["psfex_path"]
             if "source_cat_sextractor_path" in outputs:
@@ -791,6 +799,7 @@ class ImagingImage(Image):
         return outputs
 
     def select_zeropoint(self, no_user_input: bool = False):
+
         ranking = self.rank_photometric_cat()
         zps = {}
         best = None
@@ -1414,7 +1423,7 @@ class ImagingImage(Image):
     def plot_apertures(self):
         self.load_source_cat()
         pl.plot_all_params(image=self.path, cat=self.source_cat, kron=True, show=False)
-        plt.title(self.filter)
+        plt.title(self.filter_name)
         plt.show()
 
     def find_object(self, coord: SkyCoord, dual: bool = True):
@@ -1629,11 +1638,13 @@ class ImagingImage(Image):
         :return:
         """
 
-        return ["des",
-                "delve",
-                "panstarrs1",
-                "sdss",
-                "skymapper"]
+        return [
+            "instrument_archive",
+            "des",
+            "delve",
+            "panstarrs1",
+            "sdss",
+            "skymapper"]
 
 
 class CoaddedImage(ImagingImage):
@@ -1766,6 +1777,29 @@ class FORS2Image(ImagingImage, ESOImage):
                 self.other_chip = outputs["other_chip"]
         return outputs
 
+    def calibration_from_qc1(self):
+        """
+        Use the FORS2 QC1 archive to retrieve calibration parameters.
+        :return:
+        """
+        fil = self.instrument.filters[self.filter_name]
+        fil.retrieve_calibration_table()
+        self.extract_date_obs()
+        row = fil.get_nearest_calib_row(mjd=self.mjd_obs)
+
+        zp_dict = {
+            "zeropoint": row["zeropoint"],
+            "zeropoint_err": row["zeropoint_err"],
+            "airmass": 0.0
+        }
+
+        self.zeropoints["instrument_archive"] = zp_dict
+
+        self.extinction_atmospheric = row["extinction"]
+        self.extinction_atmospheric_err = row["extinction_err"]
+
+        return self.zeropoints["provided"]
+
     @classmethod
     def header_keys(cls) -> dict:
         header_keys = super().header_keys()
@@ -1818,7 +1852,7 @@ class HubbleImage(ImagingImage):
         self.exposure_time = 1.0 * units.second
         return self.exposure_time
 
-    def zeropoint(self):
+    def zeropoint(self, **kwargs):
         """
         Returns the AB magnitude zeropoint of the image, according to
         https://www.stsci.edu/hst/instrumentation/acs/data-analysis/zeropoints
