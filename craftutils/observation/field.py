@@ -1042,7 +1042,7 @@ class Epoch:
 
     def _add_coadded(self, img: Union[str, image.Image], key: str, image_dict: dict):
         if isinstance(img, str):
-            img = image.CoaddedImage(path=img)
+            img = image.CoaddedImage(path=img, instrument_name=self.instrument_name)
         img.epoch = self
         image_dict[key] = img
         return img
@@ -1139,6 +1139,7 @@ class ImagingEpoch(Epoch):
 
         self.frames_science = {}
         self.frames_reduced = {}
+        self.frames_trimmed = {}
         self.frames_normalised = {}
         self.frames_registered = {}
         self.frames_astrometry = {}
@@ -1776,6 +1777,9 @@ class ImagingEpoch(Epoch):
 
     def add_frame_reduced(self, reduced_frame: Union[str, image.ImagingImage]):
         return self._add_frame(frame=reduced_frame, frames_dict=self.frames_reduced, frame_type="reduced")
+
+    def add_frame_trimmed(self, trimmed_frame: image.ImagingImage):
+        self._add_frame(frame=trimmed_frame, frames_dict=self.frames_trimmed, frame_type="reduced")
 
     def add_frame_registered(self, registered_frame: Union[str, image.ImagingImage]):
         return self._add_frame(frame=registered_frame, frames_dict=self.frames_registered, frame_type="registered")
@@ -2637,7 +2641,6 @@ class ESOImagingEpoch(ImagingEpoch):
             **kwargs)
 
         self.frames_esoreflex_backgrounds = {}
-        self.frames_trimmed = {}
 
         self.load_output_file(mode="imaging")
 
@@ -2827,20 +2830,9 @@ class ESOImagingEpoch(ImagingEpoch):
                     self.add_frame_normalised(normed)
 
     def add_frame_background(self, background_frame: Union[image.ImagingImage, str]):
-        if isinstance(background_frame, str):
-            cls = image.ImagingImage.select_child_class(instrument=self.instrument_name)
-            background_frame = cls(path=background_frame, frame_type="reduced")
-        fil = background_frame.extract_filter()
-        if self.check_filter(fil=fil) and background_frame not in self.frames_esoreflex_backgrounds[fil]:
-            self.frames_esoreflex_backgrounds[fil].append(background_frame)
-
-    def add_frame_trimmed(self, trimmed_frame: image.ImagingImage):
-        if isinstance(trimmed_frame, str):
-            cls = image.ImagingImage.select_child_class(instrument=self.instrument_name)
-            trimmed_frame = cls(path=trimmed_frame, frame_type="reduced")
-        fil = trimmed_frame.extract_filter()
-        if self.check_filter(fil=fil) and trimmed_frame not in self.frames_trimmed[fil]:
-            self.frames_trimmed[fil].append(trimmed_frame)
+        self._add_frame(frame=background_frame,
+                        frames_dict=self.frames_esoreflex_backgrounds,
+                        frame_type="reduced")
 
     def check_filter(self, fil: str):
         not_none = super().check_filter(fil)

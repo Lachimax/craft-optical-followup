@@ -209,7 +209,7 @@ def fits_table_all(input_path: str, output_path: str = "", science_only: bool = 
 
 class Image:
 
-    def __init__(self, path: str, frame_type: str = None, instrument: str = None):
+    def __init__(self, path: str, frame_type: str = None, instrument_name: str = None):
         self.path = path
         self.output_file = path.replace(".fits", "_outputs.yaml")
         self.data_path, self.filename = os.path.split(self.path)
@@ -218,9 +218,9 @@ class Image:
         self.frame_type = frame_type
         self.headers = None
         self.data = None
-        self.instrument_name = instrument
+        self.instrument_name = instrument_name
         try:
-            self.instrument = inst.Instrument.from_params(instrument_name=instrument)
+            self.instrument = inst.Instrument.from_params(instrument_name=instrument_name)
         except FileNotFoundError:
             self.instrument = None
         self.epoch = None
@@ -441,8 +441,8 @@ class ESOImage(Image):
 
 
 class ImagingImage(Image):
-    def __init__(self, path: str, frame_type: str = None, instrument: str = None):
-        super().__init__(path=path, frame_type=frame_type, instrument=instrument)
+    def __init__(self, path: str, frame_type: str = None, instrument_name: str = None):
+        super().__init__(path=path, frame_type=frame_type, instrument_name=instrument_name)
 
         self.wcs = None
 
@@ -1647,8 +1647,8 @@ class ImagingImage(Image):
 
 
 class CoaddedImage(ImagingImage):
-    def __init__(self, path: str, frame_type: str = None, instrument: str = None, area_file: str = None):
-        super().__init__(path=path, frame_type=frame_type, instrument=instrument)
+    def __init__(self, path: str, frame_type: str = None, instrument_name: str = None, area_file: str = None):
+        super().__init__(path=path, frame_type=frame_type, instrument_name=instrument_name)
         self.area_file = area_file  # string
         if self.area_file is None:
             self.area_file = self.path.replace(".fits", "_area.fits")
@@ -1720,7 +1720,7 @@ class PanSTARRS1Cutout(ImagingImage):
 
 class FORS2Image(ImagingImage, ESOImage):
     def __init__(self, path: str, frame_type: str = None, **kwargs):
-        super().__init__(path=path, frame_type=frame_type, instrument="vlt-fors2")
+        super().__init__(path=path, frame_type=frame_type, instrument_name="vlt-fors2")
         self.other_chip = None
         self.chip_number = None
 
