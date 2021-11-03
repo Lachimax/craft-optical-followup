@@ -693,9 +693,10 @@ class ImagingImage(Image):
             self.pixel_scale_ra, self.pixel_scale_dec = ff.get_pixel_scale(self.hdu_list, layer=layer,
                                                                            astropy_units=True)
             self.close()
-            return self.pixel_scale_ra, self.pixel_scale_dec
         else:
             u.debug_print(2, "Pixel scale already set.")
+
+        return self.pixel_scale_ra, self.pixel_scale_dec
 
     def extract_filter(self):
         key = self.header_keys()["filter"]
@@ -892,6 +893,7 @@ class ImagingImage(Image):
         if zp_dict is None:
             return None
         zp_dict['airmass'] = 0.0
+        zp_dict['airmass_err'] = 0.0
         self.zeropoints[cat_name.lower()] = zp_dict
         self.zeropoint_output_paths[cat_name.lower()] = output_path
         self.update_output_file()
@@ -914,25 +916,10 @@ class ImagingImage(Image):
         self.extract_exposure_time()
 
         if force or f"MAG_AUTO_ZP_{zeropoint_name}" not in cat:
-            if zeropoint_name == "best":
-                zp_dict = self.zeropoint_best
-            elif zeropoint_name not in self.zeropoints:
-                raise KeyError(f"Zeropoint {zeropoint_name} does not exist.")
-            else:
-                zp_dict = self.zeropoints[zeropoint_name]
-            cat[f"MAG_AUTO_ZP_{zeropoint_name}"], cat[f"MAGERR_AUTO_ZP_{zeropoint_name}"] = ph.magnitude_complete(
+            cat[f"MAG_AUTO_ZP_{zeropoint_name}"], cat[f"MAGERR_AUTO_ZP_{zeropoint_name}"] = self.magnitude(
                 flux=cat["FLUX_AUTO"],
                 flux_err=cat["FLUXERR_AUTO"],
-                exp_time=self.exposure_time,
-                exp_time_err=0.0 * units.second,
-                zeropoint=zp_dict['zeropoint'],
-                zeropoint_err=zp_dict['zeropoint_err'],
-                airmass=zp_dict['airmass'],
-                airmass_err=0.0,
-                ext=0.0 * units.mag,
-                ext_err=0.0 * units.mag,
-                colour_term=0.0,
-                colour=0.0 * units.mag,
+                zeropoint_name=zeropoint_name
             )
             if dual:
                 self.source_cat_dual = cat
@@ -941,6 +928,37 @@ class ImagingImage(Image):
             self.update_output_file()
         else:
             print(f"Magnitudes already calibrated for {zeropoint_name}")
+
+    def magnitude(
+            self,
+            flux: units.Quantity,
+            flux_err: units.Quantity,
+            zeropoint_name: str = 'best'
+    ):
+
+        if zeropoint_name == "best":
+            zp_dict = self.zeropoint_best
+        elif zeropoint_name not in self.zeropoints:
+            raise KeyError(f"Zeropoint {zeropoint_name} does not exist.")
+        else:
+            zp_dict = self.zeropoints[zeropoint_name]
+
+        mag, mag_err = ph.magnitude_complete(
+            flux=flux,
+            flux_err=flux_err,
+            exp_time=self.exposure_time,
+            exp_time_err=0.0 * units.second,
+            zeropoint=zp_dict['zeropoint'],
+            zeropoint_err=zp_dict['zeropoint_err'],
+            airmass=zp_dict['airmass'],
+            airmass_err=zp_dict['airmass_err'],
+            ext=self.extinction_atmospheric,
+            ext_err=self.extinction_atmospheric_err,
+            colour_term=0.0,
+            colour=0.0 * units.mag,
+        )
+
+        return mag, mag_err
 
     def estimate_depth(self, zeropoint_name: str):
         self.load_source_cat()
@@ -1831,6 +1849,9 @@ class FORS2Image(ImagingImage, ESOImage):
 
 
 class FORS2CoaddedImage(CoaddedImage):
+    def __init__(self, path: str, frame_type: str = None, area_file: str = None):
+        super().__init__(path=path, frame_type=frame_type, instrument_name="vlt-fors2", area_file=area_file)
+
     def calibration_from_qc1(self):
         """
         Use the FORS2 QC1 archive to retrieve calibration parameters.
@@ -1841,10 +1862,16 @@ class FORS2CoaddedImage(CoaddedImage):
         self.extract_date_obs()
         row = fil.get_nearest_calib_row(mjd=self.mjd_obs)
 
+        if self.epoch is not None and self.epoch.airmass_err is not None:
+            airmass_err = self.epoch.airmass_err
+        else:
+            airmass_err = 0.0
+
         zp_dict = {
             "zeropoint": row["zeropoint"],
             "zeropoint_err": row["zeropoint_err"],
-            "airmass": 0.0,
+            "airmass": self.airmass,
+            "airmass_err": airmass_err,
             "mjd_measured": row["mjd_obs"],
             "delta_t": row["mjd_obs"] - self.mjd_obs,
             "n_matches": "n/a",
