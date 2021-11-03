@@ -327,7 +327,7 @@ class Image:
 
     def extract_gain(self):
         key = self.header_keys()["gain"]
-        print(type(self), key)
+        u.debug_print(1, type(self), key)
         self.gain = self.extract_header_item(key) * units.electron / units.ct
         return self.gain
 
@@ -1162,7 +1162,7 @@ class ImagingImage(Image):
             self,
             reference_cat: Union[str, table.QTable],
             ra_col: str = "ra", dec_col: str = "dec", mag_col: str = "phot_g_mean_mag",
-            offset_tolerance: units.Quantity = 1 * units.arcsec,
+            offset_tolerance: units.Quantity = 0.5 * units.arcsec,
             star_tolerance: float = 0.8,
             local_coord: SkyCoord = None,
             local_radius: units.Quantity = 0.5 * units.arcmin,
@@ -1268,8 +1268,11 @@ class ImagingImage(Image):
         plt.close()
 
         fig = plt.figure(figsize=(12, 12), dpi=1000)
-        self.plot_catalogue(cat=reference_cat[in_footprint], ra_col=ra_col, dec_col=dec_col, fig=fig,
-                            colour_column=mag_col)
+        self.plot_catalogue(
+            cat=reference_cat[in_footprint],
+            ra_col=ra_col, dec_col=dec_col,
+            fig=fig,
+            colour_column=mag_col, cbar_label=mag_col)
         fig.savefig(os.path.join(output_path, f"{self.name}_cat_overplot.pdf"))
 
         self.astrometry_stats["mean_offset"] = mean_offset.to(units.arcsec)
@@ -1282,8 +1285,9 @@ class ImagingImage(Image):
 
         self.astrometry_stats["n_matches"] = len(matches_source_cat)
         self.astrometry_stats["n_cat"] = sum(in_footprint)
-        self.astrometry_stats["n_local"] = sum(distance_local)
+        self.astrometry_stats["n_local"] = len(distance_local)
         self.astrometry_stats["local_coord"] = local_coord
+        self.astrometry_stats["local_tolerance"] = local_radius
         self.astrometry_stats["star_tolerance"] = star_tolerance
         self.astrometry_stats["offset_tolerance"] = offset_tolerance
 
@@ -1436,8 +1440,9 @@ class ImagingImage(Image):
         u.debug_print(1, "FIND_OBJECT: cat.colnames", cat.colnames)
         coord_cat = SkyCoord(cat["RA"], cat["DEC"])
         separation = coord.separation(coord_cat)
-        nearest = cat[np.argmin(separation)]
-        return nearest
+        i = np.argmin(separation)
+        nearest = cat[i]
+        return nearest, separation[i]
 
     def generate_psf_image(self, x: int, y: int, output: str = None):
         """
@@ -1578,6 +1583,7 @@ class ImagingImage(Image):
                        colour_column: str = None,
                        fig: plt.Figure = None,
                        ext: int = 0,
+                       cbar_label: str = None,
                        **kwargs):
         if fig is None:
             fig = plt.figure(figsize=(12, 12), dpi=1000)
@@ -1590,7 +1596,7 @@ class ImagingImage(Image):
         x, y = self.wcs.all_world2pix(cat[ra_col], cat[dec_col], 0)
         pcm = plt.scatter(x, y, c=c, cmap="plasma", marker="x", zorder=10)
         if colour_column is not None:
-            fig.colorbar(pcm, ax=ax)
+            fig.colorbar(pcm, ax=ax, label=cbar_label)
 
         u.debug_print(1, "CATALOGUE SIZE:", len(cat))
 
@@ -1679,6 +1685,18 @@ class CoaddedImage(ImagingImage):
             "area_file": self.area_file
         })
         return outputs
+
+    @classmethod
+    def select_child_class(cls, instrument: str, **kwargs):
+        if not isinstance(instrument, str):
+            instrument = str(instrument)
+        if instrument is None:
+            return CoaddedImage
+        elif instrument == "vlt-fors2":
+            return FORS2CoaddedImage
+        else:
+            return CoaddedImage
+            # raise ValueError(f"Unrecognised instrument {instrument}")
 
 
 class PanSTARRS1Cutout(ImagingImage):
@@ -1776,29 +1794,6 @@ class FORS2Image(ImagingImage, ESOImage):
                 self.other_chip = outputs["other_chip"]
         return outputs
 
-    def calibration_from_qc1(self):
-        """
-        Use the FORS2 QC1 archive to retrieve calibration parameters.
-        :return:
-        """
-        fil = self.instrument.filters[self.filter_name]
-        fil.retrieve_calibration_table()
-        self.extract_date_obs()
-        row = fil.get_nearest_calib_row(mjd=self.mjd_obs)
-
-        zp_dict = {
-            "zeropoint": row["zeropoint"],
-            "zeropoint_err": row["zeropoint_err"],
-            "airmass": 0.0
-        }
-
-        self.zeropoints["instrument_archive"] = zp_dict
-
-        self.extinction_atmospheric = row["extinction"]
-        self.extinction_atmospheric_err = row["extinction_err"]
-
-        return self.zeropoints["provided"]
-
     @classmethod
     def header_keys(cls) -> dict:
         header_keys = super().header_keys()
@@ -1827,10 +1822,41 @@ class FORS2Image(ImagingImage, ESOImage):
         :return:
         """
 
-        return ["des",
-                "panstarrs1",
-                "sdss",
-                "skymapper"]
+        return [
+            "instrument_archive",
+            "des",
+            "panstarrs1",
+            "sdss",
+            "skymapper"]
+
+
+class FORS2CoaddedImage(CoaddedImage):
+    def calibration_from_qc1(self):
+        """
+        Use the FORS2 QC1 archive to retrieve calibration parameters.
+        :return:
+        """
+        fil = self.instrument.filters[self.filter_name]
+        fil.retrieve_calibration_table()
+        self.extract_date_obs()
+        row = fil.get_nearest_calib_row(mjd=self.mjd_obs)
+
+        zp_dict = {
+            "zeropoint": row["zeropoint"],
+            "zeropoint_err": row["zeropoint_err"],
+            "airmass": 0.0,
+            "mjd_measured": row["mjd_obs"],
+            "delta_t": row["mjd_obs"] - self.mjd_obs,
+            "n_matches": "n/a",
+            "catalogue": "fors2_qc1_archive"
+        }
+
+        self.zeropoints["instrument_archive"] = zp_dict
+
+        self.extinction_atmospheric = row["extinction"]
+        self.extinction_atmospheric_err = row["extinction_err"]
+
+        return self.zeropoints["instrument_archive"]
 
 
 class GSAOIImage(ImagingImage):

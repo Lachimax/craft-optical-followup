@@ -1042,7 +1042,10 @@ class Epoch:
 
     def _add_coadded(self, img: Union[str, image.Image], key: str, image_dict: dict):
         if isinstance(img, str):
-            img = image.CoaddedImage(path=img, instrument_name=self.instrument_name)
+            u.debug_print(1, "_ADD_COADDED instrument:", self.instrument_name)
+            cls = image.CoaddedImage.select_child_class(instrument=self.instrument)
+            u.debug_print(1, "_ADD_COADDED cls:", cls)
+            img = cls(path=img, instrument_name=self.instrument_name)
         img.epoch = self
         image_dict[key] = img
         return img
@@ -1364,7 +1367,10 @@ class ImagingEpoch(Epoch):
                 img.source_extraction_psf(
                     output_dir=source_extraction_path,
                     phot_autoparams=f"{configs['kron_factor']},{configs['kron_radius_min']}")
-            self.astrometry_diagnostics(images=images)
+            offset_tolerance = 0.5 * units.arcsec
+            if "do_frames" in self.astrometry_params and not self.astrometry_params["do_frames"]:
+                offset_tolerance = 1.0 * units.arcsec
+            self.astrometry_diagnostics(images=images, offset_tolerance=offset_tolerance)
             # self.psf_diagnostics()
             self.stages_complete['8-source_extraction'] = Time.now()
             self.update_output_file()
@@ -1406,7 +1412,9 @@ class ImagingEpoch(Epoch):
                 else:
                     self.astrometry_successful[frame.name] = False
 
-    def astrometry_diagnostics(self, images: dict = None, reference_cat: table.QTable = None):
+    def astrometry_diagnostics(self, images: dict = None,
+                               reference_cat: table.QTable = None,
+                               offset_tolerance: units.Quantity = 0.5 * units.arcsec):
 
         if images is None:
             images = self.coadded_trimmed
@@ -1419,7 +1427,8 @@ class ImagingEpoch(Epoch):
             img.load_source_cat()
             self.astrometry_stats[fil] = img.astrometry_diagnostics(
                 reference_cat=reference_cat,
-                local_coord=self.field.centre_coords
+                local_coord=self.field.centre_coords,
+                offset_tolerance=offset_tolerance
             )
 
         self.update_output_file()
@@ -1574,7 +1583,7 @@ class ImagingEpoch(Epoch):
                 # obj.load_output_file()
                 plt.close()
                 # Get nearest Source-Extractor object:
-                nearest = img.find_object(obj.position, dual=dual)
+                nearest, separation = img.find_object(obj.position, dual=dual)
                 rows.append(nearest)
                 u.debug_print(1, "NEAREST", nearest.colnames)
                 err = nearest[f'MAGERR_AUTO_ZP_best']
@@ -1599,7 +1608,8 @@ class ImagingEpoch(Epoch):
                     "ra_err": np.sqrt(nearest["ERRX2_WORLD"]),
                     "dec": nearest['DELTA_SKY'],
                     "dec_err": np.sqrt(nearest["ERRY2_WORLD"]),
-                    "kron_radius": nearest["KRON_RADIUS"]}
+                    "kron_radius": nearest["KRON_RADIUS"],
+                    "separation_from_given": separation.to(units.arcsec)}
                 obj.update_output_file()
                 obj.estimate_galactic_extinction()
                 obj.write_plot_photometry()

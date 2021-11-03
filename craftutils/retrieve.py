@@ -127,7 +127,7 @@ def retrieve_svo_filter(facility_name: str, instrument_name: str, filter_name: s
     try:
         response = requests.get(url).content
     except requests.exceptions.SSLError:
-        print('An SSL error occurred when retrieving SkyMapper data. Skipping.')
+        print('An SSL error occurred when retrieving SVO data. Skipping.')
         return "ERROR"
     if b"ERROR" in response:
         return "ERROR"

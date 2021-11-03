@@ -304,16 +304,16 @@ class Object:
         for instrument_name in self.photometry:
             instrument = inst.Instrument.from_params(instrument_name)
             for filter_name in self.photometry[instrument_name]:
+                fil = instrument.filters[filter_name]
                 phot_dict = self.photometry[instrument_name][filter_name].copy()
                 phot_dict["band"] = filter_name
                 phot_dict["instrument"] = instrument_name
                 phot_dict["lambda_eff"] = u.check_quantity(
-                    number=instrument.filters[filter_name].lambda_eff,
+                    number=fil.lambda_eff,
                     unit=units.Angstrom)
                 tbl = table.QTable([phot_dict])
                 tbls.append(tbl)
         tbl = table.vstack(tbls)
-
         tbl.write(output, format="csv", overwrite=True)
         return tbl
 
