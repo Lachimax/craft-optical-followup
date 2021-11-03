@@ -40,6 +40,8 @@ class Instrument:
             fil = Filter.from_params(filter_name=file[:-5], instrument_name=self.name)
             fil.instrument = self
             self.filters[fil.name] = fil
+            if fil.votable_path is None:
+                fil.retrieve_from_svo()
 
     def guess_param_dir(self):
         return self._build_param_dir(instrument_name=self.name)
@@ -411,10 +413,10 @@ class FORS2Filter(Filter):
     qc1_retrievable = ['b_HIGH', 'v_HIGH', 'R_SPECIAL', 'I_BESS']
 
     def __init__(self, **kwargs):
+        super().__init__(**kwargs)
         self.calibration_table = None
         self.calibration_table_path = None
         self.calibration_table_last_updated = None
-        super().__init__(**kwargs)
 
     def load_calibration_table(self, force: bool = False):
         if self.calibration_table_path is not None:
@@ -430,7 +432,9 @@ class FORS2Filter(Filter):
             u.debug_print(1, "calibration_table not yet loaded.")
         else:
             if self.calibration_table_path is None:
-                self.calibration_table_path = os.path.join(self.data_path, "_calibration_table.ecsv")
+                self.calibration_table_path = os.path.join(
+                    self.data_path,
+                    f"{self.instrument.name}_{self.name}_calibration_table.ecsv")
             u.debug_print(1, "Writing calibration table to", self.calibration_table_path)
             self.calibration_table.write(self.calibration_table_path, format="ascii.ecsv", overwrite=True)
 
@@ -461,6 +465,8 @@ class FORS2Filter(Filter):
         else:
             u.debug_print(1, f"Cannot retrieve calibration table for {self.name}.")
 
+        self.update_output_file()
+
         return self.calibration_table
 
     def get_nearest_calib_row(self, mjd: float):
@@ -476,6 +482,7 @@ class FORS2Filter(Filter):
                 "calibration_table_last_updated": self.calibration_table_last_updated
             }
         )
+        return output_dict
 
     def load_output_file(self):
         outputs = super().load_output_file()
