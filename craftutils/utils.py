@@ -317,7 +317,9 @@ def uncertainty_product(value, *args: tuple):
                 measurement[measurement == 0.0] = sys.float_info.min
         elif measurement == 0.0:
             measurement = sys.float_info.min
-        variance_pre = variance_pre + (uncertainty / measurement) ** 2
+
+        debug_print(1, uncertainty, measurement)
+        variance_pre += (uncertainty / measurement) ** 2
     sigma_pre = np.sqrt(variance_pre)
     sigma = np.abs(value) * sigma_pre
     return sigma

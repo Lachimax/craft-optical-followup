@@ -323,8 +323,10 @@ def magnitude_complete(flux: units.Quantity,
         airmass = 0.0
 
     u.debug_print(1, "INSIDE magnitude_complete()")
-    u.debug_print(1, "EXP_TIME", exp_time)
-    u.debug_print(1, "ZEROPOINT", zeropoint)
+    u.debug_print(1, "EXP_TIME", exp_time, "+/-", exp_time_err)
+    u.debug_print(1, "ZEROPOINT", zeropoint, "+/-", zeropoint_err)
+    u.debug_print(1, "AIRMASS", airmass, "+/-", airmass_err)
+    u.debug_print(1, "EXTINCTION", ext, "+/-", ext_err)
 
     mag_inst, mag_error = magnitude_uncertainty(flux=flux, flux_err=flux_err,
                                                 exp_time=exp_time, exp_time_err=exp_time_err)

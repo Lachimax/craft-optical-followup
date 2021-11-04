@@ -741,6 +741,8 @@ class ImagingImage(Image):
         outputs = super()._output_dict()
         outputs.update({
             "astrometry_stats": self.astrometry_stats,
+            "extinction_atmospheric": self.extinction_atmospheric,
+            "extinction_atmospheric_err": self.extinction_atmospheric_err,
             "filter": self.filter_name,
             "psfex_path": self.psfex_path,
             "source_cat_sextractor_path": self.source_cat_sextractor_path,
@@ -767,6 +769,10 @@ class ImagingImage(Image):
         if outputs is not None:
             if "astrometry_stats" in outputs:
                 self.astrometry_stats = outputs["astrometry_stats"]
+            if "extinction_atmospheric" in outputs:
+                self.extinction_atmospheric = outputs["extinction_atmospheric"]
+            if "extinction_atmospheric_err" in outputs:
+                self.extinction_atmospheric_err = outputs["extinction_atmospheric_err"]
             if "filter" in outputs:
                 self.filter_name = outputs["filter"]
             if "psfex_path" in outputs:
@@ -946,7 +952,7 @@ class ImagingImage(Image):
         mag, mag_err = ph.magnitude_complete(
             flux=flux,
             flux_err=flux_err,
-            exp_time=self.exposure_time,
+            exp_time=self.extract_exposure_time(),
             exp_time_err=0.0 * units.second,
             zeropoint=zp_dict['zeropoint'],
             zeropoint_err=zp_dict['zeropoint_err'],
@@ -1849,8 +1855,19 @@ class FORS2Image(ImagingImage, ESOImage):
 
 
 class FORS2CoaddedImage(CoaddedImage):
-    def __init__(self, path: str, frame_type: str = None, area_file: str = None):
-        super().__init__(path=path, frame_type=frame_type, instrument_name="vlt-fors2", area_file=area_file)
+    def __init__(
+            self,
+            path: str,
+            frame_type: str = None,
+            area_file: str = None,
+            **kwargs
+    ):
+        super().__init__(
+            path=path,
+            frame_type=frame_type,
+            instrument_name="vlt-fors2",
+            area_file=area_file
+        )
 
     def calibration_from_qc1(self):
         """
@@ -1863,14 +1880,14 @@ class FORS2CoaddedImage(CoaddedImage):
         row = fil.get_nearest_calib_row(mjd=self.mjd_obs)
 
         if self.epoch is not None and self.epoch.airmass_err is not None:
-            airmass_err = self.epoch.airmass_err
+            airmass_err = self.epoch.airmass_err[self.filter_name]
         else:
             airmass_err = 0.0
 
         zp_dict = {
             "zeropoint": row["zeropoint"],
             "zeropoint_err": row["zeropoint_err"],
-            "airmass": self.airmass,
+            "airmass": self.extract_airmass(),
             "airmass_err": airmass_err,
             "mjd_measured": row["mjd_obs"],
             "delta_t": row["mjd_obs"] - self.mjd_obs,

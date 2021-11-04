@@ -1043,7 +1043,7 @@ class Epoch:
     def _add_coadded(self, img: Union[str, image.Image], key: str, image_dict: dict):
         if isinstance(img, str):
             u.debug_print(1, "_ADD_COADDED instrument:", self.instrument_name)
-            cls = image.CoaddedImage.select_child_class(instrument=self.instrument)
+            cls = image.CoaddedImage.select_child_class(instrument=self.instrument_name)
             u.debug_print(1, "_ADD_COADDED cls:", cls)
             img = cls(path=img, instrument_name=self.instrument_name)
         img.epoch = self
