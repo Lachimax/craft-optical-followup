@@ -1,5 +1,7 @@
 import os
 
+import astropy.units as units
+
 from typing import Union
 
 from craftutils.utils import system_command, debug_print
@@ -30,6 +32,9 @@ def solve_field(
         base_filename: str = "astrometry",
         overwrite: bool = True,
         tweak: bool = True,
+        # search_radius: units.Quantity = 1 * units.arcmin,
+        guess_scale: bool = True,
+        time_limit: units.Quantity = None,
         *flags,
         **params):
     """
@@ -43,13 +48,17 @@ def solve_field(
     """
 
     params["o"] = base_filename
-    params["l"] = "20"
+    # params["l"] = "20"
+    if time_limit is not None:
+        params["l"] = time_limit.to(units.second).value
 
     debug_print(1, "solve_field(): tweak ==", tweak)
 
     flags = list(flags)
     if overwrite:
         flags.append("O")
+    if guess_scale:
+        flags.append("g")
     if not tweak:
         flags.append("T")
     system_command("solve-field", image_files, False, True, *flags, **params)

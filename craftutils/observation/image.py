@@ -288,7 +288,7 @@ class Image:
             self.data = list(map(lambda h: h.data, self.hdu_list))
             self.close()
         else:
-            print("Data already loaded.")
+            u.debug_print(1, "Data already loaded.")
 
     def get_id(self):
         return self.filename[:self.filename.find(".fits")]
@@ -922,11 +922,17 @@ class ImagingImage(Image):
         self.extract_exposure_time()
 
         if force or f"MAG_AUTO_ZP_{zeropoint_name}" not in cat:
-            cat[f"MAG_AUTO_ZP_{zeropoint_name}"], cat[f"MAGERR_AUTO_ZP_{zeropoint_name}"] = self.magnitude(
+            mags = self.magnitude(
                 flux=cat["FLUX_AUTO"],
                 flux_err=cat["FLUXERR_AUTO"],
                 zeropoint_name=zeropoint_name
             )
+
+            cat[f"MAG_AUTO_ZP_{zeropoint_name}"] = mags[0]
+            cat[f"MAGERR_AUTO_ZP_{zeropoint_name}"] = mags[1]
+            cat[f"MAG_AUTO_ZP_{zeropoint_name}_no_ext"] = mags[2]
+            cat[f"MAGERR_AUTO_ZP_{zeropoint_name}_no_ext"] = mags[3]
+
             if dual:
                 self.source_cat_dual = cat
             else:
@@ -964,7 +970,22 @@ class ImagingImage(Image):
             colour=0.0 * units.mag,
         )
 
-        return mag, mag_err
+        mag_no_ext_corr, mag_no_ext_corr_err = ph.magnitude_complete(
+            flux=flux,
+            flux_err=flux_err,
+            exp_time=self.extract_exposure_time(),
+            exp_time_err=0.0 * units.second,
+            zeropoint=zp_dict['zeropoint'],
+            zeropoint_err=zp_dict['zeropoint_err'],
+            airmass=zp_dict['airmass'],
+            airmass_err=zp_dict['airmass_err'],
+            ext=0.0 * units.mag,
+            ext_err=0.0 * units.mag,
+            colour_term=0.0,
+            colour=0.0 * units.mag,
+        )
+
+        return mag, mag_err, mag_no_ext_corr, mag_no_ext_corr_err
 
     def estimate_depth(self, zeropoint_name: str):
         self.load_source_cat()
@@ -1874,33 +1895,37 @@ class FORS2CoaddedImage(CoaddedImage):
         Use the FORS2 QC1 archive to retrieve calibration parameters.
         :return:
         """
+        self.extract_filter()
         fil = self.instrument.filters[self.filter_name]
         fil.retrieve_calibration_table()
-        self.extract_date_obs()
-        row = fil.get_nearest_calib_row(mjd=self.mjd_obs)
+        if fil.calibration_table is not None:
+            self.extract_date_obs()
+            row = fil.get_nearest_calib_row(mjd=self.mjd_obs)
 
-        if self.epoch is not None and self.epoch.airmass_err is not None:
-            airmass_err = self.epoch.airmass_err[self.filter_name]
+            if self.epoch is not None and self.epoch.airmass_err is not None:
+                airmass_err = self.epoch.airmass_err[self.filter_name]
+            else:
+                airmass_err = 0.0
+
+            zp_dict = {
+                "zeropoint": row["zeropoint"],
+                "zeropoint_err": row["zeropoint_err"],
+                "airmass": self.extract_airmass(),
+                "airmass_err": airmass_err,
+                "mjd_measured": row["mjd_obs"],
+                "delta_t": row["mjd_obs"] - self.mjd_obs,
+                "n_matches": "n/a",
+                "catalogue": "fors2_qc1_archive"
+            }
+
+            self.zeropoints["instrument_archive"] = zp_dict
+
+            self.extinction_atmospheric = row["extinction"]
+            self.extinction_atmospheric_err = row["extinction_err"]
+
+            return self.zeropoints["instrument_archive"]
         else:
-            airmass_err = 0.0
-
-        zp_dict = {
-            "zeropoint": row["zeropoint"],
-            "zeropoint_err": row["zeropoint_err"],
-            "airmass": self.extract_airmass(),
-            "airmass_err": airmass_err,
-            "mjd_measured": row["mjd_obs"],
-            "delta_t": row["mjd_obs"] - self.mjd_obs,
-            "n_matches": "n/a",
-            "catalogue": "fors2_qc1_archive"
-        }
-
-        self.zeropoints["instrument_archive"] = zp_dict
-
-        self.extinction_atmospheric = row["extinction"]
-        self.extinction_atmospheric_err = row["extinction_err"]
-
-        return self.zeropoints["instrument_archive"]
+            return None
 
 
 class GSAOIImage(ImagingImage):

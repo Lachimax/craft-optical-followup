@@ -13,8 +13,6 @@ from astropy.time import Time
 from astropy.coordinates import SkyCoord
 import astropy.units as units
 import astropy.table as table
-import astropy.wcs as wcs
-import astropy.io.fits as fits
 
 import craftutils.astrometry as am
 import craftutils.fits_files as ff
@@ -1408,9 +1406,9 @@ class ImagingEpoch(Epoch):
                 new_frame = frame.correct_astrometry(output_dir=astrometry_fil_path, **self.astrometry_params)
                 if new_frame is not None:
                     self.add_frame_astrometry(new_frame)
-                    self.astrometry_successful[frame.name] = True
+                    self.astrometry_successful[fil][frame.name] = True
                 else:
-                    self.astrometry_successful[frame.name] = False
+                    self.astrometry_successful[fil][frame.name] = False
 
     def astrometry_diagnostics(self, images: dict = None,
                                reference_cat: table.QTable = None,
@@ -1816,6 +1814,8 @@ class ImagingEpoch(Epoch):
             if fil not in self.filters:
                 print(f"Adding {fil} to filter list")
                 self.filters.append(fil)
+            if fil not in self.astrometry_successful:
+                self.astrometry_successful[fil] = {}
             if fil not in self.frames_science:
                 if isinstance(self.frames_science, dict):
                     self.frames_science[fil] = []
@@ -3213,12 +3213,12 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
                                 if new_img_1 is None:
                                     reverse_pair = True
                                     failed_first = True
-                                    self.astrometry_successful[img_1.name] = False
+                                    self.astrometry_successful[fil][img_1.name] = False
                                     print(
                                         f"Astrometry.net failed to solve {img_1}, trying on opposite chip {img_2}.")
                                 else:
                                     self.add_frame_astrometry(new_img_1)
-                                    self.astrometry_successful[img_1.name] = True
+                                    self.astrometry_successful[fil][img_1.name] = True
                                     new_img_2 = img_2.correct_astrometry_from_other(
                                         new_img_1,
                                         output_dir=astrometry_fil_path,
@@ -3233,7 +3233,7 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
                                     output_dir=astrometry_fil_path,
                                     **kwargs)
                                 if new_img_2 is None:
-                                    self.astrometry_successful[img_2.name] = False
+                                    self.astrometry_successful[fil][img_2.name] = False
                                     if failed_first:
                                         raise SystemError(
                                             f"Astrometry.net failed to solve both chips of this pair ({img_1}, {img_2})")
@@ -3241,7 +3241,7 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
                                         reverse_pair = False
                                 else:
                                     self.add_frame_astrometry(new_img_2)
-                                    self.astrometry_successful[img_2.name] = True
+                                    self.astrometry_successful[fil][img_2.name] = True
                                     new_img_1 = img_1.correct_astrometry_from_other(
                                         new_img_2,
                                         output_dir=astrometry_fil_path,
@@ -3272,9 +3272,9 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
                             lst.remove(img)
                             self.add_frame_astrometry(new_img)
                             successful = new_img
-                            self.astrometry_successful[img.name] = True
+                            self.astrometry_successful[fil][img.name] = True
                         else:
-                            self.astrometry_successful[img.name] = False
+                            self.astrometry_successful[fil][img.name] = False
 
                     # If we failed to find a solution on any frame in lst:
                     if successful is None:
@@ -3304,9 +3304,9 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
                         if new_img is not None:
                             print(f"{new_img} astrometry successful.")
                             self.add_frame_astrometry(new_img)
-                            self.astrometry_successful[img.name] = True
+                            self.astrometry_successful[fil][img.name] = True
                         else:
-                            self.astrometry_successful[img.name] = False
+                            self.astrometry_successful[fil][img.name] = False
 
     @classmethod
     def sort_by_chip(cls, images: list):
