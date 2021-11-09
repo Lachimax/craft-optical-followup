@@ -1816,7 +1816,8 @@ def insert_synthetic_point_sources_psfex(
         psf = psfex_model.get_rec(y, x)
         y_cen, x_cen = psfex_model.get_center(y, x)
         psf *= flux / np.sum(psf)
-        add = np.zeros(image.shape) + psf
+        add = np.zeros(image.shape)
+        add[0:psf.shape[0], 0:psf.shape[1]] += psf
 
         combine += shift(add, (y - y_cen, x - x_cen))
 
@@ -1921,7 +1922,7 @@ def insert_point_sources_to_file(
     if path:
         file.close()
 
-    sources['mag'], _, _ = magnitude_complete(
+    sources['mag'], _ = magnitude_complete(
         flux=sources['flux'], exp_time=exp_time, zeropoint=zeropoint,
         airmass=airmass,
         ext=extinction)

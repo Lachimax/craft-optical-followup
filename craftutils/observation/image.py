@@ -1647,19 +1647,23 @@ class ImagingImage(Image):
 
         return ax, fig
 
-    def insert_synthetic_sources(self,
-                                 x: np.float64, y: np.float64,
-                                 mag: np.float64,
-                                 output: str = None, overwrite: bool = True,
-                                 world_coordinates: bool = False,
-                                 extra_values: table.Table = None
-                                 ):
+    def insert_synthetic_sources(
+            self,
+            x: np.float64, y: np.float64,
+            mag: np.float64,
+            output: str = None, overwrite: bool = True,
+            world_coordinates: bool = False,
+            extra_values: table.Table = None
+    ):
         if self.psfex_path is None:
             raise ValueError(f"{self.name}.psfex_path has not been set.")
+        if self.zeropoint_best is None:
+            raise ValueError(f"{self.name}.zeropoint_best has not been set.")
         file, sources = ph.insert_point_sources_to_file(
             file=self.path,
             x=x, y=y, mag=mag,
             psf_model=self.psfex_path,
+            zeropoint=self.zeropoint_best["zeropoint"],
             airmass=self.extract_airmass(),
             extinction=self.extinction_atmospheric,
             exp_time=self.extract_exposure_time(),
@@ -1668,8 +1672,11 @@ class ImagingImage(Image):
             output=output,
             overwrite=overwrite,
         )
-        inserted = self.new_image(file)
-        return inserted, sources
+        if output is not None:
+            inserted = self.new_image(output)
+            return inserted, sources
+        else:
+            return file, sources
 
     @classmethod
     def select_child_class(cls, instrument: str, **kwargs):
