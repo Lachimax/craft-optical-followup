@@ -70,6 +70,6 @@ def load_psfex(model_path: str, x: float, y: float):
     """
 
     psfex_model = pex.PSFEx(model_path)
-    psf = psfex_model.get_rec(x, y)
+    psf = psfex_model.get_rec(y, x)
 
     return psf

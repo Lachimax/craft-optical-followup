@@ -9,12 +9,13 @@ import numpy as np
 import photutils as ph
 from photutils.datasets import make_model_sources_image
 import matplotlib.pyplot as plt
+from scipy.ndimage import shift
+import psfex
 
 import astropy.stats as stats
 import astropy.wcs as wcs
 import astropy.table as table
 import astropy.io.fits as fits
-import astropy.convolution as convolution
 import astropy.time as time
 import astropy.units as units
 from astropy.coordinates import SkyCoord
@@ -1759,8 +1760,9 @@ def insert_synthetic_point_sources_gauss(image: np.ndarray, x: np.float64, y: np
     return combine, sources
 
 
-def insert_synthetic_point_sources_psfex(image: np.ndarray, x: np.float64, y: np.float64,
-                                         model: Union[str, fits.hdu.HDUList], mag: np.float64 = 0.0,
+def insert_synthetic_point_sources_psfex(image: np.ndarray,
+                                         x: np.float64, y: np.float64,
+                                         model_path: str, mag: np.float64 = 0.0,
                                          exp_time: float = 1.,
                                          zeropoint: float = 0.0, extinction: float = 0.0, airmass: float = 0.0,
                                          saturate: float = None):
@@ -1769,7 +1771,7 @@ def insert_synthetic_point_sources_psfex(image: np.ndarray, x: np.float64, y: np
     :param image:
     :param x:
     :param y:
-    :param model: Path to model .psf file.
+    :param model_path: Path to model .psf file.
     :param mag:
     :param exp_time:
     :param zeropoint:
@@ -1786,11 +1788,7 @@ def insert_synthetic_point_sources_psfex(image: np.ndarray, x: np.float64, y: np
     if type(y) is not np.ndarray:
         y = np.array(y)
 
-    model, path = ff.path_or_hdu(model)
-    psf_fwhm = model[1].header['PSF_FWHM']
-    gauss_fwhm = 0.41 * psf_fwhm
-
-    gaussian_model = ph.psf.IntegratedGaussianPRF(sigma=u.fwhm_to_std(fwhm=gauss_fwhm))
+    psfex_model = psfex.PSFEx(model_path)
 
     combine = np.zeros(image.shape)
     print('Generating additive image...')
@@ -1800,12 +1798,12 @@ def insert_synthetic_point_sources_psfex(image: np.ndarray, x: np.float64, y: np
 
         row = (x[i], y[i], flux)
         source = table.Table(rows=[row], names=('x_0', 'y_0', 'flux'))
-        print('Convolving...')
-        add = make_model_sources_image(shape=image.shape, model=gaussian_model, source_table=source)
-        kernel = convolution.CustomKernel(load_psfex(model_path=model, x=source['x_0'], y=source['y_0']))
-        add = convolution.convolve(add, kernel)
+        psf = psfex_model.get_rec(y, x)
+        y_cen, x_cen = psfex_model.get_center(y, x)
+        psf *= flux / np.sum(psf)
+        add = np.zeros(image.shape) + psf
 
-        combine += add
+        combine += shift(add, (y - y_cen, x - x_cen))
 
         if i == 0:
             sources = source
@@ -1834,7 +1832,7 @@ def insert_point_sources_to_file(file: Union[fits.hdu.HDUList, str],
                                  saturate: float = None,
                                  world_coordinates: bool = False,
                                  extra_values: table.Table = None,
-                                 psf_model: Union[str, fits.HDUList] = None):
+                                 psf_model: str = None):
     """
 
     :param file:
@@ -1877,19 +1875,21 @@ def insert_point_sources_to_file(file: Union[fits.hdu.HDUList, str],
         ra, dec = wcs_info.all_pix2world(x, y, 0)
 
     if psf_model is not None:
-        file[0].data, sources = insert_synthetic_point_sources_psfex(image=file[0].data, x=x, y=y, mag=mag,
-                                                                     exp_time=exp_time,
-                                                                     zeropoint=zeropoint, extinction=extinction,
-                                                                     airmass=airmass,
-                                                                     saturate=saturate, model=psf_model)
+        file[0].data, sources = insert_synthetic_point_sources_psfex(
+            image=file[0].data, x=x, y=y, mag=mag,
+            exp_time=exp_time,
+            zeropoint=zeropoint, extinction=extinction,
+            airmass=airmass,
+            saturate=saturate, model_path=psf_model)
 
     elif fwhm is not None:
-        file[0].data, sources = insert_synthetic_point_sources_gauss(image=file[0].data, x=x, y=y,
-                                                                     fwhm=fwhm, mag=mag,
-                                                                     exp_time=exp_time,
-                                                                     zeropoint=zeropoint, extinction=extinction,
-                                                                     airmass=airmass,
-                                                                     saturate=saturate)
+        file[0].data, sources = insert_synthetic_point_sources_gauss(
+            image=file[0].data, x=x, y=y,
+            fwhm=fwhm, mag=mag,
+            exp_time=exp_time,
+            zeropoint=zeropoint, extinction=extinction,
+            airmass=airmass,
+            saturate=saturate)
 
     else:
         raise ValueError("Either fwhm or psf_model must be given")
@@ -1904,9 +1904,10 @@ def insert_point_sources_to_file(file: Union[fits.hdu.HDUList, str],
     if path:
         file.close()
 
-    sources['mag'], _, _ = magnitude_complete(flux=sources['flux'], exp_time=exp_time, zeropoint=zeropoint,
-                                              airmass=airmass,
-                                              ext=extinction)
+    sources['mag'], _, _ = magnitude_complete(
+        flux=sources['flux'], exp_time=exp_time, zeropoint=zeropoint,
+        airmass=airmass,
+        ext=extinction)
     sources['ra'] = ra
     sources['dec'] = dec
 
