@@ -1835,19 +1835,21 @@ def insert_synthetic_point_sources_psfex(
     return combine, sources
 
 
-def insert_point_sources_to_file(file: Union[fits.hdu.HDUList, str],
-                                 x: np.float64, y: np.float64,
-                                 mag: np.float64,
-                                 fwhm: float = None,
-                                 output: str = None, overwrite: bool = True,
-                                 zeropoint: units.Quantity = 0.0 * units.mag,
-                                 extinction: units.Quantity = 0.0 * units.mag,
-                                 airmass: float = None,
-                                 exp_time: units.Quantity = None,
-                                 saturate: float = None,
-                                 world_coordinates: bool = False,
-                                 extra_values: table.Table = None,
-                                 psf_model: str = None):
+def insert_point_sources_to_file(
+        file: Union[fits.hdu.HDUList, str],
+        x: np.float64, y: np.float64,
+        mag: np.float64,
+        fwhm: float = None,
+        psf_model: str = None,
+        zeropoint: units.Quantity = 0.0 * units.mag,
+        extinction: units.Quantity = 0.0 * units.mag,
+        airmass: float = None,
+        exp_time: units.Quantity = None,
+        saturate: float = None,
+        world_coordinates: bool = False,
+        extra_values: table.Table = None,
+        output: str = None, overwrite: bool = True,
+):
     """
 
     :param file:
