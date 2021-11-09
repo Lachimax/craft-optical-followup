@@ -1593,7 +1593,7 @@ def match_coordinates(ids_1, ras_1, decs_1, ids_2, ras_2, decs_2, ra_tolerance, 
 # TODO: Make this more general
 # TODO: DOCSTRINGS
 def match_coordinates_filters_multi(prime, match_tables, ra_tolerance, dec_tolerance, ra_name: 'str' = 'ra',
-                                    dec_name: 'str' = 'dec', name_1='1', name_2='2'):
+                                    dec_name: str = 'dec', name_1='1', name_2='2'):
     """
 
     :param prime:
@@ -1707,16 +1707,28 @@ def match_coordinates_multi(prime, match_tables, ra_tolerance: 'float', dec_tole
     return data.dropna()
 
 
-def mag_to_flux(mag: np.float64, exp_time: float = 1., zeropoint: float = 0.0, extinction: float = 0.0,
-                airmass: float = 0.0):
+def mag_to_flux(
+        mag: Union[float, units.Quantity],
+        exp_time: Union[float, units.Quantity] = 1.0 * units.second,
+        zeropoint: Union[float, units.Quantity] = 0.0 * units.mag,
+        extinction: Union[float, units.Quantity] = 0.0 * units.mag,
+        airmass: float = 0.0):
+    zeropoint = u.dequantify(zeropoint, units.mag)
+    extinction = u.dequantify(extinction, units.mag)
+    mag = u.dequantify(mag, units.mag)
+    exp_time = u.dequantify(exp_time, units.second)
     return exp_time * 10 ** (-(mag - zeropoint + extinction * airmass) / 2.5)
 
 
-def insert_synthetic_point_sources_gauss(image: np.ndarray, x: np.float64, y: np.float64, fwhm: float,
-                                         mag: np.float64 = 0.0,
-                                         exp_time: float = 1.,
-                                         zeropoint: float = 0.0, extinction: float = 0.0, airmass: float = 0.0,
-                                         saturate: float = None, model: str = 'gauss'):
+def insert_synthetic_point_sources_gauss(
+        image: np.ndarray, x: np.float64, y: np.float64,
+        fwhm: float,
+        mag: units.Quantity = 0.0 * units.mag,
+        exp_time: units.Quantity = 1.0 * units.second,
+        zeropoint: units.Quantity = 0.0 * units.mag,
+        extinction: units.Quantity = 0.0 * units.mag,
+        airmass: float = 0.0,
+        saturate: float = None):
     """
     Using a simplified Gaussian point-spread function, insert a synthetic point source in an image.
     :param image:
@@ -1760,12 +1772,15 @@ def insert_synthetic_point_sources_gauss(image: np.ndarray, x: np.float64, y: np
     return combine, sources
 
 
-def insert_synthetic_point_sources_psfex(image: np.ndarray,
-                                         x: np.float64, y: np.float64,
-                                         model_path: str, mag: np.float64 = 0.0,
-                                         exp_time: float = 1.,
-                                         zeropoint: float = 0.0, extinction: float = 0.0, airmass: float = 0.0,
-                                         saturate: float = None):
+def insert_synthetic_point_sources_psfex(
+        image: np.ndarray,
+        x: np.float64, y: np.float64,
+        model_path: str, mag: np.float64 = 0.0,
+        exp_time: units.Quantity = 1.0 * units.second,
+        zeropoint: units.Quantity = 0.0 * units.mag,
+        extinction: units.Quantity = 0.0 * units.mag,
+        airmass: float = 0.0,
+        saturate: float = None):
     """
     Use a PSFEx psf model to insert a synthetic point source into the file.
     :param image:
@@ -1825,10 +1840,10 @@ def insert_point_sources_to_file(file: Union[fits.hdu.HDUList, str],
                                  mag: np.float64,
                                  fwhm: float = None,
                                  output: str = None, overwrite: bool = True,
-                                 zeropoint: float = 0.0,
-                                 extinction: float = 0.0,
+                                 zeropoint: units.Quantity = 0.0 * units.mag,
+                                 extinction: units.Quantity = 0.0 * units.mag,
                                  airmass: float = None,
-                                 exp_time: float = None,
+                                 exp_time: units.Quantity = None,
                                  saturate: float = None,
                                  world_coordinates: bool = False,
                                  extra_values: table.Table = None,
