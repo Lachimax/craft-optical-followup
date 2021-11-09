@@ -1802,7 +1802,7 @@ def insert_synthetic_point_sources_psfex(image: np.ndarray, x: np.float64, y: np
         source = table.Table(rows=[row], names=('x_0', 'y_0', 'flux'))
         print('Convolving...')
         add = make_model_sources_image(shape=image.shape, model=gaussian_model, source_table=source)
-        kernel = convolution.CustomKernel(load_psfex(model=model, x=source['x_0'], y=source['y_0']))
+        kernel = convolution.CustomKernel(load_psfex(model_path=model, x=source['x_0'], y=source['y_0']))
         add = convolution.convolve(add, kernel)
 
         combine += add
