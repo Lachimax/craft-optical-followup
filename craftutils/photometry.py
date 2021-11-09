@@ -102,7 +102,7 @@ def image_psf_diagnostics(hdu: Union[str, fits.HDUList], cat: Union[str, table.T
             return mod.x_stddev
 
         model_init.y_stddev.tied = tie_stddev
-        fitter = fitting.LevMarLSQFitter()
+
         model = fitter(model_init, x, y, data)
         fwhm = (model.x_fwhm * units.pixel).to(units.degree, scale)
         star["GAUSSIAN_FWHM_FITTED"] = fwhm
