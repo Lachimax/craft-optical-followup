@@ -1759,6 +1759,9 @@ def insert_synthetic_point_sources_gauss(
                                   airmass=airmass)
     print('Generating additive image...')
     add = make_model_sources_image(shape=image.shape, model=gaussian_model, source_table=sources)
+    sources['x_inserted'] = sources['x_0']
+    sources['y_inserted'] = sources['y_0']
+    sources['flux_inserted'] = sources['flux']
 
     # plt.imshow(add)
 
@@ -1812,14 +1815,15 @@ def insert_synthetic_point_sources_psfex(
                            airmass=airmass)
 
         row = (x[i], y[i], flux)
-        source = table.Table(rows=[row], names=('x_0', 'y_0', 'flux'))
-        psf = psfex_model.get_rec(y, x)
-        y_cen, x_cen = psfex_model.get_center(y, x)
+        source = table.QTable(rows=[row], names=('x_inserted', 'y_inserted', 'flux_inserted'))
+        psf = psfex_model.get_rec(y[i], x[i])
+        y_cen, x_cen = psfex_model.get_center(y[i], x[i])
+        psf[psf < 0] = 0
         psf *= flux / np.sum(psf)
         add = np.zeros(image.shape)
         add[0:psf.shape[0], 0:psf.shape[1]] += psf
 
-        combine += shift(add, (y - y_cen, x - x_cen))
+        combine += shift(add, (y[i] - y_cen, x[i] - x_cen))
 
         if i == 0:
             sources = source
@@ -1922,14 +1926,14 @@ def insert_point_sources_to_file(
     if path:
         file.close()
 
-    sources['mag'], _ = magnitude_complete(
-        flux=sources['flux'], exp_time=exp_time, zeropoint=zeropoint,
+    sources['mag_inserted'], _ = magnitude_complete(
+        flux=sources['flux_inserted'], exp_time=exp_time, zeropoint=zeropoint,
         airmass=airmass,
         ext=extinction)
-    sources['ra'] = ra
-    sources['dec'] = dec
+    sources['ra_inserted'] = ra
+    sources['dec_inserted'] = dec
 
-    sources.write(filename=output.replace('.fits', '.csv'), format='csv', overwrite=overwrite)
+    sources.write(filename=output.replace('.fits', '.ecsv'), format='ascii.ecsv', overwrite=overwrite)
 
     print('Done.')
 

@@ -145,7 +145,6 @@ def check_quantity(number: Union[float, int, units.Quantity], unit: units.Unit, 
     :return:
     """
     if type(number) is not units.Quantity:
-        number = float(number)
         number *= unit
     elif number.unit != unit:
         if not allow_mismatch:

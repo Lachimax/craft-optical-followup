@@ -462,6 +462,9 @@ class ImagingImage(Image):
         self.source_cat_dual = None
         self.dual_mode_template = None
 
+        self.synth_cat_path = None
+        self.synth_cat = None
+
         self.fwhm_pix_psfex = None
         self.fwhm_psfex = None
 
@@ -674,6 +677,25 @@ class ImagingImage(Image):
             u.debug_print(1, "Writing dual-mode source catalogue to", self.source_cat_dual_path)
             self.source_cat_dual.write(self.source_cat_dual_path, format="ascii.ecsv", overwrite=True)
 
+    def load_synth_cat(self, force: bool = False):
+        if force or self.synth_cat is None:
+            if self.synth_cat_path is not None:
+                u.debug_print(1, "self.synth_cat_path", self.synth_cat_path)
+                self.synth_cat = table.QTable.read(self.synth_cat_path, format="ascii.ecsv")
+            else:
+                u.debug_print(1, "No valid synth_cat_path found. Could not load synth_cat.")
+            return self.synth_cat
+
+    def write_synth_cat(self):
+
+        if self.synth_cat is None:
+            u.debug_print(1, "synth_cat not yet loaded.")
+        else:
+            if self.synth_cat_path is None:
+                self.synth_cat_path = self.path.replace(".fits", "_source_cat.ecsv")
+            u.debug_print(1, "Writing source catalogue to", self.synth_cat_path)
+            self.synth_cat.write(self.synth_cat_path, format="ascii.ecsv", overwrite=True)
+
     def load_wcs(self, ext: int = 0) -> wcs.WCS:
         self.load_headers()
         self.wcs = wcs.WCS(header=self.headers[ext])
@@ -749,6 +771,7 @@ class ImagingImage(Image):
             "source_cat_sextractor_dual_path": self.source_cat_sextractor_dual_path,
             "source_cat_path": self.source_cat_path,
             "source_cat_dual_path": self.source_cat_dual_path,
+            "synth_cat_path": self.synth_cat_path,
             "fwhm_pix_psfex": self.fwhm_pix_psfex,
             "fwhm_psfex": self.fwhm_psfex,
             "psfex_succesful": self.psfex_successful,
@@ -763,6 +786,7 @@ class ImagingImage(Image):
     def update_output_file(self):
         p.update_output_file(self)
         self.write_source_cat()
+        self.write_synth_cat()
 
     def load_output_file(self):
         outputs = super().load_output_file()
@@ -783,6 +807,8 @@ class ImagingImage(Image):
                 self.source_cat_sextractor_path = outputs["source_cat_sextractor_dual_path"]
             if "source_cat_path" in outputs:
                 self.source_cat_path = outputs["source_cat_path"]
+            if "synth_cat_path" in outputs:
+                self.source_cat_path = outputs["synth_cat_path"]
             if "source_cat_dual_path" in outputs:
                 self.source_cat_dual_path = outputs["source_cat_dual_path"]
             if "fwhm_psfex" in outputs:
@@ -932,6 +958,17 @@ class ImagingImage(Image):
             cat[f"MAGERR_AUTO_ZP_{zeropoint_name}"] = mags[1]
             cat[f"MAG_AUTO_ZP_{zeropoint_name}_no_ext"] = mags[2]
             cat[f"MAGERR_AUTO_ZP_{zeropoint_name}_no_ext"] = mags[3]
+
+            mags = self.magnitude(
+                flux=cat["FLUX_PSF"],
+                flux_err=cat["FLUXERR_PSF"],
+                zeropoint_name=zeropoint_name
+            )
+
+            cat[f"MAG_PSF_ZP_{zeropoint_name}"] = mags[0]
+            cat[f"MAGERR_PSF_ZP_{zeropoint_name}"] = mags[1]
+            cat[f"MAG_PSF_ZP_{zeropoint_name}_no_ext"] = mags[2]
+            cat[f"MAGERR_PSF_ZP_{zeropoint_name}_no_ext"] = mags[3]
 
             if dual:
                 self.source_cat_dual = cat
@@ -1129,7 +1166,7 @@ class ImagingImage(Image):
         return new_image
 
     def new_image(self, path: str):
-        c = ImagingImage.select_child_class(instrument=self.instrument_name)
+        c = self.__class__
         new_image = c(path=path)
         return new_image
 
@@ -1414,9 +1451,13 @@ class ImagingImage(Image):
     def match_to_cat(self, cat: Union[str, table.QTable],
                      ra_col: str = "ra", dec_col: str = "dec",
                      offset_tolerance: units.Quantity = 1 * units.arcsec,
-                     star_tolerance: float = None):
+                     star_tolerance: float = None,
+                     dual: bool = False):
         self.load_source_cat()
-        source_cat = self.source_cat
+        if dual:
+            source_cat = self.source_cat_dual
+        else:
+            source_cat = self.source_cat
         if star_tolerance is not None:
             source_cat = source_cat[source_cat["CLASS_STAR"] > star_tolerance]
 
@@ -1674,9 +1715,42 @@ class ImagingImage(Image):
         )
         if output is not None:
             inserted = self.new_image(output)
+            inserted.synth_cat_path = output.replace('.fits', '.ecsv')
             return inserted, sources
         else:
             return file, sources
+
+    def check_synthetic_sources(self):
+        """
+        Checks on the fidelity of inserted sources against catalogue.
+        :return:
+        """
+        self.load_synth_cat()
+        if self.synth_cat is None:
+            raise ValueError("No synth_cat present.")
+
+        matches_source_cat, matches_synth_cat, distance = self.match_to_cat(
+            cat=self.synth_cat,
+            ra_col='ra_inserted',
+            dec_col='dec_inserted',
+            offset_tolerance=0.5 * units.arcsec,
+            star_tolerance=0.7,
+            dual=True
+        )
+
+        matches_source_cat["matching_dist"] = distance.to(units.arcsec)
+        matches_source_cat["fraction_flux_recovered_auto"] = matches_synth_cat["flux_inserted"] / matches_source_cat["FLUX_AUTO"]
+        matches_source_cat["fraction_flux_recovered_psf"] = matches_synth_cat["flux_inserted"] / matches_source_cat[
+            "FLUX_PSF"]
+        matches_source_cat["delta_mag_auto"] = matches_synth_cat["mag_inserted"] / matches_source_cat["MAG_AUTO_ZP_best"]
+        matches_source_cat["delta_mag_psf"] = matches_synth_cat["mag_inserted"] / matches_source_cat[
+            "MAG_PSF_ZP_best"]
+
+        self.synth_cat = table.hstack(self.synth_cat, matches_source_cat)
+
+        self.update_output_file()
+
+        return self.synth_cat
 
     @classmethod
     def select_child_class(cls, instrument: str, **kwargs):
