@@ -692,7 +692,7 @@ class ImagingImage(Image):
             u.debug_print(1, "synth_cat not yet loaded.")
         else:
             if self.synth_cat_path is None:
-                self.synth_cat_path = self.path.replace(".fits", "_source_cat.ecsv")
+                self.synth_cat_path = self.path.replace(".fits", "_synth_cat.ecsv")
             u.debug_print(1, "Writing source catalogue to", self.synth_cat_path)
             self.synth_cat.write(self.synth_cat_path, format="ascii.ecsv", overwrite=True)
 
@@ -808,7 +808,7 @@ class ImagingImage(Image):
             if "source_cat_path" in outputs:
                 self.source_cat_path = outputs["source_cat_path"]
             if "synth_cat_path" in outputs:
-                self.source_cat_path = outputs["synth_cat_path"]
+                self.synth_cat_path = outputs["synth_cat_path"]
             if "source_cat_dual_path" in outputs:
                 self.source_cat_dual_path = outputs["source_cat_dual_path"]
             if "fwhm_psfex" in outputs:
@@ -938,7 +938,7 @@ class ImagingImage(Image):
         self.source_cat["B_IMAGE"] = self.source_cat["A_WORLD"].to(units.pix, self.pixel_scale_dec)
         self.source_cat["KRON_AREA_IMAGE"] = self.source_cat["A_IMAGE"] * self.source_cat["B_IMAGE"] * np.pi
 
-    def calibrate_magnitudes(self, zeropoint_name: str, force: bool = False, dual: bool = False):
+    def calibrate_magnitudes(self, zeropoint_name: str = "best", force: bool = False, dual: bool = False):
         self.load_source_cat(force=True)
         if dual:
             cat = self.source_cat_dual
@@ -1700,6 +1700,7 @@ class ImagingImage(Image):
             raise ValueError(f"{self.name}.psfex_path has not been set.")
         if self.zeropoint_best is None:
             raise ValueError(f"{self.name}.zeropoint_best has not been set.")
+        output_cat = output.replace('.fits', '_synth_cat.ecsv')
         file, sources = ph.insert_point_sources_to_file(
             file=self.path,
             x=x, y=y, mag=mag,
@@ -1711,11 +1712,13 @@ class ImagingImage(Image):
             world_coordinates=world_coordinates,
             extra_values=extra_values,
             output=output,
-            overwrite=overwrite,
+            output_cat=output_cat,
+            overwrite=overwrite
         )
         if output is not None:
             inserted = self.new_image(output)
-            inserted.synth_cat_path = output.replace('.fits', '.ecsv')
+            u.debug_print(1, "ImagingImage.insert_synthetic_sources: output_cat", output_cat)
+            inserted.synth_cat_path = output_cat
             return inserted, sources
         else:
             return file, sources
@@ -1739,14 +1742,12 @@ class ImagingImage(Image):
         )
 
         matches_source_cat["matching_dist"] = distance.to(units.arcsec)
-        matches_source_cat["fraction_flux_recovered_auto"] = matches_synth_cat["flux_inserted"] / matches_source_cat["FLUX_AUTO"]
-        matches_source_cat["fraction_flux_recovered_psf"] = matches_synth_cat["flux_inserted"] / matches_source_cat[
-            "FLUX_PSF"]
-        matches_source_cat["delta_mag_auto"] = matches_synth_cat["mag_inserted"] / matches_source_cat["MAG_AUTO_ZP_best"]
-        matches_source_cat["delta_mag_psf"] = matches_synth_cat["mag_inserted"] / matches_source_cat[
-            "MAG_PSF_ZP_best"]
+        matches_source_cat["fraction_flux_recovered_auto"] = matches_source_cat["FLUX_AUTO"] / matches_synth_cat["flux_inserted"]
+        matches_source_cat["fraction_flux_recovered_psf"] = matches_source_cat["FLUX_PSF"] / matches_synth_cat["flux_inserted"]
+        matches_source_cat["delta_mag_auto"] = matches_source_cat["MAG_AUTO_ZP_best"] - matches_synth_cat["mag_inserted"]
+        matches_source_cat["delta_mag_psf"] = matches_source_cat["MAG_PSF_ZP_best"] - matches_synth_cat["mag_inserted"]
 
-        self.synth_cat = table.hstack(self.synth_cat, matches_source_cat)
+        self.synth_cat = table.hstack([self.synth_cat, matches_source_cat])
 
         self.update_output_file()
 
@@ -2024,6 +2025,7 @@ class FORS2CoaddedImage(CoaddedImage):
             }
 
             self.zeropoints["instrument_archive"] = zp_dict
+            self.zeropoint_best = zp_dict
 
             self.extinction_atmospheric = row["extinction"]
             self.extinction_atmospheric_err = row["extinction_err"]

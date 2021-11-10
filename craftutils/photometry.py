@@ -1823,6 +1823,8 @@ def insert_synthetic_point_sources_psfex(
         add = np.zeros(image.shape)
         add[0:psf.shape[0], 0:psf.shape[1]] += psf
 
+        source["flux_inserted"] *= units.ct
+
         combine += shift(add, (y[i] - y_cen, x[i] - x_cen))
 
         if i == 0:
@@ -1853,7 +1855,9 @@ def insert_point_sources_to_file(
         saturate: float = None,
         world_coordinates: bool = False,
         extra_values: table.Table = None,
-        output: str = None, overwrite: bool = True,
+        output: str = None,
+        output_cat: str = None,
+        overwrite: bool = True,
 ):
     """
 
@@ -1930,10 +1934,13 @@ def insert_point_sources_to_file(
         flux=sources['flux_inserted'], exp_time=exp_time, zeropoint=zeropoint,
         airmass=airmass,
         ext=extinction)
-    sources['ra_inserted'] = ra
-    sources['dec_inserted'] = dec
+    sources['ra_inserted'] = ra * units.deg
+    sources['dec_inserted'] = dec * units.deg
 
-    sources.write(filename=output.replace('.fits', '.ecsv'), format='ascii.ecsv', overwrite=overwrite)
+    if output_cat is None:
+        output_cat = output.replace('.fits', '.ecsv')
+    u.debug_print(1, "insert_point_sources_to_file: output_cat", output_cat)
+    sources.write(filename=output_cat, format='ascii.ecsv', overwrite=overwrite)
 
     print('Done.')
 
