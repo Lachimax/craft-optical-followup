@@ -50,9 +50,6 @@ uncertainty_dict = {"sys": 0.0,
                     "stat": 0.0}
 
 
-
-
-
 class PositionUncertainty:
     def __init__(self,
                  uncertainty: Union[float, units.Quantity, dict, tuple] = None,
@@ -242,7 +239,8 @@ class Object:
         if output is None:
             output = os.path.join(self.data_path, f"{self.name}_photometry.pdf")
 
-        self.plot_photometry()
+        ax = self.plot_photometry()
+        ax.legend()
         plt.savefig(output)
 
     def plot_photometry(self, ax=None, **kwargs):
@@ -286,7 +284,8 @@ class Object:
                 ax.scatter(
                     lambda_eff,
                     mag_corrected,
-                    marker="x"
+                    color="violet",
+                    label="Corrected for Galactic extinction"
                 )
                 ax.set_ylabel("Apparent magnitude")
                 ax.set_xlabel("$\lambda_\mathrm{eff}$ (\AA)")
