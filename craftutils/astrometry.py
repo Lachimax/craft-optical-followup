@@ -36,12 +36,13 @@ def correct_gaia_to_epoch(gaia_cat: Union[str, table.QTable], new_epoch: time.Ti
     return gaia_cat_corrected
 
 
-def generate_astrometry_indices(cat_name: str, cat: Union[str, table.Table],
-                                output_file_prefix: str,
-                                unique_id_prefix: int,
-                                index_output_dir: str,
-                                fits_cat_output: str = None,
-                                p_lower: int = 0, p_upper: int = 2):
+def generate_astrometry_indices(
+        cat_name: str, cat: Union[str, table.Table],
+        output_file_prefix: str,
+        unique_id_prefix: int,
+        index_output_dir: str,
+        fits_cat_output: str = None,
+        p_lower: int = 0, p_upper: int = 2):
     u.mkdir_check(index_output_dir)
     cat_name = cat_name.lower()
     if fits_cat_output is None and isinstance(cat, str):
@@ -60,13 +61,14 @@ def generate_astrometry_indices(cat_name: str, cat: Union[str, table.Table],
         unique_id = int(unique_id)
         output_file_name_scale = f"{output_file_prefix}_{scale}"
         try:
-            astrometry_net.build_astrometry_index(input_fits_catalog=fits_cat_output,
-                                                  unique_id=unique_id,
-                                                  output_index=os.path.join(index_output_dir, output_file_name_scale),
-                                                  scale_number=scale,
-                                                  sort_column=cols["mag_auto"],
-                                                  scan_through_catalog=True
-                                                  )
+            astrometry_net.build_astrometry_index(
+                input_fits_catalog=fits_cat_output,
+                unique_id=unique_id,
+                output_index=os.path.join(index_output_dir, output_file_name_scale),
+                scale_number=scale,
+                sort_column=cols["mag_auto"],
+                scan_through_catalog=True
+            )
         except SystemError:
             print(f"Building index for scale {scale} failed.")
 
@@ -466,6 +468,7 @@ def match_catalogs(cat_1: table.Table, cat_2: table.Table,
                    ra_col_2: str = "ra", dec_col_2: str = "dec",
                    tolerance: units.Quantity = 1 * units.arcsec):
     # Clean out any invalid declinations
+    u.debug_print(1, type(cat_1), type(cat_2))
     cat_1 = cat_1[cat_1[dec_col_1] <= 90 * units.deg]
     cat_1 = cat_1[cat_1[dec_col_1] >= -90 * units.deg]
 

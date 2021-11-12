@@ -54,6 +54,7 @@ def solve_field(
         params["l"] = time_limit.to(units.second).value
     if search_radius is not None:
         params["radius"] = search_radius.to(units.deg).value
+    if centre is not None:
         params["ra"] = centre.ra.to(units.deg).value
         params["dec"] = centre.ra.to(units.deg).value
     debug_print(1, "solve_field(): tweak ==", tweak)

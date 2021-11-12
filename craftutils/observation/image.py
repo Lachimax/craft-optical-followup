@@ -1151,7 +1151,14 @@ class ImagingImage(Image):
         u.debug_print(1, "image.correct_astrometry(): tweak ==", tweak)
         u.mkdir_check(output_dir)
         base_filename = f"{self.name}_astrometry"
-        success = solve_field(image_files=self.path, base_filename=base_filename, overwrite=True, tweak=tweak)
+        success = solve_field(
+            image_files=self.path,
+            base_filename=base_filename,
+            overwrite=True,
+            tweak=tweak,
+            search_radius=1 * units.deg,
+            centre=self.pointing
+        )
         if not success:
             return None
         new_path = os.path.join(self.data_path, f"{base_filename}.new")
@@ -1785,9 +1792,9 @@ class ImagingImage(Image):
         self.update_output_file()
 
         return self.synth_cat
+
     #
     # def test_limit_synthetic(self):
-
 
     @classmethod
     def select_child_class(cls, instrument: str, **kwargs):
