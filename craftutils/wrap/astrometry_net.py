@@ -1,6 +1,7 @@
 import os
 
 import astropy.units as units
+from astropy.coordinates import SkyCoord
 
 from typing import Union
 
@@ -32,7 +33,8 @@ def solve_field(
         base_filename: str = "astrometry",
         overwrite: bool = True,
         tweak: bool = True,
-        # search_radius: units.Quantity = 1 * units.arcmin,
+        search_radius: units.Quantity = 1 * units.degree,
+        centre: SkyCoord = None,
         guess_scale: bool = True,
         time_limit: units.Quantity = None,
         *flags,
@@ -48,10 +50,12 @@ def solve_field(
     """
 
     params["o"] = base_filename
-    # params["l"] = "20"
     if time_limit is not None:
         params["l"] = time_limit.to(units.second).value
-
+    if search_radius is not None:
+        params["radius"] = search_radius.to(units.deg).value
+        params["ra"] = centre.ra.to(units.deg).value
+        params["dec"] = centre.ra.to(units.deg).value
     debug_print(1, "solve_field(): tweak ==", tweak)
 
     flags = list(flags)
@@ -61,6 +65,7 @@ def solve_field(
         flags.append("g")
     if not tweak:
         flags.append("T")
+
     system_command("solve-field", image_files, False, True, *flags, **params)
     if isinstance(image_files, list):
         image_path = image_files[0]
