@@ -585,7 +585,13 @@ class ImagingImage(Image):
             self.source_cat_sextractor_path = cat_path
         self.load_source_cat_sextractor(force=True)
         self.load_source_cat_sextractor_dual(force=True)
-        if len(self.source_cat) == 0:
+
+        if template is not None:
+            cat = self.source_cat_dual
+        else:
+            cat = self.source_cat
+
+        if len(cat) == 0:
             print()
             print("PSF source extraction was unsuccessful, probably due to lack of viable sources. Trying again without"
                   " PSFEx.")
@@ -847,7 +853,7 @@ class ImagingImage(Image):
 
         zeropoint_best = self.zeropoints[best]
         print(
-            f"We have selected {zeropoint_best['zeropoint']} +/- {zeropoint_best['zeropoint_err']}, "
+            f"For {self.name}, we have selected a zeropoint of {zeropoint_best['zeropoint']} +/- {zeropoint_best['zeropoint_err']}, "
             f"from {zeropoint_best['catalogue']}.")
         if not no_user_input:
             select_own = u.select_yn(message="Would you like to select another?", default=False)
@@ -926,6 +932,8 @@ class ImagingImage(Image):
             return None
         zp_dict['airmass'] = 0.0
         zp_dict['airmass_err'] = 0.0
+        zp_dict['extinction'] = 0.0
+        zp_dict['extinction_err'] = 0.0
         self.zeropoints[cat_name.lower()] = zp_dict
         self.zeropoint_output_paths[cat_name.lower()] = output_path
         self.update_output_file()
@@ -1001,8 +1009,8 @@ class ImagingImage(Image):
             zeropoint_err=zp_dict['zeropoint_err'],
             airmass=zp_dict['airmass'],
             airmass_err=zp_dict['airmass_err'],
-            ext=self.extinction_atmospheric,
-            ext_err=self.extinction_atmospheric_err,
+            ext=zp_dict['extinction'],
+            ext_err=zp_dict['extinction_err'],
             colour_term=0.0,
             colour=0.0 * units.mag,
         )
@@ -1595,11 +1603,10 @@ class ImagingImage(Image):
         kron_b = row['KRON_RADIUS'] * row['B_WORLD']
         pix_scale = self.pixel_scale_dec
         kron_theta = row['THETA_WORLD']
-        kron_theta = -kron_theta + ff.get_rotation_angle(
-            header=self.headers[ext],
-            astropy_units=True)
-        this_frame = max(kron_a.to(units.pixel, pix_scale) * np.cos(kron_theta) + 10 * units.pix,
-                         kron_a.to(units.pixel, pix_scale) * np.sin(kron_theta) + 10 * units.pix,
+        # kron_theta = -kron_theta + ff.get_rotation_angle(
+        #     header=self.headers[ext],
+        #     astropy_units=True)
+        this_frame = max(kron_a.to(units.pixel, pix_scale) + 10 * units.pix,
                          frame)
         mid_x = row["X_IMAGE"]
         mid_y = row["Y_IMAGE"]
@@ -1694,27 +1701,50 @@ class ImagingImage(Image):
             mag: np.float64,
             output: str = None, overwrite: bool = True,
             world_coordinates: bool = False,
-            extra_values: table.Table = None
+            extra_values: table.Table = None,
+            model: str = "psfex"
     ):
         if self.psfex_path is None:
             raise ValueError(f"{self.name}.psfex_path has not been set.")
         if self.zeropoint_best is None:
             raise ValueError(f"{self.name}.zeropoint_best has not been set.")
         output_cat = output.replace('.fits', '_synth_cat.ecsv')
-        file, sources = ph.insert_point_sources_to_file(
-            file=self.path,
-            x=x, y=y, mag=mag,
-            psf_model=self.psfex_path,
-            zeropoint=self.zeropoint_best["zeropoint"],
-            airmass=self.extract_airmass(),
-            extinction=self.extinction_atmospheric,
-            exp_time=self.extract_exposure_time(),
-            world_coordinates=world_coordinates,
-            extra_values=extra_values,
-            output=output,
-            output_cat=output_cat,
-            overwrite=overwrite
-        )
+
+        self.extract_pixel_scale()
+
+        if model == "gaussian":
+            file, sources = ph.insert_point_sources_to_file(
+                file=self.path,
+                x=x, y=y, mag=mag,
+                zeropoint=self.zeropoint_best["zeropoint"],
+                airmass=self.extract_airmass(),
+                extinction=self.zeropoint_best["extinction"],
+                exp_time=self.extract_exposure_time(),
+                world_coordinates=world_coordinates,
+                extra_values=extra_values,
+                output=output,
+                output_cat=output_cat,
+                overwrite=overwrite,
+                fwhm=self.fwhm_psfex.to(units.pix, self.pixel_scale_dec)
+            )
+        elif model == "psfex":
+            file, sources = ph.insert_point_sources_to_file(
+                file=self.path,
+                x=x, y=y, mag=mag,
+                psf_model=self.psfex_path,
+                zeropoint=self.zeropoint_best["zeropoint"],
+                airmass=self.extract_airmass(),
+                extinction=self.zeropoint_best["extinction"],
+                exp_time=self.extract_exposure_time(),
+                world_coordinates=world_coordinates,
+                extra_values=extra_values,
+                output=output,
+                output_cat=output_cat,
+                overwrite=overwrite
+            )
+        else:
+            raise ValueError(f"Model {model} not recognised.")
+
         if output is not None:
             inserted = self.new_image(output)
             u.debug_print(1, "ImagingImage.insert_synthetic_sources: output_cat", output_cat)
@@ -1742,9 +1772,12 @@ class ImagingImage(Image):
         )
 
         matches_source_cat["matching_dist"] = distance.to(units.arcsec)
-        matches_source_cat["fraction_flux_recovered_auto"] = matches_source_cat["FLUX_AUTO"] / matches_synth_cat["flux_inserted"]
-        matches_source_cat["fraction_flux_recovered_psf"] = matches_source_cat["FLUX_PSF"] / matches_synth_cat["flux_inserted"]
-        matches_source_cat["delta_mag_auto"] = matches_source_cat["MAG_AUTO_ZP_best"] - matches_synth_cat["mag_inserted"]
+        matches_source_cat["fraction_flux_recovered_auto"] = matches_source_cat["FLUX_AUTO"] / matches_synth_cat[
+            "flux_inserted"]
+        matches_source_cat["fraction_flux_recovered_psf"] = matches_source_cat["FLUX_PSF"] / matches_synth_cat[
+            "flux_inserted"]
+        matches_source_cat["delta_mag_auto"] = matches_source_cat["MAG_AUTO_ZP_best"] - matches_synth_cat[
+            "mag_inserted"]
         matches_source_cat["delta_mag_psf"] = matches_source_cat["MAG_PSF_ZP_best"] - matches_synth_cat["mag_inserted"]
 
         self.synth_cat = table.hstack([self.synth_cat, matches_source_cat])
@@ -1752,6 +1785,9 @@ class ImagingImage(Image):
         self.update_output_file()
 
         return self.synth_cat
+    #
+    # def test_limit_synthetic(self):
+
 
     @classmethod
     def select_child_class(cls, instrument: str, **kwargs):
@@ -1923,12 +1959,12 @@ class FORS2Image(ImagingImage, ESOImage):
     def extract_airmass(self):
         key = self.header_keys()["airmass"]
         self.airmass = self.extract_header_item(key)
-
+        u.debug_print(1, f"{self.name}.airmass", self.airmass)
         if self.airmass is None:
             airmass_start = self.extract_header_item("ESO TEL AIRM START")
             airmass_end = self.extract_header_item("ESO TEL AIRM END")
             self.airmass = (airmass_start + airmass_end) / 2
-
+        u.debug_print(1, f"{self.name}.airmass", self.airmass)
         return self.airmass
 
     def _output_dict(self):
@@ -2018,6 +2054,8 @@ class FORS2CoaddedImage(CoaddedImage):
                 "zeropoint_err": row["zeropoint_err"],
                 "airmass": self.extract_airmass(),
                 "airmass_err": airmass_err,
+                "extinction": row["extinction"],
+                "extinction_err": row["extinction_err"],
                 "mjd_measured": row["mjd_obs"],
                 "delta_t": row["mjd_obs"] - self.mjd_obs,
                 "n_matches": "n/a",
