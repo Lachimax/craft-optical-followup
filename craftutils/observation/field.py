@@ -293,7 +293,7 @@ class Field:
                 if isinstance(epoch["date"], str):
                     date_string = f" {epoch['date']}"
                 else:
-                    date_string = f" {epoch['date']}"
+                    date_string = f" {epoch['date'].strftime('%Y-%m-%d')}"
             options[f'{epoch["name"]}\t{date_string}\t{epoch["instrument"]}'] = epoch
         for epoch in self.epochs_imaging_loaded:
             # If epoch is already instantiated.
@@ -360,11 +360,12 @@ class Field:
                 '%Y-%m-%d')
             new_params["program_id"] = input("Enter the programmme ID for the observation:\n")
         new_params["instrument"] = instrument
-        new_params["data_path"] = self._epoch_data_path(mode=mode,
-                                                        instrument=instrument,
-                                                        date=new_params["date"],
-                                                        epoch_name=new_params["name"],
-                                                        survey=survey)
+        new_params["data_path"] = self._epoch_data_path(
+            mode=mode,
+            instrument=instrument,
+            date=new_params["date"],
+            epoch_name=new_params["name"],
+            survey=survey)
         new_params["field"] = self.name
         param_path = self._epoch_param_path(mode=mode, instrument=instrument, epoch_name=new_params["name"])
 
@@ -558,6 +559,7 @@ class Field:
 
     @classmethod
     def from_params(cls, name):
+        print("Initializing field...")
         path = cls.build_param_path(field_name=name)
         return cls.from_file(param_file=path)
 
@@ -1052,13 +1054,16 @@ class Epoch:
         return self._add_coadded(img=img, key=key, image_dict=self.coadded)
 
     def sort_frame(self, frame: image.Image, sort_key: str = None):
+        u.debug_print(1, f"Adding frame {frame.name}", frame.frame_type)
         if frame.frame_type == "bias" and frame not in self.frames_bias:
             self.frames_bias.append(frame)
-        elif frame.frame_type == "science" and frame not in self.frames_science:
+        elif frame.frame_type == "science":
             if isinstance(self.frames_science, list):
-                self.frames_science.append(frame)
+                if frame not in self.frames_science:
+                    self.frames_science.append(frame)
             elif isinstance(self.frames_science, dict):
-                self.frames_science[sort_key].append(frame)
+                if frame not in self.frames_science[sort_key]:
+                    self.frames_science[sort_key].append(frame)
         elif frame.frame_type == "standard" and frame not in self.frames_standard:
             self.frames_standard.append(frame)
         elif frame.frame_type == "dark" and frame not in self.frames_dark:
@@ -1410,6 +1415,8 @@ class ImagingEpoch(Epoch):
                 else:
                     self.astrometry_successful[fil][frame.name] = False
 
+                self.update_output_file()
+
     def astrometry_diagnostics(self, images: dict = None,
                                reference_cat: table.QTable = None,
                                offset_tolerance: units.Quantity = 0.5 * units.arcsec):
@@ -1758,10 +1765,10 @@ class ImagingEpoch(Epoch):
         if isinstance(frame, str):
             if os.path.isfile(frame):
                 cls = image.ImagingImage.select_child_class(instrument=self.instrument_name)
-                u.debug_print(1, f"{cls} {self.instrument_name}")
+                u.debug_print(2, f"{cls} {self.instrument_name}")
                 frame = cls(path=frame, frame_type=frame_type)
             else:
-                u.debug_print(1, f"File {frame} not found.")
+                u.debug_print(2, f"File {frame} not found.")
                 return None, None
         fil = frame.extract_filter()
         frame.epoch = self
@@ -1909,6 +1916,7 @@ class ImagingEpoch(Epoch):
 
     @classmethod
     def from_params(cls, name: str, instrument: str, field: Union[Field, str] = None, old_format: bool = False):
+        print("Initializing epoch...")
         instrument = instrument.lower()
         field_name, field = cls._from_params_setup(name=name, field=field)
         if old_format:
@@ -2935,8 +2943,9 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
             img = cls(path)
             img.extract_frame_type()
             img.extract_filter()
+            u.debug_print(1, self.instrument_name, cls, img.name, img.frame_type)
             # The below will also update the filter list.
-            self.add_frame_raw(path)
+            self.add_frame_raw(img)
 
         # Collect pointings of standard-star observations.
         for img in self.frames_standard:
@@ -3254,6 +3263,8 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
                             **kwargs)
                         self.add_frame_astrometry(new_img)
 
+                    self.update_output_file()
+
             elif method == "propagate_from_single":
                 # Sort frames by upper or lower chip.
                 upper, lower = self.sort_by_chip(frames[fil])
@@ -3291,6 +3302,8 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
 
                             self.add_frame_astrometry(new_img)
 
+                    self.update_output_file()
+
             elif method == "individual":
 
                 for img in frames[fil]:
@@ -3307,6 +3320,7 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
                             self.astrometry_successful[fil][img.name] = True
                         else:
                             self.astrometry_successful[fil][img.name] = False
+                    self.update_output_file()
 
     @classmethod
     def sort_by_chip(cls, images: list):
@@ -3795,6 +3809,7 @@ class SpectroscopyEpoch(Epoch):
 
     @classmethod
     def from_params(cls, name, field: Union[Field, str] = None, instrument: str = None):
+        print("Initializing epoch...")
         instrument = instrument.lower()
         field_name, field = cls._from_params_setup(name=name, field=field)
         path = cls.build_param_path(field_name=field_name,
