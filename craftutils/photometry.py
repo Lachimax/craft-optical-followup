@@ -1716,7 +1716,9 @@ def mag_to_flux(
     zeropoint = u.dequantify(zeropoint, units.mag)
     extinction = u.dequantify(extinction, units.mag)
     mag = u.dequantify(mag, units.mag)
+    u.debug_print(2, "mag", mag)
     exp_time = u.dequantify(exp_time, units.second)
+    u.debug_print(2, exp_time * 10 ** (-(mag - zeropoint + extinction * airmass) / 2.5))
     return exp_time * 10 ** (-(mag - zeropoint + extinction * airmass) / 2.5)
 
 
@@ -1747,17 +1749,30 @@ def insert_synthetic_point_sources_gauss(
     if type(mag) is not np.ndarray:
         mag = np.array(mag)
     if type(x) is not np.ndarray:
-        x = np.array([x])
+        x = np.array(x)
     if type(y) is not np.ndarray:
-        y = np.array([y])
+        y = np.array(y)
+
+    fwhm = u.dequantify(fwhm, unit=units.pix)
 
     gaussian_model = ph.psf.IntegratedGaussianPRF(sigma=u.fwhm_to_std(fwhm=fwhm))
-    sources = table.Table()
-    sources['x_0'] = x
-    sources['y_0'] = y
-    sources['flux'] = mag_to_flux(mag=mag, exp_time=exp_time, zeropoint=zeropoint, extinction=extinction,
-                                  airmass=airmass)
+    sources = table.QTable()
+    sources.add_column(x, name="x_0")
+    sources.add_column(y, name="y_0")
+    flux = mag_to_flux(mag=mag, exp_time=exp_time, zeropoint=zeropoint, extinction=extinction,
+                       airmass=airmass)
+
+    u.debug_print(1, "sources:\n", sources)
+    u.debug_print(2, "x:", x)
+    u.debug_print(2, "sources[x_0]:", sources['x_0'])
+    u.debug_print(1, "len(mag):", len(mag))
+    u.debug_print(1, "len(flux):", len(flux))
+    u.debug_print(2, "flux:", flux)
+    u.debug_print(1, "len(sources):", len(sources))
+
+    sources['flux'] = flux
     print('Generating additive image...')
+
     add = make_model_sources_image(shape=image.shape, model=gaussian_model, source_table=sources)
     sources['x_inserted'] = sources['x_0']
     sources['y_inserted'] = sources['y_0']
