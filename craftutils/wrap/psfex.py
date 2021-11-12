@@ -71,5 +71,8 @@ def load_psfex(model_path: str, x: float, y: float):
 
     psfex_model = pex.PSFEx(model_path)
     psf = psfex_model.get_rec(y, x)
+    centre_psf_x, centre_psf_y = psfex_model.get_center(y, x)
+    centre_x, centre_y = psf.shape[1] / 2, psf.shape[0] / 2
+    psf = shift(psf, (centre_x - centre_psf_y, centre_y - centre_psf_x))
 
     return psf
