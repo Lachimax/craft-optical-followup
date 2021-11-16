@@ -15,6 +15,7 @@ import astropy.io.fits as fits
 import astropy.table as table
 import astropy.wcs as wcs
 import astropy.units as units
+import sep
 from astropy.visualization import (ImageNormalize, LogStretch, SqrtStretch, ZScaleInterval, MinMaxInterval,
                                    PowerStretch, wcsaxes)
 from astropy.coordinates import SkyCoord
@@ -461,6 +462,9 @@ class ImagingImage(Image):
         self.source_cat = None
         self.source_cat_dual = None
         self.dual_mode_template = None
+
+        self.sep_bkg = None
+        self.data_sub_sep_bkg = None
 
         self.synth_cat_path = None
         self.synth_cat = None
@@ -1773,10 +1777,22 @@ class ImagingImage(Image):
             cat=self.synth_cat,
             ra_col='ra_inserted',
             dec_col='dec_inserted',
-            offset_tolerance=0.5 * units.arcsec,
+            offset_tolerance=1.0 * units.arcsec,
             star_tolerance=0.7,
-            dual=True
         )
+
+        self.synth_cat["flux_sep"], self.synth_cat["flux_sep_err"], _ = self.sep_aperture_photometry(
+            x=self.synth_cat["x_inserted"],
+            y=self.synth_cat["y_inserted"]
+        )
+
+        self.synth_cat["mag_sep"], self.synth_cat["mag_sep_err"], _, _ = self.magnitude(
+            flux=self.synth_cat["flux_sep"],
+            flux_err=self.synth_cat["flux_sep_err"]
+        )
+
+        self.synth_cat["delta_mag_sep"] = self.synth_cat["mag_sep"] - self.synth_cat["mag_inserted"]
+        self.synth_cat["fraction_flux_recovered_sep"] = self.synth_cat["flux_inserted"] / self.synth_cat["flux_sep"]
 
         matches_source_cat["matching_dist"] = distance.to(units.arcsec)
         matches_source_cat["fraction_flux_recovered_auto"] = matches_source_cat["FLUX_AUTO"] / matches_synth_cat[
@@ -1787,14 +1803,79 @@ class ImagingImage(Image):
             "mag_inserted"]
         matches_source_cat["delta_mag_psf"] = matches_source_cat["MAG_PSF_ZP_best"] - matches_synth_cat["mag_inserted"]
 
-        self.synth_cat = table.hstack([self.synth_cat, matches_source_cat])
+        if len(matches_source_cat) > 0:
+            self.synth_cat = table.hstack([self.synth_cat, matches_source_cat])
 
         self.update_output_file()
 
         return self.synth_cat
 
-    #
+    def sep_background(self, ext: int = 0):
+        self.load_data()
+        data = u.sanitise_endianness(self.data[ext])
+        self.sep_bkg = sep.Background(data)
+        self.data_sub_sep_bkg = (data - self.sep_bkg.back())
+        return self.sep_bkg
+
+    def sep_aperture_photometry(
+            self, x: float, y: float,
+            aperture_radius: units.Quantity = 2.0 * units.arcsec,
+            ext: int = 0
+    ):
+        self.sep_background(ext=ext)
+        self.extract_pixel_scale()
+        pixel_radius = aperture_radius.to(units.pix, self.pixel_scale_dec)
+        flux, fluxerr, flag = sep.sum_circle(
+            self.data_sub_sep_bkg,
+            x, y,
+            pixel_radius.value,
+            err=self.sep_bkg.globalrms,
+            gain=self.extract_gain().value)
+        return flux, fluxerr, flag
+
+    def insert_synthetic_range_inplace(
+            self,
+            x: float = None, y: float = None,
+            mag_min: units.Quantity = 20.0 * units.mag,
+            mag_max: units.Quantity = 30.0 * units.mag,
+            interval: units.Quantity = 0.1 * units.mag,
+            output_dir: str = None,
+            filename: str = None,
+            model: str = "psfex"
+    ):
+        x = float(x)
+        y = float(y)
+
+        x_ref, y_ref = self.extract_ref_pixel()
+        if x is None:
+            x = x_ref
+        if y is None:
+            y = y_ref
+
+        inserted = []
+        cats = []
+        if filename is None:
+            filename = f"{self.name}_insert"
+        for mag in np.linspace(mag_min, mag_max, int((mag_max - mag_min) / interval + 1)):
+            u.debug_print(1, f"INSERTING SOURCE {mag}")
+
+            file, sources = self.insert_synthetic_sources(
+                x=x, y=y, mag=mag.value,
+                output=os.path.join(output_dir, filename + f"mag_{np.round(mag.value, 1)}.fits"),
+                model=model
+            )
+            file.source_extraction_psf(output_dir=output_dir)
+            file.zeropoint_best = self.zeropoint_best
+            file.calibrate_magnitudes()
+            inserted.append(file)
+            cat = file.check_synthetic_sources()
+            cats.append(cat)
+
+        cat_all = table.vstack(cats)
+        return cat_all
+
     # def test_limit_synthetic(self):
+    #
 
     @classmethod
     def select_child_class(cls, instrument: str, **kwargs):
