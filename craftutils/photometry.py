@@ -2,7 +2,7 @@
 import copy
 import os
 import math
-from typing import Union, List
+from typing import Union, List, Iterable
 from copy import deepcopy
 
 import numpy as np
@@ -1746,12 +1746,12 @@ def insert_synthetic_point_sources_gauss(
     :return:
     """
 
-    if type(mag) is not np.ndarray:
-        mag = np.array(mag)
-    if type(x) is not np.ndarray:
-        x = np.array(x)
-    if type(y) is not np.ndarray:
-        y = np.array(y)
+    if isinstance(mag, Iterable):
+        mag = units.Quantity([mag])
+    if isinstance(x, Iterable):
+        x = units.Quantity([x])
+    if isinstance(y, Iterable):
+        y = units.Quantity([y])
 
     fwhm = u.dequantify(fwhm, unit=units.pix)
 
@@ -1814,17 +1814,18 @@ def insert_synthetic_point_sources_psfex(
     :return:
     """
 
-    if type(mag) is not np.ndarray:
-        mag = np.array(mag)
-    if type(x) is not np.ndarray:
-        x = np.array(x)
-    if type(y) is not np.ndarray:
-        y = np.array(y)
+    if not isinstance(mag, Iterable):
+        mag = np.array([mag])
+    if not isinstance(x, Iterable):
+        x = np.array([x])
+    if not isinstance(y, Iterable):
+        y = np.array([y])
 
     psfex_model = psfex.PSFEx(model_path)
 
     combine = np.zeros(image.shape)
     print('Generating additive image...')
+    print(x, y, type(x), isinstance(x, Iterable))
     for i in range(len(x)):
         flux = mag_to_flux(mag=mag[i], exp_time=exp_time, zeropoint=zeropoint, extinction=extinction,
                            airmass=airmass)
