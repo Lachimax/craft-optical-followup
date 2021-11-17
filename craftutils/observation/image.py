@@ -29,6 +29,7 @@ import craftutils.fits_files as ff
 import craftutils.photometry as ph
 import craftutils.params as p
 import craftutils.plotting as pl
+from craftutils.stats import gaussian_distributed_point
 import craftutils.observation.instrument as inst
 import craftutils.wrap.source_extractor as se
 import craftutils.wrap.psfex as psfex
@@ -361,7 +362,7 @@ class Image:
 
     def extract_n_pix(self, ext: int = 0):
         self.load_data()
-        self.n_y, self.n_x = self.data[ext].shape()
+        self.n_y, self.n_x = self.data[ext].shape
         self.n_pix = self.n_y * self.n_x
         return self.n_pix
 
@@ -1501,13 +1502,14 @@ class ImagingImage(Image):
         rate_read = self.extract_noise_read()
         n_pix = self.source_cat['KRON_AREA_IMAGE'] / units.pixel
 
-        self.source_cat["SNR"] = ph.signal_to_noise(rate_target=rate_target,
-                                                    rate_sky=rate_sky,
-                                                    rate_read=rate_read,
-                                                    exp_time=self.exposure_time,
-                                                    gain=self.gain,
-                                                    n_pix=n_pix
-                                                    ).value
+        self.source_cat["SNR"] = ph.signal_to_noise(
+            rate_target=rate_target,
+            rate_sky=rate_sky,
+            rate_read=rate_read,
+            exp_time=self.exposure_time,
+            gain=self.gain,
+            n_pix=n_pix
+        ).value
         self.update_output_file()
         print("MEDIAN SNR:", np.median(self.source_cat["SNR"]))
         return self.source_cat["SNR"]
@@ -1792,7 +1794,7 @@ class ImagingImage(Image):
         )
 
         self.synth_cat["delta_mag_sep"] = self.synth_cat["mag_sep"] - self.synth_cat["mag_inserted"]
-        self.synth_cat["fraction_flux_recovered_sep"] = self.synth_cat["flux_inserted"] / self.synth_cat["flux_sep"]
+        self.synth_cat["fraction_flux_recovered_sep"] = self.synth_cat["flux_sep"] / self.synth_cat["flux_inserted"]
 
         matches_source_cat["matching_dist"] = distance.to(units.arcsec)
         matches_source_cat["fraction_flux_recovered_auto"] = matches_source_cat["FLUX_AUTO"] / matches_synth_cat[
@@ -1833,7 +1835,7 @@ class ImagingImage(Image):
             gain=self.extract_gain().value)
         return flux, fluxerr, flag
 
-    def insert_synthetic_range_inplace(
+    def insert_synthetic_range(
             self,
             x: float = None, y: float = None,
             mag_min: units.Quantity = 20.0 * units.mag,
@@ -1841,7 +1843,9 @@ class ImagingImage(Image):
             interval: units.Quantity = 0.1 * units.mag,
             output_dir: str = None,
             filename: str = None,
-            model: str = "psfex"
+            model: str = "psfex",
+            positioning: str = "inplace",
+            scale: units.Quantity = 10 * units.arcsec
     ):
         x = float(x)
         y = float(y)
@@ -1859,23 +1863,116 @@ class ImagingImage(Image):
         for mag in np.linspace(mag_min, mag_max, int((mag_max - mag_min) / interval + 1)):
             u.debug_print(1, f"INSERTING SOURCE {mag}")
 
+            if positioning == 'inplace':
+                x_synth = x
+                y_synth = y
+            elif positioning == 'gaussian':
+                self.extract_pixel_scale()
+                scale.to(units.pix, self.pixel_scale_dec)
+                x_synth = -1
+                y_synth = -1
+                self.extract_n_pix()
+                x_max, y_max = self.n_x, self.n_y
+                while not (0 < x_synth < x_max) or not (0 < y_synth < y_max):
+                    x_synth, y_synth = gaussian_distributed_point(x_0=x, y_0=y, sigma=scale.value)
+            else:
+                raise ValueError(f"positioning {positioning} not recognised.")
+
             file, sources = self.insert_synthetic_sources(
-                x=x, y=y, mag=mag.value,
-                output=os.path.join(output_dir, filename + f"mag_{np.round(mag.value, 1)}.fits"),
+                x=x_synth, y=y_synth, mag=mag.value,
+                output=os.path.join(output_dir, filename + f"_mag_{np.round(mag.value, 1)}.fits"),
                 model=model
             )
             file.source_extraction_psf(output_dir=output_dir)
             file.zeropoint_best = self.zeropoint_best
             file.calibrate_magnitudes()
+            file.signal_to_noise()
             inserted.append(file)
             cat = file.check_synthetic_sources()
             cats.append(cat)
 
         cat_all = table.vstack(cats)
+        cat_all["distance_from_ref"] = np.sqrt(
+            (cat_all["x_inserted"] - x) ** 2 + (cat_all["y_inserted"] - y) ** 2) * units.pix
         return cat_all
 
-    # def test_limit_synthetic(self):
-    #
+    def test_limit_synthetic(
+            self,
+            coord: SkyCoord = None,
+            output_dir: str = None,
+            positioning: str = "inplace",
+            mag_min: units.Quantity = 20.0 * units.mag,
+            mag_max: units.Quantity = 30.0 * units.mag,
+            interval: units.Quantity = 0.1 * units.mag,
+    ):
+
+        if output_dir is None:
+            output_dir = os.path.join(self.data_path, f"{self.name}_lim_test")
+        u.mkdir_check(output_dir)
+        if SkyCoord is None:
+            coord = self.extract_pointing()
+        self.load_wcs()
+        x, y = self.wcs.all_world2pix(coord.ra, coord.dec, 0)
+        sources = self.insert_synthetic_range(
+            x=x, y=y,
+            mag_min=mag_min,
+            mag_max=mag_max,
+            interval=interval,
+            output_dir=output_dir,
+            positioning=positioning
+        )
+
+        plt.scatter(sources["mag_inserted"], sources["fraction_flux_recovered_psf"])
+        plt.xlabel("Inserted magnitude")
+        plt.ylabel("Fraction of flux recovered")
+        plt.savefig(os.path.join(output_dir, "flux_recovered_psf.png"))
+        plt.close()
+
+        plt.scatter(sources["mag_inserted"], sources["fraction_flux_recovered_auto"])
+        plt.xlabel("Inserted magnitude")
+        plt.ylabel("Fraction of flux recovered")
+        plt.savefig(os.path.join(output_dir, "flux_recovered_auto.png"))
+        plt.close()
+
+        plt.scatter(sources["mag_inserted"], sources["fraction_flux_recovered_sep"])
+        plt.xlabel("Inserted magnitude")
+        plt.ylabel("Fraction of flux recovered")
+        plt.savefig(os.path.join(output_dir, "flux_recovered_sep.png"))
+        plt.close()
+
+        plt.scatter(sources["mag_inserted"], sources["delta_mag_psf"])
+        plt.xlabel("Inserted magnitude")
+        plt.ylabel("Mag psf - mag inserted")
+        plt.savefig(os.path.join(output_dir, "delta_mag_psf.png"))
+        plt.close()
+
+        plt.scatter(sources["mag_inserted"], sources["delta_mag_auto"])
+        plt.xlabel("Inserted magnitude")
+        plt.ylabel("Mag auto - mag inserted")
+        plt.savefig(os.path.join(output_dir, "delta_mag_auto.png"))
+        plt.close()
+
+        plt.scatter(sources["mag_inserted"], sources["delta_mag_sep"])
+        plt.xlabel("Inserted magnitude")
+        plt.ylabel("Mag auto - mag inserted")
+        plt.savefig(os.path.join(output_dir, "delta_mag_sep.png"))
+        plt.close()
+
+        plt.scatter(sources["mag_inserted"], sources["CLASS_STAR"])
+        plt.xlabel("Inserted magnitude")
+        plt.ylabel("Class star")
+        plt.savefig(os.path.join(output_dir, "class_star.png"))
+        plt.close()
+
+        plt.scatter(sources["mag_inserted"], sources["matching_dist"])
+        plt.xlabel("Inserted magnitude")
+        plt.ylabel("Matching distance (arcsec)")
+        plt.savefig(os.path.join(output_dir, "matching_dist.png"))
+        plt.close()
+
+        sources.write(os.path.join(output_dir, "synth_cat_all.ecsv"), format="ascii.ecsv")
+
+        return sources
 
     @classmethod
     def select_child_class(cls, instrument: str, **kwargs):
