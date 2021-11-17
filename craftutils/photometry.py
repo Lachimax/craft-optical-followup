@@ -2320,14 +2320,15 @@ def intensity_radius(image, centre_x, centre_y, noise: float = None, limit: floa
     return radii, np.array(intensities)
 
 
-def signal_to_noise(rate_target: units.Quantity,
-                    rate_sky: units.Quantity,
-                    rate_read: units.Quantity,
-                    exp_time: units.Quantity,
-                    gain: units.Quantity,
-                    n_pix: units.Quantity,
-                    rate_dark: units.Quantity = 0.0 * (units.electron / (units.second * units.pixel)),
-                    ):
+def signal_to_noise(
+        rate_target: units.Quantity,
+        rate_sky: units.Quantity,
+        rate_read: units.Quantity,
+        exp_time: units.Quantity,
+        gain: units.Quantity,
+        n_pix: units.Quantity,
+        rate_dark: units.Quantity = 0.0 * (units.electron / (units.second * units.pixel)),
+):
     """
     Calculate the signal-to-noise ratio of an observed object using the Howell 1989 formulation.
     :param rate_target:
@@ -2347,14 +2348,14 @@ def signal_to_noise(rate_target: units.Quantity,
     gain = u.check_quantity(gain, gain_unit)
     n_pix = u.check_quantity(n_pix, units.pix)
 
-    print(rate_target)
-    print(rate_sky)
-    print(rate_dark)
-    print(exp_time)
-    print(gain)
-    print(n_pix)
+    u.debug_print(2, rate_target)
+    u.debug_print(2, rate_sky)
+    u.debug_print(2, rate_dark)
+    u.debug_print(2, exp_time)
+    u.debug_print(2, gain)
+    u.debug_print(2, n_pix)
 
-    print(rate_read ** 2 / (exp_time * gain))
+    u.debug_print(2, rate_read ** 2 / (exp_time * gain))
 
     snr = rate_target * np.sqrt(exp_time * gain) / np.sqrt(
         rate_target + n_pix * (rate_sky + rate_dark / gain + rate_read / (exp_time * gain)))
