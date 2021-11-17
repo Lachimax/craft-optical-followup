@@ -4,6 +4,20 @@ import numpy.random as rand
 import craftutils.utils as u
 
 
+def gaussian_distributed_point(
+        x_0: float, y_0: float,
+        sigma: float,
+):
+    theta = np.random.rand() * 2 * np.pi
+    r = np.abs(np.random.normal(loc=0.0, scale=sigma))
+    x_prime = r * np.cos(theta)
+    y_prime = r * np.sin(theta)
+    x = x_0 + x_prime
+    y = y_0 + y_prime
+
+    return x, y
+
+
 def value_from_pdf(values, probabilities):
     """
     Produces a pseudorandom number given a custom probability distribution.
