@@ -21,6 +21,13 @@ from astropy.time import Time
 debug_level = 0
 
 
+def check_iterable(obj):
+    try:
+        len(obj)
+    except TypeError:
+        obj = [obj]
+    return obj
+
 def sanitise_endianness(array: np.ndarray):
     """
     If the data is big endian, swap the byte order to make it little endian. Special thanks to this link:
