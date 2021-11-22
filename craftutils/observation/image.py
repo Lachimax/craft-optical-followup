@@ -15,13 +15,18 @@ import astropy.io.fits as fits
 import astropy.table as table
 import astropy.wcs as wcs
 import astropy.units as units
-import sep
+from astropy.stats import sigma_clipped_stats
+
 from astropy.visualization import (ImageNormalize, LogStretch, SqrtStretch, ZScaleInterval, MinMaxInterval,
                                    PowerStretch, wcsaxes)
 from astropy.coordinates import SkyCoord
 from astropy.time import Time
 
 from astroalign import register
+
+import photutils
+
+import sep
 
 import craftutils.utils as u
 import craftutils.astrometry as a
@@ -291,6 +296,7 @@ class Image:
             self.close()
         else:
             u.debug_print(1, "Data already loaded.")
+        return self.data
 
     def get_id(self):
         return self.filename[:self.filename.find(".fits")]
@@ -1692,11 +1698,11 @@ class ImagingImage(Image):
                        cbar_label: str = None,
                        **kwargs):
         if fig is None:
-            fig = plt.figure(figsize=(12, 12), dpi=1000)
+            fig = plt.figure()
         if colour_column is not None:
             c = cat[colour_column]
         else:
-            c = None
+            c = "red"
 
         ax, fig = self.plot(fig=fig, ext=ext, zorder=0, **kwargs)
         x, y = self.wcs.all_world2pix(cat[ra_col], cat[dec_col], 0)
@@ -1970,9 +1976,76 @@ class ImagingImage(Image):
         plt.savefig(os.path.join(output_dir, "matching_dist.png"))
         plt.close()
 
+        ax, fig = self.plot_catalogue(cat=sources, ra_col="ra_inserted", dec_col="dec_inserted")
+        fig.savefig(os.path.join(output_dir, "inserted_overplot.png"))
+
         sources.write(os.path.join(output_dir, "synth_cat_all.ecsv"), format="ascii.ecsv")
 
         return sources
+
+    def generate_segmap(
+            self,
+            ext: int = 0,
+            threshold: float = 4,
+            method="photutils"):
+        self.load_data()
+        data = self.data[ext]
+        if method == "photutils":
+            threshold = photutils.segmentation.detect_threshold(data, threshold)
+            segmap = photutils.detect_sources(data, threshold, npixels=5)
+        elif method == "sep":
+            _, med, std = sigma_clipped_stats(data)
+            data = u.sanitise_endianness(data)
+            objects, segmap = sep.extract(
+                data,
+                thresh=threshold * std,
+                deblend_cont=True, clean=False,
+                segmentation_map=True, minarea=5
+            )
+        else:
+            raise ValueError(f"Unrecognised method {method}.")
+        return segmap
+
+    def generate_mask(
+            self,
+            unmasked: SkyCoord = None,
+            ext: int = 0,
+            threshold: float = 4,
+            method="photutils",
+            obj_value=1,
+            back_value=0,
+    ):
+        """
+        For GALFIT, obj_value should be
+        :param unmasked:
+        :param ext:
+        :param threshold:
+        :param method:
+        :param obj_value:
+        :param back_value:
+        :return:
+        """
+        data = self.load_data()[ext]
+        segmap = self.generate_segmap(ext=ext, threshold=threshold, method=method)
+
+        self.load_wcs()
+
+        unmasked = u.check_iterable(unmasked)
+
+        if segmap is None:
+            mask = np.zeros(data.shape)
+            mask_full = np.zeros(data.shape)
+        else:
+            # Loop over the given coordinates and
+            for coord in unmasked:
+                x_unmasked, y_unmasked = self.wcs.all_world2pix(coord, 0)
+                # n is the integer representing that object in the segmap
+                n = segmap.data[int(np.round(y_unmasked)), int(np.round(x_unmasked))]
+
+                mask = segmap.data != n
+            mask[segmap.data == 0] = back_value
+            mask_full = np.zeros(data.shape)
+            mask_full[bottom:top, left:right] = mask
 
     @classmethod
     def select_child_class(cls, instrument: str, **kwargs):
