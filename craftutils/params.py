@@ -744,14 +744,25 @@ def trim_transmission_curves(f: str, instrument: str, lambda_min: float, lambda_
 
 
 def keys():
+    """
+    Returns the contents of keys.json as a dict.
+    :return:
+    """
     key_path = os.path.join(param_dir, "keys.json")
     if os.path.isfile(key_path):
         with open(param_dir + "keys.json") as fp:
             file = json.load(fp)
         return file
     else:
-        raise FileNotFoundError(f"keys.json does not exist at param_path={param_dir}. "
-                                f"Please make a copy from {os.path.join(config['proj_dir'], 'param', 'keys.json')}")
+        raise FileNotFoundError(
+            f"keys.json does not exist at param_path={param_dir}. "
+            f"Please make a copy from {os.path.join(config['proj_dir'], 'param', 'keys.json')}")
+
+
+def load_json(path: str):
+    with open(param_dir + "keys.json") as fp:
+        file = json.load(fp)
+    return file
 
 
 def path_to_config_sextractor_config_pre_psfex():
@@ -780,6 +791,7 @@ def path_to_config_sextractor_param():
 
 def path_to_config_psfex():
     return os.path.join(project_path, "param", "psfex")
+
 
 def path_to_source_extractor():
     return os.path.join(project_path, "param", "sextractor")
