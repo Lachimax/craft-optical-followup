@@ -162,12 +162,15 @@ class PositionUncertainty:
 
     @classmethod
     def default_params(cls):
-        return {"ra": uncertainty_dict.copy(),
-                "dec": uncertainty_dict.copy(),
-                "a": uncertainty_dict.copy(),
-                "b": uncertainty_dict.copy(),
-                "theta": 0.0,
-                "sigma": None}
+        return {
+            "ra": uncertainty_dict.copy(),
+            "dec": uncertainty_dict.copy(),
+            "a": uncertainty_dict.copy(),
+            "b": uncertainty_dict.copy(),
+            "theta": 0.0,
+            "sigma": None,
+            "healpix_path": None
+        }
 
 
 class Object:
@@ -617,5 +620,6 @@ class FRB(Object):
             "host_galaxy": Galaxy.default_params(),
             "mjd": 58000,
             "dm": 0.0 * dm_units,
+            "snr": 0.0
         })
         return default_params
