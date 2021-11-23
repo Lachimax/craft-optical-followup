@@ -1,4 +1,5 @@
 import os
+import shutil
 
 import astropy.units as units
 import pytest
@@ -6,7 +7,8 @@ import pytest
 import craftutils.utils as u
 import craftutils.params as p
 
-coadd_path = os.path.join(p.project_path, "tests", "files", "test.coadd1d")
+test_file_path = os.path.join(p.project_path, "tests", "files")
+coadd_path = os.path.join(test_file_path, "test.coadd1d")
 coadd_dictionary = {"coadd1d": {"coaddfile": "foreground_coadded.fits",
                                 "sensfuncfile": "YOUR_SENSFUNC_FILE",
                                 "wave_method": "linear"}}
@@ -90,6 +92,34 @@ def test_check_quantity():
     with pytest.raises(units.UnitsError) as e:
         u.check_quantity(number=number, unit=units.joule)
     assert e.type is units.UnitsError
+
+
+def test_mkdir_check():
+    path = os.path.join(test_file_path, "path_test")
+    u.rm_check(path)
+    u.mkdir_check(path)
+    assert os.path.isdir(path)
+    u.rmtree_check(path)
+
+    paths = [
+        os.path.join(test_file_path, "test_path_1"),
+        os.path.join(test_file_path, "test_path_2"),
+        os.path.join(test_file_path, "test_path_3")
+    ]
+    u.mkdir_check_args(*paths)
+    for path in paths:
+        assert os.path.isdir(path)
+        u.rmtree_check(path)
+
+
+def test_mkdir_check_args():
+    dirs = [test_file_path, "path_test", "nested", "and_then"]
+    u.rm_check(os.path.join(test_file_path, "path_test"))
+    path_out = os.path.join(*dirs)
+    path_test = u.mkdir_check_args(*dirs)
+    assert path_out == path_test
+    assert os.path.isdir(path_test)
+    shutil.rmtree(os.path.join(test_file_path, "path_test"))
 
 
 def test_dequantify():

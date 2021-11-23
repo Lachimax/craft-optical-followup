@@ -28,6 +28,7 @@ def check_iterable(obj):
         obj = [obj]
     return obj
 
+
 def sanitise_endianness(array: np.ndarray):
     """
     If the data is big endian, swap the byte order to make it little endian. Special thanks to this link:
@@ -250,6 +251,7 @@ def rm_check(path):
     if os.path.isfile(path):
         os.remove(path)
 
+
 def rmtree_check(path):
     """
     Checks if a directory exists, and removes it if so. USE WITH CAUTION; WILL DELETE ENTIRE TREE WITHOUT WARNING.
@@ -285,6 +287,14 @@ def mkdir_check_nested(path: str):
                 subpath = path[0:i]
                 mkdir_check(subpath)
         i += 1
+
+
+def mkdir_check_args(*args: str):
+    path = ""
+    for arg in args:
+        path = os.path.join(path, arg)
+        mkdir_check(path)
+    return path
 
 
 def fwhm_to_std(fwhm: float):
