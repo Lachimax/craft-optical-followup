@@ -750,9 +750,7 @@ def keys():
     """
     key_path = os.path.join(param_dir, "keys.json")
     if os.path.isfile(key_path):
-        with open(param_dir + "keys.json") as fp:
-            file = json.load(fp)
-        return file
+        return load_json(key_path)
     else:
         raise FileNotFoundError(
             f"keys.json does not exist at param_path={param_dir}. "
@@ -760,7 +758,7 @@ def keys():
 
 
 def load_json(path: str):
-    with open(param_dir + "keys.json") as fp:
+    with open(path) as fp:
         file = json.load(fp)
     return file
 
