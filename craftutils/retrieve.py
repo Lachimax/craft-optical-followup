@@ -4,7 +4,7 @@ import os
 import time
 from datetime import date, datetime
 from json.decoder import JSONDecodeError
-from typing import Union
+from typing import Union, Iterable
 
 import cgi
 import requests
@@ -336,6 +336,19 @@ def save_eso_raw_data_and_calibs(output: str, program_id: str, date_obs: Union[s
     return urls
 
 
+def count_epochs(dates: Iterable):
+    epochs = []
+    for d in dates:
+        d = Time(d)
+        date_min = d - 0.25
+        date_max = d + 0.25
+        date_str = d.strftime('%Y-%m-%d')
+        if date_str not in epochs and date_min.strftime('%Y-%m-%d') not in epochs and date_max.strftime(
+                '%Y-%m-%d') not in epochs:
+            epochs.append(date_str)
+    return epochs
+
+
 def get_eso_raw_frame_list(query: str):
     login_eso()
     tap_obs = dal.tap.TAPService(eso_tap_url)
@@ -352,8 +365,14 @@ def get_eso_raw_frame_list(query: str):
     return raw_frames
 
 
-def query_eso_raw(program_id: str, date_obs: Union[str, Time], obj: str = None, instrument: str = "fors2",
-                  mode: str = "imaging"):
+def query_eso_raw(
+        select: str = "dp_id,date_obs",
+        program_id: str = None,
+        date_obs: Union[str, Time] = None,
+        obj: Union[str, SkyCoord] = None,
+        coord_tol: units.Quantity = 1.0 * units.arcmin,
+        instrument: str = "fors2",
+        mode: str = "imaging"):
     instrument = instrument.lower()
     mode = mode.lower()
     if mode not in ["imaging", "spectroscopy"]:
@@ -372,18 +391,44 @@ def query_eso_raw(program_id: str, date_obs: Union[str, Time], obj: str = None, 
 
     if type(date_obs) is str:
         date_obs = Time(date_obs)
-    query = \
-        f"""SELECT dp_id
-FROM dbo.raw
-WHERE prog_id='{program_id}'
-AND dp_cat='SCIENCE'
-AND instrument='{instrument}'
-AND {mode_str}
-AND date_obs>'{date_obs.to_datetime().date()}'
-AND date_obs<'{(date_obs + 1).to_datetime().date()}'
-"""
+    query = f"""SELECT {select}
+            FROM dbo.raw
+            WHERE dp_cat='SCIENCE'
+            AND instrument='{instrument}'
+            AND {mode_str}
+            """
+    if program_id is not None:
+        query += f"AND prog_id='{program_id}'"
+    if date_obs is not None:
+        query += f"AND date_obs>'{(date_obs - 0.5).to_datetime().date()}'\n" \
+                 f"AND date_obs<'{(date_obs + 0.5).to_datetime().date()}'"
     if obj is not None:
-        query += f"AND target='{obj}'"
+        if isinstance(obj, str):
+            query += f"AND target='{obj}'\n"
+        elif isinstance(obj, SkyCoord):
+            ra_min = obj.directional_offset_by(
+                position_angle=90.0,
+                separation=-coord_tol,
+            ).ra.to(units.deg).value
+            ra_max = obj.directional_offset_by(
+                position_angle=90.0,
+                separation=coord_tol,
+            ).ra.to(units.deg).value
+            dec_min = obj.directional_offset_by(
+                position_angle=0.0,
+                separation=-coord_tol,
+            ).dec.to(units.deg).value
+            dec_max = obj.directional_offset_by(
+                position_angle=0.0,
+                separation=coord_tol,
+            ).dec.to(units.deg).value
+            query += f"""AND ra>{ra_min}
+            AND ra<{ra_max}
+            AND dec>{dec_min}
+            AND dec<{dec_max}
+            """
+        else:
+            raise TypeError(f"obj must be str or SkyCoord, not {type(obj)}")
     return query
 
 
@@ -1409,7 +1454,6 @@ def login_gemini():
 
 
 def save_gemini_calibs(output: str, obs_date: Time, instrument: str = 'GSAOI', fil: str = "Kshort", overwrite=False):
-
     flats = {}
     date_early = obs_date.copy()
     date_late = obs_date.copy()
