@@ -87,29 +87,25 @@ def check_for_config():
     return p
 
 
-def load_params(file: str, quiet: bool = False):
-    if u.debug_level < 1:
-        quiet = True
+def load_params(file: str):
     file = u.sanitise_file_ext(file, '.yaml')
 
-    if not quiet:
-        print('Loading parameter file from ' + str(file))
+    u.debug_print(1, 'Loading parameter file from ' + str(file))
 
     if os.path.isfile(file):
         with open(file) as f:
             p = yaml.load(f)
     else:
         p = None
-        if not quiet:
-            print('No parameter file found at', str(file) + ', returning None.')
-
+        u.debug_print(1, 'No parameter file found at', str(file) + ', returning None.')
     return p
 
 
-def save_params(file: str, dictionary: dict, quiet: bool = False):
+def save_params(file: str, dictionary: dict):
     file = u.sanitise_file_ext(filename=file, ext=".yaml")
 
     u.debug_print(1, 'Saving parameter file to ' + str(file))
+    u.debug_print(2, "params.save_params: dictionary ==", dictionary)
 
     with open(file, 'w') as f:
         yaml.dump(dictionary, f)
@@ -137,17 +133,16 @@ def select_coords(dictionary):
     return ra, dec
 
 
-def yaml_to_json(yaml_file: str, output: str = None, quiet: bool = False):
+def yaml_to_json(yaml_file: str, output: str = None):
     yaml_file = u.sanitise_file_ext(yaml_file, '.yaml')
     if output is not None:
         output = u.sanitise_file_ext(output, '.json')
     elif output is None:
         output = yaml_file.replace('.yaml', '.json')
 
-    p = load_params(file=yaml_file, quiet=quiet)
+    p = load_params(file=yaml_file)
 
-    if not quiet:
-        u.debug_print(1, 'Saving parameter file to ' + output)
+    u.debug_print(1, 'Saving parameter file to ' + output)
 
     for param in p:
         if type(p[param]) is date:
@@ -194,25 +189,25 @@ def change_yaml_param(file: str = 'project', param: str = None, value=None, upda
     return p
 
 
-def add_params(file: str, params: dict, quiet: bool = False, skip_json: bool = False):
+def add_params(file: str, params: dict, skip_json: bool = False):
     file = u.sanitise_file_ext(file, '.yaml')
     if os.path.isfile(file):
         param_dict = load_params(file)
     else:
         param_dict = {}
     param_dict.update(params)
-    save_params(file, param_dict, quiet=quiet)
+    save_params(file, param_dict)
     if not skip_json:
-        yaml_to_json(file, quiet=quiet)
+        yaml_to_json(file)
 
 
-def add_config_param(params: dict, quiet=False):
-    add_params(file="param/config.yaml", params=params, quiet=quiet)
+def add_config_param(params: dict):
+    add_params(file="param/config.yaml", params=params)
     params.config = check_for_config()
 
 
 def add_frb_param(obj: str, params: dict, quiet=False):
-    add_params(file=param_dir + "FRBs/" + obj + ".yaml", params=params, quiet=quiet)
+    add_params(file=param_dir + "FRBs/" + obj + ".yaml", params=params)
 
 
 def add_epoch_param(obj: str, params: dict, instrument: str = 'FORS2', quiet=False):
@@ -250,28 +245,28 @@ def add_output_values_frb(obj: str, params: dict, quiet: bool = False):
     add_params(file=p['data_dir'] + 'output_values', params=params, quiet=quiet)
 
 
-def apertures_fors(quiet: bool = False):
-    return load_params(param_dir + '/aperture_diameters_fors2', quiet=quiet)
+def apertures_fors():
+    return load_params(param_dir + '/aperture_diameters_fors2')
 
 
-def apertures_des(quiet: bool = False):
-    return load_params(param_dir + 'aperture_diameters_des', quiet=quiet)
+def apertures_des():
+    return load_params(param_dir + 'aperture_diameters_des')
 
 
-def sextractor_names(quiet: bool = False):
-    return load_params(param_dir + 'sextractor_names', quiet=quiet)
+def sextractor_names():
+    return load_params(param_dir + 'sextractor_names')
 
 
-def sextractor_names_psf(quiet: bool = False):
-    return load_params(param_dir + 'sextractor_names_psf', quiet=quiet)
+def sextractor_names_psf():
+    return load_params(param_dir + 'sextractor_names_psf')
 
 
-def sncosmo_models(quiet: bool = False):
-    return load_params(param_dir + 'sncosmo_models', quiet=quiet)
+def sncosmo_models():
+    return load_params(param_dir + 'sncosmo_models')
 
 
-def plotting_params(quiet: bool = False):
-    return load_params(param_dir + 'plotting', quiet=quiet)
+def plotting_params():
+    return load_params(param_dir + 'plotting')
 
 
 def ingest_eso_filter_properties(path: str, instrument: str, update: bool = False, quiet: bool = False):

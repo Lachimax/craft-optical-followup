@@ -115,11 +115,12 @@ def list_fields_old():
 
 
 def _retrieve_eso_epoch(epoch: Union['ESOImagingEpoch', 'ESOSpectroscopyEpoch'], path: str):
-    if epoch.program_id is None:
-        epoch.set_program_id(input("A program ID is required to retrieve ESO data. Enter here:\n"))
-    if epoch.date is None:
-        epoch.set_date(Time(
-            input("An observation date is required to retrieve ESO data. Enter here, in iso or isot format:\n")))
+    epoch_date = None
+    if epoch.date is not None:
+        epoch_date = epoch.date
+    program_id = None
+    if epoch.program_id is not None:
+        program_id = epoch.program_id
     if isinstance(epoch, ESOImagingEpoch):
         mode = "imaging"
     elif isinstance(epoch, ESOSpectroscopyEpoch):
@@ -127,21 +128,43 @@ def _retrieve_eso_epoch(epoch: Union['ESOImagingEpoch', 'ESOSpectroscopyEpoch'],
     else:
         raise TypeError("epoch must be either an ESOImagingEpoch or an ESOSpectroscopyEpoch.")
     if epoch.target is None:
-        obj = u.user_input(
-            "Specifying an object might help find the correct observation. Enter here, as it appears in the archive "
-            "OBJECT field, or leave blank:\n")
-        if obj not in ["", " "]:
-            epoch.set_target(obj)
+        obj = epoch.field.centre_coords
+    else:
+        obj = epoch.target
 
     u.mkdir_check(path)
     instrument = epoch.instrument_name.split('-')[-1]
-    r = retrieve.save_eso_raw_data_and_calibs(
-        output=path,
-        date_obs=epoch.date,
-        program_id=epoch.program_id,
+
+    query = retrieve.query_eso_raw(
+        select="dp_id,date_obs",
+        date_obs=epoch_date,
+        program_id=program_id,
         instrument=instrument,
         mode=mode,
-        obj=epoch.target)
+        obj=obj,
+        coord_tol=3.0 * units.arcmin
+    )
+
+    frame_list = retrieve.get_eso_raw_frame_list(query=query)
+    epoch_dates = retrieve.count_epochs(frame_list["date_obs"])
+    if len(epoch_dates) > 1:
+        _, epoch_date = u.select_option(
+            message="Multiple observation dates found matching epoch criteria. Please select one:",
+            options=epoch_dates,
+            sort=True
+        )
+        epoch.set_date(epoch_date)
+
+    r = retrieve.save_eso_raw_data_and_calibs(
+        output=path,
+        date_obs=epoch_date,
+        program_id=program_id,
+        instrument=instrument,
+        mode=mode,
+        obj=obj,
+        coord_tol=3.0 * units.arcmin
+    )
+
     if r:
         os.system(f"uncompress {path}/*.Z -f")
     return r
@@ -564,18 +587,22 @@ class Field:
         return cls.from_file(param_file=path)
 
     @classmethod
-    def new_yaml(cls, name: str, path: str = None, quiet: bool = False):
+    def new_yaml(cls, name: str, path: str = None, **kwargs):
         param_dict = cls.default_params()
         param_dict["name"] = name
         param_dict["data_path"] = os.path.join(name, "")
+        for kwarg in kwargs:
+            param_dict[kwarg] = kwargs[kwarg]
         if path is not None:
-            path = os.path.join(path, name)
-            p.save_params(file=path, dictionary=param_dict, quiet=quiet)
+            if os.path.isdir(path):
+                path = os.path.join(path, name)
+            p.save_params(file=path, dictionary=param_dict)
         return param_dict
 
     @classmethod
     def build_param_path(cls, field_name: str):
-        return os.path.join(p.param_dir, "fields", field_name, field_name)
+        path = u.mkdir_check_args(p.param_dir, "fields", field_name)
+        return os.path.join(path, f"{field_name}.yaml")
 
 
 class StandardField(Field):
@@ -710,14 +737,85 @@ class FRBField(Field):
         return default_params
 
     @classmethod
-    def new_yaml(cls, name: str, path: str = None, quiet: bool = False):
+    def new_yaml(cls, name: str, path: str = None, **kwargs) -> dict:
+        """
+        Generates a new parameter .yaml file for an FRBField.
+        :param name: Name of the field.
+        :param path: Path to write .yaml to.
+        :param kwargs: Other keywords to insert or replace in the output yaml.
+        :return: dict reflecting content of yaml file.
+        """
         param_dict = super().new_yaml(name=name, path=None)
         param_dict["frb"]["name"] = name
         param_dict["frb"]["type"] = "FRB"
-        param_dict["frb"]["host_galaxy"]["name"] = name.replace("FRB", "HG")
+        if "FRB" in name:
+            param_dict["frb"]["host_galaxy"]["name"] = name.replace("FRB", "HG")
+        else:
+            param_dict["frb"]["host_galaxy"]["name"] = name + " Host"
+
+        for kwarg in kwargs:
+            param_dict[kwarg] = kwargs[kwarg]
         if path is not None:
             path = os.path.join(path, name)
-            p.save_params(file=path, dictionary=param_dict, quiet=quiet)
+            p.save_params(file=path, dictionary=param_dict)
+        u.debug_print(2, "FRBField.new_yaml(): param_dict:", param_dict)
+        return param_dict
+
+    @classmethod
+    def yaml_from_furby_dict(
+            cls,
+            furby_dict: dict,
+            output_path: str,
+            healpix_path: str = None) -> dict:
+        """
+        Constructs a param .yaml file from a dict representing a FURBY json file.
+        :param furby_dict: the .json file read in as a dict
+        :param output_path: The path to write output yaml file to.
+        :param healpix_path: Optional, path to FITS file containing healpix information.
+        :return: Dictionary containing the same information as the written .yaml
+        """
+
+        u.mkdir_check(output_path)
+
+        field_name = furby_dict["Name"]
+        frb = objects.FRB.default_params()
+        coords = objects.position_dictionary.copy()
+        coords["ra"]["decimal"] = furby_dict["RA"]
+        coords["dec"]["decimal"] = furby_dict["DEC"]
+
+        frb["dm"] = furby_dict["DM"] * objects.dm_units
+        frb["name"] = field_name
+        frb["position"] = coords.copy()
+        frb["position_err"]["healpix_path"] = healpix_path
+        frb["host_galaxy"]["name"] = field_name + " Host"
+        param_dict = cls.new_yaml(
+            name=field_name,
+            path=output_path,
+            centre=coords,
+            frb=frb,
+            snr=furby_dict["S/N"]
+        )
+        return param_dict
+
+    @classmethod
+    def param_from_furby_json(cls, json_path: str, healpix_path: str = None):
+        """
+        Constructs a param .yaml file from a FURBY json file and places it in the default location.
+        :param json_path: The path to the FURBY .json file.
+        :param healpix_path: Optional, path to FITS file containing healpix information.
+        :return:
+        """
+        furby_dict = p.load_json(json_path)
+        u.debug_print(1, json_path)
+        u.debug_print(1, furby_dict)
+        field_name = furby_dict["Name"]
+        output_path = os.path.join(p.param_dir, "fields", field_name)
+
+        param_dict = cls.yaml_from_furby_dict(
+            furby_dict=furby_dict,
+            healpix_path=healpix_path,
+            output_path=output_path
+        )
         return param_dict
 
     @classmethod
@@ -812,8 +910,7 @@ class FRBField(Field):
 
         param_path_upper = os.path.join(p.param_dir, "fields", new_frb)
         u.mkdir_check(param_path_upper)
-        p.save_params(file=os.path.join(param_path_upper, f"{new_frb}.yaml"), dictionary=new_params,
-                      quiet=False)
+        p.save_params(file=os.path.join(param_path_upper, f"{new_frb}.yaml"), dictionary=new_params)
 
     def gather_epochs_old(self):
         print("Searching for old-format imaging epoch param files...")
@@ -846,23 +943,26 @@ epoch_stage_dirs = {"0-download": "0-data_with_raw_calibs",
 
 
 class Epoch:
-    def __init__(self,
-                 param_path: str = None,
-                 name: str = None,
-                 field: Union[str, Field] = None,
-                 data_path: str = None,
-                 instrument: str = None,
-                 date: Union[str, Time] = None,
-                 program_id: str = None,
-                 target: str = None,
-                 do: Union[list, str] = None
-                 ):
+    def __init__(
+            self,
+            param_path: str = None,
+            name: str = None,
+            field: Union[str, Field] = None,
+            data_path: str = None,
+            instrument: str = None,
+            date: Union[str, Time] = None,
+            program_id: str = None,
+            target: str = None,
+            do: Union[list, str] = None
+    ):
 
         # Input attributes
         self.param_path = param_path
         self.name = name
         self.field = field
-        self.data_path = os.path.join(p.data_path, data_path)
+        self.data_path = None
+        if data_path is not None:
+            self.data_path = os.path.join(p.data_path, data_path)
         if data_path is not None:
             u.mkdir_check_nested(data_path)
         self.instrument_name = instrument
@@ -989,6 +1089,8 @@ class Epoch:
         self.update_param_file("program_id")
 
     def set_date(self, date: Union[str, Time]):
+        if isinstance(date, str):
+            date = Time(date)
         self.date = date
         self.update_param_file("date")
 
@@ -1054,7 +1156,7 @@ class Epoch:
         return self._add_coadded(img=img, key=key, image_dict=self.coadded)
 
     def sort_frame(self, frame: image.Image, sort_key: str = None):
-        u.debug_print(1, f"Adding frame {frame.name}", frame.frame_type)
+        u.debug_print(1, f"Adding frame {frame.name}, type {frame.frame_type}, to {self}, type {type(self)}")
         if frame.frame_type == "bias" and frame not in self.frames_bias:
             self.frames_bias.append(frame)
         elif frame.frame_type == "science":
@@ -1089,12 +1191,15 @@ class Epoch:
         return default_params
 
     @classmethod
-    def new_yaml(cls, name: str, path: str = None, quiet: bool = False):
+    def new_yaml(cls, name: str, path: str = None, **kwargs):
         param_dict = cls.default_params()
         param_dict["name"] = name
+        for kwarg in kwargs:
+            param_dict[kwarg] = kwargs[kwarg]
         if path is not None:
-            path = os.path.join(path, name)
-            p.save_params(file=path, dictionary=param_dict, quiet=quiet)
+            if os.path.isdir(path):
+                path = os.path.join(path, name)
+            p.save_params(file=path, dictionary=param_dict)
         return param_dict
 
     @classmethod
@@ -1627,8 +1732,12 @@ class ImagingEpoch(Epoch):
     def guess_data_path(self):
         if self.data_path is None and self.field is not None and self.field.data_path is not None and \
                 self.instrument_name is not None and self.date is not None:
-            self.data_path = os.path.join(self.field.data_path, "imaging", self.instrument_name,
-                                          f"{self.date.isot}-{self.name}")
+            self.data_path = self.build_data_path(
+                field=self.field,
+                instrument_name=self.instrument_name,
+                date=self.date,
+                name=self.name
+            )
         return self.data_path
 
     def _output_dict(self):
@@ -1784,6 +1893,7 @@ class ImagingEpoch(Epoch):
 
     def add_frame_raw(self, raw_frame: Union[image.ImagingImage, str]):
         raw_frame, fil = self._check_frame(frame=raw_frame, frame_type="raw")
+        self.check_filter(fil)
         if raw_frame is None:
             return None
         self.frames_raw.append(raw_frame)
@@ -1923,14 +2033,20 @@ class ImagingEpoch(Epoch):
             instrument = instrument.split("-")[-1]
             path = os.path.join(p.param_dir, f"epochs_{instrument}", name)
         else:
-            path = cls.build_param_path(instrument_name=instrument,
-                                        field_name=field_name,
-                                        epoch_name=name)
+            path = cls.build_param_path(
+                instrument_name=instrument,
+                field_name=field_name,
+                epoch_name=name)
         return cls.from_file(param_file=path, field=field)
 
     @classmethod
     def build_param_path(cls, instrument_name: str, field_name: str, epoch_name: str):
-        return os.path.join(p.param_dir, "fields", field_name, "imaging", instrument_name, epoch_name)
+        path = u.mkdir_check_args(p.param_dir, "fields", field_name, "imaging", instrument_name)
+        return os.path.join(path, f"{epoch_name}.yaml")
+
+    @classmethod
+    def build_data_path(cls, field: Field, instrument_name: str, date: Time, name: str):
+        return u.mkdir_check_args(field.data_path, "imaging", instrument_name, f"{date.isot}-{name}")
 
     @classmethod
     def from_file(cls, param_file: Union[str, dict], old_format: bool = False, field: Field = None):
@@ -3408,11 +3524,13 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
             param_dict.pop("param_path")
 
         u.debug_print(2, "FORS2ImagingEpoch.from_file(), cls ==", cls)
+        u.debug_print(2, 'FORS2ImagingEpoch.from_file(), config["top_data_dir"] == ', config["top_data_dir"])
+        u.debug_print(2, 'FORS2ImagingEpoch.from_file(), param_dict["data_path"] == ', param_dict["data_path"])
 
         return cls(name=name,
                    field=field,
                    param_path=param_file,
-                   data_path=os.path.join(config["top_data_dir"], param_dict.pop('data_path')),
+                   data_path=param_dict.pop('data_path'),
                    instrument='vlt-fors2',
                    program_id=param_dict.pop('program_id'),
                    date=param_dict.pop('date'),
@@ -3476,7 +3594,7 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
         u.mkdir_check(instrument_path)
         output_path = os.path.join(instrument_path, new_epoch_name)
         p.save_params(file=output_path,
-                      dictionary=new_params, quiet=False)
+                      dictionary=new_params)
 
         return output_path
 

@@ -40,10 +40,11 @@ def main(
         if not os.path.isfile(healpix_path):
             healpix_path = None
 
-        fld.FRBField.param_from_furby_json(
+        params = fld.FRBField.param_from_furby_json(
             json_path=furby_path,
             healpix_path=healpix_path,
         )
+        field_name = params["name"]
         field = fld.Field.from_params(name=field_name)
 
         instrument = "vlt-fors2"
@@ -56,7 +57,9 @@ def main(
                 field_name=field_name,
                 epoch_name=epoch_name
             ),
-
+            field=field.name,
+            instrument=instrument,
+            data_path=os.path.join(field_name, epoch_name, "")
         )
         epoch = fld.FORS2ImagingEpoch.from_params(
             name=epoch_name,

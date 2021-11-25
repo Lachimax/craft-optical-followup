@@ -318,14 +318,19 @@ def print_eso_calselector_info(description: str, mode_requested: str):
     return alert, mode_warning, certified_warning
 
 
-def save_eso_raw_data_and_calibs(output: str, program_id: str, date_obs: Union[str, Time],
-                                 instrument: str, mode: str, obj: str = None):
+def save_eso_raw_data_and_calibs(
+        output: str, program_id: str, date_obs: Union[str, Time],
+        instrument: str, mode: str,
+        obj: str = None,
+        coord_tol: units.Quantity = 1.0 * units.arcmin
+):
     u.mkdir_check(output)
     instrument = instrument.lower()
     login_eso()
     print(f"Querying the ESO TAP service at {eso_tap_url}")
-    query = query_eso_raw(program_id=program_id, date_obs=date_obs, obj=obj, instrument=instrument, mode=mode)
-    print(query)
+    query = query_eso_raw(
+        program_id=program_id, date_obs=date_obs, obj=obj, instrument=instrument, mode=mode, coord_tol=coord_tol
+    )
     raw_frames = get_eso_raw_frame_list(query=query)
     calib_urls = get_eso_calib_associations_all(raw_frames=raw_frames)
     urls = list(raw_frames['url']) + calib_urls
@@ -339,6 +344,7 @@ def save_eso_raw_data_and_calibs(output: str, program_id: str, date_obs: Union[s
 def count_epochs(dates: Iterable):
     epochs = []
     for d in dates:
+        u.debug_print(2, d)
         d = Time(d)
         date_min = d - 0.25
         date_max = d + 0.25
@@ -380,28 +386,28 @@ def query_eso_raw(
     mode_str = ""
     if instrument == "fors2":
         if mode == "imaging":
-            mode_str = "dp_tech = 'IMAGE'"
+            mode_str = "dp_tech='IMAGE'"
         elif mode == "spectroscopy":
-            mode_str = "dp_tech = 'SPECTRUM'"
+            mode_str = "dp_tech='SPECTRUM'"
     if instrument == "xshooter":
         if mode == "imaging":
-            mode_str = "dp_tech = 'IMAGE'"
+            mode_str = "dp_tech='IMAGE'"
         elif mode == "spectroscopy":
             mode_str = "dp_tech like 'ECHELLE%'"
 
     if type(date_obs) is str:
         date_obs = Time(date_obs)
     query = f"""SELECT {select}
-            FROM dbo.raw
-            WHERE dp_cat='SCIENCE'
-            AND instrument='{instrument}'
-            AND {mode_str}
-            """
+FROM dbo.raw
+WHERE dp_cat='SCIENCE'
+AND instrument='{instrument}'
+AND {mode_str}
+"""
     if program_id is not None:
         query += f"AND prog_id='{program_id}'"
     if date_obs is not None:
-        query += f"AND date_obs>'{(date_obs - 0.5).to_datetime().date()}'\n" \
-                 f"AND date_obs<'{(date_obs + 0.5).to_datetime().date()}'"
+        query += f"AND date_obs>='{(date_obs - 0.5).to_datetime().date()}'\n" \
+                 f"AND date_obs<='{(date_obs + 1).to_datetime().date()}'\n"
     if obj is not None:
         if isinstance(obj, str):
             query += f"AND target='{obj}'\n"
@@ -423,12 +429,14 @@ def query_eso_raw(
                 separation=coord_tol,
             ).dec.to(units.deg).value
             query += f"""AND ra>{ra_min}
-            AND ra<{ra_max}
-            AND dec>{dec_min}
-            AND dec<{dec_max}
-            """
+AND ra<{ra_max}
+AND dec>{dec_min}
+AND dec<{dec_max}
+"""
         else:
             raise TypeError(f"obj must be str or SkyCoord, not {type(obj)}")
+    u.debug_print(1, "Query for ESO Archive:\n")
+    u.debug_print(1, query)
     return query
 
 

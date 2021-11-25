@@ -41,9 +41,9 @@ except AttributeError:
 quantity_support()
 
 position_dictionary = {"ra": {"decimal": 0.0,
-                              "hms": "00h00m00s"},
+                              "hms": None},
                        "dec": {"decimal": 0.0,
-                               "dms": "00d00m00s"},
+                               "dms": None},
                        }
 
 uncertainty_dict = {"sys": 0.0,
@@ -227,6 +227,7 @@ class Object:
 
     def check_data_path(self):
         if self.field is not None:
+            u.debug_print(1, self.name)
             self.data_path = os.path.join(self.field.data_path, "objects", self.name)
             u.mkdir_check(self.data_path)
             self.output_file = os.path.join(self.data_path, f"{self.name}_outputs.yaml")
@@ -382,6 +383,9 @@ class Object:
                 output=raw_path
             )
             ext_tbl = table.QTable.read(raw_path, format="ascii")
+            for colname in ext_tbl.colnames:
+                if str(table[colname].unit) == "mags":
+                    table[colname]._set_unit(units.mag)
             tbl_path = os.path.join(self.data_path, f"{self.name}_galactic_extinction.ecsv")
             ext_tbl.write(tbl_path, overwrite=True, format="ascii.ecsv")
             self.irsa_extinction = ext_tbl
@@ -532,9 +536,10 @@ class Galaxy(Object):
 
     @classmethod
     def default_params(cls):
-        default_params = super(Galaxy, cls).default_params()
+        default_params = super().default_params()
         default_params.update({
-            "z": 0.0
+            "z": 0.0,
+            "type": "galaxy"
         })
         return default_params
 
