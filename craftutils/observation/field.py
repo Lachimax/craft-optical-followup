@@ -153,7 +153,7 @@ def _retrieve_eso_epoch(epoch: Union['ESOImagingEpoch', 'ESOSpectroscopyEpoch'],
             options=epoch_dates,
             sort=True
         )
-        epoch.set_date(epoch_date)
+    epoch.set_date(epoch_date)
 
     r = retrieve.save_eso_raw_data_and_calibs(
         output=path,
@@ -222,6 +222,7 @@ class Field:
         self.mkdir_params()
         self.data_path = os.path.join(p.data_path, data_path)
         u.debug_print(1, self.name, "self.data_path", self.data_path)
+        self.data_path_relative = data_path
         self.mkdir()
         self.output_file = None
 
@@ -964,7 +965,7 @@ class Epoch:
         if data_path is not None:
             self.data_path = os.path.join(p.data_path, data_path)
         if data_path is not None:
-            u.mkdir_check_nested(data_path)
+            u.mkdir_check_nested(self.data_path)
         self.instrument_name = instrument
         try:
             self.instrument = inst.Instrument.from_params(instrument_name=instrument)
@@ -1013,7 +1014,7 @@ class Epoch:
 
     def _pipeline_init(self, ):
         if self.data_path is not None:
-            u.mkdir_check(self.data_path)
+            u.mkdir_check_nested(self.data_path)
         else:
             raise ValueError(f"data_path has not been set for {self}")
         self.do = _check_do_list(self.do)
@@ -1045,6 +1046,7 @@ class Epoch:
     def _output_dict(self):
 
         return {
+            "date": self.date,
             "stages": self.stages_complete,
             "paths": self.paths,
             "frames_science": _output_img_dict_list(self.frames_science),
@@ -1732,7 +1734,7 @@ class ImagingEpoch(Epoch):
     def guess_data_path(self):
         if self.data_path is None and self.field is not None and self.field.data_path is not None and \
                 self.instrument_name is not None and self.date is not None:
-            self.data_path = self.build_data_path(
+            self.data_path = self.build_data_path_absolute(
                 field=self.field,
                 instrument_name=self.instrument_name,
                 date=self.date,
@@ -1773,6 +1775,9 @@ class ImagingEpoch(Epoch):
         outputs = super().load_output_file(**kwargs)
         if type(outputs) is dict:
             cls = image.Image.select_child_class(instrument=self.instrument_name, mode='imaging')
+            if self.date is None:
+                if "date" in outputs:
+                    self.date = outputs["date"]
             if "filters" in outputs:
                 self.filters = outputs["filters"]
             if "deepest" in outputs and outputs["deepest"] is not None:
@@ -1847,7 +1852,8 @@ class ImagingEpoch(Epoch):
                 cat=csv_path
             )
 
-        unique_id_prefix = int(self.field.name.replace("FRB", ""))
+        unique_id_prefix = int(
+            f"{abs(int(self.field.centre_coords.ra.value))}{abs(int(self.field.centre_coords.dec.value))}")
 
         am.generate_astrometry_indices(
             cat_name=cat_name,
@@ -1864,6 +1870,8 @@ class ImagingEpoch(Epoch):
 
     def epoch_gaia_catalogue(self):
         if self.gaia_catalogue is None:
+            if self.date is None:
+                raise ValueError(f"{self}.date not set; needed to correct Gaia cat to epoch.")
             self.gaia_catalogue = am.correct_gaia_to_epoch(
                 self.field.get_path(f"cat_csv_gaia"),
                 new_epoch=self.date
@@ -2045,8 +2053,13 @@ class ImagingEpoch(Epoch):
         return os.path.join(path, f"{epoch_name}.yaml")
 
     @classmethod
-    def build_data_path(cls, field: Field, instrument_name: str, date: Time, name: str):
-        return u.mkdir_check_args(field.data_path, "imaging", instrument_name, f"{date.isot}-{name}")
+    def build_data_path_absolute(cls, field: Field, instrument_name: str, name: str, date: Time = None):
+        if date is not None:
+            name_str = f"{date.isot}-{name}"
+        else:
+            name_str = name
+
+        return u.mkdir_check_args(field.data_path, "imaging", instrument_name, name_str)
 
     @classmethod
     def from_file(cls, param_file: Union[str, dict], old_format: bool = False, field: Field = None):
@@ -3109,6 +3122,12 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
             print("Copying to ESOReflex input directory...")
             shutil.copy(os.path.join(raw_dir, file), config["esoreflex_input_dir"])
             print("Done.")
+
+        tmp = self.frames_science[self.filters[0]][0]
+        if self.date is None:
+            self.set_date(tmp.extract_date_obs())
+        if self.target is None:
+            self.set_target(tmp.extract_object())
 
         self.update_output_file()
 

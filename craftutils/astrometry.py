@@ -24,9 +24,11 @@ from craftutils.retrieve import cat_columns, load_catalogue
 def correct_gaia_to_epoch(gaia_cat: Union[str, table.QTable], new_epoch: time.Time):
     gaia_cat = load_catalogue(cat_name="gaia", cat=gaia_cat)
     epochs = list(map(lambda y: f"J{y}", gaia_cat['ref_epoch']))
-    gaia_coords = SkyCoord(ra=gaia_cat["ra"], dec=gaia_cat["dec"],
-                           pm_ra_cosdec=gaia_cat["pmra"], pm_dec=gaia_cat["pmdec"],
-                           obstime=epochs)
+    gaia_coords = SkyCoord(
+        ra=gaia_cat["ra"], dec=gaia_cat["dec"],
+        pm_ra_cosdec=gaia_cat["pmra"], pm_dec=gaia_cat["pmdec"],
+        obstime=epochs)
+    u.debug_print(2, "astrometry.correct_gaia_to_epoch(): new_epoch ==", new_epoch)
     gaia_coords_corrected = gaia_coords.apply_space_motion(new_obstime=new_epoch)
     gaia_cat_corrected = copy.deepcopy(gaia_cat)
     gaia_cat_corrected["ra"] = gaia_coords_corrected.ra
