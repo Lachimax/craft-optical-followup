@@ -36,6 +36,8 @@ def main(
         new_field = True
         furby = True
 
+        imaging = True
+
         healpix_path = furby_path.replace(".json", "_hp.fits")
         if not os.path.isfile(healpix_path):
             healpix_path = None
@@ -59,14 +61,14 @@ def main(
             ),
             field=field.name,
             instrument=instrument,
-            data_path=os.path.join(field_name, epoch_name, "")
+            data_path=os.path.join(field_name, "imaging", instrument, epoch_name, "")
         )
-        epoch = fld.FORS2ImagingEpoch.from_params(
-            name=epoch_name,
-            instrument=instrument,
-            field=field,
-            old_format=False,
-        )
+        # epoch = fld.FORS2ImagingEpoch.from_params(
+        #     name=epoch_name,
+        #     instrument=instrument,
+        #     field=field,
+        #     old_format=False,
+        # )
 
     else:
         if field_name is None:
@@ -120,38 +122,38 @@ def main(
                     exit(0)
             field = fld.Field.from_params(name=field_name)
 
-        field.retrieve_catalogues()
-        if spectroscopy:
-            mode = "Spectroscopy"
-        elif imaging:
-            mode = "Imaging"
+    field.retrieve_catalogues()
+    if spectroscopy:
+        mode = "Spectroscopy"
+    elif imaging:
+        mode = "Imaging"
+    else:
+        _, mode = u.select_option(message="Please select a mode.", options=["Imaging", "Spectroscopy"])
+
+    if mode == "Spectroscopy":
+        if epoch_name is None:
+            # Build a list of imaging epochs from that field.
+            field.gather_epochs_spectroscopy()
+            # Let the user select an epoch.
+            epoch = field.select_epoch_spectroscopy()
         else:
-            _, mode = u.select_option(message="Please select a mode.", options=["Imaging", "Spectroscopy"])
+            if instrument is None:
+                instrument = fld.select_instrument(mode="spectroscopy")
+            epoch = fld.SpectroscopyEpoch.from_params(epoch_name, instrument=instrument, field=field)
 
-        if mode == "Spectroscopy":
-            if epoch_name is None:
-                # Build a list of imaging epochs from that field.
-                field.gather_epochs_spectroscopy()
-                # Let the user select an epoch.
-                epoch = field.select_epoch_spectroscopy()
-            else:
-                if instrument is None:
-                    instrument = fld.select_instrument(mode="spectroscopy")
-                epoch = fld.SpectroscopyEpoch.from_params(epoch_name, instrument=instrument, field=field)
-
-        else:  # if mode == "Imaging"
-            if epoch_name is None:
-                # Build a list of imaging epochs from that field.
-                if type(field) is fld.FRBField:
-                    field.gather_epochs_old()
-                field.gather_epochs_imaging()
-                # Let the user select an epoch.
-                epoch = field.select_epoch_imaging()
-            else:
-                if instrument is None:
-                    instrument = fld.select_instrument(mode="imaging")
-                epoch = fld.ImagingEpoch.from_params(epoch_name, instrument=instrument, field=field)
-                epoch.field = field
+    else:  # if mode == "Imaging"
+        if epoch_name is None:
+            # Build a list of imaging epochs from that field.
+            if type(field) is fld.FRBField:
+                field.gather_epochs_old()
+            field.gather_epochs_imaging()
+            # Let the user select an epoch.
+            epoch = field.select_epoch_imaging()
+        else:
+            if instrument is None:
+                instrument = fld.select_instrument(mode="imaging")
+            epoch = fld.ImagingEpoch.from_params(epoch_name, instrument=instrument, field=field)
+            epoch.field = field
 
     epoch.do = do
     epoch.pipeline(
