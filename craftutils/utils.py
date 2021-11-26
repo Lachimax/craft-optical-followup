@@ -270,23 +270,30 @@ def mkdir_check(*paths: str):
     """
     for path in paths:
         if not os.path.isdir(path):
+            debug_print(2, f"Making directory {path}")
             os.mkdir(path)
+        else:
+            debug_print(2, f"Directory {path} already exists, doing nothing.")
 
 
 # TODO: Make this system independent.
-def mkdir_check_nested(path: str):
+def mkdir_check_nested(path: str, remove_last: bool = True):
     """
     Does mkdir_check, but for all parent directories of the given path.
     :param path:
     :return:
     """
-    i = 1
-    while i < len(path):
-        if path[i] == "/":
-            if i + 1 == len(path) or path[i + 1] != "/":
-                subpath = path[0:i]
-                mkdir_check(subpath)
-        i += 1
+
+    levels = []
+    while len(path) > 1:
+        path, end = os.path.split(path)
+        levels.append(end)
+    levels.append(path)
+    levels.reverse()
+    if remove_last:
+        levels.pop()
+    debug_print(1, "utils.mkdir_check_nested(): levels ==", levels)
+    mkdir_check_args(*levels)
 
 
 def mkdir_check_args(*args: str):
@@ -956,8 +963,13 @@ def system_command(command: str, arguments: Union[str, list] = None,
         for argument in arguments:
             sys_str += f" {argument}"
     for param in params:
-        sys_str += f" -{param} {params[param]}"
+        debug_print(2, "utils.system_command(): flag ==", param, "len", len(param))
+        if len(param) == 1:
+            sys_str += f" -{param} {params[param]}"
+        elif len(param) > 1:
+            sys_str += f" --{param} {params[param]}"
     for flag in flags:
+        debug_print(2, "utils.system_command(): flag ==", flag, "len", len(flag))
         if len(flag) == 1:
             sys_str += f" -{flag}"
         elif len(flag) > 1:

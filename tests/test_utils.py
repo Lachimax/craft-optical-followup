@@ -122,6 +122,33 @@ def test_mkdir_check_args():
     shutil.rmtree(os.path.join(test_file_path, "path_test"))
 
 
+def test_mkdir_check_nested():
+    u.debug_level = 2
+    path_test = os.path.join(test_file_path, "path_test", "nested", "and_then")
+    u.rm_check(os.path.join(test_file_path, "path_test"))
+    u.mkdir_check_nested(path_test, remove_last=False)
+    assert os.path.isdir(path_test)
+    u.rmtree_check(os.path.join(test_file_path, "path_test"))
+
+    path_test = os.path.join(test_file_path, "path_test", "nested", "and_then", "/")
+    u.mkdir_check_nested(path_test)
+    assert os.path.isdir(path_test)
+    u.rmtree_check(os.path.join(test_file_path, "path_test"))
+
+    path_test = os.path.join(test_file_path, "path_test", "nested", "and_then", "gaia.csv")
+    u.mkdir_check_nested(path_test)
+    assert os.path.isdir(os.path.split(path_test)[0])
+    assert not os.path.isfile(path_test)
+    u.rmtree_check(os.path.join(test_file_path, "path_test"))
+
+
+def test_rmtree_check():
+    list_test = [test_file_path, "path_test", "nested", "and_then"]
+    path_test = u.mkdir_check_args(*list_test)
+    u.rmtree_check(os.path.join(test_file_path, "path_test"))
+    assert not os.path.isdir(path_test)
+
+
 def test_dequantify():
     number = 10.
     assert u.dequantify(number=number) == 10.
