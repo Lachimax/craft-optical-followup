@@ -40,14 +40,20 @@ except AttributeError:
 
 quantity_support()
 
-position_dictionary = {"ra": {"decimal": 0.0,
-                              "hms": None},
-                       "dec": {"decimal": 0.0,
-                               "dms": None},
-                       }
+position_dictionary = {
+    "ra": {
+        "decimal": 0.0,
+        "hms": None},
+    "dec": {
+        "decimal": 0.0,
+        "dms": None
+    },
+}
 
-uncertainty_dict = {"sys": 0.0,
-                    "stat": 0.0}
+uncertainty_dict = {
+    "sys": 0.0,
+    "stat": 0.0
+}
 
 
 class PositionUncertainty:
@@ -239,15 +245,27 @@ class Object:
         if self.check_data_path():
             p.update_output_file(self)
 
-    def write_plot_photometry(self, output: str = None):
+    def write_plot_photometry(self, output: str = None, **kwargs):
+        """
+        Plots available photometry (mag v lambda_eff) and writes to disk.
+        :param output: Path to write plot.
+        :return: matplotlib ax object containing plot info
+        """
         if output is None:
             output = os.path.join(self.data_path, f"{self.name}_photometry.pdf")
 
-        ax = self.plot_photometry()
+        ax = self.plot_photometry(**kwargs)
         ax.legend()
         plt.savefig(output)
+        return ax
 
     def plot_photometry(self, ax=None, **kwargs):
+        """
+        Plots available photometry (mag v lambda_eff).
+        :param ax: matplotlib ax object to plot with. A new object is generated if none is provided.
+        :param kwargs:
+        :return: matplotlib ax object containing plot info
+        """
         if ax is None:
             fig, ax = plt.subplots()
         if "ls" not in kwargs:
@@ -347,11 +365,11 @@ class Object:
                                           self.irsa_extinction["A_SandF"].value
                                           ) * units.mag
 
-        plt.plot(x, fitted(x), label="power law")
-        plt.scatter(tbl["lambda_eff"], tbl["ext_gal_pl"].value, label="power law fit", **kwargs)
-        plt.scatter(lambda_eff_tbl, self.irsa_extinction["A_SandF"].value, label="from IRSA", **kwargs)
-        plt.scatter(tbl["lambda_eff"], tbl["ext_gal_interp"].value, label="interpolated", **kwargs)
-        plt.legend()
+        ax.plot(x, fitted(x), label="power law")
+        ax.scatter(tbl["lambda_eff"], tbl["ext_gal_pl"].value, label="power law fit", **kwargs)
+        ax.scatter(lambda_eff_tbl, self.irsa_extinction["A_SandF"].value, label="from IRSA", **kwargs)
+        ax.scatter(tbl["lambda_eff"], tbl["ext_gal_interp"].value, label="interpolated", **kwargs)
+        ax.legend()
         plt.savefig(os.path.join(self.data_path, f"{self.name}_irsa_extinction.pdf"))
         plt.close()
         self.extinction_law = {"amplitude": fitted.amplitude.value * fitted.amplitude.unit,
@@ -372,6 +390,7 @@ class Object:
             self.photometry[instrument][band]["mag_ext_corrected"] = row["mag"] - row[key]
 
         self.photometry_to_table()
+        return ax
 
     def retrieve_extinction_table(self, force: bool = False):
         self.load_extinction_table()
@@ -384,8 +403,8 @@ class Object:
             )
             ext_tbl = table.QTable.read(raw_path, format="ascii")
             for colname in ext_tbl.colnames:
-                if str(table[colname].unit) == "mags":
-                    table[colname]._set_unit(units.mag)
+                if str(ext_tbl[colname].unit) == "mags":
+                    ext_tbl[colname]._set_unit(units.mag)
             tbl_path = os.path.join(self.data_path, f"{self.name}_galactic_extinction.ecsv")
             ext_tbl.write(tbl_path, overwrite=True, format="ascii.ecsv")
             self.irsa_extinction = ext_tbl
@@ -404,6 +423,13 @@ class Object:
             "position": position_dictionary.copy(),
             "position_err": PositionUncertainty.default_params(),
             "type": None,
+            "photometry_args_manual":
+                {
+                    "a": 0.0 * units.arcsec,
+                    "b": 0.0 * units.arcsec,
+                    "theta": 0.0 * units.arcsec,
+                    "kron_radius": 3.5
+                }
         }
         return default_params
 

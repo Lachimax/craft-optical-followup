@@ -611,6 +611,7 @@ def save_irsa_extinction(ra: float, dec: float, output: str):
     """
     values, ext_str = retrieve_irsa_extinction(ra=ra, dec=dec)
     ext_str = ext_str.replace("microns", "um")
+    ext_str = ext_str.replace("mags", "mag")
     with open(output, "w") as file:
         file.write(ext_str)
     return values, ext_str
