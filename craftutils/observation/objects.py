@@ -414,6 +414,7 @@ class Object:
             c="red",
             **kwargs
         )
+        ax.set_ylim(0, 0.6)
         ax.legend()
         plt.savefig(os.path.join(self.data_path, f"{self.name}_irsa_extinction.pdf"))
         plt.close()
