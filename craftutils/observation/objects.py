@@ -22,6 +22,7 @@ except ImportError:
 frb_installed = True
 try:
     import frb.halos.models as halos
+    import frb.halos.hmf as hmf
     import frb.dm.igm as igm
 except ImportError:
     print("FRB is not installed; DM_ISM estimates will not be available.")
@@ -196,12 +197,14 @@ class Object:
 
         self.cat_row = None
         self.photometry = {}
+        self.photometry_tbl = None
         self.data_path = None
         self.output_file = None
         self.field = field
         self.irsa_extinction_path = None
         self.irsa_extinction = None
-        self.extinction_law = None
+        self.ebv_sandf = None
+        self.extinction_power_law = None
         self.paths = {}
         self.load_output_file()
 
@@ -217,7 +220,7 @@ class Object:
         return {
             "photometry": self.photometry,
             "irsa_extinction_path": self.irsa_extinction_path,
-            "extinction_law": self.extinction_law
+            "extinction_law": self.extinction_power_law
         }
 
     def load_output_file(self):
@@ -314,7 +317,12 @@ class Object:
             ax.invert_yaxis()
         return ax
 
-    def photometry_to_table(self, output: str = None):
+    def build_photometry_table_path(self):
+        return os.path.join(self.data_path, f"{self.name}_photometry.csv")
+
+    # TODO: Refactor photometry to use table instead of dict (not sure why I even did it that way to start with)
+
+    def photometry_to_table(self, output: str = None, fmt: str = "ascii.ecsv"):
         """
         Converts the photometry information, which is stored internally as a dictionary, into an astropy QTable.
         :param output: Where to write table.
@@ -322,7 +330,9 @@ class Object:
         """
 
         if output is None:
-            output = os.path.join(self.data_path, f"{self.name}_photometry.csv")
+            output = self.build_photometry_table_path()
+
+        # if self.photometry_tbl is None:
 
         tbls = []
         for instrument_name in self.photometry:
@@ -337,12 +347,13 @@ class Object:
                     unit=units.Angstrom)
                 tbl = table.QTable([phot_dict])
                 tbls.append(tbl)
-        tbl = table.vstack(tbls)
-        tbl.write(output, format="csv", overwrite=True)
-        return tbl
+        self.photometry_tbl = table.vstack(tbls)
 
-    def estimate_galactic_extinction(self, ax=None, **kwargs):
+        self.photometry_tbl.write(output, format=fmt, overwrite=True)
+        return self.photometry_tbl
 
+    def estimate_galactic_extinction(self, ax=None, r_v: float = 3.1, **kwargs):
+        import extinction
         if ax is None:
             fig, ax = plt.subplots()
         if "marker" not in kwargs:
@@ -355,47 +366,88 @@ class Object:
         fitter = fitting.LevMarLSQFitter()
         fitted = fitter(power_law, lambda_eff_tbl, self.irsa_extinction["A_SandF"].value)
 
-        x = np.linspace(min(lambda_eff_tbl), max(lambda_eff_tbl))
-
         tbl = self.photometry_to_table()
 
-        tbl["ext_gal_pl"] = fitted(tbl["lambda_eff"]) * units.mag
-        tbl["ext_gal_interp"] = np.interp(tbl["lambda_eff"],
-                                          lambda_eff_tbl,
-                                          self.irsa_extinction["A_SandF"].value
-                                          ) * units.mag
+        x = np.linspace(0, 80000, 1000) * units.Angstrom
 
-        ax.plot(x, fitted(x), label="power law")
-        ax.scatter(tbl["lambda_eff"], tbl["ext_gal_pl"].value, label="power law fit", **kwargs)
-        ax.scatter(lambda_eff_tbl, self.irsa_extinction["A_SandF"].value, label="from IRSA", **kwargs)
-        ax.scatter(tbl["lambda_eff"], tbl["ext_gal_interp"].value, label="interpolated", **kwargs)
+        a_v = r_v * self.ebv_sandf
+
+        tbl["ext_gal_sandf"] = extinction.fitzpatrick99(tbl["lambda_eff"], a_v, r_v) * units.mag
+        tbl["ext_gal_pl"] = fitted(tbl["lambda_eff"]) * units.mag
+        tbl["ext_gal_interp"] = np.interp(
+            tbl["lambda_eff"],
+            lambda_eff_tbl,
+            self.irsa_extinction["A_SandF"].value
+        ) * units.mag
+
+        ax.plot(
+            x, extinction.fitzpatrick99(x, a_v, r_v),
+            label="S\&F + F99 extinction law",
+            c="red"
+        )
+        ax.plot(
+            x, fitted(x),
+            label=f"power law fit to IRSA",
+            # , \\alpha={fitted.alpha.value}; $x_0$={fitted.x_0.value}; A={fitted.amplitude.value}",
+            c="blue"
+        )
+        ax.scatter(
+            lambda_eff_tbl, self.irsa_extinction["A_SandF"].value,
+            label="from IRSA",
+            c="green",
+            **kwargs)
+        ax.scatter(
+            tbl["lambda_eff"], tbl["ext_gal_pl"].value,
+            label="power law interpolation of IRSA",
+            c="blue",
+            **kwargs
+        )
+        ax.scatter(
+            tbl["lambda_eff"], tbl["ext_gal_interp"].value,
+            label="numpy interpolation from IRSA",
+            c="violet",
+            **kwargs
+        )
+        ax.scatter(
+            tbl["lambda_eff"], tbl["ext_gal_sandf"].value,
+            label="S\&F + F99 extinction law",
+            c="red",
+            **kwargs
+        )
         ax.legend()
         plt.savefig(os.path.join(self.data_path, f"{self.name}_irsa_extinction.pdf"))
         plt.close()
-        self.extinction_law = {"amplitude": fitted.amplitude.value * fitted.amplitude.unit,
-                               "x_0": fitted.x_0.value,
-                               "alpha": fitted.alpha.value}
+        self.extinction_power_law = {
+            "amplitude": fitted.amplitude.value * fitted.amplitude.unit,
+            "x_0": fitted.x_0.value,
+            "alpha": fitted.alpha.value
+        }
 
         for row in tbl:
             instrument = row["instrument"]
             band = row["band"]
-            if row["lambda_eff"] > max(lambda_eff_tbl) or row["lambda_eff"] < min(lambda_eff_tbl):
-                key = "ext_gal_pl"
-                self.photometry[instrument][band]["ext_gal_type"] = "power_law_fit"
-            else:
-                key = "ext_gal_interp"
-                self.photometry[instrument][band]["ext_gal_type"] = "interpolated"
+
+            # if row["lambda_eff"] > max(lambda_eff_tbl) or row["lambda_eff"] < min(lambda_eff_tbl):
+            #     key = "ext_gal_pl"
+            #     self.photometry[instrument][band]["ext_gal_type"] = "power_law_fit"
+            # else:
+            #     key = "ext_gal_interp"
+            #     self.photometry[instrument][band]["ext_gal_type"] = "interpolated"
+            key = "ext_gal_sandf"
+            self.photometry[instrument][band]["ext_gal_type"] = "s_and_f"
             self.photometry[instrument][band]["ext_gal"] = row[key]
             u.debug_print(1, key, row['mag'], row[key])
             self.photometry[instrument][band]["mag_ext_corrected"] = row["mag"] - row[key]
 
-        self.photometry_to_table()
+        tbl_2 = self.photometry_to_table()
+        # tbl_2.update(tbl)
+        # tbl_2.write(self.build_photometry_table_path().replace("photometry", "photemetry_extended"))
         return ax
 
     def retrieve_extinction_table(self, force: bool = False):
         self.load_extinction_table()
         if force or self.irsa_extinction is None:
-            raw_path = os.path.join(self.data_path, f"{self.name}_irsa_extinction.tbl")
+            raw_path = os.path.join(self.data_path, f"{self.name}_irsa_extinction.ecsv")
             r.save_irsa_extinction(
                 ra=self.position.ra.value,
                 dec=self.position.dec.value,
@@ -409,6 +461,11 @@ class Object:
             ext_tbl.write(tbl_path, overwrite=True, format="ascii.ecsv")
             self.irsa_extinction = ext_tbl
             self.irsa_extinction_path = tbl_path
+
+        if force or self.ebv_sandf is None:
+            # Get E(B-V) at this coordinate.
+            tbl = r.retrieve_irsa_details(coord=self.position)
+            self.ebv_sandf = tbl["ext SandF ref"]
 
     def load_extinction_table(self, force: bool = False):
         if force or self.irsa_extinction is None:
@@ -624,6 +681,12 @@ class FRB(Object):
         if not frb_installed:
             raise ImportError("FRB is not installed.")
         return igm.average_DM(self.host_galaxy.z, cosmo=cosmo.Planck18)
+
+    def estimate_dm_halos(self):
+        if not frb_installed:
+            raise ImportError("FRB is not installed.")
+        hmf.init_hmf()
+        return igm.average_DMhalos(self.host_galaxy.z, cosmo=cosmo.Planck18)
 
     def estimate_dm_excess(self):
         dm_ism = self.estimate_dm_mw_ism()

@@ -21,6 +21,11 @@ except ModuleNotFoundError:
     print("This version of astroquery does not support Gemini. Gemini functions will not be available.")
 
 try:
+    import astroquery.ipac.irsa.irsa_dust as irsa_dust
+except ModuleNotFoundError:
+    print("This version of astroquery does not support IRSA dust. Related functions will not be available.")
+
+try:
     from pyvo import dal
 except ModuleNotFoundError:
     print("Pyvo not installed. Functions using pyvo will not be available.")
@@ -571,7 +576,16 @@ def retrieve_irsa_xml(ra: float, dec: float):
     return str(irsa_xml, 'utf-8')
 
 
-def retrieve_irsa_extinction(ra: float, dec: float):
+def retrieve_irsa_details(ra: float = None, dec: float = None, coord: SkyCoord = None):
+    if coord is None:
+        if ra is None or dec is None:
+            raise ValueError("Either ra & dec or coord must be provided.")
+        coord = SkyCoord(ra * units.deg, dec * units.deg)
+
+    return irsa_dust.IrsaDust.get_query_table(coord)
+
+
+def retrieve_irsa_extinction(ra: float = None, dec: float = None, coord: SkyCoord = None):
     """
     Retrieves the extinction per bandpass table, and other relevant parameters, for a given sky position from the
     IRSA Dust Tool (https://irsa.ipac.caltech.edu/applications/DUST/).
@@ -579,28 +593,16 @@ def retrieve_irsa_extinction(ra: float, dec: float):
     :param dec: Declination of the desired field, in degrees.
     :return: Tuple: dictionary of retrieved values, table-formatted string.
     """
-    irsa_xml = retrieve_irsa_xml(ra=ra, dec=dec)
+    if coord is None:
+        if ra is None or dec is None:
+            raise ValueError("Either ra & dec or coord must be provided.")
+        coord = SkyCoord(ra * units.deg, dec * units.deg)
+    table = irsa_dust.IrsaDust.get_extinction_table(coord)
 
-    to_retrieve = {"refPixelValueSandF": "dust_ebv"}
-    retrieved = {}
-    for tag in to_retrieve:
-        val_str = u.extract_xml_param(tag="refPixelValueSandF", xml_str=irsa_xml)
-        retrieved[to_retrieve[tag]], _ = u.unit_str_to_float(val_str)
-    i = irsa_xml.find("extinction.tbl")
-    j = i + 14
-    substr = irsa_xml[i:i + 8]
-    while substr != "https://":
-        i -= 1
-        substr = irsa_xml[i:i + 8]
-    table_url = irsa_xml[i:j]
-    print("Retrieving bandpass extinction table from", table_url)
-    extinction = urllib.request.urlopen(table_url)
-    ext_str = extinction.read()
-    ext_str = str(ext_str, 'utf-8')
-    return retrieved, ext_str
+    return table
 
 
-def save_irsa_extinction(ra: float, dec: float, output: str):
+def save_irsa_extinction(output: str, ra: float = None, dec: float = None, coord: SkyCoord = None, fmt: str = "ascii.ecsv"):
     """
     Retrieves the extinction per bandpass table for a given sky position from the IRSA Dust Tool
     (https://irsa.ipac.caltech.edu/applications/DUST/) and writes it to disk.
@@ -609,12 +611,9 @@ def save_irsa_extinction(ra: float, dec: float, output: str):
     :param output: The location on disk to which to write the file.
     :return: Tuple: dictionary of retrieved values, table-formatted string.
     """
-    values, ext_str = retrieve_irsa_extinction(ra=ra, dec=dec)
-    ext_str = ext_str.replace("microns", "um")
-    ext_str = ext_str.replace("mags", "mag")
-    with open(output, "w") as file:
-        file.write(ext_str)
-    return values, ext_str
+    table = retrieve_irsa_extinction(ra=ra, dec=dec, coord=coord)
+    table.write(output, format=fmt)
+    return table
 
 
 def update_frb_irsa_extinction(frb: str):
