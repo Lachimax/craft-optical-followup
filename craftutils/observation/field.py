@@ -95,6 +95,103 @@ def select_instrument(mode: str):
     return instrument
 
 
+def _epoch_directory_path():
+    path = os.path.join(p.param_dir, "fields", "directory.yaml")
+    u.debug_print(2, "_epoch_directory_path(): path ==", path)
+    return path
+
+
+def load_epoch_directory():
+    """
+    Loads the epoch directory yaml file from the param directory.
+    :return: epoch directory as dict.
+    """
+    path = _epoch_directory_path()
+    directory = p.load_params(path)
+    if directory is None and os.path.isfile(path):
+        directory = {}
+    return directory
+
+
+def write_epoch_directory(directory: dict):
+    """
+    Writes the passed dict to the directory.yaml file in param directory.
+    :param directory: The updated directory as a dict.
+    :return:
+    """
+    p.save_params(_epoch_directory_path(), directory)
+
+
+def add_to_epoch_directory(field_name: str, instrument: str, mode: str, epoch_name: str):
+    """
+    Adds a single epoch to the epoch directory.
+    :param field_name:
+    :param instrument:
+    :param mode:
+    :param epoch_name:
+    :return:
+    """
+    directory = load_epoch_directory()
+    directory[epoch_name] = {
+        "field_name": field_name,
+        "instrument": instrument,
+        "mode": mode,
+        "epoch_name": epoch_name,
+    }
+    write_epoch_directory(directory=directory)
+
+
+def add_many_to_epoch_directory(
+        epochs,
+        field_name: str = None,
+        instrument: str = None,
+        mode: str = None
+):
+    """
+
+    :param epochs: A nested dictionary, with keys being the epoch names; the value dictionaries should then have:
+        field_name or field, instrument, mode. Any of these values can be
+        overridden by the other arguments.
+    :return:
+    """
+    directory = load_epoch_directory()
+    u.debug_print(2, "add_many_to_epoch_directory(): directory ==", directory)
+    for epoch_name in epochs:
+        epoch_dict = epochs[epoch_name]
+        # if "epoch_name" in epoch_dict:
+        #     epoch_name = epoch_dict["epoch_name"]
+        # elif "epoch" in epoch_dict:
+        #     epoch_name = epoch_dict["epoch"]
+        # elif "name" in epoch_dict:
+        #     epoch_name = epoch_dict["name"]
+        # else:
+        #     u.debug_print(2, "add_many_to_epoch_directory(): epoch_dict ==", epoch_dict)
+        #     raise ValueError("No epoch_name given or found in current dict.")
+
+        if field_name is None:
+            if "field_name" in epoch_dict:
+                field_name = epoch_dict["field_name"]
+            elif "field" in epoch_dict:
+                field_name = epoch_dict["field"]
+            else:
+                raise ValueError("No field_name given or found in current dict.")
+
+        if instrument is None:
+            instrument = epoch_dict["instrument"]
+
+        u.debug_print(2, "add_many_to_epoch_directory(): mode ==", mode)
+        if mode is None:
+            mode = epoch_dict["mode"]
+
+        directory[epoch_name] = {
+            "field_name": field_name,
+            "instrument": epoch_dict["instrument"],
+            "mode": mode,
+            "epoch_name": epoch_name,
+        }
+        write_epoch_directory(directory)
+
+
 def list_fields():
     print("Searching for field param files...")
     param_path = os.path.join(config['param_dir'], 'fields')
@@ -273,6 +370,13 @@ class Field:
             warnings.warn(f"param_dir is not set for this {type(self)}.")
 
     def _gather_epochs(self, mode: str = "imaging"):
+        """
+        Helper method for code reuse in gather_epochs_spectroscopy() and gather_epochs_imaging().
+        Gathers all of the observation epochs of the given mode for this field.
+        :param mode: str, "imaging" or "spectroscopy"
+        :return: Dict, with keys being the epoch names and values being nested dictionaries containing the same
+        information as the epoch .yaml files.
+        """
         print(f"Searching for {mode} epoch param files...")
         epochs = {}
         if self.param_dir is not None:
@@ -289,14 +393,26 @@ class Field:
                     epoch["param_path"] = param_path
                     epochs[epoch_name] = epoch
 
+        add_many_to_epoch_directory(epochs, field_name=self.name, mode=mode)
+
         return epochs
 
     def gather_epochs_spectroscopy(self):
+        """
+        Gathers all of the spectroscopy observation epochs of this field.
+        :return: Dict, with keys being the epoch names and values being nested dictionaries containing the same
+        information as the epoch .yaml files.
+        """
         epochs = self._gather_epochs(mode="spectroscopy")
         self.epochs_spectroscopy.update(epochs)
         return epochs
 
     def gather_epochs_imaging(self):
+        """
+        Gathers all of the imaging observation epochs of this field.
+        :return: Dict, with keys being the epoch names and values being nested dictionaries containing the same
+        information as the epoch .yaml files.
+        """
         epochs = self._gather_epochs(mode="imaging")
         self.epochs_imaging.update(epochs)
         return epochs
@@ -3218,6 +3334,7 @@ class ESOImagingEpoch(ImagingEpoch):
         })
         return param_dict
 
+
 class HAWKIEpoch(ESOImagingEpoch):
     def pipeline(self, **kwargs):
         super().pipeline(**kwargs)
@@ -3230,6 +3347,7 @@ class HAWKIEpoch(ESOImagingEpoch):
         self.proc_photometric_calibration(**kwargs)
         self.proc_dual_mode_source_extraction(**kwargs)
         self.proc_get_photometry(**kwargs)
+
 
 class FORS2ImagingEpoch(ESOImagingEpoch):
 
@@ -3249,7 +3367,6 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
     #     if super().proc_1_initial_setup(no_query, **kwargs):
     #         for fil in self.filters:
     #             self.pair_files(self.frames_science[fil])
-
 
     def _register(self, frames: dict, fil: str, tmp: image.ImagingImage, n_template: int, output_dir: str):
         pairs = self.pair_files(images=frames[fil])
