@@ -366,12 +366,12 @@ def get_eso_raw_frame_list(query: str):
     again = True
     raw_frames = Table()
     while again:
-        try:
-            raw_frames = tap_obs.search(query=query)
-            raw_frames = raw_frames.to_table()
-            again = False
-        except dal.exceptions.DALQueryError:
-            again = u.select_yn("The request timed out. Try again?")
+        # try:
+        raw_frames = tap_obs.search(query=query)
+        raw_frames = raw_frames.to_table()
+        again = False
+        # except dal.exceptions.DALQueryError:
+        #     again = u.select_yn("The request timed out. Try again?")
     raw_frames['url'] = list(map(lambda r: f"https://dataportal.eso.org/dataportal_new/file/{r}", raw_frames['dp_id']))
     return raw_frames
 
@@ -389,7 +389,7 @@ def query_eso_raw(
     if mode not in ["imaging", "spectroscopy"]:
         raise ValueError("Mode must be 'imaging' or 'spectroscopy'")
     mode_str = ""
-    if instrument == "fors2":
+    if instrument in ["fors2", "hawki"]:
         if mode == "imaging":
             mode_str = "dp_tech='IMAGE'"
         elif mode == "spectroscopy":
@@ -602,7 +602,8 @@ def retrieve_irsa_extinction(ra: float = None, dec: float = None, coord: SkyCoor
     return table
 
 
-def save_irsa_extinction(output: str, ra: float = None, dec: float = None, coord: SkyCoord = None, fmt: str = "ascii.ecsv"):
+def save_irsa_extinction(output: str, ra: float = None, dec: float = None, coord: SkyCoord = None,
+                         fmt: str = "ascii.ecsv"):
     """
     Retrieves the extinction per bandpass table for a given sky position from the IRSA Dust Tool
     (https://irsa.ipac.caltech.edu/applications/DUST/) and writes it to disk.

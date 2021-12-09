@@ -18,7 +18,7 @@ yaml.AstropyDumper.ignore_aliases = lambda *args: True
 instruments_imaging = [
     "vlt-fors2",
     "vlt-xshooter",
-    "vlt_hawki",
+    "vlt-hawki",
     "gs-aoi",
     "hst-wfc3_ir",
     "hst-wfc3_uvis2",
