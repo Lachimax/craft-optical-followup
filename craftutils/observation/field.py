@@ -318,7 +318,7 @@ class Field:
             self.param_dir = os.path.split(self.param_path)[0]
         self.mkdir_params()
         self.data_path = os.path.join(p.data_path, data_path)
-        u.debug_print(1, self.name, "self.data_path", self.data_path)
+        u.debug_print(2, f"Field.__init__(): {self.name}.data_path", self.data_path)
         self.data_path_relative = data_path
         self.mkdir()
         self.output_file = None
@@ -923,8 +923,8 @@ class FRBField(Field):
         :return:
         """
         furby_dict = p.load_json(json_path)
-        u.debug_print(1, json_path)
-        u.debug_print(1, furby_dict)
+        u.debug_print(2, "FRBField.param_from_furby_json(): json_path ==", json_path)
+        u.debug_print(2, "FRBField.param_from_furby_json(): furby_dict ==", furby_dict)
         field_name = furby_dict["Name"]
         output_path = os.path.join(p.param_dir, "fields", field_name)
 
@@ -1082,6 +1082,7 @@ class Epoch:
             self.data_path = os.path.join(p.data_path, data_path)
         if data_path is not None:
             u.mkdir_check_nested(self.data_path)
+        u.debug_print(2, f"__init__(): {self.name}.data_path ==", self.data_path)
         self.instrument_name = instrument
         try:
             self.instrument = inst.Instrument.from_params(instrument_name=instrument)
@@ -1262,9 +1263,9 @@ class Epoch:
 
     def _add_coadded(self, img: Union[str, image.Image], key: str, image_dict: dict):
         if isinstance(img, str):
-            u.debug_print(1, "_ADD_COADDED instrument:", self.instrument_name)
+            u.debug_print(2, f"Epoch._add_coadded(): {self.name}.instrument_name ==", self.instrument_name)
             cls = image.CoaddedImage.select_child_class(instrument=self.instrument_name)
-            u.debug_print(1, "_ADD_COADDED cls:", cls)
+            u.debug_print(2, f"Epoch._add_coadded(): cls ==", cls)
             img = cls(path=img, instrument_name=self.instrument_name)
         img.epoch = self
         image_dict[key] = img
@@ -1397,14 +1398,14 @@ class ImagingEpoch(Epoch):
         if "normalisation" in kwargs:
             self.normalisation_params = kwargs["normalisation"]
 
-        u.debug_print(1, self.astrometry_params)
+        u.debug_print(2, f"ImagingEpoch.__init__(): {self.name}.astrometry_params ==", self.astrometry_params)
 
         # self.load_output_file(mode="imaging")
 
     # TODO: Make output_path keyword standard across all proc methods
 
     def proc_register(self, no_query: bool = False, **kwargs):
-        u.debug_print(1, self.registration_params)
+        u.debug_print(2, f"ImagingEmpoch.proc_register(): {self.name}.registration_params", self.registration_params)
         if "register_frames" in self.registration_params and self.registration_params["register_frames"]:
             if no_query or self.query_stage(
                     "Register frames using astroalign?",
@@ -1437,7 +1438,7 @@ class ImagingEpoch(Epoch):
         """
 
         u.mkdir_check(output_dir)
-        u.debug_print(1, "SELF.REGISTER: template", template)
+        u.debug_print(1, f"{self}.register(): template ==", template)
 
         if frames is None:
             frames = self.frames_normalised
@@ -1456,7 +1457,7 @@ class ImagingEpoch(Epoch):
             else:
                 tmp = frames[fil][template[fil]]
                 n_template = template[fil]
-            u.debug_print(1, "SELF.REGISTER: tmp", tmp)
+            u.debug_print(1, f"{self}.register(): tmp", tmp)
 
             output_dir_fil = os.path.join(output_dir, fil)
             u.mkdir_check(output_dir_fil)

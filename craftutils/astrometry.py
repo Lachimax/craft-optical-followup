@@ -470,7 +470,7 @@ def match_catalogs(cat_1: table.Table, cat_2: table.Table,
                    ra_col_2: str = "ra", dec_col_2: str = "dec",
                    tolerance: units.Quantity = 1 * units.arcsec):
     # Clean out any invalid declinations
-    u.debug_print(1, type(cat_1), type(cat_2))
+    u.debug_print(2, "match_catalogs(): type(cat_1) ==", type(cat_1), "type(cat_2) ==", type(cat_2))
     cat_1 = cat_1[cat_1[dec_col_1] <= 90 * units.deg]
     cat_1 = cat_1[cat_1[dec_col_1] >= -90 * units.deg]
 

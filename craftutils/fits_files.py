@@ -494,11 +494,11 @@ def detect_edges_area(file: Union['fits.HDUList', 'str']):
         mid_y = int(mid_y / 2)
         if mid_y == 0:
             raise ValueError("mid_y got stuck.")
-        u.debug_print(1, mid_y)
+        u.debug_print(2, "detect_edges_area(): mid_y==", mid_y)
         # Take a horizontal slice right across the middle of the image.
         slice_hor = np.round(data[mid_y], 13)
         slice_hor_keep = np.nonzero(slice_hor > 0.75 * keep_val)[0]
-        u.debug_print(1, slice_hor.max())
+        u.debug_print(2, "detect_edges_area(): slice_hor.max()", slice_hor.max())
     left = slice_hor_keep[0]
     right = slice_hor_keep[-1]
 

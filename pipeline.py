@@ -166,6 +166,7 @@ def main(
             epoch = fld.ImagingEpoch.from_params(epoch_name, instrument=instrument, field=field)
             epoch.field = field
 
+    u.debug_print(2, "pipeline.py: type(epoch) ==", type(epoch))
     epoch.do = do
     epoch.pipeline(
         do_not_reuse_masters=do_not_reuse_masters,

@@ -127,8 +127,10 @@ class PositionUncertainty:
             theta = 0.0
 
         # Check whether we're specifying uncertainty using equatorial coordinates or ellipse parameters.
-        u.debug_print(1, a_stat, a_sys, b_stat, b_sys, theta, position)
-        u.debug_print(1, ra_err_sys, ra_err_stat, dec_err_sys, dec_err_stat)
+        u.debug_print(2, "PositionUncertainty.__init__(): a_stat, a_sys, b_stat, b_sys, theta, position ==", a_stat,
+                      a_sys, b_stat, b_sys, theta, position)
+        u.debug_print(2, "PositionUncertainty.__init__(): ra_err_sys, ra_err_stat, dec_err_sys, dec_err_stat ==",
+                      ra_err_sys, ra_err_stat, dec_err_sys, dec_err_stat)
         if a_stat is not None and a_sys is not None and b_stat is not None and b_sys is not None and theta is not None and position is not None:
             ellipse = True
         elif ra_err_sys is not None and ra_err_stat is not None and dec_err_sys is not None and dec_err_stat is not None:
@@ -236,7 +238,7 @@ class Object:
 
     def check_data_path(self):
         if self.field is not None:
-            u.debug_print(1, self.name)
+            u.debug_print(2, "", self.name)
             self.data_path = os.path.join(self.field.data_path, "objects", self.name)
             u.mkdir_check(self.data_path)
             self.output_file = os.path.join(self.data_path, f"{self.name}_outputs.yaml")

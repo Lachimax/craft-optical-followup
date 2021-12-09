@@ -318,10 +318,10 @@ class Image:
         # Check in the given HDU, then check all headers.
         value = self._extract_header_item(key=key, ext=ext)
         u.debug_print(2, "")
-        u.debug_print(2, "INSIDE Image.extract_header_item()")
-        u.debug_print(2, self.path)
-        u.debug_print(2, key)
-        u.debug_print(2, value)
+        u.debug_print(2, "Image.extract_header_item():")
+        u.debug_print(2, f"\t{self}.path ==", self.path)
+        u.debug_print(2, f"\t key ==", key)
+        u.debug_print(2, f"\t value ==", value)
         u.debug_print(2, "")
         if value is None:
             for ext in range(len(self.headers)):
@@ -417,7 +417,8 @@ class Image:
                 child = cls.select_child_class(instrument=instrument, mode=mode)
             else:
                 child = ImagingImage
-        img = child(path=path)
+        u.debug_print(2, "Image.from_fits(): instrument ==", instrument)
+        img = child(path=path, instrument_name=instrument)
         img.instrument_name = instrument
         return img
 
@@ -658,8 +659,8 @@ class ImagingImage(Image):
             print("source_cat_dual could not be loaded because source_cat_sextractor_dual_path has not been set.")
 
     def load_source_cat(self, force: bool = False):
-        u.debug_print(1, self.name)
-        u.debug_print(1, "SELF.SOURCE_CAT_PATH", self.source_cat_path)
+        u.debug_print(2, f"ImagingImage.load_source_cat(): {self}.name ==", self.name)
+        u.debug_print(2, f"ImagingImage.load_source_cat(): {self}.source_cat_path ==", self.source_cat_path)
         if force or self.source_cat is None or self.source_cat_dual is None:
             if self.source_cat_path is not None:
                 u.debug_print(1, "Loading source_table from", self.source_cat_path)
@@ -697,7 +698,7 @@ class ImagingImage(Image):
     def load_synth_cat(self, force: bool = False):
         if force or self.synth_cat is None:
             if self.synth_cat_path is not None:
-                u.debug_print(1, "self.synth_cat_path", self.synth_cat_path)
+                u.debug_print(2, f"ImagingImage.load_synth_cat(): {self}.synth_cat_path ==", self.synth_cat_path)
                 self.synth_cat = table.QTable.read(self.synth_cat_path, format="ascii.ecsv")
             else:
                 u.debug_print(1, "No valid synth_cat_path found. Could not load synth_cat.")
@@ -844,7 +845,7 @@ class ImagingImage(Image):
                 self.depth = outputs["depth"]
             if "dual_mode_template" in outputs and outputs["dual_mode_template"] is not None:
                 self.dual_mode_template = outputs["dual_mode_template"]
-        u.debug_print(1, "SELF.SOURCE_CAT_PATH", self.source_cat_path)
+        u.debug_print(2, f"ImagingImage.load_output_file(): {self}.source_cat_path ==", self.source_cat_path)
         return outputs
 
     def select_zeropoint(self, no_user_input: bool = False):

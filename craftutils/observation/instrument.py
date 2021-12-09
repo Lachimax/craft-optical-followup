@@ -85,9 +85,9 @@ class Instrument:
 
     @classmethod
     def from_file(cls, param_file: Union[str, dict]):
-        u.debug_print(1, "INSTRUMENT.FROM_FILE(): param_file", param_file)
+        u.debug_print(1, "Instrument.from_file(): param_file ==", param_file)
         name, param_file, param_dict = p.params_init(param_file)
-        u.debug_print(1, "INSTRUMENT.FROM_FILE(): name", name)
+        u.debug_print(1, "Instrument.from_file(): name", name)
         if param_dict is None:
             raise FileNotFoundError("Param file missing!")
         return cls(**param_dict)
@@ -95,7 +95,8 @@ class Instrument:
     @classmethod
     def from_params(cls, instrument_name: str):
         path = cls._build_param_path(instrument_name=instrument_name)
-        u.debug_print(1, instrument_name, path)
+        u.debug_print(2, "Instrument.from_params(): instrument_name ==", instrument_name)
+        u.debug_print(2, "Instrument.from_params(): path ==", path)
         return cls.from_file(param_file=path)
 
     @classmethod
@@ -110,7 +111,7 @@ class Instrument:
     def _build_param_dir(cls, instrument_name: str):
         path = os.path.join(p.param_dir, "instruments")
         u.mkdir_check(path)
-        u.debug_print(1, "INSTRUMENT_NAME", instrument_name)
+        u.debug_print(2, "Instrument._build_param_dir(): instrument_name ==", instrument_name)
         path = os.path.join(path, instrument_name)
         u.mkdir_check(path)
         return path
