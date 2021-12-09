@@ -3343,6 +3343,45 @@ class ESOImagingEpoch(ImagingEpoch):
         return outputs
 
     @classmethod
+    def from_file(cls, param_file: Union[str, dict], name: str = None, field: Field = None):
+
+        name, param_file, param_dict = p.params_init(param_file)
+        if param_dict is None:
+            raise FileNotFoundError(f"No parameter file found at {param_file}.")
+
+        if field is None:
+            field = param_dict.pop("field")
+        if 'target' in param_dict:
+            target = param_dict.pop('target')
+        else:
+            target = None
+
+        if "field" in param_dict:
+            param_dict.pop("field")
+        if "instrument" in param_dict:
+            param_dict.pop("instrument")
+        if "name" in param_dict:
+            param_dict.pop("name")
+        if "param_path" in param_dict:
+            param_dict.pop("param_path")
+
+        u.debug_print(2, f"ESOImagingEpoch.from_file(), cls ==", cls)
+        u.debug_print(2, 'ESOImagingEpoch.from_file(), config["top_data_dir"] == ', config["top_data_dir"])
+        u.debug_print(2, 'ESOImagingEpoch.from_file(), param_dict["data_path"] == ', param_dict["data_path"])
+
+        return cls(
+            name=name,
+            field=field,
+            param_path=param_file,
+            data_path=param_dict.pop('data_path'),
+            instrument=cls.instrument_name,
+            program_id=param_dict.pop('program_id'),
+            date=param_dict.pop('date'),
+            target=target,
+            source_extractor_config=param_dict['sextractor'],
+            **param_dict)
+
+    @classmethod
     def stages(cls):
         param_dict = super().stages()
         param_dict.update({
@@ -3673,40 +3712,8 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
             if name is None:
                 raise ValueError("name must be provided for old_format=True.")
             param_file = cls.convert_old_params(old_epoch_name=name)
-        name, param_file, param_dict = p.params_init(param_file)
-        if param_dict is None:
-            raise FileNotFoundError(f"No parameter file found at {param_file}.")
 
-        if field is None:
-            field = param_dict.pop("field")
-        if 'target' in param_dict:
-            target = param_dict.pop('target')
-        else:
-            target = None
-
-        if "field" in param_dict:
-            param_dict.pop("field")
-        if "instrument" in param_dict:
-            param_dict.pop("instrument")
-        if "name" in param_dict:
-            param_dict.pop("name")
-        if "param_path" in param_dict:
-            param_dict.pop("param_path")
-
-        u.debug_print(2, "FORS2ImagingEpoch.from_file(), cls ==", cls)
-        u.debug_print(2, 'FORS2ImagingEpoch.from_file(), config["top_data_dir"] == ', config["top_data_dir"])
-        u.debug_print(2, 'FORS2ImagingEpoch.from_file(), param_dict["data_path"] == ', param_dict["data_path"])
-
-        return cls(name=name,
-                   field=field,
-                   param_path=param_file,
-                   data_path=param_dict.pop('data_path'),
-                   instrument='vlt-fors2',
-                   program_id=param_dict.pop('program_id'),
-                   date=param_dict.pop('date'),
-                   target=target,
-                   source_extractor_config=param_dict['sextractor'],
-                   **param_dict)
+        return super().from_file(param_file=param_file, name=name, field=field)
 
     @classmethod
     def convert_old_params(cls, old_epoch_name: str):
