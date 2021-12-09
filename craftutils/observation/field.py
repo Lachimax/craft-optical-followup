@@ -1131,11 +1131,17 @@ class Epoch:
 
         self.coadded = {}
 
+        add_to_epoch_directory(
+            field_name=self.field.name,
+            instrument=self.instrument_name,
+            mode=self.mode,
+            epoch_name=self.name)
+
         # self.load_output_file()
 
     def pipeline(self, **kwargs):
         self._pipeline_init()
-        u.debug_print(1, kwargs)
+        u.debug_print(2, "Epoch.pipeline(): kwargs ==", kwargs)
 
     def _pipeline_init(self, ):
         if self.data_path is not None:
@@ -2962,17 +2968,20 @@ class ESOImagingEpoch(ImagingEpoch):
         data_title = self.name
 
         # Write tables of fits files to main directory; firstly, science images only:
-        tbl = image.fits_table(input_path=raw_dir,
-                               output_path=os.path.join(data_dir, data_title + "_fits_table_science.csv"),
-                               science_only=True)
+        tbl = image.fits_table(
+            input_path=raw_dir,
+            output_path=os.path.join(data_dir, data_title + "_fits_table_science.csv"),
+            science_only=True)
         # Then including all calibration files
-        tbl_full = image.fits_table(input_path=raw_dir,
-                                    output_path=os.path.join(data_dir, data_title + "_fits_table_all.csv"),
-                                    science_only=False)
+        tbl_full = image.fits_table(
+            input_path=raw_dir,
+            output_path=os.path.join(data_dir, data_title + "_fits_table_all.csv"),
+            science_only=False)
 
-        image.fits_table_all(input_path=raw_dir,
-                             output_path=os.path.join(data_dir, data_title + "_fits_table_detailed.csv"),
-                             science_only=False)
+        image.fits_table_all(
+            input_path=raw_dir,
+            output_path=os.path.join(data_dir, data_title + "_fits_table_detailed.csv"),
+            science_only=False)
 
         for row in tbl:
             path = os.path.join(self.paths["raw_dir"], row["identifier"])
@@ -3028,7 +3037,11 @@ class ESOImagingEpoch(ImagingEpoch):
 
         for file in os.listdir(raw_dir):
             print("Copying to ESOReflex input directory...")
-            shutil.copy(os.path.join(raw_dir, file), config["esoreflex_input_dir"])
+            inst_reflex_dir = {
+                "vlt-fors2": "fors",
+                "vlt-hawki": "hawki"
+            }[self.instrument_name]
+            shutil.copy(os.path.join(raw_dir, file), os.path.join(config["esoreflex_input_dir"], inst_reflex_dir))
             print("Done.")
 
         tmp = self.frames_science[self.filters[0]][0]

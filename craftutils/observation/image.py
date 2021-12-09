@@ -41,7 +41,11 @@ import craftutils.wrap.psfex as psfex
 from craftutils.wrap.astrometry_net import solve_field
 from craftutils.retrieve import cat_columns
 
-instrument_header = {"FORS2": "vlt-fors2"}
+# This contains the names as in the header as keys and the names as used in this project as values.
+instrument_header = {
+    "FORS2": "vlt-fors2",
+    "HAWKI": "vlt-hawki"
+}
 
 
 # TODO: Make this list all fits files, then write wrapper that eliminates non-science images and use that in scripts.
@@ -215,6 +219,7 @@ def fits_table_all(input_path: str, output_path: str = "", science_only: bool = 
 
 
 class Image:
+    instrument_name = "dummy"
 
     def __init__(self, path: str, frame_type: str = None, instrument_name: str = None):
         self.path = path
@@ -225,9 +230,10 @@ class Image:
         self.frame_type = frame_type
         self.headers = None
         self.data = None
-        self.instrument_name = instrument_name
+        if instrument_name is not None:
+            self.instrument_name = instrument_name
         try:
-            self.instrument = inst.Instrument.from_params(instrument_name=instrument_name)
+            self.instrument = inst.Instrument.from_params(instrument_name=self.instrument_name)
         except FileNotFoundError:
             self.instrument = None
         self.epoch = None
@@ -335,7 +341,7 @@ class Image:
 
     def extract_gain(self):
         key = self.header_keys()["gain"]
-        u.debug_print(1, type(self), key)
+        u.debug_print(2, f"Image.extract_gain(): type({self})", type(self), key)
         self.gain = self.extract_header_item(key) * units.electron / units.ct
         return self.gain
 
@@ -1116,9 +1122,6 @@ class ImagingImage(Image):
         self.load_data()
         target.load_data()
 
-        u.debug_print(2, target.data)
-        u.debug_print(2, self.data)
-        u.debug_print(2, type(self.data[ext]), type(target.data[ext]))
         data_source = self.data[ext]
         data_source = u.sanitise_endianness(data_source)
         data_target = target.data[ext]
@@ -2057,6 +2060,8 @@ class ImagingImage(Image):
             return PanSTARRS1Cutout
         elif instrument == "vlt-fors2":
             return FORS2Image
+        elif instrument == "vlt-hawki":
+            return HAWKIImage
         elif instrument == "gs-aoi":
             return GSAOIImage
         elif "hst" in instrument:
@@ -2095,7 +2100,8 @@ class ImagingImage(Image):
             "delve",
             "panstarrs1",
             "sdss",
-            "skymapper"]
+            "skymapper"
+        ]
 
 
 class CoaddedImage(ImagingImage):
@@ -2146,6 +2152,7 @@ class CoaddedImage(ImagingImage):
 
 
 class PanSTARRS1Cutout(ImagingImage):
+    instrument_name = "panstarrs1"
 
     def __init__(self, path: str):
         super().__init__(path=path)
@@ -2182,12 +2189,7 @@ class PanSTARRS1Cutout(ImagingImage):
         return header_keys
 
 
-class FORS2Image(ImagingImage, ESOImage):
-    def __init__(self, path: str, frame_type: str = None, **kwargs):
-        super().__init__(path=path, frame_type=frame_type, instrument_name="vlt-fors2")
-        self.other_chip = None
-        self.chip_number = None
-
+class ESOImagingImage(ImagingImage, ESOImage):
     def extract_frame_type(self):
         obj = self.extract_object()
         category = self.extract_header_item("ESO DPR CATG")
@@ -2205,16 +2207,6 @@ class FORS2Image(ImagingImage, ESOImage):
             self.frame_type = "science_reduced"
         return self.frame_type
 
-    def extract_chip_number(self):
-        chip_string = self.extract_header_item(key='HIERARCH ESO DET CHIP1 ID')
-        chip = 0
-        if chip_string == 'CCID20-14-5-3':
-            chip = 1
-        elif chip_string == 'CCID20-14-5-6':
-            chip = 2
-        self.chip_number = chip
-        return chip
-
     def extract_airmass(self):
         key = self.header_keys()["airmass"]
         self.airmass = self.extract_header_item(key)
@@ -2225,20 +2217,6 @@ class FORS2Image(ImagingImage, ESOImage):
             self.airmass = (airmass_start + airmass_end) / 2
         u.debug_print(1, f"{self.name}.airmass", self.airmass)
         return self.airmass
-
-    def _output_dict(self):
-        outputs = super()._output_dict()
-        outputs.update({
-            "other_chip": self.other_chip.path,
-        })
-        return outputs
-
-    def load_output_file(self):
-        outputs = super().load_output_file()
-        if outputs is not None:
-            if "other_chip" in outputs:
-                self.other_chip = outputs["other_chip"]
-        return outputs
 
     @classmethod
     def header_keys(cls) -> dict:
@@ -2261,6 +2239,43 @@ class FORS2Image(ImagingImage, ESOImage):
                 n += 1
         return n
 
+
+class HAWKIImage(ESOImagingImage):
+    instrument_name = "vlt-hawki"
+
+
+class FORS2Image(ESOImagingImage):
+    instrument_name = "vlt-fors2"
+
+    def __init__(self, path: str, frame_type: str = None, **kwargs):
+        super().__init__(path=path, frame_type=frame_type, instrument_name=self.instrument_name)
+        self.other_chip = None
+        self.chip_number = None
+
+    def extract_chip_number(self):
+        chip_string = self.extract_header_item(key='HIERARCH ESO DET CHIP1 ID')
+        chip = 0
+        if chip_string == 'CCID20-14-5-3':
+            chip = 1
+        elif chip_string == 'CCID20-14-5-6':
+            chip = 2
+        self.chip_number = chip
+        return chip
+
+    def _output_dict(self):
+        outputs = super()._output_dict()
+        outputs.update({
+            "other_chip": self.other_chip.path,
+        })
+        return outputs
+
+    def load_output_file(self):
+        outputs = super().load_output_file()
+        if outputs is not None:
+            if "other_chip" in outputs:
+                self.other_chip = outputs["other_chip"]
+        return outputs
+
     @classmethod
     def rank_photometric_cat(cls):
         """
@@ -2277,6 +2292,8 @@ class FORS2Image(ImagingImage, ESOImage):
 
 
 class FORS2CoaddedImage(CoaddedImage):
+    instrument_name = "vlt-fors2"
+
     def __init__(
             self,
             path: str,
@@ -2287,7 +2304,7 @@ class FORS2CoaddedImage(CoaddedImage):
         super().__init__(
             path=path,
             frame_type=frame_type,
-            instrument_name="vlt-fors2",
+            instrument_name=self.instrument_name,
             area_file=area_file
         )
 
@@ -2333,6 +2350,7 @@ class FORS2CoaddedImage(CoaddedImage):
 
 
 class GSAOIImage(ImagingImage):
+    instrument_name = "gs-aoi"
 
     def extract_pointing(self):
         # GSAOI images keep the WCS information in the second HDU header.
@@ -2345,6 +2363,7 @@ class GSAOIImage(ImagingImage):
 
 
 class HubbleImage(ImagingImage):
+    instrument_name = "hst-dummy"
 
     def extract_exposure_time(self):
         self.exposure_time = 1.0 * units.second
