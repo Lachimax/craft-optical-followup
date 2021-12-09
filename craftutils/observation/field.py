@@ -555,8 +555,13 @@ class Field:
         if survey:
             path = self._instrument_data_path(mode=mode, instrument=instrument)
         else:
-            path = os.path.join(self._instrument_data_path(mode=mode, instrument=instrument),
-                                f"{date}-{epoch_name}")
+            if date is None:
+                name_str = epoch_name
+            else:
+                name_str = f"{date}-{epoch_name}"
+            path = os.path.join(
+                self._instrument_data_path(mode=mode, instrument=instrument),
+                name_str)
         u.mkdir_check(path)
         return path
 
@@ -1060,6 +1065,9 @@ epoch_stage_dirs = {"0-download": "0-data_with_raw_calibs",
 
 
 class Epoch:
+    instrument_name = "dummy-instrument"
+    mode = "dummy_mode"
+
     def __init__(
             self,
             param_path: str = None,
@@ -1337,6 +1345,9 @@ class Epoch:
 
 
 class ImagingEpoch(Epoch):
+    instrument_name = "dummy-instrument"
+    mode = "imaging"
+
     def __init__(self,
                  name: str = None,
                  field: Union[str, Field] = None,
@@ -1421,8 +1432,9 @@ class ImagingEpoch(Epoch):
                 self.stages_complete['4.5-align'] = Time.now()
                 self.update_output_file()
 
-    def register(self, output_dir: str, frames: dict = None, template: Union[int, dict, image.ImagingImage, str] = 0,
-                 **kwargs):
+    def register(
+            self, output_dir: str, frames: dict = None, template: Union[int, dict, image.ImagingImage, str] = 0,
+            **kwargs):
         """
 
         :param output_dir:
@@ -2250,19 +2262,21 @@ class ImagingEpoch(Epoch):
     def select_child_class(cls, instrument: str):
         instrument = instrument.lower()
         if instrument == "vlt-fors2":
-            return FORS2ImagingEpoch
-        if instrument == "vlt-hawki":
-            return HAWKIEpoch
-        if instrument == "panstarrs1":
-            return PanSTARRS1ImagingEpoch
-        if instrument == "gs-aoi":
-            return GSAOIImagingEpoch
-        if instrument in ["hst-wfc3_ir", "hst-wfc3_uvis2"]:
-            return HubbleImagingEpoch
+            child_class = FORS2ImagingEpoch
+        elif instrument == "vlt-hawki":
+            child_class = HAWKIImagingEpoch
+        elif instrument == "panstarrs1":
+            child_class = PanSTARRS1ImagingEpoch
+        elif instrument == "gs-aoi":
+            child_class = GSAOIImagingEpoch
+        elif instrument in ["hst-wfc3_ir", "hst-wfc3_uvis2"]:
+            child_class = HubbleImagingEpoch
         elif instrument in instruments_imaging:
-            return ImagingEpoch
+            child_class = ImagingEpoch
         else:
             raise ValueError(f"Unrecognised instrument {instrument}")
+        u.debug_print(2, f"field.select_child_class(): instrument ==", instrument, "child_class ==", child_class)
+        return child_class
 
 
 class GSAOIImagingEpoch(ImagingEpoch):
@@ -2590,6 +2604,7 @@ class GSAOIImagingEpoch(ImagingEpoch):
 
 
 class HubbleImagingEpoch(ImagingEpoch):
+    instrument_name = "hst-dummy"
 
     def __init__(
             self,
@@ -2709,6 +2724,7 @@ class HubbleImagingEpoch(ImagingEpoch):
 
 class PanSTARRS1ImagingEpoch(ImagingEpoch):
     instrument_name = "panstarrs1"
+    mode = "imaging"
 
     def __init__(self,
                  name: str = None,
@@ -2879,6 +2895,8 @@ class PanSTARRS1ImagingEpoch(ImagingEpoch):
 
 
 class ESOImagingEpoch(ImagingEpoch):
+    instrument_name = "dummy-instrument"
+    mode = "imaging"
 
     def __init__(
             self,
@@ -3336,7 +3354,9 @@ class ESOImagingEpoch(ImagingEpoch):
         return param_dict
 
 
-class HAWKIEpoch(ESOImagingEpoch):
+class HAWKIImagingEpoch(ESOImagingEpoch):
+    instrument_name = "vlt-hawki"
+
     def pipeline(self, **kwargs):
         super().pipeline(**kwargs)
         self.proc_register(**kwargs)
@@ -3351,6 +3371,7 @@ class HAWKIEpoch(ESOImagingEpoch):
 
 
 class FORS2ImagingEpoch(ESOImagingEpoch):
+    instrument_name = "vlt-fors2"
 
     def pipeline(self, **kwargs):
         super().pipeline(**kwargs)
@@ -3749,6 +3770,8 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
 
 
 class SpectroscopyEpoch(Epoch):
+    instrument_name = "dummy-instrument"
+    mode = "spectrocopy"
     grisms = {}
 
     def __init__(self,
@@ -4163,6 +4186,7 @@ class ESOSpectroscopyEpoch(SpectroscopyEpoch):
 
 
 class FORS2SpectroscopyEpoch(ESOSpectroscopyEpoch):
+    instrument_name = "vlt-fors2"
     _instrument_pypeit = "vlt_fors2"
     grisms = {
         "GRIS_300I": {
