@@ -764,39 +764,41 @@ class FRBField(Field):
                 self.add_object(self.frb.host_galaxy)
         self.epochs_imaging_old = {}
 
-    def plot_host(self, epoch: 'ImagingEpoch', fig: plt.Figure, fil: str,
-                  centre: SkyCoord = None,
-                  show_frb: bool = True, frame: units.Quantity = 30 * units.pix,
-                  n: int = 1, n_x: int = 1, n_y: int = 1,
-                  cmap: str = 'viridis', show_cbar: bool = False,
-                  stretch: str = 'sqrt',
-                  vmin: float = None,
-                  vmax: float = None,
-                  show_grid: bool = False,
-                  ticks: int = None, interval: str = 'minmax',
-                  show_coords: bool = True,
-                  font_size: int = 12,
-                  reverse_y=False,
-                  frb_kwargs: dict = {},
-                  **kwargs):
+    def plot_host(
+            self, epoch: 'ImagingEpoch', fig: plt.Figure, fil: str,
+            centre: SkyCoord = None,
+            show_frb: bool = True, frame: units.Quantity = 30 * units.pix,
+            n: int = 1, n_x: int = 1, n_y: int = 1,
+            cmap: str = 'viridis', show_cbar: bool = False,
+            stretch: str = 'sqrt',
+            vmin: float = None,
+            vmax: float = None,
+            show_grid: bool = False,
+            ticks: int = None, interval: str = 'minmax',
+            show_coords: bool = True,
+            font_size: int = 12,
+            reverse_y=False,
+            frb_kwargs: dict = {},
+            **kwargs):
 
         if not isinstance(self.frb, objects.FRB):
             raise TypeError("self.frb has not been set properly for this FRBField.")
         if centre is None:
             centre = self.frb.host_galaxy.position
 
-        subplot, hdu_cut = epoch.plot_object(fig=fig, frame=frame, fil=fil, img="coadded",
-                                             centre=centre,
-                                             n=n, n_x=n_x, n_y=n_y,
-                                             cmap=cmap, show_cbar=show_cbar, stretch=stretch,
-                                             vmin=vmin, vmax=vmax,
-                                             show_grid=show_grid,
-                                             ticks=ticks, interval=interval,
-                                             show_coords=show_coords,
-                                             font_size=font_size,
-                                             reverse_y=reverse_y,
-                                             **kwargs
-                                             )
+        subplot, hdu_cut = epoch.plot_object(
+            fig=fig, frame=frame, fil=fil, img="coadded",
+            centre=centre,
+            n=n, n_x=n_x, n_y=n_y,
+            cmap=cmap, show_cbar=show_cbar, stretch=stretch,
+            vmin=vmin, vmax=vmax,
+            show_grid=show_grid,
+            ticks=ticks, interval=interval,
+            show_coords=show_coords,
+            font_size=font_size,
+            reverse_y=reverse_y,
+            **kwargs
+        )
 
         position = self.frb.position
         ra = position.ra.value
@@ -2114,20 +2116,21 @@ class ImagingEpoch(Epoch):
         else:
             return False
 
-    def plot_object(self, img: str, fil: str, fig: plt.Figure,
-                    centre: SkyCoord,
-                    frame: units.Quantity = 30 * units.pix,
-                    n: int = 1, n_x: int = 1, n_y: int = 1,
-                    cmap: str = 'viridis', show_cbar: bool = False,
-                    stretch: str = 'sqrt',
-                    vmin: float = None,
-                    vmax: float = None,
-                    show_grid: bool = False,
-                    ticks: int = None, interval: str = 'minmax',
-                    show_coords: bool = True,
-                    font_size: int = 12,
-                    reverse_y=False,
-                    **kwargs):
+    def plot_object(
+            self, img: str, fil: str, fig: plt.Figure,
+            centre: SkyCoord,
+            frame: units.Quantity = 30 * units.pix,
+            n: int = 1, n_x: int = 1, n_y: int = 1,
+            cmap: str = 'viridis', show_cbar: bool = False,
+            stretch: str = 'sqrt',
+            vmin: float = None,
+            vmax: float = None,
+            show_grid: bool = False,
+            ticks: int = None, interval: str = 'minmax',
+            show_coords: bool = True,
+            font_size: int = 12,
+            reverse_y=False,
+            **kwargs):
         if img == "coadded":
             u.debug_print(1, self.name, type(self))
             u.debug_print(1, self.coadded)
@@ -2137,18 +2140,19 @@ class ImagingEpoch(Epoch):
 
         u.debug_print(1, f"PIXEL SCALE: {to_plot.extract_pixel_scale()}")
 
-        subplot, hdu_cut = to_plot.plot_subimage(fig=fig, frame=frame,
-                                                 centre=centre,
-                                                 n=n, n_x=n_x, n_y=n_y,
-                                                 cmap=cmap, show_cbar=show_cbar, stretch=stretch,
-                                                 vmin=vmin, vmax=vmax,
-                                                 show_grid=show_grid,
-                                                 ticks=ticks, interval=interval,
-                                                 show_coords=show_coords,
-                                                 font_size=font_size,
-                                                 reverse_y=reverse_y,
-                                                 **kwargs
-                                                 )
+        subplot, hdu_cut = to_plot.plot_subimage(
+            fig=fig, frame=frame,
+            centre=centre,
+            n=n, n_x=n_x, n_y=n_y,
+            cmap=cmap, show_cbar=show_cbar, stretch=stretch,
+            vmin=vmin, vmax=vmax,
+            show_grid=show_grid,
+            ticks=ticks, interval=interval,
+            show_coords=show_coords,
+            font_size=font_size,
+            reverse_y=reverse_y,
+            **kwargs
+        )
         return subplot, hdu_cut
 
     @classmethod

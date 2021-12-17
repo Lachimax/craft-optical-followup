@@ -48,14 +48,18 @@ def make_header(table_path: str, output_path: str):
     return u.system_command("mMakeHdr", [table_path, output_path])
 
 
-def check_input_images(input_directory: str):
+def check_input_images(input_directory: str,
+                       **kwargs):
     table = fits_table_all(input_directory, science_only=False)
     table.sort("ARCFILE")
 
     keys = header_keys()
     exptime_key = keys["exptime"]
     instrument_key = keys["instrument"]
-    gain_key = keys["gain"]
+    if "gain_key" in kwargs:
+        gain_key = kwargs["gain_key"]
+    else:
+        gain_key = keys["gain"]
 
     template = table[0]
     exptime = np.round(float(template[exptime_key]))
@@ -253,8 +257,12 @@ def add(input_directory: str, table_path: str,
                             p=input_directory, a=coadd_type)
 
 
-def standard_script(input_directory: str, output_directory: str, output_file_name: str = None,
-                    ignore_differences: bool = False):
+def standard_script(
+        input_directory: str,
+        output_directory: str,
+        output_file_name: str = None,
+        ignore_differences: bool = False, **kwargs
+):
     """
     Does a standard median coaddition of fits files in input_directory.
     Adapted from an example bash script found at http://montage.ipac.caltech.edu/docs/first_mosaic_tutorial.html
@@ -281,7 +289,7 @@ def standard_script(input_directory: str, output_directory: str, output_file_nam
 
     if not ignore_differences:
         print("Checking input images...")
-        check_input_images(input_directory=input_directory)
+        check_input_images(input_directory=input_directory, **kwargs)
 
     print("Creating metadata tables of the input images.")
     table_path = "images.tbl"

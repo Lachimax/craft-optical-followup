@@ -522,6 +522,9 @@ class ImagingImage(Image):
 
         self.load_output_file()
 
+    def clean_cosmic_rays(self):
+        pass
+
     def source_extraction(
             self, configuration_file: str,
             output_dir: str,
