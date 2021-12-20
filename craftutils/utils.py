@@ -21,17 +21,55 @@ from astropy.time import Time
 debug_level = 0
 
 
-def check_margins(data, margins=None, left=None, right=None, bottom=None, top=None):
+def frame_from_centre(frame, x, y, data):
+    left = x - frame
+    right = x + frame
+    bottom = y - frame
+    top = y + frame
+    return check_margins(data=data, left=left, right=right, bottom=bottom, top=top)
+
+
+def check_margins(data, left=None, right=None, bottom=None, top=None, margins: tuple = None):
+    """
+
+    :param data:
+    :param left:
+    :param right:
+    :param bottom:
+    :param top:
+    :param margins: In the order left, right, bottom, top
+    :return:
+    """
+    shape = data.shape
+
     if margins is not None:
         left, right, bottom, top = margins
+
     if left is None:
         left = 0
+    else:
+        left = int(dequantify(left))
+
     if right is None:
-        right = data.shape[1]
+        right = shape[1]
+    else:
+        right = int(dequantify(right))
+
     if bottom is None:
         bottom = 0
+    else:
+        bottom = int(dequantify(bottom))
+
     if top is None:
-        top = data.shape[0]
+        top = shape[0]
+    else:
+        top = int(dequantify(top))
+
+    if right < left:
+        raise ValueError('Improper inputs; right is smaller than left.')
+    if top < bottom:
+        raise ValueError('Improper inputs; top is smaller than bottom.')
+
     return left, right, bottom, top
 
 
