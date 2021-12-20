@@ -21,6 +21,20 @@ from astropy.time import Time
 debug_level = 0
 
 
+def check_margins(data, margins=None, left=None, right=None, bottom=None, top=None):
+    if margins is not None:
+        left, right, bottom, top = margins
+    if left is None:
+        left = 0
+    if right is None:
+        right = data.shape[1]
+    if bottom is None:
+        bottom = 0
+    if top is None:
+        top = data.shape[0]
+    return left, right, bottom, top
+
+
 def check_iterable(obj):
     try:
         len(obj)
