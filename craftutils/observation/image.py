@@ -2026,7 +2026,7 @@ class ImagingImage(Image):
         """
         self.load_data()
         data = self.data[ext]
-        left, right, bottom, top = margins = u.check_margins(data=data, margins=margins)
+        left, right, bottom, top = u.check_margins(data=data, margins=margins)
         data_trim = data[bottom:top, left:right]
         if method == "photutils":
             threshold = photutils.segmentation.detect_threshold(data_trim, threshold)
@@ -2050,11 +2050,11 @@ class ImagingImage(Image):
         u.debug_print(2, f"{self}.generate_segmap(): segmap_full ==", segmap_full)
         u.debug_print(2, f"{self}.generate_segmap(): segmap ==", segmap)
         segmap_full[bottom:top, left:right] = segmap.data
-        return segmap_full, margins
+        return segmap_full
 
     def generate_mask(
             self,
-            unmasked: SkyCoord = None,
+            unmasked: SkyCoord = (),
             ext: int = 0,
             threshold: float = 4,
             method: str = "sep",
@@ -2075,8 +2075,8 @@ class ImagingImage(Image):
         :return:
         """
         data = self.load_data()[ext]
-        segmap, (left, right, bottom, top) = self.generate_segmap(ext=ext, threshold=threshold, method=method,
-                                                                  margins=margins)
+        segmap = self.generate_segmap(ext=ext, threshold=threshold, method=method,
+                                      margins=margins)
         self.load_wcs()
 
         unmasked = u.check_iterable(unmasked)
@@ -2102,6 +2102,17 @@ class ImagingImage(Image):
         mask[mask == 0] = back_value
 
         return mask
+
+    def masked_data(
+            self,
+            mask: np.ndarray = None,
+            ext: int = 0,
+            **generate_mask_kwargs
+    ):
+        self.load_data()
+        if mask is None:
+            mask = self.generate_mask(**generate_mask_kwargs)
+        return np.ma.MaskedArray(self.data[ext].copy(), mask=mask)
 
     def write_mask(self, path: str):
         """
