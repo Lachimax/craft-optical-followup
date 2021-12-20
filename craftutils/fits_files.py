@@ -734,32 +734,10 @@ def trim(hdu: fits.hdu.hdulist.HDUList,
     :param top:
     :return:
     """
-    shape = hdu[ext].data.shape
-    if left is None:
-        left = 0
-    else:
-        left = int(u.dequantify(left))
-
-    if right is None:
-        right = shape[1]
-    else:
-        right = int(u.dequantify(right))
-
-    if bottom is None:
-        bottom = 0
-    else:
-        bottom = int(u.dequantify(bottom))
-
-    if top is None:
-        top = shape[0]
-    else:
-        top = int(u.dequantify(top))
-
-    if right < left:
-        raise ValueError('Improper inputs; right is smaller than left.')
-    if top < bottom:
-        raise ValueError('Improper inputs; top is smaller than bottom.')
-
+    left, right, bottom, top = u.check_margins(
+        data=hdu[ext].data,
+        left=left, right=right, bottom=bottom, top=top
+    )
     if in_place:
         new_hdu = hdu
     else:
