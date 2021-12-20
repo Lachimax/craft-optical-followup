@@ -260,6 +260,17 @@ class Image:
     def __str__(self):
         return self.filename
 
+    def add_log(self, action: str, method=None):
+
+        log_entry = {
+            "git_version": p.get_project_git_hash(),
+            "action": action
+        }
+        if method is not None:
+            log_entry["method"] = method.__name__
+        self.log[Time.now().strftime("%Y-%m-%d")] = log_entry
+        self.update_output_file()
+
     def open(self, mode: str = "readonly"):
         if self.path is not None and self.hdu_list is None:
             self.hdu_list = fits.open(self.path, mode=mode)
@@ -271,8 +282,19 @@ class Image:
             self.hdu_list.close()
             self.hdu_list = None
 
-    def copy(self, destination):
+    def new_image(self, path: str):
+        c = self.__class__
+        new_image = c(path=path)
+        return new_image
+
+    def copy(self, destination: str):
+        u.debug_print(1, "Copying", self.path, "to", destination)
         shutil.copy(self.path, destination)
+        new_image = self.new_image(path=destination)
+        new_image.log = self.log
+        new_image.add_log(f"Copied from {self.path} to {destination}.", method=self.copy)
+        new_image.update_output_file()
+        return new_image
 
     def load_output_file(self):
         outputs = p.load_output_file(self)
@@ -1202,17 +1224,8 @@ class ImagingImage(Image):
         new_image = self.new_image(
             path=final_file
         )
+        new_image.add_log("Astrometry corrected using")
         return new_image
-
-    def new_image(self, path: str):
-        c = self.__class__
-        new_image = c(path=path)
-        return new_image
-
-    def copy(self, destination):
-        u.debug_print(1, "Copying", self.path, "to", destination)
-        shutil.copy(self.path, destination)
-        return self.new_image(path=destination)
 
     def transfer_wcs(self, other_image: 'ImagingImage', ext: int = 0):
         other_image.load_headers()
@@ -2050,7 +2063,7 @@ class ImagingImage(Image):
             margins: tuple = (None, None, None, None)
     ):
         """
-
+        Uses a segmentation map to produce a
         :param unmasked: SkyCoord list of objects to keep unmasked; if any
         :param ext:
         :param threshold:
@@ -2089,6 +2102,14 @@ class ImagingImage(Image):
         mask[mask == 0] = back_value
 
         return mask
+
+    def write_mask(self, path: str):
+        """
+        Not yet implemented.
+        :param path:
+        :return:
+        """
+        pass
 
     @classmethod
     def select_child_class(cls, instrument: str, **kwargs):
