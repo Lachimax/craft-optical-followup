@@ -250,6 +250,8 @@ class Image:
         self.object = None
         self.pointing = None
 
+        self.log = {}
+
     def __eq__(self, other):
         if not isinstance(other, Image):
             raise TypeError("Can only compare Image instance to another Image instance.")
@@ -277,14 +279,18 @@ class Image:
         if outputs is not None:
             if "frame_type" in outputs:
                 self.frame_type = outputs["frame_type"]
+            if "log" in outputs:
+                self.log = outputs["log"]
         return outputs
 
     def update_output_file(self):
         p.update_output_file(self)
 
     def _output_dict(self):
-        return {"frame_type": self.frame_type,
-                }
+        return {
+            "frame_type": self.frame_type,
+            "log": self.log,
+        }
 
     def load_headers(self, force: bool = False, **kwargs):
         if self.headers is None or force:
@@ -1994,65 +2000,95 @@ class ImagingImage(Image):
             self,
             ext: int = 0,
             threshold: float = 4,
-            method="photutils"):
+            method="photutils",
+            margins: tuple = (None, None, None, None)):
+        """
+        Generate a segmentation map of the image in which the image is broken into segments according to detected sources.
+        Each source is assigned an integer, and the segmap has the same spatial dimensions as the input image.
+        :param ext:
+        :param threshold:
+        :param method:
+        :param margins:
+        :return:
+        """
         self.load_data()
         data = self.data[ext]
+        left, right, bottom, top = margins = u.check_margins(data=data, margins=margins)
+        data_trim = data[bottom:top, left:right]
         if method == "photutils":
-            threshold = photutils.segmentation.detect_threshold(data, threshold)
-            segmap = photutils.detect_sources(data, threshold, npixels=5)
+            threshold = photutils.segmentation.detect_threshold(data_trim, threshold)
+            u.debug_print(2, f"{self}.generate_segmap(): threshold ==", threshold)
+            segmap = photutils.detect_sources(data_trim, threshold, npixels=5)
         elif method == "sep":
-            _, med, std = sigma_clipped_stats(data)
-            data = u.sanitise_endianness(data)
+            mean, med, std = sigma_clipped_stats(data_trim)
+            u.debug_print(2, f"{self}.generate_segmap(): std ==", std, "threshold ==", threshold, "threshold * std ==",
+                          threshold * std)
+            data_trim = u.sanitise_endianness(data_trim)
             objects, segmap = sep.extract(
-                data,
-                thresh=threshold * std,
+                data_trim,
+                thresh=mean + threshold * std,
                 deblend_cont=True, clean=False,
                 segmentation_map=True, minarea=5
             )
+
         else:
             raise ValueError(f"Unrecognised method {method}.")
-        return segmap
+        segmap_full = np.zeros(data.shape)
+        u.debug_print(2, f"{self}.generate_segmap(): segmap_full ==", segmap_full)
+        u.debug_print(2, f"{self}.generate_segmap(): segmap ==", segmap)
+        segmap_full[bottom:top, left:right] = segmap.data
+        return segmap_full, margins
 
     def generate_mask(
             self,
             unmasked: SkyCoord = None,
             ext: int = 0,
             threshold: float = 4,
-            method="photutils",
+            method: str = "sep",
             obj_value=1,
             back_value=0,
+            margins: tuple = (None, None, None, None)
     ):
         """
-        For GALFIT, obj_value should be
-        :param unmasked:
+
+        :param unmasked: SkyCoord list of objects to keep unmasked; if any
         :param ext:
         :param threshold:
         :param method:
-        :param obj_value:
-        :param back_value:
+        :param obj_value: For GALFIT masks, should be 1.
+        :param back_value: For GALFIT masks, should be 0.
+        :param margins: If only part of the image is to be masked, provide (left, right, bottom, top) in pixel
+            coordinates as tuple.
         :return:
         """
         data = self.load_data()[ext]
-        segmap = self.generate_segmap(ext=ext, threshold=threshold, method=method)
-
+        segmap, (left, right, bottom, top) = self.generate_segmap(ext=ext, threshold=threshold, method=method,
+                                                                  margins=margins)
         self.load_wcs()
 
         unmasked = u.check_iterable(unmasked)
 
         if segmap is None:
             mask = np.zeros(data.shape)
-            mask_full = np.zeros(data.shape)
         else:
-            # Loop over the given coordinates and
+            # Loop over the given coordinates and eliminate those segments from the mask.
+            mask = np.ones(data.shape, dtype=bool)
+            # This sets all the background pixels to False
+            mask[segmap == 0] = False
             for coord in unmasked:
-                x_unmasked, y_unmasked = self.wcs.all_world2pix(coord, 0)
-                # n is the integer representing that object in the segmap
-                n = segmap.data[int(np.round(y_unmasked)), int(np.round(x_unmasked))]
+                x_unmasked, y_unmasked = self.wcs.all_world2pix(coord.ra, coord.dec, 0)
+                # obj_id is the integer representing that object in the segmap
+                obj_id = segmap[int(np.round(y_unmasked)), int(np.round(x_unmasked))]
+                # If obj_id is zero, then our work here is already done (ie, the segmap routine read it as background anyway)
+                if obj_id != 0:
+                    mask[segmap == obj_id] = False
 
-                mask = segmap.data != n
-            mask[segmap.data == 0] = back_value
-            mask_full = np.zeros(data.shape)
-            mask_full[bottom:top, left:right] = mask
+        # Convert to integer (from bool)
+        mask = mask.astype(int)
+        mask[mask > 0] = obj_value
+        mask[mask == 0] = back_value
+
+        return mask
 
     @classmethod
     def select_child_class(cls, instrument: str, **kwargs):
