@@ -161,6 +161,10 @@ project_path = u.check_trailing_slash(config['proj_dir'])
 data_path = u.check_trailing_slash(config["top_data_dir"])
 
 
+def get_project_git_hash(short: bool = False):
+    return u.get_git_hash(directory=project_path, short=short)
+
+
 def path_or_params_obj(obj: Union[dict, str], instrument: str = 'FORS2', quiet: bool = False):
     if type(obj) is str:
         return obj, object_params_instrument(obj, instrument=instrument, quiet=quiet)

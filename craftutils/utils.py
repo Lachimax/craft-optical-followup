@@ -6,6 +6,7 @@ import shutil
 import sys
 from typing import List, Union, Tuple
 from datetime import datetime as dt
+import subprocess
 
 import numpy as np
 
@@ -19,6 +20,25 @@ from astropy.time import Time
 # TODO: Also comment.
 
 debug_level = 0
+
+
+def get_git_hash(directory: str, short: bool = False):
+    """
+    Gets the git version
+    Special thanks to: https://stackoverflow.com/questions/14989858/get-the-current-git-hash-in-a-python-script
+    :return:
+    """
+    current_dir = os.getcwd()
+    os.chdir(directory)
+    args = ['git', 'rev-parse', 'HEAD']
+    if short:
+        args.insert(2, "--short")
+    try:
+        githash = subprocess.check_output(args).decode('ascii').strip()
+    except subprocess.CalledProcessError:
+        githash = None
+    os.chdir(current_dir)
+    return githash
 
 
 def frame_from_centre(frame, x, y, data):
