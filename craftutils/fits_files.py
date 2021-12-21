@@ -747,7 +747,7 @@ def trim(hdu: fits.hdu.hdulist.HDUList,
         data=hdu[ext].data,
         left=left, right=right, bottom=bottom, top=top
     )
-    
+
     return new_hdu
 
 

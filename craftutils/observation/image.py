@@ -1884,6 +1884,7 @@ class ImagingImage(Image):
                 sigma_clip=sigma_clip,
                 bkg_estimator=bkg_estimator
             )
+            self.data_sub_bkg[ext] = (data - bkg.background)
 
         else:
             raise ValueError(f"Unrecognised method {method}.")
@@ -2068,30 +2069,35 @@ class ImagingImage(Image):
         self.load_data()
         data = self.data[ext]
         left, right, bottom, top = u.check_margins(data=data, margins=margins)
-        data_trim = data[bottom:top, left:right]
 
-        bkg = self.calculate_background(ext=ext, **background_kwargs)
+        bkg = self.calculate_background(method=method, ext=ext, **background_kwargs)
 
         if method == "photutils":
-
+            data_trim = u.trim_image(
+                data=data,
+                margins=margins
+            )
+            u.debug_print(2, f"{self}.generate_segmap(): data_trim.shape ==", data_trim.shape)
             threshold = photutils.segmentation.detect_threshold(
                 data_trim,
                 threshold,
-                background=bkg.background,
-                error=bkg.background_rms
+                background=u.trim_image(bkg.background, margins=margins),
+                error=u.trim_image(bkg.background_rms, margins=margins)
             )
             u.debug_print(2, f"{self}.generate_segmap(): threshold ==", threshold)
             segmap = photutils.detect_sources(data_trim, threshold, npixels=min_area)
 
         elif method == "sep":
-            mean, med, std = sigma_clipped_stats(data_trim)
-            u.debug_print(2, f"{self}.generate_segmap(): std ==", std, "threshold ==", threshold, "threshold * std ==",
-                          threshold * std)
-            data_trim = u.sanitise_endianness(data_trim)
+            # The copying is done here to avoid 'C-contiguous' errors in SEP.
+            data_trim = u.sanitise_endianness(
+                u.trim_image(self.data_sub_bkg[ext], margins=margins)
+            ).copy()
+            err = u.trim_image(bkg.rms(), margins=margins).copy()
+            u.debug_print(2, f"{self}.generate_segmap(): type(err) ==", type(err), "err.shape ==", err.shape)
             objects, segmap = sep.extract(
                 data_trim,
-                err=bkg.rms(),
-                thresh=mean + threshold * std,
+                err=err,
+                thresh=threshold,
                 deblend_cont=True, clean=False,
                 segmentation_map=True, minarea=min_area
             )
@@ -2101,7 +2107,7 @@ class ImagingImage(Image):
         segmap_full = np.zeros(data.shape)
         u.debug_print(2, f"{self}.generate_segmap(): segmap_full ==", segmap_full)
         u.debug_print(2, f"{self}.generate_segmap(): segmap ==", segmap)
-        segmap_full[bottom:top, left:right] = segmap.data
+        segmap_full[bottom:top + 1, left:right + 1] = segmap.data
         return segmap_full
 
     def generate_mask(
@@ -2242,10 +2248,11 @@ class CoaddedImage(ImagingImage):
              output_path: str = None):
         trimmed = super().trim(left=left, right=right, bottom=bottom, top=top, output_path=output_path)
         new_area_path = output_path.replace(".fits", "_area.fits")
-        ff.trim_file(path=self.area_file,
-                     left=left, right=right, bottom=bottom, top=top,
-                     new_path=new_area_path
-                     )
+        ff.trim_file(
+            path=self.area_file,
+            left=left, right=right, bottom=bottom, top=top,
+            new_path=new_area_path
+        )
         trimmed.area_file = new_area_path
         return trimmed
 
