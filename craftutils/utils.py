@@ -93,6 +93,17 @@ def check_margins(data, left=None, right=None, bottom=None, top=None, margins: t
     return left, right, bottom, top
 
 
+def trim_image(data, left=None, right=None, bottom=None, top=None, margins: tuple = None):
+
+    left, right, bottom, top = check_margins(
+        data=data,
+        left=left, right=right, bottom=bottom, top=top,
+        margins=margins
+    )
+    debug_print(2, "fits_files.trim(): left ==", left, "right ==", right, "bottom ==", bottom, "top")
+    return data[bottom:top, left:right]
+
+
 def check_iterable(obj):
     try:
         len(obj)

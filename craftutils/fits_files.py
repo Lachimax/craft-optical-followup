@@ -724,7 +724,7 @@ def world_to_pix(ra: "float", dec: "float", header: "fits.header.Header"):
 def trim(hdu: fits.hdu.hdulist.HDUList,
          left: Union[int, units.Quantity] = None, right: Union[int, units.Quantity] = None,
          bottom: Union[int, units.Quantity] = None, top: Union[int, units.Quantity] = None,
-         update_wcs: bool = True, in_place: bool = False, quiet: bool = False, ext: int = 0):
+         update_wcs: bool = True, in_place: bool = False, ext: int = 0):
     """
 
     :param hdu:
@@ -734,10 +734,7 @@ def trim(hdu: fits.hdu.hdulist.HDUList,
     :param top:
     :return:
     """
-    left, right, bottom, top = u.check_margins(
-        data=hdu[ext].data,
-        left=left, right=right, bottom=bottom, top=top
-    )
+
     if in_place:
         new_hdu = hdu
     else:
@@ -746,10 +743,11 @@ def trim(hdu: fits.hdu.hdulist.HDUList,
     if update_wcs:
         new_hdu[ext].header['CRPIX1'] = hdu[ext].header['CRPIX1'] - left
         new_hdu[ext].header['CRPIX2'] = hdu[ext].header['CRPIX2'] - bottom
-    if not quiet:
-        print(bottom, top, left, right)
-    new_hdu[ext].data = hdu[ext].data[bottom:top, left:right]
-
+    new_hdu[ext].data = u.trim_image(
+        data=hdu[ext].data,
+        left=left, right=right, bottom=bottom, top=top
+    )
+    
     return new_hdu
 
 
