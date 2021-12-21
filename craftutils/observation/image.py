@@ -15,7 +15,7 @@ import astropy.io.fits as fits
 import astropy.table as table
 import astropy.wcs as wcs
 import astropy.units as units
-from astropy.stats import sigma_clipped_stats
+from astropy.stats import sigma_clipped_stats, SigmaClip
 
 from astropy.visualization import (ImageNormalize, LogStretch, SqrtStretch, ZScaleInterval, MinMaxInterval,
                                    PowerStretch, wcsaxes)
@@ -505,8 +505,9 @@ class ImagingImage(Image):
         self.source_cat_dual = None
         self.dual_mode_template = None
 
-        self.sep_bkg = None
-        self.data_sub_sep_bkg = None
+        self.sep_background = None
+        self.pu_background = None
+        self.data_sub_bkg = None
 
         self.synth_cat_path = None
         self.synth_cat = None
@@ -676,6 +677,13 @@ class ImagingImage(Image):
         ) * units.deg
 
         return source_cat
+
+    def load_data(self, force: bool = False):
+        super().load_data()
+        self.data_sub_bkg = [None] * len(self.data)
+        self.sep_background = [None] * len(self.data)
+        self.pu_background = [None] * len(self.data)
+        return self.data
 
     def load_source_cat_sextractor(self, force: bool = False):
         if self.source_cat_sextractor_path is not None:
@@ -1555,6 +1563,12 @@ class ImagingImage(Image):
         self.source_cat_dual["B_IMAGE"] = self.source_cat_dual["B_WORLD"].to(units.pix, self.pixel_scale_dec)
 
     def estimate_sky_background(self, ext: int = 0, force: bool = False):
+        """
+        Estimates background as a global median. VERY loose estimate.
+        :param ext:
+        :param force:
+        :return:
+        """
         if force or self.sky_background is None:
             self.load_data()
             self.sky_background = np.nanmedian(self.data[ext]) * units.ct / units.pixel
@@ -1844,26 +1858,50 @@ class ImagingImage(Image):
 
         return self.synth_cat
 
-    def sep_background(self, ext: int = 0):
+    def calculate_background(
+            self, ext: int = 0,
+            box_size: int = 64,
+            filter_size: int = 3, method: str = "sep"
+    ):
         self.load_data()
-        data = u.sanitise_endianness(self.data[ext])
-        self.sep_bkg = sep.Background(data)
-        self.data_sub_sep_bkg = (data - self.sep_bkg.back())
-        return self.sep_bkg
+
+        if method == "sep":
+            data = u.sanitise_endianness(self.data[ext])
+            bkg = self.sep_background[ext] = sep.Background(
+                data,
+                bw=box_size, bh=box_size,
+                fw=filter_size, fh=filter_size
+            )
+            self.data_sub_bkg[ext] = (data - bkg.back())
+
+        elif method == "photutils":
+            data = self.data[ext]
+            sigma_clip = SigmaClip(sigma=3.)
+            bkg_estimator = photutils.MedianBackground()
+            bkg = self.pu_background[ext] = photutils.Background2D(
+                data, box_size,
+                filter_size=filter_size,
+                sigma_clip=sigma_clip,
+                bkg_estimator=bkg_estimator
+            )
+
+        else:
+            raise ValueError(f"Unrecognised method {method}.")
+        return bkg
 
     def sep_aperture_photometry(
             self, x: float, y: float,
             aperture_radius: units.Quantity = 2.0 * units.arcsec,
             ext: int = 0
     ):
-        self.sep_background(ext=ext)
+        self.calculate_background(ext=ext)
         self.extract_pixel_scale()
         pixel_radius = aperture_radius.to(units.pix, self.pixel_scale_dec)
         flux, fluxerr, flag = sep.sum_circle(
-            self.data_sub_sep_bkg,
+            self.data_sub_bkg,
             x, y,
             pixel_radius.value,
-            err=self.sep_bkg.globalrms,
+            err=self.sep_background.globalrms,
             gain=self.extract_gain().value)
         return flux, fluxerr, flag
 
@@ -2013,8 +2051,11 @@ class ImagingImage(Image):
             self,
             ext: int = 0,
             threshold: float = 4,
-            method="photutils",
-            margins: tuple = (None, None, None, None)):
+            method="sep",
+            margins: tuple = (None, None, None, None),
+            min_area: int = 5,
+            **background_kwargs
+    ):
         """
         Generate a segmentation map of the image in which the image is broken into segments according to detected sources.
         Each source is assigned an integer, and the segmap has the same spatial dimensions as the input image.
@@ -2028,10 +2069,20 @@ class ImagingImage(Image):
         data = self.data[ext]
         left, right, bottom, top = u.check_margins(data=data, margins=margins)
         data_trim = data[bottom:top, left:right]
+
+        bkg = self.calculate_background(ext=ext, **background_kwargs)
+
         if method == "photutils":
-            threshold = photutils.segmentation.detect_threshold(data_trim, threshold)
+
+            threshold = photutils.segmentation.detect_threshold(
+                data_trim,
+                threshold,
+                background=bkg.background,
+                error=bkg.background_rms
+            )
             u.debug_print(2, f"{self}.generate_segmap(): threshold ==", threshold)
-            segmap = photutils.detect_sources(data_trim, threshold, npixels=5)
+            segmap = photutils.detect_sources(data_trim, threshold, npixels=min_area)
+
         elif method == "sep":
             mean, med, std = sigma_clipped_stats(data_trim)
             u.debug_print(2, f"{self}.generate_segmap(): std ==", std, "threshold ==", threshold, "threshold * std ==",
@@ -2039,9 +2090,10 @@ class ImagingImage(Image):
             data_trim = u.sanitise_endianness(data_trim)
             objects, segmap = sep.extract(
                 data_trim,
+                err=bkg.rms(),
                 thresh=mean + threshold * std,
                 deblend_cont=True, clean=False,
-                segmentation_map=True, minarea=5
+                segmentation_map=True, minarea=min_area
             )
 
         else:
