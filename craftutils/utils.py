@@ -375,7 +375,7 @@ def mkdir_check_nested(path: str, remove_last: bool = True):
     :param path:
     :return:
     """
-
+    path_orig = path
     levels = []
     while len(path) > 1:
         path, end = os.path.split(path)
@@ -386,6 +386,7 @@ def mkdir_check_nested(path: str, remove_last: bool = True):
         levels.pop()
     debug_print(1, "utils.mkdir_check_nested(): levels ==", levels)
     mkdir_check_args(*levels)
+    mkdir_check(path_orig)
 
 
 def mkdir_check_args(*args: str):
