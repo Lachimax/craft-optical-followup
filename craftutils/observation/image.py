@@ -1751,7 +1751,7 @@ class ImagingImage(Image):
         if colour_column is not None:
             fig.colorbar(pcm, ax=ax, label=cbar_label)
 
-        u.debug_print(1, "CATALOGUE SIZE:", len(cat))
+        u.debug_print(2, f"{self}.plot_catalogue(): len(cat):", len(cat))
 
         return ax, fig
 
