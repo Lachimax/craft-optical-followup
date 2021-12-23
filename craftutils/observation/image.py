@@ -1443,7 +1443,8 @@ class ImagingImage(Image):
             right: Union[int, units.Quantity] = None,
             bottom: Union[int, units.Quantity] = None,
             top: Union[int, units.Quantity] = None,
-            output_path: str = None):
+            output_path: str = None
+    ):
         left = u.dequantify(left, unit=units.pix)
         right = u.dequantify(right, unit=units.pix)
         bottom = u.dequantify(bottom, unit=units.pix)
@@ -1584,13 +1585,13 @@ class ImagingImage(Image):
 
     def find_object(self, coord: SkyCoord, dual: bool = True):
         self.load_source_cat()
-        u.debug_print(1, "FIND_OBJECT: dual", dual)
+        u.debug_print(2, f"{self}.find_object(): dual ==", dual)
         if dual:
             cat = self.source_cat_dual
         else:
             cat = self.source_cat
 
-        u.debug_print(1, "FIND_OBJECT: cat.colnames", cat.colnames)
+        u.debug_print(2, f"{self}.find_object(): cat.colnames ==", cat.colnames)
         coord_cat = SkyCoord(cat["RA"], cat["DEC"])
         separation = coord.separation(coord_cat)
         i = np.argmin(separation)
@@ -1890,6 +1891,138 @@ class ImagingImage(Image):
             raise ValueError(f"Unrecognised method {method}.")
         return bkg
 
+    def generate_segmap(
+            self,
+            ext: int = 0,
+            threshold: float = 4,
+            method="sep",
+            margins: tuple = (None, None, None, None),
+            min_area: int = 5,
+            **background_kwargs
+    ):
+        """
+        Generate a segmentation map of the image in which the image is broken into segments according to detected sources.
+        Each source is assigned an integer, and the segmap has the same spatial dimensions as the input image.
+        :param ext:
+        :param threshold:
+        :param method:
+        :param margins:
+        :return:
+        """
+        self.load_data()
+        data = self.data[ext]
+        left, right, bottom, top = u.check_margins(data=data, margins=margins)
+
+        bkg = self.calculate_background(method=method, ext=ext, **background_kwargs)
+
+        if method == "photutils":
+            data_trim = u.trim_image(
+                data=data,
+                margins=margins
+            )
+            u.debug_print(2, f"{self}.generate_segmap(): data_trim.shape ==", data_trim.shape)
+            threshold = photutils.segmentation.detect_threshold(
+                data_trim,
+                threshold,
+                background=u.trim_image(bkg.background, margins=margins),
+                error=u.trim_image(bkg.background_rms, margins=margins)
+            )
+            u.debug_print(2, f"{self}.generate_segmap(): threshold ==", threshold)
+            segmap = photutils.detect_sources(data_trim, threshold, npixels=min_area)
+
+        elif method == "sep":
+            # The copying is done here to avoid 'C-contiguous' errors in SEP.
+            data_trim = u.sanitise_endianness(
+                u.trim_image(self.data_sub_bkg[ext], margins=margins)
+            ).copy()
+            err = u.trim_image(bkg.rms(), margins=margins).copy()
+            u.debug_print(2, f"{self}.generate_segmap(): type(err) ==", type(err), "err.shape ==", err.shape)
+            objects, segmap = sep.extract(
+                data_trim,
+                err=err,
+                thresh=threshold,
+                deblend_cont=True, clean=False,
+                segmentation_map=True, minarea=min_area
+            )
+
+        else:
+            raise ValueError(f"Unrecognised method {method}.")
+        segmap_full = np.zeros(data.shape)
+        u.debug_print(2, f"{self}.generate_segmap(): segmap_full ==", segmap_full)
+        u.debug_print(2, f"{self}.generate_segmap(): segmap ==", segmap)
+        segmap_full[bottom:top + 1, left:right + 1] = segmap.data
+        return segmap_full
+
+    def generate_mask(
+            self,
+            unmasked: SkyCoord = (),
+            ext: int = 0,
+            threshold: float = 4,
+            method: str = "sep",
+            obj_value=1,
+            back_value=0,
+            margins: tuple = (None, None, None, None)
+    ):
+        """
+        Uses a segmentation map to produce a
+        :param unmasked: SkyCoord list of objects to keep unmasked; if any
+        :param ext:
+        :param threshold:
+        :param method:
+        :param obj_value: For GALFIT masks, should be 1.
+        :param back_value: For GALFIT masks, should be 0.
+        :param margins: If only part of the image is to be masked, provide (left, right, bottom, top) in pixel
+            coordinates as tuple.
+        :return:
+        """
+        data = self.load_data()[ext]
+        segmap = self.generate_segmap(ext=ext, threshold=threshold, method=method,
+                                      margins=margins)
+        self.load_wcs()
+
+        unmasked = u.check_iterable(unmasked)
+
+        if segmap is None:
+            mask = np.zeros(data.shape)
+        else:
+            # Loop over the given coordinates and eliminate those segments from the mask.
+            mask = np.ones(data.shape, dtype=bool)
+            # This sets all the background pixels to False
+            mask[segmap == 0] = False
+            for coord in unmasked:
+                x_unmasked, y_unmasked = self.wcs.all_world2pix(coord.ra, coord.dec, 0)
+                # obj_id is the integer representing that object in the segmap
+                obj_id = segmap[int(np.round(y_unmasked)), int(np.round(x_unmasked))]
+                # If obj_id is zero, then our work here is already done (ie, the segmap routine read it as background anyway)
+                if obj_id != 0:
+                    mask[segmap == obj_id] = False
+
+        # Convert to integer (from bool)
+        mask = mask.astype(int)
+        mask[mask > 0] = obj_value
+        mask[mask == 0] = back_value
+
+        return mask
+
+    def masked_data(
+            self,
+            mask: np.ndarray = None,
+            ext: int = 0,
+            **generate_mask_kwargs
+    ):
+        self.load_data()
+        if mask is None:
+            mask = self.generate_mask(**generate_mask_kwargs)
+        return np.ma.MaskedArray(self.data[ext].copy(), mask=mask)
+
+    def write_mask(self, path: str):
+        """
+        Not yet implemented.
+        :param path:
+        :return:
+        """
+        pass
+
     def sep_aperture_photometry(
             self, x: float, y: float,
             aperture_radius: units.Quantity = 2.0 * units.arcsec,
@@ -2047,138 +2180,6 @@ class ImagingImage(Image):
         sources.write(os.path.join(output_dir, "synth_cat_all.ecsv"), format="ascii.ecsv")
 
         return sources
-
-    def generate_segmap(
-            self,
-            ext: int = 0,
-            threshold: float = 4,
-            method="sep",
-            margins: tuple = (None, None, None, None),
-            min_area: int = 5,
-            **background_kwargs
-    ):
-        """
-        Generate a segmentation map of the image in which the image is broken into segments according to detected sources.
-        Each source is assigned an integer, and the segmap has the same spatial dimensions as the input image.
-        :param ext:
-        :param threshold:
-        :param method:
-        :param margins:
-        :return:
-        """
-        self.load_data()
-        data = self.data[ext]
-        left, right, bottom, top = u.check_margins(data=data, margins=margins)
-
-        bkg = self.calculate_background(method=method, ext=ext, **background_kwargs)
-
-        if method == "photutils":
-            data_trim = u.trim_image(
-                data=data,
-                margins=margins
-            )
-            u.debug_print(2, f"{self}.generate_segmap(): data_trim.shape ==", data_trim.shape)
-            threshold = photutils.segmentation.detect_threshold(
-                data_trim,
-                threshold,
-                background=u.trim_image(bkg.background, margins=margins),
-                error=u.trim_image(bkg.background_rms, margins=margins)
-            )
-            u.debug_print(2, f"{self}.generate_segmap(): threshold ==", threshold)
-            segmap = photutils.detect_sources(data_trim, threshold, npixels=min_area)
-
-        elif method == "sep":
-            # The copying is done here to avoid 'C-contiguous' errors in SEP.
-            data_trim = u.sanitise_endianness(
-                u.trim_image(self.data_sub_bkg[ext], margins=margins)
-            ).copy()
-            err = u.trim_image(bkg.rms(), margins=margins).copy()
-            u.debug_print(2, f"{self}.generate_segmap(): type(err) ==", type(err), "err.shape ==", err.shape)
-            objects, segmap = sep.extract(
-                data_trim,
-                err=err,
-                thresh=threshold,
-                deblend_cont=True, clean=False,
-                segmentation_map=True, minarea=min_area
-            )
-
-        else:
-            raise ValueError(f"Unrecognised method {method}.")
-        segmap_full = np.zeros(data.shape)
-        u.debug_print(2, f"{self}.generate_segmap(): segmap_full ==", segmap_full)
-        u.debug_print(2, f"{self}.generate_segmap(): segmap ==", segmap)
-        segmap_full[bottom:top + 1, left:right + 1] = segmap.data
-        return segmap_full
-
-    def generate_mask(
-            self,
-            unmasked: SkyCoord = (),
-            ext: int = 0,
-            threshold: float = 4,
-            method: str = "sep",
-            obj_value=1,
-            back_value=0,
-            margins: tuple = (None, None, None, None)
-    ):
-        """
-        Uses a segmentation map to produce a
-        :param unmasked: SkyCoord list of objects to keep unmasked; if any
-        :param ext:
-        :param threshold:
-        :param method:
-        :param obj_value: For GALFIT masks, should be 1.
-        :param back_value: For GALFIT masks, should be 0.
-        :param margins: If only part of the image is to be masked, provide (left, right, bottom, top) in pixel
-            coordinates as tuple.
-        :return:
-        """
-        data = self.load_data()[ext]
-        segmap = self.generate_segmap(ext=ext, threshold=threshold, method=method,
-                                      margins=margins)
-        self.load_wcs()
-
-        unmasked = u.check_iterable(unmasked)
-
-        if segmap is None:
-            mask = np.zeros(data.shape)
-        else:
-            # Loop over the given coordinates and eliminate those segments from the mask.
-            mask = np.ones(data.shape, dtype=bool)
-            # This sets all the background pixels to False
-            mask[segmap == 0] = False
-            for coord in unmasked:
-                x_unmasked, y_unmasked = self.wcs.all_world2pix(coord.ra, coord.dec, 0)
-                # obj_id is the integer representing that object in the segmap
-                obj_id = segmap[int(np.round(y_unmasked)), int(np.round(x_unmasked))]
-                # If obj_id is zero, then our work here is already done (ie, the segmap routine read it as background anyway)
-                if obj_id != 0:
-                    mask[segmap == obj_id] = False
-
-        # Convert to integer (from bool)
-        mask = mask.astype(int)
-        mask[mask > 0] = obj_value
-        mask[mask == 0] = back_value
-
-        return mask
-
-    def masked_data(
-            self,
-            mask: np.ndarray = None,
-            ext: int = 0,
-            **generate_mask_kwargs
-    ):
-        self.load_data()
-        if mask is None:
-            mask = self.generate_mask(**generate_mask_kwargs)
-        return np.ma.MaskedArray(self.data[ext].copy(), mask=mask)
-
-    def write_mask(self, path: str):
-        """
-        Not yet implemented.
-        :param path:
-        :return:
-        """
-        pass
 
     @classmethod
     def select_child_class(cls, instrument: str, **kwargs):

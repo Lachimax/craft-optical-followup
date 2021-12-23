@@ -450,7 +450,8 @@ def plot_hg(data_title: str, instrument: str, f: str, frame: int,
 
 def distance_bar(hdu: fits.hdu.HDUList, ang_size_distance: float, x: float, y: float, frame: int,
                  length: float = None, angle_length: float = None, spread: float = 1.,
-                 reverse_y=False, fancy: bool = False, x_bar: float = None, line_kwargs: dict = {}, text_kwargs: dict = {},
+                 reverse_y=False, fancy: bool = False, x_bar: float = None, line_kwargs: dict = {},
+                 text_kwargs: dict = {},
                  fancy_line_kwargs: dict = {"lw": 0.5, "color": "red"}):
     """
     Draw a projected distance bar on your plot.
@@ -607,7 +608,7 @@ def plot_gal_params(hdu: fits.HDUList, ras: Union[list, np.ndarray, float], decs
     b = u.dequantify(b)
 
     for i, x in enumerate(xs):
-        print(x, ys[i])
+        u.debug_print(2, "plotting.plot_gal_params(): x, ys[i] ==", x, ys[i])
         if a[i] != 0 and b[i] != 0:
             if world_axes:
                 ellipse = photutils.EllipticalAperture((x, ys[i]), a=a[i] / pix_scale, b=b[i] / pix_scale,
