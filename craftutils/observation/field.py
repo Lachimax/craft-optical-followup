@@ -108,8 +108,10 @@ def load_epoch_directory():
     """
     path = _epoch_directory_path()
     directory = p.load_params(path)
-    if directory is None and os.path.isfile(path):
+    if directory is None:
         directory = {}
+        if not os.path.isfile(path):
+            write_epoch_directory(directory=directory)
     return directory
 
 
@@ -1147,6 +1149,7 @@ class Epoch:
 
     def _pipeline_init(self, ):
         if self.data_path is not None:
+            u.debug_print(2, f"{self}._pipeline_init(): self.data_path ==", self.data_path)
             u.mkdir_check_nested(self.data_path)
         else:
             raise ValueError(f"data_path has not been set for {self}")
