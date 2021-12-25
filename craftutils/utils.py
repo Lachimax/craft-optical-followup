@@ -24,7 +24,7 @@ debug_level = 0
 
 def get_git_hash(directory: str, short: bool = False):
     """
-    Gets the git version
+    Gets the git version hash.
     Special thanks to: https://stackoverflow.com/questions/14989858/get-the-current-git-hash-in-a-python-script
     :return:
     """
@@ -305,6 +305,21 @@ def remove_trailing_slash(path: str):
     if path.endswith("/"):
         path = path[:-1]
     return path
+
+
+def world_angle_se_to_pu(
+        theta: Union[units.Quantity, float],
+        rot_angle: Union[units.Quantity, float] = 0 * units.deg
+):
+    """
+    Converts a Source Extractor world angle to a photutils (relative to image) angle.
+    :param theta: world angle, in degrees.
+    :param rot_angle: rotation angle of the image.
+    :return:
+    """
+    theta = check_quantity(theta, units.deg)
+    rot_angle = check_quantity(rot_angle, units.deg)
+    return -theta.to(units.radian).value
 
 
 def size_from_ang_size_distance(theta: float, ang_size_distance: float):

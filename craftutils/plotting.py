@@ -600,9 +600,8 @@ def plot_gal_params(hdu: fits.HDUList, ras: Union[list, np.ndarray, float], decs
         ys = np.array(decs)
 
     theta = np.array(theta)
-    theta = -theta + ff.get_rotation_angle(header)
-    # Convert to radians
-    theta = theta * np.pi / 180
+    # Convert to photutils angle format
+    theta = u.world_angle_se_to_pu(theta, rot_angle=ff.get_rotation_angle(header))
 
     a = u.dequantify(a)
     b = u.dequantify(b)
