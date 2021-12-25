@@ -764,6 +764,10 @@ class ImagingImage(Image):
         self.wcs = wcs.WCS(header=self.headers[ext])
         return self.wcs
 
+    def extract_rotation_angle(self, ext: int = 0):
+        self.load_headers()
+        return ff.get_rotation_angle(header=self.headers[ext])
+
     def extract_wcs_footprint(self):
         """
         Returns the RA & Dec of the corners of the image.
