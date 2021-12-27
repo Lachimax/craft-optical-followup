@@ -1003,9 +1003,14 @@ class ImagingImage(Image):
     def aperture_areas(self):
         self.load_source_cat()
         self.extract_pixel_scale()
-        self.source_cat["A_IMAGE"] = self.source_cat["A_WORLD"].to(units.pix, self.pixel_scale_dec)
-        self.source_cat["B_IMAGE"] = self.source_cat["A_WORLD"].to(units.pix, self.pixel_scale_dec)
-        self.source_cat["KRON_AREA_IMAGE"] = self.source_cat["A_IMAGE"] * self.source_cat["B_IMAGE"] * np.pi
+
+        for source_cat in [self.source_cat, self.source_cat_dual]:
+
+            source_cat["A_IMAGE"] = source_cat["A_WORLD"].to(units.pix, self.pixel_scale_dec)
+            source_cat["B_IMAGE"] = source_cat["A_WORLD"].to(units.pix, self.pixel_scale_dec)
+            source_cat["KRON_AREA_IMAGE"] = source_cat["A_IMAGE"] * source_cat["B_IMAGE"] * np.pi
+
+
 
     def calibrate_magnitudes(self, zeropoint_name: str = "best", force: bool = False, dual: bool = False):
         self.load_source_cat(force=True)
@@ -1536,18 +1541,24 @@ class ImagingImage(Image):
             tolerance=offset_tolerance)
         return matches_source_cat, matches_ext_cat, distance
 
-    def signal_to_noise(self):
+    def signal_to_noise(self, dual: bool = False):
         self.load_source_cat()
         self.extract_exposure_time()
         self.extract_gain()
         self.aperture_areas()
-        flux_target = self.source_cat['FLUX_AUTO']
-        rate_target = flux_target / self.exposure_time
-        rate_sky = self.source_cat['BACKGROUND'] / (self.exposure_time * units.pix)
-        rate_read = self.extract_noise_read()
-        n_pix = self.source_cat['KRON_AREA_IMAGE'] / units.pixel
 
-        self.source_cat["SNR"] = ph.signal_to_noise(
+        if dual:
+            source_cat = self.source_cat_dual
+        else:
+            source_cat = self.source_cat
+
+        flux_target = source_cat['FLUX_AUTO']
+        rate_target = flux_target / self.exposure_time
+        rate_sky = source_cat['BACKGROUND'] / (self.exposure_time * units.pix)
+        rate_read = self.extract_noise_read()
+        n_pix = source_cat['KRON_AREA_IMAGE'] / units.pixel
+
+        source_cat["SNR_CCD"] = ph.signal_to_noise(
             rate_target=rate_target,
             rate_sky=rate_sky,
             rate_read=rate_read,
@@ -1555,9 +1566,15 @@ class ImagingImage(Image):
             gain=self.gain,
             n_pix=n_pix
         ).value
+
+        if dual:
+            self.source_cat_dual = source_cat
+        else:
+            self.source_cat = source_cat
+
         self.update_output_file()
-        print("MEDIAN SNR:", np.median(self.source_cat["SNR"]))
-        return self.source_cat["SNR"]
+        print("MEDIAN SNR:", np.median(source_cat["SNR_CCD"]))
+        return source_cat["SNR_CCD"]
 
     def object_axes(self):
         self.load_source_cat()
