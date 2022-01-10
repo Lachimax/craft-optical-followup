@@ -201,14 +201,14 @@ def plot_subimage(fig: plt.Figure, hdu: Union[str, fits.HDUList], ra: float, dec
     :param reverse_y:
     :return:
     """
-    print(hdu)
+    u.debug_print(1, "plotting.plot_subimage(): hdu ==", hdu)
     hdu, path = ff.path_or_hdu(hdu=hdu)
-    print(hdu[0].data.shape)
+    u.debug_print(1, "plotting.plot_subimage(): hdu[0].data.shape ==", hdu[0].data.shape)
 
     hdu_cut = ff.trim_frame_point(hdu=hdu, ra=ra, dec=dec, frame=frame, world_frame=world_frame)
     wcs_cut = wcs.WCS(header=hdu_cut[0].header)
 
-    print(n_y, n_x, n)
+    u.debug_print(1, "plotting.plot_subimage(): n_y, n_x, n ==", n_y, n_x, n)
     if show_coords:
         plot = fig.add_subplot(n_y, n_x, n, projection=wcs_cut)
         if ticks is not None:
@@ -240,7 +240,7 @@ def plot_subimage(fig: plt.Figure, hdu: Union[str, fits.HDUList], ra: float, dec
     else:
         raise ValueError('Interval not recognised.')
 
-    print(hdu_cut[0].data.shape)
+    u.debug_print(1, "plotting.plot_subimage(): hdu_cut[0].data.shape ==", hdu_cut[0].data.shape)
     if stretch == 'log':
         norm = ImageNormalize(hdu_cut[0].data, interval=interval, stretch=LogStretch(), vmin=vmin, vmax=vmax)
     elif stretch == 'sqrt':
@@ -250,7 +250,7 @@ def plot_subimage(fig: plt.Figure, hdu: Union[str, fits.HDUList], ra: float, dec
 
     plot.title.set_text(title)
     plot.title.set_size(font_size)
-    print(ylabel)
+    u.debug_print(1, "plotting.plot_subimage(): ylabel ==", ylabel)
     if ylabel is not None:
         plot.set_ylabel(ylabel, size=12)
 
