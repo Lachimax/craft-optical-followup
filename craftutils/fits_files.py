@@ -751,19 +751,19 @@ def trim(hdu: fits.hdu.hdulist.HDUList,
     return new_hdu
 
 
-def subimage_edges(data: np.ndarray, x, y, frame, quiet: bool = True):
+def subimage_edges(data: np.ndarray, x, y, frame):
     bottom = y - frame
     top = y + frame
     left = x - frame
     right = x + frame
-    bottom, top, left, right = check_subimage_edges(data=data, bottom=bottom, top=top, left=left, right=right,
-                                                    quiet=quiet)
+    bottom, top, left, right = check_subimage_edges(
+        data=data, bottom=bottom, top=top, left=left, right=right,
+                                                    )
     return bottom, top, left, right
 
 
-def check_subimage_edges(data: np.ndarray, bottom, top, left, right, quiet: bool = True):
-    if not quiet:
-        print(bottom, top, left, right)
+def check_subimage_edges(data: np.ndarray, bottom, top, left, right):
+    u.debug_print(1, "fits_files.check_subimage_edges(): bottom, top, left, right == ", bottom, top, left, right)
     if (bottom < 0 and top < 0) or (bottom > data.shape[0] and top > data.shape[0]):
         raise ValueError(f"Both y-axis edges ({bottom}, {top}) are outside the image.")
     if (left < 0 and right < 0) or (left > data.shape[1] and right > data.shape[1]):
@@ -776,7 +776,7 @@ def check_subimage_edges(data: np.ndarray, bottom, top, left, right, quiet: bool
 
 
 def trim_frame_point(hdu: fits.hdu.hdulist.HDUList, ra: float, dec: float,
-                     frame: Union[int, float], world_frame: bool = False, quiet: bool = False, ext: int = 0):
+                     frame: Union[int, float], world_frame: bool = False, ext: int = 0):
     """
     Trims a fits file to frame a single point.
     :param hdu:
@@ -795,7 +795,7 @@ def trim_frame_point(hdu: fits.hdu.hdulist.HDUList, ra: float, dec: float,
 
     bottom, top, left, right = subimage_edges(data=hdu[ext].data, x=x, y=y, frame=frame)
 
-    hdu_cut = trim(hdu=hdu, left=left, right=right, bottom=bottom, top=top, quiet=quiet, ext=ext)
+    hdu_cut = trim(hdu=hdu, left=left, right=right, bottom=bottom, top=top, ext=ext)
     return hdu_cut
 
 
