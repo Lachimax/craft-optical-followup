@@ -1883,7 +1883,9 @@ class ImagingImage(Image):
     def calculate_background(
             self, ext: int = 0,
             box_size: int = 64,
-            filter_size: int = 3, method: str = "sep"
+            filter_size: int = 3,
+            method: str = "sep",
+            **back_kwargs
     ):
         self.load_data()
 
@@ -1892,7 +1894,8 @@ class ImagingImage(Image):
             bkg = self.sep_background[ext] = sep.Background(
                 data,
                 bw=box_size, bh=box_size,
-                fw=filter_size, fh=filter_size
+                fw=filter_size, fh=filter_size,
+                **back_kwargs
             )
             self.data_sub_bkg[ext] = (data - bkg.back())
 
@@ -1904,7 +1907,8 @@ class ImagingImage(Image):
                 data, box_size,
                 filter_size=filter_size,
                 sigma_clip=sigma_clip,
-                bkg_estimator=bkg_estimator
+                bkg_estimator=bkg_estimator,
+                **back_kwargs
             )
             self.data_sub_bkg[ext] = (data - bkg.background)
 
@@ -2029,11 +2033,15 @@ class ImagingImage(Image):
             self,
             mask: np.ndarray = None,
             ext: int = 0,
+            mask_type: str = 'zeroed-out',
             **generate_mask_kwargs
     ):
         self.load_data()
         if mask is None:
             mask = self.generate_mask(**generate_mask_kwargs)
+
+        # if mask_type == 'zeroed-out'
+
         return np.ma.MaskedArray(self.data[ext].copy(), mask=mask)
 
     def write_mask(self, path: str):
