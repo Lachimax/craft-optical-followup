@@ -272,8 +272,10 @@ class Image:
         self.update_output_file()
 
     def open(self, mode: str = "readonly"):
+        u.debug_print(1, f"Image.open() 1: {self}.hdu_list:", self.hdu_list)
         if self.path is not None and self.hdu_list is None:
             self.hdu_list = fits.open(self.path, mode=mode)
+            u.debug_print(1, f"Image.open() 2: {self}.hdu_list:", self.hdu_list)
         elif self.path is None:
             print("The FITS file could not be loaded because path has not been set.")
 
@@ -325,8 +327,9 @@ class Image:
 
     def load_data(self, force: bool = False):
         if self.data is None or force:
-            self.open()
             unit = self.extract_unit()
+            self.open()
+            u.debug_print(1, f"Image.load_data() 1: {self}.hdu_list:", self.hdu_list)
             if unit is not None:
                 try:
                     unit = units.Unit(unit)
@@ -334,6 +337,8 @@ class Image:
                 except ValueError:
                     self.data = list(map(lambda h: h.data, self.hdu_list))
             else:
+                u.debug_print(1, f"Image.load_data(): {self}.path:", self.path)
+                u.debug_print(1, f"Image.load_data() 2: {self}.hdu_list:", self.hdu_list)
                 self.data = list(map(lambda h: h.data, self.hdu_list))
             self.close()
         else:
@@ -1604,6 +1609,56 @@ class ImagingImage(Image):
         masked_data = self.data[0] * mask
 
         gain = self.extract_gain()
+
+        snrs = []
+        snrs_se = []
+        sigma_fluxes = []
+
+        for cat_obj in source_cat:
+
+            x = cat_obj["X_IMAGE"].value - 1
+            y = cat_obj["Y_IMAGE"].value - 1
+
+            a = cat_obj["A_WORLD"].to(units.pix, scale).value
+            b = cat_obj["B_WORLD"].to(units.pix, scale).value
+
+            kron = cat_obj["KRON_RADIUS"]
+
+            theta = u.world_angle_se_to_pu(cat_obj["THETA_WORLD"])
+
+            ap = ph.aperture.EllipticalAperture(
+                [x, y],
+                a=a,
+                b=b,
+                theta=theta
+            )
+
+            area_aperture = ap.area
+            ap_mask = ap.to_mask(method='center')
+
+            flux = cat_obj["FLUX_AUTO"]
+
+            ap_rms = ap_mask.multiply(rms)
+            sigma_flux = np.sqrt(ap_rms.sum()) * units.ct
+            snr = flux / np.sqrt(sigma_flux ** 2 + flux / gain)
+
+            snr_se = flux / cat_obj["FLUXERR_AUTO"].value
+
+            snrs.append(snr.value)
+            sigma_fluxes.append(sigma_flux.value)
+            snrs_se.append(snr_se)
+
+            if show:
+                plt.show()
+
+        source_cat["SNR_MEASURED"] = snrs
+        source_cat["NOISE_MEASURED"] = sigma_fluxes
+        source_cat["SNR_SE"] = snrs_se
+
+        if dual:
+            source_cat = self.source_cat_dual
+        else:
+            source_cat = self.source_cat
 
     def object_axes(self):
         self.load_source_cat()
