@@ -326,7 +326,15 @@ class Image:
     def load_data(self, force: bool = False):
         if self.data is None or force:
             self.open()
-            self.data = list(map(lambda h: h.data, self.hdu_list))
+            unit = self.extract_unit()
+            if unit is not None:
+                try:
+                    unit = units.Unit(unit)
+                    self.data = list(map(lambda h: h.data * unit, self.hdu_list))
+                except ValueError:
+                    self.data = list(map(lambda h: h.data, self.hdu_list))
+            else:
+                self.data = list(map(lambda h: h.data, self.hdu_list))
             self.close()
         else:
             u.debug_print(1, "Data already loaded.")
@@ -366,6 +374,10 @@ class Image:
             return None
         else:
             return value
+
+    def extract_unit(self):
+        key = self.header_keys()["unit"]
+        return self.extract_header_item(key)
 
     def extract_gain(self):
         key = self.header_keys()["gain"]
@@ -422,7 +434,8 @@ class Image:
                        "date-obs": "DATE-OBS",
                        "mjd-obs": "MJD-OBS",
                        "object": "OBJECT",
-                       "instrument": "INSTRUME"}
+                       "instrument": "INSTRUME",
+                       "unit": "BUNIT"}
         return header_keys
 
     @classmethod
@@ -947,7 +960,7 @@ class ImagingImage(Image):
             dist_tol: units.Quantity = 2. * units.arcsec,
             snr_cut=200
     ):
-        self.signal_to_noise()
+        self.signal_to_noise_ccd()
         if image_name is None:
             image_name = self.name
         self.extract_filter()
@@ -1005,12 +1018,9 @@ class ImagingImage(Image):
         self.extract_pixel_scale()
 
         for source_cat in [self.source_cat, self.source_cat_dual]:
-
             source_cat["A_IMAGE"] = source_cat["A_WORLD"].to(units.pix, self.pixel_scale_dec)
             source_cat["B_IMAGE"] = source_cat["A_WORLD"].to(units.pix, self.pixel_scale_dec)
             source_cat["KRON_AREA_IMAGE"] = source_cat["A_IMAGE"] * source_cat["B_IMAGE"] * np.pi
-
-
 
     def calibrate_magnitudes(self, zeropoint_name: str = "best", force: bool = False, dual: bool = False):
         self.load_source_cat(force=True)
@@ -1100,7 +1110,7 @@ class ImagingImage(Image):
 
     def estimate_depth(self, zeropoint_name: str):
         self.load_source_cat()
-        self.signal_to_noise()
+        self.signal_to_noise_ccd()
         self.calibrate_magnitudes(zeropoint_name=zeropoint_name)
         cat_3sigma = self.source_cat[self.source_cat["SNR"] > 3.0]
         print("Total sources:", len(self.source_cat))
@@ -1541,7 +1551,7 @@ class ImagingImage(Image):
             tolerance=offset_tolerance)
         return matches_source_cat, matches_ext_cat, distance
 
-    def signal_to_noise(self, dual: bool = False):
+    def signal_to_noise_ccd(self, dual: bool = False):
         self.load_source_cat()
         self.extract_exposure_time()
         self.extract_gain()
@@ -1558,7 +1568,7 @@ class ImagingImage(Image):
         rate_read = self.extract_noise_read()
         n_pix = source_cat['KRON_AREA_IMAGE'] / units.pixel
 
-        source_cat["SNR_CCD"] = ph.signal_to_noise(
+        source_cat["SNR_CCD"] = ph.signal_to_noise_ccd_equ(
             rate_target=rate_target,
             rate_sky=rate_sky,
             rate_read=rate_read,
@@ -1575,6 +1585,25 @@ class ImagingImage(Image):
         self.update_output_file()
         print("MEDIAN SNR:", np.median(source_cat["SNR_CCD"]))
         return source_cat["SNR_CCD"]
+
+    def signal_to_noise_measure(self, dual: bool = False):
+        self.load_source_cat()
+        if dual:
+            source_cat = self.source_cat_dual
+        else:
+            source_cat = self.source_cat
+
+        self.load_data()
+        _, scale = self.extract_pixel_scale()
+        mask = self.generate_mask(method='sep')
+        mask = mask.astype(bool)
+        bkg = self.calculate_background(method='sep', mask=mask)
+        rms = bkg.rms()
+
+        mask = np.invert(mask)
+        masked_data = self.data[0] * mask
+
+        gain = self.extract_gain()
 
     def object_axes(self):
         self.load_source_cat()
@@ -2119,7 +2148,7 @@ class ImagingImage(Image):
             file.source_extraction_psf(output_dir=output_dir)
             file.zeropoint_best = self.zeropoint_best
             file.calibrate_magnitudes()
-            file.signal_to_noise()
+            file.signal_to_noise_ccd_equ()
             inserted.append(file)
             cat = file.check_synthetic_sources()
             cats.append(cat)

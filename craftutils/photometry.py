@@ -2317,7 +2317,7 @@ def intensity_radius(image, centre_x, centre_y, noise: float = None, limit: floa
     return radii, np.array(intensities)
 
 
-def signal_to_noise(
+def signal_to_noise_ccd_equ(
         rate_target: units.Quantity,
         rate_sky: units.Quantity,
         rate_read: units.Quantity,
@@ -2357,3 +2357,6 @@ def signal_to_noise(
     snr = rate_target * np.sqrt(exp_time * gain) / np.sqrt(
         rate_target + n_pix * (rate_sky + rate_dark / gain + rate_read / (exp_time * gain)))
     return snr
+
+
+
