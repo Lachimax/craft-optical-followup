@@ -1746,12 +1746,9 @@ def insert_synthetic_point_sources_gauss(
     :return:
     """
 
-    if isinstance(mag, Iterable):
-        mag = units.Quantity([mag])
-    if isinstance(x, Iterable):
-        x = units.Quantity([x])
-    if isinstance(y, Iterable):
-        y = units.Quantity([y])
+    mag = units.Quantity(u.check_iterable(mag))
+    x = units.Quantity(u.check_iterable(x))
+    y = units.Quantity(u.check_iterable(x))
 
     fwhm = u.dequantify(fwhm, unit=units.pix)
 
@@ -1770,7 +1767,7 @@ def insert_synthetic_point_sources_gauss(
     u.debug_print(2, "flux:", flux)
     u.debug_print(1, "len(sources):", len(sources))
 
-    sources['flux'] = flux
+    sources['flux'] = flux.value
     print('Generating additive image...')
 
     add = make_model_sources_image(shape=image.shape, model=gaussian_model, source_table=sources)
