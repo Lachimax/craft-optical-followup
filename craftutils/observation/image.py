@@ -750,11 +750,11 @@ class ImagingImage(Image):
 
         return source_cat
 
-    def _save_to_source_cat(self, source_cat: table.QTable, dual: bool):
+    def _set_source_cat(self, source_cat: table.QTable, dual: bool):
         """
         CAUTION. This will overwrite any saved source_cat both on disk and in memory. Recommended that this only be used when columns
         have been added to the existing source_cat.
-        :param source_cat:
+        :param source_cat: QTable to make this object's
         :param dual:
         :return:
         """
@@ -1078,7 +1078,7 @@ class ImagingImage(Image):
             cat[f"MAG_PSF_ZP_{zeropoint_name}_no_ext"] = mags[2]
             cat[f"MAGERR_PSF_ZP_{zeropoint_name}_no_ext"] = mags[3]
 
-            self._save_to_source_cat(source_cat=cat, dual=dual)
+            self._set_source_cat(source_cat=cat, dual=dual)
 
         else:
             print(f"Magnitudes already calibrated for {zeropoint_name}")
@@ -1129,28 +1129,47 @@ class ImagingImage(Image):
 
         return mag, mag_err, mag_no_ext_corr, mag_no_ext_corr_err
 
-    def estimate_depth(self, zeropoint_name: str):
-        self.load_source_cat()
+    def estimate_depth(self, zeropoint_name: str, dual: bool = False):
+        """
+        Use various measures of S/N to estimate image depth at a range of sigmas.
+        :param zeropoint_name:
+        :param dual:
+        :return:
+        """
+
+        source_cat = self.get_source_cat(dual=dual)
         self.signal_to_noise_ccd()
         self.signal_to_noise_measure()
-        self.signal_to_noise_se()
         self.calibrate_magnitudes(zeropoint_name=zeropoint_name)
 
         # "max" stores the magnitude of the faintest object with S/N > x sigma
         self.depth["max"] = {}
-        # "secure" stores the magnitude of the brightest object with S/N < x sigma, thus giving the faintest at which we
-        # can be confident of a detection
+        # "secure" finds the brightest object with S/N < x sigma, then increments to the
+        # overall; thus giving the faintest magnitude at which we can be confident of a detection
         self.depth["secure"] = {}
 
+        # We do this to ensure that, in the "secure" step, object i+1 is the next-brightest in the catalogue
+        source_cat.sort("FLUX_AUTO")
+
         for sigma in range(1, 6):
-            cat_more_xsigma = self.source_cat[self.source_cat["SNR_CCD"] > sigma]
+            for snr_key in ["SNR_CCD", "SNR_MEASURED", "SNR_SE"]:
 
-            cat_less_xsigma = self.source_cat[self.source_cat["SNR_CCD"] < sigma]
+                # Faintest source at x-sigma:
+                cat_more_xsigma = source_cat[source_cat[snr_key] > sigma]
+                print(f"Sources > {sigma}-sigma:", len(cat_more_xsigma))
+                self.depth["max"][snr_key][f"{sigma}-sigma"] = np.max(cat_more_xsigma[f"MAG_AUTO_ZP_{zeropoint_name}"])
 
-        print("Total sources:", len(self.source_cat))
-        print("Sources > 3 sigma:", len(cat_3sigma))
+                # Brightest source less than x-sigma (kind of)
+                source_less_sigma = source_cat[source_cat[snr_key] < sigma]
+                source_less_sigma = source_less_sigma[source_less_sigma[sigma] != np.inf]
+                source_less_sigma = source_less_sigma[source_less_sigma[sigma] != np.nan]
+                i = np.argmax(source_less_sigma["FLUX_AUTO"])
+                i, _ = u.find_nearest(source_cat["NUMBER"], source_less_sigma[i]["NUMBER"])
+                i += 1
+                src_lim = source_cat[i]
+                self.depth["secure"][snr_key][f"{sigma}-sigma"] = src_lim[f"MAG_AUTO_ZP_{zeropoint_name}"]
 
-        np.max(cat_3sigma[f"MAG_AUTO_ZP_{zeropoint_name}"])
+        source_cat.sort("NUMBER")
         self.update_output_file()
         return self.depth
 
@@ -1605,7 +1624,7 @@ class ImagingImage(Image):
             n_pix=n_pix
         ).value
 
-        self._save_to_source_cat(source_cat, dual)
+        self._set_source_cat(source_cat, dual)
 
         self.update_output_file()
         print("MEDIAN SNR:", np.median(source_cat["SNR_CCD"]))
@@ -1665,11 +1684,7 @@ class ImagingImage(Image):
         source_cat["NOISE_MEASURED"] = sigma_fluxes
         source_cat["SNR_SE"] = snrs_se
 
-        self._save_to_source_cat(source_cat=source_cat, dual=dual)
-
-    def signal_to_noise_se(self, dual: bool = False):
-        source_cat = self.get_source_cat(dual=dual)
-
+        self._set_source_cat(source_cat=source_cat, dual=dual)
 
     def object_axes(self):
         self.load_source_cat()
@@ -2140,7 +2155,11 @@ class ImagingImage(Image):
         :param path:
         :return:
         """
-        pass
+
+
+
+        mask_file = self.copy(path)
+        mask_file
 
     def sep_aperture_photometry(
             self, x: float, y: float,
@@ -2557,6 +2576,51 @@ class FORS2CoaddedImage(CoaddedImage):
             instrument_name=self.instrument_name,
             area_file=area_file
         )
+
+    def zeropoint(
+            self,
+            cat_path: str,
+            output_path: str,
+            cat_name: str = 'Catalogue',
+            cat_zeropoint: units.Quantity = 0.0 * units.mag,
+            cat_zeropoint_err: units.Quantity = 0.0 * units.mag,
+            image_name: str = None,
+            show: bool = False,
+            sex_x_col: str = 'XPSF_IMAGE',
+            sex_y_col: str = 'YPSF_IMAGE',
+            sex_ra_col: str = 'ALPHAPSF_SKY',
+            sex_dec_col: str = 'DELTAPSF_SKY',
+            sex_flux_col: str = 'FLUX_PSF',
+            stars_only: bool = True,
+            star_class_col: str = 'CLASS_STAR',
+            star_class_tol: float = 0.95,
+            mag_range_sex_lower: units.Quantity = -100. * units.mag,
+            mag_range_sex_upper: units.Quantity = 100. * units.mag,
+            dist_tol: units.Quantity = 2. * units.arcsec,
+            snr_cut=200
+    ):
+        super().zeropoint(
+            cat_path=cat_path,
+            output_path=output_path,
+            cat_name=cat_name,
+            cat_zeropoint=cat_zeropoint,
+            cat_zeropoint_err=cat_zeropoint_err,
+            image_name=image_name,
+            show=show,
+            sex_x_col=sex_x_col,
+            sex_y_col=sex_y_col,
+            sex_ra_col=sex_ra_col,
+            sex_dec_col=sex_dec_col,
+            sex_flux_col=sex_flux_col,
+            stars_only=stars_only,
+            star_class_col=star_class_col,
+            star_class_tol=star_class_tol,
+            mag_range_sex_lower=mag_range_sex_lower,
+            mag_range_sex_upper=mag_range_sex_upper,
+            dist_tol=dist_tol,
+            snr_cut=snr_cut
+        )
+        self.calibration_from_qc1()
 
     def calibration_from_qc1(self):
         """

@@ -1737,22 +1737,28 @@ class ImagingEpoch(Epoch):
                 fil_path = os.path.join(output_path, fil)
                 u.mkdir_check(fil_path)
                 if f"in_{cat_name}" in self.field.cats and self.field.cats[f"in_{cat_name}"]:
-                    img.zeropoint(cat_path=self.field.get_path(f"cat_csv_{cat_name}"),
-                                  output_path=os.path.join(fil_path, cat_name),
-                                  cat_name=cat_name,
-                                  dist_tol=distance_tolerance,
-                                  show=False,
-                                  snr_cut=snr_min,
-                                  star_class_tol=star_class_tolerance
-                                  )
+                    img.zeropoint(
+                        cat_path=self.field.get_path(f"cat_csv_{cat_name}"),
+                        output_path=os.path.join(fil_path, cat_name),
+                        cat_name=cat_name,
+                        dist_tol=distance_tolerance,
+                        show=False,
+                        snr_cut=snr_min,
+                        star_class_tol=star_class_tolerance
+                    )
 
             zeropoint, cat = img.select_zeropoint()
 
             img.estimate_depth(zeropoint_name=cat)
 
-            if img.depth > deepest.depth:
+            if img.depth["secure"]["SNR_MEASURED"]["5-sigma"] > deepest.depth["secure"]["SNR_MEASURED"]["5-sigma"]:
                 deepest = img
 
+        return deepest
+
+    def check_deepest(self, img: image.ImagingImage):
+        if img.depth["secure"]["SNR_MEASURED"]["5-sigma"] > deepest.depth["secure"]["SNR_MEASURED"]["5-sigma"]:
+            deepest = img
         return deepest
 
     def trim_coadded(self, output_dir: str):
@@ -3478,40 +3484,7 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
                     registered = frame.copy(
                         os.path.join(output_dir, frame.filename.replace("_norm.fits", "_registered.fits")))
                     self.add_frame_registered(registered)
-
-    def zeropoint(self,
-                  output_path: str,
-                  distance_tolerance: units.Quantity = 0.2 * units.arcsec,
-                  snr_min: float = 200.,
-                  star_class_tolerance: float = 0.95
-                  ):
-        deepest = self.coadded_trimmed[self.filters[0]]
-        for fil in self.filters:
-            img = self.coadded_trimmed[fil]
-            for cat_name in retrieve.photometry_catalogues:
-                if cat_name == "gaia":
-                    continue
-                fil_path = os.path.join(output_path, fil)
-                u.mkdir_check(fil_path)
-                if f"in_{cat_name}" in self.field.cats and self.field.cats[f"in_{cat_name}"]:
-                    img.zeropoint(cat_path=self.field.get_path(f"cat_csv_{cat_name}"),
-                                  output_path=os.path.join(fil_path, cat_name),
-                                  cat_name=cat_name,
-                                  dist_tol=distance_tolerance,
-                                  show=False,
-                                  snr_cut=snr_min,
-                                  star_class_tol=star_class_tolerance
-                                  )
-                img.calibration_from_qc1()
-
-            zeropoint, cat = img.select_zeropoint()
-
-            img.estimate_depth(zeropoint_name=cat)
-
-            if img.depth > deepest.depth:
-                deepest = img
-
-        return deepest
+                    
 
     def correct_astrometry_frames(self, output_dir: str, frames: dict = None, **kwargs):
         """
