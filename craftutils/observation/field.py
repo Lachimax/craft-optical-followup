@@ -1720,7 +1720,7 @@ class ImagingEpoch(Epoch):
         self.deepest_filter = deepest.filter_name
         self.deepest = deepest
 
-        print("DEEPEST FILTER:", self.deepest_filter, self.deepest.depth)
+        print("DEEPEST FILTER:", self.deepest_filter, self.deepest.depth["secure"]["SNR_MEASURED"]["5-sigma"])
 
     def zeropoint(self,
                   output_path: str,
@@ -1751,14 +1751,8 @@ class ImagingEpoch(Epoch):
 
             img.estimate_depth(zeropoint_name=cat)
 
-            if img.depth["secure"]["SNR_MEASURED"]["5-sigma"] > deepest.depth["secure"]["SNR_MEASURED"]["5-sigma"]:
-                deepest = img
+            deepest = image.deepest(deepest, img)
 
-        return deepest
-
-    def check_deepest(self, img: image.ImagingImage):
-        if img.depth["secure"]["SNR_MEASURED"]["5-sigma"] > deepest.depth["secure"]["SNR_MEASURED"]["5-sigma"]:
-            deepest = img
         return deepest
 
     def trim_coadded(self, output_dir: str):
@@ -2850,31 +2844,31 @@ class PanSTARRS1ImagingEpoch(ImagingEpoch):
             self.data_path = os.path.join(self.field.data_path, "imaging", "panstarrs1")
         return self.data_path
 
-    def photometric_calibration(self, output_path: str, **kwargs):
-        u.mkdir_check(output_path)
-        u.debug_print(1, self.filters)
+    def zeropoint(self,
+                  output_path: str,
+                  distance_tolerance: units.Quantity = 0.2 * units.arcsec,
+                  snr_min: float = 200.,
+                  star_class_tolerance: float = 0.95
+                  ):
         deepest = self.coadded[self.filters[0]]
         for fil in self.filters:
             img = self.coadded[fil]
-            img.zeropoint(cat_path=self.field.get_path("cat_csv_panstarrs1"),
-                          output_path=os.path.join(output_path, img.name),
-                          cat_name="PanSTARRS1",
-                          image_name="PanSTARRS Cutout",
-                          )
+            img.zeropoint(
+                cat_path=self.field.get_path("cat_csv_panstarrs1"),
+                output_path=os.path.join(output_path, img.name),
+                cat_name="PanSTARRS1",
+                dist_tol=distance_tolerance,
+                show=False,
+                snr_cut=snr_min,
+                star_class_tol=star_class_tolerance,
+                image_name="PanSTARRS Cutout",
+            )
             img.zeropoint_best = img.zeropoints["panstarrs1"]
             img.estimate_depth(zeropoint_name="panstarrs1")
 
-            if img.depth > deepest.depth:
-                deepest = img
+            deepest = image.deepest(deepest, img)
 
-        for fil in self.filters:
-            img = self.coadded[fil]
-            print(img.filter_name, img.depth)
-
-        self.deepest_filter = deepest.filter_name
-        self.deepest = deepest
-
-        print("DEEPEST FILTER:", self.deepest_filter, self.deepest.depth)
+        return deepest
 
     def add_coadded_image(self, img: Union[str, image.Image], key: str, **kwargs):
         if isinstance(img, str):
@@ -3484,7 +3478,6 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
                     registered = frame.copy(
                         os.path.join(output_dir, frame.filename.replace("_norm.fits", "_registered.fits")))
                     self.add_frame_registered(registered)
-                    
 
     def correct_astrometry_frames(self, output_dir: str, frames: dict = None, **kwargs):
         """

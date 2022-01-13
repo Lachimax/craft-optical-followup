@@ -1153,7 +1153,6 @@ class ImagingImage(Image):
 
         for sigma in range(1, 6):
             for snr_key in ["SNR_CCD", "SNR_MEASURED", "SNR_SE"]:
-
                 # Faintest source at x-sigma:
                 cat_more_xsigma = source_cat[source_cat[snr_key] > sigma]
                 print(f"Sources > {sigma}-sigma:", len(cat_more_xsigma))
@@ -1649,7 +1648,6 @@ class ImagingImage(Image):
         sigma_fluxes = []
 
         for cat_obj in source_cat:
-
             x = cat_obj["X_IMAGE"].value - 1
             y = cat_obj["Y_IMAGE"].value - 1
 
@@ -2155,8 +2153,6 @@ class ImagingImage(Image):
         :param path:
         :return:
         """
-
-
 
         mask_file = self.copy(path)
         mask_file
@@ -2851,6 +2847,16 @@ class Spec1DCoadded(Spectrum):
             "trimmed_paths": self.trimmed_path
         })
         return outputs
+
+
+def deepest(
+        img_1: ImagingImage, img_2: ImagingImage, sigma: int = 5, depth_type: str = "secure",
+        snr_type: str = "SNR_MEASURED"):
+    if img_1.depth[depth_type][snr_type][f"{sigma}-sigma"] > \
+            img_2.depth[depth_type][snr_type][f"{sigma}-sigma"]:
+        return img_1
+    else:
+        return img_2
 
 # def pypeit_str(self):
 #     header = self.hdu[0].header
