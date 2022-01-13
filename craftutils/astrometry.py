@@ -1,19 +1,79 @@
 # Code by Lachlan Marnoch, 2019 - 2021
-
-from astropy import table
-from astropy.io import fits
-from astropy import wcs
-from astropy.coordinates import SkyCoord
+import copy
+from typing import Union, Iterable
+import os
 
 import matplotlib.pyplot as plt
 import numpy as np
 
-from craftutils import fits_files as ff
-from craftutils import params as p
-from craftutils import utils as u
-from craftutils import plotting as pl
+import astropy.table as table
+import astropy.io.fits as fits
+import astropy.wcs as wcs
+from astropy.coordinates import SkyCoord
+import astropy.units as units
+import astropy.time as time
+from astropy.visualization import ImageNormalize, ZScaleInterval, SqrtStretch
 
-from typing import Union, Iterable
+import craftutils.fits_files as ff
+import craftutils.params as p
+import craftutils.utils as u
+import craftutils.wrap.astrometry_net as astrometry_net
+from craftutils.retrieve import cat_columns, load_catalogue
+
+
+def correct_gaia_to_epoch(gaia_cat: Union[str, table.QTable], new_epoch: time.Time):
+    gaia_cat = load_catalogue(cat_name="gaia", cat=gaia_cat)
+    epochs = list(map(lambda y: f"J{y}", gaia_cat['ref_epoch']))
+    gaia_coords = SkyCoord(
+        ra=gaia_cat["ra"], dec=gaia_cat["dec"],
+        pm_ra_cosdec=gaia_cat["pmra"], pm_dec=gaia_cat["pmdec"],
+        obstime=epochs)
+    u.debug_print(2, "astrometry.correct_gaia_to_epoch(): new_epoch ==", new_epoch)
+    gaia_coords_corrected = gaia_coords.apply_space_motion(new_obstime=new_epoch)
+    gaia_cat_corrected = copy.deepcopy(gaia_cat)
+    gaia_cat_corrected["ra"] = gaia_coords_corrected.ra
+    gaia_cat_corrected["dec"] = gaia_coords_corrected.dec
+    new_epoch.format = "jyear"
+    gaia_cat_corrected["ref_epoch"] = new_epoch.value
+    return gaia_cat_corrected
+
+
+def generate_astrometry_indices(
+        cat_name: str, cat: Union[str, table.Table],
+        output_file_prefix: str,
+        unique_id_prefix: int,
+        index_output_dir: str,
+        fits_cat_output: str = None,
+        p_lower: int = 0, p_upper: int = 2):
+    u.mkdir_check(index_output_dir)
+    cat_name = cat_name.lower()
+    if fits_cat_output is None and isinstance(cat, str):
+        if cat.endswith(".csv"):
+            fits_cat_output = cat.replace(".csv", ".fits")
+        else:
+            fits_cat_output = cat + ".fits"
+    elif fits_cat_output is None:
+        raise ValueError("fits_cat_output must be provided if cat is given as a Table instead of a path.")
+    cat = u.path_or_table(cat, fmt="ascii.csv")
+    cols = cat_columns(cat=cat_name, f="rank")
+    cat.write(fits_cat_output, format='fits', overwrite=True)
+    unique_id_prefix = str(unique_id_prefix)
+    for scale in range(p_lower, p_upper + 1):
+        unique_id = unique_id_prefix + str(scale).replace("-", "0")
+        unique_id = int(unique_id)
+        output_file_name_scale = f"{output_file_prefix}_{scale}"
+        try:
+            astrometry_net.build_astrometry_index(
+                input_fits_catalog=fits_cat_output,
+                unique_id=unique_id,
+                output_index=os.path.join(index_output_dir, output_file_name_scale),
+                scale_number=scale,
+                sort_column=cols["mag_auto"],
+                scan_through_catalog=True
+            )
+        except SystemError:
+            print(f"Building index for scale {scale} failed.")
+
 
 def attempt_skycoord(coord: Union[SkyCoord, str, tuple, list, np.ndarray]):
     if type(coord) is SkyCoord:
@@ -223,7 +283,7 @@ def tweak(sextractor_path: str, destination: str, image_path: str, cat_path: str
         cat['x'], cat['y'] = wcs_info.all_world2pix(cat[ra_name], cat[dec_name], 0)
         x, y = wcs_info.all_world2pix(sextracted[sextractor_ra_name], sextracted[sextractor_dec_name], 0)
 
-    norm = pl.nice_norm(data)
+    norm = ImageNormalize(data, interval=ZScaleInterval(), stretch=SqrtStretch())
     if show:
         # plt.subplot(projection=wcs_info)
         plt.imshow(data, norm=norm, origin='lower', cmap='viridis')
@@ -397,3 +457,45 @@ def tweak_final(sextractor_path: str, destination: str,
 
     else:
         print('No catalogue found for this alignment.')
+
+
+def find_nearest(coord: SkyCoord, search_coords: SkyCoord):
+    separations = coord.separation(search_coords)
+    match_id = np.argmin(separations)
+    return match_id, separations[match_id]
+
+
+def match_catalogs(cat_1: table.Table, cat_2: table.Table,
+                   ra_col_1: str = "ALPHAPSF_SKY", dec_col_1: str = "DELTAPSF_SKY",
+                   ra_col_2: str = "ra", dec_col_2: str = "dec",
+                   tolerance: units.Quantity = 1 * units.arcsec):
+    # Clean out any invalid declinations
+    u.debug_print(2, "match_catalogs(): type(cat_1) ==", type(cat_1), "type(cat_2) ==", type(cat_2))
+    cat_1 = cat_1[cat_1[dec_col_1] <= 90 * units.deg]
+    cat_1 = cat_1[cat_1[dec_col_1] >= -90 * units.deg]
+
+    cat_2 = cat_2[cat_2[dec_col_2] <= 90 * units.deg]
+    cat_2 = cat_2[cat_2[dec_col_2] >= -90 * units.deg]
+
+    coords_1 = SkyCoord(cat_1[ra_col_1], cat_1[dec_col_1])
+    coords_2 = SkyCoord(cat_2[ra_col_2], cat_2[dec_col_2])
+
+    if len(coords_1) >= len(coords_2):
+        idx, distance, _ = coords_2.match_to_catalog_sky(coords_1)
+        keep = distance < tolerance
+        idx = idx[keep]
+        matches_2 = cat_2[keep]
+        distance = distance[keep]
+
+        matches_1 = cat_1[idx]
+
+    else:
+        idx, distance, _ = coords_1.match_to_catalog_sky(coords_2)
+        keep = distance < tolerance
+        idx = idx[keep]
+        matches_1 = cat_1[keep]
+        distance = distance[keep]
+
+        matches_2 = cat_2[idx]
+
+    return matches_1, matches_2, distance

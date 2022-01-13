@@ -75,7 +75,7 @@ DELTA_SKY                Declination of barycenter (native)                     
 #CXY_WORLD                Cxy object ellipse parameter (WORLD units)                [deg**(-2)]
 #A_IMAGE                  Profile RMS along major axis                              [pixel]
 #B_IMAGE                  Profile RMS along minor axis                              [pixel]
-#THETA_IMAGE              Position angle (CCW/x)                                    [deg]
+THETA_IMAGE              Position angle (CCW/x)                                    [deg]
 A_WORLD                  #Profile RMS along major axis (world units)                [deg]
 B_WORLD                  #Profile RMS along minor axis (world units)                [deg]
 THETA_WORLD              #Position angle (CCW/world-x)                              [deg]

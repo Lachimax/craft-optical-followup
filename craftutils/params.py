@@ -1,19 +1,31 @@
 # Code by Lachlan Marnoch, 2019-2021
 
-from astropy.io.misc import yaml
-# import yaml
-import csv
 import json
-from typing import Union
 import os
-import numpy as np
 from datetime import date
+from typing import Union
 
-import astropy.table as tbl
+import astropy.io.misc.yaml as yaml
+import astropy.units as units
+import numpy as np
+import pkg_resources
+from astropy.table import Table, QTable
 
 from craftutils import utils as u
 
 yaml.AstropyDumper.ignore_aliases = lambda *args: True
+
+instruments_imaging = [
+    "vlt-fors2",
+    "vlt-xshooter",
+    "vlt-hawki",
+    "gs-aoi",
+    "hst-wfc3_ir",
+    "hst-wfc3_uvis2",
+    "mgb-imacs",
+    "panstarrs1"]
+instruments_spectroscopy = ["vlt-fors2", "vlt-xshooter"]
+surveys = ["panstarrs1"]
 
 
 def serialise_attributes(dumper, data):
@@ -30,7 +42,7 @@ def tabulate_output_values(path: str, output: str = None):
         output_values["filename"] = file
         outputs.append(output_values)
 
-    outputs = tbl.Table(outputs)
+    outputs = Table(outputs)
 
     if output is not None:
         output = u.sanitise_file_ext(filename=output, ext='.csv')
@@ -40,40 +52,61 @@ def tabulate_output_values(path: str, output: str = None):
     return outputs
 
 
+home_path = os.path.expanduser("~")
+config_dir = os.path.join(home_path, ".craftutils")
+config_file = os.path.join(config_dir, "config.yaml")
+
+
 def check_for_config():
-    p = load_params('param/config.yaml')
+    u.mkdir_check(config_dir)
+    p = load_params(config_file)
     if p is None:
-        print("No config.yaml file found.")
+        config_text = pkg_resources.resource_string(
+            __name__,
+            os.path.join("..", f"param", "config_template.yaml")).decode()
+        print(type(config_text))
+        config_text = config_text.replace("proj_dir: <some_directory>/craft-optical-followup/",
+                                          f"proj_dir: {os.getcwd()}/")
+
+        with open(config_file, "w") as cfg:
+            cfg.write(config_text)
+
+        print(f"No config file was detected at {config_file}.")
+        print(f"A fresh config file has been created at '{config_file}'")
+        print(
+            "In this file, please set 'top_data_dir' to a valid path in which to store all "
+            "data products of this package (This may require a large amount of space.).")
+        print("You may also like to specify an alternate param_dir")
+
+        input("\nOnce you have edited this file, press any key to proceed.")
+        p = load_params(config_file)
     else:
         for param in p:
             p[param] = u.check_trailing_slash(p[param])
-        save_params('param/config.yaml', p)
-        yaml_to_json('param/config.yaml')
+        save_params(config_file, p)
+        yaml_to_json(config_file)
     return p
 
 
-def load_params(file: str, quiet: bool = False):
+def load_params(file: str):
     file = u.sanitise_file_ext(file, '.yaml')
 
-    if not quiet:
-        print('Loading parameter file from ' + str(file))
+    u.debug_print(1, 'Loading parameter file from ' + str(file))
 
     if os.path.isfile(file):
         with open(file) as f:
             p = yaml.load(f)
     else:
         p = None
-        if not quiet:
-            print('No parameter file found at', str(file) + ', returning None.')
-
+        u.debug_print(1, 'No parameter file found at', str(file) + ', returning None.')
     return p
 
 
-def save_params(file: str, dictionary: dict, quiet: bool = False):
+def save_params(file: str, dictionary: dict):
     file = u.sanitise_file_ext(filename=file, ext=".yaml")
 
-    if not quiet:
-        print('Saving parameter file to ' + str(file))
+    u.debug_print(1, 'Saving parameter file to ' + str(file))
+    u.debug_print(2, "params.save_params: dictionary ==", dictionary)
 
     with open(file, 'w') as f:
         yaml.dump(dictionary, f)
@@ -91,7 +124,7 @@ def select_coords(dictionary):
 
     dec = None
     if "dec" in dictionary:
-        if "dms" in dictionary["dec"] and dictionary["dec"]["hms"] not in [None, 0]:
+        if "dms" in dictionary["dec"] and dictionary["dec"]["dms"] not in [None, 0]:
             dec = dictionary["dec"]["dms"]
         elif "decimal" in dictionary["dec"] and dictionary["dec"]["decimal"] not in [None, 0]:
             dec = f"{dictionary['dec']['decimal']}d"
@@ -101,17 +134,16 @@ def select_coords(dictionary):
     return ra, dec
 
 
-def yaml_to_json(yaml_file: str, output: str = None, quiet: bool = False):
+def yaml_to_json(yaml_file: str, output: str = None):
     yaml_file = u.sanitise_file_ext(yaml_file, '.yaml')
     if output is not None:
         output = u.sanitise_file_ext(output, '.json')
     elif output is None:
         output = yaml_file.replace('.yaml', '.json')
 
-    p = load_params(file=yaml_file, quiet=quiet)
+    p = load_params(file=yaml_file)
 
-    if not quiet:
-        print('Saving parameter file to ' + output)
+    u.debug_print(1, 'Saving parameter file to ' + output)
 
     for param in p:
         if type(p[param]) is date:
@@ -124,7 +156,13 @@ def yaml_to_json(yaml_file: str, output: str = None, quiet: bool = False):
 
 
 config = check_for_config()
-param_path = u.check_trailing_slash(config['param_dir'])
+param_dir = u.check_trailing_slash(config['param_dir'])
+project_path = u.check_trailing_slash(config['proj_dir'])
+data_path = u.check_trailing_slash(config["top_data_dir"])
+
+
+def get_project_git_hash(short: bool = False):
+    return u.get_git_hash(directory=project_path, short=short)
 
 
 def path_or_params_obj(obj: Union[dict, str], instrument: str = 'FORS2', quiet: bool = False):
@@ -156,28 +194,29 @@ def change_yaml_param(file: str = 'project', param: str = None, value=None, upda
     return p
 
 
-def add_params(file: str, params: dict, quiet: bool = False):
+def add_params(file: str, params: dict, skip_json: bool = False):
     file = u.sanitise_file_ext(file, '.yaml')
     if os.path.isfile(file):
         param_dict = load_params(file)
     else:
         param_dict = {}
     param_dict.update(params)
-    save_params(file, param_dict, quiet=quiet)
-    yaml_to_json(file, quiet=quiet)
+    save_params(file, param_dict)
+    if not skip_json:
+        yaml_to_json(file)
 
 
-def add_config_param(params: dict, quiet=False):
-    add_params(file="param/config.yaml", params=params, quiet=quiet)
+def add_config_param(params: dict):
+    add_params(file="param/config.yaml", params=params)
     params.config = check_for_config()
 
 
 def add_frb_param(obj: str, params: dict, quiet=False):
-    add_params(file=param_path + "FRBs/" + obj + ".yaml", params=params, quiet=quiet)
+    add_params(file=param_dir + "FRBs/" + obj + ".yaml", params=params)
 
 
 def add_epoch_param(obj: str, params: dict, instrument: str = 'FORS2', quiet=False):
-    add_params(file=param_path + "epochs_" + instrument.lower() + "/" + obj + ".yaml", params=params, quiet=quiet)
+    add_params(file=param_dir + "epochs_" + instrument.lower() + "/" + obj + ".yaml", params=params, quiet=quiet)
 
 
 def add_output_path(obj: str, key: str, path: str, instrument='fors2', quiet: bool = False):
@@ -211,31 +250,31 @@ def add_output_values_frb(obj: str, params: dict, quiet: bool = False):
     add_params(file=p['data_dir'] + 'output_values', params=params, quiet=quiet)
 
 
-def apertures_fors(quiet: bool = False):
-    return load_params(param_path + '/aperture_diameters_fors2', quiet=quiet)
+def apertures_fors():
+    return load_params(param_dir + '/aperture_diameters_fors2')
 
 
-def apertures_des(quiet: bool = False):
-    return load_params(param_path + 'aperture_diameters_des', quiet=quiet)
+def apertures_des():
+    return load_params(param_dir + 'aperture_diameters_des')
 
 
-def sextractor_names(quiet: bool = False):
-    return load_params(param_path + 'sextractor_names', quiet=quiet)
+def sextractor_names():
+    return load_params(param_dir + 'sextractor_names')
 
 
-def sextractor_names_psf(quiet: bool = False):
-    return load_params(param_path + 'sextractor_names_psf', quiet=quiet)
+def sextractor_names_psf():
+    return load_params(param_dir + 'sextractor_names_psf')
 
 
-def sncosmo_models(quiet: bool = False):
-    return load_params(param_path + 'sncosmo_models', quiet=quiet)
+def sncosmo_models():
+    return load_params(param_dir + 'sncosmo_models')
 
 
-def plotting_params(quiet: bool = False):
-    return load_params(param_path + 'plotting', quiet=quiet)
+def plotting_params():
+    return load_params(param_dir + 'plotting')
 
 
-def ingest_filter_properties(path: str, instrument: str, update: bool = False, quiet: bool = False):
+def ingest_eso_filter_properties(path: str, instrument: str, update: bool = False, quiet: bool = False):
     """
     Imports a dataset from http://archive.eso.org/bin/qc1_cgi?action=qc1_browse_table&table=fors2_photometry into a
     filter properties .yaml file within this project.
@@ -243,7 +282,7 @@ def ingest_filter_properties(path: str, instrument: str, update: bool = False, q
     :param instrument:
     :return:
     """
-    data = tbl.Table.read(path, format='ascii')
+    data = Table.read(path, format='ascii')
     name = data['filter_name'][0]
     if sum(data['filter_name'] != name) > 0:
         raise ValueError('This file contains data for more than one filter.')
@@ -266,69 +305,108 @@ def ingest_filter_properties(path: str, instrument: str, update: bool = False, q
     params['extinction_err'] = u.numpy_to_list(data['extinction_err'])
     if update:
         params['calib_last_updated'] = str(date.today())
-    save_params(file=param_path + f'filters/{instrument}-{name}', dictionary=params)
+    save_params(file=param_dir + f'filters/{instrument}-{name}', dictionary=params)
 
 
-def ingest_filter_transmission(path: str, f: str, instrument: str, filter_only: bool = True, lambda_eff: float = None,
-                               fwhm: float = None, source: float = None, unit: str = 'nm', percentage: bool = False,
+def ingest_filter_transmission(path: str, fil_name: str, instrument: str,
+                               instrument_response: bool = False, atmosphere: bool = False,
+                               lambda_eff: units.Quantity = None,
+                               fwhm: float = None,
+                               source: str = None,
+                               wavelength_unit: units.Unit = units.Angstrom,
+                               percentage: bool = False,
                                quiet: bool = False):
-    units = ['nm', 'Angstrom']
-    if unit not in units:
-        raise ValueError('Units must be one of ', units)
+    """
 
-    params = filter_params(f=f, instrument=instrument, quiet=quiet)
+    :param path:
+    :param fil_name:
+    :param instrument:
+    :param instrument_response: Filter curve includes instrument response
+    :param atmosphere: Filter curve includes atmospheric transmission
+    :param lambda_eff:
+    :param fwhm:
+    :param source:
+    :param wavelength_unit:
+    :param percentage:
+    :param quiet:
+    :return:
+    """
+
+    if not wavelength_unit.is_equivalent(units.Angstrom):
+        raise units.UnitTypeError(f"Wavelength units must be of type length, not {wavelength_unit}")
+
+    type_str = "_filter"
+    if instrument_response:
+        type_str += "_instrument"
+    if atmosphere:
+        type_str += "_atmosphere"
+
+    params = filter_params(f=fil_name, instrument=instrument, quiet=quiet)
     if params is None:
         params = new_filter_params(quiet=quiet)
-        params['name'] = f
+        params['name'] = fil_name
         params['instrument'] = instrument
 
     if lambda_eff is not None:
+        lambda_eff = u.check_quantity(lambda_eff, unit=units.Angstrom, convert=True)
         params['lambda_eff'] = lambda_eff
         # TODO: If None, measure?
     if fwhm is not None:
         params['fwhm'] = fwhm
         # TODO: If None, measure?
     if source is not None:
-        if filter_only:
-            params['source_filter_only'] = source
-        else:
-            params['source'] = source
+        params[f'source{type_str}'] = source
 
-    data = np.genfromtxt(path)
-    wavelengths = data[:, 0]
-    transmissions = data[:, 1]
+    tbl = QTable.read(path, format="ascii")
+    tbl["col1"].name = "wavelength"
+    tbl["wavelength"] *= wavelength_unit
+    tbl["wavelength"] = tbl["wavelength"].to("Angstrom")
+
+    tbl["col2"].name = "transmission"
 
     if percentage:
-        transmissions /= 100
-    if unit == 'nm':
-        wavelengths *= 10
+        tbl["transmission"] /= 100
 
-    # Make sure the wavelengths increase instead of decrease; this assumes that the wavelengths are at least in order.
-    if wavelengths[0] > wavelengths[-1]:
-        wavelengths = np.flip(wavelengths)
-        transmissions = np.flip(transmissions)
+    tbl.sort("wavelength")
 
-    if filter_only:
-        params['wavelengths_filter_only'] = wavelengths.tolist()
-        params['transmissions_filter_only'] = transmissions.tolist()
-    else:
-        params['wavelengths'] = wavelengths.tolist()
-        params['transmissions'] = transmissions.tolist()
+    params[f'wavelengths{type_str}'] = tbl["wavelength"].value.tolist()
+    params[f'transmissions{type_str}'] = tbl["transmission"].value.tolist()
 
-    save_params(file=param_path + f'filters/{instrument}-{f}', dictionary=params, quiet=quiet)
+    save_params(file=os.path.join(param_dir, 'filters', f'{instrument}-{fil_name}'), dictionary=params, quiet=quiet)
 
 
-def ingest_filter_set(path: str, instrument: str, filter_only: bool = True, source: float = None,
-                      unit: str = 'Angstrom',
+def ingest_filter_set(path: str, instrument: str,
+                      instrument_response: bool = False, atmosphere: bool = False,
+                      source: str = None,
+                      wavelength_unit: units.Unit = None,
                       percentage: bool = False, lambda_name='LAMBDA', quiet: bool = False):
-    units = ['nm', 'Angstrom']
-    if unit not in units:
-        raise ValueError('Units must be one of ', units)
+    """
 
-    data = tbl.Table.read(path, format='ascii')
-    wavelengths = data[lambda_name]
-    if unit == 'nm':
-        wavelengths *= 10
+    :param path:
+    :param instrument:
+    :param instrument_response: Filter curve includes instrument response
+    :param atmosphere: Filter curve includes atmospheric transmission
+    :param source:
+    :param wavelength_unit:
+    :param percentage:
+    :param lambda_name:
+    :param quiet:
+    :return:
+    """
+
+    if not wavelength_unit.is_equivalent(units.Angstrom):
+        raise units.UnitTypeError(f"Wavelength units must be of type length, not {wavelength_unit}")
+
+    type_str = "_filter"
+    if instrument_response:
+        type_str += "_instrument"
+    if atmosphere:
+        type_str += "_atmosphere"
+
+    data = QTable.read(path, format='ascii')
+    data.sort("col1")
+    wavelengths = data["col1"] * wavelength_unit
+    wavelengths = wavelengths.to("Angstrom")
     for f in data.colnames:
         if f != lambda_name:
             params = filter_params(f=f, instrument=instrument, quiet=quiet)
@@ -338,42 +416,32 @@ def ingest_filter_set(path: str, instrument: str, filter_only: bool = True, sour
                 params = new_filter_params(quiet=quiet)
             params['name'] = f
             if source is not None:
-                if filter_only:
-                    params['source_filter_only'] = source
-                else:
-                    params['source'] = source
+                params[f'source{type_str}'] = source
             if percentage:
                 transmissions /= 100
-            # Make sure the wavelengths increase instead of decrease; this assumes that the wavelengths are at least in
-            # order.
-            if wavelengths[0] > wavelengths[-1]:
-                wavelengths = np.flip(wavelengths)
-                transmissions = np.flip(transmissions)
-            if filter_only:
-                params['wavelengths_filter_only'] = wavelengths.tolist()
-                params['transmissions_filter_only'] = transmissions.tolist()
-            else:
-                params['wavelengths'] = wavelengths.tolist()
-                params['transmissions'] = transmissions.tolist()
+            params[f'wavelengths{type_str}'] = wavelengths
+            params[f'transmissions{type_str}'] = transmissions
 
-            save_params(file=param_path + f'filters/{instrument}-{f}', dictionary=params, quiet=quiet)
+            save_params(file=param_dir + f'filters/{instrument}-{f}', dictionary=params, quiet=quiet)
     refresh_params_filters(quiet=quiet)
 
 
 def new_filter_params(quiet: bool = False):
-    return load_params(param_path + 'filters/filter_template.yaml', quiet=quiet)
+    return load_params(
+        os.path.join(project_path, 'param', 'filters', 'filter_template.yaml'),
+        quiet=quiet)
 
 
 def filter_params(f: str, instrument: str = 'FORS2', quiet: bool = False):
-    return load_params(param_path + f'filters/{instrument}-{f}', quiet=quiet)
+    return load_params(os.path.join(param_dir, 'filters', f'{instrument}-{f}'), quiet=quiet)
 
 
 def instrument_all_filters(instrument: str = 'FORS2', quiet: bool = False):
     # refresh_params_filters()
     filters = {}
-    directory = param_path + 'filters/'
+    directory = param_dir + 'filters/'
     for file in filter(lambda f: instrument in f and f[-5:] == '.yaml', os.listdir(directory)):
-        params = load_params(param_path + f'filters/{file}', quiet=quiet)
+        params = load_params(param_dir + f'filters/{file}', quiet=quiet)
         filters[params['name']] = params
     return filters
 
@@ -396,36 +464,36 @@ def instrument_filters_single_param(param: str, instrument: str = 'FORS2', sort_
 
 def object_params_instrument(obj: str, instrument: str, quiet: bool = False):
     instrument = instrument.lower()
-    return load_params(os.path.join(param_path, f'epochs_{instrument}', obj), quiet=quiet)
+    return load_params(os.path.join(param_dir, f'epochs_{instrument}', obj), quiet=quiet)
 
 
 def object_params_fors2(obj: str, quiet: bool = False):
-    return load_params(param_path + 'epochs_fors2/' + obj, quiet=quiet)
+    return load_params(param_dir + 'epochs_fors2/' + obj, quiet=quiet)
 
 
 def object_params_xshooter(obj: str, quiet: bool = False):
-    return load_params(param_path + 'epochs_xshooter/' + obj, quiet=quiet)
+    return load_params(param_dir + 'epochs_xshooter/' + obj, quiet=quiet)
 
 
 def object_params_imacs(obj: str, quiet: bool = False):
-    return load_params(param_path + 'epochs_imacs/' + obj, quiet=quiet)
+    return load_params(param_dir + 'epochs_imacs/' + obj, quiet=quiet)
 
 
 def object_params_des(obj: str, quiet: bool = False):
-    return load_params(param_path + 'epochs_des/' + obj, quiet=quiet)
+    return load_params(param_dir + 'epochs_des/' + obj, quiet=quiet)
 
 
 def object_params_sdss(obj: str, quiet: bool = False):
-    return load_params(param_path + 'epochs_sdss/' + obj, quiet=quiet)
+    return load_params(param_dir + 'epochs_sdss/' + obj, quiet=quiet)
 
 
 def object_params_frb(obj: str, quiet: bool = False):
-    return load_params(param_path + 'FRBs/' + obj, quiet=quiet)
+    return load_params(param_dir + 'FRBs/' + obj, quiet=quiet)
 
 
 def object_params_all_epochs(obj: str, instrument: str = 'FORS2', quiet: bool = False):
     properties = {}
-    directory = param_path + 'epochs_' + instrument.lower() + '/'
+    directory = param_dir + 'epochs_' + instrument.lower() + '/'
     for file in os.listdir(directory):
         if file[-5:] == '.yaml':
             if obj + '_' in file:
@@ -436,7 +504,7 @@ def object_params_all_epochs(obj: str, instrument: str = 'FORS2', quiet: bool = 
 
 def params_all_epochs(instrument: str = 'FORS2', quiet: bool = False):
     properties = {}
-    directory = param_path + 'epochs_' + instrument.lower() + '/'
+    directory = param_dir + 'epochs_' + instrument.lower() + '/'
     for file in os.listdir(directory):
         if file[-5:] == '.yaml' and 'template' not in file:
             properties[file[:-5]] = load_params(directory + file, quiet=quiet)
@@ -548,7 +616,7 @@ def refresh_params_all(quiet=False):
 
 def refresh_params_folder(folder: str, template: str, quiet: bool = False):
     template = u.sanitise_file_ext(template, '.yaml')
-    user_dir = f"{param_path}/{folder}/"
+    user_dir = f"{param_dir}/{folder}/"
     proj_dir = f"param/{folder}/"
     # Get template file from within this project; use to update param files in param directory as specified in
     # config.yaml
@@ -611,9 +679,9 @@ def refresh_params_folder(folder: str, template: str, quiet: bool = False):
 
 
 def sanitise_wavelengths(quiet: bool = False):
-    files = filter(lambda x: x[-5:] == '.yaml', os.listdir(param_path + 'filters/'))
+    files = filter(lambda x: x[-5:] == '.yaml', os.listdir(param_dir + 'filters/'))
     for file in files:
-        file_params = load_params(param_path + 'filters/' + file, quiet=quiet)
+        file_params = load_params(param_dir + 'filters/' + file, quiet=quiet)
         wavelengths = file_params['wavelengths']
         transmissions = file_params['transmissions']
         if len(wavelengths) > 0 and wavelengths[0] > wavelengths[-1]:
@@ -630,14 +698,14 @@ def sanitise_wavelengths(quiet: bool = False):
         file_params['wavelengths_filter_only'] = wavelengths
         file_params['transmissions_filter_only'] = transmissions
 
-        save_params(param_path + 'filters/' + file, file_params, quiet=quiet)
+        save_params(param_dir + 'filters/' + file, file_params, quiet=quiet)
     refresh_params_filters()
 
 
 def convert_to_angstrom(quiet: bool = False):
-    files = filter(lambda x: x[-5:] == '.yaml', os.listdir(param_path + 'filters/'))
+    files = filter(lambda x: x[-5:] == '.yaml', os.listdir(param_dir + 'filters/'))
     for file in files:
-        file_params = load_params(param_path + 'filters/' + file, quiet=quiet)
+        file_params = load_params(param_dir + 'filters/' + file, quiet=quiet)
 
         wavelengths = np.array(file_params['wavelengths'])
         wavelengths *= 10
@@ -647,7 +715,7 @@ def convert_to_angstrom(quiet: bool = False):
         wavelengths *= 10
         file_params['wavelengths_filter_only'] = wavelengths.tolist()
 
-        save_params(param_path + 'filters/' + file, file_params, quiet=quiet)
+        save_params(param_dir + 'filters/' + file, file_params, quiet=quiet)
     refresh_params_filters(quiet=quiet)
 
 
@@ -672,13 +740,102 @@ def trim_transmission_curves(f: str, instrument: str, lambda_min: float, lambda_
         file_params['transmissions_filter_only'] = transmissions[arg_lambda_min:arg_lambda_max]
         file_params['wavelengths_filter_only'] = wavelengths[arg_lambda_min:arg_lambda_max]
 
-    save_params(param_path + f'filters/{instrument}-{f}.yaml', file_params, quiet=quiet)
+    save_params(param_dir + f'filters/{instrument}-{f}.yaml', file_params, quiet=quiet)
 
 
 def keys():
-    with open(param_path + "keys.json") as fp:
+    """
+    Returns the contents of keys.json as a dict.
+    :return:
+    """
+    key_path = os.path.join(param_dir, "keys.json")
+    if os.path.isfile(key_path):
+        return load_json(key_path)
+    else:
+        raise FileNotFoundError(
+            f"keys.json does not exist at param_path={param_dir}. "
+            f"Please make a copy from {os.path.join(config['proj_dir'], 'param', 'keys.json')}")
+
+
+def load_json(path: str):
+    with open(path) as fp:
         file = json.load(fp)
     return file
+
+
+def path_to_config_sextractor_config_pre_psfex():
+    return os.path.join(path_to_config_psfex(), "pre-psfex.sex")
+
+
+def path_to_config_sextractor_failed_psfex_config():
+    return os.path.join(path_to_source_extractor(), "failed-psf-fit.sex")
+
+
+def path_to_config_sextractor_failed_psfex_param():
+    return os.path.join(path_to_source_extractor(), "failed-psf-fit.param")
+
+
+def path_to_config_sextractor_config():
+    return os.path.join(path_to_config_psfex(), "psf-fit.sex")
+
+
+def path_to_config_sextractor_param_pre_psfex():
+    return os.path.join(path_to_config_psfex(), "pre-psfex.param")
+
+
+def path_to_config_sextractor_param():
+    return os.path.join(path_to_config_psfex(), "psf-fit.param")
+
+
+def path_to_config_psfex():
+    return os.path.join(project_path, "param", "psfex")
+
+
+def path_to_source_extractor():
+    return os.path.join(project_path, "param", "sextractor")
+
+
+def params_init(param_file: Union[str, dict]):
+    if type(param_file) is str:
+        # Load params from .yaml at path.
+        param_file = u.sanitise_file_ext(filename=param_file, ext="yaml")
+        param_dict = load_params(file=param_file)
+        if param_dict is None:
+            return None, None, None  # raise FileNotFoundError(f"No parameter file found at {param_file}.")
+        name = u.get_filename(path=param_file, include_ext=False)
+        param_dict["param_path"] = param_file
+    else:
+        param_dict = param_file
+        name = param_dict["name"]
+        param_file = param_dict["param_path"]
+
+    return name, param_file, param_dict
+
+
+def load_output_file(obj):
+    if obj.data_path is not None and obj.name is not None:
+        obj.output_file = os.path.join(obj.data_path, f"{obj.name}_outputs.yaml")
+        outputs = load_params(file=obj.output_file)
+        if outputs is not None:
+            if "paths" in outputs:
+                obj.paths.update(outputs["paths"])
+        return outputs
+    else:
+        raise ValueError("Insufficient information to find output file; data_path and name must be set.")
+
+
+def update_output_file(obj):
+    if obj.output_file is not None:
+        param_dict = load_params(obj.output_file)
+        if param_dict is None:
+            param_dict = {}
+        # For each of these, check if None first.
+        u.debug_print(1, "OBJ", obj, type(obj))
+        u.debug_print(1, "OBJ._OUTPUT_DICT", obj._output_dict())
+        param_dict.update(obj._output_dict())
+        save_params(dictionary=param_dict, file=obj.output_file)
+    else:
+        raise ValueError("Output could not be saved to file due to lack of valid output path.")
 
 
 # def change_param_name(folder):

@@ -1,23 +1,25 @@
 # Code by Lachlan Marnoch, 2019
 
-import astropy.io.fits as fits
+import os
+from typing import Union
+
 import matplotlib.pyplot as plt
 import numpy as np
 import photutils
-import os
 
-from astropy import wcs as wcs
+import astropy.io.fits as fits
+import astropy.wcs as wcs
+from astropy.table import Table
 from astropy.visualization import (ImageNormalize, LogStretch, SqrtStretch, ZScaleInterval, MinMaxInterval,
                                    PowerStretch, wcsaxes)
-from astropy.table import Table
-from typing import Union
 
-from craftutils import fits_files as ff
-from craftutils import params as p
-from craftutils import astrometry as am
+import craftutils.fits_files as ff
+import craftutils.params as p
+import craftutils.astrometry as am
+import craftutils.utils as u
 
 
-def plot_kron(fig: plt.figure, data_title: str, instrument: str, f: str, index: Union[int, list], catalogue: str,
+def plot_kron(fig: plt.Figure, data_title: str, instrument: str, f: str, index: Union[int, list], catalogue: str,
               n: int, n_x: int, n_y: int,
               image_name: str, frame: Union[int, float], cmap: str = 'viridis', vmin: float = None, vmax: float = None,
               des: bool = False, offset_ra: int = 0, offset_dec: int = 0):
@@ -88,7 +90,7 @@ def plot_kron(fig: plt.figure, data_title: str, instrument: str, f: str, index: 
                             colour='red')
 
 
-def plot_difference(fig: plt.figure, path: str, obj: str, instrument: str,
+def plot_difference(fig: plt.Figure, path: str, obj: str, instrument: str,
                     frame: Union[int, float], world_frame: bool = True,
                     n: int = 1, n_y: int = 1, show_title: bool = True,
                     cmap: str = 'viridis', show_cbar: bool = False, stretch: str = 'sqrt', vmin: float = None,
@@ -161,23 +163,25 @@ def plot_difference(fig: plt.figure, path: str, obj: str, instrument: str,
     return fig
 
 
-def plot_subimage(fig: plt.figure, hdu: Union[str, fits.HDUList], ra: float, dec: float,
+def plot_subimage(fig: plt.Figure, hdu: Union[str, fits.HDUList], ra: float, dec: float,
                   frame: Union[int, float], world_frame: bool = False, title: str = None,
                   n: int = 1, n_x: int = 1, n_y: int = 1,
-                  cmap: str = 'viridis', show_cbar: bool = False, stretch: str = 'sqrt', vmin: float = None,
+                  cmap: str = 'viridis', show_cbar: bool = False, stretch: str = 'sqrt',
+                  vmin: float = None,
                   vmax: float = None,
                   show_grid: bool = False,
                   ticks: int = None, interval: str = 'minmax',
                   show_coords: bool = True, ylabel: str = None,
                   font_size: int = 12,
-                  reverse_y=False):
+                  reverse_y=False,
+                  **kwargs):
     """
 
     :param fig:
     :param hdu:
     :param ra:
     :param dec:
-    :param frame: in pixels, or in arcsecs (?) if world_frame is True.
+    :param frame: in pixels, or in degrees (?) if world_frame is True.
     :param world_frame:
     :param title:
     :param n:
@@ -197,14 +201,14 @@ def plot_subimage(fig: plt.figure, hdu: Union[str, fits.HDUList], ra: float, dec
     :param reverse_y:
     :return:
     """
-    print(hdu)
+    u.debug_print(1, "plotting.plot_subimage(): hdu ==", hdu)
     hdu, path = ff.path_or_hdu(hdu=hdu)
-    print(hdu[0].data.shape)
+    u.debug_print(1, "plotting.plot_subimage(): hdu[0].data.shape ==", hdu[0].data.shape)
 
     hdu_cut = ff.trim_frame_point(hdu=hdu, ra=ra, dec=dec, frame=frame, world_frame=world_frame)
     wcs_cut = wcs.WCS(header=hdu_cut[0].header)
 
-    print(n_y, n_x, n)
+    u.debug_print(1, "plotting.plot_subimage(): n_y, n_x, n ==", n_y, n_x, n)
     if show_coords:
         plot = fig.add_subplot(n_y, n_x, n, projection=wcs_cut)
         if ticks is not None:
@@ -215,6 +219,7 @@ def plot_subimage(fig: plt.figure, hdu: Union[str, fits.HDUList], ra: float, dec
         frame1 = plt.gca()
         frame1.axes.get_xaxis().set_visible(False)
         frame1.axes.set_yticks([])
+        frame1.axes.invert_yaxis()
         # frame1.axes.get_yaxis().set_visible(False)
 
     if show_grid:
@@ -235,7 +240,7 @@ def plot_subimage(fig: plt.figure, hdu: Union[str, fits.HDUList], ra: float, dec
     else:
         raise ValueError('Interval not recognised.')
 
-    print(hdu_cut[0].data.shape)
+    u.debug_print(1, "plotting.plot_subimage(): hdu_cut[0].data.shape ==", hdu_cut[0].data.shape)
     if stretch == 'log':
         norm = ImageNormalize(hdu_cut[0].data, interval=interval, stretch=LogStretch(), vmin=vmin, vmax=vmax)
     elif stretch == 'sqrt':
@@ -245,11 +250,11 @@ def plot_subimage(fig: plt.figure, hdu: Union[str, fits.HDUList], ra: float, dec
 
     plot.title.set_text(title)
     plot.title.set_size(font_size)
-    print(ylabel)
+    u.debug_print(1, "plotting.plot_subimage(): ylabel ==", ylabel)
     if ylabel is not None:
         plot.set_ylabel(ylabel, size=12)
 
-    im = plt.imshow(hdu_cut[0].data, norm=norm, cmap=cmap)
+    im = plt.imshow(hdu_cut[0].data, norm=norm, cmap=cmap, **kwargs, origin='lower')
     if reverse_y:
         plot.invert_yaxis()
     c_ticks = np.linspace(norm.vmin, norm.vmax, 5, endpoint=True)
@@ -259,7 +264,7 @@ def plot_subimage(fig: plt.figure, hdu: Union[str, fits.HDUList], ra: float, dec
     return plot, hdu_cut
 
 
-def plot_galaxy(fig: plt.figure, data_title: str, instrument: str, f: str, ra: float, dec: float,
+def plot_galaxy(fig: plt.Figure, data_title: str, instrument: str, f: str, ra: float, dec: float,
                 frame: Union[int, float], world_frame: bool = False,
                 n: int = 1, n_x: int = 1, n_y: int = 1,
                 cmap: str = 'viridis', show_cbar: bool = False, stretch: str = 'sqrt', vmin: float = None,
@@ -269,9 +274,12 @@ def plot_galaxy(fig: plt.figure, data_title: str, instrument: str, f: str, ra: f
                 image_name: str = 'astrometry_image',
                 object_name: str = None, ticks: int = None, interval: str = 'minmax',
                 show_coords=True,
-                reverse_y=False):
+                reverse_y=False,
+                show_frb=False, ellipse_colour: str = 'white',
+                line_width=1.):
     instrument = instrument.lower()
-    instruments = {'fors2': 'FORS2', 'imacs': 'IMACS', 'xshooter': 'X-shooter', 'gmos': 'GMOS'}
+    instruments = {'fors2': 'FORS2', 'imacs': 'IMACS', 'xshooter': 'X-shooter', 'gmos': 'GMOS',
+                   'hst': 'Hubble Space Telescope'}
 
     if instrument == 'imacs':
         f_0 = f
@@ -326,13 +334,46 @@ def plot_galaxy(fig: plt.figure, data_title: str, instrument: str, f: str, ra: f
                                   show_grid=show_grid,
                                   ticks=ticks, interval=interval,
                                   show_coords=show_coords,
-                                  reverse_y=reverse_y)
+                                  reverse_y=reverse_y,
+                                  )
+
+    burst_name = data_title[:data_title.find("_")]
+    name = burst_name[3:]
+    burst_properties = p.object_params_frb(burst_name)
+    burst_ra = burst_properties['burst_ra']
+    burst_dec = burst_properties['burst_dec']
+
+    if show_frb is True:
+        show_frb = 'quadrature'
+
+    if show_frb == 'all':
+        # Statistical
+        a, b, theta = am.calculate_error_ellipse(burst_properties, error='statistical')
+        plot_gal_params(hdu=hdu_cut, ras=[burst_ra], decs=[burst_dec], a=[a],
+                        b=[b],
+                        theta=[-theta], colour=ellipse_colour, ls='-')
+        # Systematic
+        a, b, theta = am.calculate_error_ellipse(burst_properties, error='systematic')
+        plot_gal_params(hdu=hdu_cut, ras=[burst_ra], decs=[burst_dec], a=[a],
+                        b=[b],
+                        theta=[-theta], colour=ellipse_colour, ls='--')
+        # Quadrature
+        a, b, theta = am.calculate_error_ellipse(burst_properties, error='quadrature')
+        plot_gal_params(hdu=hdu_cut, ras=[burst_ra], decs=[burst_dec], a=[a],
+                        b=[b],
+                        theta=[-theta], colour=ellipse_colour, ls=':')
+
+    elif show_frb is not False:
+        a, b, theta = am.calculate_error_ellipse(burst_properties, error=show_frb)
+        plot_gal_params(hdu=hdu_cut, ras=[burst_ra], decs=[burst_dec], a=[a],
+                        b=[b],
+                        theta=[-theta], colour=ellipse_colour, ls='-', lw=line_width)
 
     return plot, hdu_cut
 
 
 def plot_hg(data_title: str, instrument: str, f: str, frame: int,
-            fig: plt.figure, n: int = 1, n_x: int = 1, n_y: int = 1,
+            fig: plt.Figure, n: int = 1, n_x: int = 1, n_y: int = 1,
             show_frb: Union[bool, str] = False, ellipse_colour: str = 'white',
             cmap: str = 'viridis', show_cbar: bool = False, stretch: str = 'sqrt', vmin: float = None,
             vmax: float = None,
@@ -345,7 +386,8 @@ def plot_hg(data_title: str, instrument: str, f: str, frame: int,
             show_distance: bool = True, bar_position: str = 'left',
             show_coords: bool = True,
             show_name: bool = True,
-            reverse_y=False):
+            reverse_y=False,
+            line_width=1.):
     instrument = instrument.lower()
     instruments = {'fors2': 'FORS2', 'imacs': 'IMACS', 'xshooter': 'X-shooter', 'gmos': 'GMOS'}
     if instrument not in instruments:
@@ -357,9 +399,6 @@ def plot_hg(data_title: str, instrument: str, f: str, frame: int,
 
     hg_ra = burst_properties['hg_ra']
     hg_dec = burst_properties['hg_dec']
-
-    burst_ra = burst_properties['burst_ra']
-    burst_dec = burst_properties['burst_dec']
 
     ang_size_distance = burst_properties['ang_size_distance']
 
@@ -374,7 +413,9 @@ def plot_hg(data_title: str, instrument: str, f: str, frame: int,
                                 vmax=vmax,
                                 show_grid=show_grid,
                                 show_filter=show_filter, image_name=image_name, show_instrument=show_instrument,
-                                object_name=object_name, ticks=ticks, show_coords=show_coords, reverse_y=reverse_y)
+                                object_name=object_name, ticks=ticks, show_coords=show_coords, reverse_y=reverse_y,
+                                show_frb=show_frb, ellipse_colour=ellipse_colour,
+                                line_width=line_width)
 
     if show_z:
         if reverse_y:
@@ -389,39 +430,13 @@ def plot_hg(data_title: str, instrument: str, f: str, frame: int,
 
             distance_bar(hdu=hdu_cut, ang_size_distance=ang_size_distance, angle_length=1.0, x=frame / 15,
                          y=frame / 4.5,
-                         colour=bar_colour, spread=frame / 10, reverse_y=reverse_y, frame=frame)
+                         line_kwargs={"c": bar_colour}, spread=frame / 10, reverse_y=reverse_y, frame=frame)
         elif bar_position == 'right':
             distance_bar(hdu=hdu_cut, ang_size_distance=ang_size_distance, angle_length=1.0, x=frame * 2 - frame / 1.8,
                          y=frame / 4.5,
-                         colour=bar_colour, spread=frame / 10, reverse_y=reverse_y, frame=frame)
+                         line_kwargs={"c": bar_colour}, spread=frame / 10, reverse_y=reverse_y, frame=frame)
         else:
             raise ValueError('Bar position not recognised.')
-
-    if show_frb is True:
-        show_frb = 'quadrature'
-
-    if show_frb == 'all':
-        # Statistical
-        a, b, theta = am.calculate_error_ellipse(burst_properties, error='statistical')
-        plot_gal_params(hdu=hdu_cut, ras=[burst_ra], decs=[burst_dec], a=[a],
-                        b=[b],
-                        theta=[-theta], colour=ellipse_colour, line_style='-')
-        # Systematic
-        a, b, theta = am.calculate_error_ellipse(burst_properties, error='systematic')
-        plot_gal_params(hdu=hdu_cut, ras=[burst_ra], decs=[burst_dec], a=[a],
-                        b=[b],
-                        theta=[-theta], colour=ellipse_colour, line_style='--')
-        # Quadrature
-        a, b, theta = am.calculate_error_ellipse(burst_properties, error='quadrature')
-        plot_gal_params(hdu=hdu_cut, ras=[burst_ra], decs=[burst_dec], a=[a],
-                        b=[b],
-                        theta=[-theta], colour=ellipse_colour, line_style=':')
-
-    elif show_frb is not False:
-        a, b, theta = am.calculate_error_ellipse(burst_properties, error=show_frb)
-        plot_gal_params(hdu=hdu_cut, ras=[burst_ra], decs=[burst_dec], a=[a],
-                        b=[b],
-                        theta=[-theta], colour=ellipse_colour, line_style='-')
 
         # burst_x, burst_y = wcs_cut.all_world2pix(burst_ra, burst_dec, 0)
         # plt.scatter(burst_x, burst_y)
@@ -434,8 +449,10 @@ def plot_hg(data_title: str, instrument: str, f: str, frame: int,
 
 
 def distance_bar(hdu: fits.hdu.HDUList, ang_size_distance: float, x: float, y: float, frame: int,
-                 colour: str = 'white', length: float = None, angle_length: float = None, spread: float = 1.,
-                 reverse_y=False):
+                 length: float = None, angle_length: float = None, spread: float = 1.,
+                 reverse_y=False, fancy: bool = False, x_bar: float = None, line_kwargs: dict = {},
+                 text_kwargs: dict = {},
+                 fancy_line_kwargs: dict = {"lw": 0.5, "color": "red"}):
     """
     Draw a projected distance bar on your plot.
     :param hdu:
@@ -444,7 +461,6 @@ def distance_bar(hdu: fits.hdu.HDUList, ang_size_distance: float, x: float, y: f
     :param angle_length: In arcsecs, the length of the bar you want to show.
     :param x: Position of bar in plot.
     :param y: Position of bar in plot.
-    :param colour: Colour of bar and text.
     :return:
     """
 
@@ -477,14 +493,41 @@ def distance_bar(hdu: fits.hdu.HDUList, ang_size_distance: float, x: float, y: f
     print('Projected length:', length, 'pc')
     print('Angular size:', angle_length, 'arcsecs')
 
-    if reverse_y:
-        plt.plot((x, x + pix_length), (2 * frame - y, 2 * frame - y), c=colour)
-        plt.text(x, 2 * frame - y - spread, f'{np.round(length / 1000, 1)} kpc', color=colour)
-        plt.text(x, 2 * frame - y + 1.7 * spread, f'{int(angle_length)} arcsec', color=colour)
+    if "lw" in line_kwargs:
+        lw = line_kwargs["lw"]
     else:
-        plt.plot((x, x + pix_length), (y, y), c=colour)
-        plt.text(x, y + spread, f'{np.round(length / 1000, 1)} kpc', color=colour)
-        plt.text(x, y - 1.7 * spread, f'{int(angle_length)} arcsec', color=colour)
+        lw = 1
+
+    if x_bar is None:
+        x_bar = x
+
+    if reverse_y:
+        x_left = x_bar
+        x_right = x_bar + pix_length
+        y_bar = 2 * frame - y
+        y_text_kpc = 2 * frame - y - spread
+        y_text_arcsec = 2 * frame - y + 1.7 * spread
+    else:
+        x_left = x_bar + 0.5
+        x_right = x_bar + 0.5 + pix_length
+        y_bar = y
+        y_text_kpc = y + spread
+        y_text_arcsec = y - 1.7 * spread
+
+    plt.plot((x_left, x_right), (y_bar, y_bar), **line_kwargs)
+    if fancy:
+        # Large bar left endcap
+        plt.plot((x_left, x_left), (y_bar + spread / 3, y_bar - spread / 3), **line_kwargs)
+        # Large bar right endcap
+        plt.plot((x_right, x_right), (y_bar + spread / 3, y_bar - spread / 3), **line_kwargs)
+        # Small bar
+        plt.plot((x_left, x_right), (y_bar, y_bar), **fancy_line_kwargs)
+        # Small bar left endcap
+        plt.plot((x_left, x_left), (y_bar + spread / 3, y_bar - spread / 3), **fancy_line_kwargs)
+        # Small bar right endcap
+        plt.plot((x_right, x_right), (y_bar + spread / 3, y_bar - spread / 3), **fancy_line_kwargs)
+    plt.text(x, y_text_kpc, f'{np.round(length / 1000, 1)} kpc', **text_kwargs)
+    plt.text(x, y_text_arcsec, f'{int(angle_length)} arcsec', **text_kwargs)
 
 
 def nice_norm(image: np.ndarray):
@@ -502,7 +545,7 @@ def latex_setup():
     plt.rc('font', weight='bold')
     plt.rc('text', usetex=True)
     plt.rc('xtick', labelsize=8)
-    plt.rcParams['text.latex.preamble'] = [r'\usepackage{amsmath} ']  # \usepackage{sfmath} \boldmath
+    plt.rcParams['text.latex.preamble'] = r'\usepackage{amsmath} '  # \usepackage{sfmath} \boldmath
 
     plt.rcParams['font.serif'] = ['Times']
     plt.rcParams['axes.linewidth'] = 2.
@@ -530,7 +573,7 @@ def plot_gal_params(hdu: fits.HDUList, ras: Union[list, np.ndarray, float], decs
                     a: Union[list, np.ndarray, float], b: Union[list, np.ndarray, float],
                     theta: Union[list, np.ndarray, float], colour: str = 'white',
                     show_centre: bool = False,
-                    label: str = None, world: bool = True, world_axes: bool = True, line_style='-'):
+                    label: str = None, world: bool = True, world_axes: bool = True, **kwargs):
     """
 
     :param hdu:
@@ -557,18 +600,21 @@ def plot_gal_params(hdu: fits.HDUList, ras: Union[list, np.ndarray, float], decs
         ys = np.array(decs)
 
     theta = np.array(theta)
-    theta = -theta + ff.get_rotation_angle(header)
-    # Convert to radians
-    theta = theta * np.pi / 180
+    # Convert to photutils angle format
+    theta = u.world_angle_se_to_pu(theta, rot_angle=ff.get_rotation_angle(header))
+
+    a = u.dequantify(a)
+    b = u.dequantify(b)
 
     for i, x in enumerate(xs):
+        u.debug_print(2, "plotting.plot_gal_params(): x, ys[i] ==", x, ys[i])
         if a[i] != 0 and b[i] != 0:
             if world_axes:
                 ellipse = photutils.EllipticalAperture((x, ys[i]), a=a[i] / pix_scale, b=b[i] / pix_scale,
                                                        theta=theta[i])
             else:
                 ellipse = photutils.EllipticalAperture((x, ys[i]), a=a[i], b=b[i], theta=theta[i])
-            ellipse.plot(color=colour, label=label, ls=line_style)
+            ellipse.plot(**kwargs)
             line_label = None
         else:
             line_label = label

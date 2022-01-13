@@ -2,23 +2,22 @@
 
 import os
 import shutil as sh
+import string
 from copy import deepcopy
-
-from astropy import wcs
-from astropy.nddata import CCDData
-from astropy.io import fits
-from astropy import units
-
 from datetime import datetime as dt
 from typing import Union
-from numbers import Number
-import string
-import pandas as pd
+
 import numpy as np
 import matplotlib.pyplot as plt
 
-from craftutils import utils as u
-from craftutils import plotting as pl
+import astropy.wcs as wcs
+import astropy.io.fits as fits
+import astropy.units as units
+from astropy.nddata import CCDData
+from astropy.table import Table
+from astropy.visualization import ImageNormalize, ZScaleInterval, SqrtStretch
+
+import craftutils.utils as u
 
 
 # TODO: Fill in docstrings.
@@ -111,20 +110,40 @@ def trim_nan(hdu: fits.HDUList, second_hdu: fits.HDUList = None):
     return image, second_image
 
 
-def wcs_transfer(header_template: dict, header_update: dict):
-    keys = ['CRVAL1', 'CRVAL2', 'CRPIX1', 'CRPIX2', 'CDELT1', 'CDELT2', 'CROTA1', 'CROTA2', 'CTYPE1', 'CTYPE2', 'CD1_1',
-            'CD1_2', 'CD2_1', 'CD2_2', 'EQUINOX', 'CUNIT1', 'CUNIT2']
+wcs_keys = [
+    'AP_0_0', 'AP_0_1', 'AP_0_2', 'AP_1_0', 'AP_1_1', 'AP_2_0', 'AP_ORDER',
+    'A_0_0', 'A_0_1', 'A_0_2', 'A_1_0', 'A_1_1', 'A_2_0', 'A_ORDER',
+    'BP_0_0', 'BP_0_1', 'BP_0_2', 'BP_1_0', 'BP_1_1', 'BP_2_0', 'BP_ORDER',
+    'B_0_0', 'B_0_1', 'B_0_2', 'B_1_0', 'B_1_1', 'B_2_0', 'B_ORDER',
+    'CD1_1', 'CD1_2', 'CD2_1', 'CD2_2',
+    'CDELT1', 'CDELT2',
+    'CROTA1', 'CROTA2',
+    'CRPIX1', 'CRPIX2',
+    'CRVAL1', 'CRVAL2',
+    'CTYPE1', 'CTYPE2',
+    'CUNIT1', 'CUNIT2',
+    'EQUINOX',
+    'IMAGEH', 'IMAGEW',
+    'LONPOLE', 'LATPOLE',
+    'NAXIS', 'NAXIS1', 'NAXIS2',
+    'WCSAXES',
+]
 
+
+def wcs_transfer(header_template: Union[dict, fits.Header], header_update: dict):
+    """
+    Using the list of header keys in fits_files.wcs_keys, overwrites the WCS header elements of header_update with those
+    in header_template.
+    :param header_template: Header from which to copy WCS.
+    :param header_update: Header to which to copy WCS.
+    :return: Update header_update.
+    """
     update = {}
-    for key in keys:
+    for key in wcs_keys:
         if key in header_template:
             update[key] = header_template[key]
-        if key in header_update:
-            del header_update[key]
 
     header_update.update(update)
-
-    print(update)
 
     return header_update
 
@@ -194,14 +213,6 @@ def reproject(image_1: Union[fits.HDUList, str], image_2: Union[fits.HDUList, st
 
     return n_reprojected
 
-
-# def trim_nan(contains_nans: fits.HDUList, other: fits.HDUList):
-#     contains_nans_data = contains_nans[0].data
-#     other_data = other[0].data
-#
-#     col_mask = np.ones(dtype=bool)
-#     for col in contains_nans_data:
-#         if np.sum(np.isnan(col)) > 0:
 
 def align(comparison: Union[fits.hdu.hdulist.HDUList, str], template: Union[fits.hdu.hdulist.HDUList, str],
           comparison_output: str = 'comparison_shifted.fits', template_output: str = 'template_shifted.fits',
@@ -312,7 +323,7 @@ def align(comparison: Union[fits.hdu.hdulist.HDUList, str], template: Union[fits
         comparison.close()
 
 
-def divide_by_exp_time(file: Union['fits.hdu.hdulist.HDUList', 'str'], output: 'str' = None):
+def divide_by_exp_time(file: Union['fits.hdu_list.hdulist.HDUList', 'str'], output: 'str' = None):
     """
     Convert a fits file from total counts to counts/second.
     :param file: Path or HDU object of the file.
@@ -327,13 +338,13 @@ def divide_by_exp_time(file: Union['fits.hdu.hdulist.HDUList', 'str'], output: '
     file[0].data = file[0].data / old_exp_time
 
     # Set header entries to match.
-    change_header(file=file, name='EXPTIME', entry=1.)
-    change_header(file=file, name='OLD_EXPTIME', entry=old_exp_time)
+    change_header(file=file, key='EXPTIME', value=1.)
+    change_header(file=file, key='OLD_EXPTIME', value=old_exp_time)
 
     old_gain = get_header_attribute(file=file, attribute='GAIN')
     if old_gain is None:
         old_gain = 0.8
-    change_header(file=file, name='GAIN', entry=old_gain * old_exp_time)
+    change_header(file=file, key='GAIN', value=old_gain * old_exp_time)
 
     old_saturate = get_header_attribute(file=file, attribute='SATURATE')
     if old_saturate is None:
@@ -341,7 +352,8 @@ def divide_by_exp_time(file: Union['fits.hdu.hdulist.HDUList', 'str'], output: '
     # Set 'saturate' at 10% lower than stated value, as the detector frequently behaves non-linearly well below the
     # max value.
     new_saturate = 0.9 * old_saturate / old_exp_time
-    change_header(file=file, name='SATURATE', entry=new_saturate)
+    change_header(file=file, key='SATURATE', value=new_saturate)
+    change_header(file=file, key='BUNIT', value="ct / s")
 
     if output is not None:
         file.writeto(output, overwrite=True)
@@ -403,34 +415,58 @@ def subtract_file(file: Union[str, fits.HDUList], sub_file: Union[str, fits.HDUL
     return subbed
 
 
-def detect_edges(file: Union['fits.hdu.hdulist.HDUList', 'str']):
+def detect_frame_value(file: Union['fits.HDUList', 'str'], ext: int = 0):
     """
-    Detects the edges of a rectangular non-zero block, where the frame consists of zeroed pixels. For use with
+    For images that have
+    :param file:
+    :param value:
+    :param ext:
+    :return:
+    """
+    file, path = path_or_hdu(file)
+    data = file[ext].data
+    outer = (data[:, 0], data[:, -1], data[0], data[-1])
+
+    value = None
+    for edge in outer:
+        is_uniform = np.all(edge == edge[0])
+        if is_uniform:
+            value = edge[0]
+
+    if path:
+        file.close()
+
+    return value
+
+
+def detect_edges(file: Union['fits.HDUList', 'str'], value: float = 0.0, ext: int = 0):
+    """
+    Detects the edges of a rectangular non-zero block, where the frame consists of a single value. For use with
     background files with an obvious frame.
     :param file:
+    :param value: the value of the frame.
     :return:
     """
 
-    if type(file) is str:
-        file = fits.open(file)
+    file, path = path_or_hdu(file)
 
-    data = file[0].data
+    data = file[ext].data
 
     height = data.shape[0]
     mid_y = int(height / 2)
     slice_hor = data[mid_y]
-    slice_hor_nonzero = np.nonzero(slice_hor)[0]
+    slice_hor_nonzero = np.nonzero(slice_hor - value)[0]
     left = slice_hor_nonzero[0]
     right = slice_hor_nonzero[-1]
 
     width = data.shape[1]
     mid_x = int(width / 2)
     slice_vert = data[:, mid_x]
-    slice_vert_nonzero = np.nonzero(slice_vert)[0]
+    slice_vert_nonzero = np.nonzero(slice_vert - value)[0]
     bottom = slice_vert_nonzero[0]
     top = slice_vert_nonzero[-1]
 
-    if type(file) is str:
+    if path:
         file.close()
 
     print(left, right, bottom, top)
@@ -438,7 +474,7 @@ def detect_edges(file: Union['fits.hdu.hdulist.HDUList', 'str']):
     return left, right, bottom, top
 
 
-def detect_edges_area(file: Union['fits.hdu.hdulist.HDUList', 'str']):
+def detect_edges_area(file: Union['fits.HDUList', 'str']):
     if type(file) is str:
         file = fits.open(file)
 
@@ -456,9 +492,13 @@ def detect_edges_area(file: Union['fits.hdu.hdulist.HDUList', 'str']):
     # This is here just in case mid_y finds a row that does not have maximum coverage.
     while len(slice_hor_keep) == 0:
         mid_y = int(mid_y / 2)
+        if mid_y == 0:
+            raise ValueError("mid_y got stuck.")
+        u.debug_print(2, "detect_edges_area(): mid_y==", mid_y)
         # Take a horizontal slice right across the middle of the image.
         slice_hor = np.round(data[mid_y], 13)
-        slice_hor_keep = np.nonzero(slice_hor == keep_val)[0]
+        slice_hor_keep = np.nonzero(slice_hor > 0.75 * keep_val)[0]
+        u.debug_print(2, "detect_edges_area(): slice_hor.max()", slice_hor.max())
     left = slice_hor_keep[0]
     right = slice_hor_keep[-1]
 
@@ -480,7 +520,7 @@ def detect_edges_area(file: Union['fits.hdu.hdulist.HDUList', 'str']):
     return left, right, bottom, top
 
 
-def get_filter(file: Union['fits.hdu.hdulist.HDUList', 'str']):
+def get_filter(file: Union['fits.hdu_list.hdulist.HDUList', str]):
     path = False
     if type(file) is str:
         path = True
@@ -502,7 +542,7 @@ def get_filter(file: Union['fits.hdu.hdulist.HDUList', 'str']):
         return filters
 
 
-def get_header_attribute(file: Union['fits.hdu.hdulist.HDUList', 'str'], attribute: 'str', ext: 'int' = 0):
+def get_header_attribute(file: Union['fits.hdu_list.hdulist.HDUList', 'str'], attribute: 'str', ext: 'int' = 0):
     file, path = path_or_hdu(file)
 
     header = file[ext].header
@@ -517,10 +557,10 @@ def get_header_attribute(file: Union['fits.hdu.hdulist.HDUList', 'str'], attribu
     return value
 
 
-def get_chip_num(file: Union['fits.hdu.hdulist.HDUList', 'str']):
+def get_chip_num(file: Union['fits.hdu_list.hdulist.HDUList', 'str']):
     """
     For use with FORS2 images only. Returns 1 if image is from upper CCD, 2 if lower, and 0 if the necessary information
-    is not present in the FITS file (likely indicating a non-FORS2 image).
+    is not present in the FITS file (likely indicating a stacked or non-FORS2 image).
     :param file: May be a string containing the path to the file, or the file itself as an astropy.fits HDUList object.
     :return:
     """
@@ -533,15 +573,15 @@ def get_chip_num(file: Union['fits.hdu.hdulist.HDUList', 'str']):
     return chip
 
 
-def get_exp_time(file: Union['fits.hdu.hdulist.HDUList', 'str']):
+def get_exp_time(file: Union['fits.hdu_list.hdulist.HDUList', 'str']):
     return get_header_attribute(file=file, attribute='EXPTIME')
 
 
-def get_airmass(file: Union['fits.hdu.hdulist.HDUList', 'str']):
+def get_airmass(file: Union['fits.hdu_list.hdulist.HDUList', 'str']):
     return get_header_attribute(file=file, attribute='AIRMASS')
 
 
-def get_object(file: Union['fits.hdu.hdulist.HDUList', 'str']):
+def get_object(file: Union['fits.hdu_list.hdulist.HDUList', 'str']):
     return get_header_attribute(file=file, attribute='OBJECT')
 
 
@@ -601,7 +641,7 @@ def sort_by_filter(path: 'str'):
             sh.move(path + file, filter_path)
 
 
-def get_pixel_scale(file: Union['fits.hdu.hdulist.HDUList', 'str'], layer: int = 0, astropy_units: bool = False):
+def get_pixel_scale(file: Union['fits.hdu_list.hdulist.HDUList', 'str'], layer: int = 0, astropy_units: bool = False):
     """
     Using the FITS file header, obtains the pixel scale of the file (in degrees).
     Declination scale is the true angular size of the pixel.
@@ -645,31 +685,31 @@ def get_pixel_scale(file: Union['fits.hdu.hdulist.HDUList', 'str'], layer: int =
 
 
 def add_log(file: Union[fits.hdu.hdulist.HDUList, str], action: str):
-    change_header(file, name='history', entry=dt.now().strftime('%Y-%m-%dT%H:%M:%S'))
-    change_header(file, name='history', entry=action)
+    change_header(file, key='history', value=dt.now().strftime('%Y-%m-%dT%H:%M:%S'))
+    change_header(file, key='history', value=action)
 
 
-def change_header(file: Union[fits.hdu.hdulist.HDUList, str], name: str, entry):
+def change_header(file: Union[fits.hdu.hdulist.HDUList, str], key: str, value, ext: int = 0):
     """
     Changes the value of a header entry, if it already exists; if not, adds an entry to the bottom of a given fits
     header. Format is NAME: 'entry'
     :param file:
-    :param name:
-    :param entry:
+    :param key:
+    :param value:
     :return:
     """
-    name = name.upper()
+    key = key.upper()
     path = ''
     if type(file) is str:
         path = file
         file = fits.open(path, mode='update')
-    file[0].header[name] = entry
+    file[ext].header[key] = value
     if path != '':
         file.close(output_verify='ignore')
     return file
 
 
-def pix_to_world(x: "float", y: "float", header: "fits.header.Header"):
+def pix_to_world(x: float, y: float, header: fits.header.Header):
     w = wcs.WCS(header)
     ra, dec = w.all_pix2world(x, y, 0)
     return ra, dec
@@ -684,7 +724,7 @@ def world_to_pix(ra: "float", dec: "float", header: "fits.header.Header"):
 def trim(hdu: fits.hdu.hdulist.HDUList,
          left: Union[int, units.Quantity] = None, right: Union[int, units.Quantity] = None,
          bottom: Union[int, units.Quantity] = None, top: Union[int, units.Quantity] = None,
-         update_wcs: bool = True, in_place: bool = False, quiet: bool = False):
+         update_wcs: bool = True, in_place: bool = False, ext: int = 0):
     """
 
     :param hdu:
@@ -694,31 +734,6 @@ def trim(hdu: fits.hdu.hdulist.HDUList,
     :param top:
     :return:
     """
-    shape = hdu[0].data.shape
-    if left is None:
-        left = 0
-    else:
-        left = int(u.dequantify(left))
-
-    if right is None:
-        right = shape[1]
-    else:
-        right = int(u.dequantify(right))
-
-    if bottom is None:
-        bottom = 0
-    else:
-        bottom = int(u.dequantify(bottom))
-
-    if top is None:
-        top = shape[0]
-    else:
-        top = int(u.dequantify(top))
-
-    if right < left:
-        raise ValueError('Improper inputs; right is smaller than left.')
-    if top < bottom:
-        raise ValueError('Improper inputs; top is smaller than bottom.')
 
     if in_place:
         new_hdu = hdu
@@ -726,28 +741,29 @@ def trim(hdu: fits.hdu.hdulist.HDUList,
         new_hdu = deepcopy(hdu)
 
     if update_wcs:
-        new_hdu[0].header['CRPIX1'] = hdu[0].header['CRPIX1'] - left
-        new_hdu[0].header['CRPIX2'] = hdu[0].header['CRPIX2'] - bottom
-    if not quiet:
-        print(bottom, top, left, right)
-    new_hdu[0].data = hdu[0].data[bottom:top, left:right]
+        new_hdu[ext].header['CRPIX1'] = hdu[ext].header['CRPIX1'] - left
+        new_hdu[ext].header['CRPIX2'] = hdu[ext].header['CRPIX2'] - bottom
+    new_hdu[ext].data = u.trim_image(
+        data=hdu[ext].data,
+        left=left, right=right, bottom=bottom, top=top
+    )
 
     return new_hdu
 
 
-def subimage_edges(data: np.ndarray, x, y, frame, quiet: bool = True):
+def subimage_edges(data: np.ndarray, x, y, frame):
     bottom = y - frame
     top = y + frame
     left = x - frame
     right = x + frame
-    bottom, top, left, right = check_subimage_edges(data=data, bottom=bottom, top=top, left=left, right=right,
-                                                    quiet=quiet)
+    bottom, top, left, right = check_subimage_edges(
+        data=data, bottom=bottom, top=top, left=left, right=right,
+                                                    )
     return bottom, top, left, right
 
 
-def check_subimage_edges(data: np.ndarray, bottom, top, left, right, quiet: bool = True):
-    if not quiet:
-        print(bottom, top, left, right)
+def check_subimage_edges(data: np.ndarray, bottom, top, left, right):
+    u.debug_print(1, "fits_files.check_subimage_edges(): bottom, top, left, right == ", bottom, top, left, right)
     if (bottom < 0 and top < 0) or (bottom > data.shape[0] and top > data.shape[0]):
         raise ValueError(f"Both y-axis edges ({bottom}, {top}) are outside the image.")
     if (left < 0 and right < 0) or (left > data.shape[1] and right > data.shape[1]):
@@ -760,7 +776,7 @@ def check_subimage_edges(data: np.ndarray, bottom, top, left, right, quiet: bool
 
 
 def trim_frame_point(hdu: fits.hdu.hdulist.HDUList, ra: float, dec: float,
-                     frame: Union[int, float], world_frame: bool = False, quiet: bool = False):
+                     frame: Union[int, float], world_frame: bool = False, ext: int = 0):
     """
     Trims a fits file to frame a single point.
     :param hdu:
@@ -770,16 +786,16 @@ def trim_frame_point(hdu: fits.hdu.hdulist.HDUList, ra: float, dec: float,
     :param world_frame:
     :return:
     """
-    wcs_image = wcs.WCS(header=hdu[0].header)
+    wcs_image = wcs.WCS(header=hdu[ext].header)
     x, y = wcs_image.all_world2pix(ra, dec, 0)
 
     if world_frame:
         _, scale = get_pixel_scale(hdu)
         frame = frame / scale
 
-    bottom, top, left, right = subimage_edges(data=hdu[0].data, x=x, y=y, frame=frame)
+    bottom, top, left, right = subimage_edges(data=hdu[ext].data, x=x, y=y, frame=frame)
 
-    hdu_cut = trim(hdu=hdu, left=left, right=right, bottom=bottom, top=top, quiet=quiet)
+    hdu_cut = trim(hdu=hdu, left=left, right=right, bottom=bottom, top=top, ext=ext)
     return hdu_cut
 
 
@@ -844,8 +860,9 @@ def trim_file(path: Union[str, fits.HDUList], left: int = None, right: int = Non
     print('Trimming: \n' + str(path))
     print('left', left, 'right', right, 'bottom', bottom, 'top', top)
     print('Moving to: \n' + str(new_path))
-    add_log(file=file, action='Trimmed using PyCRAFT.fits_files.trim() with borders at x = ' + str(left) + ', ' + str(
-        right) + '; y=' + str(bottom) + ', ' + str(top) + '; moved from ' + str(path) + ' to ' + str(new_path))
+    add_log(file=file,
+            action='Trimmed using craftutils.fits_files.trim() with borders at x = ' + str(left) + ', ' + str(
+                right) + '; y=' + str(bottom) + ', ' + str(top) + '; moved from ' + str(path) + ' to ' + str(new_path))
     print()
 
     print(new_path)
@@ -905,186 +922,7 @@ def blank_out(path, left, right, top, bottom, newpath=None):
     file.close()
 
 
-# TODO: Make this list all fits files, then write wrapper that eliminates non-science images and use that in scripts.
-def fits_table(input_path: str, output_path: str = "", science_only: bool = True):
-    """
-    Produces and writes to disk a table of .fits files in the given path, with the vital statistics of each. Intended
-    only for use with raw ESO data.
-    :param input_path:
-    :param output_path:
-    :param science_only: If True, we are writing a list for a folder that also contains calibration files, which we want
-     to ignore.
-    :return:
-    """
-
-    # If there's no trailing slash in the paths, add one.
-    input_path = u.check_trailing_slash(input_path)
-
-    if output_path == "":
-        output_path = input_path + "fits_table.csv"
-    elif output_path[-4:] != ".csv":
-        if output_path[-1] == "/":
-            output_path = output_path + "fits_table.csv"
-        else:
-            output_path = output_path + ".csv"
-
-    print('Writing table of fits files to: \n', output_path)
-
-    files = os.listdir(input_path)
-    files.sort()
-    files_fits = []
-
-    # Keep only the relevant fits files
-
-    for f in files:
-        if f[-5:] == ".fits":
-            files_fits.append(f)
-
-    # Create list of dictionaries to be used as the output data
-    output = []
-
-    ids = string.ascii_lowercase
-    if len(ids) < len(files_fits):
-        ids = ids + string.ascii_uppercase
-    if len(ids) < len(files_fits):
-        ids = ids + string.digits
-
-    for i, f in enumerate(files_fits):
-        data = {}
-        file = fits.open(input_path + f)
-        header = file[0].header
-        data['identifier'] = f
-        if science_only and ('ESO DPR CATG' not in header or 'SCIENCE' not in header['ESO DPR CATG']):
-            continue
-        if len(ids) >= len(files_fits):
-            data['id'] = ids[i]
-        if "OBJECT" in header:
-            data['object'] = header["OBJECT"]
-        if "ESO OBS NAME" in header:
-            data['obs_name'] = header["ESO OBS NAME"]
-        if "EXPTIME" in header:
-            data['exp_time'] = header["EXPTIME"]
-        if "AIRMASS" in header:
-            data['airmass'] = header["AIRMASS"]
-        elif "ESO TEL AIRM START" in header and "ESO TEL AIRM END":
-            data['airmass'] = (header["ESO TEL AIRM START"] + header["ESO TEL AIRM END"]) / 2
-        if "CRVAL1" in header:
-            data['ref_ra'] = header["CRVAL1"]
-        if "CRVAL2" in header:
-            data['ref_dec'] = header["CRVAL2"]
-        if "CRPIX1" in header:
-            data['ref_pix_x'] = header["CRPIX1"]
-        if "CRPIX2" in header:
-            data['ref_pix_y'] = header["CRPIX2"]
-        if "EXTNAME" in header:
-            data['chip'] = header["EXTNAME"]
-        elif "ESO DET CHIP1 ID" in header:
-            if header["ESO DET CHIP1 ID"] == 'CCID20-14-5-3':
-                data['chip'] = 'CHIP1'
-            if header["ESO DET CHIP1 ID"] == 'CCID20-14-5-6':
-                data['chip'] = 'CHIP2'
-        if "GAIN" in header:
-            data['gain'] = header["GAIN"]
-        if "INSTRUME" in header:
-            data['instrument'] = header["INSTRUME"]
-        if "ESO TEL AIRM START" in header:
-            data['airmass_start'] = header["ESO TEL AIRM START"]
-        if "ESO TEL AIRM END" in header:
-            data['airmass_end'] = header["ESO TEL AIRM END"]
-        if "ESO INS OPTI3 NAME" in header:
-            data['collimater'] = header["ESO INS OPTI3 NAME"]
-        if "ESO INS OPTI5 NAME" in header:
-            data['filter1'] = header["ESO INS OPTI5 NAME"]
-        if "ESO INS OPTI6 NAME" in header:
-            data['filter2'] = header["ESO INS OPTI6 NAME"]
-        if "ESO INS OPTI7 NAME" in header:
-            data['filter3'] = header["ESO INS OPTI7 NAME"]
-        if "ESO INS OPTI9 NAME" in header:
-            data['filter4'] = header["ESO INS OPTI9 NAME"]
-        if "ESO INS OPTI10 NAME" in header:
-            data['filter5'] = header["ESO INS OPTI10 NAME"]
-        if "ESO INS OPTI8 NAME" in header:
-            data['camera'] = header["ESO INS OPTI8 NAME"]
-        if "NAXIS1" in header:
-            data['pixels_x'] = header["NAXIS1"]
-        if "NAXIS2" in header:
-            data['pixels_y'] = header["NAXIS2"]
-        if "SATURATE" in header:
-            data['saturate'] = header["SATURATE"]
-        if "MJD-OBS" in header:
-            data['mjd_obs'] = header["MJD-OBS"]
-        output.append(data)
-        file.close()
-
-    output.sort(key=lambda a: a['identifier'])
-
-    out_file = pd.DataFrame(output)
-    out_file.to_csv(output_path)
-
-    return out_file
-
-
-def fits_table_all(input_path: str, output_path: str = "", science_only: bool = True):
-    """
-    Produces and writes to disk a table of .fits files in the given path, with the vital statistics of each. Intended
-    only for use with raw ESO data.
-    :param input_path:
-    :param output_path:
-    :param science_only: If True, we are writing a list for a folder that also contains calibration files, which we want
-     to ignore.
-    :return:
-    """
-
-    # If there's no trailing slash in the paths, add one.
-    if not output_path.endswith(".csv"):
-        output_path = u.check_trailing_slash(output_path)
-
-    if output_path == "":
-        output_path = input_path + "fits_table.csv"
-    elif output_path[-4:] != ".csv":
-        if output_path[-1] == "/":
-            output_path = output_path + "fits_table.csv"
-        else:
-            output_path = output_path + ".csv"
-
-    print('Writing table of fits files to: \n', output_path)
-
-    files = os.listdir(input_path)
-    files.sort()
-    files_fits = list(filter(lambda x: x[-5:] == '.fits', files))
-
-    # Create list of dictionaries to be used as the output data
-    output = []
-
-    ids = string.ascii_lowercase
-    if len(ids) < len(files_fits):
-        ids = ids + string.ascii_uppercase
-    if len(ids) < len(files_fits):
-        ids = ids + string.digits
-
-    for i, f in enumerate(files_fits):
-        data = {}
-        file = fits.open(input_path + f)
-        header = file[0].header
-        for key in header:
-            data[key] = header[key]
-        if 'ESO TEL AIRM END' in data and 'ESO TEL AIRM START' in data:
-            data['AIRMASS'] = (float(data['ESO TEL AIRM END']) + float(data['ESO TEL AIRM START'])) / 2
-        if science_only and 'SCIENCE' in data['ESO DPR CATG']:
-            output.append(data)
-        elif not science_only:
-            output.append(data)
-        file.close()
-
-    output.sort(key=lambda a: a['ARCFILE'])
-
-    out_file = pd.DataFrame(output)
-    out_file.to_csv(output_path)
-
-    return out_file
-
-
-def write_sextractor_script(table: Union['str', pd.DataFrame], output_path: 'str' = 'sextract_multi.sh',
+def write_sextractor_script(table: Union['str', Table], output_path: 'str' = 'sextract_multi.sh',
                             criterion: 'str' = None,
                             value: 'str' = None, sex_params: 'list' = None, sex_param_values: 'list' = None,
                             cat_name='sextracted', cats_dir='cats'):
@@ -1102,7 +940,7 @@ def write_sextractor_script(table: Union['str', pd.DataFrame], output_path: 'str
     print('Writing SExtractor script to: \n', output_path)
 
     if type(table) is str:
-        table = pd.read_csv(table)
+        table = Table.read(table, format="ascii.csv")
 
     if criterion is not None:
         table = table[table[criterion] == value]
@@ -1174,7 +1012,7 @@ def write_sof(table_path: str, output_path: str = 'bias.sof', sof_type: str = 'f
     if os.path.isfile(output_path):
         os.remove(output_path)
 
-    files = pd.read_csv(table_path)
+    files = Table.read(table_path, format="ascii.csv")
     files = files[files['chip'] == chip]
 
     # Bias
@@ -1207,7 +1045,7 @@ def write_sof(table_path: str, output_path: str = 'bias.sof', sof_type: str = 'f
             suffix = "down"
             chip_id = "1456"
 
-        std_image = files[files['object'] == 'STD']['identifier'].values[0]
+        std_image = files[files['object'] == 'STD']['identifier'][0]
 
         with open(output_path, 'a') as output:
             output.writelines(std_image + " STANDARD_IMG\n")
@@ -1252,7 +1090,7 @@ def stack(files: list, output: str = None, directory: str = '', stack_type: str 
         if normalise:
             data_append = data_append / np.nanmedian(data_append[np.isfinite(data_append)])
         if show:
-            norm = pl.nice_norm(data_append)
+            norm = ImageNormalize(data_append, interval=ZScaleInterval(), stretch=SqrtStretch())
             plt.imshow(data_append, origin='lower', norm=norm)
             plt.show()
 
@@ -1267,7 +1105,7 @@ def stack(files: list, output: str = None, directory: str = '', stack_type: str 
         stacked = np.sum(data, axis=0)
 
     if show:
-        norm = pl.nice_norm(stacked)
+        norm = ImageNormalize(stacked, interval=ZScaleInterval(), stretch=SqrtStretch())
         plt.imshow(stacked, origin='lower', norm=norm)
         plt.show()
 

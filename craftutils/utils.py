@@ -1,19 +1,211 @@
 # Code by Lachlan Marnoch, 2019-2021
 
-from datetime import datetime as dt
-import numpy as np
 import math
 import os
-from typing import List, Union
+import shutil
+import sys
+from typing import List, Union, Tuple
+from datetime import datetime as dt
+import subprocess
 
+import numpy as np
+
+import astropy.table as table
+import astropy.io.fits as fits
+import astropy.units as units
 from astropy.coordinates import SkyCoord
-import astropy.table as tbl
-from astropy.io import fits
-from astropy import units
-
+from astropy.time import Time
 
 # TODO: Arrange these into some kind of logical order.
 # TODO: Also comment.
+
+debug_level = 0
+
+
+def get_git_hash(directory: str, short: bool = False):
+    """
+    Gets the git version hash.
+    Special thanks to: https://stackoverflow.com/questions/14989858/get-the-current-git-hash-in-a-python-script
+    :return:
+    """
+    current_dir = os.getcwd()
+    os.chdir(directory)
+    args = ['git', 'rev-parse', 'HEAD']
+    if short:
+        args.insert(2, "--short")
+    try:
+        githash = subprocess.check_output(args).decode('ascii').strip()
+    except subprocess.CalledProcessError:
+        githash = None
+    os.chdir(current_dir)
+    return githash
+
+
+def frame_from_centre(frame, x, y, data):
+    left = x - frame
+    right = x + frame
+    bottom = y - frame
+    top = y + frame
+    return check_margins(data=data, left=left, right=right, bottom=bottom, top=top)
+
+
+def check_margins(data, left=None, right=None, bottom=None, top=None, margins: tuple = None):
+    """
+
+    :param data:
+    :param left:
+    :param right:
+    :param bottom:
+    :param top:
+    :param margins: In the order left, right, bottom, top
+    :return:
+    """
+    shape = data.shape
+
+    if margins is not None:
+        left, right, bottom, top = margins
+
+    if left is None:
+        left = 0
+    else:
+        left = int(dequantify(left))
+
+    if right is None:
+        right = shape[1]
+    else:
+        right = int(dequantify(right))
+
+    if bottom is None:
+        bottom = 0
+    else:
+        bottom = int(dequantify(bottom))
+
+    if top is None:
+        top = shape[0]
+    else:
+        top = int(dequantify(top))
+
+    if right < left:
+        raise ValueError('Improper inputs; right is smaller than left.')
+    if top < bottom:
+        raise ValueError('Improper inputs; top is smaller than bottom.')
+
+    return left, right, bottom, top
+
+
+def trim_image(data, left=None, right=None, bottom=None, top=None, margins: tuple = None):
+    """
+
+    :param data:
+    :param left:
+    :param right:
+    :param bottom:
+    :param top:
+    :param margins:
+    :return:
+    """
+    left, right, bottom, top = check_margins(
+        data=data,
+        left=left, right=right, bottom=bottom, top=top,
+        margins=margins
+    )
+    debug_print(2, "fits_files.trim(): left ==", left, "right ==", right, "bottom ==", bottom, "top ==", top)
+    return data[bottom:top + 1, left:right + 1]
+
+
+def check_iterable(obj):
+    try:
+        len(obj)
+    except TypeError:
+        obj = [obj]
+    return obj
+
+
+def sanitise_endianness(array: np.ndarray):
+    """
+    If the data is big endian, swap the byte order to make it little endian. Special thanks to this link:
+    https://stackoverflow.com/questions/60161759/valueerror-big-endian-buffer-not-supported-on-little-endian-compiler
+    :return: A little-endian version of the input array.
+    """
+    if array.dtype.byteorder == '>':
+        array = array.byteswap().newbyteorder()
+    return array
+
+
+def debug_print(level: int = 1, *args):
+    if debug_level >= level:
+        print(*args)
+
+
+def path_or_table(tbl: Union[str, table.QTable, table.Table], load_qtable: bool = True, fmt: str = "ascii.ecsv"):
+    if isinstance(tbl, str):
+        if load_qtable:
+            tbl = table.QTable.read(tbl, format=fmt)
+        else:
+            tbl = table.Table.read(tbl, format=fmt)
+    elif not isinstance(tbl, table.Table):
+        raise TypeError(f"tbl must be a string or an astropy Table, not {type(tbl)}")
+    return tbl
+
+
+def write_list_to_file(path: str, file: list):
+    # Delete file, to be rewritten.
+    rm_check(path)
+    # Write file to disk.
+    print(f"Writing pypeit file to {path}")
+    with open(path, 'w') as pypeit_file:
+        pypeit_file.writelines(file)
+
+
+def relevant_timescale(time: units.Quantity):
+    if not time.unit.is_equivalent(units.second):
+        raise ValueError(f"{time} is not a time.")
+    microseconds = time.to(units.us)
+    if microseconds < 1000 * units.us:
+        return microseconds
+    milliseconds = time.to(units.ms)
+    if milliseconds < 1000 * units.ms:
+        return milliseconds
+    seconds = time.to(units.second)
+    if seconds < 60 * units.second:
+        return seconds
+    minutes = time.to(units.minute)
+    if minutes < 60 * units.minute:
+        return minutes
+    hours = time.to(units.hour)
+    if hours < 24 * units.hour:
+        return hours
+    days = time.to(units.day)
+    if days < 7 * units.day:
+        return days
+    weeks = time.to(units.week)
+    if weeks < 52.2 * units.week:
+        return weeks
+    years = time.to(units.year)
+    return years
+
+
+def traverse_dict(dictionary: dict, function, keys: list = None):
+    if keys is None:
+        keys = []
+    for key in dictionary:
+        keys_this = keys.copy()
+        keys_this.append(key)
+        value = dictionary[key]
+        if type(value) is dict:
+            traverse_dict(value, function=function, keys=keys_this)
+        else:
+            function(keys_this, value)
+
+
+def get_filename(path: str, include_ext: True):
+    # Split the path into file and path.
+    filename = os.path.split(path)[-1]
+    if not include_ext:
+        # Remove file extension.
+        filename = os.path.splitext(filename)[0]
+    return filename
+
 
 def check_key(key: str, dictionary: dict, na_values: Union[tuple, list] = (None)):
     """
@@ -39,20 +231,45 @@ def check_dict(key: str, dictionary: dict, na_values: Union[tuple, list] = (None
         return dictionary[key]
 
 
-def check_quantity(number: Union[float, int, units.Quantity], unit: units.Unit, allow_mismatch: bool = True):
+def check_quantity(number: Union[float, int, units.Quantity], unit: units.Unit, allow_mismatch: bool = True,
+                   convert: bool = False):
+    """
+    If the passed number is not a Quantity, turns it into one with the passed unit. If it is already a Quantity,
+    checks the unit; if the unit is compatible with the passed unit, the quantity is returned unchanged (unless convert
+    is True).
+
+    :param number: Quantity (or not) to check.
+    :param unit: Unit to check for.
+    :param allow_mismatch: If False, even compatible units will not be allowed.
+    :param convert: If True, convert compatible Quantity to units unit.
+    :return:
+    """
     if type(number) is not units.Quantity:
         number *= unit
     elif number.unit != unit:
         if not allow_mismatch:
-            raise ValueError(f"This is already a Quantity, but with units {number.unit}; units {unit} were specified.")
+            raise units.UnitsError(
+                f"This is already a Quantity, but with units {number.unit}; units {unit} were specified.")
         elif not (number.unit.is_equivalent(unit)):
-            raise ValueError(
+            raise units.UnitsError(
                 f"This number is already a Quantity, but with incompatible units ({number.unit}); units {unit} were specified.")
+        elif convert:
+            number = number.to(unit)
     return number
 
 
-def dequantify(number: Union[float, int, units.Quantity]):
+def dequantify(number: Union[float, int, units.Quantity], unit: units.Unit = None):
+    """
+    Removes the unit from an astropy Quantity, or returns the number unchanged if it is not a Quantity.
+    If a unit is provided, and number is a Quantity, an attempt will be made to convert the number to that unit before
+    returning the value.
+    :param number:
+    :param unit:
+    :return:
+    """
     if type(number) is units.Quantity:
+        if unit is not None:
+            number = check_quantity(number=number, unit=unit, convert=True)
         return number.value
     else:
         return number
@@ -88,6 +305,21 @@ def remove_trailing_slash(path: str):
     if path.endswith("/"):
         path = path[:-1]
     return path
+
+
+def world_angle_se_to_pu(
+        theta: Union[units.Quantity, float],
+        rot_angle: Union[units.Quantity, float] = 0 * units.deg
+):
+    """
+    Converts a Source Extractor world angle to a photutils (relative to image) angle.
+    :param theta: world angle, in degrees.
+    :param rot_angle: rotation angle of the image.
+    :return:
+    """
+    theta = check_quantity(theta, units.deg)
+    rot_angle = check_quantity(rot_angle, units.deg)
+    return -theta.to(units.radian).value + rot_angle.value
 
 
 def size_from_ang_size_distance(theta: float, ang_size_distance: float):
@@ -127,29 +359,57 @@ def rm_check(path):
         os.remove(path)
 
 
-def mkdir_check(path: str):
+def rmtree_check(path):
     """
-    Checks if a directory exists; if not, creates it.
+    Checks if a directory exists, and removes it if so. USE WITH CAUTION; WILL DELETE ENTIRE TREE WITHOUT WARNING.
     :param path:
     :return:
     """
-    if not os.path.isdir(path):
-        os.mkdir(path)
+    if os.path.isdir(path):
+        shutil.rmtree(path)
 
 
-def mkdir_check_nested(path: str):
+def mkdir_check(*paths: str):
+    """
+    Checks if a directory exists; if not, creates it.
+    :param paths:
+    :return:
+    """
+    for path in paths:
+        if not os.path.isdir(path):
+            debug_print(2, f"Making directory {path}")
+            os.mkdir(path)
+        else:
+            debug_print(2, f"Directory {path} already exists, doing nothing.")
+
+
+# TODO: Make this system independent.
+def mkdir_check_nested(path: str, remove_last: bool = True):
     """
     Does mkdir_check, but for all parent directories of the given path.
     :param path:
     :return:
     """
-    i = 1
-    while i < len(path):
-        if path[i] == "/":
-            if i + 1 == len(path) or path[i + 1] != "/":
-                subpath = path[0:i]
-                mkdir_check(subpath)
-        i += 1
+    path_orig = path
+    levels = []
+    while len(path) > 1:
+        path, end = os.path.split(path)
+        levels.append(end)
+    levels.append(path)
+    levels.reverse()
+    if remove_last:
+        levels.pop()
+    debug_print(1, "utils.mkdir_check_nested(): levels ==", levels)
+    mkdir_check_args(*levels)
+    mkdir_check(path_orig)
+
+
+def mkdir_check_args(*args: str):
+    path = ""
+    for arg in args:
+        path = os.path.join(path, arg)
+        mkdir_check(path)
+    return path
 
 
 def fwhm_to_std(fwhm: float):
@@ -174,17 +434,59 @@ def directory_of(path: str):
     return path, file
 
 
+def uncertainty_product(value, *args: tuple):
+    """
+    Each arg should be a tuple, in which the first entry is the measurement and the second entry is the uncertainty in
+    that measurement. These may be in the form of numpy arrays or table columns.
+    """
+    variance_pre = 0.
+    for measurement, uncertainty in args:
+        if hasattr(measurement, "__len__"):
+            if isinstance(measurement, units.Quantity):
+                measurement[measurement == 0.0] = sys.float_info.min * measurement.unit
+            else:
+                measurement[measurement == 0.0] = sys.float_info.min
+        elif measurement == 0.0:
+            measurement = sys.float_info.min
+
+        debug_print(1, uncertainty, measurement)
+        variance_pre += (uncertainty / measurement) ** 2
+    sigma_pre = np.sqrt(variance_pre)
+    sigma = np.abs(value) * sigma_pre
+    return sigma
+
+
+def uncertainty_sum(*args):
+    variance = 0.
+    for uncertainty in args:
+        variance += uncertainty ** 2
+    sigma = np.sqrt(variance)
+    return sigma
+
+
+def uncertainty_log10(arg: float, uncertainty_arg: float, a: float = 1.):
+    """
+    Calculates standard uncertainty for function of the form a * log10(arg)
+    :return:
+    """
+    return np.abs(a * uncertainty_arg / (arg * np.log(10)))
+
+
 def error_product(value, measurements, errors):
     """
-    Produces the absolute error of a value calculated as a product or as a quotient.
+    Produces the absolute uncertainty of a value calculated as a product or as a quotient.
     :param value: The final calculated value.
     :param measurements: An array of the measurements used to calculate the value.
     :param errors: An array of the respective errors of the measurements. Expected to be in the same order as
         measurements.
     :return:
     """
+
     measurements = np.array(measurements)
     errors = np.array(errors)
+    print("VALUE:", value)
+    print("UNCERTAINTIES:", errors)
+    print("MEASUREMENTS:", measurements)
     return value * np.sum(np.abs(errors[measurements != 0.] / measurements[measurements != 0.]))
 
 
@@ -198,15 +500,22 @@ def error_func(arg, err, func=lambda x: np.log10(x), absolute=False):
     :return:
     """
     measurement = func(arg)
+    print("\narg", arg)
+    print("\nmeasurement", measurement)
     # One of these should come out negative - that becomes the minus error, and the positive the plus error.
     error_plus = func(arg + err) - measurement
     error_minus = func(arg - err) - measurement
 
     error_plus_actual = []
     error_minus_actual = []
-    for i, _ in enumerate(error_plus):
-        error_plus_actual.append(np.max([error_plus[i], error_minus[i]]))
-        error_minus_actual.append(np.min([error_plus[i], error_minus[i]]))
+    print("\nerror_plus", error_plus)
+    try:
+        for i, _ in enumerate(error_plus):
+            error_plus_actual.append(np.max([error_plus[i], error_minus[i]]))
+            error_minus_actual.append(np.min([error_plus[i], error_minus[i]]))
+    except TypeError:
+        error_plus_actual.append(np.max([error_plus, error_minus]))
+        error_minus_actual.append(np.min([error_plus, error_minus]))
 
     if absolute:
         return measurement + np.array([0., error_plus_actual, error_minus_actual])
@@ -310,7 +619,6 @@ def first_file(path: "str", ext: 'str' = None):
 
 
 def find_object(x, y, x_search, y_search, world=False):
-    # TODO: Throw error here if search arrays not same length
     """
     Returns closest match to given coordinates from the given search space.
     :param x: x-coordinate to find
@@ -319,7 +627,8 @@ def find_object(x, y, x_search, y_search, world=False):
     :param y_search: array to search for y-coordinate
     :return: id (int), distance (float)
     """
-
+    if len(x_search) != len(y_search):
+        raise ValueError('x_search and y_search must be the same length.')
     if world:
         distances = np.sqrt(((x_search - x) * np.cos(y)) ** 2 + (y_search - y) ** 2)
     else:
@@ -343,11 +652,6 @@ def match_cat(x_match, y_match, x_cat, y_cat, tolerance=np.inf, world=False, ret
     :return: tuple of arrays containing: 0. the match indices in the search array and 1. the match indices in the
     catalogue.
     """
-
-    if len(x_match) != len(y_match):
-        raise ValueError('x_match and y_match must be the same length.')
-    if len(x_cat) != len(y_cat):
-        raise ValueError('x_cat and y_cat must be the same length.')
 
     matches_search = []
     matches_cat = []
@@ -411,8 +715,8 @@ def match_both(table_1, table_2, cat, table_name_1: 'str' = '1', table_name_2: '
 
     # Consolidate tables.
 
-    return tbl.hstack([matches_both_cat, matches_both_1, matches_both_2],
-                      table_names=[cat_name, table_name_1, table_name_2])
+    return table.hstack([matches_both_cat, matches_both_1, matches_both_2],
+                        table_names=[cat_name, table_name_1, table_name_2])
 
 
 def in_all(item, list_of_lists: 'list'):
@@ -461,12 +765,12 @@ def find_nearest(array, value, sorted: bool = False):
         return idx, array[idx]
 
 
-def round_to_sig_fig(x: float, n: int):
+def round_to_sig_fig(x: float, n: int) -> float:
     """
     https://stackoverflow.com/questions/3410976/how-to-round-a-number-to-significant-figures-in-python
     :param x: Number to round.
     :param n: Number of significant figures to round to.
-    :return:
+    :return: Rounded number
     """
 
     return round(x, (n - 1) - int(np.floor(np.log10(abs(x)))))
@@ -505,13 +809,13 @@ def join_csv(filenames: [str], output: str):
     tables = []
     for file in filenames:
         if file[-4:] == '.csv':
-            tables.append(tbl.Table.read(file, format='ascii.csv'))
+            tables.append(table.Table.read(file, format='ascii.csv'))
         elif file[-5:] == '.fits':
-            tables.append(tbl.Table(fits.open(file)[1].data))
+            tables.append(table.Table(fits.open(file)[1].data))
         else:
             raise ValueError('File format not recognised.')
 
-    output_tbl = tbl.hstack(tables)
+    output_tbl = table.hstack(tables)
     for col in output_tbl.colnames:
         if col[-2:] == '_1':
             col_new = col[:-2]
@@ -553,16 +857,10 @@ def unit_str_to_float(string: str):
     return value, units
 
 
-def select_option(message: str, options: List[str], default: Union[str, int] = None):
-    if type(default) is str:
-        default = options.index(default)
-    if default is not None:
-        message += f" [default: {default} {options[default]}]"
-    print()
-    print(message)
-
+def option(options: list, default: str = None):
     for i, opt in enumerate(options):
         print(i, opt)
+
     selection = None
     picked = None
 
@@ -578,9 +876,63 @@ def select_option(message: str, options: List[str], default: Union[str, int] = N
         try:
             picked = options[selection]
         except IndexError:
-            print(f"Response is not in provided options. Please pick an integer between 0 and {len(options) - 1}")
+            print(f"Response is not in provided options. Please select an integer from 0 to {len(options) - 1}")
     print(f"You have selected {selection}: {picked}")
-    return picked
+    return selection, picked
+
+
+def enter_time(message: str):
+    date = None
+    while date is None:
+        date = input(message + "\n")
+        print()
+        try:
+            date = Time(date)
+        except ValueError:
+            print("Date format not recognised. Try again:")
+    return date
+
+
+def select_option(message: str,
+                  options: Union[List[str], dict],
+                  default: Union[str, int] = None,
+                  sort: bool = False) -> tuple:
+    """
+    Options can be a list of strings, or a dict in which the keys are the options to be printed and the values are the
+    represented options. The returned object is a tuple, with the first entry being the number given by the user and
+    the second entry being the corresponding option. If a dict is passed to options, the second tuple entry will be the
+    dict value.
+    :param message: Message to display before options.
+    :param options: Options to display.
+    :param default: Option to return if no user input is given.
+    :param sort: Sort options?
+    :return: Tuple containing (user input, selection)
+    """
+    if type(default) is str:
+        default = options.index(default)
+    if default is not None:
+        message += f" [default: {default} {options[default]}]"
+    print()
+    print(message)
+
+    dictionary = False
+    if type(options) is dict:
+        dictionary = True
+        options_list = []
+        for opt in options:
+            options_list.append(opt)
+        if sort:
+            options_list.sort()
+    else:
+        options_list = options
+
+    if sort:
+        options_list.sort()
+    selection, picked = option(options=options_list, default=default)
+    if dictionary:
+        return selection, options[picked]
+    else:
+        return selection, picked
 
 
 def select_yn(message: str, default: Union[str, bool] = None):
@@ -595,7 +947,6 @@ def select_yn(message: str, default: Union[str, bool] = None):
         message += f"[default: n]"
     elif default is not None:
         print("Warning: default not recognised. No default value will be used.")
-    print()
     print(message)
     inp = None
     while inp is None:
@@ -634,3 +985,116 @@ def user_input(message: str, typ: type = str, default=None):
                 print(f"Could not cast {inp} to {typ}. Try again:")
     print(f"You have entered {inp}.")
     return inp
+
+
+def scan_nested_dict(dictionary: dict, keys: list):
+    value = dictionary
+    for key in keys:
+        value = value[key]
+    return value
+
+
+def get_scope(lines: list, levels: list):
+    this_dict = {}
+    this_level = levels[0]
+    for i, line in enumerate(lines):
+        if levels[i] == this_level:
+            scope_start = i + 1
+            scope_end = i + 1
+            while scope_end < len(levels) and levels[scope_end] > this_level:
+                scope_end += 1
+            if "=" in line:
+                key, value = line.split("=")
+                this_dict[key] = value
+            else:
+                this_dict[line] = get_scope(lines=lines[scope_start:scope_end], levels=levels[scope_start:scope_end])
+
+    return this_dict
+
+
+def get_pypeit_param_levels(lines: list):
+    levels = []
+    last_non_zero = 0
+    for i, line in enumerate(lines):
+        level = line.count("[")
+        if level == 0:
+            level = levels[last_non_zero] + 1
+        else:
+            last_non_zero = i
+        levels.append(level)
+        line = line.replace("\t", "").replace(" ", "").replace("[", "").replace("]", "").replace("\n", "")
+        if "#" in line:
+            line = line.split("#")[0]
+        lines[i] = line
+    return lines, levels
+
+
+def get_pypeit_user_params(file: Union[list, str]):
+    if isinstance(file, str):
+        with open(file) as f:
+            file = f.readlines()
+
+    p_start = file.index("# User-defined execution parameters\n") + 1
+    p_end = p_start + 1
+    while file[p_end] != "\n":
+        p_end += 1
+
+    lines, levels = get_pypeit_param_levels(lines=file[p_start:p_end])
+    param_dict = get_scope(lines=lines, levels=levels)
+
+    return param_dict
+
+
+def print_nested_dict(dictionary, level: int = 0):
+    if not isinstance(dictionary, dict):
+        raise TypeError("dictionary must be dict")
+    for key in dictionary:
+        print(level * "\t", key + ":")
+        if isinstance(dictionary[key], dict):
+            print_nested_dict(dictionary[key], level + 1)
+        else:
+            print((level + 1) * "\t", dictionary[key])
+
+
+def system_command(command: str, arguments: Union[str, list] = None,
+                   suppress_print: bool = False,
+                   error_on_exit_code: bool = True,
+                   *flags, **params):
+    if command in [""]:
+        raise ValueError("Empty command.")
+    if " " in command:
+        raise ValueError("Command contains spaces.")
+    sys_str = command
+    if arguments is not None:
+        if isinstance(arguments, str):
+            arguments = [arguments]
+        for argument in arguments:
+            sys_str += f" {argument}"
+    for param in params:
+        debug_print(2, "utils.system_command(): flag ==", param, "len", len(param))
+        if len(param) == 1:
+            sys_str += f" -{param} {params[param]}"
+        elif len(param) > 1:
+            sys_str += f" --{param} {params[param]}"
+    for flag in flags:
+        debug_print(2, "utils.system_command(): flag ==", flag, "len", len(flag))
+        if len(flag) == 1:
+            sys_str += f" -{flag}"
+        elif len(flag) > 1:
+            sys_str += f" --{flag}"
+
+    if not suppress_print:
+        print()
+        print("Executing:")
+        print(sys_str)
+        print()
+    result = os.system(sys_str)
+    if result != 0 and error_on_exit_code:
+        raise SystemError(f"System command failed with exit code {result}")
+    if not suppress_print:
+        print()
+        print("Finished:")
+        print(sys_str)
+        print("With code", result)
+        print()
+    return result
