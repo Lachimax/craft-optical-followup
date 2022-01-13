@@ -87,7 +87,8 @@ class Instrument:
     def from_file(cls, param_file: Union[str, dict]):
         u.debug_print(1, "Instrument.from_file(): param_file ==", param_file)
         name, param_file, param_dict = p.params_init(param_file)
-        u.debug_print(1, "Instrument.from_file(): name", name)
+        u.debug_print(1, "Instrument.from_file(): name ==", name)
+        u.debug_print(1, "Instrument.from_file(): param_dict ==", param_dict)
         if param_dict is None:
             raise FileNotFoundError("Param file missing!")
         return cls(**param_dict)
@@ -95,8 +96,8 @@ class Instrument:
     @classmethod
     def from_params(cls, instrument_name: str):
         path = cls._build_param_path(instrument_name=instrument_name)
-        u.debug_print(2, "Instrument.from_params(): instrument_name ==", instrument_name)
-        u.debug_print(2, "Instrument.from_params(): path ==", path)
+        u.debug_print(1, "Instrument.from_params(): instrument_name ==", instrument_name)
+        u.debug_print(1, "Instrument.from_params(): path ==", path)
         return cls.from_file(param_file=path)
 
     @classmethod
@@ -168,7 +169,7 @@ class Filter:
         self.data_path = None
         if "data_path" in kwargs:
             self.data_path = kwargs["data_path"]
-        u.mkdir_check(self.data_path)
+        u.mkdir_check_nested(self.data_path)
         self.votable = None
         self.votable_path = None
 

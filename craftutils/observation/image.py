@@ -233,9 +233,14 @@ class Image:
         if instrument_name is not None:
             self.instrument_name = instrument_name
         try:
+            u.debug_print(1, f"Image.__init__(): {self}.instrument_name ==", self.instrument_name)
             self.instrument = inst.Instrument.from_params(instrument_name=self.instrument_name)
         except FileNotFoundError:
+            u.debug_print(1, f"Image.__init__(): FileNotFoundError")
             self.instrument = None
+        u.debug_print(
+            1, f"Image.__init__(): {self}.instrument ==", self.instrument,
+            self.instrument_name)
         self.epoch = None
 
         # Header attributes
@@ -988,7 +993,7 @@ class ImagingImage(Image):
             dist_tol: units.Quantity = 2. * units.arcsec,
             snr_cut=200
     ):
-        self.signal_to_noise_ccd()
+        self.signal_to_noise_measure()
         if image_name is None:
             image_name = self.name
         self.extract_filter()
@@ -1001,34 +1006,35 @@ class ImagingImage(Image):
         cat_mag_col = column_names['mag_psf']
         cat_type = "csv"
 
-        zp_dict = ph.determine_zeropoint_sextractor(sextractor_cat=self.source_cat,
-                                                    image=self.path,
-                                                    cat_path=cat_path,
-                                                    cat_name=cat_name,
-                                                    output_path=output_path,
-                                                    image_name=image_name,
-                                                    show=show,
-                                                    cat_ra_col=cat_ra_col,
-                                                    cat_dec_col=cat_dec_col,
-                                                    cat_mag_col=cat_mag_col,
-                                                    sex_ra_col=sex_ra_col,
-                                                    sex_dec_col=sex_dec_col,
-                                                    sex_x_col=sex_x_col,
-                                                    sex_y_col=sex_y_col,
-                                                    dist_tol=dist_tol,
-                                                    flux_column=sex_flux_col,
-                                                    mag_range_sex_upper=mag_range_sex_upper,
-                                                    mag_range_sex_lower=mag_range_sex_lower,
-                                                    stars_only=stars_only,
-                                                    star_class_tol=star_class_tol,
-                                                    star_class_col=star_class_col,
-                                                    exp_time=self.exposure_time,
-                                                    cat_type=cat_type,
-                                                    cat_zeropoint=cat_zeropoint,
-                                                    cat_zeropoint_err=cat_zeropoint_err,
-                                                    snr_col='SNR',
-                                                    snr_cut=snr_cut,
-                                                    )
+        zp_dict = ph.determine_zeropoint_sextractor(
+            sextractor_cat=self.source_cat,
+            image=self.path,
+            cat_path=cat_path,
+            cat_name=cat_name,
+            output_path=output_path,
+            image_name=image_name,
+            show=show,
+            cat_ra_col=cat_ra_col,
+            cat_dec_col=cat_dec_col,
+            cat_mag_col=cat_mag_col,
+            sex_ra_col=sex_ra_col,
+            sex_dec_col=sex_dec_col,
+            sex_x_col=sex_x_col,
+            sex_y_col=sex_y_col,
+            dist_tol=dist_tol,
+            flux_column=sex_flux_col,
+            mag_range_sex_upper=mag_range_sex_upper,
+            mag_range_sex_lower=mag_range_sex_lower,
+            stars_only=stars_only,
+            star_class_tol=star_class_tol,
+            star_class_col=star_class_col,
+            exp_time=self.exposure_time,
+            cat_type=cat_type,
+            cat_zeropoint=cat_zeropoint,
+            cat_zeropoint_err=cat_zeropoint_err,
+            snr_col='SNR_MEASURED',
+            snr_cut=snr_cut,
+        )
 
         if zp_dict is None:
             return None
@@ -1138,9 +1144,9 @@ class ImagingImage(Image):
         """
 
         source_cat = self.get_source_cat(dual=dual)
-        self.signal_to_noise_ccd()
-        self.signal_to_noise_measure()
-        self.calibrate_magnitudes(zeropoint_name=zeropoint_name)
+        self.signal_to_noise_ccd(dual=dual)
+        self.signal_to_noise_measure(dual=dual)
+        self.calibrate_magnitudes(zeropoint_name=zeropoint_name, dual=dual)
 
         # "max" stores the magnitude of the faintest object with S/N > x sigma
         self.depth["max"] = {}
@@ -1153,19 +1159,27 @@ class ImagingImage(Image):
 
         for sigma in range(1, 6):
             for snr_key in ["SNR_CCD", "SNR_MEASURED", "SNR_SE"]:
+                u.debug_print(1, "ImagingImage.estimate_depth(): snr_key, sigma ==", snr_key, sigma)
+                self.depth["max"][snr_key] = {}
+                self.depth["secure"][snr_key] = {}
                 # Faintest source at x-sigma:
+                u.debug_print(1, f"ImagingImage.estimate_depth(): source_cat[{snr_key}].unit ==",
+                              source_cat[snr_key].unit)
                 cat_more_xsigma = source_cat[source_cat[snr_key] > sigma]
                 print(f"Sources > {sigma}-sigma:", len(cat_more_xsigma))
                 self.depth["max"][snr_key][f"{sigma}-sigma"] = np.max(cat_more_xsigma[f"MAG_AUTO_ZP_{zeropoint_name}"])
 
                 # Brightest source less than x-sigma (kind of)
                 source_less_sigma = source_cat[source_cat[snr_key] < sigma]
-                source_less_sigma = source_less_sigma[source_less_sigma[sigma] != np.inf]
-                source_less_sigma = source_less_sigma[source_less_sigma[sigma] != np.nan]
-                i = np.argmax(source_less_sigma["FLUX_AUTO"])
-                i, _ = u.find_nearest(source_cat["NUMBER"], source_less_sigma[i]["NUMBER"])
-                i += 1
-                src_lim = source_cat[i]
+                if len(source_less_sigma) > 0:
+                    source_less_sigma = source_less_sigma[source_less_sigma[snr_key] != np.inf]
+                    source_less_sigma = source_less_sigma[source_less_sigma[snr_key] != np.nan]
+                    i = np.argmax(source_less_sigma["FLUX_AUTO"])
+                    i, _ = u.find_nearest(source_cat["NUMBER"], source_less_sigma[i]["NUMBER"])
+                    i += 1
+                    src_lim = source_cat[i]
+                else:
+                    src_lim = source_cat[0]
                 self.depth["secure"][snr_key][f"{sigma}-sigma"] = src_lim[f"MAG_AUTO_ZP_{zeropoint_name}"]
 
         source_cat.sort("NUMBER")
@@ -1639,9 +1653,7 @@ class ImagingImage(Image):
         bkg = self.calculate_background(method='sep', mask=mask)
         rms = bkg.rms()
 
-        mask = np.invert(mask)
-
-        gain = self.extract_gain()
+        gain = self.extract_gain() / units.electron
 
         snrs = []
         snrs_se = []
@@ -1656,14 +1668,13 @@ class ImagingImage(Image):
 
             theta = u.world_angle_se_to_pu(cat_obj["THETA_WORLD"])
 
-            ap = ph.aperture.EllipticalAperture(
+            ap = photutils.aperture.EllipticalAperture(
                 [x, y],
                 a=a,
                 b=b,
                 theta=theta
             )
 
-            area_aperture = ap.area
             ap_mask = ap.to_mask(method='center')
 
             flux = cat_obj["FLUX_AUTO"]
@@ -1676,7 +1687,7 @@ class ImagingImage(Image):
 
             snrs.append(snr.value)
             sigma_fluxes.append(sigma_flux.value)
-            snrs_se.append(snr_se)
+            snrs_se.append(snr_se.value)
 
         source_cat["SNR_MEASURED"] = snrs
         source_cat["NOISE_MEASURED"] = sigma_fluxes
@@ -2624,6 +2635,9 @@ class FORS2CoaddedImage(CoaddedImage):
         :return:
         """
         self.extract_filter()
+        u.debug_print(
+            1, f"FORS2CoaddedImage.calibration_from_qc1(): {self}.instrument ==", self.instrument,
+            self.instrument_name)
         fil = self.instrument.filters[self.filter_name]
         fil.retrieve_calibration_table()
         if fil.calibration_table is not None:

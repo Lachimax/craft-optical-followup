@@ -31,15 +31,19 @@ def main(
     new_field = False
 
     directory = fld.load_epoch_directory()
-    if epoch_name is not None and epoch_name in directory:
-        epoch_dict = directory[epoch_name]
-        field_name = epoch_dict["field_name"]
-        instrument = epoch_dict["instrument"]
-        mode = epoch_dict["mode"]
-        if mode == "imaging":
-            imaging = True
-        elif mode == "spectroscopy":
-            spectroscopy = True
+    if epoch_name is not None:
+        print(f"Looking for {epoch_name} in directory...")
+        if epoch_name in directory:
+            epoch_dict = directory[epoch_name]
+            field_name = epoch_dict["field_name"]
+            instrument = epoch_dict["instrument"]
+            mode = epoch_dict["mode"]
+            if mode == "imaging":
+                imaging = True
+            elif mode == "spectroscopy":
+                spectroscopy = True
+        else:
+            print(f"{epoch_name} not found.")
 
     # Do automated FURBY process.
     if furby_path is not None:
