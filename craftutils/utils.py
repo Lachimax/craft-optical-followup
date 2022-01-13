@@ -319,7 +319,7 @@ def world_angle_se_to_pu(
     """
     theta = check_quantity(theta, units.deg)
     rot_angle = check_quantity(rot_angle, units.deg)
-    return -theta.to(units.radian).value
+    return -theta.to(units.radian).value + rot_angle.value
 
 
 def size_from_ang_size_distance(theta: float, ang_size_distance: float):

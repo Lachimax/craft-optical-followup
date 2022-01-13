@@ -564,6 +564,7 @@ class ImagingImage(Image):
 
         self.depth = None
 
+
         self.astrometry_corrected_path = None
         self.astrometry_stats = {}
 
@@ -1116,8 +1117,9 @@ class ImagingImage(Image):
     def estimate_depth(self, zeropoint_name: str):
         self.load_source_cat()
         self.signal_to_noise_ccd()
+        self.signal_to_noise_measure()
         self.calibrate_magnitudes(zeropoint_name=zeropoint_name)
-        cat_3sigma = self.source_cat[self.source_cat["SNR"] > 3.0]
+        cat_3sigma = self.source_cat[self.source_cat["SNR_CCD"] > 3.0]
         print("Total sources:", len(self.source_cat))
         print("Sources > 3 sigma:", len(cat_3sigma))
         self.depth = np.max(cat_3sigma[f"MAG_AUTO_ZP_{zeropoint_name}"])
