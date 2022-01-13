@@ -562,8 +562,7 @@ class ImagingImage(Image):
         self.extinction_atmospheric = None
         self.extinction_atmospheric_err = None
 
-        self.depth = None
-
+        self.depth = {}
 
         self.astrometry_corrected_path = None
         self.astrometry_stats = {}
@@ -741,6 +740,29 @@ class ImagingImage(Image):
                 self.load_source_cat_sextractor_dual(force=force)
             else:
                 u.debug_print(1, "No valid source_cat_dual_path found. Could not load source_table.")
+
+    def get_source_cat(self, dual: bool, force: bool = False):
+        self.load_source_cat(force=force)
+        if dual:
+            source_cat = self.source_cat_dual
+        else:
+            source_cat = self.source_cat
+
+        return source_cat
+
+    def _save_to_source_cat(self, source_cat: table.QTable, dual: bool):
+        """
+        CAUTION. This will overwrite any saved source_cat both on disk and in memory. Recommended that this only be used when columns
+        have been added to the existing source_cat.
+        :param source_cat:
+        :param dual:
+        :return:
+        """
+        if dual:
+            self.source_cat_dual = source_cat
+        else:
+            self.source_cat = source_cat
+        self.update_output_file()
 
     def write_source_cat(self):
         if self.source_cat is None:
@@ -1029,11 +1051,7 @@ class ImagingImage(Image):
             source_cat["KRON_AREA_IMAGE"] = source_cat["A_IMAGE"] * source_cat["B_IMAGE"] * np.pi
 
     def calibrate_magnitudes(self, zeropoint_name: str = "best", force: bool = False, dual: bool = False):
-        self.load_source_cat(force=True)
-        if dual:
-            cat = self.source_cat_dual
-        else:
-            cat = self.source_cat
+        cat = self.get_source_cat(dual=dual, force=True)
 
         self.extract_exposure_time()
 
@@ -1060,11 +1078,8 @@ class ImagingImage(Image):
             cat[f"MAG_PSF_ZP_{zeropoint_name}_no_ext"] = mags[2]
             cat[f"MAGERR_PSF_ZP_{zeropoint_name}_no_ext"] = mags[3]
 
-            if dual:
-                self.source_cat_dual = cat
-            else:
-                self.source_cat = cat
-            self.update_output_file()
+            self._save_to_source_cat(source_cat=cat, dual=dual)
+
         else:
             print(f"Magnitudes already calibrated for {zeropoint_name}")
 
@@ -1118,11 +1133,24 @@ class ImagingImage(Image):
         self.load_source_cat()
         self.signal_to_noise_ccd()
         self.signal_to_noise_measure()
+        self.signal_to_noise_se()
         self.calibrate_magnitudes(zeropoint_name=zeropoint_name)
-        cat_3sigma = self.source_cat[self.source_cat["SNR_CCD"] > 3.0]
+
+        # "max" stores the magnitude of the faintest object with S/N > x sigma
+        self.depth["max"] = {}
+        # "secure" stores the magnitude of the brightest object with S/N < x sigma, thus giving the faintest at which we
+        # can be confident of a detection
+        self.depth["secure"] = {}
+
+        for sigma in range(1, 6):
+            cat_more_xsigma = self.source_cat[self.source_cat["SNR_CCD"] > sigma]
+
+            cat_less_xsigma = self.source_cat[self.source_cat["SNR_CCD"] < sigma]
+
         print("Total sources:", len(self.source_cat))
         print("Sources > 3 sigma:", len(cat_3sigma))
-        self.depth = np.max(cat_3sigma[f"MAG_AUTO_ZP_{zeropoint_name}"])
+
+        np.max(cat_3sigma[f"MAG_AUTO_ZP_{zeropoint_name}"])
         self.update_output_file()
         return self.depth
 
@@ -1540,11 +1568,9 @@ class ImagingImage(Image):
                      offset_tolerance: units.Quantity = 1 * units.arcsec,
                      star_tolerance: float = None,
                      dual: bool = False):
-        self.load_source_cat()
-        if dual:
-            source_cat = self.source_cat_dual
-        else:
-            source_cat = self.source_cat
+
+        source_cat = self.get_source_cat(dual=dual)
+
         if star_tolerance is not None:
             source_cat = source_cat[source_cat["CLASS_STAR"] > star_tolerance]
 
@@ -1559,15 +1585,10 @@ class ImagingImage(Image):
         return matches_source_cat, matches_ext_cat, distance
 
     def signal_to_noise_ccd(self, dual: bool = False):
-        self.load_source_cat()
+        source_cat = self.get_source_cat(dual=dual)
         self.extract_exposure_time()
         self.extract_gain()
         self.aperture_areas()
-
-        if dual:
-            source_cat = self.source_cat_dual
-        else:
-            source_cat = self.source_cat
 
         flux_target = source_cat['FLUX_AUTO']
         rate_target = flux_target / self.exposure_time
@@ -1584,21 +1605,14 @@ class ImagingImage(Image):
             n_pix=n_pix
         ).value
 
-        if dual:
-            self.source_cat_dual = source_cat
-        else:
-            self.source_cat = source_cat
+        self._save_to_source_cat(source_cat, dual)
 
         self.update_output_file()
         print("MEDIAN SNR:", np.median(source_cat["SNR_CCD"]))
         return source_cat["SNR_CCD"]
 
     def signal_to_noise_measure(self, dual: bool = False):
-        self.load_source_cat()
-        if dual:
-            source_cat = self.source_cat_dual
-        else:
-            source_cat = self.source_cat
+        source_cat = self.get_source_cat(dual=dual)
 
         self.load_data()
         _, scale = self.extract_pixel_scale()
@@ -1608,7 +1622,6 @@ class ImagingImage(Image):
         rms = bkg.rms()
 
         mask = np.invert(mask)
-        masked_data = self.data[0] * mask
 
         gain = self.extract_gain()
 
@@ -1623,8 +1636,6 @@ class ImagingImage(Image):
 
             a = cat_obj["A_WORLD"].to(units.pix, scale).value
             b = cat_obj["B_WORLD"].to(units.pix, scale).value
-
-            kron = cat_obj["KRON_RADIUS"]
 
             theta = u.world_angle_se_to_pu(cat_obj["THETA_WORLD"])
 
@@ -1650,17 +1661,15 @@ class ImagingImage(Image):
             sigma_fluxes.append(sigma_flux.value)
             snrs_se.append(snr_se)
 
-            if show:
-                plt.show()
-
         source_cat["SNR_MEASURED"] = snrs
         source_cat["NOISE_MEASURED"] = sigma_fluxes
         source_cat["SNR_SE"] = snrs_se
 
-        if dual:
-            source_cat = self.source_cat_dual
-        else:
-            source_cat = self.source_cat
+        self._save_to_source_cat(source_cat=source_cat, dual=dual)
+
+    def signal_to_noise_se(self, dual: bool = False):
+        source_cat = self.get_source_cat(dual=dual)
+
 
     def object_axes(self):
         self.load_source_cat()
@@ -1691,13 +1700,8 @@ class ImagingImage(Image):
         plt.show()
 
     def find_object(self, coord: SkyCoord, dual: bool = True):
-        self.load_source_cat()
+        cat = self.get_source_cat(dual=dual)
         u.debug_print(2, f"{self}.find_object(): dual ==", dual)
-        if dual:
-            cat = self.source_cat_dual
-        else:
-            cat = self.source_cat
-
         u.debug_print(2, f"{self}.find_object(): cat.colnames ==", cat.colnames)
         coord_cat = SkyCoord(cat["RA"], cat["DEC"])
         separation = coord.separation(coord_cat)
