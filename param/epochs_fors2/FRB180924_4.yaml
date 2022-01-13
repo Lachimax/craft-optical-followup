@@ -5,7 +5,6 @@ I_colour_term: 0.0
 I_colour_term_err: 0.0
 I_des_fits: null
 I_des_sextractor_psf: null
-I_do_zeropoint_field: false
 I_field_mag_range_lower: 20.0
 I_field_mag_range_upper: 25.0
 I_offset_x: null
@@ -16,11 +15,11 @@ I_std_star_class_tol: 0.95
 astrometry_tweak: true
 cat_field_name: DES
 data_dir: /home/lachlan/Data/FRB180924/FORS2/MJD58718/
-data_title: FRB180924_4
 deepest_filter: g_HIGH
-des_cat: /home/lachlan/Data/FRB180924/DES/des_objects.csv
+delete_esoreflex: true
 do_dual_mode: true
 do_sextractor: false
+do_sextractor_individual: false
 filters: [g_HIGH, I_BESS]
 g_cat_calib_path: null
 g_cat_calib_zeropoint: 0.0
@@ -29,7 +28,6 @@ g_colour_term: 0.0
 g_colour_term_err: 0.0
 g_des_fits: /home/lachlan/Data/FRB180924/DES/DESJ214425.2-405359.2_g.fits
 g_des_sextractor_psf: /home/lachlan/Data/FRB180924/DES/psfex/g_psf-fit.cat
-g_do_zeropoint_field: false
 g_field_mag_range_lower: 20.0
 g_field_mag_range_upper: 25.0
 g_offset_x: null
@@ -39,9 +37,11 @@ g_std_mag_range_upper: 21.5
 g_std_star_class_tol: 0.95
 gaia_cat: null
 manual_astrometry: false
-mjd: 58718
-object: Re-image-FRB-180924-Host
+photometry_apertures: []
+renormalise_centre_dec: 0.0
+renormalise_centre_ra: 0.0
 sextractor_kron_radius: 1.4
+sextractor_min_radius: 1.0
 skip_astrometry: true
 skip_copy: true
 skip_download: true
@@ -51,4 +51,8 @@ sm_fits: null
 std_cat: /home/lachlan/Data/FRB180924/FORS2/MJD58718/calibration/std_star/des/des_objects.csv
 std_cat_name: DES
 subtraction_image: tweaked_image
+test_synths:
+  dec: []
+  mag: []
+  ra: []
 threshold: 1.5

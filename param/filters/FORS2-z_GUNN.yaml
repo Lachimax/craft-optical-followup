@@ -1,6 +1,13 @@
+calib_last_updated: '2019-10-17'
+colour_term: []
+colour_term_err: []
+date: []
+extinction: []
+extinction_err: []
 fwhm: 130.5
 instrument: FORS2
 lambda_eff: 910
+mjd: []
 name: z_GUNN
 plotting_colour: black
 source: http://www.eso.org/sci/facilities/paranal/instruments/fors/inst/Filters/curves.html
@@ -31,3 +38,5 @@ wavelengths_filter_only: [3300.0, 3400.0, 3500.0, 3600.0, 3700.0, 3800.0, 3900.0
   10000.0, 10100.0, 10200.0, 10300.0, 10400.0, 10500.0, 10600.0, 10700.0, 10800.0,
   10900.0, 11000.0, 11100.0, 11200.0, 11300.0, 11400.0, 11500.0, 11600.0, 11700.0,
   11800.0, 11900.0, 12000.0]
+zeropoint: []
+zeropoint_err: []

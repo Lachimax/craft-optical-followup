@@ -1,6 +1,13 @@
+calib_last_updated: '2019-10-17'
+colour_term: []
+colour_term_err: []
+date: []
+extinction: []
+extinction_err: []
 fwhm: 0.0
 instrument: DES
 lambda_eff: 0.0
+mjd: []
 name: z
 plotting_colour: null
 source: http://www.ctio.noao.edu/noao/content/DECam-filter-information
@@ -304,3 +311,5 @@ wavelengths_filter_only: [8270.0, 8280.0, 8290.0, 8300.0, 8310.0, 8320.0, 8330.0
   10040.0, 10050.0, 10060.0, 10070.0, 10080.0, 10090.0, 10100.0, 10110.0, 10120.0,
   10130.0, 10140.0, 10150.0, 10160.0, 10170.0, 10180.0, 10190.0, 10200.0, 10210.0,
   10220.0, 10230.0, 10240.0, 10250.0, 10260.0, 10270.0]
+zeropoint: []
+zeropoint_err: []

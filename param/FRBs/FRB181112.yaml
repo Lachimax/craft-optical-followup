@@ -2,6 +2,7 @@ alignment_dec: -52.976175
 alignment_ra: 327.32708
 ang_size_distance: 1238000000.0
 burst_dec: -52.97094444
+burst_dec_str: null
 burst_err_stat_a: 0.555
 burst_err_stat_b: 0.153
 burst_err_stat_dec: 0.3
@@ -12,9 +13,8 @@ burst_err_sys_dec: 1.4
 burst_err_sys_ra: 0.24
 burst_err_theta: 30
 burst_ra: 327.34845833
+burst_ra_str: null
 data_dir: /home/lachlan/Data/FRB181112/
-dust_ebv: 0.0174
-filters: [g_HIGH, I_BESS]
 hg_dec: -52.9709323
 hg_err_x: 7.76e-12
 hg_err_y: 7.48e-12

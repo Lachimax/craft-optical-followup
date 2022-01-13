@@ -1,14 +1,23 @@
+calib_last_updated: '2019-10-17'
+colour_term: []
+colour_term_err: []
+date: []
+extinction: []
+extinction_err: []
 fwhm: 0.0
 instrument: SkyMapper
 lambda_eff: 0.0
+mjd: []
 name: u
 plotting_colour: null
 source: null
 source_filter_only: SVO Filter Profile Service
-transmissions: []
-transmissions_filter_only: [0.0, 0.003, 0.023, 0.086, 0.204, 0.366, 0.537, 0.695,
+transmissions: [0.0, 0.003, 0.023, 0.086, 0.204, 0.366, 0.537, 0.695,
   0.826, 0.923, 0.985, 0.992, 0.937, 0.805, 0.595, 0.332, 0.113, 0.015, 0.0]
-wavelengths: []
-wavelengths_filter_only: [3000.0, 3050.0, 3100.0, 3150.0, 3200.0, 3250.0, 3300.0,
+transmissions_filter_only: []
+wavelengths: [3000.0, 3050.0, 3100.0, 3150.0, 3200.0, 3250.0, 3300.0,
   3350.0, 3400.0, 3450.0, 3500.0, 3550.0, 3600.0, 3650.0, 3700.0, 3750.0, 3800.0,
   3850.0, 3900.0]
+wavelengths_filter_only: []
+zeropoint: []
+zeropoint_err: []

@@ -5,9 +5,7 @@ FLUXERR_BEST             #RMS error for BEST flux                               
 FLUX_AUTO
 FLUXERR_AUTO
 FLUX_APER
-FLUX_APER(1)
 FLUXERR_APER
-FLUXERR_APER(1)
 MAG_BEST                 #Best of MAG_AUTO and MAG_ISOCOR                           [mag]
 MAGERR_BEST              #RMS error for MAG_BEST                                    [mag]
 MAG_AUTO
@@ -26,7 +24,7 @@ MAGERR_WIN               #RMS error for MAG_WIN                                 
 #VECTOR_SOMFIT            Position vector of the winning SOM node                  
 KRON_RADIUS              #Kron apertures in units of A or B
 #PETRO_RADIUS             Petrosian apertures in units of A or B                   
-#BACKGROUND               Background at centroid position                           [count]
+BACKGROUND               Background at centroid position                           [count]
 THRESHOLD                #Detection threshold above background                      [count]
 FLUX_MAX                 #Peak flux above background                                [count]
 #ISOAREA_IMAGE            Isophotal area above Analysis threshold                   [pixel**2]
@@ -77,7 +75,7 @@ DELTA_SKY                Declination of barycenter (native)                     
 #CXY_WORLD                Cxy object ellipse parameter (WORLD units)                [deg**(-2)]
 #A_IMAGE                  Profile RMS along major axis                              [pixel]
 #B_IMAGE                  Profile RMS along minor axis                              [pixel]
-#THETA_IMAGE              Position angle (CCW/x)                                    [deg]
+THETA_IMAGE              Position angle (CCW/x)                                    [deg]
 A_WORLD                  #Profile RMS along major axis (world units)                [deg]
 B_WORLD                  #Profile RMS along minor axis (world units)                [deg]
 THETA_WORLD              #Position angle (CCW/world-x)                              [deg]
@@ -179,8 +177,8 @@ FLAGS                    #Extraction flags
 #NIMAFLAGS_ISO            Number of flagged pixels entering IMAFLAGS_ISO           
 #NLOWWEIGHT_ISO           Nb of pixels with low weight over the iso. profile       
 #NLOWDWEIGHT_ISO          Nb of pixels with low det. weight over the iso. profile  
-#FWHM_IMAGE               FWHM assuming a gaussian core                             [pixel]
-#FWHM_WORLD               FWHM assuming a gaussian core                             [deg]
+FWHM_IMAGE               FWHM assuming a gaussian core                             [pixel]
+FWHM_WORLD               FWHM assuming a gaussian core                             [deg]
 ELONGATION               #A_IMAGE/B_IMAGE
 #ELLIPTICITY              1 - B_IMAGE/A_IMAGE                                      
 #POLAR_IMAGE              (A_IMAGE^2 - B_IMAGE^2)/(A_IMAGE^2 + B_IMAGE^2)          
@@ -330,8 +328,8 @@ ERRY2PSF_WORLD           Variance of PSF position along Y-WORLD (delta)         
 #THETAMODEL_B1950         Model position angle (east of north) (B1950)              [deg]
 #SPREAD_MODEL             Spread parameter from model-fitting
 #SPREADERR_MODEL          Spread parameter error from model-fitting                
-#FLUX_BACKOFFSET          Background offset from fitting                            [count]
-#FLUXERR_BACKOFFSET       RMS error on fitted background offset                     [count]
+FLUX_BACKOFFSET          Background offset from fitting                            [count]
+FLUXERR_BACKOFFSET       RMS error on fitted background offset                     [count]
 #FLUX_POINTSOURCE         Point source flux from fitting                            [count]
 #FLUXERR_POINTSOURCE      RMS error on fitted point source total flux               [count]
 #MAG_POINTSOURCE          Point source total magnitude from fitting                 [mag]

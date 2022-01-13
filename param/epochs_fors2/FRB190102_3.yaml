@@ -1,17 +1,19 @@
 astrometry_tweak: true
 cat_field_name: DES
 data_dir: /media/lachlan/73828fc7-33a9-4fcf-be55-d38ab92b5ed1/home/lachlan/Data/FRB190102/FORS2/MJD58651/
-data_title: FRB190102_3
 deepest_filter: z_GUNN
-des_cat: null
+delete_esoreflex: true
 do_dual_mode: true
 do_sextractor: true
+do_sextractor_individual: false
 filters: [u_HIGH, z_GUNN]
 gaia_cat: null
 manual_astrometry: false
-mjd: 58651
-object: Image-FRB-190102-Host-uz
+photometry_apertures: []
+renormalise_centre_dec: 0.0
+renormalise_centre_ra: 0.0
 sextractor_kron_radius: 2.5
+sextractor_min_radius: 1.0
 skip_astrometry: true
 skip_copy: true
 skip_download: true
@@ -21,6 +23,10 @@ sm_fits: null
 std_cat: /media/lachlan/73828fc7-33a9-4fcf-be55-d38ab92b5ed1/home/lachlan/Data/FRB190102/FORS2/MJD58651/calibration/std_star/SkyMapper/SkyMapper.csv
 std_cat_name: SkyMapper
 subtraction_image: astrometry_image
+test_synths:
+  dec: []
+  mag: []
+  ra: []
 threshold: 1.5
 u_cat_calib_path: null
 u_cat_calib_zeropoint: 0.0
@@ -29,7 +35,6 @@ u_colour_term: 0
 u_colour_term_err: 0
 u_des_fits: null
 u_des_sextractor_psf: null
-u_do_zeropoint_field: false
 u_field_mag_range_lower: 20.0
 u_field_mag_range_upper: 25.0
 u_offset_x: null
@@ -44,7 +49,6 @@ z_colour_term: 0
 z_colour_term_err: 0
 z_des_fits: null
 z_des_sextractor_psf: null
-z_do_zeropoint_field: false
 z_field_mag_range_lower: 20.0
 z_field_mag_range_upper: 25.0
 z_offset_x: null

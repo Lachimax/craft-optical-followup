@@ -1,7 +1,4 @@
-# Default configuration file for SExtractor 2.19.5
-# EB 2013-12-14
-#
- 
+
 #-------------------------------- Catalog ------------------------------------
  
 CATALOG_NAME     psf-fit.cat       # name of the output catalog

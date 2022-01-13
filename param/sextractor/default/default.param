@@ -26,7 +26,7 @@ MAGERR_WIN               #RMS error for MAG_WIN                                 
 #VECTOR_SOMFIT            Position vector of the winning SOM node                  
 KRON_RADIUS              #Kron apertures in units of A or B
 #PETRO_RADIUS             Petrosian apertures in units of A or B                   
-#BACKGROUND               Background at centroid position                           [count]
+BACKGROUND               Background at centroid position                           [count]
 THRESHOLD                #Detection threshold above background                      [count]
 FLUX_MAX                 #Peak flux above background                                [count]
 #ISOAREA_IMAGE            Isophotal area above Analysis threshold                   [pixel**2]
@@ -328,8 +328,8 @@ FLUX_RADIUS              #Fraction-of-light radii                               
 #THETAMODEL_B1950         Model position angle (east of north) (B1950)              [deg]
 #SPREAD_MODEL             Spread parameter from model-fitting                      
 #SPREADERR_MODEL          Spread parameter error from model-fitting                
-#FLUX_BACKOFFSET          Background offset from fitting                            [count]
-#FLUXERR_BACKOFFSET       RMS error on fitted background offset                     [count]
+FLUX_BACKOFFSET          Background offset from fitting                            [count]
+FLUXERR_BACKOFFSET       RMS error on fitted background offset                     [count]
 #FLUX_POINTSOURCE         Point source flux from fitting                            [count]
 #FLUXERR_POINTSOURCE      RMS error on fitted point source total flux               [count]
 #MAG_POINTSOURCE          Point source total magnitude from fitting                 [mag]

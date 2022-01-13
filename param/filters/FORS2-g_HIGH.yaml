@@ -1,6 +1,13 @@
+calib_last_updated: '2019-10-17'
+colour_term: []
+colour_term_err: []
+date: []
+extinction: []
+extinction_err: []
 fwhm: 160.5
 instrument: FORS2
 lambda_eff: 470
+mjd: []
 name: g_HIGH
 plotting_colour: cyan
 source: http://www.eso.org/sci/facilities/paranal/instruments/fors/inst/Filters/curves.html
@@ -81,3 +88,5 @@ wavelengths_filter_only: [3785.0, 3790.0, 3795.0, 3800.0, 3805.0, 3810.0, 3815.0
   5455.0, 5460.0, 5465.0, 5470.0, 5475.0, 5480.0, 5485.0, 5490.0, 5495.0, 5500.0,
   5505.0, 5510.0, 5515.0, 5520.0, 5525.0, 5530.0, 5535.0, 5540.0, 5545.0, 5550.0,
   5555.0, 5560.0]
+zeropoint: []
+zeropoint_err: []
