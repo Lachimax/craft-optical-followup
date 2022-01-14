@@ -1545,10 +1545,27 @@ class ImagingImage(Image):
         image = self.__class__(path=output_path, instrument_name=self.instrument_name)
         return image
 
-    def divide_by_exp_time(self, output_path: str):
-        ff.divide_by_exp_time(file=self.path, output=output_path)
-        image = self.__class__(path=output_path)
-        return image
+    def convert_to_es(self, output_path: str, ext: int = 0):
+        new = self.copy(output_path)
+        gain = self.extract_gain()
+        exp_time = self.extract_exposure_time()
+        new.open()
+        new_data = new.data[ext]
+        new_data *= gain.value
+        new_data /= exp_time.value
+        new.data[ext] = new_data.value
+
+        header = new.headers[ext]
+        header["BUNIT"] = str(new_data.unit)
+        header["GAIN"] = 1.0
+        header["OLD_GAIN"] = gain.value
+        header["EXPTIME"] = 1.0
+        header["OLD_EXPTIME"] = exp_time.value
+        new.headers[ext] = header
+
+        new.write_data()
+        new.write_headers()
+        return new
 
     def reproject(self, other_image: 'ImagingImage', ext: int = 0, output_path: str = None):
         import reproject as rp

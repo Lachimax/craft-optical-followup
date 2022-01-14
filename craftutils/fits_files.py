@@ -323,7 +323,7 @@ def align(comparison: Union[fits.hdu.hdulist.HDUList, str], template: Union[fits
         comparison.close()
 
 
-def divide_by_exp_time(file: Union['fits.hdu_list.hdulist.HDUList', 'str'], output: 'str' = None):
+def divide_by_exp_time(file: Union['fits.hdu_list.hdulist.HDUList', str], output: 'str' = None, ext: int = 0):
     """
     Convert a fits file from total counts to counts/second.
     :param file: Path or HDU object of the file.
@@ -335,7 +335,7 @@ def divide_by_exp_time(file: Union['fits.hdu_list.hdulist.HDUList', 'str'], outp
 
     old_exp_time = get_exp_time(file)
 
-    file[0].data = file[0].data / old_exp_time
+    file[ext].data = file[ext].data / old_exp_time
 
     # Set header entries to match.
     change_header(file=file, key='EXPTIME', value=1.)

@@ -5,6 +5,7 @@ import os
 import warnings
 from typing import Union, List
 import shutil
+from collections import OrderedDict
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -1082,7 +1083,8 @@ class Epoch:
             date: Union[str, Time] = None,
             program_id: str = None,
             target: str = None,
-            do: Union[list, str] = None
+            do: Union[list, str] = None,
+            **kwargs
     ):
 
         # Input attributes
@@ -1135,6 +1137,10 @@ class Epoch:
 
         self.coadded = {}
 
+        self.do_kwargs = {}
+        if "do" in kwargs:
+            self.do_kwargs = kwargs["do"]
+
         add_to_epoch_directory(
             field_name=self.field.name,
             instrument=self.instrument_name,
@@ -1143,9 +1149,65 @@ class Epoch:
 
         # self.load_output_file()
 
-    def pipeline(self, **kwargs):
+    def stages(self):
+        stages = {
+            "initial_setup": {
+                "method": self.proc_initial_setup,
+                "message": "Do initial setup of files?",
+                "default": True,
+                "do_key": None  # If do_key is None or not present, the stage is default and will be performed.
+            }
+        }
+
+        return stages
+
+    def pipeline(self, no_query: bool = False, **kwargs):
+        """
+        Performs the pipeline methods given in stages()
+        :param no_query: If True, skips the query stage and performs all stages (unless "do" was provided on __init__)
+        :param kwargs:
+        :return:
+        """
         self._pipeline_init()
         u.debug_print(2, "Epoch.pipeline(): kwargs ==", kwargs)
+
+        # Loop through stages list specified in stages()
+        stages = self.stages()
+        for n, name in enumerate(stages):
+            stage = stages[name]
+            message = stage["message"]
+            # If default is present, then it defines whether the stage should be performed by default. If True, it
+            # must be switched off by the do_key to skip the step; if False, then do_key must be set to True to perform
+            # the step. This should work.
+            if "default" in stage:
+                do_this = stage["default"]
+            else:
+                do_this = True
+
+            # Check for do_key;
+            # If it is present and not None, then we check kwargs for the key and only do this stage if the value
+            # is True.
+            if "do_key" in stage and stage["do_key"] is not None:
+                do_key = stage["do_key"]
+                if do_key in self.do_kwargs:
+                    do_this = kwargs["do"][do_key]
+            # If do_key not found, defer to "default".
+
+            if do_this and (no_query or self.query_stage(
+                    message=message,
+                    n=n,
+                    stage_name=name,
+            )):
+                # Construct path; if dir_name is None then the step is pathless.
+                dir_name = f"{n}-{name}"
+                output_dir = os.path.join(self.data_path, dir_name)
+                u.rmtree_check(output_dir)
+                u.mkdir_check(output_dir)
+                self.paths[name] = output_dir
+
+                if stage["method"](output_dir=output_dir, **kwargs):
+                    self.stages_complete[f"{n}-{name}"] = Time.now()
+                    self.update_output_file()
 
     def _pipeline_init(self, ):
         if self.data_path is not None:
@@ -1155,14 +1217,10 @@ class Epoch:
             raise ValueError(f"data_path has not been set for {self}")
         self.do = _check_do_list(self.do)
 
-    def proc_initial_setup(self, no_query: bool = False, **kwargs):
-        if no_query or self.query_stage("Do initial setup of files?", stage='1-initial_setup'):
-            self._initial_setup()
-            self.stages_complete['1-initial_setup'] = Time.now()
-            self.update_output_file()
-            return True
+    def proc_initial_setup(self, output_dir: str, **kwargs):
+        self._initial_setup(output_dir=output_dir, **kwargs)
 
-    def _initial_setup(self):
+    def _initial_setup(self, output_dir: str, **kwargs):
         pass
 
     def _path_0_raw(self):
@@ -1198,8 +1256,14 @@ class Epoch:
             raise ValueError(f"{stage} is not a valid stage for this Epoch.")
         return self.stages_complete[stage]
 
-    def query_stage(self, message: str, stage: str):
-        n = float(stage[:stage.find("-")])
+    def query_stage(self, message: str, stage_name: str, n: float):
+        """
+        Helper method for asking the user if we need to do this stage of processing.
+        If self.do is True, skips the query and returns True.
+        :param message: Message to display.
+        :param stage_name: Stage number
+        :return:
+        """
         # Check if n is an integer, and if so cast to int.
         if n == int(n):
             n = int(n)
@@ -1208,7 +1272,7 @@ class Epoch:
                 return True
         else:
             message = f"{n}. {message}"
-            done = self.check_done(stage=stage)
+            done = self.check_done(stage=f"{n}-{stage_name}")
             if done is not None:
                 time_since = (Time.now() - done).sec * units.second
                 time_since = u.relevant_timescale(time_since)
@@ -1312,10 +1376,6 @@ class Epoch:
             self.frames_flat.append(frame)
 
     @classmethod
-    def stages(cls):
-        return {"1-initial_setup": None}
-
-    @classmethod
     def default_params(cls):
         default_params = {
             "name": None,
@@ -1324,7 +1384,8 @@ class Epoch:
             "instrument": None,
             "date": None,
             "target": None,
-            "program_id": None
+            "program_id": None,
+            "do": {}
         }
         return default_params
 
@@ -1424,24 +1485,70 @@ class ImagingEpoch(Epoch):
 
         # self.load_output_file(mode="imaging")
 
-    # TODO: Make output_path keyword standard across all proc methods
+    def stages(self):
 
-    def proc_register(self, no_query: bool = False, **kwargs):
-        u.debug_print(2, f"ImagingEmpoch.proc_register(): {self.name}.registration_params", self.registration_params)
-        if "register_frames" in self.registration_params and self.registration_params["register_frames"]:
-            if no_query or self.query_stage(
-                    "Register frames using astroalign?",
-                    stage="4.5-register_frames"):
-                output_dir = os.path.join(self.data_path, "4.5-registered")
-                self.paths["registered_dir"] = output_dir
-                self.frames_registered = {}
-                u.rmtree_check(output_dir)
-                self.register(
-                    output_dir=output_dir,
-                    **self.registration_params
-                )
-                self.stages_complete['4.5-align'] = Time.now()
-                self.update_output_file()
+        stages = super().stages()
+        stages.update({
+            "register_frames": {
+                "method": self.proc_register,
+                "message": "Register frames using astroalign?",
+                "default": False,
+                "do_key": "register_frames"
+            },
+            "correct_astrometry_frames": {
+                "method": self.proc_correct_astrometry_frames,
+                "message": "Correct astrometry of individual frames?",
+                "default": True,
+                "do_key": "astrometry_frames"
+            },
+            "coadd": {
+                "method": self.proc_coadd,
+                "message": "Coadd astrometry-corrected frames with Montage?",
+                "default": True
+            },
+            "trim_coadded": {
+                "method": self.proc_trim_coadded,
+                "message": "Trim / reproject coadded images to same footprint?",
+                "default": True
+            },
+            "correct_astrometry_coadded": {
+                "method": self.proc_correct_astrometry_coadded,
+                "message": "Correct astrometry of coadded images?",
+                "default": False,
+                "do_key": "astrometry_coadded"
+            },
+            "source_extraction": {
+                "method": self.proc_source_extraction,
+                "message": "Do source extraction and diagnostics?",
+                "default": True,
+            },
+            "photometric_calibration": {
+                "method": self.proc_photometric_calibration,
+                "message": "Do photometric calibration?",
+                "default": True,
+            },
+            "dual_mode_source_extraction": {
+                "method": self.proc_dual_mode_source_extraction,
+                "message": "Do source extraction in dual-mode, using deepest image as footprint?",
+                "default": True,
+            },
+            "get_photometry": {
+                "method": self.proc_get_photometry,
+                "message": "Get photometry?",
+                "default": True,
+            }
+        }
+        )
+        return stages
+
+    def proc_register(self, output_dir: str, **kwargs):
+        u.debug_print(2, f"ImagingEpoch.proc_register(): {self.name}.registration_params", self.registration_params)
+        self.frames_registered = {}
+        u.rmtree_check(output_dir)
+        self.register(
+            output_dir=output_dir,
+            **self.registration_params
+        )
 
     def register(
             self, output_dir: str, frames: dict = None, template: Union[int, dict, image.ImagingImage, str] = 0,
@@ -1505,148 +1612,22 @@ class ImagingEpoch(Epoch):
                         tmp.name.replace(".fits", "_registered.fits")))
                 self.add_frame_registered(registered)
 
-    def proc_correct_astrometry_frames(self, no_query: bool = False, **kwargs):
-        do = True
-        if "do_frames" in self.astrometry_params:
-            do = self.astrometry_params["do_frames"]
+    def proc_correct_astrometry_frames(self, output_dir: str, **kwargs):
 
-        if do:
+        self.generate_astrometry_indices()
 
-            if no_query or self.query_stage(
-                    stage="5-correct_astrometry_frames",
-                    message="Correct astrometry of individual frames?"):
-                self.generate_astrometry_indices()
+        self.frames_astrometry = {}
 
-                if "output_path" in kwargs:
-                    astrometry_path = kwargs["output_path"]
-                    kwargs.pop("output_path")
-                else:
-                    astrometry_path = os.path.join(self.data_path, "5-astrometry_frames")
-                u.rmtree_check(astrometry_path)
-                u.mkdir_check(astrometry_path)
-
-                self.frames_astrometry = {}
-
-                if "register_frames" in self.registration_params and self.registration_params["register_frames"]:
-                    self.correct_astrometry_frames(
-                        output_dir=astrometry_path,
-                        frames=self.frames_registered,
-                        **self.astrometry_params)
-                else:
-                    self.correct_astrometry_frames(
-                        output_dir=astrometry_path,
-                        frames=self.frames_normalised,
-                        **self.astrometry_params)
-
-                self.paths['astrometry_dir'] = astrometry_path
-                self.stages_complete["5-correct_astrometry_frames"] = Time.now()
-                self.update_output_file()
-
-    def proc_coadd(self, no_query: bool = False, **kwargs):
-
-        if no_query or self.query_stage(stage="6-coadd",
-                                        message="Coadd astrometry-corrected frames with Montage?"):
-            if "output_path" in kwargs:
-                coadd_path = kwargs["output_path"]
-            else:
-                coadd_path = os.path.join(self.data_path, "6-coadded_with_montage")
-            self.coadd(coadd_path, **self.coadd_params)
-            self.paths['coadd_dir'] = coadd_path
-            self.stages_complete["6-coadd"] = Time.now()
-            self.update_output_file()
-
-    def proc_trim_coadded(self, no_query: bool = False, **kwargs):
-        if no_query or self.query_stage(stage="7-trim_coadded",
-                                        message="Trim / reproject coadded images to same footprint?"):
-            trimmed_path = os.path.join(self.data_path, "7-trimmed_again")
-            self.trim_coadded(trimmed_path)
-            self.paths['trimmed_coadded_dir'] = trimmed_path
-            self.stages_complete["7-trim_coadded"] = Time.now()
-            self.update_output_file()
-
-    def proc_correct_astrometry_coadded(self, no_query: bool = False, **kwargs):
-        if "do_coadded" in self.astrometry_params and self.astrometry_params["do_coadded"]:
-            if no_query or self.query_stage(stage="7.5-correct_astrometry_coadded",
-                                            message="Correct astrometry of coadded images?"):
-                self.generate_astrometry_indices()
-
-                if "output_path" in kwargs:
-                    astrometry_path = kwargs["output_path"]
-                    kwargs.pop("output_path")
-                else:
-                    astrometry_path = os.path.join(self.data_path, "7.5-astrometry_coadded")
-                u.rmtree_check(astrometry_path)
-                u.mkdir_check(astrometry_path)
-
-                self.correct_astrometry_coadded(
-                    output_dir=astrometry_path,
-                    images=self.coadded_trimmed,
-                    **self.astrometry_params)
-
-                self.paths['astrometry_coadded_dir'] = astrometry_path
-                self.stages_complete["7.5-correct_astrometry_coadded"] = Time.now()
-                self.update_output_file()
-
-    def correct_astrometry_coadded(self, output_dir: str, images: dict, **kwargs):
-        self.coadded_astrometry = {}
-
-        if images is None:
-            images = self.coadded_trimmed
-
-        for fil in images:
-            img = images[fil]
-            new_img = img.correct_astrometry(
+        if "register_frames" in self.do_kwargs and self.do_kwargs["register_frames"]:
+            self.correct_astrometry_frames(
                 output_dir=output_dir,
-                tweak=False
-            )
-            self.add_coadded_astrometry_image(new_img, key=fil)
-            # self.astrometry_diagnostics(images=self.coadded_astrometry)
-
-    def proc_source_extraction(self, no_query: bool = False, **kwargs):
-        if no_query or self.query_stage("Do source extraction and diagnostics?", stage='8-source_extraction'):
-            source_extraction_path = os.path.join(self.data_path, "8-source_extraction")
-            u.mkdir_check(source_extraction_path)
-            if "do_coadded" in self.astrometry_params and self.astrometry_params["do_coadded"]:
-                images = self.coadded_astrometry
-            else:
-                images = self.coadded_trimmed
-            for fil in images:
-                img = images[fil]
-                self.set_path("source_extraction_dir", source_extraction_path)
-                configs = self.source_extractor_config
-                img.source_extraction_psf(
-                    output_dir=source_extraction_path,
-                    phot_autoparams=f"{configs['kron_factor']},{configs['kron_radius_min']}")
-            offset_tolerance = 0.5 * units.arcsec
-            if "do_frames" in self.astrometry_params and not self.astrometry_params["do_frames"]:
-                offset_tolerance = 1.0 * units.arcsec
-            self.astrometry_diagnostics(images=images, offset_tolerance=offset_tolerance)
-            # self.psf_diagnostics()
-            self.stages_complete['8-source_extraction'] = Time.now()
-            self.update_output_file()
-
-    def proc_photometric_calibration(self, no_query: bool = False, **kwargs):
-        if no_query or self.query_stage("Do photometric calibration?", stage="9-photometric_calibration"):
-            calib_dir = os.path.join(self.data_path, "9-photometric_calibration")
-            self.photometric_calibration(calib_dir, **kwargs)
-            self.paths['calib_dir'] = calib_dir
-            self.stages_complete["9-photometric_calibration"] = Time.now()
-            self.update_output_file()
-
-    def proc_dual_mode_source_extraction(self, no_query: bool = False, **kwargs):
-        if no_query or self.query_stage("Do source extraction in dual-mode, using deepest image as footprint?",
-                                        stage="10-dual_mode_source_extraction"):
-            source_extraction_path = os.path.join(self.data_path, "10-dual_mode_source_extraction")
-            self.dual_mode_source_extraction(source_extraction_path)
-            self.stages_complete["10-dual_mode_source_extraction"] = Time.now()
-            self.update_output_file()
-
-    def proc_get_photometry(self, no_query: bool = False, **kwargs):
-        if no_query or self.query_stage("Get photometry?", stage="11-get_photometry"):
-            object_property_path = os.path.join(self.data_path, "11-object_properties")
-            self.get_photometry(object_property_path)
-            self.stages_complete["11-object_properties"] = Time.now()
-            self.update_output_file()
+                frames=self.frames_registered,
+                **self.astrometry_params)
+        else:
+            self.correct_astrometry_frames(
+                output_dir=output_dir,
+                frames=self.frames_normalised,
+                **self.astrometry_params)
 
     def correct_astrometry_frames(self, output_dir: str, frames: dict = None, **kwargs):
         self.frames_astrometry = {}
@@ -1664,27 +1645,94 @@ class ImagingEpoch(Epoch):
 
                 self.update_output_file()
 
-    def astrometry_diagnostics(self, images: dict = None,
-                               reference_cat: table.QTable = None,
-                               offset_tolerance: units.Quantity = 0.5 * units.arcsec):
+    def proc_coadd(self, output_dir: str, **kwargs):
+        self.coadd(output_dir, **self.coadd_params)
+
+    def coadd(self, output_dir: str, frames: str = "astrometry"):
+        """
+        Use Montage to coadd individual frames.
+        :param output_dir: Directory in which to write data products.
+        :param frames: Name of frames list to coadd.
+        :return:
+        """
+        u.mkdir_check(output_dir)
+        if frames == "astrometry":
+            input_directory = self.paths['correct_astrometry_frames']
+        elif frames == "normalised":
+            input_directory = os.path.join(self.paths['normalised_dir'], "science")
+        else:
+            raise ValueError(f"{frames} not recognised as frame type.")
+
+        print(f"Coadding {frames} frames, with input directory {input_directory}")
+        for fil in self.filters:
+            input_directory_fil = os.path.join(input_directory, fil)
+            output_directory_fil = os.path.join(output_dir, fil)
+            u.rmtree_check(output_directory_fil)
+            u.mkdir_check(output_directory_fil)
+            coadded_path = montage.standard_script(
+                input_directory=input_directory_fil,
+                output_directory=output_directory_fil,
+                output_file_name=f"{self.name}_{self.date.strftime('%Y-%m-%d')}_{fil}_coadded.fits")
+            self.add_coadded_image(coadded_path, key=fil, mode="imaging")
+
+    def proc_trim_coadded(self, output_dir: str, **kwargs):
+        self.trim_coadded(output_dir)
+
+    def trim_coadded(self, output_dir: str):
+        u.mkdir_check(output_dir)
+        template = None
+        for fil in self.coadded:
+            img = self.coadded[fil]
+            output_path = os.path.join(output_dir, img.filename.replace(".fits", "_trimmed.fits"))
+            trimmed = img.trim_from_area(output_path=output_path)
+            if template is None:
+                template = trimmed
+            else:
+                # Using the first image as a template, reproject this one into the pixel space (for alignment)
+                trimmed = trimmed.reproject(other_image=template, output_path=output_path)
+            self.add_coadded_trimmed_image(trimmed, key=fil)
+
+    def proc_correct_astrometry_coadded(self, output_dir: str, **kwargs):
+        self.generate_astrometry_indices()
+        self.correct_astrometry_coadded(
+            output_dir=output_dir,
+            images=self.coadded_trimmed,
+            **self.astrometry_params)
+
+    def correct_astrometry_coadded(self, output_dir: str, images: dict, **kwargs):
+        self.coadded_astrometry = {}
 
         if images is None:
             images = self.coadded_trimmed
 
-        if reference_cat is None:
-            reference_cat = self.epoch_gaia_catalogue()
-
         for fil in images:
             img = images[fil]
-            img.load_source_cat()
-            self.astrometry_stats[fil] = img.astrometry_diagnostics(
-                reference_cat=reference_cat,
-                local_coord=self.field.centre_coords,
-                offset_tolerance=offset_tolerance
+            new_img = img.correct_astrometry(
+                output_dir=output_dir,
+                tweak=False
             )
+            self.add_coadded_astrometry_image(new_img, key=fil)
+            # self.astrometry_diagnostics(images=self.coadded_astrometry)
 
-        self.update_output_file()
-        return self.astrometry_stats
+    def proc_source_extraction(self, output_dir: str, **kwargs):
+        if "astrometry_coadded" in self.do_kwargs and self.do_kwargs["astrometry_coadded"]:
+            images = self.coadded_astrometry
+        else:
+            images = self.coadded_trimmed
+        for fil in images:
+            img = images[fil]
+            configs = self.source_extractor_config
+            img.source_extraction_psf(
+                output_dir=output_dir,
+                phot_autoparams=f"{configs['kron_factor']},{configs['kron_radius_min']}")
+        offset_tolerance = 0.5 * units.arcsec
+        if "astrometry_frames" in self.do_kwargs and not self.do_kwargs["astrometry_frames"]:
+            offset_tolerance = 1.0 * units.arcsec
+        self.astrometry_diagnostics(images=images, offset_tolerance=offset_tolerance)
+        # self.psf_diagnostics()
+
+    def proc_photometric_calibration(self, output_dir: str, **kwargs):
+        self.photometric_calibration(output_dir, **kwargs)
 
     def photometric_calibration(self, output_path: str, **kwargs):
         u.mkdir_check(output_path)
@@ -1722,99 +1770,21 @@ class ImagingEpoch(Epoch):
 
         print("DEEPEST FILTER:", self.deepest_filter, self.deepest.depth["secure"]["SNR_MEASURED"]["5-sigma"])
 
-    def zeropoint(self,
-                  output_path: str,
-                  distance_tolerance: units.Quantity = 0.2 * units.arcsec,
-                  snr_min: float = 200.,
-                  star_class_tolerance: float = 0.95
-                  ):
-        deepest = self.coadded_trimmed[self.filters[0]]
-        for fil in self.filters:
-            img = self.coadded_trimmed[fil]
-            for cat_name in retrieve.photometry_catalogues:
-                if cat_name == "gaia":
-                    continue
-                fil_path = os.path.join(output_path, fil)
-                u.mkdir_check(fil_path)
-                if f"in_{cat_name}" in self.field.cats and self.field.cats[f"in_{cat_name}"]:
-                    img.zeropoint(
-                        cat_path=self.field.get_path(f"cat_csv_{cat_name}"),
-                        output_path=os.path.join(fil_path, cat_name),
-                        cat_name=cat_name,
-                        dist_tol=distance_tolerance,
-                        show=False,
-                        snr_cut=snr_min,
-                        star_class_tol=star_class_tolerance
-                    )
-
-            zeropoint, cat = img.select_zeropoint()
-
-            img.estimate_depth(zeropoint_name=cat)
-
-            deepest = image.deepest(deepest, img)
-
-        return deepest
-
-    def trim_coadded(self, output_dir: str):
-        u.mkdir_check(output_dir)
-        template = None
-        for fil in self.coadded:
-            img = self.coadded[fil]
-            output_path = os.path.join(output_dir, img.filename.replace(".fits", "_trimmed.fits"))
-            trimmed = img.trim_from_area(output_path=output_path)
-            if template is None:
-                template = trimmed
-            else:
-                # Using the first image as a template, reproject this one into the pixel space (for alignment)
-                trimmed = trimmed.reproject(other_image=template, output_path=output_path)
-            self.add_coadded_trimmed_image(trimmed, key=fil)
-
-    def coadd(self, output_dir: str, frames: str = "astrometry"):
-        """
-        Use Montage to coadd individual frames.
-        :param output_dir: Directory in which to write data products.
-        :param frames: Name of frames list to coadd.
-        :return:
-        """
-        u.mkdir_check(output_dir)
-        if frames == "astrometry":
-            input_directory = self.paths['astrometry_dir']
-        elif frames == "normalised":
-            input_directory = os.path.join(self.paths['normalised_dir'], "science")
-        else:
-            raise ValueError(f"{frames} not recognised as frame type.")
-
-        print(f"Coadding {frames} frames, with input directory {input_directory}")
-        for fil in self.filters:
-            input_directory_fil = os.path.join(input_directory, fil)
-            output_directory_fil = os.path.join(output_dir, fil)
-            u.rmtree_check(output_directory_fil)
-            u.mkdir_check(output_directory_fil)
-            coadded_path = montage.standard_script(
-                input_directory=input_directory_fil,
-                output_directory=output_directory_fil,
-                output_file_name=f"{self.name}_{self.date.strftime('%Y-%m-%d')}_{fil}_coadded.fits")
-            self.add_coadded_image(coadded_path, key=fil, mode="imaging")
-
-    def _get_images(self, image_type: str):
-        if image_type == "coadded_trimmed":
-            image_dict = self.coadded_trimmed
-        elif image_type == "coadded":
-            image_dict = self.coadded
-        else:
-            raise ValueError(f"Images type '{image_type}' not recognised.")
-        return image_dict
+    def proc_dual_mode_source_extraction(self, output_dir: str, **kwargs):
+        self.dual_mode_source_extraction(output_dir)
 
     def dual_mode_source_extraction(self, path: str, image_type: str = "coadded_trimmed"):
         image_dict = self._get_images(image_type=image_type)
         u.mkdir_check(path)
         for fil in image_dict:
             img = image_dict[fil]
-            self.set_path("source_extraction_dual_dir", path)
             configs = self.source_extractor_config
             img.source_extraction_psf(output_dir=path,
                                       phot_autoparams=f"{configs['kron_factor']},{configs['kron_radius_min']}",
                                       template=self.deepest)
+
+    def proc_get_photometry(self, output_dir: str, **kwargs):
+        self.get_photometry(output_dir)
 
     def get_photometry(self, path: str, image_type: str = "coadded_trimmed", dual: bool = True):
         """
@@ -1870,6 +1840,71 @@ class ImagingEpoch(Epoch):
                       format="ascii.ecsv")
             tbl.write(os.path.join(fil_output_path, f"{self.field.name}_{self.name}_{fil}.csv"),
                       format="ascii.csv")
+
+    def astrometry_diagnostics(
+            self, images: dict = None,
+            reference_cat: table.QTable = None,
+            offset_tolerance: units.Quantity = 0.5 * units.arcsec):
+
+        if images is None:
+            images = self.coadded_trimmed
+
+        if reference_cat is None:
+            reference_cat = self.epoch_gaia_catalogue()
+
+        for fil in images:
+            img = images[fil]
+            img.load_source_cat()
+            self.astrometry_stats[fil] = img.astrometry_diagnostics(
+                reference_cat=reference_cat,
+                local_coord=self.field.centre_coords,
+                offset_tolerance=offset_tolerance
+            )
+
+        self.update_output_file()
+        return self.astrometry_stats
+
+    def zeropoint(self,
+                  output_path: str,
+                  distance_tolerance: units.Quantity = 0.2 * units.arcsec,
+                  snr_min: float = 200.,
+                  star_class_tolerance: float = 0.95
+                  ):
+        deepest = self.coadded_trimmed[self.filters[0]]
+        for fil in self.filters:
+            img = self.coadded_trimmed[fil]
+            for cat_name in retrieve.photometry_catalogues:
+                if cat_name == "gaia":
+                    continue
+                fil_path = os.path.join(output_path, fil)
+                u.mkdir_check(fil_path)
+                if f"in_{cat_name}" in self.field.cats and self.field.cats[f"in_{cat_name}"]:
+                    img.zeropoint(
+                        cat_path=self.field.get_path(f"cat_csv_{cat_name}"),
+                        output_path=os.path.join(fil_path, cat_name),
+                        cat_name=cat_name,
+                        dist_tol=distance_tolerance,
+                        show=False,
+                        snr_cut=snr_min,
+                        star_class_tol=star_class_tolerance
+                    )
+
+            zeropoint, cat = img.select_zeropoint()
+
+            img.estimate_depth(zeropoint_name=cat)
+
+            deepest = image.deepest(deepest, img)
+
+        return deepest
+
+    def _get_images(self, image_type: str):
+        if image_type == "coadded_trimmed":
+            image_dict = self.coadded_trimmed
+        elif image_type == "coadded":
+            image_dict = self.coadded
+        else:
+            raise ValueError(f"Images type '{image_type}' not recognised.")
+        return image_dict
 
     def guess_data_path(self):
         if self.data_path is None and self.field is not None and self.field.data_path is not None and \
@@ -2159,22 +2194,6 @@ class ImagingEpoch(Epoch):
         return subplot, hdu_cut
 
     @classmethod
-    def stages(cls):
-        stages = super().stages()
-        stages.update({
-            "4.5-register_frames": None,
-            "5-correct_astrometry_frames": None,
-            "6-coadd": None,
-            "7-trim_coadded": None,
-            "7.5-correct_astrometry_coadded": None,
-            "8-source_extraction": None,
-            "9-photometric_calibration": None,
-            "10-dual_mode_source_extraction": None,
-            "11-get_photometry": None
-        })
-        return stages
-
-    @classmethod
     def from_params(cls, name: str, instrument: str, field: Union[Field, str] = None, old_format: bool = False):
         print("Initializing epoch...")
         instrument = instrument.lower()
@@ -2311,56 +2330,64 @@ class GSAOIImagingEpoch(ImagingEpoch):
                  target: str = None,
                  source_extractor_config: dict = None,
                  ):
-        super().__init__(name=name,
-                         field=field,
-                         param_path=param_path,
-                         data_path=data_path,
-                         instrument=instrument,
-                         date=date,
-                         program_id=program_id,
-                         target=target,
-                         source_extractor_config=source_extractor_config)
+        super().__init__(
+            name=name,
+            field=field,
+            param_path=param_path,
+            data_path=data_path,
+            instrument=instrument,
+            date=date,
+            program_id=program_id,
+            target=target,
+            source_extractor_config=source_extractor_config)
         self.science_table = None
         self.flats_lists = {}
         self.std_lists = {}
 
         self.load_output_file(mode="imaging")
 
-    @classmethod
-    def stages(cls):
-        stages = super().stages()
-        stages.update({"0-download": None,
-                       "2-reduce_flats": None,
-                       "3-reduce_science": None,
-                       "4-stack_science": None
-                       })
+    def stages(self):
+        stages_super = super().stages()
+        stages = {
+            "download": {
+                "method": self.proc_download,
+                "message": "Download raw data from Gemini archive?",
+                "default": True,
+                "do_key": None
+            },
+            "initial_setup": stages_super["initial_setup"],
+            "reduce_flats": {
+                "method": self.proc_reduce_flats,
+                "message": "Reduce flat-field images?",
+                "default": True,
+                "do_key": None
+            },
+            "reduce_science": {
+                "method": self.proc_reduce_science,
+                "message": "Reduce science images?",
+                "default": True,
+                "do_key": None
+            },
+            "stack_science": {
+                "method": self.proc_stack_science,
+                "message": "Stack science images with DISCO-STU?",
+                "default": True,
+                "do_key": None
+            }
+        }
         return stages
 
-    def pipeline(self, **kwargs):
-        super().pipeline(**kwargs)
-        self.proc_0_download(**kwargs)
-        self.proc_initial_setup(**kwargs)
-        self.proc_2_reduce_flats(**kwargs)
-        self.proc_3_reduce_science(**kwargs)
-        self.proc_4_stack_science(**kwargs)
+    def proc_download(self, output_dir: str, **kwargs):
+        if 'overwrite_download' in kwargs:
+            overwrite = kwargs['overwrite_download']
+        else:
+            overwrite = False
+        self.retrieve(output_dir=output_dir, overwrite=overwrite)
 
-    def proc_0_download(self, no_query: bool = False, **kwargs):
-        if no_query or self.query_stage("Download raw data from Gemini archive?", stage='0-download'):
-            if 'overwrite_download' in kwargs:
-                overwrite = kwargs['overwrite_download']
-            else:
-                overwrite = False
-            self.retrieve(overwrite=overwrite)
-            self.stages_complete['0-download'] = Time.now()
-            self.update_output_file()
-
-    def retrieve(self, overwrite: bool = False):
-        raw_dir_full = self.paths["raw_dir"]
-        u.mkdir_check(raw_dir_full)
-
+    def retrieve(self, output_dir: str, overwrite: bool = False):
         # Get the science files
         science_files = retrieve.save_gemini_epoch(
-            output=raw_dir_full,
+            output=output_dir,
             program_id=self.program_id,
             coord=self.field.centre_coords,
             overwrite=overwrite)
@@ -2377,12 +2404,12 @@ class GSAOIImagingEpoch(ImagingEpoch):
             print(f"Retrieving calibration files for {fil} band...")
             print()
             retrieve.save_gemini_calibs(
-                output=raw_dir_full,
+                output=output_dir,
                 obs_date=self.date,
                 fil=fil,
                 overwrite=overwrite)
 
-    def _initial_setup(self):
+    def _initial_setup(self, output_dir: str, **kwargs):
         data_dir = self.data_path
         raw_dir = self.paths["raw_dir"]
         self.paths["redux_dir"] = redux_dir = os.path.join(data_dir, "1-reduced")
@@ -2477,47 +2504,33 @@ class GSAOIImagingEpoch(ImagingEpoch):
             self.std_objects[obj] = std_list_obj
             self.std_lists[obj] = os.path.join(redux_dir, std_list_obj_name)
 
-    def proc_2_reduce_flats(self, no_query: bool = False, **kwargs):
-        if no_query or self.query_stage(stage="2-reduce_flats",
-                                        message="Reduce flat-field images?"):
-            for fil in self.flats_lists:
-                dragons.reduce(self.flats_lists[fil], redux_dir=self.paths["redux_dir"])
-            flat_dir = os.path.join(self.paths["redux_dir"], "calibrations", "processed_flat")
-            for flat in os.listdir(flat_dir):
-                flat = os.path.join(flat_dir, flat)
-                print(f"Adding {flat} to database.")
-                sys_str = f"caldb add {flat}"
-                print(sys_str)
-                os.system(sys_str)
-            self.stages_complete['2-reduce_flats'] = Time.now()
-            self.update_output_file()
+    def proc_reduce_flats(self, output_dir: str, **kwargs):
+        for fil in self.flats_lists:
+            dragons.reduce(self.flats_lists[fil], redux_dir=self.paths["redux_dir"])
+        flat_dir = os.path.join(self.paths["redux_dir"], "calibrations", "processed_flat")
+        for flat in os.listdir(flat_dir):
+            flat = os.path.join(flat_dir, flat)
+            print(f"Adding {flat} to database.")
+            sys_str = f"caldb add {flat}"
+            print(sys_str)
+            os.system(sys_str)
 
-    def proc_3_reduce_science(self, no_query: bool = False, **kwargs):
-        if no_query or self.query_stage(stage="3-reduce_science",
-                                        message="Reduce science images?"):
-            dragons.reduce(self.paths["science_list"], redux_dir=self.paths["redux_dir"])
-            self.stages_complete['3-reduce_science'] = Time.now()
-            self.update_output_file()
+    def proc_reduce_science(self, output_dir: str, **kwargs):
+        dragons.reduce(self.paths["science_list"], redux_dir=self.paths["redux_dir"])
 
-    def proc_4_stack_science(self, no_query: bool = False, **kwargs):
-        if no_query or self.query_stage(
-                stage="4-stack_science",
-                message="Stack science images with DISCO-STU?"):
-
-            for fil in self.filters:
-                dragons.disco(
-                    redux_dir=self.paths["redux_dir"],
-                    expression=f"(filter_name==\"{fil}\" and observation_class==\"science\")",
-                    output=f"{self.name}_{fil}_stacked.fits",
-                    file_glob="*_skySubtracted.fits",
-                    refcat=self.field.paths["cat_csv_gaia"],
-                    refcat_format="ascii.csv",
-                    refcat_ra="ra",
-                    refcat_dec="dec",
-                    ignore_objcat=False
-                )
-            self.stages_complete['4-stack_science'] = Time.now()
-            self.update_output_file()
+    def proc_stack_science(self, output_dir: str, **kwargs):
+        for fil in self.filters:
+            dragons.disco(
+                redux_dir=self.paths["redux_dir"],
+                expression=f"(filter_name==\"{fil}\" and observation_class==\"science\")",
+                output=f"{self.name}_{fil}_stacked.fits",
+                file_glob="*_skySubtracted.fits",
+                refcat=self.field.paths["cat_csv_gaia"],
+                refcat_format="ascii.csv",
+                refcat_ra="ra",
+                refcat_dec="dec",
+                ignore_objcat=False
+            )
 
     def check_filter(self, fil: str):
         not_none = super().check_filter(fil)
@@ -2644,54 +2657,37 @@ class HubbleImagingEpoch(ImagingEpoch):
 
         self.load_output_file(mode="imaging")
 
-    def pipeline(self, **kwargs):
-        self.proc_initial_setup(**kwargs)
-        self.proc_photometric_calibration(**kwargs)
-        self.proc_3_source_extraction(**kwargs)
-        self.proc_4_get_photometry(**kwargs)
+    def stages(self):
+        super_stages = super().stages()
+        stages = {
+            "initial_setup": super_stages["initial_setup"],
+            "photometric_calibration": super_stages["photometric_calibration"],
+            "source_extraction": super_stages["source_extraction"],
+            "get_photometry": super_stages["get_photometry"]
+        }
+        return stages
 
-    def _initial_setup(self):
-        coadd_dir = self.paths["coadd_dir"] = os.path.join(self.data_path, "1-coadded")
-        u.mkdir_check(coadd_dir)
+    def _initial_setup(self, output_dir: str, **kwargs):
         for file in filter(lambda f: f.endswith(".fits"), os.listdir(self.data_path)):
-            shutil.move(os.path.join(self.data_path, file), coadd_dir)
-        for file in filter(lambda f: f.endswith(".fits"), os.listdir(coadd_dir)):
-            img = image.HubbleImage(os.path.join(coadd_dir, file))
+            shutil.move(os.path.join(self.data_path, file), output_dir)
+        for file in filter(lambda f: f.endswith(".fits"), os.listdir(output_dir)):
+            img = image.HubbleImage(os.path.join(output_dir, file))
             self.add_coadded_image(img, key=img.extract_filter())
-
-    def proc_photometric_calibration(self, no_query: bool = False, **kwargs):
-        if no_query or self.query_stage("Do photometric calibration?", stage="2-photometric_calibration"):
-            calib_dir = os.path.join(self.data_path, "2-photometric_calibration")
-            self.photometric_calibration(calib_dir)
-            self.stages_complete['2-photometric_calibration'] = Time.now()
-            self.update_output_file()
 
     def photometric_calibration(self, output_path: str, **kwargs):
         for fil in self.coadded:
             self.coadded[fil].zeropoint()
 
-    def proc_3_source_extraction(self, no_query: bool = False, **kwargs):
-        if no_query or self.query_stage("Do source extraction?",
-                                        stage="3-source_extraction"):
-            source_extraction_path = os.path.join(self.data_path, "3-source_extraction")
-            u.mkdir_check(source_extraction_path)
-            for fil in self.coadded:
-                img = self.coadded[fil]
-                self.set_path("source_extraction_dir", source_extraction_path)
-                configs = self.source_extractor_config
-                img.source_extraction_psf(
-                    output_dir=source_extraction_path,
-                    phot_autoparams=f"{configs['kron_factor']},{configs['kron_radius_min']}")
-            self.stages_complete["3-source_extraction"] = Time.now()
-            self.update_output_file()
+    def proc_source_extraction(self, output_dir: str, **kwargs):
+        for fil in self.coadded:
+            img = self.coadded[fil]
+            configs = self.source_extractor_config
+            img.source_extraction_psf(
+                output_dir=output_dir,
+                phot_autoparams=f"{configs['kron_factor']},{configs['kron_radius_min']}")
 
-    def proc_4_get_photometry(self, no_query: bool = False, **kwargs):
-        if no_query or self.query_stage("Get photometry?", stage="4-get_photometry"):
-            object_property_path = os.path.join(self.data_path, "4-object_properties")
-            self.get_photometry(object_property_path, image_type="coadded", dual=False)
-
-            self.stages_complete["4-get_photometry"] = Time.now()
-            self.update_output_file()
+    def proc_get_photometry(self, output_dir: str, **kwargs):
+        self.get_photometry(output_dir, image_type="coadded", dual=False)
 
     def add_coadded_image(self, img: Union[str, image.Image], key: str, **kwargs):
         if isinstance(img, str):
@@ -2699,16 +2695,6 @@ class HubbleImagingEpoch(ImagingEpoch):
         img.epoch = self
         self.coadded[key] = img
         return img
-
-    @classmethod
-    def stages(cls):
-        param_dict = super().stages()
-        param_dict.update({"0-download": None,
-                           "2-photometric_calibration": None,
-                           "3-source_extraction": None,
-                           "4-get_photometry": None
-                           })
-        return param_dict
 
     @classmethod
     def from_file(cls, param_file: Union[str, dict], name: str = None, field: Field = None):
@@ -2756,76 +2742,61 @@ class PanSTARRS1ImagingEpoch(ImagingEpoch):
         self.load_output_file(mode="imaging")
         if isinstance(field, Field):
             self.field.retrieve_catalogue(cat_name="panstarrs1")
-        u.debug_print(1, "INIT; self.filters", self.filters)
+        u.debug_print(1, f"PanSTARRS1ImagingEpoch.__init__(): {self}.filters ==", self.filters)
 
     # TODO: Automatic cutout download; don't worry for now.
 
+    def stages(self):
+        super_stages = super().stages()
+        stages = {
+            "download": super_stages["download"],
+            "source_extraction": super_stages["source_extraction"],
+            "photometric_calibration": super_stages["photometric_calibration"],
+            "dual_mode_source_extraction": super_stages["dual_mode_source_extraction"],
+            "get_photometry": super_stages["get_photometry"]
+        }
+        return stages
+
     def pipeline(self, **kwargs):
         super().pipeline(**kwargs)
-        self.proc_0_download(**kwargs)
-        self.proc_initial_setup(**kwargs)
-        self.proc_2_source_extraction(**kwargs)
-        self.proc_3_photometric_calibration(**kwargs)
-        self.proc_4_dual_mode_source_extraction(**kwargs)
-        self.proc_5_get_photometry(**kwargs)
+        self.proc_download(0, **kwargs)
+        self.proc_initial_setup(1, **kwargs)
+        self.proc_source_extraction(2, **kwargs)
+        self.proc_photometric_calibration(3, **kwargs)
+        self.proc_dual_mode_source_extraction(4, **kwargs)
+        self.proc_get_photometry(5, **kwargs)
 
-    def proc_0_download(self, **kwargs):
+    def proc_download(self, output_dir: str, **kwargs):
         """
         Automatically download PanSTARRS1 cutout.
-        @param kwargs:
-        @return:
+        :param output_dir:
+        :param kwargs:
+        :return:
         """
         pass
 
-    def proc_2_source_extraction(self, no_query: bool = False, **kwargs):
-        if no_query or self.query_stage("Do source extraction?", stage='2-source_extraction'):
-            source_extraction_path = os.path.join(self.data_path, "2-source_extraction")
-            u.mkdir_check(source_extraction_path)
-            for fil in self.coadded:
-                img = self.coadded[fil]
-                self.set_path("source_extraction_dir", source_extraction_path)
-                configs = self.source_extractor_config
-                img.source_extraction_psf(output_dir=source_extraction_path,
-                                          phot_autoparams=f"{configs['kron_factor']},{configs['kron_radius_min']}")
-            self.stages_complete['2-source_extraction'] = Time.now()
-            self.update_output_file()
+    def proc_source_extraction(self, output_dir: str, **kwargs):
+        for fil in self.coadded:
+            img = self.coadded[fil]
+            self.set_path("source_extraction_dir", output_dir)
+            configs = self.source_extractor_config
+            img.source_extraction_psf(
+                output_dir=output_dir,
+                phot_autoparams=f"{configs['kron_factor']},{configs['kron_radius_min']}")
 
-    def proc_3_photometric_calibration(self, no_query: bool = False, **kwargs):
-        if no_query or self.query_stage("Do photometric calibration?", stage="3-photometric_calibration"):
-            calib_dir = os.path.join(self.data_path, "3-photometric_calibration")
-            u.debug_print(1, "PROC_3_PHOTOMETRIC_CALIBRATION; self.filters", self.filters)
-            self.photometric_calibration(calib_dir)
-            self.stages_complete['3-photometric_calibration'] = Time.now()
-            self.update_output_file()
+    def proc_get_photometry(self, output_dir: str, **kwargs):
+        self.get_photometry(output_dir, image_type="coadded")
 
-    def proc_4_dual_mode_source_extraction(self, no_query: bool = False, **kwargs):
-        if no_query or self.query_stage("Do source extraction in dual-mode, using deepest image as footprint?",
-                                        stage="4-dual_mode_source_extraction"):
-            source_extraction_path = os.path.join(self.data_path, "4-dual_mode_source_extraction")
-            self.dual_mode_source_extraction(source_extraction_path, image_type="coadded")
-            self.stages_complete["4-dual_mode_source_extraction"] = Time.now()
-            self.update_output_file()
-
-    def proc_5_get_photometry(self, no_query: bool = False, **kwargs):
-        if no_query or self.query_stage("Get photometry?", stage="5-get_photometry"):
-            object_property_path = os.path.join(self.data_path, "5-object_properties")
-            self.get_photometry(object_property_path, image_type="coadded")
-
-            self.stages_complete["5-get_photometry"] = Time.now()
-            self.update_output_file()
-
-    def _initial_setup(self):
-        imaging_dir = os.path.join(self.data_path, "0-imaging")
-        u.mkdir_check(imaging_dir)
+    def _initial_setup(self, output_dir: str, **kwargs):
         for file in filter(lambda f: f.endswith(".fits"), os.listdir(self.data_path)):
-            shutil.move(os.path.join(self.data_path, file), imaging_dir)
-        self.set_path("imaging_dir", imaging_dir)
+            shutil.move(os.path.join(self.data_path, file), output_dir)
+        self.set_path("imaging_dir", output_dir)
         # Write a table of fits files from the 0-imaging directory.
         table_path_all = os.path.join(self.data_path, f"{self.name}_fits_table_all.csv")
         self.set_path("fits_table", table_path_all)
-        image.fits_table_all(input_path=imaging_dir, output_path=table_path_all, science_only=False)
-        for file in filter(lambda f: f.endswith(".fits"), os.listdir(imaging_dir)):
-            path = os.path.join(imaging_dir, file)
+        image.fits_table_all(input_path=output_dir, output_path=table_path_all, science_only=False)
+        for file in filter(lambda f: f.endswith(".fits"), os.listdir(output_dir)):
+            path = os.path.join(output_dir, file)
             img = image.PanSTARRS1Cutout(path=path)
 
             # img.open(mode="update")
@@ -2876,17 +2847,6 @@ class PanSTARRS1ImagingEpoch(ImagingEpoch):
         img.epoch = self
         self.coadded[key] = img
         return img
-
-    @classmethod
-    def stages(cls):
-        param_dict = super().stages()
-        param_dict.update({"0-download": None,
-                           "2-source_extraction": None,
-                           "3-photometric_calibration": None,
-                           "4-dual_mode_source_extraction": None,
-                           "5-get_photometry": None
-                           })
-        return param_dict
 
     @classmethod
     def from_file(cls, param_file: Union[str, dict], name: str = None, field: Field = None):
@@ -2941,37 +2901,54 @@ class ESOImagingEpoch(ImagingEpoch):
 
         self.load_output_file(mode="imaging")
 
-    def pipeline(self, **kwargs):
-        super().pipeline(**kwargs)
-        self.proc_download(**kwargs)
-        self.proc_initial_setup(**kwargs)
-        self.proc_sort_after_esoreflex(**kwargs)
-        self.proc_trim_reduced(**kwargs)
-        self.proc_divide_by_exp_time(**kwargs)
+    def stages(self):
+        super_stages = super().stages()
+        stages = {
+            "download": {
+                "method": self.proc_download,
+                "message": "Download raw data from ESO archive?",
+                "default": True,
+                "do_key": None
+            },
+            "initial_setup": super_stages["initial_setup"],
+            "sort_reduced": {
+                "method": self.proc_sort_reduced,
+                "message": "Sort ESOReflex products? Requires reducing data with ESOReflex first.",
+                "default": True,
+                "do_key": None
+            },
+            "trim_reduced": {
+                "method": self.proc_trim_reduced,
+                "message": "Trim reduced images?",
+                "default": True,
+                "do_key": None
+            },
+            "convert_to_es": {
+                "method": self.proc_convert_to_es,
+                "message": "Convert image values to electrons/second?",
+                "default": True,
+                "do_key": None
+            },
+        }
+        return stages
 
-    def proc_download(self, no_query: bool = False, **kwargs):
-        if no_query or self.query_stage("Download raw data from ESO archive?", stage='0-download'):
-            r = self.retrieve()
-            if r:
-                self.stages_complete['0-download'] = Time.now()
-                self.update_output_file()
+    def proc_download(self, output_dir: str, **kwargs):
+        r = self.retrieve(output_dir)
+        if r:
+            return True
 
-    def retrieve(self):
+    def retrieve(self, output_dir: str):
         """
         Check ESO archive for the epoch raw frames, and download those frames and associated files.
         :return:
         """
         r = []
-        if "raw_dir" in self.paths:
-            r = _retrieve_eso_epoch(self, path=self.paths["raw_dir"])
-        else:
-            warnings.warn("raw_dir has not been set. Retrieve could not be run.")
+        r = _retrieve_eso_epoch(self, path=output_dir)
         return r
 
-    def _initial_setup(self):
+    def _initial_setup(self, output_dir: str, **kwargs):
+        raw_dir = self.paths["download"]
         data_dir = self.data_path
-        raw_dir = os.path.join(data_dir, epoch_stage_dirs["0-download"])
-        self.paths["raw_dir"] = raw_dir
         data_title = self.name
 
         # Write tables of fits files to main directory; firstly, science images only:
@@ -2991,7 +2968,7 @@ class ESOImagingEpoch(ImagingEpoch):
             science_only=False)
 
         for row in tbl:
-            path = os.path.join(self.paths["raw_dir"], row["identifier"])
+            path = os.path.join(raw_dir, row["identifier"])
             cls = image.ImagingImage.select_child_class(instrument=self.instrument_name, mode="imaging")
             img = cls(path)
             img.extract_frame_type()
@@ -3059,15 +3036,10 @@ class ESOImagingEpoch(ImagingEpoch):
 
         self.update_output_file()
 
-    def proc_sort_after_esoreflex(self, no_query: bool = False, **kwargs):
-        if no_query or self.query_stage(
-                "Sort ESOReflex products? Requires reducing data with ESOReflex first.",
-                stage='2-sort_after_esoreflex'):
-            self._sort_after_esoreflex()
-            self.stages_complete['0-download'] = Time.now()
-            self.update_output_file()
+    def proc_sort_reduced(self, output_dir: str, **kwargs):
+        self._sort_after_esoreflex(output_dir=output_dir)
 
-    def _sort_after_esoreflex(self, **kwargs):
+    def _sort_after_esoreflex(self, output_dir: str, **kwargs):
 
         self.frames_reduced = {}
         self.frames_esoreflex_backgrounds = {}
@@ -3080,8 +3052,6 @@ class ESOImagingEpoch(ImagingEpoch):
         eso_dir = p.config['esoreflex_output_dir']
         if os.path.isdir(eso_dir):
             data_dir = self.data_path
-            destination = os.path.join(data_dir, "2-reduced/")
-            u.mkdir_check(destination)
 
             mjd = int(self.date.mjd)
             obj = self.target.lower()
@@ -3117,19 +3087,19 @@ class ESOImagingEpoch(ImagingEpoch):
                         if file_obj == obj and file_mjd == mjd:
                             # Check which type of file we have.
                             if file_name.endswith("PHOT_BACKGROUND_SCI_IMG.fits"):
-                                file_destination = os.path.join(destination, "backgrounds")
+                                file_destination = os.path.join(output_dir, "backgrounds")
                                 suffix = "PHOT_BACKGROUND_SCI_IMG.fits"
                                 file_type = "background"
                             elif file_name.endswith("OBJECT_TABLE_SCI_IMG.fits"):
-                                file_destination = os.path.join(destination, "obj_tbls")
+                                file_destination = os.path.join(output_dir, "obj_tbls")
                                 suffix = "OBJECT_TABLE_SCI_IMG.fits"
                                 file_type = "object_table"
                             elif file_name.endswith("SCIENCE_REDUCED_IMG.fits"):
-                                file_destination = os.path.join(destination, "science")
+                                file_destination = os.path.join(output_dir, "science")
                                 suffix = "SCIENCE_REDUCED_IMG.fits"
                                 file_type = "science"
                             else:
-                                file_destination = os.path.join(destination, "sources")
+                                file_destination = os.path.join(output_dir, "sources")
                                 suffix = "SOURCES_SCI_IMG.fits"
                                 file_type = "sources"
                             # Make this directory, if it doesn't already exist.
@@ -3157,23 +3127,19 @@ class ESOImagingEpoch(ImagingEpoch):
         else:
             raise IOError(f"ESO output directory '{eso_dir}' not found.")
 
-    def proc_trim_reduced(self, no_query: bool = False, **kwargs):
-        if no_query or self.query_stage(
-                "Trim reduced images?",
-                stage='3-trim_reduced'):
-            self.trim_reduced(
-                output_dir=os.path.join(self.data_path, "3-trimmed"),
-                **kwargs)
-            self.stages_complete['3-trim_reduced'] = Time.now()
-            self.update_output_file()
+    def proc_trim_reduced(self, output_dir: str, **kwargs):
+        self.trim_reduced(
+            output_dir=output_dir,
+            **kwargs)
 
-    def trim_reduced(self, output_dir, **kwargs):
+    def trim_reduced(self, output_dir: str, **kwargs):
 
-        u.mkdir_check(output_dir)
         u.mkdir_check(os.path.join(output_dir, "backgrounds"))
         u.mkdir_check(os.path.join(output_dir, "science"))
 
-        u.debug_print(1, self.frames_esoreflex_backgrounds)
+        u.debug_print(
+            2, f"ESOImagingEpoch.trim_reduced(): {self}.frames_esoreflex_backgrounds ==",
+            self.frames_esoreflex_backgrounds)
 
         edged = False
 
@@ -3253,7 +3219,7 @@ class ESOImagingEpoch(ImagingEpoch):
                     value=65535.)
                 frame.set_header_item(
                     key='BUNIT',
-                    value="cts"
+                    value="ct"
                 )
                 if frame.extract_chip_number() == 1:
                     print('Upper Chip:')
@@ -3275,19 +3241,12 @@ class ESOImagingEpoch(ImagingEpoch):
                         output_path=new_path)
                     self.add_frame_trimmed(trimmed)
 
-    def proc_divide_by_exp_time(self, no_query: bool = False, **kwargs):
-        if no_query or self.query_stage(
-                "Divide trimmed images by exposure time?",
-                stage="4-divide_by_exp_time"):
-            output_dir = os.path.join(self.data_path, "4-divided_by_exp_time")
-            self.paths["normalised_dir"] = output_dir
-            self.divide_by_exp_time(
-                output_dir=output_dir,
-                **self.normalisation_params)
-            self.stages_complete['4-divide_by_exp_time'] = Time.now()
-            self.update_output_file()
+    def proc_convert_to_es(self, output_dir: str, **kwargs):
+        self.convert_to_es(
+            output_dir=output_dir,
+            **self.normalisation_params)
 
-    def divide_by_exp_time(self, output_dir: str, **kwargs):
+    def convert_to_es(self, output_dir: str, **kwargs):
 
         self.frames_normalised = {}
 
@@ -3319,13 +3278,14 @@ class ESOImagingEpoch(ImagingEpoch):
                         frame.filename.replace("trim", "norm"))
 
                     # Divide by exposure time to get an image in counts/second.
-                    normed = frame.divide_by_exp_time(output_path=science_destination)
+                    normed = frame.convert_to_es(output_path=science_destination)
                     self.add_frame_normalised(normed)
 
     def add_frame_background(self, background_frame: Union[image.ImagingImage, str]):
-        self._add_frame(frame=background_frame,
-                        frames_dict=self.frames_esoreflex_backgrounds,
-                        frame_type="reduced")
+        self._add_frame(
+            frame=background_frame,
+            frames_dict=self.frames_esoreflex_backgrounds,
+            frame_type="reduced")
 
     def check_filter(self, fil: str):
         not_none = super().check_filter(fil)
@@ -3401,53 +3361,19 @@ class ESOImagingEpoch(ImagingEpoch):
             source_extractor_config=param_dict['sextractor'],
             **param_dict)
 
-    @classmethod
-    def stages(cls):
-        param_dict = super().stages()
-        param_dict.update({
-            "0-download": None,
-            "2-sort_after_esoreflex": None,
-            "3-trim_reduced": None,
-            "4-divide_by_exp_time": None
-        })
-        return param_dict
-
 
 class HAWKIImagingEpoch(ESOImagingEpoch):
     instrument_name = "vlt-hawki"
-
-    def pipeline(self, **kwargs):
-        super().pipeline(**kwargs)
-        self.proc_register(**kwargs)
-        self.proc_correct_astrometry_frames(**kwargs)
-        self.proc_coadd(**kwargs)
-        self.proc_trim_coadded(**kwargs)
-        self.proc_correct_astrometry_coadded(**kwargs)
-        self.proc_source_extraction(**kwargs)
-        self.proc_photometric_calibration(**kwargs)
-        self.proc_dual_mode_source_extraction(**kwargs)
-        self.proc_get_photometry(**kwargs)
 
 
 class FORS2ImagingEpoch(ESOImagingEpoch):
     instrument_name = "vlt-fors2"
 
-    def pipeline(self, **kwargs):
-        super().pipeline(**kwargs)
-        self.proc_register(**kwargs)
-        self.proc_correct_astrometry_frames(**kwargs)
-        self.proc_coadd(**kwargs)
-        self.proc_trim_coadded(**kwargs)
-        self.proc_correct_astrometry_coadded(**kwargs)
-        self.proc_source_extraction(**kwargs)
-        self.proc_photometric_calibration(**kwargs)
-        self.proc_dual_mode_source_extraction(**kwargs)
-        self.proc_get_photometry(**kwargs)
+    def stages(self):
 
-    # def proc_1_initial_setup(self, no_query: bool = False, **kwargs):
-    #     if super().proc_1_initial_setup(no_query, **kwargs):
-    #         for fil in self.filters:
-    #             self.pair_files(self.frames_science[fil])
+        ie_stages = ImagingEpoch.stages(self)
+        stages = super().stages().update(ie_stages)
+        return stages
 
     def _register(self, frames: dict, fil: str, tmp: image.ImagingImage, n_template: int, output_dir: str):
         pairs = self.pair_files(images=frames[fil])
@@ -3798,8 +3724,8 @@ class SpectroscopyEpoch(Epoch):
         self._pypeit_sorted_file = None
         self._pypeit_coadd1d_file = None
 
-    def proc_4_pypeit_flux(self, no_query: bool = False, **kwargs):
-        if no_query or self.query_stage("Do fluxing with PypeIt?", stage='4-pypeit_flux_calib'):
+    def proc_pypeit_flux(self, no_query: bool = False, **kwargs):
+        if no_query or self.query_stage("Do fluxing with PypeIt?", stage_name='4-pypeit_flux_calib'):
             self._pypeit_flux()
             self.stages_complete['4-pypeit_flux_calib'] = Time.now()
             self.update_output_file()
@@ -3970,19 +3896,19 @@ class SpectroscopyEpoch(Epoch):
                             "decker": self.decker})
         return output_dict
 
-    def proc_2_pypeit_setup(self, no_query: bool = False, **kwargs):
-        if no_query or self.query_stage("Do PypeIt setup?", stage='2-pypeit_setup'):
+    def proc_pypeit_setup(self, no_query: bool = False, **kwargs):
+        if no_query or self.query_stage("Do PypeIt setup?", stage_name='2-pypeit_setup'):
             pass
 
-    def proc_3_pypeit_run(self, no_query: bool = False, do_not_reuse_masters=False, **kwargs):
-        if no_query or self.query_stage("Run PypeIt?", stage='3-pypeit_run'):
+    def proc_pypeit_run(self, no_query: bool = False, do_not_reuse_masters=False, **kwargs):
+        if no_query or self.query_stage("Run PypeIt?", stage_name='3-pypeit_run'):
             pass
 
-    def proc_5_pypeit_coadd(self, no_query: bool = False, **kwargs):
+    def proc_pypeit_coadd(self, no_query: bool = False, **kwargs):
         pass
 
-    def proc_6_convert_to_marz_format(self, no_query: bool = False, **kwargs):
-        if no_query or self.query_stage("Convert co-added 1D spectra to Marz format?", stage='6-marz-format'):
+    def proc_convert_to_marz_format(self, no_query: bool = False, **kwargs):
+        if no_query or self.query_stage("Convert co-added 1D spectra to Marz format?", stage_name='6-marz-format'):
             pass
 
     def _path_2_pypeit(self):
@@ -4132,16 +4058,16 @@ class ESOSpectroscopyEpoch(SpectroscopyEpoch):
             do_not_reuse_masters = kwargs["do_not_reuse_masters"]
         else:
             do_not_reuse_masters = False
-        self.proc_0_raw()
+        self.proc_raw()
         self.proc_initial_setup()
-        self.proc_2_pypeit_setup()
-        self.proc_3_pypeit_run(do_not_reuse_masters=do_not_reuse_masters)
-        self.proc_4_pypeit_flux()
-        self.proc_5_pypeit_coadd()
-        self.proc_6_convert_to_marz_format()
+        self.proc_pypeit_setup()
+        self.proc_pypeit_run(do_not_reuse_masters=do_not_reuse_masters)
+        self.proc_pypeit_flux()
+        self.proc_pypeit_coadd()
+        self.proc_convert_to_marz_format()
 
-    def proc_0_raw(self, no_query: bool = False, **kwargs):
-        if no_query or self.query_stage("Download raw data from ESO archive?", stage='0-download'):
+    def proc_raw(self, no_query: bool = False, **kwargs):
+        if no_query or self.query_stage("Download raw data from ESO archive?", stage_name='0-download'):
             self._path_0_raw()
             r = self.retrieve()
             if r:
@@ -4190,8 +4116,8 @@ class FORS2SpectroscopyEpoch(ESOSpectroscopyEpoch):
     def pipeline(self, **kwargs):
         super().pipeline(**kwargs)
 
-    def proc_2_pypeit_setup(self, no_query: bool = False, **kwargs):
-        if no_query or self.query_stage("Do PypeIt setup?", stage='2-pypeit_setup'):
+    def proc_pypeit_setup(self, no_query: bool = False, **kwargs):
+        if no_query or self.query_stage("Do PypeIt setup?", stage_name='2-pypeit_setup'):
             self._path_2_pypeit()
             setup_files = os.path.join(self.paths["pypeit_dir"], 'setup_files', '')
             self.paths["pypeit_setup_dir"] = setup_files
@@ -4228,18 +4154,18 @@ class FORS2SpectroscopyEpoch(ESOSpectroscopyEpoch):
             self.stages_complete['2-pypeit_setup'] = Time.now()
             self.update_output_file()
 
-    def proc_3_pypeit_run(self, no_query: bool = False, do_not_reuse_masters: bool = False, **kwargs):
-        if no_query or self.query_stage("Run PypeIt?", stage='3-pypeit_run'):
+    def proc_pypeit_run(self, no_query: bool = False, do_not_reuse_masters: bool = False, **kwargs):
+        if no_query or self.query_stage("Run PypeIt?", stage_name='3-pypeit_run'):
             spec.run_pypeit(pypeit_file=self.paths['pypeit_file'],
                             redux_path=self.paths['pypeit_run_dir'],
                             do_not_reuse_masters=do_not_reuse_masters)
             self.stages_complete['3-pypeit_run'] = Time.now()
             self.update_output_file()
 
-    def proc_5_pypeit_coadd(self, no_query: bool = False, **kwargs):
+    def proc_pypeit_coadd(self, no_query: bool = False, **kwargs):
         if no_query or self.query_stage(
                 "Do coaddition with PypeIt?\nYou should first inspect the 2D spectra to determine which objects to co-add.",
-                stage='5-pypeit_coadd'):
+                stage_name='5-pypeit_coadd'):
             for file in filter(lambda f: "spec1d" in f, os.listdir(self.paths["pypeit_science_dir"])):
                 path = os.path.join(self.paths["pypeit_science_dir"], file)
                 os.system(f"pypeit_show_1dspec {path}")
@@ -4329,10 +4255,10 @@ class XShooterSpectroscopyEpoch(ESOSpectroscopyEpoch):
 
     def pipeline(self, **kwargs):
         super().pipeline(**kwargs)
-        # self.proc_5_pypeit_coadd()
+        # self.proc_pypeit_coadd()
 
-    def proc_2_pypeit_setup(self, no_query: bool = False, **kwargs):
-        if no_query or self.query_stage("Do PypeIt setup?", stage='2-pypeit_setup'):
+    def proc_pypeit_setup(self, no_query: bool = False, **kwargs):
+        if no_query or self.query_stage("Do PypeIt setup?", stage_name='2-pypeit_setup'):
             self._path_2_pypeit()
             setup_files = os.path.join(self.paths["pypeit_dir"], 'setup_files', '')
             self.paths["pypeit_setup_dir"] = setup_files
@@ -4410,13 +4336,14 @@ class XShooterSpectroscopyEpoch(ESOSpectroscopyEpoch):
             self.stages_complete['2-pypeit_setup'] = Time.now()
             self.update_output_file()
 
-    def proc_3_pypeit_run(self, no_query: bool = False, do_not_reuse_masters: bool = False, **kwargs):
+    def proc_pypeit_run(self, no_query: bool = False, do_not_reuse_masters: bool = False, **kwargs):
         for i, arm in enumerate(self.grisms):
             # UVB not yet implemented in PypeIt, so we skip.
             if arm == "uvb":
                 continue
             self._current_arm = arm
-            if no_query or self.query_stage(f"Run PypeIt for {arm.upper()} arm?", stage=f'3.{i + 1}-pypeit_run_{arm}'):
+            if no_query or self.query_stage(f"Run PypeIt for {arm.upper()} arm?",
+                                            stage_name=f'3.{i + 1}-pypeit_run_{arm}'):
                 spec.run_pypeit(pypeit_file=self.get_path('pypeit_file'),
                                 redux_path=self.get_path('pypeit_run_dir'),
                                 do_not_reuse_masters=do_not_reuse_masters)
@@ -4432,28 +4359,28 @@ class XShooterSpectroscopyEpoch(ESOSpectroscopyEpoch):
             #     self.update_output_file()
         self._current_arm = None
 
-    def proc_4_pypeit_flux(self, no_query: bool = False, **kwargs):
+    def proc_pypeit_flux(self, no_query: bool = False, **kwargs):
         for i, arm in enumerate(self.grisms):
             # UVB not yet implemented in PypeIt, so we skip.
             if arm == "uvb":
                 continue
             self._current_arm = arm
             if no_query or self.query_stage(f"Do PypeIt fluxing for {arm.upper()} arm?",
-                                            stage=f'4.{i + 1}-pypeit_flux_calib_{arm}'):
+                                            stage_name=f'4.{i + 1}-pypeit_flux_calib_{arm}'):
                 self._current_arm = arm
                 self._pypeit_flux()
             self.stages_complete[f'4.{i + 1}-pypeit_flux_calib_{arm}'] = Time.now()
         self._current_arm = None
         self.update_output_file()
 
-    def proc_5_pypeit_coadd(self, no_query: bool = False, **kwargs):
+    def proc_pypeit_coadd(self, no_query: bool = False, **kwargs):
         for i, arm in enumerate(self.grisms):
             # UVB not yet implemented in PypeIt, so we skip.
             if arm == "uvb":
                 continue
             self._current_arm = arm
             if no_query or self.query_stage(f"Do PypeIt coaddition for {arm.upper()} arm?",
-                                            stage=f'5.{i + 1}-pypeit_coadd_{arm}'):
+                                            stage_name=f'5.{i + 1}-pypeit_coadd_{arm}'):
                 run_dir = self.get_path("pypeit_run_dir")
                 coadd_file_path = os.path.join(run_dir, f"{self._instrument_pypeit}_{arm}.coadd1d")
                 self.set_path("pypeit_coadd1d_file", coadd_file_path)
@@ -4479,9 +4406,9 @@ class XShooterSpectroscopyEpoch(ESOSpectroscopyEpoch):
 
         self._current_arm = None
 
-    def proc_6_convert_to_marz_format(self, no_query: bool = False, **kwargs):
+    def proc_convert_to_marz_format(self, no_query: bool = False, **kwargs):
         if no_query or self.query_stage("Convert co-added 1D spectra to Marz format?",
-                                        stage='6-convert_to_marz_format'):
+                                        stage_name='6-convert_to_marz_format'):
             for arm in self.coadded:
                 self.coadded[arm].convert_to_marz_format()
             self.stages_complete[f'6-convert_to_marz_format'] = Time.now()
