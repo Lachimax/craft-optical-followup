@@ -1092,7 +1092,7 @@ class ImagingImage(Image):
     def magnitude(
             self,
             flux: units.Quantity,
-            flux_err: units.Quantity,
+            flux_err: units.Quantity = 0 * units.ct,
             zeropoint_name: str = 'best'
     ):
 
