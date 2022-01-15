@@ -254,6 +254,7 @@ class Image:
         self.n_pix = None
         self.object = None
         self.pointing = None
+        self.saturate = None
 
         self.log = {}
 
@@ -436,16 +437,26 @@ class Image:
         self.extract_n_pix()
         return 1, self.n_x, 1, self.n_y
 
+    def extract_saturate(self):
+        key = self.header_keys()["saturate"]
+        saturate = self.extract_header_item(key)
+        if saturate is None:
+            saturate = 65535
+        self.saturate = saturate
+        return self.saturate
+
     @classmethod
     def header_keys(cls):
-        header_keys = {"exposure_time": "EXPTIME",
-                       "noise_read": "RON",
-                       "gain": "GAIN",
-                       "date-obs": "DATE-OBS",
-                       "mjd-obs": "MJD-OBS",
-                       "object": "OBJECT",
-                       "instrument": "INSTRUME",
-                       "unit": "BUNIT"}
+        header_keys = {
+            "exposure_time": "EXPTIME",
+            "noise_read": "RON",
+            "gain": "GAIN",
+            "date-obs": "DATE-OBS",
+            "mjd-obs": "MJD-OBS",
+            "object": "OBJECT",
+            "instrument": "INSTRUME",
+            "unit": "BUNIT",
+            "saturate": "SATURATE"}
         return header_keys
 
     @classmethod
@@ -1549,6 +1560,8 @@ class ImagingImage(Image):
         new = self.copy(output_path)
         gain = self.extract_gain()
         exp_time = self.extract_exposure_time()
+        saturate = self.extract_saturate()
+
         new.open()
         new_data = new.data[ext]
         new_data *= gain.value
@@ -1557,10 +1570,12 @@ class ImagingImage(Image):
 
         header = new.headers[ext]
         header["BUNIT"] = str(new_data.unit)
-        header["GAIN"] = 1.0
+        header["GAIN"] = 1.0 * exp_time
         header["OLD_GAIN"] = gain.value
         header["EXPTIME"] = 1.0
         header["OLD_EXPTIME"] = exp_time.value
+        header["OLD_SATURATE"] = saturate
+        header["SATURATE"] = saturate / exp_time
         new.headers[ext] = header
 
         new.write_data()

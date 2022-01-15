@@ -1115,7 +1115,7 @@ class Epoch:
 
         # Written attributes
         self.output_file = None  # This will be set during the load_output_file call
-        self.stages_complete = self.stages()
+        self.stages_complete = {}
         self.log = {}
 
         self.binning = None
@@ -1173,6 +1173,7 @@ class Epoch:
 
         # Loop through stages list specified in stages()
         stages = self.stages()
+        u.debug_print(1, f"Epoch.pipeline(): type(self) ==", type(self))
         for n, name in enumerate(stages):
             stage = stages[name]
             message = stage["message"]
@@ -1202,7 +1203,7 @@ class Epoch:
                 dir_name = f"{n}-{name}"
                 output_dir = os.path.join(self.data_path, dir_name)
                 u.rmtree_check(output_dir)
-                u.mkdir_check(output_dir)
+                u.mkdir_check_nested(output_dir)
                 self.paths[name] = output_dir
 
                 if stage["method"](output_dir=output_dir, **kwargs):
@@ -1252,9 +1253,12 @@ class Epoch:
         p.update_output_file(self)
 
     def check_done(self, stage: str):
-        if stage not in self.stages_complete:
+        if stage not in self.stages():
             raise ValueError(f"{stage} is not a valid stage for this Epoch.")
-        return self.stages_complete[stage]
+        if stage in self.stages_complete:
+            return self.stages_complete[stage]
+        else:
+            return None
 
     def query_stage(self, message: str, stage_name: str, n: float):
         """
@@ -1272,7 +1276,7 @@ class Epoch:
                 return True
         else:
             message = f"{n}. {message}"
-            done = self.check_done(stage=f"{n}-{stage_name}")
+            done = self.check_done(stage=stage_name)
             if done is not None:
                 time_since = (Time.now() - done).sec * units.second
                 time_since = u.relevant_timescale(time_since)
@@ -3372,7 +3376,9 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
     def stages(self):
 
         ie_stages = ImagingEpoch.stages(self)
-        stages = super().stages().update(ie_stages)
+        stages = super().stages()
+        stages.update(ie_stages)
+        u.debug_print(2, f"FORS2ImagingEpoch.stages(): stages ==", stages)
         return stages
 
     def _register(self, frames: dict, fil: str, tmp: image.ImagingImage, n_template: int, output_dir: str):
