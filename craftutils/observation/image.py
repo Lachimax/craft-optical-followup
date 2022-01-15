@@ -4,6 +4,7 @@ import math
 import string
 import os
 import shutil
+import sys
 import warnings
 from typing import Union, Tuple
 from copy import deepcopy
@@ -11,6 +12,7 @@ from copy import deepcopy
 import numpy as np
 import matplotlib.pyplot as plt
 
+import astropy
 import astropy.io.fits as fits
 import astropy.table as table
 import astropy.wcs as wcs
@@ -38,6 +40,7 @@ from craftutils.stats import gaussian_distributed_point
 import craftutils.observation.instrument as inst
 import craftutils.wrap.source_extractor as se
 import craftutils.wrap.psfex as psfex
+import craftutils.observation.log as log
 from craftutils.wrap.astrometry_net import solve_field
 from craftutils.retrieve import cat_columns
 
@@ -256,7 +259,7 @@ class Image:
         self.pointing = None
         self.saturate = None
 
-        self.log = {}
+        self.log = log.Log()
 
     def __eq__(self, other):
         if not isinstance(other, Image):
@@ -265,17 +268,6 @@ class Image:
 
     def __str__(self):
         return self.filename
-
-    def add_log(self, action: str, method=None):
-
-        log_entry = {
-            "git_version": p.get_project_git_hash(),
-            "action": action
-        }
-        if method is not None:
-            log_entry["method"] = method.__name__
-        self.log[Time.now().strftime("%Y-%m-%d")] = log_entry
-        self.update_output_file()
 
     def open(self, mode: str = "readonly"):
         u.debug_print(1, f"Image.open() 1: {self}.hdu_list:", self.hdu_list)
@@ -299,10 +291,14 @@ class Image:
         u.debug_print(1, "Copying", self.path, "to", destination)
         shutil.copy(self.path, destination)
         new_image = self.new_image(path=destination)
-        new_image.log = self.log
+        new_image.log = self.log.copy()
         new_image.add_log(f"Copied from {self.path} to {destination}.", method=self.copy)
         new_image.update_output_file()
         return new_image
+
+    def add_log(self, action: str, method=None, path: str = None):
+        self.log.add_log(action=action, method=method, path=path)
+        self.update_output_file()
 
     def load_output_file(self):
         outputs = p.load_output_file(self)
@@ -310,7 +306,7 @@ class Image:
             if "frame_type" in outputs:
                 self.frame_type = outputs["frame_type"]
             if "log" in outputs:
-                self.log = outputs["log"]
+                self.log = log.Log(outputs["log"])
         return outputs
 
     def update_output_file(self):
@@ -319,7 +315,7 @@ class Image:
     def _output_dict(self):
         return {
             "frame_type": self.frame_type,
-            "log": self.log,
+            "log": self.log.to_dict(),
         }
 
     def load_headers(self, force: bool = False, **kwargs):
@@ -1329,7 +1325,7 @@ class ImagingImage(Image):
         new_image = self.new_image(
             path=final_file
         )
-        new_image.add_log("Astrometry corrected using")
+        new_image.add_log("Astrometry corrected using Astrometry.net.", method=self.correct_astrometry)
         return new_image
 
     def transfer_wcs(self, other_image: 'ImagingImage', ext: int = 0):
@@ -1562,7 +1558,7 @@ class ImagingImage(Image):
         exp_time = self.extract_exposure_time()
         saturate = self.extract_saturate()
 
-        new.open()
+        new.load_data()
         new_data = new.data[ext]
         new_data *= gain.value
         new_data /= exp_time.value
@@ -2572,8 +2568,12 @@ class FORS2Image(ESOImagingImage):
 
     def _output_dict(self):
         outputs = super()._output_dict()
+        if self.other_chip is not None:
+            other_chip = self.other_chip.path
+        else:
+            other_chip = None
         outputs.update({
-            "other_chip": self.other_chip.path,
+            "other_chip": other_chip,
         })
         return outputs
 

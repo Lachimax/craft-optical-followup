@@ -20,6 +20,7 @@ import craftutils.fits_files as ff
 import craftutils.observation.objects as objects
 import craftutils.observation.image as image
 import craftutils.observation.instrument as inst
+import craftutils.observation.log as log
 import craftutils.params as p
 import craftutils.plotting as pl
 import craftutils.retrieve as retrieve
@@ -1116,7 +1117,7 @@ class Epoch:
         # Written attributes
         self.output_file = None  # This will be set during the load_output_file call
         self.stages_complete = {}
-        self.log = {}
+        self.log = log.Log()
 
         self.binning = None
         self.binning_std = None
@@ -1149,11 +1150,16 @@ class Epoch:
 
         # self.load_output_file()
 
+    def add_log(self, action: str, method=None, path: str = None,):
+        self.log.add_log(action=action, method=method, path=path)
+        self.update_output_file()
+
     def stages(self):
         stages = {
             "initial_setup": {
                 "method": self.proc_initial_setup,
                 "message": "Do initial setup of files?",
+                "log_message": "Initial setup conducted.",
                 "default": True,
                 "do_key": None  # If do_key is None or not present, the stage is default and will be performed.
             }
@@ -1203,12 +1209,17 @@ class Epoch:
                 dir_name = f"{n}-{name}"
                 output_dir = os.path.join(self.data_path, dir_name)
                 u.rmtree_check(output_dir)
-                u.mkdir_check_nested(output_dir)
+                u.mkdir_check(output_dir)
                 self.paths[name] = output_dir
 
-                if stage["method"](output_dir=output_dir, **kwargs):
+                if stage["method"](output_dir=output_dir, **kwargs) is not False:
                     self.stages_complete[f"{n}-{name}"] = Time.now()
                     self.update_output_file()
+                    if stage["log_method"] is not None:
+                        log_message = stage["log_message"]
+                    else:
+                        log_message = f"Performed processing step {dir_name}."
+                    self.add_log(log_message, method=stage["method"])
 
     def _pipeline_init(self, ):
         if self.data_path is not None:
@@ -1220,6 +1231,7 @@ class Epoch:
 
     def proc_initial_setup(self, output_dir: str, **kwargs):
         self._initial_setup(output_dir=output_dir, **kwargs)
+        return True
 
     def _initial_setup(self, output_dir: str, **kwargs):
         pass
@@ -1236,6 +1248,8 @@ class Epoch:
                 for fil in outputs["coadded"]:
                     if outputs["coadded"][fil] is not None:
                         self.add_coadded_image(img=outputs["coadded"][fil], key=fil, **kwargs)
+            if "log" in outputs:
+                self.log = log.Log(outputs["log"])
         return outputs
 
     def _output_dict(self):
@@ -1246,7 +1260,8 @@ class Epoch:
             "paths": self.paths,
             "frames_science": _output_img_dict_list(self.frames_science),
             "frames_std": _output_img_dict_list(self.frames_standard),
-            "coadded": _output_img_dict_single(self.coadded)
+            "coadded": _output_img_dict_single(self.coadded),
+            "log": self.log.to_dict()
         }
 
     def update_output_file(self):
