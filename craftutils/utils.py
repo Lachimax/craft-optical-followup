@@ -1098,3 +1098,11 @@ def system_command(command: str, arguments: Union[str, list] = None,
         print("With code", result)
         print()
     return result
+
+
+def system_package_version(package_name: str):
+    verstring = subprocess.getoutput(f"dpkg -s {package_name} | grep -i version")
+    if verstring.startswith("Version: "):
+        return verstring[9:]
+    else:
+        return None

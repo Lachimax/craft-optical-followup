@@ -1,11 +1,12 @@
 import copy
 import sys
 from typing import Union
+from typing import List
 
 from astropy.time import Time
 
 import craftutils.params as p
-
+import craftutils.utils as u
 
 class Log:
 
@@ -35,7 +36,18 @@ class Log:
         elif isinstance(other, Log):
             self.log.update(other.log)
 
-    def add_log(self, action: str, method=None, path: str = None):
+    def add_log(
+            self, action: str, method=None, path: str = None, packages: List[str] = None
+    ):
+        """
+
+        :param action: String describing the action to be logged.
+        :param method: Python method or function used to achieve this action. If provided
+        :param path: Path to which new products were written.
+        :param packages: A list of any system packages involved; if they can be reached in the terminal using this name,
+            the version number will be recorded.
+        :return:
+        """
 
         module_versions = {}
         for key in sys.modules:
@@ -45,13 +57,22 @@ class Log:
                 pass
 
         log_entry = {
-            "craftutils_git_hash": p.get_project_git_hash(),
+            "git_hash": p.get_project_git_hash(),
             "python_version": sys.version,
             "module_versions": module_versions,
             "action": action,
             "path": path
         }
 
+        if packages is not None:
+            log_entry["package_versions"] = {}
+            for package in packages:
+                log_entry["package_versions"][package] = u.system_package_version(package)
+
         if method is not None:
-            log_entry["method"] = method.__name__
+            if isinstance(method, str):
+                log_entry["method"] = method
+            else:
+                log_entry["method"] = method.__name__
+
         self.log[Time.now().strftime("%Y-%m-%d")] = log_entry

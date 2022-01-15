@@ -16,7 +16,7 @@ from craftutils.utils import system_command
 
 class PSFExModel(Fittable2DModel):
     """
-    Warning: does not work
+    Warning: does not work. I tried!
     """
     n_inputs = 2
     n_outputs = 1

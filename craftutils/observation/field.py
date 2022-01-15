@@ -1150,8 +1150,8 @@ class Epoch:
 
         # self.load_output_file()
 
-    def add_log(self, action: str, method=None, path: str = None,):
-        self.log.add_log(action=action, method=method, path=path)
+    def add_log(self, action: str, method=None, path: str = None, packages: List[str] = None):
+        self.log.add_log(action=action, method=method, path=path, packages=packages)
         self.update_output_file()
 
     def stages(self):
@@ -1214,12 +1214,12 @@ class Epoch:
 
                 if stage["method"](output_dir=output_dir, **kwargs) is not False:
                     self.stages_complete[f"{n}-{name}"] = Time.now()
-                    self.update_output_file()
-                    if stage["log_method"] is not None:
+                    # self.update_output_file()
+                    if "log_message" in stage and stage["log_message"] is not None:
                         log_message = stage["log_message"]
                     else:
                         log_message = f"Performed processing step {dir_name}."
-                    self.add_log(log_message, method=stage["method"])
+                    self.add_log(log_message, method=stage["method"], path=output_dir)
 
     def _pipeline_init(self, ):
         if self.data_path is not None:

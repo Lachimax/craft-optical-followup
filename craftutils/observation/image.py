@@ -6,7 +6,7 @@ import os
 import shutil
 import sys
 import warnings
-from typing import Union, Tuple
+from typing import Union, Tuple, List
 from copy import deepcopy
 
 import numpy as np
@@ -269,6 +269,11 @@ class Image:
     def __str__(self):
         return self.filename
 
+    def add_log(self, action: str, method=None, path: str = None, packages: List[str] = None, ext: int = 0):
+        self.log.add_log(action=action, method=method, path=path, packages=packages)
+        self.add_history(note=action, ext=ext)
+        self.update_output_file()
+
     def open(self, mode: str = "readonly"):
         u.debug_print(1, f"Image.open() 1: {self}.hdu_list:", self.hdu_list)
         if self.path is not None and self.hdu_list is None:
@@ -295,10 +300,6 @@ class Image:
         new_image.add_log(f"Copied from {self.path} to {destination}.", method=self.copy)
         new_image.update_output_file()
         return new_image
-
-    def add_log(self, action: str, method=None, path: str = None):
-        self.log.add_log(action=action, method=method, path=path)
-        self.update_output_file()
 
     def load_output_file(self):
         outputs = p.load_output_file(self)
@@ -351,10 +352,26 @@ class Image:
         return self.filename[:self.filename.find(".fits")]
 
     def set_header_item(self, key: str, value, ext: int = 0):
-        self.close()
-        value = u.dequantify(value)
-        ff.change_header(file=self.path, key=key, value=value, ext=ext)
         self.load_headers(force=True)
+        value = u.dequantify(value)
+
+        if key in self.headers[ext]:
+            old_value = self.headers[ext][key]
+            action = f"Changed FITS header item {key} from {old_value} to {value} on ext {ext}."
+        else:
+            action = f"Created new FITS header item {key} with value {value} on ext {ext}."
+
+        self.headers[ext][key] = value
+        self.close()
+        self.write_headers()
+        self.add_log(
+            action=action, method=self.set_header_item, ext=ext
+        )
+
+    def add_history(self, note: str, ext: int = 0):
+        self.load_headers()
+        self.headers[ext]["HISTORY"] = str(Time.now()) + ": " + note
+        self.write_headers()
 
     def _extract_header_item(self, key: str, ext: int = 0):
         self.load_headers()
@@ -440,6 +457,16 @@ class Image:
             saturate = 65535
         self.saturate = saturate
         return self.saturate
+
+    def write_headers(self):
+        with fits.open(self.path, mode="update") as file:
+            for i, header in enumerate(self.headers):
+                file[i].header = header
+
+    def write_data(self):
+        with fits.open(self.path, mode="update") as file:
+            for i, data in enumerate(self.data):
+                file[i].data = data
 
     @classmethod
     def header_keys(cls):
@@ -595,8 +622,8 @@ class ImagingImage(Image):
             template = template.path
             self.dual_mode_template = template
         self.extract_gain()
-        print("TEMPLATE PATH:", template)
-        return se.source_extractor(
+        u.debug_print(2, f"ImagingImage.source_extraction(): template ==", template)
+        output_path = se.source_extractor(
             image_path=self.path,
             output_dir=output_dir,
             configuration_file=configuration_file,
@@ -606,6 +633,13 @@ class ImagingImage(Image):
             gain=self.gain.value,
             **configs
         )
+        self.add_log(
+            action="Sources extracted using Source Extractor.",
+            method=self.source_extraction,
+            path=output_dir,
+            packages=["source-extractor"]
+        )
+        return output_path
 
     def psfex(self, output_dir: str, force: bool = False, **kwargs):
         if force or self.psfex_path is None:
@@ -622,7 +656,14 @@ class ImagingImage(Image):
             pix_scale = self.pixel_scale_dec
             self.fwhm_pix_psfex = self.psfex_output[1].header['PSF_FWHM'] * units.pixel
             self.fwhm_psfex = self.fwhm_pix_psfex.to(units.arcsec, pix_scale)
-            self.update_output_file()
+
+            self.add_log(
+                action="PSF modelled using psfex.",
+                method=self.psfex,
+                path=output_dir,
+                packages=["psfex"]
+            )
+
         return self.load_psfex_output()
 
     def load_psfex_output(self, force: bool = False):
@@ -694,7 +735,12 @@ class ImagingImage(Image):
         else:
             self.psfex_successful = True
         self.write_source_cat()
-        self.update_output_file()
+        self.add_log(
+            action="Sources extracted using Source Extractor with PSFEx PSF modelling.",
+            method=self.source_extraction_psf,
+            path=output_dir,
+            packages=["psfex", "source-extractor"]
+        )
 
     def _load_source_cat_sextractor(self, path: str):
         self.load_wcs()
@@ -975,7 +1021,11 @@ class ImagingImage(Image):
                 _, zeropoint_best = u.select_option(message="Select best zeropoint:", options=zps)
                 best = zeropoint_best["catalogue"]
         self.zeropoint_best = zeropoint_best
-        self.update_output_file()
+
+        self.add_log(
+            action=f"Selected best zeropoint as {zeropoint_best['zeropoint']} +/- {zeropoint_best['zeropoint_err']}, from {zeropoint_best['catalogue']}",
+            method=self.select_zeropoint
+        )
         return self.zeropoint_best, best
 
     def zeropoint(
@@ -1051,7 +1101,11 @@ class ImagingImage(Image):
         zp_dict['extinction_err'] = 0.0
         self.zeropoints[cat_name.lower()] = zp_dict
         self.zeropoint_output_paths[cat_name.lower()] = output_path
-        self.update_output_file()
+        self.add_log(
+            action=f"Calculated zeropoint as {zp_dict['zeropoint']} +/- {zp_dict['zeropoint_err']}, from {zp_dict['catalogue']}.",
+            method=self.select_zeropoint,
+            path=output_path
+        )
         return self.zeropoints[cat_name.lower()]
 
     def aperture_areas(self):
@@ -1062,6 +1116,11 @@ class ImagingImage(Image):
             source_cat["A_IMAGE"] = source_cat["A_WORLD"].to(units.pix, self.pixel_scale_dec)
             source_cat["B_IMAGE"] = source_cat["A_WORLD"].to(units.pix, self.pixel_scale_dec)
             source_cat["KRON_AREA_IMAGE"] = source_cat["A_IMAGE"] * source_cat["B_IMAGE"] * np.pi
+
+        self.add_log(
+            action=f"Calculated area of FLUX_AUTO apertures.",
+            method=self.aperture_areas,
+        )
 
     def calibrate_magnitudes(self, zeropoint_name: str = "best", force: bool = False, dual: bool = False):
         cat = self.get_source_cat(dual=dual, force=True)
@@ -1092,6 +1151,11 @@ class ImagingImage(Image):
             cat[f"MAGERR_PSF_ZP_{zeropoint_name}_no_ext"] = mags[3]
 
             self._set_source_cat(source_cat=cat, dual=dual)
+
+            self.add_log(
+                action=f"Calibrated source catalogue magnitudes using zeropoint {zeropoint_name}.",
+                method=self.calibrate_magnitudes,
+            )
 
         else:
             print(f"Magnitudes already calibrated for {zeropoint_name}")
@@ -1190,65 +1254,30 @@ class ImagingImage(Image):
                 self.depth["secure"][snr_key][f"{sigma}-sigma"] = src_lim[f"MAG_AUTO_ZP_{zeropoint_name}"]
 
         source_cat.sort("NUMBER")
-        self.update_output_file()
+        self.add_log(
+            action=f"Estimated image depth.",
+            method=self.estimate_depth,
+        )
         return self.depth
 
-    def psf_diagnostics(self, star_class_tol: float = 0.95,
-                        mag_max: float = 0.0 * units.mag, mag_min: float = -7.0 * units.mag,
-                        match_to: table.Table = None, frame: float = 15):
-        self.open()
-        self.load_source_cat()
-        stars_moffat, stars_gauss, stars_sex = ph.image_psf_diagnostics(
-            hdu=self.hdu_list,
-            cat=self.source_cat,
-            star_class_tol=star_class_tol,
-            mag_max=mag_max,
-            mag_min=mag_min,
-            match_to=match_to,
-            frame=frame)
-
-        fwhm_gauss = (stars_gauss["GAUSSIAN_FWHM_FITTED"]).to(units.arcsec)
-        self.fwhm_median_gauss = np.nanmedian(fwhm_gauss)
-        self.fwhm_max_gauss = np.nanmax(fwhm_gauss)
-        self.fwhm_min_gauss = np.nanmin(fwhm_gauss)
-        self.fwhm_sigma_gauss = np.nanstd(fwhm_gauss)
-        self.fwhm_rms_gauss = np.sqrt(np.mean(fwhm_gauss ** 2))
-
-        fwhm_moffat = (stars_moffat["MOFFAT_FWHM_FITTED"]).to(units.arcsec)
-        self.fwhm_median_moffat = np.nanmedian(fwhm_moffat)
-        self.fwhm_max_moffat = np.nanmax(fwhm_moffat)
-        self.fwhm_min_moffat = np.nanmin(fwhm_moffat)
-        self.fwhm_sigma_moffat = np.nanstd(fwhm_moffat)
-        self.fwhm_rms_moffat = np.sqrt(np.mean(fwhm_moffat ** 2))
-
-        fwhm_sextractor = (stars_sex["FWHM_WORLD"]).to(units.arcsec)
-        self.fwhm_median_sextractor = np.nanmedian(fwhm_sextractor)
-        self.fwhm_max_sextractor = np.nanmax(fwhm_sextractor)
-        self.fwhm_min_sextractor = np.nanmin(fwhm_sextractor)
-        self.fwhm_sigma_sextractor = np.nanstd(fwhm_sextractor)
-        self.fwhm_rms_sextractor = np.sqrt(np.mean(fwhm_sextractor ** 2))
-
-        self.close()
-
-        results = {
-            "fwhm_median_gauss": self.fwhm_median_gauss,
-            "fwhm_max_gauss": self.fwhm_max_gauss,
-            "fwhm_min_gauss": self.fwhm_min_gauss,
-            "fwhm_sigma_gauss": self.fwhm_sigma_gauss,
-            "fwhm_rms_gauss": self.fwhm_rms_gauss,
-            "fwhm_median_moffat": self.fwhm_median_moffat,
-            "fwhm_max_moffat": self.fwhm_max_moffat,
-            "fwhm_min_moffat": self.fwhm_min_moffat,
-            "fwhm_sigma_moffat": self.fwhm_sigma_moffat,
-            "fwhm_rms_moffat": self.fwhm_rms_moffat,
-            "fwhm_median_sextractor": self.fwhm_median_sextractor,
-            "fwhm_max_sextractor": self.fwhm_max_sextractor,
-            "fwhm_min_sextractor": self.fwhm_min_sextractor,
-            "fwhm_sigma_sextractor": self.fwhm_sigma_sextractor,
-            "fwhm_rms_sextractor": self.fwhm_rms_sextractor,
-        }
-
-        return results
+    def send_column_to_source_cat(self, colname: str, sample: table.Table):
+        """
+        Takes values from an extra column added to a subset of source_cat.
+        Trust me, it comes in handy.
+        Assumes that NO entries have been removed from the main source_cat since being produced by Source Extractor,
+        as it requires that the relationship source_cat["NUMBER"] = i - 1 holds true.
+        (The commented line is for use when that assumption is no longer valid, but is slower).
+        :param colname: Name of column to send.
+        :param sample:
+        :return:
+        """
+        if not colname in self.source_cat.colnames:
+            self.source_cat.add_column(-99, name=colname)
+        self.source_cat.sort("NUMBER")
+        for star in sample:
+            index = star["NUMBER"]
+            # i = self.find_object_index(index, dual=False)
+            self.source_cat[index - 1][colname] = star[colname]
 
     def register(self, target: 'ImagingImage', output_path: str, ext: int = 0, trim: bool = True):
         self.load_data()
@@ -1275,6 +1304,10 @@ class ImagingImage(Image):
             left, right, bottom, top = new_image.detect_edges(frame_value=frame_value)
             new_image.trim(left=left, right=right, bottom=bottom, top=top, output_path=output_path)
 
+        new_image.add_log(
+            action=f"Registered and reprojected to footprint of {target} using astroalign.",
+            method=self.register,
+        )
         return new_image
 
     def detect_frame_value(self, ext: int = 0):
@@ -1325,13 +1358,20 @@ class ImagingImage(Image):
         new_image = self.new_image(
             path=final_file
         )
-        new_image.add_log("Astrometry corrected using Astrometry.net.", method=self.correct_astrometry)
+        new_image.add_log(
+            "Astrometry corrected using Astrometry.net.",
+            method=self.correct_astrometry,
+            packages=["astrometry.net"])
         return new_image
 
     def transfer_wcs(self, other_image: 'ImagingImage', ext: int = 0):
         other_image.load_headers()
         self.load_headers()
         self.headers[ext] = ff.wcs_transfer(header_template=other_image.headers[ext], header_update=self.headers[ext])
+        self.add_log(
+            f"Changed WCS information to match {other_image}.",
+            method=self.transfer_wcs
+        )
         self.write_headers()
 
     def correct_astrometry_from_other(self, other_image: 'ImagingImage', output_dir: str = None) -> 'ImagingImage':
@@ -1391,6 +1431,12 @@ class ImagingImage(Image):
 
         cls = ImagingImage.select_child_class(instrument=self.instrument_name)
         new_image = cls(path=output_path)
+
+        new_image.add_log(
+            f"Used WCS info from {other_image} to correct this image.",
+            method=self.correct_astrometry_from_other
+        )
+
         return new_image
 
     def astrometry_diagnostics(
@@ -1404,6 +1450,20 @@ class ImagingImage(Image):
             show_plots: bool = False,
             output_path=None
     ):
+        """
+        Perform diagnostics of astrometric offset of stars in image from catalogue.
+        :param reference_cat: Path to reference catalogue.
+        :param ra_col:
+        :param dec_col:
+        :param mag_col:
+        :param offset_tolerance: Maximum offset to be matched.
+        :param star_tolerance: Minimum CLASS_STAR for object to be considered.
+        :param local_coord:
+        :param local_radius:
+        :param show_plots:
+        :param output_path:
+        :return:
+        """
         if local_coord is None:
             local_coord = self.extract_pointing()
 
@@ -1415,8 +1475,8 @@ class ImagingImage(Image):
         if isinstance(reference_cat, str):
             reference_cat = table.QTable.read(reference_cat)
 
-        u.debug_print(1, "REFERENCE_CAT", reference_cat)
-        u.debug_print(1, "SELF.SOURCE_CAT", self.source_cat)
+        u.debug_print(2, "ImagingImage.astrometry_diagnostics(): reference_cat ==", reference_cat)
+        u.debug_print(2, f"ImagingImage.astrometry_diagnostics(): {self}.source_cat ==", self.source_cat)
 
         plt.scatter(self.source_cat["RA"], self.source_cat["DEC"], marker='x')
         plt.xlabel("Right Ascension (Catalogue)")
@@ -1526,9 +1586,79 @@ class ImagingImage(Image):
         self.astrometry_stats["star_tolerance"] = star_tolerance
         self.astrometry_stats["offset_tolerance"] = offset_tolerance
 
-        self.update_output_file()
+        matches_source_cat["OFFSET_FROM_REF"] = distance
+        self.send_column_to_source_cat(colname="OFFSET_FROM_GAIA", sample=matches_source_cat)
+
+        self.add_log(
+            action=f"Calculated astrometry offset statistics.",
+            method=self.astrometry_stats,
+            path=output_path
+        )
 
         return self.astrometry_stats
+
+    def psf_diagnostics(self, star_class_tol: float = 0.95,
+                        mag_max: float = 0.0 * units.mag, mag_min: float = -7.0 * units.mag,
+                        match_to: table.Table = None, frame: float = 15):
+        self.open()
+        self.load_source_cat()
+        stars_moffat, stars_gauss, stars_sex = ph.image_psf_diagnostics(
+            hdu=self.hdu_list,
+            cat=self.source_cat,
+            star_class_tol=star_class_tol,
+            mag_max=mag_max,
+            mag_min=mag_min,
+            match_to=match_to,
+            frame=frame)
+
+        fwhm_gauss = stars_gauss["GAUSSIAN_FWHM_FITTED"]
+        self.fwhm_median_gauss = np.nanmedian(fwhm_gauss)
+        self.fwhm_max_gauss = np.nanmax(fwhm_gauss)
+        self.fwhm_min_gauss = np.nanmin(fwhm_gauss)
+        self.fwhm_sigma_gauss = np.nanstd(fwhm_gauss)
+        self.fwhm_rms_gauss = np.sqrt(np.mean(fwhm_gauss ** 2))
+        self.send_column_to_source_cat("GAUSSIAN_FWHM_FITTED", stars_gauss)
+
+        fwhm_moffat = stars_moffat["MOFFAT_FWHM_FITTED"]
+        self.fwhm_median_moffat = np.nanmedian(fwhm_moffat)
+        self.fwhm_max_moffat = np.nanmax(fwhm_moffat)
+        self.fwhm_min_moffat = np.nanmin(fwhm_moffat)
+        self.fwhm_sigma_moffat = np.nanstd(fwhm_moffat)
+        self.fwhm_rms_moffat = np.sqrt(np.mean(fwhm_moffat ** 2))
+        self.send_column_to_source_cat("MOFFAT_FWHM_FITTED", stars_moffat)
+
+        fwhm_sextractor = stars_sex["FWHM_WORLD"].to(units.arcsec)
+        self.fwhm_median_sextractor = np.nanmedian(fwhm_sextractor)
+        self.fwhm_max_sextractor = np.nanmax(fwhm_sextractor)
+        self.fwhm_min_sextractor = np.nanmin(fwhm_sextractor)
+        self.fwhm_sigma_sextractor = np.nanstd(fwhm_sextractor)
+        self.fwhm_rms_sextractor = np.sqrt(np.mean(fwhm_sextractor ** 2))
+
+        self.close()
+
+        results = {
+            "fwhm_median_gauss": self.fwhm_median_gauss,
+            "fwhm_max_gauss": self.fwhm_max_gauss,
+            "fwhm_min_gauss": self.fwhm_min_gauss,
+            "fwhm_sigma_gauss": self.fwhm_sigma_gauss,
+            "fwhm_rms_gauss": self.fwhm_rms_gauss,
+            "fwhm_median_moffat": self.fwhm_median_moffat,
+            "fwhm_max_moffat": self.fwhm_max_moffat,
+            "fwhm_min_moffat": self.fwhm_min_moffat,
+            "fwhm_sigma_moffat": self.fwhm_sigma_moffat,
+            "fwhm_rms_moffat": self.fwhm_rms_moffat,
+            "fwhm_median_sextractor": self.fwhm_median_sextractor,
+            "fwhm_max_sextractor": self.fwhm_max_sextractor,
+            "fwhm_min_sextractor": self.fwhm_min_sextractor,
+            "fwhm_sigma_sextractor": self.fwhm_sigma_sextractor,
+            "fwhm_rms_sextractor": self.fwhm_rms_sextractor,
+        }
+        self.add_log(
+            action=f"Calculated PSF FWHM statistics.",
+            method=self.psf_diagnostics,
+            packages=["source-extractor", "psfex"]
+        )
+        return results
 
     def trim(
             self,
@@ -1545,11 +1675,19 @@ class ImagingImage(Image):
 
         if output_path is None:
             output_path = self.path.replace(".fits", "_trimmed.fits")
-        ff.trim_file(path=self.path,
-                     left=left, right=right, bottom=bottom, top=top,
-                     new_path=output_path
-                     )
+        ff.trim_file(
+            path=self.path,
+            left=left, right=right, bottom=bottom, top=top,
+            new_path=output_path
+        )
         image = self.__class__(path=output_path, instrument_name=self.instrument_name)
+
+        image.add_log(
+            action=f"Trimmed image to margins left={left}, right={right}, bottom={bottom}, top={top}",
+            method=self.trim,
+            path=output_path
+        )
+
         return image
 
     def convert_to_es(self, output_path: str, ext: int = 0):
@@ -1564,15 +1702,19 @@ class ImagingImage(Image):
         new_data /= exp_time.value
         new.data[ext] = new_data.value
 
-        header = new.headers[ext]
-        header["BUNIT"] = str(new_data.unit)
-        header["GAIN"] = 1.0 * exp_time
-        header["OLD_GAIN"] = gain.value
-        header["EXPTIME"] = 1.0
-        header["OLD_EXPTIME"] = exp_time.value
-        header["OLD_SATURATE"] = saturate
-        header["SATURATE"] = saturate / exp_time
-        new.headers[ext] = header
+        new.set_header_item(key="BUNIT", value=str(new_data.unit), ext=ext)
+        new.set_header_item(key="GAIN", value=1.0 * exp_time, ext=ext)
+        new.set_header_item(key="OLD_GAIN", value=gain.value, ext=ext)
+        new.set_header_item(key="EXPTIME", value=1.0, ext=ext)
+        new.set_header_item(key="OLD_EXPTIME", value=exp_time.value, ext=ext)
+        new.set_header_item(key="OLD_SATURATE", value=saturate, ext=ext)
+        new.set_header_item(key="SATURATE", value=saturate / exp_time, ext=ext)
+
+        new.add_log(
+            action=f"Converted image data on ext {ext} to e- / s, using gain of {gain} and exptime of {exp_time}.",
+            method=self.convert_to_es,
+            path=output_path
+        )
 
         new.write_data()
         new.write_headers()
@@ -1585,30 +1727,20 @@ class ImagingImage(Image):
         other_image.load_headers()
         print(f"Reprojecting {self.filename} into the pixel space of {other_image.filename}")
         reprojected, footprint = rp.reproject_exact(self.path, other_image.headers[ext], parallel=True)
-        if output_path != self.path:
-            shutil.copyfile(self.path, output_path)
-        reprojected_image = deepcopy(self)
-        reprojected_image.path = output_path
+
+        reprojected_image = self.copy(output_path)
         reprojected_image.load_data()
         reprojected_image.data[ext] = reprojected
         reprojected_image.write_data()
+
+        reprojected_image.add_log(
+            action=f"Reprojected into pixel space of {other_image}.",
+            method=self.reproject,
+            path=output_path
+        )
+
         reprojected_image.transfer_wcs(other_image=other_image)
-        reprojected_image.add_history(f"Reprojected into pixel space of {other_image.filename}")
         return reprojected_image
-
-    def add_history(self, note: str, ext: int = 0, ):
-        self.headers[ext]["HISTORY"] = str(Time.now()) + ": " + note
-        self.write_headers()
-
-    def write_headers(self):
-        with fits.open(self.path, mode="update") as file:
-            for i, header in enumerate(self.headers):
-                file[i].header = header
-
-    def write_data(self):
-        with fits.open(self.path, mode="update") as file:
-            for i, data in enumerate(self.data):
-                file[i].data = data
 
     def trim_to_wcs(self, bottom_left: SkyCoord, top_right: SkyCoord, output_path: str = None) -> 'ImagingImage':
         """
@@ -1669,6 +1801,12 @@ class ImagingImage(Image):
 
         self.update_output_file()
         print("MEDIAN SNR:", np.median(source_cat["SNR_CCD"]))
+
+        self.add_log(
+            action=f"Estimated SNR using CCD Equation.",
+            method=self.signal_to_noise_ccd,
+        )
+
         return source_cat["SNR_CCD"]
 
     def signal_to_noise_measure(self, dual: bool = False):
@@ -1723,6 +1861,12 @@ class ImagingImage(Image):
 
         self._set_source_cat(source_cat=source_cat, dual=dual)
 
+        self.add_log(
+            action=f"Estimated SNR using SEP RMS map and Source Extractor uncertainty.",
+            method=self.signal_to_noise_measure,
+            packages=["source-extractor"]
+        )
+
     def object_axes(self):
         self.load_source_cat()
         self.extract_pixel_scale()
@@ -1730,6 +1874,11 @@ class ImagingImage(Image):
         self.source_cat["B_IMAGE"] = self.source_cat["B_WORLD"].to(units.pix, self.pixel_scale_dec)
         self.source_cat_dual["A_IMAGE"] = self.source_cat_dual["A_WORLD"].to(units.pix, self.pixel_scale_dec)
         self.source_cat_dual["B_IMAGE"] = self.source_cat_dual["B_WORLD"].to(units.pix, self.pixel_scale_dec)
+
+        self.add_log(
+            action=f"Created axis columns A_IMAGE, B_IMAGE in pixel units from A_WORLD, B_WORLD.",
+            method=self.object_axes,
+        )
 
     def estimate_sky_background(self, ext: int = 0, force: bool = False):
         """
@@ -1760,6 +1909,17 @@ class ImagingImage(Image):
         i = np.argmin(separation)
         nearest = cat[i]
         return nearest, separation[i]
+
+    def find_object_index(self, index: int, dual: bool = True):
+        """
+        Using NUMBER column
+        :param index:
+        :param dual:
+        :return:
+        """
+        source_cat = self.get_source_cat(dual=dual)
+        i, _ = u.find_nearest(source_cat["NUMBER"], index)
+        return source_cat[i], i
 
     def generate_psf_image(self, x: int, y: int, output: str = None):
         """
@@ -1794,21 +1954,22 @@ class ImagingImage(Image):
         else:
             raise units.UnitsError("Frame must have units pixels or angle, not", frame.unit)
 
-        subplot, hdu_cut = pl.plot_subimage(fig=fig, hdu=self.hdu_list,
-                                            ra=centre.ra.value,
-                                            dec=centre.dec.value,
-                                            frame=frame.value,
-                                            world_frame=world_frame,
-                                            n=n, n_x=n_x, n_y=n_y,
-                                            cmap=cmap, show_cbar=show_cbar, stretch=stretch,
-                                            vmin=vmin, vmax=vmax,
-                                            show_grid=show_grid,
-                                            ticks=ticks, interval=interval,
-                                            show_coords=show_coords,
-                                            ylabel=ylabel,
-                                            reverse_y=reverse_y,
-                                            **kwargs
-                                            )
+        subplot, hdu_cut = pl.plot_subimage(
+            fig=fig, hdu=self.hdu_list,
+            ra=centre.ra.value,
+            dec=centre.dec.value,
+            frame=frame.value,
+            world_frame=world_frame,
+            n=n, n_x=n_x, n_y=n_y,
+            cmap=cmap, show_cbar=show_cbar, stretch=stretch,
+            vmin=vmin, vmax=vmax,
+            show_grid=show_grid,
+            ticks=ticks, interval=interval,
+            show_coords=show_coords,
+            ylabel=ylabel,
+            reverse_y=reverse_y,
+            **kwargs
+        )
         self.close()
         return subplot, hdu_cut
 
@@ -1892,15 +2053,17 @@ class ImagingImage(Image):
         )
         return ax, fig
 
-    def plot_catalogue(self,
-                       cat: table.QTable,
-                       ra_col: str = "ra",
-                       dec_col: str = "dec",
-                       colour_column: str = None,
-                       fig: plt.Figure = None,
-                       ext: int = 0,
-                       cbar_label: str = None,
-                       **kwargs):
+    def plot_catalogue(
+            self,
+            cat: table.QTable,
+            ra_col: str = "ra",
+            dec_col: str = "dec",
+            colour_column: str = None,
+            fig: plt.Figure = None,
+            ext: int = 0,
+            cbar_label: str = None,
+            **kwargs
+    ):
         if fig is None:
             fig = plt.figure()
         if colour_column is not None:
@@ -1922,7 +2085,8 @@ class ImagingImage(Image):
             self,
             x: np.float64, y: np.float64,
             mag: np.float64,
-            output: str = None, overwrite: bool = True,
+            output: str,
+            overwrite: bool = True,
             world_coordinates: bool = False,
             extra_values: table.Table = None,
             model: str = "psfex"
@@ -1968,19 +2132,86 @@ class ImagingImage(Image):
         else:
             raise ValueError(f"Model {model} not recognised.")
 
-        if output is not None:
-            inserted = self.new_image(output)
-            u.debug_print(1, "ImagingImage.insert_synthetic_sources: output_cat", output_cat)
-            inserted.synth_cat_path = output_cat
-            return inserted, sources
-        else:
-            return file, sources
+        inserted = self.copy(output)
+        u.debug_print(1, "ImagingImage.insert_synthetic_sources: output_cat", output_cat)
+        inserted.synth_cat_path = output_cat
+        inserted.add_log(
+            action=f"Injected synthetic point-sources, defined in output catalogue at {output_cat}.",
+            method=self.insert_synthetic_sources,
+            path=output
+        )
+        return inserted, sources
+
+    def insert_synthetic_range(
+            self,
+            x: float = None, y: float = None,
+            mag_min: units.Quantity = 20.0 * units.mag,
+            mag_max: units.Quantity = 30.0 * units.mag,
+            interval: units.Quantity = 0.1 * units.mag,
+            output_dir: str = None,
+            filename: str = None,
+            model: str = "psfex",
+            positioning: str = "inplace",
+            scale: units.Quantity = 10 * units.arcsec
+    ):
+        x = float(x)
+        y = float(y)
+
+        x_ref, y_ref = self.extract_ref_pixel()
+        if x is None:
+            x = x_ref
+        if y is None:
+            y = y_ref
+
+        inserted = []
+        cats = []
+        if filename is None:
+            filename = f"{self.name}_insert"
+        for mag in np.linspace(mag_min, mag_max, int((mag_max - mag_min) / interval + 1)):
+            u.debug_print(1, f"INSERTING SOURCE {mag}")
+
+            if positioning == 'inplace':
+                x_synth = x
+                y_synth = y
+            elif positioning == 'gaussian':
+                self.extract_pixel_scale()
+                scale.to(units.pix, self.pixel_scale_dec)
+                x_synth = -1
+                y_synth = -1
+                self.extract_n_pix()
+                x_max, y_max = self.n_x, self.n_y
+                while not (0 < x_synth < x_max) or not (0 < y_synth < y_max):
+                    x_synth, y_synth = gaussian_distributed_point(x_0=x, y_0=y, sigma=scale.value)
+            else:
+                raise ValueError(f"positioning {positioning} not recognised.")
+
+            file, sources = self.insert_synthetic_sources(
+                x=x_synth, y=y_synth, mag=mag.value,
+                output=os.path.join(output_dir, filename + f"_mag_{np.round(mag.value, 1)}.fits"),
+                model=model
+            )
+            file.source_extraction_psf(output_dir=output_dir)
+            file.zeropoint_best = self.zeropoint_best
+            file.calibrate_magnitudes()
+            file.signal_to_noise_ccd()
+            inserted.append(file)
+            cat = file.check_synthetic_sources()
+            cats.append(cat)
+
+        cat_all = table.vstack(cats)
+        cat_all["distance_from_ref"] = np.sqrt(
+            (cat_all["x_inserted"] - x) ** 2 + (cat_all["y_inserted"] - y) ** 2) * units.pix
+        return cat_all
 
     def check_synthetic_sources(self):
         """
         Checks on the fidelity of inserted sources against catalogue.
         :return:
         """
+
+        self.signal_to_noise_measure()
+        self.signal_to_noise_ccd()
+
         self.load_synth_cat()
         if self.synth_cat is None:
             raise ValueError("No synth_cat present.")
@@ -1990,10 +2221,13 @@ class ImagingImage(Image):
             ra_col='ra_inserted',
             dec_col='dec_inserted',
             offset_tolerance=1.0 * units.arcsec,
-            star_tolerance=0.7,
+            # star_tolerance=0.7,
         )
 
+        aperture_radius = 2 * self.fwhm_pix_psfex
+
         self.synth_cat["flux_sep"], self.synth_cat["flux_sep_err"], _ = self.sep_aperture_photometry(
+            aperture_radius=aperture_radius,
             x=self.synth_cat["x_inserted"],
             y=self.synth_cat["y_inserted"]
         )
@@ -2005,6 +2239,8 @@ class ImagingImage(Image):
 
         self.synth_cat["delta_mag_sep"] = self.synth_cat["mag_sep"] - self.synth_cat["mag_inserted"]
         self.synth_cat["fraction_flux_recovered_sep"] = self.synth_cat["flux_sep"] / self.synth_cat["flux_inserted"]
+        self.synth_cat["snr_sep"] = self.synth_cat["flux_sep"] / self.synth_cat["flux_sep_err"]
+        self.synth_cat["aperture_radius"] = aperture_radius
 
         matches_source_cat["matching_dist"] = distance.to(units.arcsec)
         matches_source_cat["fraction_flux_recovered_auto"] = matches_source_cat["FLUX_AUTO"] / matches_synth_cat[
@@ -2018,9 +2254,114 @@ class ImagingImage(Image):
         if len(matches_source_cat) > 0:
             self.synth_cat = table.hstack([self.synth_cat, matches_source_cat])
 
-        self.update_output_file()
+        self.add_log(
+            action=f"Created catalogue of synthetic sources and their measurements.",
+            method=self.check_synthetic_sources,
+            path=self.synth_cat_path
+        )
 
         return self.synth_cat
+
+    def test_limit_synthetic(
+            self,
+            coord: SkyCoord = None,
+            output_dir: str = None,
+            positioning: str = "inplace",
+            mag_min: units.Quantity = 20.0 * units.mag,
+            mag_max: units.Quantity = 30.0 * units.mag,
+            interval: units.Quantity = 0.1 * units.mag,
+    ):
+
+        if output_dir is None:
+            output_dir = os.path.join(self.data_path, f"{self.name}_lim_test")
+        u.mkdir_check(output_dir)
+        if SkyCoord is None:
+            coord = self.extract_pointing()
+        self.load_wcs()
+        x, y = self.wcs.all_world2pix(coord.ra, coord.dec, 0)
+        sources = self.insert_synthetic_range(
+            x=x, y=y,
+            mag_min=mag_min,
+            mag_max=mag_max,
+            interval=interval,
+            output_dir=output_dir,
+            positioning=positioning
+        )
+
+        plt.scatter(sources["mag_inserted"], sources["fraction_flux_recovered_psf"])
+        plt.xlabel("Inserted magnitude")
+        plt.ylabel("Fraction of flux recovered")
+        plt.savefig(os.path.join(output_dir, "flux_recovered_psf.png"))
+        plt.close()
+
+        plt.scatter(sources["mag_inserted"], sources["fraction_flux_recovered_auto"])
+        plt.xlabel("Inserted magnitude")
+        plt.ylabel("Fraction of flux recovered")
+        plt.savefig(os.path.join(output_dir, "flux_recovered_auto.png"))
+        plt.close()
+
+        plt.scatter(sources["mag_inserted"], sources["fraction_flux_recovered_sep"])
+        plt.xlabel("Inserted magnitude")
+        plt.ylabel("Fraction of flux recovered")
+        plt.savefig(os.path.join(output_dir, "flux_recovered_sep.png"))
+        plt.close()
+
+        plt.scatter(sources["mag_inserted"], sources["delta_mag_psf"])
+        plt.xlabel("Inserted magnitude")
+        plt.ylabel("Mag psf - mag inserted")
+        plt.savefig(os.path.join(output_dir, "delta_mag_psf.png"))
+        plt.close()
+
+        plt.scatter(sources["mag_inserted"], sources["delta_mag_auto"])
+        plt.xlabel("Inserted magnitude")
+        plt.ylabel("Mag auto - mag inserted")
+        plt.savefig(os.path.join(output_dir, "delta_mag_auto.png"))
+        plt.close()
+
+        plt.scatter(sources["mag_inserted"], sources["delta_mag_sep"])
+        plt.xlabel("Inserted magnitude")
+        plt.ylabel("Mag auto - mag inserted")
+        plt.savefig(os.path.join(output_dir, "delta_mag_sep.png"))
+        plt.close()
+
+        plt.scatter(sources["mag_inserted"], sources["CLASS_STAR"])
+        plt.xlabel("Inserted magnitude")
+        plt.ylabel("Class star")
+        plt.savefig(os.path.join(output_dir, "class_star.png"))
+        plt.close()
+
+        plt.scatter(sources["mag_inserted"], sources["matching_dist"])
+        plt.xlabel("Inserted magnitude")
+        plt.ylabel("Matching distance (arcsec)")
+        plt.savefig(os.path.join(output_dir, "matching_dist.png"))
+        plt.close()
+
+        plt.scatter(sources["mag_inserted"], sources["snr_sep"])
+        plt.xlabel("Inserted magnitude")
+        plt.ylabel("S/N, measured by SEP")
+        plt.savefig(os.path.join(output_dir, "matching_dist.png"))
+        plt.close()
+
+        plt.scatter(sources["mag_inserted"], sources["SNR_SE"])
+        plt.xlabel("Inserted magnitude")
+        plt.ylabel("S/N, measured by SEP")
+        plt.savefig(os.path.join(output_dir, "matching_dist.png"))
+        plt.close()
+
+        # TODO: S/N measure and plot
+
+        ax, fig = self.plot_catalogue(cat=sources, ra_col="ra_inserted", dec_col="dec_inserted")
+        fig.savefig(os.path.join(output_dir, "inserted_overplot.png"))
+
+        sources.write(os.path.join(output_dir, "synth_cat_all.ecsv"), format="ascii.ecsv")
+
+        self.add_log(
+            action=f"Created catalogue of synthetic sources from range of insertions and their measurements.",
+            method=self.test_limit_synthetic,
+            path=output_dir
+        )
+
+        return sources
 
     def calculate_background(
             self, ext: int = 0,
@@ -2143,8 +2484,9 @@ class ImagingImage(Image):
         :return:
         """
         data = self.load_data()[ext]
-        segmap = self.generate_segmap(ext=ext, threshold=threshold, method=method,
-                                      margins=margins)
+        segmap = self.generate_segmap(
+            ext=ext, threshold=threshold, method=method,
+            margins=margins)
         self.load_wcs()
 
         unmasked = u.check_iterable(unmasked)
@@ -2186,15 +2528,27 @@ class ImagingImage(Image):
 
         return np.ma.MaskedArray(self.data[ext].copy(), mask=mask)
 
-    def write_mask(self, path: str):
+    def write_mask(
+            self, output_path: str,
+            ext: int = 0,
+            **mask_kwargs
+    ):
         """
         Not yet implemented.
         :param path:
         :return:
         """
 
-        mask_file = self.copy(path)
-        mask_file
+        mask_file = self.copy(output_path)
+        mask_file.load_data()
+        mask_file.data[ext] = self.generate_mask(ext=ext, **mask_kwargs)
+        mask_file.write_data()
+
+        mask_file.add_log(
+            action="Converted image to source mask.",
+            method=self.source_extraction,
+            path=output_path,
+        )
 
     def sep_aperture_photometry(
             self, x: float, y: float,
@@ -2208,151 +2562,9 @@ class ImagingImage(Image):
             self.data_sub_bkg,
             x, y,
             pixel_radius.value,
-            err=self.sep_background.globalrms,
+            err=self.sep_background.rms(),
             gain=self.extract_gain().value)
         return flux, fluxerr, flag
-
-    def insert_synthetic_range(
-            self,
-            x: float = None, y: float = None,
-            mag_min: units.Quantity = 20.0 * units.mag,
-            mag_max: units.Quantity = 30.0 * units.mag,
-            interval: units.Quantity = 0.1 * units.mag,
-            output_dir: str = None,
-            filename: str = None,
-            model: str = "psfex",
-            positioning: str = "inplace",
-            scale: units.Quantity = 10 * units.arcsec
-    ):
-        x = float(x)
-        y = float(y)
-
-        x_ref, y_ref = self.extract_ref_pixel()
-        if x is None:
-            x = x_ref
-        if y is None:
-            y = y_ref
-
-        inserted = []
-        cats = []
-        if filename is None:
-            filename = f"{self.name}_insert"
-        for mag in np.linspace(mag_min, mag_max, int((mag_max - mag_min) / interval + 1)):
-            u.debug_print(1, f"INSERTING SOURCE {mag}")
-
-            if positioning == 'inplace':
-                x_synth = x
-                y_synth = y
-            elif positioning == 'gaussian':
-                self.extract_pixel_scale()
-                scale.to(units.pix, self.pixel_scale_dec)
-                x_synth = -1
-                y_synth = -1
-                self.extract_n_pix()
-                x_max, y_max = self.n_x, self.n_y
-                while not (0 < x_synth < x_max) or not (0 < y_synth < y_max):
-                    x_synth, y_synth = gaussian_distributed_point(x_0=x, y_0=y, sigma=scale.value)
-            else:
-                raise ValueError(f"positioning {positioning} not recognised.")
-
-            file, sources = self.insert_synthetic_sources(
-                x=x_synth, y=y_synth, mag=mag.value,
-                output=os.path.join(output_dir, filename + f"_mag_{np.round(mag.value, 1)}.fits"),
-                model=model
-            )
-            file.source_extraction_psf(output_dir=output_dir)
-            file.zeropoint_best = self.zeropoint_best
-            file.calibrate_magnitudes()
-            file.signal_to_noise_ccd_equ()
-            inserted.append(file)
-            cat = file.check_synthetic_sources()
-            cats.append(cat)
-
-        cat_all = table.vstack(cats)
-        cat_all["distance_from_ref"] = np.sqrt(
-            (cat_all["x_inserted"] - x) ** 2 + (cat_all["y_inserted"] - y) ** 2) * units.pix
-        return cat_all
-
-    def test_limit_synthetic(
-            self,
-            coord: SkyCoord = None,
-            output_dir: str = None,
-            positioning: str = "inplace",
-            mag_min: units.Quantity = 20.0 * units.mag,
-            mag_max: units.Quantity = 30.0 * units.mag,
-            interval: units.Quantity = 0.1 * units.mag,
-    ):
-
-        if output_dir is None:
-            output_dir = os.path.join(self.data_path, f"{self.name}_lim_test")
-        u.mkdir_check(output_dir)
-        if SkyCoord is None:
-            coord = self.extract_pointing()
-        self.load_wcs()
-        x, y = self.wcs.all_world2pix(coord.ra, coord.dec, 0)
-        sources = self.insert_synthetic_range(
-            x=x, y=y,
-            mag_min=mag_min,
-            mag_max=mag_max,
-            interval=interval,
-            output_dir=output_dir,
-            positioning=positioning
-        )
-
-        plt.scatter(sources["mag_inserted"], sources["fraction_flux_recovered_psf"])
-        plt.xlabel("Inserted magnitude")
-        plt.ylabel("Fraction of flux recovered")
-        plt.savefig(os.path.join(output_dir, "flux_recovered_psf.png"))
-        plt.close()
-
-        plt.scatter(sources["mag_inserted"], sources["fraction_flux_recovered_auto"])
-        plt.xlabel("Inserted magnitude")
-        plt.ylabel("Fraction of flux recovered")
-        plt.savefig(os.path.join(output_dir, "flux_recovered_auto.png"))
-        plt.close()
-
-        plt.scatter(sources["mag_inserted"], sources["fraction_flux_recovered_sep"])
-        plt.xlabel("Inserted magnitude")
-        plt.ylabel("Fraction of flux recovered")
-        plt.savefig(os.path.join(output_dir, "flux_recovered_sep.png"))
-        plt.close()
-
-        plt.scatter(sources["mag_inserted"], sources["delta_mag_psf"])
-        plt.xlabel("Inserted magnitude")
-        plt.ylabel("Mag psf - mag inserted")
-        plt.savefig(os.path.join(output_dir, "delta_mag_psf.png"))
-        plt.close()
-
-        plt.scatter(sources["mag_inserted"], sources["delta_mag_auto"])
-        plt.xlabel("Inserted magnitude")
-        plt.ylabel("Mag auto - mag inserted")
-        plt.savefig(os.path.join(output_dir, "delta_mag_auto.png"))
-        plt.close()
-
-        plt.scatter(sources["mag_inserted"], sources["delta_mag_sep"])
-        plt.xlabel("Inserted magnitude")
-        plt.ylabel("Mag auto - mag inserted")
-        plt.savefig(os.path.join(output_dir, "delta_mag_sep.png"))
-        plt.close()
-
-        plt.scatter(sources["mag_inserted"], sources["CLASS_STAR"])
-        plt.xlabel("Inserted magnitude")
-        plt.ylabel("Class star")
-        plt.savefig(os.path.join(output_dir, "class_star.png"))
-        plt.close()
-
-        plt.scatter(sources["mag_inserted"], sources["matching_dist"])
-        plt.xlabel("Inserted magnitude")
-        plt.ylabel("Matching distance (arcsec)")
-        plt.savefig(os.path.join(output_dir, "matching_dist.png"))
-        plt.close()
-
-        ax, fig = self.plot_catalogue(cat=sources, ra_col="ra_inserted", dec_col="dec_inserted")
-        fig.savefig(os.path.join(output_dir, "inserted_overplot.png"))
-
-        sources.write(os.path.join(output_dir, "synth_cat_all.ecsv"), format="ascii.ecsv")
-
-        return sources
 
     @classmethod
     def select_child_class(cls, instrument: str, **kwargs):
@@ -2420,7 +2632,9 @@ class CoaddedImage(ImagingImage):
              bottom: Union[int, units.Quantity] = None,
              top: Union[int, units.Quantity] = None,
              output_path: str = None):
+        # Let the super method take care of this image
         trimmed = super().trim(left=left, right=right, bottom=bottom, top=top, output_path=output_path)
+        # Trim the area file in the same way.
         new_area_path = output_path.replace(".fits", "_area.fits")
         ff.trim_file(
             path=self.area_file,
@@ -2428,6 +2642,11 @@ class CoaddedImage(ImagingImage):
             new_path=new_area_path
         )
         trimmed.area_file = new_area_path
+        trimmed.add_log(
+            action=f"Trimmed area file to margins left={left}, right={right}, bottom={bottom}, top={top}",
+            method=self.trim,
+            path=new_area_path
+        )
         return trimmed
 
     def trim_from_area(self, output_path: str = None):
@@ -2700,6 +2919,11 @@ class FORS2CoaddedImage(CoaddedImage):
             self.extinction_atmospheric = row["extinction"]
             self.extinction_atmospheric_err = row["extinction_err"]
 
+            self.add_log(
+                action=f"Retrieved calibration values from ESO QC1 archive.",
+                method=self.calibration_from_qc1,
+            )
+
             return self.zeropoints["instrument_archive"]
         else:
             return None
@@ -2733,12 +2957,19 @@ class HubbleImage(ImagingImage):
         """
         photflam = self.extract_header_item("PHOTFLAM")
         photplam = self.extract_header_item("PHOTPLAM")
+
+        zeropoint = (-2.5 * math.log10(photflam) - 5 * math.log10(photplam) - 2.408) * units.mag
+
         self.zeropoint_best = {
-            "zeropoint": (-2.5 * math.log10(photflam) - 5 * math.log10(photplam) - 2.408) * units.mag,
+            "zeropoint": zeropoint,
             "zeropoint_err": 0.0 * units.mag,
             "airmass": 0.0,
         }
         self.update_output_file()
+        self.add_log(
+            action=f"Calculated zeropoint {zeropoint} from PHOTFLAM and PHOTPLAM header keys.",
+            method=self.trim,
+        )
         return self.zeropoint_best
 
     @classmethod

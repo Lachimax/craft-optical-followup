@@ -105,7 +105,7 @@ def image_psf_diagnostics(hdu: Union[str, fits.HDUList], cat: Union[str, table.T
         model_init.y_stddev.tied = tie_stddev
 
         model = fitter(model_init, x, y, data)
-        fwhm = (model.x_fwhm * units.pixel).to(units.degree, scale)
+        fwhm = (model.x_fwhm * units.pixel).to(units.arcsec, scale)
         star["GAUSSIAN_FWHM_FITTED"] = fwhm
 
         stars[j] = star
