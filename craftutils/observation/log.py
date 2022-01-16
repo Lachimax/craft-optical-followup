@@ -38,9 +38,9 @@ class Log:
 
     def add_log(
             self, action: str, 
-            method=None, 
-            output_path: str = None,
+            method=None,
             input_path: str = None,
+            output_path: str = None,
             packages: List[str] = None
     ):
         """

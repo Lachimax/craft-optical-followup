@@ -271,8 +271,17 @@ class Image:
     def __str__(self):
         return self.filename
 
-    def add_log(self, action: str, method=None, path: str = None, packages: List[str] = None, ext: int = 0):
-        self.log.add_log(action=action, method=method, output_path=path, packages=packages)
+    def add_log(
+            self, action: str, method=None,
+            input_path: str = None, output_path: str = None,
+            packages: List[str] = None, ext: int = 0):
+
+        self.log.add_log(
+            action=action,
+            method=method,
+            input_path=input_path,
+            output_path=output_path,
+            packages=packages)
         self.add_history(note=action, ext=ext)
         # self.update_output_file()
 
@@ -457,7 +466,7 @@ class Image:
         saturate = self.extract_header_item(key)
         if saturate is None:
             saturate = 65535
-        self.saturate = saturate
+        self.saturate = saturate * units.ct
         return self.saturate
 
     def write_fits_file(self):
@@ -608,9 +617,6 @@ class ImagingImage(Image):
 
         self.load_output_file()
 
-    def clean_cosmic_rays(self):
-        pass
-
     def source_extraction(
             self, configuration_file: str,
             output_dir: str,
@@ -636,7 +642,7 @@ class ImagingImage(Image):
         self.add_log(
             action="Sources extracted using Source Extractor.",
             method=self.source_extraction,
-            path=output_dir,
+            output_path=output_dir,
             packages=["source-extractor"]
         )
         self.update_output_file()
@@ -646,11 +652,12 @@ class ImagingImage(Image):
         if force or self.psfex_path is None:
             config = p.path_to_config_sextractor_config_pre_psfex()
             output_params = p.path_to_config_sextractor_param_pre_psfex()
-            catalog = self.source_extraction(configuration_file=config,
-                                             output_dir=output_dir,
-                                             parameters_file=output_params,
-                                             catalog_name=f"{self.name}_psfex.fits",
-                                             )
+            catalog = self.source_extraction(
+                configuration_file=config,
+                output_dir=output_dir,
+                parameters_file=output_params,
+                catalog_name=f"{self.name}_psfex.fits",
+            )
             self.psfex_path = psfex.psfex(catalog=catalog, output_dir=output_dir, **kwargs)
             self.psfex_output = fits.open(self.psfex_path)
             self.extract_pixel_scale()
@@ -661,7 +668,7 @@ class ImagingImage(Image):
             self.add_log(
                 action="PSF modelled using psfex.",
                 method=self.psfex,
-                path=output_dir,
+                output_path=output_dir,
                 packages=["psfex"]
             )
             self.update_output_file()
@@ -740,7 +747,7 @@ class ImagingImage(Image):
         self.add_log(
             action="Sources extracted using Source Extractor with PSFEx PSF modelling.",
             method=self.source_extraction_psf,
-            path=output_dir,
+            output_path=output_dir,
             packages=["psfex", "source-extractor"]
         )
         self.update_output_file()
@@ -1108,7 +1115,7 @@ class ImagingImage(Image):
         self.add_log(
             action=f"Calculated zeropoint as {zp_dict['zeropoint']} +/- {zp_dict['zeropoint_err']}, from {zp_dict['catalogue']}.",
             method=self.select_zeropoint,
-            path=output_path
+            output_path=output_path
         )
         self.update_output_file()
         return self.zeropoints[cat_name.lower()]
@@ -1604,7 +1611,7 @@ class ImagingImage(Image):
         self.add_log(
             action=f"Calculated astrometry offset statistics.",
             method=self.astrometry_stats,
-            path=output_path
+            output_path=output_path
         )
         self.update_output_file()
 
@@ -1699,7 +1706,7 @@ class ImagingImage(Image):
         image.add_log(
             action=f"Trimmed image to margins left={left}, right={right}, bottom={bottom}, top={top}",
             method=self.trim,
-            path=output_path
+            output_path=output_path
         )
         image.update_output_file()
 
@@ -1728,7 +1735,7 @@ class ImagingImage(Image):
         new.add_log(
             action=f"Converted image data on ext {ext} to e- / s, using gain of {gain} and exptime of {exp_time}.",
             method=self.convert_to_es,
-            path=output_path
+            output_path=output_path
         )
 
         new.write_fits_file()
@@ -1741,9 +1748,13 @@ class ImagingImage(Image):
         data = cleaned.data[ext]
         gain = cleaned.extract_gain().value
 
-        cleaned_data = cosmicray_lacosmic(
+        cleaned_data, mask = cosmicray_lacosmic(
             ccd=data,
-
+            gain_apply=False,
+            gain=gain,
+            readnoise=cleaned.extract_noise_read().value,
+            satlevel=cleaned.extract_saturate().value,
+            verbose=True
         )
 
         cleaned.data[ext] = cleaned_data
@@ -1751,8 +1762,10 @@ class ImagingImage(Image):
         cleaned.add_log(
             action="Cleaned cosmic rays using LA cosmic algorithm.",
             method=self.clean_cosmic_rays,
-            path=output_path,
+            output_path=output_path,
+            input_path=self.path,
         )
+        cleaned.update_output_file()
 
     def reproject(self, other_image: 'ImagingImage', ext: int = 0, output_path: str = None):
         import reproject as rp
@@ -1770,7 +1783,7 @@ class ImagingImage(Image):
         reprojected_image.add_log(
             action=f"Reprojected into pixel space of {other_image}.",
             method=self.reproject,
-            path=output_path
+            output_path=output_path
         )
         reprojected_image.update_output_file()
 
@@ -2075,6 +2088,7 @@ class ImagingImage(Image):
         ax.imshow(
             data, **kwargs,
             norm=ImageNormalize(
+                data,
                 interval=MinMaxInterval(),
                 stretch=SqrtStretch(),
                 vmin=np.median(data),
@@ -2176,7 +2190,7 @@ class ImagingImage(Image):
         inserted.add_log(
             action=f"Injected synthetic point-sources, defined in output catalogue at {output_cat}.",
             method=self.insert_synthetic_sources,
-            path=output
+            output_path=output
         )
         inserted.update_output_file()
         return inserted, sources
@@ -2296,7 +2310,7 @@ class ImagingImage(Image):
         self.add_log(
             action=f"Created catalogue of synthetic sources and their measurements.",
             method=self.check_synthetic_sources,
-            path=self.synth_cat_path
+            output_path=self.synth_cat_path
         )
         self.update_output_file()
 
@@ -2398,7 +2412,7 @@ class ImagingImage(Image):
         self.add_log(
             action=f"Created catalogue of synthetic sources from range of insertions and their measurements.",
             method=self.test_limit_synthetic,
-            path=output_dir
+            output_path=output_dir
         )
         self.update_output_file()
 
@@ -2588,7 +2602,7 @@ class ImagingImage(Image):
         mask_file.add_log(
             action="Converted image to source mask.",
             method=self.source_extraction,
-            path=output_path,
+            output_path=output_path,
         )
         mask_file.update_output_file()
 
@@ -2687,7 +2701,7 @@ class CoaddedImage(ImagingImage):
         trimmed.add_log(
             action=f"Trimmed area file to margins left={left}, right={right}, bottom={bottom}, top={top}",
             method=self.trim,
-            path=new_area_path
+            output_path=new_area_path
         )
         trimmed.update_output_file()
         return trimmed

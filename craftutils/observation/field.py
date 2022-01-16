@@ -1693,7 +1693,9 @@ class ImagingEpoch(Epoch):
             coadded_path = montage.standard_script(
                 input_directory=input_directory_fil,
                 output_directory=output_directory_fil,
-                output_file_name=f"{self.name}_{self.date.strftime('%Y-%m-%d')}_{fil}_coadded.fits")
+                output_file_name=f"{self.name}_{self.date.strftime('%Y-%m-%d')}_{fil}_coadded.fits",
+                coadd_type="mean"
+            )
             self.add_coadded_image(coadded_path, key=fil, mode="imaging")
 
     def proc_trim_coadded(self, output_dir: str, **kwargs):
