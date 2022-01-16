@@ -37,6 +37,7 @@ class Instrument:
     def gather_filters(self):
         filter_dir = self.guess_filter_dir()
         for file in filter(lambda f: f.endswith(".yaml"), os.listdir(filter_dir)):
+            u.debug_print(1, "Instrument.gather_filters(): file == ", file)
             fil = Filter.from_params(filter_name=file[:-5], instrument_name=self.name)
             fil.instrument = self
             self.filters[fil.name] = fil
@@ -207,6 +208,10 @@ class Filter:
             raise TypeError(f"instrument must be of type Instrument or str, not {type(self.instrument)}")
 
     def retrieve_from_svo(self):
+        """
+
+        :return:
+        """
         self.load_instrument()
         path = os.path.join(self.data_path, f"{self.instrument}_{self.name}_SVOTable.xml")
         if self.svo_instrument is None:

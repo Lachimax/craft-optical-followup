@@ -37,13 +37,17 @@ class Log:
             self.log.update(other.log)
 
     def add_log(
-            self, action: str, method=None, path: str = None, packages: List[str] = None
+            self, action: str, 
+            method=None, 
+            output_path: str = None,
+            input_path: str = None,
+            packages: List[str] = None
     ):
         """
 
         :param action: String describing the action to be logged.
         :param method: Python method or function used to achieve this action. If provided
-        :param path: Path to which new products were written.
+        :param output_path: Path to which new products were written.
         :param packages: A list of any system packages involved; if they can be reached in the terminal using this name,
             the version number will be recorded.
         :return:
@@ -61,7 +65,8 @@ class Log:
             "python_version": sys.version,
             "module_versions": module_versions,
             "action": action,
-            "path": path
+            "output_path": output_path,
+            "input_path": input_path
         }
 
         if packages is not None:

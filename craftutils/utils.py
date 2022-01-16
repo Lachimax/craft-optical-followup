@@ -35,7 +35,7 @@ def get_git_hash(directory: str, short: bool = False):
         args.insert(2, "--short")
     try:
         githash = subprocess.check_output(args).decode('ascii').strip()
-    except subprocess.CalledProcessError:
+    except (subprocess.CalledProcessError, FileNotFoundError):
         githash = None
     os.chdir(current_dir)
     return githash
