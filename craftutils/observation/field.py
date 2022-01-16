@@ -1745,6 +1745,7 @@ class ImagingEpoch(Epoch):
         for fil in images:
             img = images[fil]
             configs = self.source_extractor_config
+            img.psfex_path = None
             img.source_extraction_psf(
                 output_dir=output_dir,
                 phot_autoparams=f"{configs['kron_factor']},{configs['kron_radius_min']}")
@@ -2704,6 +2705,7 @@ class HubbleImagingEpoch(ImagingEpoch):
     def proc_source_extraction(self, output_dir: str, **kwargs):
         for fil in self.coadded:
             img = self.coadded[fil]
+            img.psfex_path = None
             configs = self.source_extractor_config
             img.source_extraction_psf(
                 output_dir=output_dir,

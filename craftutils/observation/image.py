@@ -24,6 +24,10 @@ from astropy.visualization import (
     PowerStretch, wcsaxes)
 from astropy.coordinates import SkyCoord
 from astropy.time import Time
+from astropy.visualization import quantity_support
+quantity_support()
+
+
 from ccdproc import cosmicray_lacosmic
 
 from astroalign import register
@@ -1286,8 +1290,8 @@ class ImagingImage(Image):
         :param sample:
         :return:
         """
-        if not colname in self.source_cat.colnames:
-            self.source_cat.add_column(-99, name=colname)
+        if colname not in self.source_cat.colnames:
+            self.source_cat.add_column(-99 * sample[colname].unit, name=colname)
         self.source_cat.sort("NUMBER")
         for star in sample:
             index = star["NUMBER"]
@@ -1586,8 +1590,9 @@ class ImagingImage(Image):
             cat=reference_cat[in_footprint],
             ra_col=ra_col, dec_col=dec_col,
             fig=fig,
-            colour_column=mag_col, cbar_label=mag_col)
-        fig.savefig(os.path.join(output_path, f"{self.name}_cat_overplot.pdf"))
+            colour_column=mag_col,
+            cbar_label=mag_col)
+        #fig.savefig(os.path.join(output_path, f"{self.name}_cat_overplot.pdf"))
 
         self.astrometry_stats["mean_offset"] = mean_offset.to(units.arcsec)
         self.astrometry_stats["median_offset"] = median_offset.to(units.arcsec)
@@ -1606,11 +1611,11 @@ class ImagingImage(Image):
         self.astrometry_stats["offset_tolerance"] = offset_tolerance
 
         matches_source_cat["OFFSET_FROM_REF"] = distance
-        self.send_column_to_source_cat(colname="OFFSET_FROM_GAIA", sample=matches_source_cat)
+        self.send_column_to_source_cat(colname="OFFSET_FROM_REF", sample=matches_source_cat)
 
         self.add_log(
             action=f"Calculated astrometry offset statistics.",
-            method=self.astrometry_stats,
+            method=self.astrometry_diagnostics,
             output_path=output_path
         )
         self.update_output_file()
@@ -2086,9 +2091,9 @@ class ImagingImage(Image):
         self.load_data()
         data = self.data[ext]
         ax.imshow(
-            data, **kwargs,
+            u.dequantify(data), **kwargs,
             norm=ImageNormalize(
-                data,
+                u.dequantify(data),
                 interval=MinMaxInterval(),
                 stretch=SqrtStretch(),
                 vmin=np.median(data),
@@ -2119,7 +2124,7 @@ class ImagingImage(Image):
         if fig is None:
             fig = plt.figure()
         if colour_column is not None:
-            c = cat[colour_column]
+            c = u.dequantify(cat[colour_column])
         else:
             c = "red"
 
@@ -2435,7 +2440,7 @@ class ImagingImage(Image):
                 fw=filter_size, fh=filter_size,
                 **back_kwargs
             )
-            self.data_sub_bkg[ext] = (data - bkg.back())
+            self.data_sub_bkg[ext] = (data - bkg.back() * data.unit)
 
         elif method == "photutils":
             data = self.data[ext]
