@@ -75,4 +75,4 @@ class Log:
             else:
                 log_entry["method"] = method.__name__
 
-        self.log[Time.now().strftime("%Y-%m-%d")] = log_entry
+        self.log[Time.now().strftime("%Y-%m-%dT%H:%M:%S")] = log_entry

@@ -224,7 +224,7 @@ def fits_table_all(input_path: str, output_path: str = "", science_only: bool = 
 class Image:
     instrument_name = "dummy"
 
-    def __init__(self, path: str, frame_type: str = None, instrument_name: str = None):
+    def __init__(self, path: str, frame_type: str = None, instrument_name: str = None, logg: log.Log = None):
         self.path = path
         self.output_file = path.replace(".fits", "_outputs.yaml")
         self.data_path, self.filename = os.path.split(self.path)
@@ -259,7 +259,9 @@ class Image:
         self.pointing = None
         self.saturate = None
 
-        self.log = log.Log()
+        if logg is None:
+            self.log = log.Log()
+        u.debug_print(2, f"Image.__init__(): {self}.log.log.keys() ==", self.log.log.keys())
 
     def __eq__(self, other):
         if not isinstance(other, Image):
@@ -297,8 +299,8 @@ class Image:
         shutil.copy(self.path, destination)
         new_image = self.new_image(path=destination)
         new_image.log = self.log.copy()
+        u.debug_print(2, f"Image.copy(): {new_image}.log.log.keys() ==", new_image.log.log.keys())
         new_image.add_log(f"Copied from {self.path} to {destination}.", method=self.copy)
-        new_image.update_output_file()
         return new_image
 
     def load_output_file(self):
@@ -352,6 +354,7 @@ class Image:
         return self.filename[:self.filename.find(".fits")]
 
     def set_header_item(self, key: str, value, ext: int = 0):
+        # TODO: Accept dict of keys and values to add.
         self.load_headers(force=True)
         value = u.dequantify(value)
 
@@ -466,7 +469,7 @@ class Image:
     def write_data(self):
         with fits.open(self.path, mode="update") as file:
             for i, data in enumerate(self.data):
-                file[i].data = data
+                file[i].data = u.dequantify(data)
 
     @classmethod
     def header_keys(cls):
@@ -1681,6 +1684,7 @@ class ImagingImage(Image):
             new_path=output_path
         )
         image = self.__class__(path=output_path, instrument_name=self.instrument_name)
+        image.log = self.log.copy()
 
         image.add_log(
             action=f"Trimmed image to margins left={left}, right={right}, bottom={bottom}, top={top}",
@@ -1698,9 +1702,13 @@ class ImagingImage(Image):
 
         new.load_data()
         new_data = new.data[ext]
-        new_data *= gain.value
-        new_data /= exp_time.value
+        u.debug_print(1, "Image.convert_to_es() 1: new_data.unit ==", new_data.unit)
+        new_data *= gain
+        new_data /= exp_time
         new.data[ext] = new_data.value
+        u.debug_print(1, "Image.concert_to_es() 2: new_data.unit ==", new_data.unit)
+
+        # TODO: Too much writing to disk here. Rewrite set_header_item to take and set multiple keys at once
 
         new.set_header_item(key="BUNIT", value=str(new_data.unit), ext=ext)
         new.set_header_item(key="GAIN", value=1.0 * exp_time, ext=ext)
