@@ -143,15 +143,24 @@ def retrieve_svo_filter(facility_name: str, instrument_name: str, filter_name: s
 
 
 def save_svo_filter(facility_name: str, instrument_name: str, filter_name: str, output: str):
+    """
+
+    :param facility_name:
+    :param instrument_name:
+    :param filter_name:
+    :param output:
+    :return:
+    """
     response = retrieve_svo_filter(
         facility_name=facility_name,
         instrument_name=instrument_name,
         filter_name=filter_name
     )
+    u.debug_print(1, "retrieve.save_svo_filter(): response ==", response)
     if response == "ERROR":
         return response
     elif response is not None:
-        u.mkdir_check_nested(path=output)
+        u.mkdir_check_nested(path=output, remove_last=True)
         print("Saving SVO filter data to" + output)
         with open(output, "wb") as file:
             file.write(response)

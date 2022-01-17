@@ -99,7 +99,7 @@ def inject_header(file_path: str, input_directory: str,
         f"FILTER": template.extract_filter(),
         f"INSTRUME": template.instrument_name,
         f"RON": template.extract_noise_read().value,
-        f"BUNIT": template.extract_
+        f"BUNIT": template.extract_unit()
     }
 
     frame_paths = list(map(lambda f: os.path.join(input_directory, f), table["PATH"]))
@@ -262,7 +262,9 @@ def standard_script(
         input_directory: str,
         output_directory: str,
         output_file_name: str = None,
-        ignore_differences: bool = False, **kwargs
+        ignore_differences: bool = False,
+        coadd_type: str = 'median',
+        **kwargs
 ):
     """
     Does a standard median coaddition of fits files in input_directory.
@@ -331,10 +333,16 @@ def standard_script(
     print("Coadding the images to create mosaics with background corrections.")
     if output_file_name is None:
         output_file_name = "coadded.fits"
-    add(input_directory=corr_dir, coadd_type='median', table_path=reprojected_table_path,
+    add(input_directory=corr_dir,
+        coadd_type=coadd_type,
+        table_path=reprojected_table_path,
         header_path=header_path, output_path=output_file_name)
 
-    inject_header(file_path=output_file_name, input_directory=input_directory, instrument="vlt-fors2")
+    inject_header(
+        file_path=output_file_name,
+        input_directory=input_directory,
+        instrument="vlt-fors2",
+        coadd_type=coadd_type)
 
     os.chdir(old_dir)
 

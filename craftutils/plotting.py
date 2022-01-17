@@ -13,6 +13,9 @@ from astropy.table import Table
 from astropy.visualization import (ImageNormalize, LogStretch, SqrtStretch, ZScaleInterval, MinMaxInterval,
                                    PowerStretch, wcsaxes)
 
+from astropy.visualization import quantity_support
+quantity_support()
+
 import craftutils.fits_files as ff
 import craftutils.params as p
 import craftutils.astrometry as am

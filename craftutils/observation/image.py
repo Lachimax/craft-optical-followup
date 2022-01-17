@@ -19,10 +19,16 @@ import astropy.wcs as wcs
 import astropy.units as units
 from astropy.stats import sigma_clipped_stats, SigmaClip
 
-from astropy.visualization import (ImageNormalize, LogStretch, SqrtStretch, ZScaleInterval, MinMaxInterval,
-                                   PowerStretch, wcsaxes)
+from astropy.visualization import (
+    ImageNormalize, LogStretch, SqrtStretch, ZScaleInterval, MinMaxInterval,
+    PowerStretch, wcsaxes)
 from astropy.coordinates import SkyCoord
 from astropy.time import Time
+from astropy.visualization import quantity_support
+quantity_support()
+
+
+from ccdproc import cosmicray_lacosmic
 
 from astroalign import register
 
@@ -271,10 +277,19 @@ class Image:
     def __str__(self):
         return self.filename
 
-    def add_log(self, action: str, method=None, path: str = None, packages: List[str] = None, ext: int = 0):
-        self.log.add_log(action=action, method=method, path=path, packages=packages)
+    def add_log(
+            self, action: str, method=None,
+            input_path: str = None, output_path: str = None,
+            packages: List[str] = None, ext: int = 0):
+
+        self.log.add_log(
+            action=action,
+            method=method,
+            input_path=input_path,
+            output_path=output_path,
+            packages=packages)
         self.add_history(note=action, ext=ext)
-        self.update_output_file()
+        # self.update_output_file()
 
     def open(self, mode: str = "readonly"):
         u.debug_print(1, f"Image.open() 1: {self}.hdu_list:", self.hdu_list)
@@ -365,8 +380,8 @@ class Image:
             action = f"Created new FITS header item {key} with value {value} on ext {ext}."
 
         self.headers[ext][key] = value
-        self.close()
-        self.write_headers()
+        # self.close()
+        # self.write_fits_file()
         self.add_log(
             action=action, method=self.set_header_item, ext=ext
         )
@@ -374,7 +389,7 @@ class Image:
     def add_history(self, note: str, ext: int = 0):
         self.load_headers()
         self.headers[ext]["HISTORY"] = str(Time.now()) + ": " + note
-        self.write_headers()
+        self.write_fits_file()
 
     def _extract_header_item(self, key: str, ext: int = 0):
         self.load_headers()
@@ -458,13 +473,16 @@ class Image:
         saturate = self.extract_header_item(key)
         if saturate is None:
             saturate = 65535
-        self.saturate = saturate
+        self.saturate = saturate * units.ct
         return self.saturate
 
-    def write_headers(self):
+    def write_fits_file(self):
         with fits.open(self.path, mode="update") as file:
-            for i, header in enumerate(self.headers):
-                file[i].header = header
+            for i in range(len(self.headers)):
+                if self.headers is not None:
+                    file[i].header = self.headers[i]
+                if self.data is not None:
+                    file[i].data = u.dequantify(self.data[i])
 
     def write_data(self):
         with fits.open(self.path, mode="update") as file:
@@ -611,9 +629,6 @@ class ImagingImage(Image):
 
         self.load_output_file()
 
-    def clean_cosmic_rays(self):
-        pass
-
     def source_extraction(
             self, configuration_file: str,
             output_dir: str,
@@ -639,20 +654,22 @@ class ImagingImage(Image):
         self.add_log(
             action="Sources extracted using Source Extractor.",
             method=self.source_extraction,
-            path=output_dir,
+            output_path=output_dir,
             packages=["source-extractor"]
         )
+        self.update_output_file()
         return output_path
 
     def psfex(self, output_dir: str, force: bool = False, **kwargs):
         if force or self.psfex_path is None:
             config = p.path_to_config_sextractor_config_pre_psfex()
             output_params = p.path_to_config_sextractor_param_pre_psfex()
-            catalog = self.source_extraction(configuration_file=config,
-                                             output_dir=output_dir,
-                                             parameters_file=output_params,
-                                             catalog_name=f"{self.name}_psfex.fits",
-                                             )
+            catalog = self.source_extraction(
+                configuration_file=config,
+                output_dir=output_dir,
+                parameters_file=output_params,
+                catalog_name=f"{self.name}_psfex.fits",
+            )
             self.psfex_path = psfex.psfex(catalog=catalog, output_dir=output_dir, **kwargs)
             self.psfex_output = fits.open(self.psfex_path)
             self.extract_pixel_scale()
@@ -663,9 +680,10 @@ class ImagingImage(Image):
             self.add_log(
                 action="PSF modelled using psfex.",
                 method=self.psfex,
-                path=output_dir,
+                output_path=output_dir,
                 packages=["psfex"]
             )
+            self.update_output_file()
 
         return self.load_psfex_output()
 
@@ -741,9 +759,10 @@ class ImagingImage(Image):
         self.add_log(
             action="Sources extracted using Source Extractor with PSFEx PSF modelling.",
             method=self.source_extraction_psf,
-            path=output_dir,
+            output_path=output_dir,
             packages=["psfex", "source-extractor"]
         )
+        self.update_output_file()
 
     def _load_source_cat_sextractor(self, path: str):
         self.load_wcs()
@@ -1029,6 +1048,7 @@ class ImagingImage(Image):
             action=f"Selected best zeropoint as {zeropoint_best['zeropoint']} +/- {zeropoint_best['zeropoint_err']}, from {zeropoint_best['catalogue']}",
             method=self.select_zeropoint
         )
+        self.update_output_file()
         return self.zeropoint_best, best
 
     def zeropoint(
@@ -1107,8 +1127,9 @@ class ImagingImage(Image):
         self.add_log(
             action=f"Calculated zeropoint as {zp_dict['zeropoint']} +/- {zp_dict['zeropoint_err']}, from {zp_dict['catalogue']}.",
             method=self.select_zeropoint,
-            path=output_path
+            output_path=output_path
         )
+        self.update_output_file()
         return self.zeropoints[cat_name.lower()]
 
     def aperture_areas(self):
@@ -1124,6 +1145,7 @@ class ImagingImage(Image):
             action=f"Calculated area of FLUX_AUTO apertures.",
             method=self.aperture_areas,
         )
+        self.update_output_file()
 
     def calibrate_magnitudes(self, zeropoint_name: str = "best", force: bool = False, dual: bool = False):
         cat = self.get_source_cat(dual=dual, force=True)
@@ -1159,6 +1181,7 @@ class ImagingImage(Image):
                 action=f"Calibrated source catalogue magnitudes using zeropoint {zeropoint_name}.",
                 method=self.calibrate_magnitudes,
             )
+            self.update_output_file()
 
         else:
             print(f"Magnitudes already calibrated for {zeropoint_name}")
@@ -1261,6 +1284,7 @@ class ImagingImage(Image):
             action=f"Estimated image depth.",
             method=self.estimate_depth,
         )
+        self.update_output_file()
         return self.depth
 
     def send_column_to_source_cat(self, colname: str, sample: table.Table):
@@ -1274,8 +1298,8 @@ class ImagingImage(Image):
         :param sample:
         :return:
         """
-        if not colname in self.source_cat.colnames:
-            self.source_cat.add_column(-99, name=colname)
+        if colname not in self.source_cat.colnames:
+            self.source_cat.add_column(-99 * sample[colname].unit, name=colname)
         self.source_cat.sort("NUMBER")
         for star in sample:
             index = star["NUMBER"]
@@ -1311,6 +1335,7 @@ class ImagingImage(Image):
             action=f"Registered and reprojected to footprint of {target} using astroalign.",
             method=self.register,
         )
+        new_image.update_output_file()
         return new_image
 
     def detect_frame_value(self, ext: int = 0):
@@ -1365,6 +1390,7 @@ class ImagingImage(Image):
             "Astrometry corrected using Astrometry.net.",
             method=self.correct_astrometry,
             packages=["astrometry.net"])
+        new_image.update_output_file()
         return new_image
 
     def transfer_wcs(self, other_image: 'ImagingImage', ext: int = 0):
@@ -1375,7 +1401,8 @@ class ImagingImage(Image):
             f"Changed WCS information to match {other_image}.",
             method=self.transfer_wcs
         )
-        self.write_headers()
+        self.update_output_file()
+        self.write_fits_file()
 
     def correct_astrometry_from_other(self, other_image: 'ImagingImage', output_dir: str = None) -> 'ImagingImage':
         """
@@ -1439,6 +1466,7 @@ class ImagingImage(Image):
             f"Used WCS info from {other_image} to correct this image.",
             method=self.correct_astrometry_from_other
         )
+        new_image.update_output_file()
 
         return new_image
 
@@ -1570,8 +1598,9 @@ class ImagingImage(Image):
             cat=reference_cat[in_footprint],
             ra_col=ra_col, dec_col=dec_col,
             fig=fig,
-            colour_column=mag_col, cbar_label=mag_col)
-        fig.savefig(os.path.join(output_path, f"{self.name}_cat_overplot.pdf"))
+            colour_column=mag_col,
+            cbar_label=mag_col)
+        #fig.savefig(os.path.join(output_path, f"{self.name}_cat_overplot.pdf"))
 
         self.astrometry_stats["mean_offset"] = mean_offset.to(units.arcsec)
         self.astrometry_stats["median_offset"] = median_offset.to(units.arcsec)
@@ -1590,13 +1619,14 @@ class ImagingImage(Image):
         self.astrometry_stats["offset_tolerance"] = offset_tolerance
 
         matches_source_cat["OFFSET_FROM_REF"] = distance
-        self.send_column_to_source_cat(colname="OFFSET_FROM_GAIA", sample=matches_source_cat)
+        self.send_column_to_source_cat(colname="OFFSET_FROM_REF", sample=matches_source_cat)
 
         self.add_log(
             action=f"Calculated astrometry offset statistics.",
-            method=self.astrometry_stats,
-            path=output_path
+            method=self.astrometry_diagnostics,
+            output_path=output_path
         )
+        self.update_output_file()
 
         return self.astrometry_stats
 
@@ -1661,6 +1691,7 @@ class ImagingImage(Image):
             method=self.psf_diagnostics,
             packages=["source-extractor", "psfex"]
         )
+        self.update_output_file()
         return results
 
     def trim(
@@ -1689,8 +1720,9 @@ class ImagingImage(Image):
         image.add_log(
             action=f"Trimmed image to margins left={left}, right={right}, bottom={bottom}, top={top}",
             method=self.trim,
-            path=output_path
+            output_path=output_path
         )
+        image.update_output_file()
 
         return image
 
@@ -1721,12 +1753,37 @@ class ImagingImage(Image):
         new.add_log(
             action=f"Converted image data on ext {ext} to e- / s, using gain of {gain} and exptime of {exp_time}.",
             method=self.convert_to_es,
-            path=output_path
+            output_path=output_path
         )
 
-        new.write_data()
-        new.write_headers()
+        new.write_fits_file()
+        new.update_output_file()
         return new
+
+    def clean_cosmic_rays(self, output_path: str, ext: int = 0):
+        cleaned = self.copy(output_path)
+        cleaned.load_data()
+        data = cleaned.data[ext]
+        gain = cleaned.extract_gain().value
+
+        cleaned_data, mask = cosmicray_lacosmic(
+            ccd=data,
+            gain_apply=False,
+            gain=gain,
+            readnoise=cleaned.extract_noise_read().value,
+            satlevel=cleaned.extract_saturate().value,
+            verbose=True
+        )
+
+        cleaned.data[ext] = cleaned_data
+        cleaned.write_fits_file()
+        cleaned.add_log(
+            action="Cleaned cosmic rays using LA cosmic algorithm.",
+            method=self.clean_cosmic_rays,
+            output_path=output_path,
+            input_path=self.path,
+        )
+        cleaned.update_output_file()
 
     def reproject(self, other_image: 'ImagingImage', ext: int = 0, output_path: str = None):
         import reproject as rp
@@ -1739,13 +1796,14 @@ class ImagingImage(Image):
         reprojected_image = self.copy(output_path)
         reprojected_image.load_data()
         reprojected_image.data[ext] = reprojected
-        reprojected_image.write_data()
+        reprojected_image.write_fits_file()
 
         reprojected_image.add_log(
             action=f"Reprojected into pixel space of {other_image}.",
             method=self.reproject,
-            path=output_path
+            output_path=output_path
         )
+        reprojected_image.update_output_file()
 
         reprojected_image.transfer_wcs(other_image=other_image)
         return reprojected_image
@@ -1814,6 +1872,7 @@ class ImagingImage(Image):
             action=f"Estimated SNR using CCD Equation.",
             method=self.signal_to_noise_ccd,
         )
+        self.update_output_file()
 
         return source_cat["SNR_CCD"]
 
@@ -1874,6 +1933,7 @@ class ImagingImage(Image):
             method=self.signal_to_noise_measure,
             packages=["source-extractor"]
         )
+        self.update_output_file()
 
     def object_axes(self):
         self.load_source_cat()
@@ -1887,6 +1947,7 @@ class ImagingImage(Image):
             action=f"Created axis columns A_IMAGE, B_IMAGE in pixel units from A_WORLD, B_WORLD.",
             method=self.object_axes,
         )
+        self.update_output_file()
 
     def estimate_sky_background(self, ext: int = 0, force: bool = False):
         """
@@ -2043,8 +2104,9 @@ class ImagingImage(Image):
         self.load_data()
         data = self.data[ext]
         ax.imshow(
-            data, **kwargs,
+            u.dequantify(data), **kwargs,
             norm=ImageNormalize(
+                u.dequantify(data),
                 interval=MinMaxInterval(),
                 stretch=SqrtStretch(),
                 vmin=np.median(data),
@@ -2075,7 +2137,7 @@ class ImagingImage(Image):
         if fig is None:
             fig = plt.figure()
         if colour_column is not None:
-            c = cat[colour_column]
+            c = u.dequantify(cat[colour_column])
         else:
             c = "red"
 
@@ -2146,8 +2208,9 @@ class ImagingImage(Image):
         inserted.add_log(
             action=f"Injected synthetic point-sources, defined in output catalogue at {output_cat}.",
             method=self.insert_synthetic_sources,
-            path=output
+            output_path=output
         )
+        inserted.update_output_file()
         return inserted, sources
 
     def insert_synthetic_range(
@@ -2265,8 +2328,9 @@ class ImagingImage(Image):
         self.add_log(
             action=f"Created catalogue of synthetic sources and their measurements.",
             method=self.check_synthetic_sources,
-            path=self.synth_cat_path
+            output_path=self.synth_cat_path
         )
+        self.update_output_file()
 
         return self.synth_cat
 
@@ -2366,8 +2430,9 @@ class ImagingImage(Image):
         self.add_log(
             action=f"Created catalogue of synthetic sources from range of insertions and their measurements.",
             method=self.test_limit_synthetic,
-            path=output_dir
+            output_path=output_dir
         )
+        self.update_output_file()
 
         return sources
 
@@ -2388,7 +2453,7 @@ class ImagingImage(Image):
                 fw=filter_size, fh=filter_size,
                 **back_kwargs
             )
-            self.data_sub_bkg[ext] = (data - bkg.back())
+            self.data_sub_bkg[ext] = (data - bkg.back() * data.unit)
 
         elif method == "photutils":
             data = self.data[ext]
@@ -2550,13 +2615,14 @@ class ImagingImage(Image):
         mask_file = self.copy(output_path)
         mask_file.load_data()
         mask_file.data[ext] = self.generate_mask(ext=ext, **mask_kwargs)
-        mask_file.write_data()
+        mask_file.write_fits_file()
 
         mask_file.add_log(
             action="Converted image to source mask.",
             method=self.source_extraction,
-            path=output_path,
+            output_path=output_path,
         )
+        mask_file.update_output_file()
 
     def sep_aperture_photometry(
             self, x: float, y: float,
@@ -2653,8 +2719,9 @@ class CoaddedImage(ImagingImage):
         trimmed.add_log(
             action=f"Trimmed area file to margins left={left}, right={right}, bottom={bottom}, top={top}",
             method=self.trim,
-            path=new_area_path
+            output_path=new_area_path
         )
+        trimmed.update_output_file()
         return trimmed
 
     def trim_from_area(self, output_path: str = None):
@@ -2931,6 +2998,7 @@ class FORS2CoaddedImage(CoaddedImage):
                 action=f"Retrieved calibration values from ESO QC1 archive.",
                 method=self.calibration_from_qc1,
             )
+            self.update_output_file()
 
             return self.zeropoints["instrument_archive"]
         else:
@@ -2978,6 +3046,7 @@ class HubbleImage(ImagingImage):
             action=f"Calculated zeropoint {zeropoint} from PHOTFLAM and PHOTPLAM header keys.",
             method=self.trim,
         )
+        self.update_output_file()
         return self.zeropoint_best
 
     @classmethod

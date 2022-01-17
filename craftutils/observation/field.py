@@ -1151,8 +1151,8 @@ class Epoch:
         # self.load_output_file()
 
     def add_log(self, action: str, method=None, path: str = None, packages: List[str] = None):
-        self.log.add_log(action=action, method=method, path=path, packages=packages)
-        self.update_output_file()
+        self.log.add_log(action=action, method=method, output_path=path, packages=packages)
+        # self.update_output_file()
 
     def stages(self):
         stages = {
@@ -1214,12 +1214,14 @@ class Epoch:
 
                 if stage["method"](output_dir=output_dir, **kwargs) is not False:
                     self.stages_complete[f"{n}-{name}"] = Time.now()
-                    # self.update_output_file()
+
                     if "log_message" in stage and stage["log_message"] is not None:
                         log_message = stage["log_message"]
                     else:
                         log_message = f"Performed processing step {dir_name}."
                     self.add_log(log_message, method=stage["method"], path=output_dir)
+
+                    self.update_output_file()
 
     def _pipeline_init(self, ):
         if self.data_path is not None:
@@ -1691,7 +1693,9 @@ class ImagingEpoch(Epoch):
             coadded_path = montage.standard_script(
                 input_directory=input_directory_fil,
                 output_directory=output_directory_fil,
-                output_file_name=f"{self.name}_{self.date.strftime('%Y-%m-%d')}_{fil}_coadded.fits")
+                output_file_name=f"{self.name}_{self.date.strftime('%Y-%m-%d')}_{fil}_coadded.fits",
+                coadd_type="mean"
+            )
             self.add_coadded_image(coadded_path, key=fil, mode="imaging")
 
     def proc_trim_coadded(self, output_dir: str, **kwargs):
@@ -1741,6 +1745,7 @@ class ImagingEpoch(Epoch):
         for fil in images:
             img = images[fil]
             configs = self.source_extractor_config
+            img.psfex_path = None
             img.source_extraction_psf(
                 output_dir=output_dir,
                 phot_autoparams=f"{configs['kron_factor']},{configs['kron_radius_min']}")
@@ -2700,6 +2705,7 @@ class HubbleImagingEpoch(ImagingEpoch):
     def proc_source_extraction(self, output_dir: str, **kwargs):
         for fil in self.coadded:
             img = self.coadded[fil]
+            img.psfex_path = None
             configs = self.source_extractor_config
             img.source_extraction_psf(
                 output_dir=output_dir,
@@ -2769,21 +2775,13 @@ class PanSTARRS1ImagingEpoch(ImagingEpoch):
         super_stages = super().stages()
         stages = {
             "download": super_stages["download"],
+            "initial_setup": super_stages["initial_setup"],
             "source_extraction": super_stages["source_extraction"],
             "photometric_calibration": super_stages["photometric_calibration"],
             "dual_mode_source_extraction": super_stages["dual_mode_source_extraction"],
             "get_photometry": super_stages["get_photometry"]
         }
         return stages
-
-    def pipeline(self, **kwargs):
-        super().pipeline(**kwargs)
-        self.proc_download(0, **kwargs)
-        self.proc_initial_setup(1, **kwargs)
-        self.proc_source_extraction(2, **kwargs)
-        self.proc_photometric_calibration(3, **kwargs)
-        self.proc_dual_mode_source_extraction(4, **kwargs)
-        self.proc_get_photometry(5, **kwargs)
 
     def proc_download(self, output_dir: str, **kwargs):
         """
@@ -3038,12 +3036,15 @@ class ESOImagingEpoch(ImagingEpoch):
                     std.path = path_dest
                     std.update_output_file()
 
+        inst_reflex_dir = {
+            "vlt-fors2": "fors",
+            "vlt-hawki": "hawki"
+        }[self.instrument_name]
+        inst_reflex_dir = os.path.join(config["esoreflex_input_dir"], inst_reflex_dir)
+        u.mkdir_check_nested(inst_reflex_dir, remove_last=False)
         for file in os.listdir(raw_dir):
             print("Copying to ESOReflex input directory...")
-            inst_reflex_dir = {
-                "vlt-fors2": "fors",
-                "vlt-hawki": "hawki"
-            }[self.instrument_name]
+
             shutil.copy(os.path.join(raw_dir, file), os.path.join(config["esoreflex_input_dir"], inst_reflex_dir))
             print("Done.")
 
