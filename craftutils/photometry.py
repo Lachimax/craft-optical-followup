@@ -1748,7 +1748,7 @@ def insert_synthetic_point_sources_gauss(
 
     mag = units.Quantity(u.check_iterable(mag))
     x = units.Quantity(u.check_iterable(x))
-    y = units.Quantity(u.check_iterable(x))
+    y = units.Quantity(u.check_iterable(y))
 
     fwhm = u.dequantify(fwhm, unit=units.pix)
 

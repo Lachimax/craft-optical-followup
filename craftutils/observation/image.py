@@ -25,8 +25,6 @@ from astropy.visualization import (
 from astropy.coordinates import SkyCoord
 from astropy.time import Time
 from astropy.visualization import quantity_support
-quantity_support()
-
 
 from ccdproc import cosmicray_lacosmic
 
@@ -49,6 +47,8 @@ import craftutils.wrap.psfex as psfex
 import craftutils.observation.log as log
 from craftutils.wrap.astrometry_net import solve_field
 from craftutils.retrieve import cat_columns
+
+quantity_support()
 
 # This contains the names as in the header as keys and the names as used in this project as values.
 instrument_header = {
@@ -1600,7 +1600,7 @@ class ImagingImage(Image):
             fig=fig,
             colour_column=mag_col,
             cbar_label=mag_col)
-        #fig.savefig(os.path.join(output_path, f"{self.name}_cat_overplot.pdf"))
+        # fig.savefig(os.path.join(output_path, f"{self.name}_cat_overplot.pdf"))
 
         self.astrometry_stats["mean_offset"] = mean_offset.to(units.arcsec)
         self.astrometry_stats["median_offset"] = median_offset.to(units.arcsec)
