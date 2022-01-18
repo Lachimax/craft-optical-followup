@@ -91,7 +91,7 @@ def check_for_config():
 def load_params(file: str):
     file = u.sanitise_file_ext(file, '.yaml')
 
-    u.debug_print(1, 'Loading parameter file from ' + str(file))
+    u.debug_print(2, 'Loading parameter file from ' + str(file))
 
     if os.path.isfile(file):
         with open(file) as f:

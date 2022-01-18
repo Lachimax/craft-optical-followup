@@ -198,13 +198,14 @@ def fits_table_all(input_path: str, output_path: str = "", science_only: bool = 
 
     files = os.listdir(input_path)
     files.sort()
-    files_fits = list(filter(lambda x: x[-5:] == '.fits', files))
+    files_fits = list(filter(lambda x: x.endswith('.fits'), files))
 
     # Create list of dictionaries to be used as the output data
     output = []
 
     for i, f in enumerate(files_fits):
         data = {}
+        data["FILENAME"] = f
         file_path = os.path.join(input_path, f)
         image = Image.from_fits(path=file_path)
         if science_only:
@@ -218,7 +219,7 @@ def fits_table_all(input_path: str, output_path: str = "", science_only: bool = 
                 data[key] = header[key]
         if 'ESO TEL AIRM END' in data and 'ESO TEL AIRM START' in data:
             data['AIRMASS'] = (float(data['ESO TEL AIRM END']) + float(data['ESO TEL AIRM START'])) / 2
-            output.append(data)
+        output.append(data)
         data["PATH"] = file_path
 
     out_file = table.Table(output)
@@ -1136,10 +1137,15 @@ class ImagingImage(Image):
         self.load_source_cat()
         self.extract_pixel_scale()
 
-        for source_cat in [self.source_cat, self.source_cat_dual]:
-            source_cat["A_IMAGE"] = source_cat["A_WORLD"].to(units.pix, self.pixel_scale_dec)
-            source_cat["B_IMAGE"] = source_cat["A_WORLD"].to(units.pix, self.pixel_scale_dec)
-            source_cat["KRON_AREA_IMAGE"] = source_cat["A_IMAGE"] * source_cat["B_IMAGE"] * np.pi
+        self.source_cat["A_IMAGE"] = self.source_cat["A_WORLD"].to(units.pix, self.pixel_scale_dec)
+        self.source_cat["B_IMAGE"] = self.source_cat["A_WORLD"].to(units.pix, self.pixel_scale_dec)
+        self.source_cat["KRON_AREA_IMAGE"] = self.source_cat["A_IMAGE"] * self.source_cat["B_IMAGE"] * np.pi
+
+        if self.source_cat_dual is not None:
+            self.source_cat_dual["A_IMAGE"] = self.source_cat_dual["A_WORLD"].to(units.pix, self.pixel_scale_dec)
+            self.source_cat_dual["B_IMAGE"] = self.source_cat_dual["A_WORLD"].to(units.pix, self.pixel_scale_dec)
+            self.source_cat_dual["KRON_AREA_IMAGE"] = self.source_cat_dual["A_IMAGE"] * self.source_cat_dual[
+                "B_IMAGE"] * np.pi
 
         self.add_log(
             action=f"Calculated area of FLUX_AUTO apertures.",
@@ -1240,10 +1246,11 @@ class ImagingImage(Image):
         :return:
         """
 
-        source_cat = self.get_source_cat(dual=dual)
         self.signal_to_noise_ccd(dual=dual)
         self.signal_to_noise_measure(dual=dual)
         self.calibrate_magnitudes(zeropoint_name=zeropoint_name, dual=dual)
+
+        source_cat = self.get_source_cat(dual=dual)
 
         # "max" stores the magnitude of the faintest object with S/N > x sigma
         self.depth["max"] = {}
@@ -1260,8 +1267,9 @@ class ImagingImage(Image):
                 self.depth["max"][snr_key] = {}
                 self.depth["secure"][snr_key] = {}
                 # Faintest source at x-sigma:
-                u.debug_print(1, f"ImagingImage.estimate_depth(): source_cat[{snr_key}].unit ==",
-                              source_cat[snr_key].unit)
+                u.debug_print(
+                    1, f"ImagingImage.estimate_depth(): source_cat[{snr_key}].unit ==",
+                    source_cat[snr_key].unit)
                 cat_more_xsigma = source_cat[source_cat[snr_key] > sigma]
                 print(f"Sources > {sigma}-sigma:", len(cat_more_xsigma))
                 self.depth["max"][snr_key][f"{sigma}-sigma"] = np.max(cat_more_xsigma[f"MAG_AUTO_ZP_{zeropoint_name}"])

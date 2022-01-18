@@ -399,7 +399,7 @@ def mkdir_check_nested(path: str, remove_last: bool = True):
     levels.reverse()
     if remove_last:
         levels.pop()
-    debug_print(1, "utils.mkdir_check_nested(): levels ==", levels)
+    debug_print(2, "utils.mkdir_check_nested(): levels ==", levels)
     mkdir_check_args(*levels)
     # mkdir_check(path_orig)
 

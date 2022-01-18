@@ -39,6 +39,7 @@ class Log:
     def add_log(
             self, action: str, 
             method=None,
+            method_args: dict = None,
             input_path: str = None,
             output_path: str = None,
             packages: List[str] = None
@@ -79,5 +80,8 @@ class Log:
                 log_entry["method"] = method
             else:
                 log_entry["method"] = method.__name__
+
+        if method_args is not None:
+            log_entry["method_args"] = method_args
 
         self.log[Time.now().strftime("%Y-%m-%dT%H:%M:%S")] = log_entry

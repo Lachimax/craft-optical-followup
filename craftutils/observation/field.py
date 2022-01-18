@@ -696,13 +696,14 @@ class Field:
             extent = None
 
         if field_type == "Field":
-            return cls(name=name,
-                       centre_coords=f"{centre_ra} {centre_dec}",
-                       param_path=param_file,
-                       data_path=os.path.join(config["top_data_dir"], param_dict["data_path"]),
-                       objs=param_dict["objects"],
-                       extent=extent
-                       )
+            return cls(
+                name=name,
+                centre_coords=f"{centre_ra} {centre_dec}",
+                param_path=param_file,
+                data_path=os.path.join(config["top_data_dir"], param_dict["data_path"]),
+                objs=param_dict["objects"],
+                extent=extent
+            )
         elif field_type == "FRBField":
             return FRBField.from_file(param_file)
 
@@ -1084,7 +1085,7 @@ class Epoch:
             date: Union[str, Time] = None,
             program_id: str = None,
             target: str = None,
-            do: Union[list, str] = None,
+            do_stages: Union[list, str] = None,
             **kwargs
     ):
 
@@ -1112,7 +1113,7 @@ class Epoch:
         self.program_id = program_id
         self.target = target
 
-        self.do = do
+        self.do = do_stages
 
         # Written attributes
         self.output_file = None  # This will be set during the load_output_file call
@@ -1138,9 +1139,14 @@ class Epoch:
 
         self.coadded = {}
 
+        u.debug_print(2, f"Epoch.__init__(): kwargs ==", kwargs)
+
         self.do_kwargs = {}
+        u.debug_print(2, "do" in kwargs)
         if "do" in kwargs:
             self.do_kwargs = kwargs["do"]
+
+        u.debug_print(2, f"Epoch.__init__(): {self}.do_kwargs ==", self.do_kwargs)
 
         add_to_epoch_directory(
             field_name=self.field.name,
@@ -1149,6 +1155,9 @@ class Epoch:
             epoch_name=self.name)
 
         # self.load_output_file()
+
+    def __str__(self):
+        return self.name
 
     def add_log(self, action: str, method=None, path: str = None, packages: List[str] = None):
         self.log.add_log(action=action, method=method, output_path=path, packages=packages)
@@ -1197,7 +1206,7 @@ class Epoch:
             if "do_key" in stage and stage["do_key"] is not None:
                 do_key = stage["do_key"]
                 if do_key in self.do_kwargs:
-                    do_this = kwargs["do"][do_key]
+                    do_this = self.do_kwargs[do_key]
             # If do_key not found, defer to "default".
 
             if do_this and (no_query or self.query_stage(
@@ -1441,20 +1450,31 @@ class ImagingEpoch(Epoch):
     instrument_name = "dummy-instrument"
     mode = "imaging"
 
-    def __init__(self,
-                 name: str = None,
-                 field: Union[str, Field] = None,
-                 param_path: str = None,
-                 data_path: str = None,
-                 instrument: str = None,
-                 date: Union[str, Time] = None,
-                 program_id: str = None,
-                 target: str = None,
-                 source_extractor_config: dict = None,
-                 standard_epochs: list = None,
-                 **kwargs):
-        super().__init__(name=name, field=field, param_path=param_path, data_path=data_path, instrument=instrument,
-                         date=date, program_id=program_id, target=target)
+    def __init__(
+            self,
+            name: str = None,
+            field: Union[str, Field] = None,
+            param_path: str = None,
+            data_path: str = None,
+            instrument: str = None,
+            date: Union[str, Time] = None,
+            program_id: str = None,
+            target: str = None,
+            source_extractor_config: dict = None,
+            standard_epochs: list = None,
+            **kwargs
+    ):
+        super().__init__(
+            name=name,
+            field=field,
+            param_path=param_path,
+            data_path=data_path,
+            instrument=instrument,
+            date=date,
+            program_id=program_id,
+            target=target,
+            **kwargs
+        )
         self.guess_data_path()
         self.source_extractor_config = source_extractor_config
         if self.source_extractor_config is None:
@@ -1667,6 +1687,10 @@ class ImagingEpoch(Epoch):
                 self.update_output_file()
 
     def proc_coadd(self, output_dir: str, **kwargs):
+        if "astrometry_frames" in self.do_kwargs and not self.do_kwargs["astrometry_frames"]:
+            self.coadd_params["frames"] = "normalised"
+        else:
+            self.coadd_params["frames"] = "astrometry"
         self.coadd(output_dir, **self.coadd_params)
 
     def coadd(self, output_dir: str, frames: str = "astrometry"):
@@ -1680,7 +1704,7 @@ class ImagingEpoch(Epoch):
         if frames == "astrometry":
             input_directory = self.paths['correct_astrometry_frames']
         elif frames == "normalised":
-            input_directory = os.path.join(self.paths['normalised_dir'], "science")
+            input_directory = os.path.join(self.paths['convert_to_es'], "science")
         else:
             raise ValueError(f"{frames} not recognised as frame type.")
 
@@ -1690,13 +1714,14 @@ class ImagingEpoch(Epoch):
             output_directory_fil = os.path.join(output_dir, fil)
             u.rmtree_check(output_directory_fil)
             u.mkdir_check(output_directory_fil)
-            coadded_path = montage.standard_script(
+            coadded_paths = montage.standard_script(
                 input_directory=input_directory_fil,
                 output_directory=output_directory_fil,
                 output_file_name=f"{self.name}_{self.date.strftime('%Y-%m-%d')}_{fil}_coadded.fits",
-                coadd_type="mean"
+                coadd_types=["mean"]
             )
-            self.add_coadded_image(coadded_path, key=fil, mode="imaging")
+            for coadded_path in coadded_paths:
+                self.add_coadded_image(coadded_path, key=fil, mode="imaging")
 
     def proc_trim_coadded(self, output_dir: str, **kwargs):
         self.trim_coadded(output_dir)
@@ -1756,9 +1781,13 @@ class ImagingEpoch(Epoch):
         # self.psf_diagnostics()
 
     def proc_photometric_calibration(self, output_dir: str, **kwargs):
-        self.photometric_calibration(output_dir, **kwargs)
+        if "astrometry_coadded" in self.do_kwargs and self.do_kwargs["astrometry_coadded"]:
+            images = self.coadded_astrometry
+        else:
+            images = self.coadded_trimmed
+        self.photometric_calibration(output_path=output_dir, image_dict=images, **kwargs)
 
-    def photometric_calibration(self, output_path: str, **kwargs):
+    def photometric_calibration(self, image_dict: dict, output_path: str, images: str = "coadded", **kwargs):
         u.mkdir_check(output_path)
 
         if "distance_tolerance" in kwargs and kwargs["distance_tolerance"] is not None:
@@ -1779,14 +1808,20 @@ class ImagingEpoch(Epoch):
         print("DISTANCE TOLERANCE:", dist_tol)
 
         deepest = self.zeropoint(
+            image_dict=image_dict,
             output_path=output_path,
             distance_tolerance=dist_tol,
             snr_min=snr_tol,
             star_class_tolerance=star_class_tolerance
         )
 
+        if images == "coadded":
+            image_dict = self.coadded
+        else:
+            image_dict = self.coadded_astrometry
+
         for fil in self.filters:
-            img = self.coadded[fil]
+            img = image_dict[fil]
             u.debug_print(1, img.filter_name, img.depth)
 
         self.deepest_filter = deepest.filter_name
@@ -1888,15 +1923,17 @@ class ImagingEpoch(Epoch):
         self.update_output_file()
         return self.astrometry_stats
 
-    def zeropoint(self,
-                  output_path: str,
-                  distance_tolerance: units.Quantity = 0.2 * units.arcsec,
-                  snr_min: float = 200.,
-                  star_class_tolerance: float = 0.95
-                  ):
-        deepest = self.coadded_trimmed[self.filters[0]]
+    def zeropoint(
+            self,
+            image_dict: dict,
+            output_path: str,
+            distance_tolerance: units.Quantity = 0.2 * units.arcsec,
+            snr_min: float = 200.,
+            star_class_tolerance: float = 0.95,
+    ):
+        deepest = image_dict[self.filters[0]]
         for fil in self.filters:
-            img = self.coadded_trimmed[fil]
+            img = image_dict[fil]
             for cat_name in retrieve.photometry_catalogues:
                 if cat_name == "gaia":
                     continue
@@ -2257,24 +2294,26 @@ class ImagingEpoch(Epoch):
         if old_format:
             instrument = "vlt-fors2"
         else:
-            instrument = param_dict["instrument"].lower()
+            instrument = param_dict.pop("instrument").lower()
 
         if field is None:
-            field = param_dict["field"]
+            field = param_dict.pop("field")
 
         sub_cls = cls.select_child_class(instrument=instrument)
         u.debug_print(1, sub_cls)
         if sub_cls is ImagingEpoch:
-            return cls(name=name,
-                       field=field,
-                       param_path=param_file,
-                       data_path=os.path.join(config["top_data_dir"], param_dict['data_path']),
-                       instrument=instrument,
-                       date=param_dict['date'],
-                       program_id=param_dict["program_id"],
-                       target=param_dict["target"],
-                       source_extractor_config=param_dict['sextractor'],
-                       )
+            return cls(
+                name=name,
+                field=field,
+                param_path=param_file,
+                data_path=os.path.join(config["top_data_dir"], param_dict.pop('data_path')),
+                instrument=instrument,
+                date=param_dict.pop('date'),
+                program_id=param_dict.pop("program_id"),
+                target=param_dict.pop("target"),
+                source_extractor_config=param_dict.pop('sextractor'),
+                **param_dict
+            )
         elif sub_cls is FORS2ImagingEpoch:
             return sub_cls.from_file(param_dict, name=name, old_format=old_format, field=field)
         else:
@@ -2343,17 +2382,19 @@ class GSAOIImagingEpoch(ImagingEpoch):
     """
     instrument_name = "gs-aoi"
 
-    def __init__(self,
-                 name: str = None,
-                 field: Union[str, Field] = None,
-                 param_path: str = None,
-                 data_path: str = None,
-                 instrument: str = None,
-                 date: Union[str, Time] = None,
-                 program_id: str = None,
-                 target: str = None,
-                 source_extractor_config: dict = None,
-                 ):
+    def __init__(
+            self,
+            name: str = None,
+            field: Union[str, Field] = None,
+            param_path: str = None,
+            data_path: str = None,
+            instrument: str = None,
+            date: Union[str, Time] = None,
+            program_id: str = None,
+            target: str = None,
+            source_extractor_config: dict = None,
+            **kwargs
+    ):
         super().__init__(
             name=name,
             field=field,
@@ -2595,21 +2636,24 @@ class GSAOIImagingEpoch(ImagingEpoch):
             raise FileNotFoundError(f"No parameter file found at {param_file}.")
 
         if field is None:
-            field = param_dict["field"]
+            field = param_dict.pop("field")
         if 'target' in param_dict:
-            target = param_dict['target']
+            target = param_dict.pop('target')
         else:
             target = None
 
-        return cls(name=name,
-                   field=field,
-                   param_path=param_file,
-                   data_path=os.path.join(config["top_data_dir"], param_dict['data_path']),
-                   instrument='gs-aoi',
-                   program_id=param_dict['program_id'],
-                   date=param_dict['date'],
-                   target=target,
-                   source_extractor_config=param_dict['sextractor'])
+        return cls(
+            name=name,
+            field=field,
+            param_path=param_file,
+            data_path=os.path.join(config["top_data_dir"], param_dict.pop('data_path')),
+            instrument='gs-aoi',
+            program_id=param_dict.pop('program_id'),
+            date=param_dict.pop('date'),
+            target=target,
+            source_extractor_config=param_dict.pop('sextractor'),
+            **param_dict
+        )
 
     @classmethod
     def sort_files(cls, input_dir: str, output_dir: str = None, tolerance: units.Quantity = 3 * units.arcmin):
@@ -2729,21 +2773,24 @@ class HubbleImagingEpoch(ImagingEpoch):
             raise FileNotFoundError(f"No parameter file found at {param_file}.")
 
         if field is None:
-            field = param_dict["field"]
+            field = param_dict.pop("field")
         if 'target' in param_dict:
-            target = param_dict['target']
+            target = param_dict.pop('target')
         else:
             target = None
 
-        return cls(name=name,
-                   field=field,
-                   param_path=param_file,
-                   data_path=os.path.join(config["top_data_dir"], param_dict['data_path']),
-                   instrument=param_dict["instrument"],
-                   program_id=param_dict['program_id'],
-                   date=param_dict['date'],
-                   target=target,
-                   source_extractor_config=param_dict['sextractor'])
+        return cls(
+            name=name,
+            field=field,
+            param_path=param_file,
+            data_path=os.path.join(config["top_data_dir"], param_dict.pop('data_path')),
+            instrument=param_dict.pop("instrument"),
+            program_id=param_dict.pop('program_id'),
+            date=param_dict.pop('date'),
+            target=target,
+            source_extractor_config=param_dict.pop('sextractor'),
+            **param_dict
+        )
 
 
 class PanSTARRS1ImagingEpoch(ImagingEpoch):
@@ -2872,14 +2919,16 @@ class PanSTARRS1ImagingEpoch(ImagingEpoch):
             raise FileNotFoundError(f"No parameter file found at {param_file}.")
 
         if field is None:
-            field = param_dict["field"]
+            field = param_dict.pop("field")
 
         epoch = cls(
             name=name,
             field=field,
             param_path=param_file,
-            data_path=os.path.join(config["top_data_dir"], param_dict['data_path']),
-            source_extractor_config=param_dict['sextractor'])
+            data_path=os.path.join(config["top_data_dir"], param_dict.pop('data_path')),
+            source_extractor_config=param_dict.pop('sextractor'),
+            **param_dict
+        )
         epoch.instrument = cls.instrument_name
         return epoch
 
@@ -2900,7 +2949,9 @@ class ESOImagingEpoch(ImagingEpoch):
             target: str = None,
             standard_epochs: list = None,
             source_extractor_config: dict = None,
-            **kwargs):
+            **kwargs
+    ):
+        u.debug_print(2, f"ESOImagingEpoch.__init__(): kwargs ==", kwargs)
         super().__init__(
             name=name,
             field=field,
@@ -3369,6 +3420,8 @@ class ESOImagingEpoch(ImagingEpoch):
         u.debug_print(2, 'ESOImagingEpoch.from_file(), config["top_data_dir"] == ', config["top_data_dir"])
         u.debug_print(2, 'ESOImagingEpoch.from_file(), param_dict["data_path"] == ', param_dict["data_path"])
 
+        u.debug_print(2, "ESOImagingEpoch.from_file(): param_dict ==", param_dict)
+
         return cls(
             name=name,
             field=field,
@@ -3379,7 +3432,8 @@ class ESOImagingEpoch(ImagingEpoch):
             date=param_dict.pop('date'),
             target=target,
             source_extractor_config=param_dict['sextractor'],
-            **param_dict)
+            **param_dict
+        )
 
 
 class HAWKIImagingEpoch(ESOImagingEpoch):
@@ -4019,22 +4073,24 @@ class SpectroscopyEpoch(Epoch):
             raise FileNotFoundError(f"No parameter file found at {param_file}.")
         instrument = param_dict["instrument"].lower()
         if field is None:
-            field = param_dict["field"]
+            field = param_dict.pop("field")
         if 'target' in param_dict:
-            target = param_dict['target']
+            target = param_dict.pop('target')
         else:
             target = None
         sub_cls = cls.select_child_class(instrument=instrument)
         # if sub_cls is SpectroscopyEpoch:
-        return sub_cls(name=name,
-                       field=field,
-                       param_path=param_file,
-                       data_path=os.path.join(config["top_data_dir"], param_dict['data_path']),
-                       instrument=instrument,
-                       date=param_dict["date"],
-                       program_id=param_dict["program_id"],
-                       target=target
-                       )
+        return sub_cls(
+            name=name,
+            field=field,
+            param_path=param_file,
+            data_path=os.path.join(config["top_data_dir"], param_dict['data_path']),
+            instrument=instrument,
+            date=param_dict["date"],
+            program_id=param_dict["program_id"],
+            target=target,
+            **param_dict
+        )
         # else:
         # return sub_cls.from_file(param_file=param_file, field=field)
 

@@ -289,20 +289,21 @@ def gain_mean_combine(old_gain: float = 0.8, n_frames: int = 1):
     return n_frames * old_gain
 
 
-def magnitude_complete(flux: units.Quantity,
-                       flux_err: units.Quantity = 0.0 * units.ct,
-                       exp_time: units.Quantity = 1. * units.second,
-                       exp_time_err: units.Quantity = 0.0 * units.second,
-                       zeropoint: units.Quantity = 0.0 * units.mag,
-                       zeropoint_err: units.Quantity = 0.0 * units.mag,
-                       airmass: float = 0.0,
-                       airmass_err: float = 0.0,
-                       ext: units.Quantity = 0.0 * units.mag,
-                       ext_err: units.Quantity = 0.0 * units.mag,
-                       colour_term: float = 0.0,
-                       colour_term_err: float = 0.0,
-                       colour: units.Quantity = 0.0 * units.mag,
-                       colour_err: units.Quantity = 0.0 * units.mag):
+def magnitude_complete(
+        flux: units.Quantity,
+        flux_err: units.Quantity = 0.0 * units.ct,
+        exp_time: units.Quantity = 1. * units.second,
+        exp_time_err: units.Quantity = 0.0 * units.second,
+        zeropoint: units.Quantity = 0.0 * units.mag,
+        zeropoint_err: units.Quantity = 0.0 * units.mag,
+        airmass: float = 0.0,
+        airmass_err: float = 0.0,
+        ext: units.Quantity = 0.0 * units.mag,
+        ext_err: units.Quantity = 0.0 * units.mag,
+        colour_term: float = 0.0,
+        colour_term_err: float = 0.0,
+        colour: units.Quantity = 0.0 * units.mag,
+        colour_err: units.Quantity = 0.0 * units.mag):
     """
     Returns a photometric magnitude and the calculated error.
     :param flux: Total flux of the object over the exposure time, in counts.
@@ -323,11 +324,18 @@ def magnitude_complete(flux: units.Quantity,
     if airmass is None:
         airmass = 0.0
 
-    u.debug_print(1, "INSIDE magnitude_complete()")
-    u.debug_print(1, "EXP_TIME", exp_time, "+/-", exp_time_err)
-    u.debug_print(1, "ZEROPOINT", zeropoint, "+/-", zeropoint_err)
-    u.debug_print(1, "AIRMASS", airmass, "+/-", airmass_err)
-    u.debug_print(1, "EXTINCTION", ext, "+/-", ext_err)
+    flux = u.check_quantity(flux, units.ct)
+    flux_err = u.check_quantity(flux_err, units.ct)
+    zeropoint = u.check_quantity(zeropoint, units.mag)
+    zeropoint_err = u.check_quantity(zeropoint_err, units.mag)
+    exp_time = u.check_quantity(exp_time, units.s)
+    exp_time_err = u.check_quantity(exp_time_err, units.s)
+
+    u.debug_print(2, "photometry.magnitude_complete():")
+    u.debug_print(2, "\texp_time ==", exp_time, "+/-", exp_time_err)
+    u.debug_print(2, "\tzeropoint ==", zeropoint, "+/-", zeropoint_err)
+    u.debug_print(2, "\tairmass", airmass, "+/-", airmass_err)
+    u.debug_print(2, "\textinction", ext, "+/-", ext_err)
 
     mag_inst, mag_error = magnitude_uncertainty(flux=flux, flux_err=flux_err,
                                                 exp_time=exp_time, exp_time_err=exp_time_err)
@@ -2357,6 +2365,3 @@ def signal_to_noise_ccd_equ(
     snr = rate_target * np.sqrt(exp_time * gain) / np.sqrt(
         rate_target + n_pix * (rate_sky + rate_dark / gain + rate_read / (exp_time * gain)))
     return snr
-
-
-

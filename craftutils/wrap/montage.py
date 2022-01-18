@@ -1,6 +1,7 @@
 # Code by Lachlan Marnoch 2021
 
 import os
+from typing import List, Union
 
 import numpy as np
 
@@ -51,7 +52,7 @@ def make_header(table_path: str, output_path: str):
 def check_input_images(input_directory: str,
                        **kwargs):
     table = fits_table_all(input_directory, science_only=False)
-    table.sort("ARCFILE")
+    table.sort("FILENAME")
 
     keys = header_keys()
     exptime_key = keys["exptime"]
@@ -79,7 +80,7 @@ def inject_header(file_path: str, input_directory: str,
                   coadd_type: str = 'median', ext: int = 0,
                   instrument: str = "vlt-fors2"):
     table = fits_table_all(input_directory, science_only=False)
-    table.sort("ARCFILE")
+    table.sort("FILENAME")
 
     important_keys = header_keys()
 
@@ -263,7 +264,7 @@ def standard_script(
         output_directory: str,
         output_file_name: str = None,
         ignore_differences: bool = False,
-        coadd_type: str = 'median',
+        coadd_types: Union[List[str], str] = 'median',
         **kwargs
 ):
     """
@@ -330,20 +331,32 @@ def standard_script(
                        correction_table_path=corrections_table_path,
                        corr_dir=corr_dir)
 
-    print("Coadding the images to create mosaics with background corrections.")
-    if output_file_name is None:
-        output_file_name = "coadded.fits"
-    add(input_directory=corr_dir,
-        coadd_type=coadd_type,
-        table_path=reprojected_table_path,
-        header_path=header_path, output_path=output_file_name)
+    if isinstance(coadd_types, str):
+        coadd_types = [coadd_types]
 
-    inject_header(
-        file_path=output_file_name,
-        input_directory=input_directory,
-        instrument="vlt-fors2",
-        coadd_type=coadd_type)
+    file_paths = []
+
+    for coadd_type in coadd_types:
+        print(f"Coadding the images with {coadd_type}.")
+        if output_file_name is None:
+            output_file_name = "coadded.fits"
+        output_file_name_coadd = output_file_name.replace(".fits", f"_{coadd_type}.fits")
+        add(input_directory=corr_dir,
+            coadd_type=coadd_type,
+            table_path=reprojected_table_path,
+            header_path=header_path,
+            output_path=output_file_name_coadd)
+
+        inject_header(
+            file_path=output_file_name_coadd,
+            input_directory=input_directory,
+            instrument="vlt-fors2",
+            coadd_type=coadd_type)
+
+        file_paths.append(os.path.join(output_directory, output_file_name_coadd))
 
     os.chdir(old_dir)
 
-    return os.path.join(output_directory, output_file_name)
+    u.debug_print(1, "montage.standard_script():", file_paths)
+
+    return file_paths
