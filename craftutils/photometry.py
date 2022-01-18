@@ -1767,7 +1767,7 @@ def insert_synthetic_point_sources_gauss(
     u.debug_print(2, "flux:", flux)
     u.debug_print(1, "len(sources):", len(sources))
 
-    sources['flux'] = flux.value
+    sources['flux'] = u.dequantify(flux)
     print('Generating additive image...')
 
     add = make_model_sources_image(shape=image.shape, model=gaussian_model, source_table=sources)
