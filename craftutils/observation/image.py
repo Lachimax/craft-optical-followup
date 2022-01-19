@@ -1063,8 +1063,8 @@ class ImagingImage(Image):
             show: bool = False,
             sex_x_col: str = 'XPSF_IMAGE',
             sex_y_col: str = 'YPSF_IMAGE',
-            sex_ra_col: str = 'ALPHAPSF_SKY',
-            sex_dec_col: str = 'DELTAPSF_SKY',
+            sex_ra_col: str = 'RA',
+            sex_dec_col: str = 'DEC',
             sex_flux_col: str = 'FLUX_PSF',
             stars_only: bool = True,
             star_class_col: str = 'CLASS_STAR',
@@ -1072,7 +1072,7 @@ class ImagingImage(Image):
             mag_range_sex_lower: units.Quantity = -100. * units.mag,
             mag_range_sex_upper: units.Quantity = 100. * units.mag,
             dist_tol: units.Quantity = 2. * units.arcsec,
-            snr_cut=200
+            snr_cut=100
     ):
         self.signal_to_noise_measure()
         if image_name is None:
@@ -1372,7 +1372,8 @@ class ImagingImage(Image):
             base_filename=base_filename,
             overwrite=True,
             tweak=tweak,
-            search_radius=1 * units.deg,
+            guess_scale=False,
+            search_radius=None,
             centre=self.pointing
         )
         if not success:
@@ -1803,7 +1804,10 @@ class ImagingImage(Image):
         print(f"Reprojecting {self.filename} into the pixel space of {other_image.filename}")
         reprojected, footprint = rp.reproject_exact(self.path, other_image.headers[ext], parallel=True)
 
-        reprojected_image = self.copy(output_path)
+        if output_path == self.path:
+            reprojected_image = self
+        else:
+            reprojected_image = self.copy(output_path)
         reprojected_image.load_data()
         reprojected_image.data[ext] = reprojected
         reprojected_image.write_fits_file()
@@ -2464,7 +2468,11 @@ class ImagingImage(Image):
                 fw=filter_size, fh=filter_size,
                 **back_kwargs
             )
-            self.data_sub_bkg[ext] = (data - bkg.back() * data.unit)
+            if isinstance(data, units.Quantity):
+                back = bkg.back() * data.unit
+            else:
+                back = bkg.back()
+            self.data_sub_bkg[ext] = (data - back)
 
         elif method == "photutils":
             data = self.data[ext]
@@ -2711,12 +2719,14 @@ class CoaddedImage(ImagingImage):
         if self.area_file is None:
             self.area_file = self.path.replace(".fits", "_area.fits")
 
-    def trim(self,
-             left: Union[int, units.Quantity] = None,
-             right: Union[int, units.Quantity] = None,
-             bottom: Union[int, units.Quantity] = None,
-             top: Union[int, units.Quantity] = None,
-             output_path: str = None):
+    def trim(
+            self,
+            left: Union[int, units.Quantity] = None,
+            right: Union[int, units.Quantity] = None,
+            bottom: Union[int, units.Quantity] = None,
+            top: Union[int, units.Quantity] = None,
+            output_path: str = None
+    ):
         # Let the super method take care of this image
         trimmed = super().trim(left=left, right=right, bottom=bottom, top=top, output_path=output_path)
         # Trim the area file in the same way.
@@ -2932,8 +2942,8 @@ class FORS2CoaddedImage(CoaddedImage):
             show: bool = False,
             sex_x_col: str = 'XPSF_IMAGE',
             sex_y_col: str = 'YPSF_IMAGE',
-            sex_ra_col: str = 'ALPHAPSF_SKY',
-            sex_dec_col: str = 'DELTAPSF_SKY',
+            sex_ra_col: str = 'RA',
+            sex_dec_col: str = 'DEC',
             sex_flux_col: str = 'FLUX_PSF',
             stars_only: bool = True,
             star_class_col: str = 'CLASS_STAR',
@@ -2941,7 +2951,7 @@ class FORS2CoaddedImage(CoaddedImage):
             mag_range_sex_lower: units.Quantity = -100. * units.mag,
             mag_range_sex_upper: units.Quantity = 100. * units.mag,
             dist_tol: units.Quantity = 2. * units.arcsec,
-            snr_cut=200
+            snr_cut=100
     ):
         super().zeropoint(
             cat_path=cat_path,

@@ -116,6 +116,22 @@ def load_epoch_directory():
             write_epoch_directory(directory=directory)
     return directory
 
+def epoch_from_directory(epoch_name: str):
+    directory = load_epoch_directory()
+    print(f"Looking for {epoch_name} in directory...")
+    epoch = None
+    if epoch_name in directory:
+        epoch_dict = directory[epoch_name]
+        field_name = epoch_dict["field_name"]
+        instrument = epoch_dict["instrument"]
+        mode = epoch_dict["mode"]
+        field = Field.from_params(name=field_name)
+        if mode == "imaging":
+            epoch = ImagingEpoch.from_params(epoch_name, instrument=instrument, field=field)
+        elif mode == "spectroscopy":
+            epoch = SpectroscopyEpoch.from_params(name=epoch_name, field=field, instrument=instrument)
+        return epoch
+
 
 def write_epoch_directory(directory: dict):
     """
@@ -287,14 +303,15 @@ def _check_do_list(do: Union[list, str]):
 
 
 class Field:
-    def __init__(self,
-                 name: str = None,
-                 centre_coords: Union[SkyCoord, str] = None,
-                 param_path: str = None,
-                 data_path: str = None,
-                 objs: Union[List[objects.Object], dict] = None,
-                 extent: units.Quantity = None
-                 ):
+    def __init__(
+            self,
+            name: str = None,
+            centre_coords: Union[SkyCoord, str] = None,
+            param_path: str = None,
+            data_path: str = None,
+            objs: Union[List[objects.Object], dict] = None,
+            extent: units.Quantity = None
+    ):
         """
 
         :param centre_coords:
@@ -578,13 +595,15 @@ class Field:
         if isinstance(self.extent, units.Quantity):
             radius = self.extent
         else:
-            radius = 0.5 * units.deg
+            radius = 0.1 * units.deg
         output = self._cat_data_path(cat=cat_name)
         ra = self.centre_coords.ra.value
         dec = self.centre_coords.dec.value
         if force_update or f"in_{cat_name}" not in self.cats:
-            response = retrieve.save_catalogue(ra=ra, dec=dec, output=output, cat=cat_name.lower(),
-                                               radius=radius)
+            u.debug_print(0, "Field.retrieve_catalogue(): radius ==", radius)
+            response = retrieve.save_catalogue(
+                ra=ra, dec=dec, output=output, cat=cat_name.lower(),
+                radius=radius)
             # Check if a valid response was received; if not, we don't want to erroneously report that
             # the field doesn't exist in the catalogue.
             if isinstance(response, str) and response == "ERROR":
@@ -676,7 +695,7 @@ class Field:
                           "type": "Field",
                           "centre": objects.position_dictionary.copy(),
                           "objects": [objects.Object.default_params()],
-                          "extent": 0.5 * units.deg
+                          "extent": 0.1 * units.deg
                           }
         return default_params
 
@@ -1130,7 +1149,7 @@ class Epoch:
         # Frames
         self.frames_raw = []
         self.frames_bias = []
-        self.frames_standard = []
+        self.frames_standard = {}
         self.frames_science = []
         self.frames_dark = []
         self.frames_flat = []
@@ -1153,6 +1172,8 @@ class Epoch:
             instrument=self.instrument_name,
             mode=self.mode,
             epoch_name=self.name)
+
+        self.param_file = kwargs
 
         # self.load_output_file()
 
@@ -1215,7 +1236,9 @@ class Epoch:
                 u.mkdir_check_nested(output_dir, remove_last=False)
                 self.paths[name] = output_dir
 
-                if stage["method"](output_dir=output_dir, **kwargs) is not False:
+                stage_kwargs = self.param_file[name]
+
+                if stage["method"](output_dir=output_dir, **stage_kwargs) is not False:
                     self.stages_complete[f"{n}-{name}"] = Time.now()
 
                     if "log_message" in stage and stage["log_message"] is not None:
@@ -1265,6 +1288,7 @@ class Epoch:
             "paths": self.paths,
             "frames_science": _output_img_dict_list(self.frames_science),
             "frames_std": _output_img_dict_list(self.frames_standard),
+            "frames_bias": _output_img_list(self.frames_bias),
             "coadded": _output_img_dict_single(self.coadded),
             "log": self.log.to_dict()
         }
@@ -1361,6 +1385,8 @@ class Epoch:
         p.save_params(file=self.param_path, dictionary=params)
 
     def add_frame_raw(self, raw_frame: Union[image.ImagingImage, str]):
+        u.debug_print(0,
+                      f"add_frame_raw(): Adding frame {raw_frame.name}, type {raw_frame.frame_type}, to {self}, type {type(self)}")
         self.frames_raw.append(raw_frame)
         self.sort_frame(raw_frame)
 
@@ -1382,9 +1408,13 @@ class Epoch:
         return self._add_coadded(img=img, key=key, image_dict=self.coadded)
 
     def sort_frame(self, frame: image.Image, sort_key: str = None):
-        u.debug_print(1, f"Adding frame {frame.name}, type {frame.frame_type}, to {self}, type {type(self)}")
+        frame.extract_frame_type()
+        u.debug_print(0,
+                      f"sort_frame(); Adding frame {frame.name}, type {frame.frame_type}, to {self}, type {type(self)}")
+
         if frame.frame_type == "bias" and frame not in self.frames_bias:
             self.frames_bias.append(frame)
+
         elif frame.frame_type == "science":
             if isinstance(self.frames_science, list):
                 if frame not in self.frames_science:
@@ -1392,8 +1422,16 @@ class Epoch:
             elif isinstance(self.frames_science, dict):
                 if frame not in self.frames_science[sort_key]:
                     self.frames_science[sort_key].append(frame)
-        elif frame.frame_type == "standard" and frame not in self.frames_standard:
-            self.frames_standard.append(frame)
+
+        elif frame.frame_type == "standard":
+            # u.debug_print(0, f"Adding standard frame {frame}")
+            if isinstance(self.frames_standard, list):
+                if frame not in self.frames_standard:
+                    self.frames_standard.append(frame)
+            elif isinstance(self.frames_standard, dict):
+                if frame not in self.frames_standard[sort_key]:
+                    self.frames_standard[sort_key].append(frame)
+
         elif frame.frame_type == "dark" and frame not in self.frames_dark:
             self.frames_dark.append(frame)
         elif frame.frame_type == "flat" and frame not in self.frames_flat:
@@ -1515,6 +1553,9 @@ class ImagingEpoch(Epoch):
         self.normalisation_params = {}
         if "normalisation" in kwargs:
             self.normalisation_params = kwargs["normalisation"]
+        self.photometric_calibration_params = {}
+        if "photometric_calibration" in kwargs:
+            self.photometric_calibration_params = kwargs["photometric_calibration"]
 
         u.debug_print(2, f"ImagingEpoch.__init__(): {self.name}.astrometry_params ==", self.astrometry_params)
 
@@ -1539,15 +1580,15 @@ class ImagingEpoch(Epoch):
                 "message": "Coadd astrometry-corrected frames with Montage?",
                 "default": True
             },
-            "trim_coadded": {
-                "method": self.proc_trim_coadded,
-                "message": "Trim / reproject coadded images to same footprint?",
-                "default": True
-            },
             "correct_astrometry_coadded": {
                 "method": self.proc_correct_astrometry_coadded,
                 "message": "Correct astrometry of coadded images?",
                 "default": False,
+            },
+            "trim_coadded": {
+                "method": self.proc_trim_coadded,
+                "message": "Trim / reproject coadded images to same footprint?",
+                "default": True
             },
             "source_extraction": {
                 "method": self.proc_source_extraction,
@@ -1714,14 +1755,48 @@ class ImagingEpoch(Epoch):
             for coadded_path in coadded_paths:
                 self.add_coadded_image(coadded_path, key=fil, mode="imaging")
 
-    def proc_trim_coadded(self, output_dir: str, **kwargs):
-        self.trim_coadded(output_dir)
+    def proc_correct_astrometry_coadded(self, output_dir: str, **kwargs):
+        self.generate_astrometry_indices()
+        self.correct_astrometry_coadded(
+            output_dir=output_dir,
+            images=self.coadded,
+            **self.astrometry_params)
 
-    def trim_coadded(self, output_dir: str):
+    def correct_astrometry_coadded(self, output_dir: str, images: dict, **kwargs):
+        self.coadded_astrometry = {}
+
+        if images is None:
+            images = self.coadded
+
+        for fil in images:
+            img = images[fil]
+            new_img = img.correct_astrometry(
+                output_dir=output_dir,
+                tweak=False
+            )
+            if img.area_file is not None:
+                area = type(new_img)(img.area_file)
+                area_new = area.copy(new_img.path.replace(".fits", "_area.fits"))
+                area_new.transfer_wcs(new_img)
+                new_img.area_file = area_new.path
+
+            self.add_coadded_astrometry_image(new_img, key=fil)
+            # self.astrometry_diagnostics(images=self.coadded_astrometry)
+
+    def proc_trim_coadded(self, output_dir: str, **kwargs):
+        if "correct_astrometry_coadded" in self.do_kwargs and self.do_kwargs["correct_astrometry_coadded"]:
+            images = self.coadded_astrometry
+        else:
+            images = self.coadded
+        self.trim_coadded(output_dir, images=images)
+
+    def trim_coadded(self, output_dir: str, images: dict = None):
+        if images is None:
+            images = self.coadded
         u.mkdir_check(output_dir)
         template = None
-        for fil in self.coadded:
-            img = self.coadded[fil]
+        for fil in images:
+            img = images[fil]
             output_path = os.path.join(output_dir, img.filename.replace(".fits", "_trimmed.fits"))
             trimmed = img.trim_from_area(output_path=output_path)
             if template is None:
@@ -1731,33 +1806,8 @@ class ImagingEpoch(Epoch):
                 trimmed = trimmed.reproject(other_image=template, output_path=output_path)
             self.add_coadded_trimmed_image(trimmed, key=fil)
 
-    def proc_correct_astrometry_coadded(self, output_dir: str, **kwargs):
-        self.generate_astrometry_indices()
-        self.correct_astrometry_coadded(
-            output_dir=output_dir,
-            images=self.coadded_trimmed,
-            **self.astrometry_params)
-
-    def correct_astrometry_coadded(self, output_dir: str, images: dict, **kwargs):
-        self.coadded_astrometry = {}
-
-        if images is None:
-            images = self.coadded_trimmed
-
-        for fil in images:
-            img = images[fil]
-            new_img = img.correct_astrometry(
-                output_dir=output_dir,
-                tweak=False
-            )
-            self.add_coadded_astrometry_image(new_img, key=fil)
-            # self.astrometry_diagnostics(images=self.coadded_astrometry)
-
     def proc_source_extraction(self, output_dir: str, **kwargs):
-        if "correct_astrometry_coadded" in self.do_kwargs and self.do_kwargs["correct_astrometry_coadded"]:
-            images = self.coadded_astrometry
-        else:
-            images = self.coadded_trimmed
+        images = self.coadded_trimmed
         for fil in images:
             img = images[fil]
             configs = self.source_extractor_config
@@ -1772,14 +1822,13 @@ class ImagingEpoch(Epoch):
         # self.psf_diagnostics()
 
     def proc_photometric_calibration(self, output_dir: str, **kwargs):
-        if "correct_astrometry_coadded" in self.do_kwargs and self.do_kwargs["correct_astrometry_coadded"]:
-            images = self.coadded_astrometry
-        else:
-            images = self.coadded_trimmed
+        images = self.coadded_trimmed
         self.photometric_calibration(output_path=output_dir, image_dict=images, **kwargs)
 
     def photometric_calibration(self, image_dict: dict, output_path: str, images: str = "coadded", **kwargs):
         u.mkdir_check(output_path)
+
+        kwargs.update(self.photometric_calibration_params)
 
         if "distance_tolerance" in kwargs and kwargs["distance_tolerance"] is not None:
             dist_tol = float(kwargs["distance_tolerance"]) * units.arcsec
@@ -1927,7 +1976,7 @@ class ImagingEpoch(Epoch):
             image_dict: dict,
             output_path: str,
             distance_tolerance: units.Quantity = 0.2 * units.arcsec,
-            snr_min: float = 200.,
+            snr_min: float = 100.,
             star_class_tolerance: float = 0.95,
     ):
         deepest = image_dict[self.filters[0]]
@@ -1944,9 +1993,9 @@ class ImagingEpoch(Epoch):
                         output_path=os.path.join(fil_path, cat_name),
                         cat_name=cat_name,
                         dist_tol=distance_tolerance,
-                        show=False,
+                        show=True,
                         snr_cut=snr_min,
-                        star_class_tol=star_class_tolerance
+                        star_class_tol=star_class_tolerance,
                     )
 
             zeropoint, cat = img.select_zeropoint()
@@ -2138,10 +2187,14 @@ class ImagingEpoch(Epoch):
 
     def add_frame_raw(self, raw_frame: Union[image.ImagingImage, str]):
         raw_frame, fil = self._check_frame(frame=raw_frame, frame_type="raw")
+        u.debug_print(
+            0,
+            f"add_frame_raw(): Adding frame {raw_frame.name}, type {raw_frame.frame_type}, to {self}, type {type(self)}")
         self.check_filter(fil)
         if raw_frame is None:
             return None
-        self.frames_raw.append(raw_frame)
+        if raw_frame not in self.frames_raw:
+            self.frames_raw.append(raw_frame)
         self.sort_frame(raw_frame, sort_key=fil)
         return raw_frame
 
@@ -2178,6 +2231,9 @@ class ImagingEpoch(Epoch):
                 self.filters.append(fil)
             if fil not in self.astrometry_successful:
                 self.astrometry_successful[fil] = {}
+            if fil not in self.frames_science:
+                if isinstance(self.frames_standard, dict):
+                    self.frames_standard[fil] = []
             if fil not in self.frames_science:
                 if isinstance(self.frames_science, dict):
                     self.frames_science[fil] = []
@@ -2750,7 +2806,8 @@ class HubbleImagingEpoch(ImagingEpoch):
             configs = self.source_extractor_config
             img.source_extraction_psf(
                 output_dir=output_dir,
-                phot_autoparams=f"{configs['kron_factor']},{configs['kron_radius_min']}")
+                phot_autoparams=f"{configs['kron_factor']},{configs['kron_radius_min']}"
+            )
 
     def proc_get_photometry(self, output_dir: str, **kwargs):
         self.get_photometry(output_dir, image_type="coadded", dual=False)
@@ -3028,7 +3085,7 @@ class ESOImagingEpoch(ImagingEpoch):
             output_path=os.path.join(data_dir, data_title + "_fits_table_detailed.csv"),
             science_only=False)
 
-        for row in tbl:
+        for row in tbl_full:
             path = os.path.join(raw_dir, row["identifier"])
             cls = image.ImagingImage.select_child_class(instrument=self.instrument_name, mode="imaging")
             img = cls(path)
@@ -3036,19 +3093,36 @@ class ESOImagingEpoch(ImagingEpoch):
             img.extract_filter()
             u.debug_print(1, self.instrument_name, cls, img.name, img.frame_type)
             # The below will also update the filter list.
+            u.debug_print(
+                0,
+                f"_initial_setup(): Adding frame {img.name}, type {img.frame_type}, to {self}, type {type(self)}")
             self.add_frame_raw(img)
-
-        # Collect pointings of standard-star observations.
-        for img in self.frames_standard:
-            pointing = img.extract_pointing
-            fil = img.extract_filter
-            if pointing not in self.std_pointings[fil]:
-                self.std_pointings[fil].append(pointing)
-
-        # Collect and save some stats on those filters:
 
         std_dir = os.path.join(data_dir, 'standards')
         u.mkdir_check(std_dir)
+
+        # Collect pointings of standard-star observations.
+        for fil in self.frames_standard:
+            std_filter_dir = os.path.join(std_dir, fil)
+            self.set_path(f"standard_dir_{fil}", std_filter_dir)
+            u.mkdir_check(std_filter_dir)
+            for img in self.frames_standard[fil]:
+                pointing = img.extract_pointing()
+                if pointing not in self.std_pointings[fil]:
+                    self.std_pointings[fil].append(pointing)
+                    # pointing_dir = os.path.join(std_filter_dir, f"RA{pointing.ra.value}_DEC{pointing.dec.value}")
+                    # u.mkdir_check(pointing_dir)
+                    # pointing_dir = os.path.join(pointing_dir, "0-raw_stds")
+                    # u.mkdir_check(pointing_dir)
+                    #
+                    # path_dest = os.path.join(pointing_dir, img.filename)
+                    # shutil.copy(img.path, path_dest)
+                    # img.path = path_dest
+                    # img.update_output_file()
+
+        # Collect and save some stats on those filters:
+
+
 
         for i, fil in enumerate(self.filters):
 
@@ -3063,22 +3137,9 @@ class ESOImagingEpoch(ImagingEpoch):
             self.airmass_err[fil] = max(np.nanmax(airmasses) - self.airmass_mean[fil],
                                         self.airmass_mean[fil] - np.nanmin(airmasses))
 
-            std_filter_dir = os.path.join(std_dir, fil)
-            self.set_path(f"standard_dir_{fil}", std_filter_dir)
-            u.mkdir_check(std_filter_dir)
-            print(f'Copying {fil} calibration data to standard folder...')
 
-            # Sort the STD files by filter, and within that by pointing.
-            for j, pointing in enumerate(self.std_pointings[fil]):
-                pointing_dir = os.path.join(std_filter_dir, f"RA{pointing.ra.value}_DEC{pointing.dec.value}")
-                u.mkdir_check(pointing_dir)
-                pointing_dir = os.path.join(pointing_dir, "0-data_with_raw_calibs")
-                u.mkdir_check(pointing_dir)
-                for std in self.frames_standard[fil]:
-                    path_dest = os.path.join(pointing_dir, std.filename)
-                    shutil.move(std.path, path_dest)
-                    std.path = path_dest
-                    std.update_output_file()
+
+            print(f'Copying {fil} calibration data to standard folder...')
 
         inst_reflex_dir = {
             "vlt-fors2": "fors",
@@ -3086,11 +3147,15 @@ class ESOImagingEpoch(ImagingEpoch):
         }[self.instrument_name]
         inst_reflex_dir = os.path.join(config["esoreflex_input_dir"], inst_reflex_dir)
         u.mkdir_check_nested(inst_reflex_dir, remove_last=False)
-        for file in os.listdir(raw_dir):
-            print("Copying to ESOReflex input directory...")
 
-            shutil.copy(os.path.join(raw_dir, file), os.path.join(config["esoreflex_input_dir"], inst_reflex_dir))
-            print("Done.")
+        u.debug_print(0, kwargs)
+
+        if not ("skip_esoreflex_copy" in kwargs and kwargs["skip_esoreflex_copy"]):
+            for file in os.listdir(raw_dir):
+                print("Copying to ESOReflex input directory...")
+
+                shutil.copy(os.path.join(raw_dir, file), os.path.join(config["esoreflex_input_dir"], inst_reflex_dir))
+                print("Done.")
 
         tmp = self.frames_science[self.filters[0]][0]
         if self.date is None:
@@ -3627,6 +3692,30 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
                         else:
                             self.astrometry_successful[fil][img.name] = False
                     self.update_output_file()
+
+    def photometric_calibration(
+            self,
+            #image_dict: dict,
+            output_path: str,
+            #images: str = "coadded",
+            **kwargs):
+
+        import craftutils.wrap.esorex as esorex
+
+        bias_up, bias_down = self.sort_by_chip(self.frames_bias)
+
+        esorex.fors_bias(
+            bias_frames=list(map(lambda b: b.path, bias_up)),
+            output_dir=output_path,
+            output_filename="master_bias_up.fits",
+        )
+        esorex.fors_bias(
+            bias_frames=list(map(lambda b: b.path, bias_down)),
+            output_dir=output_path,
+            output_filename="master_bias_down.fits",
+        )
+
+        pass
 
     @classmethod
     def sort_by_chip(cls, images: list):
