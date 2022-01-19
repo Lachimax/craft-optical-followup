@@ -37,6 +37,7 @@ def solve_field(
         centre: SkyCoord = None,
         guess_scale: bool = True,
         time_limit: units.Quantity = None,
+        verify: bool = False,
         *flags,
         **params):
     """
@@ -66,6 +67,8 @@ def solve_field(
         flags.append("g")
     if not tweak:
         flags.append("T")
+    if not verify:
+        flags.append("y")
 
     system_command("solve-field", image_files, False, True, *flags, **params)
     if isinstance(image_files, list):
