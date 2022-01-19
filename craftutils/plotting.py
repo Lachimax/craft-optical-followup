@@ -14,13 +14,13 @@ from astropy.visualization import (ImageNormalize, LogStretch, SqrtStretch, ZSca
                                    PowerStretch, wcsaxes)
 
 from astropy.visualization import quantity_support
-quantity_support()
 
 import craftutils.fits_files as ff
 import craftutils.params as p
 import craftutils.astrometry as am
 import craftutils.utils as u
 
+quantity_support()
 
 def plot_kron(fig: plt.Figure, data_title: str, instrument: str, f: str, index: Union[int, list], catalogue: str,
               n: int, n_x: int, n_y: int,

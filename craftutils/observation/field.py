@@ -1170,7 +1170,6 @@ class Epoch:
                 "message": "Do initial setup of files?",
                 "log_message": "Initial setup conducted.",
                 "default": True,
-                "do_key": None  # If do_key is None or not present, the stage is default and will be performed.
             }
         }
 
@@ -1200,14 +1199,9 @@ class Epoch:
             else:
                 do_this = True
 
-            # Check for do_key;
-            # If it is present and not None, then we check kwargs for the key and only do this stage if the value
-            # is True.
-            if "do_key" in stage and stage["do_key"] is not None:
-                do_key = stage["do_key"]
-                if do_key in self.do_kwargs:
-                    do_this = self.do_kwargs[do_key]
-            # If do_key not found, defer to "default".
+            # Check if name is in "do" dict. If it is, defer to that setting; if not, defer to default.
+            if name in self.do_kwargs:
+                do_this = self.do_kwargs[name]
 
             if do_this and (no_query or self.query_stage(
                     message=message,
@@ -1218,7 +1212,7 @@ class Epoch:
                 dir_name = f"{n}-{name}"
                 output_dir = os.path.join(self.data_path, dir_name)
                 u.rmtree_check(output_dir)
-                u.mkdir_check(output_dir)
+                u.mkdir_check_nested(output_dir, remove_last=False)
                 self.paths[name] = output_dir
 
                 if stage["method"](output_dir=output_dir, **kwargs) is not False:
@@ -1534,13 +1528,11 @@ class ImagingEpoch(Epoch):
                 "method": self.proc_register,
                 "message": "Register frames using astroalign?",
                 "default": False,
-                "do_key": "register_frames"
             },
             "correct_astrometry_frames": {
                 "method": self.proc_correct_astrometry_frames,
                 "message": "Correct astrometry of individual frames?",
                 "default": True,
-                "do_key": "astrometry_frames"
             },
             "coadd": {
                 "method": self.proc_coadd,
@@ -1556,7 +1548,6 @@ class ImagingEpoch(Epoch):
                 "method": self.proc_correct_astrometry_coadded,
                 "message": "Correct astrometry of coadded images?",
                 "default": False,
-                "do_key": "astrometry_coadded"
             },
             "source_extraction": {
                 "method": self.proc_source_extraction,
@@ -1687,7 +1678,7 @@ class ImagingEpoch(Epoch):
                 self.update_output_file()
 
     def proc_coadd(self, output_dir: str, **kwargs):
-        if "astrometry_frames" in self.do_kwargs and not self.do_kwargs["astrometry_frames"]:
+        if "correct_astrometry_frames" in self.do_kwargs and not self.do_kwargs["correct_astrometry_frames"]:
             self.coadd_params["frames"] = "normalised"
         else:
             self.coadd_params["frames"] = "astrometry"
@@ -1704,7 +1695,7 @@ class ImagingEpoch(Epoch):
         if frames == "astrometry":
             input_directory = self.paths['correct_astrometry_frames']
         elif frames == "normalised":
-            input_directory = os.path.join(self.paths['convert_to_es'], "science")
+            input_directory = os.path.join(self.paths['convert_to_cs'], "science")
         else:
             raise ValueError(f"{frames} not recognised as frame type.")
 
@@ -1763,7 +1754,7 @@ class ImagingEpoch(Epoch):
             # self.astrometry_diagnostics(images=self.coadded_astrometry)
 
     def proc_source_extraction(self, output_dir: str, **kwargs):
-        if "astrometry_coadded" in self.do_kwargs and self.do_kwargs["astrometry_coadded"]:
+        if "correct_astrometry_coadded" in self.do_kwargs and self.do_kwargs["correct_astrometry_coadded"]:
             images = self.coadded_astrometry
         else:
             images = self.coadded_trimmed
@@ -1775,13 +1766,13 @@ class ImagingEpoch(Epoch):
                 output_dir=output_dir,
                 phot_autoparams=f"{configs['kron_factor']},{configs['kron_radius_min']}")
         offset_tolerance = 0.5 * units.arcsec
-        if "astrometry_frames" in self.do_kwargs and not self.do_kwargs["astrometry_frames"]:
+        if "correct_astrometry_frames" in self.do_kwargs and not self.do_kwargs["correct_astrometry_frames"]:
             offset_tolerance = 1.0 * units.arcsec
         self.astrometry_diagnostics(images=images, offset_tolerance=offset_tolerance)
         # self.psf_diagnostics()
 
     def proc_photometric_calibration(self, output_dir: str, **kwargs):
-        if "astrometry_coadded" in self.do_kwargs and self.do_kwargs["astrometry_coadded"]:
+        if "correct_astrometry_coadded" in self.do_kwargs and self.do_kwargs["correct_astrometry_coadded"]:
             images = self.coadded_astrometry
         else:
             images = self.coadded_trimmed
@@ -1830,7 +1821,11 @@ class ImagingEpoch(Epoch):
         print("DEEPEST FILTER:", self.deepest_filter, self.deepest.depth["secure"]["SNR_MEASURED"]["5-sigma"])
 
     def proc_dual_mode_source_extraction(self, output_dir: str, **kwargs):
-        self.dual_mode_source_extraction(output_dir)
+        if "correct_astrometry_coadded" in self.do_kwargs and self.do_kwargs["correct_astrometry_coadded"]:
+            image_type = "coadded_astrometry"
+        else:
+            image_type = "coadded_trimmed"
+        self.dual_mode_source_extraction(output_dir, image_type)
 
     def dual_mode_source_extraction(self, path: str, image_type: str = "coadded_trimmed"):
         image_dict = self._get_images(image_type=image_type)
@@ -1843,7 +1838,11 @@ class ImagingEpoch(Epoch):
                                       template=self.deepest)
 
     def proc_get_photometry(self, output_dir: str, **kwargs):
-        self.get_photometry(output_dir)
+        if "correct_astrometry_coadded" in self.do_kwargs and self.do_kwargs["correct_astrometry_coadded"]:
+            image_type = "coadded_astrometry"
+        else:
+            image_type = "coadded_trimmed"
+        self.get_photometry(output_dir, image_type=image_type)
 
     def get_photometry(self, path: str, image_type: str = "coadded_trimmed", dual: bool = True):
         """
@@ -1963,6 +1962,8 @@ class ImagingEpoch(Epoch):
             image_dict = self.coadded_trimmed
         elif image_type == "coadded":
             image_dict = self.coadded
+        elif image_type == "coadded_astrometry":
+            image_dict = self.coadded_astrometry
         else:
             raise ValueError(f"Images type '{image_type}' not recognised.")
         return image_dict
@@ -2256,7 +2257,6 @@ class ImagingEpoch(Epoch):
 
     @classmethod
     def from_params(cls, name: str, instrument: str, field: Union[Field, str] = None, old_format: bool = False):
-        print("Initializing epoch...")
         instrument = instrument.lower()
         field_name, field = cls._from_params_setup(name=name, field=field)
         if old_format:
@@ -2285,6 +2285,7 @@ class ImagingEpoch(Epoch):
 
     @classmethod
     def from_file(cls, param_file: Union[str, dict], old_format: bool = False, field: Field = None):
+        print("Initializing epoch...")
 
         name, param_file, param_dict = p.params_init(param_file)
 
@@ -2418,26 +2419,22 @@ class GSAOIImagingEpoch(ImagingEpoch):
                 "method": self.proc_download,
                 "message": "Download raw data from Gemini archive?",
                 "default": True,
-                "do_key": None
             },
             "initial_setup": stages_super["initial_setup"],
             "reduce_flats": {
                 "method": self.proc_reduce_flats,
                 "message": "Reduce flat-field images?",
                 "default": True,
-                "do_key": None
             },
             "reduce_science": {
                 "method": self.proc_reduce_science,
                 "message": "Reduce science images?",
                 "default": True,
-                "do_key": None
             },
             "stack_science": {
                 "method": self.proc_stack_science,
                 "message": "Stack science images with DISCO-STU?",
                 "default": True,
-                "do_key": None
             }
         }
         return stages
@@ -2976,26 +2973,22 @@ class ESOImagingEpoch(ImagingEpoch):
                 "method": self.proc_download,
                 "message": "Download raw data from ESO archive?",
                 "default": True,
-                "do_key": None
             },
             "initial_setup": super_stages["initial_setup"],
             "sort_reduced": {
                 "method": self.proc_sort_reduced,
                 "message": "Sort ESOReflex products? Requires reducing data with ESOReflex first.",
                 "default": True,
-                "do_key": None
             },
             "trim_reduced": {
                 "method": self.proc_trim_reduced,
                 "message": "Trim reduced images?",
                 "default": True,
-                "do_key": None
             },
-            "convert_to_es": {
-                "method": self.proc_convert_to_es,
-                "message": "Convert image values to electrons/second?",
+            "convert_to_cs": {
+                "method": self.proc_convert_to_cs,
+                "message": "Convert image values to counts/second?",
                 "default": True,
-                "do_key": None
             },
         }
         return stages
@@ -3312,12 +3305,12 @@ class ESOImagingEpoch(ImagingEpoch):
                         output_path=new_path)
                     self.add_frame_trimmed(trimmed)
 
-    def proc_convert_to_es(self, output_dir: str, **kwargs):
-        self.convert_to_es(
+    def proc_convert_to_cs(self, output_dir: str, **kwargs):
+        self.convert_to_cs(
             output_dir=output_dir,
             **self.normalisation_params)
 
-    def convert_to_es(self, output_dir: str, **kwargs):
+    def convert_to_cs(self, output_dir: str, **kwargs):
 
         self.frames_normalised = {}
 
@@ -3349,7 +3342,7 @@ class ESOImagingEpoch(ImagingEpoch):
                         frame.filename.replace("trim", "norm"))
 
                     # Divide by exposure time to get an image in counts/second.
-                    normed = frame.convert_to_es(output_path=science_destination)
+                    normed = frame.convert_to_cs(output_path=science_destination)
                     self.add_frame_normalised(normed)
 
     def add_frame_background(self, background_frame: Union[image.ImagingImage, str]):

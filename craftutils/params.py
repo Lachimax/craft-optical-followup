@@ -462,42 +462,42 @@ def instrument_filters_single_param(param: str, instrument: str = 'FORS2', sort_
     return param_dict
 
 
-def object_params_instrument(obj: str, instrument: str, quiet: bool = False):
+def object_params_instrument(obj: str, instrument: str):
     instrument = instrument.lower()
-    return load_params(os.path.join(param_dir, f'epochs_{instrument}', obj), quiet=quiet)
+    return load_params(os.path.join(param_dir, f'epochs_{instrument}', obj))
 
 
-def object_params_fors2(obj: str, quiet: bool = False):
-    return load_params(param_dir + 'epochs_fors2/' + obj, quiet=quiet)
+def object_params_fors2(obj: str):
+    return load_params(param_dir + 'epochs_fors2/' + obj)
 
 
-def object_params_xshooter(obj: str, quiet: bool = False):
-    return load_params(param_dir + 'epochs_xshooter/' + obj, quiet=quiet)
+def object_params_xshooter(obj: str):
+    return load_params(param_dir + 'epochs_xshooter/' + obj)
 
 
-def object_params_imacs(obj: str, quiet: bool = False):
-    return load_params(param_dir + 'epochs_imacs/' + obj, quiet=quiet)
+def object_params_imacs(obj: str):
+    return load_params(param_dir + 'epochs_imacs/' + obj)
 
 
-def object_params_des(obj: str, quiet: bool = False):
-    return load_params(param_dir + 'epochs_des/' + obj, quiet=quiet)
+def object_params_des(obj: str):
+    return load_params(param_dir + 'epochs_des/' + obj)
 
 
-def object_params_sdss(obj: str, quiet: bool = False):
-    return load_params(param_dir + 'epochs_sdss/' + obj, quiet=quiet)
+def object_params_sdss(obj: str):
+    return load_params(param_dir + 'epochs_sdss/' + obj)
 
 
-def object_params_frb(obj: str, quiet: bool = False):
-    return load_params(param_dir + 'FRBs/' + obj, quiet=quiet)
+def object_params_frb(obj: str):
+    return load_params(param_dir + 'FRBs/' + obj)
 
 
-def object_params_all_epochs(obj: str, instrument: str = 'FORS2', quiet: bool = False):
+def object_params_all_epochs(obj: str, instrument: str = 'FORS2'):
     properties = {}
     directory = param_dir + 'epochs_' + instrument.lower() + '/'
     for file in os.listdir(directory):
         if file[-5:] == '.yaml':
             if obj + '_' in file:
-                properties[file[-6:-5]] = load_params(directory + file, quiet=quiet)
+                properties[file[-6:-5]] = load_params(directory + file)
 
     return properties
 

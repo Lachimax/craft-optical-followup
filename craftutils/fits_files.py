@@ -741,8 +741,8 @@ def trim(hdu: fits.hdu.hdulist.HDUList,
         new_hdu = deepcopy(hdu)
 
     if update_wcs:
-        new_hdu[ext].header['CRPIX1'] = hdu[ext].header['CRPIX1'] - left
-        new_hdu[ext].header['CRPIX2'] = hdu[ext].header['CRPIX2'] - bottom
+        new_hdu[ext].header['CRPIX1'] = hdu[ext].header['CRPIX1'] - u.dequantify(left, units.pix)
+        new_hdu[ext].header['CRPIX2'] = hdu[ext].header['CRPIX2'] - u.dequantify(bottom, units.pix)
     new_hdu[ext].data = u.trim_image(
         data=hdu[ext].data,
         left=left, right=right, bottom=bottom, top=top

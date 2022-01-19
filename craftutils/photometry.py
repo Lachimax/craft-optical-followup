@@ -22,6 +22,7 @@ from astropy.coordinates import SkyCoord
 from astropy.modeling import models, fitting
 from astropy.modeling.functional_models import Sersic1D
 from astropy.stats import sigma_clip
+from astropy.visualization import quantity_support
 
 import craftutils.fits_files as ff
 import craftutils.params as p
@@ -31,6 +32,8 @@ import craftutils.retrieve as r
 import craftutils.astrometry as a
 
 from craftutils.wrap.psfex import load_psfex
+
+quantity_support()
 
 # TODO: End-to-end pipeline script?
 # TODO: Change expected types to Union
@@ -337,8 +340,10 @@ def magnitude_complete(
     u.debug_print(2, "\tairmass", airmass, "+/-", airmass_err)
     u.debug_print(2, "\textinction", ext, "+/-", ext_err)
 
-    mag_inst, mag_error = magnitude_uncertainty(flux=flux, flux_err=flux_err,
-                                                exp_time=exp_time, exp_time_err=exp_time_err)
+    mag_inst, mag_error = magnitude_uncertainty(
+        flux=flux, flux_err=flux_err,
+        exp_time=exp_time, exp_time_err=exp_time_err
+    )
     magnitude = mag_inst + zeropoint - ext * airmass - colour_term * colour
     error_extinction = u.uncertainty_product(ext * airmass, (ext, ext_err), (airmass, airmass_err))
     error_colour = u.uncertainty_product(colour_term * colour, (colour_term, colour_term_err), (colour, colour_err))
@@ -347,10 +352,12 @@ def magnitude_complete(
     return magnitude, error
 
 
-def magnitude_uncertainty(flux: units.Quantity,
-                          flux_err: units.Quantity = 0.0 * units.ct,
-                          exp_time: units.Quantity = 1. * units.second,
-                          exp_time_err: units.Quantity = 0.0 * units.second):
+def magnitude_uncertainty(
+        flux: units.Quantity,
+        flux_err: units.Quantity = 0.0 * units.ct,
+        exp_time: units.Quantity = 1. * units.second,
+        exp_time_err: units.Quantity = 0.0 * units.second
+):
     flux = u.check_quantity(flux, unit=units.ct)
     flux_err = u.check_quantity(flux_err, unit=units.ct)
     exp_time = u.check_quantity(exp_time, unit=units.second)
@@ -363,37 +370,38 @@ def magnitude_uncertainty(flux: units.Quantity,
     return mag, error
 
 
-def determine_zeropoint_sextractor(sextractor_cat: Union[str, table.QTable],
-                                   cat_path: str,
-                                   image: Union[str, fits.HDUList],
-                                   output_path: str,
-                                   cat_name: str = 'Catalogue',
-                                   image_name: str = 'FORS2',
-                                   show: bool = False,
-                                   cat_ra_col: str = 'RA',
-                                   cat_dec_col: str = 'DEC',
-                                   cat_mag_col: str = 'WAVG_MAG_PSF_',
-                                   sex_ra_col='ALPHA_SKY',
-                                   sex_dec_col='DELTA_SKY',
-                                   sex_x_col: str = 'XPSF_IMAGE',
-                                   sex_y_col: str = 'YPSF_IMAGE',
-                                   dist_tol: units.Quantity = 2 * units.arcsec,
-                                   flux_column: str = 'FLUX_PSF',
-                                   flux_err_column: str = 'FLUXERR_PSF',
-                                   mag_range_sex_upper: units.Quantity = 100 * units.mag,
-                                   mag_range_sex_lower: units.Quantity = -100 * units.mag,
-                                   stars_only: bool = True,
-                                   star_class_tol: float = 0.95,
-                                   star_class_col: str = 'CLASS_STAR',
-                                   exp_time: float = None,
-                                   y_lower: units.Quantity = 0 * units.pix,
-                                   y_upper: units.Quantity = 100000 * units.pix,
-                                   cat_type: str = 'csv',
-                                   cat_zeropoint: units.Quantity = 0.0 * units.mag,
-                                   cat_zeropoint_err: units.Quantity = 0.0 * units.mag,
-                                   latex_plot: bool = False,
-                                   snr_cut: float = 300.,
-                                   snr_col: str = 'SNR_WIN'):
+def determine_zeropoint_sextractor(
+        sextractor_cat: Union[str, table.QTable],
+        cat_path: str,
+        image: Union[str, fits.HDUList],
+        output_path: str,
+        cat_name: str = 'Catalogue',
+        image_name: str = 'FORS2',
+        show: bool = False,
+        cat_ra_col: str = 'RA',
+        cat_dec_col: str = 'DEC',
+        cat_mag_col: str = 'WAVG_MAG_PSF_',
+        sex_ra_col='ALPHA_SKY',
+        sex_dec_col='DELTA_SKY',
+        sex_x_col: str = 'XPSF_IMAGE',
+        sex_y_col: str = 'YPSF_IMAGE',
+        dist_tol: units.Quantity = 2 * units.arcsec,
+        flux_column: str = 'FLUX_PSF',
+        flux_err_column: str = 'FLUXERR_PSF',
+        mag_range_sex_upper: units.Quantity = 100 * units.mag,
+        mag_range_sex_lower: units.Quantity = -100 * units.mag,
+        stars_only: bool = True,
+        star_class_tol: float = 0.95,
+        star_class_col: str = 'CLASS_STAR',
+        exp_time: float = None,
+        y_lower: units.Quantity = 0 * units.pix,
+        y_upper: units.Quantity = 100000 * units.pix,
+        cat_type: str = 'csv',
+        cat_zeropoint: units.Quantity = 0.0 * units.mag,
+        cat_zeropoint_err: units.Quantity = 0.0 * units.mag,
+        latex_plot: bool = False,
+        snr_cut: float = 300.,
+        snr_col: str = 'SNR_WIN'):
     """
     This function expects your catalogue to be a .csv.
     :param sextractor_cat:
@@ -505,7 +513,7 @@ def determine_zeropoint_sextractor(sextractor_cat: Union[str, table.QTable],
     # Plot all stars found by SExtractor.
     source_tbl = source_tbl[source_tbl[sex_ra_col] != 0.0]
     source_tbl = source_tbl[source_tbl[sex_dec_col] != 0.0]
-    plt.scatter(source_tbl[sex_ra_col], source_tbl[sex_dec_col], label='SExtractor')
+    plt.scatter(u.dequantify(source_tbl[sex_ra_col]), u.dequantify(source_tbl[sex_dec_col]), label='SExtractor')
     plt.xlim()
     plt.title('Objects found by SExtractor')
     plt.savefig(output_path + '1-sextracted-positions.png')
@@ -514,14 +522,14 @@ def determine_zeropoint_sextractor(sextractor_cat: Union[str, table.QTable],
     plt.close()
 
     # Plot all catalogue stars.
-    plt.scatter(cat[cat_ra_col], cat[cat_dec_col])
+    plt.scatter(u.dequantify(cat[cat_ra_col]), u.dequantify(cat[cat_dec_col]))
     plt.title('Objects in catalogue')
     plt.savefig(output_path + '2-catalogue-positions.png')
     if show:
         plt.show()
     plt.close()
 
-    plt.scatter(source_tbl[sex_ra_col], source_tbl[sex_dec_col], label='SExtractor')
+    plt.scatter(u.dequantify(source_tbl[sex_ra_col]), u.dequantify(source_tbl[sex_dec_col]), label='SExtractor')
     plt.scatter(cat[cat_ra_col], cat[cat_dec_col], label=cat_name)
     plt.legend()
     plt.title('Matches with ' + cat_name + ' Catalogue')
@@ -530,10 +538,11 @@ def determine_zeropoint_sextractor(sextractor_cat: Union[str, table.QTable],
     plt.close()
 
     # Match stars to catalogue.
-    matches, matches_cat, _ = a.match_catalogs(cat_1=source_tbl, cat_2=cat,
-                                               ra_col_1=sex_ra_col, ra_col_2=cat_ra_col,
-                                               dec_col_1=sex_dec_col, dec_col_2=cat_dec_col,
-                                               tolerance=tolerance)
+    matches, matches_cat, _ = a.match_catalogs(
+        cat_1=source_tbl, cat_2=cat,
+        ra_col_1=sex_ra_col, ra_col_2=cat_ra_col,
+        dec_col_1=sex_dec_col, dec_col_2=cat_dec_col,
+        tolerance=tolerance)
 
     # Plot all matches with catalogue.
     plt.scatter(matches[sex_ra_col], matches[sex_dec_col], label='SExtractor MAG\\_AUTO')
@@ -1649,9 +1658,11 @@ def match_coordinates_filters_multi(prime, match_tables, ra_tolerance, dec_toler
     return data
 
 
-def match_coordinates_multi(prime, match_tables, ra_tolerance: 'float', dec_tolerance: 'float', ra_name: 'str' = 'ra',
-                            dec_name: 'str' = 'dec', mag_name: 'str' = 'mag', extra_cols: 'list' = None,
-                            x_name: 'str' = 'xcentroid', y_name: 'str' = 'ycentroid'):
+def match_coordinates_multi(
+        prime, match_tables, ra_tolerance: 'float', dec_tolerance: 'float', ra_name: 'str' = 'ra',
+        dec_name: 'str' = 'dec', mag_name: 'str' = 'mag', extra_cols: 'list' = None,
+        x_name: 'str' = 'xcentroid', y_name: 'str' = 'ycentroid'
+):
     """
 
     :param prime:

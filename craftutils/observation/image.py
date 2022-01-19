@@ -1734,7 +1734,7 @@ class ImagingImage(Image):
 
         return image
 
-    def convert_to_es(self, output_path: str, ext: int = 0):
+    def convert_to_cs(self, output_path: str, ext: int = 0):
         new = self.copy(output_path)
         gain = self.extract_gain()
         exp_time = self.extract_exposure_time()
@@ -1742,8 +1742,8 @@ class ImagingImage(Image):
 
         new.load_data()
         new_data = new.data[ext]
-        u.debug_print(1, "Image.convert_to_es() 1: new_data.unit ==", new_data.unit)
-        new_data *= gain
+        u.debug_print(1, "Image.convert_to_cs() 1: new_data.unit ==", new_data.unit)
+        # new_data *= gain
         new_data /= exp_time
         new.data[ext] = new_data.value
         u.debug_print(1, "Image.concert_to_es() 2: new_data.unit ==", new_data.unit)
@@ -1751,16 +1751,18 @@ class ImagingImage(Image):
         # TODO: Too much writing to disk here. Rewrite set_header_item to take and set multiple keys at once
 
         new.set_header_item(key="BUNIT", value=str(new_data.unit), ext=ext)
-        new.set_header_item(key="GAIN", value=1.0 * exp_time, ext=ext)
-        new.set_header_item(key="OLD_GAIN", value=gain.value, ext=ext)
+        # new.set_header_item(key="GAIN", value=1.0 * exp_time, ext=ext)
+        new.set_header_item(key="GAIN", value=gain * exp_time, ext=ext)
+        new.set_header_item(key="OLD_GAIN", value=gain, ext=ext)
         new.set_header_item(key="EXPTIME", value=1.0, ext=ext)
         new.set_header_item(key="OLD_EXPTIME", value=exp_time.value, ext=ext)
         new.set_header_item(key="OLD_SATURATE", value=saturate, ext=ext)
+        # new.set_header_item(key="SATURATE", value=saturate * gain / exp_time, ext=ext)
         new.set_header_item(key="SATURATE", value=saturate / exp_time, ext=ext)
 
         new.add_log(
-            action=f"Converted image data on ext {ext} to e- / s, using gain of {gain} and exptime of {exp_time}.",
-            method=self.convert_to_es,
+            action=f"Converted image data on ext {ext} to cts / s, using exptime of {exp_time}.",
+            method=self.convert_to_cs,
             output_path=output_path
         )
 
@@ -1851,10 +1853,10 @@ class ImagingImage(Image):
         return matches_source_cat, matches_ext_cat, distance
 
     def signal_to_noise_ccd(self, dual: bool = False):
-        source_cat = self.get_source_cat(dual=dual)
         self.extract_exposure_time()
         self.extract_gain()
         self.aperture_areas()
+        source_cat = self.get_source_cat(dual=dual)
 
         flux_target = source_cat['FLUX_AUTO']
         rate_target = flux_target / self.exposure_time
@@ -2078,15 +2080,16 @@ class ImagingImage(Image):
         image_cut = ff.trim(hdu=self.hdu_list, left=left, right=right, bottom=bottom, top=top)
         norm = pl.nice_norm(image=image_cut[ext].data)
         plt.imshow(image_cut[0].data, origin='lower', norm=norm)
-        pl.plot_gal_params(hdu=image_cut,
-                           ras=[row["RA"].value],
-                           decs=[row["DEC"].value],
-                           a=[row["A_WORLD"].value],
-                           b=[row["B_WORLD"].value],
-                           theta=[row["THETA_WORLD"].value],
-                           world=True,
-                           show_centre=True
-                           )
+        pl.plot_gal_params(
+            hdu=image_cut,
+            ras=[row["RA"].value],
+            decs=[row["DEC"].value],
+            a=[row["A_WORLD"].value],
+            b=[row["B_WORLD"].value],
+            theta=[row["THETA_WORLD"].value],
+            world=True,
+            show_centre=True
+        )
         pl.plot_gal_params(hdu=image_cut,
                            ras=[row["RA"].value],
                            decs=[row["DEC"].value],
