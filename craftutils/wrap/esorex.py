@@ -11,6 +11,14 @@ import craftutils.utils as u
 
 eso_bin_path = os.path.join(p.config["eso_install_dir"], "bin", "esorex")
 
+eso_calib_path = os.path.join(p.config["eso_install_dir"], "calib")
+fors2_calib_path = os.path.join(
+    eso_calib_path,
+    filter(
+        lambda d: os.path.isdir(os.path.join(eso_calib_path, d)) and d.startswith("fors-"),
+        os.listdir(eso_calib_path)
+    ).__next__())
+
 
 def write_sof(
         table_path: str,
@@ -89,6 +97,7 @@ def write_sof(
 def sof(frames: Dict[str, list], output_path: str):
     output_lines = []
     for frame_type in frames:
+        u.debug_print(0, output_lines)
         for frame in frames[frame_type]:
             output_lines.append(f"{frame} {frame_type}\n")
 
@@ -100,14 +109,130 @@ def sof(frames: Dict[str, list], output_path: str):
     return output_lines
 
 
-def fors_bias(bias_frames: List[str], output_dir: str, output_filename: str):
-    sof_path = os.path.join(output_dir, "bias.sof")
+def fors_bias(
+        bias_frames: List[str], output_dir: str, output_filename: str = None,
+        sof_name: str = "bias.sof"):
+    sof_name = u.sanitise_file_ext(sof_name, ".sof")
+    old_dir = os.getcwd()
+    os.chdir(output_dir)
+    sof_path = os.path.join(output_dir, sof_name)
     sof({"BIAS": bias_frames}, sof_path)
     u.system_command_verbose(f"{eso_bin_path} fors_bias {sof_path}")
     master_path = os.path.join(output_dir, "master_bias.fits")
-    final_path = os.path.join(output_dir, output_filename)
-    shutil.move(master_path, final_path)
+    if output_filename is not None:
+        final_path = os.path.join(output_dir, output_filename)
+        shutil.move(master_path, final_path)
+    else:
+        final_path = master_path
+    os.chdir(old_dir)
     return final_path
 
-def fors_img_sky_flat():
-    pass
+
+def fors_img_sky_flat(
+        flat_frames: List[str],
+        master_bias: str,
+        output_dir: str,
+        output_filename: str = None,
+        sof_name: str = "flat.sof"
+):
+    sof_name = u.sanitise_file_ext(sof_name, ".sof")
+    old_dir = os.getcwd()
+    os.chdir(output_dir)
+    sof_path = os.path.join(output_dir, sof_name)
+    sof({
+        "SKY_FLAT_IMG": flat_frames,
+        "MASTER_BIAS": [master_bias],
+    },
+        sof_path)
+    u.system_command_verbose(f"{eso_bin_path} fors_img_sky_flat {sof_path}")
+    master_path = os.path.join(output_dir, "master_sky_flat_img.fits")
+    if output_filename is not None:
+        final_path = os.path.join(output_dir, output_filename)
+        shutil.move(master_path, final_path)
+    else:
+        final_path = master_path
+    os.chdir(old_dir)
+    return final_path
+
+
+fors_flux_std_imgs = ("fors2_stetson_2010Dec09.fits", "fors2_landolt_std_UBVRI.fits")
+
+
+def select_phot_table(chip_num: int):
+    if chip_num == 1:
+        phot_table = "fors2_1453_phot.fits"
+    elif chip_num == 2:
+        phot_table = "fors2_1456_phot.fits"
+    else:
+        raise ValueError(f"FORS2 chip number must be 1 or 2, not {chip_num}")
+    return phot_table
+
+
+def fors_zeropoint(
+        standard_img: str,
+        master_bias: str,
+        master_sky_flat_img: str,
+        output_dir: str,
+        output_filename: str = None,
+        chip_num: int = 1,
+        sof_name: str = "zeropoint.sof",
+        flux_std_imgs: List[str] = fors_flux_std_imgs,
+):
+    sof_name = u.sanitise_file_ext(sof_name, ".sof")
+    old_dir = os.getcwd()
+    os.chdir(output_dir)
+    sof_path = os.path.join(output_dir, sof_name)
+
+    phot_table = select_phot_table(chip_num)
+
+    sof({
+        "STANDARD_IMG": [standard_img],
+        "MASTER_BIAS": [master_bias],
+        "MASTER_SKY_FLAT_IMG": [master_sky_flat_img],
+        "FLX_STD_IMG": list(map(lambda f: os.path.join(fors2_calib_path, f), flux_std_imgs)),
+        "PHOT_TABLE": [os.path.join(fors2_calib_path, phot_table)],
+    },
+        sof_path)
+    u.system_command_verbose(f"{eso_bin_path} fors_zeropoint {sof_path}")
+
+    master_path = os.path.join(output_dir, "aligned_phot.fits")
+    if output_filename is not None:
+        final_path = os.path.join(output_dir, output_filename)
+        shutil.move(master_path, final_path)
+    else:
+        final_path = master_path
+    os.chdir(old_dir)
+    return final_path
+
+
+def fors_photometry(
+        aligned_phot: List[str],
+        master_sky_flat_img: str,
+        output_dir: str,
+        chip_num: int = 1,
+        sof_name: str = "photometry.sof"
+):
+    sof_name = u.sanitise_file_ext(sof_name, ".sof")
+    old_dir = os.getcwd()
+    os.chdir(output_dir)
+    sof_path = os.path.join(output_dir, sof_name)
+
+    phot_table = select_phot_table(chip_num)
+
+    sof({
+        "MASTER_SKY_FLAT_IMG": [master_sky_flat_img],
+        "ALIGNED_PHOT": aligned_phot,
+        "PHOT_TABLE": [os.path.join(fors2_calib_path, phot_table)],
+    },
+        sof_path)
+
+    u.system_command_verbose(f"{eso_bin_path} fors_photometry --fite=one {sof_path}")
+
+    # master_path = os.path.join(output_dir, "aligned_phot.fits")
+    # if output_filename is not None:
+    #     final_path = os.path.join(output_dir, output_filename)
+    #     shutil.move(master_path, final_path)
+    # else:
+    #     final_path = master_path
+    os.chdir(old_dir)
+    # return final_path

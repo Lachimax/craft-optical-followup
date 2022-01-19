@@ -511,6 +511,7 @@ def determine_zeropoint_sextractor(
                                                                   exp_time=exp_time)
 
     # Plot all stars found by SExtractor.
+    plt.close()
     source_tbl = source_tbl[source_tbl[sex_ra_col] != 0.0]
     source_tbl = source_tbl[source_tbl[sex_dec_col] != 0.0]
     plt.scatter(u.dequantify(source_tbl[sex_ra_col]), u.dequantify(source_tbl[sex_dec_col]), label='SExtractor')

@@ -116,6 +116,7 @@ def load_epoch_directory():
             write_epoch_directory(directory=directory)
     return directory
 
+
 def epoch_from_directory(epoch_name: str):
     directory = load_epoch_directory()
     print(f"Looking for {epoch_name} in directory...")
@@ -1152,7 +1153,7 @@ class Epoch:
         self.frames_standard = {}
         self.frames_science = []
         self.frames_dark = []
-        self.frames_flat = []
+        self.frames_flat = {}
 
         self.frames_reduced = []
 
@@ -1287,6 +1288,7 @@ class Epoch:
             "stages": self.stages_complete,
             "paths": self.paths,
             "frames_science": _output_img_dict_list(self.frames_science),
+            "frames_flat": _output_img_dict_list(self.frames_flat),
             "frames_std": _output_img_dict_list(self.frames_standard),
             "frames_bias": _output_img_list(self.frames_bias),
             "coadded": _output_img_dict_single(self.coadded),
@@ -1424,7 +1426,6 @@ class Epoch:
                     self.frames_science[sort_key].append(frame)
 
         elif frame.frame_type == "standard":
-            # u.debug_print(0, f"Adding standard frame {frame}")
             if isinstance(self.frames_standard, list):
                 if frame not in self.frames_standard:
                     self.frames_standard.append(frame)
@@ -1434,8 +1435,14 @@ class Epoch:
 
         elif frame.frame_type == "dark" and frame not in self.frames_dark:
             self.frames_dark.append(frame)
-        elif frame.frame_type == "flat" and frame not in self.frames_flat:
-            self.frames_flat.append(frame)
+
+        elif frame.frame_type == "flat":
+            if isinstance(self.frames_flat, list):
+                if frame not in self.frames_flat:
+                    self.frames_flat.append(frame)
+            elif isinstance(self.frames_flat, dict):
+                if frame not in self.frames_flat[sort_key]:
+                    self.frames_flat[sort_key].append(frame)
 
     @classmethod
     def default_params(cls):
@@ -1520,8 +1527,6 @@ class ImagingEpoch(Epoch):
         self.exp_time_err = {}
         self.airmass_mean = {}
         self.airmass_err = {}
-
-        self.flats = {}
 
         self.frames_science = {}
         self.frames_reduced = {}
@@ -2051,7 +2056,6 @@ class ImagingEpoch(Epoch):
             "exp_time_err": self.exp_time_err,
             "airmass_mean": self.airmass_mean,
             "airmass_err": self.airmass_err,
-            "flats": _output_img_dict_list(self.flats),
             "astrometry_successful": self.astrometry_successful,
             "astrometry_stats": self.astrometry_stats
         })
@@ -2231,9 +2235,12 @@ class ImagingEpoch(Epoch):
                 self.filters.append(fil)
             if fil not in self.astrometry_successful:
                 self.astrometry_successful[fil] = {}
-            if fil not in self.frames_science:
+            if fil not in self.frames_standard:
                 if isinstance(self.frames_standard, dict):
                     self.frames_standard[fil] = []
+            if fil not in self.frames_flat:
+                if isinstance(self.frames_flat, dict):
+                    self.frames_flat[fil] = []
             if fil not in self.frames_science:
                 if isinstance(self.frames_science, dict):
                     self.frames_science[fil] = []
@@ -2264,8 +2271,6 @@ class ImagingEpoch(Epoch):
                 self.airmass_err[fil] = None
             if fil not in self.std_pointings:
                 self.std_pointings[fil] = []
-            if fil not in self.flats:
-                self.flats[fil] = []
             if fil not in self.astrometry_stats:
                 self.astrometry_stats[fil] = {}
             return True
@@ -3069,6 +3074,11 @@ class ESOImagingEpoch(ImagingEpoch):
         data_dir = self.data_path
         data_title = self.name
 
+        self.frames_science = {}
+        self.frames_flat = {}
+        self.frames_bias = []
+        self.frames_raw = []
+
         # Write tables of fits files to main directory; firstly, science images only:
         tbl = image.fits_table(
             input_path=raw_dir,
@@ -3094,7 +3104,7 @@ class ESOImagingEpoch(ImagingEpoch):
             u.debug_print(1, self.instrument_name, cls, img.name, img.frame_type)
             # The below will also update the filter list.
             u.debug_print(
-                0,
+                2,
                 f"_initial_setup(): Adding frame {img.name}, type {img.frame_type}, to {self}, type {type(self)}")
             self.add_frame_raw(img)
 
@@ -3121,11 +3131,7 @@ class ESOImagingEpoch(ImagingEpoch):
                     # img.update_output_file()
 
         # Collect and save some stats on those filters:
-
-
-
         for i, fil in enumerate(self.filters):
-
             exp_times = list(map(lambda frame: frame.extract_exposure_time().value, self.frames_science[fil]))
             u.debug_print(1, "exposure times:")
             u.debug_print(1, exp_times)
@@ -3136,8 +3142,6 @@ class ESOImagingEpoch(ImagingEpoch):
             self.airmass_mean[fil] = np.nanmean(airmasses)
             self.airmass_err[fil] = max(np.nanmax(airmasses) - self.airmass_mean[fil],
                                         self.airmass_mean[fil] - np.nanmin(airmasses))
-
-
 
             print(f'Copying {fil} calibration data to standard folder...')
 
@@ -3695,27 +3699,64 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
 
     def photometric_calibration(
             self,
-            #image_dict: dict,
+            # image_dict: dict,
             output_path: str,
-            #images: str = "coadded",
+            # images: str = "coadded",
             **kwargs):
 
         import craftutils.wrap.esorex as esorex
 
-        bias_up, bias_down = self.sort_by_chip(self.frames_bias)
+        bias_sets = self.sort_by_chip(self.frames_bias)
+        flat_sets = {}
+        std_sets = {}
+        for fil in self.filters:
+            flat_sets[fil] = self.sort_by_chip(self.frames_flat[fil])
+            std_sets[fil] = self.sort_by_chip(self.frames_standard[fil])
 
-        esorex.fors_bias(
-            bias_frames=list(map(lambda b: b.path, bias_up)),
-            output_dir=output_path,
-            output_filename="master_bias_up.fits",
-        )
-        esorex.fors_bias(
-            bias_frames=list(map(lambda b: b.path, bias_down)),
-            output_dir=output_path,
-            output_filename="master_bias_down.fits",
-        )
+        chips = ("up", "down")
+        for i, chip in enumerate(chips):
+            bias_set = bias_sets[i]
 
-        pass
+            master_bias = esorex.fors_bias(
+                bias_frames=list(map(lambda b: b.path, bias_set)),
+                output_dir=output_path,
+                output_filename=f"master_bias_{chip}.fits",
+                sof_name=f"bias_{chip}.sof"
+            )
+
+            for fil in self.filters:
+                flat_set = list(map(lambda b: b.path, flat_sets[fil][i]))
+                u.debug_print(0, flat_set)
+                fil_dir = os.path.join(output_path, fil)
+                u.mkdir_check(fil_dir)
+                master_sky_flat_img = esorex.fors_img_sky_flat(
+                    flat_frames=flat_set,
+                    master_bias=master_bias,
+                    output_dir=fil_dir,
+                    output_filename=f"master_sky_flat_img_{chip}.fits",
+                    sof_name=f"flat_{chip}"
+                )
+
+                aligned_phots = []
+                for std in std_sets[fil][i]:
+                    std_dir = os.path.join(fil_dir, std.name)
+                    u.mkdir_check(std_dir)
+                    aligned_phot = esorex.fors_zeropoint(
+                        standard_img=std.path,
+                        master_bias=master_bias,
+                        master_sky_flat_img=master_sky_flat_img,
+                        output_dir=std_dir,
+                        chip_num=i + 1
+                    )
+                    aligned_phots.append(aligned_phot)
+
+                if len(aligned_phots) > 1:
+                    esorex.fors_photometry(
+                        aligned_phot=aligned_phots,
+                        master_sky_flat_img=master_sky_flat_img,
+                        output_dir=fil_dir,
+                        chip_num=i + 1,
+                    )
 
     @classmethod
     def sort_by_chip(cls, images: list):
