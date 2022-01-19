@@ -1316,14 +1316,14 @@ def construct_columns(cat="panstarrs1"):
 
 
 def retrieve_mast_photometry(ra: float, dec: float, cat: str = "panstarrs1", release="dr2", table="stack",
-                             radius: units.Quantity = 0.2 * units.deg):
+                             radius: units.Quantity = 0.1 * units.deg):
     if cat.lower() == "panstarrs1":
         cat_str = "panstarrs"
     else:
         cat_str = cat.lower()
 
     radius = u.dequantify(radius, unit=units.deg)
-    print(f"\nQuerying {cat} {release} archive for field centring on RA={ra}, DEC={dec}")
+    print(f"\nQuerying {cat} {release} archive for field centring on RA={ra}, DEC={dec}, with radius {radius}")
     cat = cat.lower()
     url = f"{mast_url}{cat_str}/{release}/{table}.csv"
     print(url)
@@ -1337,7 +1337,7 @@ def retrieve_mast_photometry(ra: float, dec: float, cat: str = "panstarrs1", rel
 
 
 def save_mast_photometry(ra: float, dec: float, output: str, cat: str = "panstarrs1",
-                         radius: units.Quantity = 0.2 * units.deg):
+                         radius: units.Quantity = 0.1 * units.deg):
     response = retrieve_mast_photometry(ra=ra, dec=dec, cat=cat, radius=radius)
     if response == "ERROR":
         return response
