@@ -366,6 +366,12 @@ class Image:
             u.debug_print(1, "Data already loaded.")
         return self.data
 
+    def to_ccddata(self, unit: Union[str, units.Unit]):
+        if unit is not None:
+            return ccdproc.CCDData.read(self.path)
+        else:
+            return ccdproc.CCDData.read(self.path, unit=unit)
+
     def get_id(self):
         return self.filename[:self.filename.find(".fits")]
 
