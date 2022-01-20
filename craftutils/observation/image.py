@@ -9,6 +9,7 @@ import warnings
 from typing import Union, Tuple, List
 from copy import deepcopy
 
+import ccdproc
 import numpy as np
 import matplotlib.pyplot as plt
 
@@ -367,10 +368,14 @@ class Image:
         return self.data
 
     def to_ccddata(self, unit: Union[str, units.Unit]):
-        if unit is not None:
+        if unit is None:
             return ccdproc.CCDData.read(self.path)
         else:
             return ccdproc.CCDData.read(self.path, unit=unit)
+
+    @classmethod
+    def from_ccddata(self, ccddata: ccdproc.CCDData, path: str):
+        pass
 
     def get_id(self):
         return self.filename[:self.filename.find(".fits")]
@@ -487,14 +492,11 @@ class Image:
         with fits.open(self.path, mode="update") as file:
             for i in range(len(self.headers)):
                 if self.headers is not None:
+                    if i >= len(file):
+                        file.append(fits.ImageHDU())
                     file[i].header = self.headers[i]
                 if self.data is not None:
                     file[i].data = u.dequantify(self.data[i])
-
-    def write_data(self):
-        with fits.open(self.path, mode="update") as file:
-            for i, data in enumerate(self.data):
-                file[i].data = u.dequantify(data)
 
     @classmethod
     def header_keys(cls):
@@ -1133,7 +1135,7 @@ class ImagingImage(Image):
         self.zeropoint_output_paths[cat_name.lower()] = output_path
         self.add_log(
             action=f"Calculated zeropoint as {zp_dict['zeropoint']} +/- {zp_dict['zeropoint_err']}, from {zp_dict['catalogue']}.",
-            method=self.select_zeropoint,
+            method=self.zeropoint,
             output_path=output_path
         )
         self.update_output_file()
@@ -1802,7 +1804,13 @@ class ImagingImage(Image):
         )
         cleaned.update_output_file()
 
-    def reproject(self, other_image: 'ImagingImage', ext: int = 0, output_path: str = None):
+    def reproject(
+            self,
+            other_image: 'ImagingImage',
+            ext: int = 0,
+            output_path: str = None,
+            include_footprint: bool = False
+    ):
         import reproject as rp
         if output_path is None:
             output_path = self.path.replace(".fits", "_reprojected.fits")
@@ -1816,6 +1824,11 @@ class ImagingImage(Image):
             reprojected_image = self.copy(output_path)
         reprojected_image.load_data()
         reprojected_image.data[ext] = reprojected
+
+        if include_footprint:
+            new_hdu = fits.ImageHDU()
+            reprojected_image.headers.append(new_hdu.header)
+            reprojected_image.data.append(footprint)
         reprojected_image.write_fits_file()
 
         reprojected_image.add_log(
@@ -2355,6 +2368,37 @@ class ImagingImage(Image):
 
         return self.synth_cat
 
+    def test_limit_location(
+            self,
+            coord: SkyCoord,
+            ap_radius: units.Quantity = 2 * units.arcsec,
+            ext: int = 0,
+            **kwargs
+    ):
+
+        self.load_wcs()
+        _, pix_scale = self.extract_pixel_scale()
+        x, y = self.wcs.all_world2pix(coord.ra, coord.dec, 0)
+        ap_radius_pix = ap_radius.to(units.pix, pix_scale).value
+
+        mask = self.generate_mask(method='sep')
+        mask = mask.astype(bool)
+
+        self.calculate_background(method="sep", mask=mask, ext=ext, **kwargs)
+        rms = self.sep_background.rms()
+
+        flux, _, _ = sep.sum_circle(rms, [x], [y], ap_radius_pix)
+        sigma_flux = np.sqrt(flux)
+
+        limits = {}
+        for i in range(1, 6):
+            n_sigma_flux = sigma_flux * i
+            limit, _, _, _ = self.magnitude(flux=n_sigma_flux)
+            limits[f"{i}-sigma"] = {
+                "flux": flux,
+                "mag": limit
+            }
+
     def test_limit_synthetic(
             self,
             coord: SkyCoord = None,
@@ -2709,6 +2753,7 @@ class ImagingImage(Image):
         """
 
         return [
+            "calib_pipeline",
             "instrument_archive",
             "des",
             "delve",

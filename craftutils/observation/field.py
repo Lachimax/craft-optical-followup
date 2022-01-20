@@ -7,6 +7,7 @@ from typing import Union, List
 import shutil
 from collections import OrderedDict
 
+import ccdproc
 import matplotlib.pyplot as plt
 import numpy as np
 
@@ -14,6 +15,7 @@ from astropy.time import Time
 from astropy.coordinates import SkyCoord
 import astropy.units as units
 import astropy.table as table
+import astropy.io.fits as fits
 
 import craftutils.astrometry as am
 import craftutils.fits_files as ff
@@ -601,7 +603,7 @@ class Field:
         ra = self.centre_coords.ra.value
         dec = self.centre_coords.dec.value
         if force_update or f"in_{cat_name}" not in self.cats:
-            u.debug_print(0, "Field.retrieve_catalogue(): radius ==", radius)
+            u.debug_print(2, "Field.retrieve_catalogue(): radius ==", radius)
             response = retrieve.save_catalogue(
                 ra=ra, dec=dec, output=output, cat=cat_name.lower(),
                 radius=radius)
@@ -1237,7 +1239,10 @@ class Epoch:
                 u.mkdir_check_nested(output_dir, remove_last=False)
                 self.paths[name] = output_dir
 
-                stage_kwargs = self.param_file[name]
+                if name in self.param_file:
+                    stage_kwargs = self.param_file[name]
+                else:
+                    stage_kwargs = {}
 
                 if stage["method"](output_dir=output_dir, **stage_kwargs) is not False:
                     self.stages_complete[f"{n}-{name}"] = Time.now()
@@ -1387,8 +1392,9 @@ class Epoch:
         p.save_params(file=self.param_path, dictionary=params)
 
     def add_frame_raw(self, raw_frame: Union[image.ImagingImage, str]):
-        u.debug_print(0,
-                      f"add_frame_raw(): Adding frame {raw_frame.name}, type {raw_frame.frame_type}, to {self}, type {type(self)}")
+        u.debug_print(
+            2,
+            f"add_frame_raw(): Adding frame {raw_frame.name}, type {raw_frame.frame_type}, to {self}, type {type(self)}")
         self.frames_raw.append(raw_frame)
         self.sort_frame(raw_frame)
 
@@ -1411,7 +1417,7 @@ class Epoch:
 
     def sort_frame(self, frame: image.Image, sort_key: str = None):
         frame.extract_frame_type()
-        u.debug_print(0,
+        u.debug_print(2,
                       f"sort_frame(); Adding frame {frame.name}, type {frame.frame_type}, to {self}, type {type(self)}")
 
         if frame.frame_type == "bias" and frame not in self.frames_bias:
@@ -1751,14 +1757,40 @@ class ImagingEpoch(Epoch):
             output_directory_fil = os.path.join(output_dir, fil)
             u.rmtree_check(output_directory_fil)
             u.mkdir_check(output_directory_fil)
-            coadded_paths = montage.standard_script(
+            coadded_path = montage.standard_script(
                 input_directory=input_directory_fil,
                 output_directory=output_directory_fil,
                 output_file_name=f"{self.name}_{self.date.strftime('%Y-%m-%d')}_{fil}_coadded.fits",
-                coadd_types=["mean"]
+                coadd_types=["median"],
+                add_with_ccdproc=False,
+                sigma_clip=True,
+                # unit="electron / second"
+                # sigma_clip_low_threshold=5,
+            )[0]
+            corr_dir = os.path.join(output_directory_fil, "corrdir")
+            coadded_median = image.FORS2CoaddedImage(coadded_path)
+            ccds = []
+            for proj_img_path in list(map(
+                    lambda m: os.path.join(corr_dir, m),
+                    filter(
+                        lambda f: f.endswith(".fits") and not f.endswith("area.fits"),
+                        os.listdir(corr_dir)))):
+                proj_img = image.FORS2Image(proj_img_path)
+                reproj_img = proj_img.reproject(coadded_median, include_footprint=True)
+                reproj_img_ccd = reproj_img.to_ccddata(unit="electron / second")
+                ccds.append(reproj_img_ccd)
+            sigclip_path = coadded_path.replace("median", "mean-sigmaclip")
+            combined = ccdproc.combine(
+                img_list=ccds,
+                output_file=sigclip_path,
+                method="average",
+                sigma_clip=True,
+                sigma_clip_func=np.nanmean,
+                sigma_clip_dev_func=np.nanstd,
+                sigma_clip_high_thresh=2.5
             )
-            for coadded_path in coadded_paths:
-                self.add_coadded_image(coadded_path, key=fil, mode="imaging")
+
+            self.add_coadded_image(sigclip_path, key=fil, mode="imaging")
 
     def proc_correct_astrometry_coadded(self, output_dir: str, **kwargs):
         self.generate_astrometry_indices()
@@ -1983,6 +2015,7 @@ class ImagingEpoch(Epoch):
             distance_tolerance: units.Quantity = 0.2 * units.arcsec,
             snr_min: float = 100.,
             star_class_tolerance: float = 0.95,
+            suppress_select: bool = False
     ):
         deepest = image_dict[self.filters[0]]
         for fil in self.filters:
@@ -1998,12 +2031,12 @@ class ImagingEpoch(Epoch):
                         output_path=os.path.join(fil_path, cat_name),
                         cat_name=cat_name,
                         dist_tol=distance_tolerance,
-                        show=True,
+                        show=False,
                         snr_cut=snr_min,
                         star_class_tol=star_class_tolerance,
                     )
 
-            zeropoint, cat = img.select_zeropoint()
+            zeropoint, cat = img.select_zeropoint(suppress_select)
 
             img.estimate_depth(zeropoint_name=cat)
 
@@ -2192,7 +2225,7 @@ class ImagingEpoch(Epoch):
     def add_frame_raw(self, raw_frame: Union[image.ImagingImage, str]):
         raw_frame, fil = self._check_frame(frame=raw_frame, frame_type="raw")
         u.debug_print(
-            0,
+            2,
             f"add_frame_raw(): Adding frame {raw_frame.name}, type {raw_frame.frame_type}, to {self}, type {type(self)}")
         self.check_filter(fil)
         if raw_frame is None:
@@ -3152,8 +3185,6 @@ class ESOImagingEpoch(ImagingEpoch):
         inst_reflex_dir = os.path.join(config["esoreflex_input_dir"], inst_reflex_dir)
         u.mkdir_check_nested(inst_reflex_dir, remove_last=False)
 
-        u.debug_print(0, kwargs)
-
         if not ("skip_esoreflex_copy" in kwargs and kwargs["skip_esoreflex_copy"]):
             for file in os.listdir(raw_dir):
                 print("Copying to ESOReflex input directory...")
@@ -3699,12 +3730,21 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
 
     def photometric_calibration(
             self,
-            # image_dict: dict,
+            image_dict: dict,
             output_path: str,
-            # images: str = "coadded",
+            images: str = "coadded",
             **kwargs):
 
         import craftutils.wrap.esorex as esorex
+
+        super().photometric_calibration(
+            output_path=output_path,
+            image_dict=image_dict,
+            images=images,
+            **kwargs
+        )
+
+        images = self._get_images(images)
 
         bias_sets = self.sort_by_chip(self.frames_bias)
         flat_sets = {}
@@ -3726,7 +3766,6 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
 
             for fil in self.filters:
                 flat_set = list(map(lambda b: b.path, flat_sets[fil][i]))
-                u.debug_print(0, flat_set)
                 fil_dir = os.path.join(output_path, fil)
                 u.mkdir_check(fil_dir)
                 master_sky_flat_img = esorex.fors_img_sky_flat(
@@ -3751,12 +3790,30 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
                     aligned_phots.append(aligned_phot)
 
                 if len(aligned_phots) > 1:
-                    esorex.fors_photometry(
-                        aligned_phot=aligned_phots,
-                        master_sky_flat_img=master_sky_flat_img,
-                        output_dir=fil_dir,
-                        chip_num=i + 1,
-                    )
+                    try:
+                        phot_coeff_table = esorex.fors_photometry(
+                            aligned_phot=aligned_phots,
+                            master_sky_flat_img=master_sky_flat_img,
+                            output_dir=fil_dir,
+                            chip_num=i + 1,
+                        )
+
+                        phot_coeff_table = fits.open(phot_coeff_table)[1].data
+
+                        img = images[fil]
+                        img.zeropoint_best = {
+                            "zeropoint": phot_coeff_table["ZPOINT"] * units.mag,
+                            "zeropoint_err": phot_coeff_table["DZPOINT"],
+                            "airmass": img.extract_airmass(),
+                            "airmass_err": self.airmass_err[fil],
+                            "extinction": phot_coeff_table["EXT"],
+                            "extinction_err": phot_coeff_table["DEXT"],
+                            "catalogue": "calib_pipeline"
+                        }
+                        img.update_output_file()
+                    except SystemError:
+                        print(
+                            "System Error encountered while doing esorex processing; possibly impossible value encountered. Skipping.")
 
     @classmethod
     def sort_by_chip(cls, images: list):

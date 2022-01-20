@@ -985,6 +985,8 @@ def write_sextractor_script_shift(file: 'str', shift_param: 'str', shift_param_v
         output.writelines('mv *.cat ' + cats_dir)
 
 
+
+
 def stack(files: list, output: str = None, directory: str = '', stack_type: str = 'median', inherit: bool = True,
           show: bool = False, normalise: bool = False):
     accepted_stack_types = ['mean', 'median', 'add']

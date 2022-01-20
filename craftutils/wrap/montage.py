@@ -6,6 +6,7 @@ from typing import List, Union
 import numpy as np
 
 import astropy.io.fits as fits
+from ccdproc import combine, CCDData
 
 import craftutils.utils as u
 from craftutils.observation.image import fits_table_all
@@ -265,6 +266,8 @@ def standard_script(
         output_file_name: str = None,
         ignore_differences: bool = False,
         coadd_types: Union[List[str], str] = 'median',
+        add_with_ccdproc: Union[List[bool], bool] = False,
+        unit="electron / second",
         **kwargs
 ):
     """
@@ -323,24 +326,29 @@ def standard_script(
 
     print("Performing background modeling and compute corrections for each image.")
     corrections_table_path = "corrections.tbl"
-    background_model(table_path=reprojected_table_path, fit_table_path=fit_table_path,
-                     correction_table_path=corrections_table_path)
+    background_model(
+        table_path=reprojected_table_path, fit_table_path=fit_table_path,
+        correction_table_path=corrections_table_path)
 
     print("Applying corrections to each image")
-    background_execute(input_directory=proj_dir, table_path=reprojected_table_path,
-                       correction_table_path=corrections_table_path,
-                       corr_dir=corr_dir)
+    background_execute(
+        input_directory=proj_dir, table_path=reprojected_table_path,
+        correction_table_path=corrections_table_path,
+        corr_dir=corr_dir)
 
     if isinstance(coadd_types, str):
         coadd_types = [coadd_types]
+    if isinstance(add_with_ccdproc, bool):
+        add_with_ccdproc = len(coadd_types) * [add_with_ccdproc]
 
     file_paths = []
 
-    for coadd_type in coadd_types:
+    for i, coadd_type in enumerate(coadd_types):
         print(f"Coadding the images with {coadd_type}.")
         if output_file_name is None:
             output_file_name = "coadded.fits"
         output_file_name_coadd = output_file_name.replace(".fits", f"_{coadd_type}.fits")
+
         add(input_directory=corr_dir,
             coadd_type=coadd_type,
             table_path=reprojected_table_path,

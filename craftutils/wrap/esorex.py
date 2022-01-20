@@ -209,6 +209,7 @@ def fors_photometry(
         aligned_phot: List[str],
         master_sky_flat_img: str,
         output_dir: str,
+        output_filename: str = None,
         chip_num: int = 1,
         sof_name: str = "photometry.sof"
 ):
@@ -228,11 +229,11 @@ def fors_photometry(
 
     u.system_command_verbose(f"{eso_bin_path} fors_photometry --fite=one {sof_path}")
 
-    # master_path = os.path.join(output_dir, "aligned_phot.fits")
-    # if output_filename is not None:
-    #     final_path = os.path.join(output_dir, output_filename)
-    #     shutil.move(master_path, final_path)
-    # else:
-    #     final_path = master_path
+    master_path = os.path.join(output_dir, "phot_coeff_table.fits")
+    if output_filename is not None:
+        final_path = os.path.join(output_dir, output_filename)
+        shutil.move(master_path, final_path)
+    else:
+        final_path = master_path
     os.chdir(old_dir)
-    # return final_path
+    return final_path
