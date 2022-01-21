@@ -476,13 +476,13 @@ def detect_edges(file: Union['fits.HDUList', 'str'], value: float = 0.0, ext: in
 
 def detect_edges_area(file: Union['fits.HDUList', 'str']):
     if type(file) is str:
+        print("Area file:", file)
         file = fits.open(file)
 
     data = file[0].data
 
     # We round to the 13th decimal place
     keep_val = np.round(np.max(data), 13)
-    print(keep_val)
 
     height = data.shape[0]
     mid_y = int(height / 2)

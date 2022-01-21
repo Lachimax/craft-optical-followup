@@ -1400,9 +1400,8 @@ class ImagingImage(Image):
             output_dir = self.data_path
         final_file = os.path.join(output_dir, f"{base_filename}.fits")
         self.astrometry_corrected_path = final_file
-        new_image = self.new_image(
-            path=final_file
-        )
+        new_image = self.copy(final_file)
+
         new_image.add_log(
             "Astrometry corrected using Astrometry.net.",
             method=self.correct_astrometry,
@@ -2385,7 +2384,7 @@ class ImagingImage(Image):
         mask = mask.astype(bool)
 
         self.calculate_background(method="sep", mask=mask, ext=ext, **kwargs)
-        rms = self.sep_background.rms()
+        rms = self.sep_background[ext].rms()
 
         flux, _, _ = sep.sum_circle(rms, [x], [y], ap_radius_pix)
         sigma_flux = np.sqrt(flux)
@@ -2398,6 +2397,7 @@ class ImagingImage(Image):
                 "flux": flux,
                 "mag": limit
             }
+        return limits
 
     def test_limit_synthetic(
             self,
@@ -2719,7 +2719,7 @@ class ImagingImage(Image):
         elif instrument == "vlt-fors2":
             return FORS2Image
         elif instrument == "vlt-hawki":
-            return HAWKIImage
+            return HAWKICoaddedImage
         elif instrument == "gs-aoi":
             return GSAOIImage
         elif "hst" in instrument:
@@ -2807,6 +2807,28 @@ class CoaddedImage(ImagingImage):
             "area_file": self.area_file
         })
         return outputs
+
+    def load_output_file(self):
+        outputs = p.load_output_file(self)
+        if outputs is not None:
+            if "area_file" in outputs:
+                self.area_file = outputs["area_file"]
+        return outputs
+
+    def correct_astrometry(self, output_dir: str = None, tweak: bool = True, **kwargs):
+        new_image = super().correct_astrometry(
+            output_dir=output_dir,
+            tweak=tweak,
+            **kwargs
+        )
+        new_image.area_file = self.area_file
+        return new_image
+
+    def copy(self, destination: str):
+        new_image = super().copy(destination)
+        new_image.area_file = self.area_file
+        new_image.update_output_file()
+        return new_image
 
     @classmethod
     def select_child_class(cls, instrument: str, **kwargs):
@@ -2910,8 +2932,19 @@ class ESOImagingImage(ImagingImage, ESOImage):
         return n
 
 
-class HAWKIImage(ESOImagingImage):
+class HAWKICoaddedImage(ESOImagingImage):
     instrument_name = "vlt-hawki"
+
+    def zeropoint(
+            self
+    ):
+        self.zeropoint_best = {
+            "zeropoint": self.extract_header_item("PHOTZP"),
+            "zeropoint_err": self.extract_header_item("PHOTZPER"),
+            "extinction": 0.0 * units.mag,
+            "extinction_err": 0.0 * units.mag,
+            "catalogue": "2MASS"
+        }
 
 
 class FORS2Image(ESOImagingImage):

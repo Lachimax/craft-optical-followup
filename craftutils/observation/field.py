@@ -1767,6 +1767,11 @@ class ImagingEpoch(Epoch):
                 # unit="electron / second"
                 # sigma_clip_low_threshold=5,
             )[0]
+
+            sigclip_path = coadded_path.replace("median", "mean-sigmaclip")
+            area_final = sigclip_path.replace(".fits", "_area.fits")
+            shutil.copy(coadded_path.replace(".fits", "_area.fits"), area_final)
+
             corr_dir = os.path.join(output_directory_fil, "corrdir")
             coadded_median = image.FORS2CoaddedImage(coadded_path)
             ccds = []
@@ -1779,8 +1784,8 @@ class ImagingEpoch(Epoch):
                 reproj_img = proj_img.reproject(coadded_median, include_footprint=True)
                 reproj_img_ccd = reproj_img.to_ccddata(unit="electron / second")
                 ccds.append(reproj_img_ccd)
-            sigclip_path = coadded_path.replace("median", "mean-sigmaclip")
-            combined = ccdproc.combine(
+
+            combined_ccd = ccdproc.combine(
                 img_list=ccds,
                 output_file=sigclip_path,
                 method="average",
@@ -1789,6 +1794,14 @@ class ImagingEpoch(Epoch):
                 sigma_clip_dev_func=np.nanstd,
                 sigma_clip_high_thresh=2.5
             )
+            # TODO: Inject header
+
+            combined_img = image.FORS2CoaddedImage(sigclip_path, area_file=area_final)
+            coadded_img = image.FORS2CoaddedImage(coadded_path)
+            coadded_img.load_headers()
+            combined_img.headers = coadded_img.headers
+            combined_img.write_fits_file()
+            combined_img.update_output_file()
 
             self.add_coadded_image(sigclip_path, key=fil, mode="imaging")
 
@@ -1811,11 +1824,6 @@ class ImagingEpoch(Epoch):
                 output_dir=output_dir,
                 tweak=False
             )
-            if img.area_file is not None:
-                area = type(new_img)(img.area_file)
-                area_new = area.copy(new_img.path.replace(".fits", "_area.fits"))
-                area_new.transfer_wcs(new_img)
-                new_img.area_file = area_new.path
 
             self.add_coadded_astrometry_image(new_img, key=fil)
             # self.astrometry_diagnostics(images=self.coadded_astrometry)
@@ -1854,7 +1862,7 @@ class ImagingEpoch(Epoch):
                 phot_autoparams=f"{configs['kron_factor']},{configs['kron_radius_min']}")
         offset_tolerance = 0.5 * units.arcsec
         if "correct_astrometry_frames" in self.do_kwargs and not self.do_kwargs["correct_astrometry_frames"]:
-            offset_tolerance = 1.0 * units.arcsec
+            offset_tolerance = 2.0 * units.arcsec
         self.astrometry_diagnostics(images=images, offset_tolerance=offset_tolerance)
         # self.psf_diagnostics()
 
