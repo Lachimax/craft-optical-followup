@@ -2386,6 +2386,10 @@ class ImagingImage(Image):
         self.calculate_background(method="sep", mask=mask, ext=ext, **kwargs)
         rms = self.sep_background[ext].rms()
 
+        plt.imshow(rms)
+        plt.colorbar()
+        plt.show()
+
         flux, _, _ = sep.sum_circle(rms, [x], [y], ap_radius_pix)
         sigma_flux = np.sqrt(flux)
 
@@ -2394,7 +2398,7 @@ class ImagingImage(Image):
             n_sigma_flux = sigma_flux * i
             limit, _, _, _ = self.magnitude(flux=n_sigma_flux)
             limits[f"{i}-sigma"] = {
-                "flux": flux,
+                "flux": n_sigma_flux,
                 "mag": limit
             }
         return limits
@@ -2856,9 +2860,9 @@ class PanSTARRS1Cutout(ImagingImage):
     def extract_filter(self):
         key = self.header_keys()["filter"]
         fil_string = self.extract_header_item(key)
-        self.filter = fil_string[:fil_string.find(".")]
-        self.filter_short = self.filter
-        return self.filter
+        self.filter_name = fil_string[:fil_string.find(".")]
+        self.filter_short = self.filter_name
+        return self.filter_name
 
     def extract_exposure_time(self):
         self.load_headers()
@@ -2943,6 +2947,8 @@ class HAWKICoaddedImage(ESOImagingImage):
             "zeropoint_err": self.extract_header_item("PHOTZPER"),
             "extinction": 0.0 * units.mag,
             "extinction_err": 0.0 * units.mag,
+            "airmass": 0.0,
+            "airmass_err": 0.0,
             "catalogue": "2MASS"
         }
 

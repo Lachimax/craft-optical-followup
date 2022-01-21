@@ -268,6 +268,7 @@ def standard_script(
         coadd_types: Union[List[str], str] = 'median',
         add_with_ccdproc: Union[List[bool], bool] = False,
         unit="electron / second",
+        do_inject_header: bool = True,
         **kwargs
 ):
     """
@@ -355,11 +356,12 @@ def standard_script(
             header_path=header_path,
             output_path=output_file_name_coadd)
 
-        inject_header(
-            file_path=output_file_name_coadd,
-            input_directory=input_directory,
-            instrument="vlt-fors2",
-            coadd_type=coadd_type)
+        if do_inject_header:
+            inject_header(
+                file_path=output_file_name_coadd,
+                input_directory=input_directory,
+                instrument="vlt-fors2",
+                coadd_type=coadd_type)
 
         file_paths.append(os.path.join(output_directory, output_file_name_coadd))
 
