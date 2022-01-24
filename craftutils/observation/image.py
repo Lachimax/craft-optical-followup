@@ -1686,21 +1686,26 @@ class ImagingImage(Image):
         self.close()
 
         results = {
-            "fwhm_median_gauss": self.fwhm_median_gauss,
-            "fwhm_max_gauss": self.fwhm_max_gauss,
-            "fwhm_min_gauss": self.fwhm_min_gauss,
-            "fwhm_sigma_gauss": self.fwhm_sigma_gauss,
-            "fwhm_rms_gauss": self.fwhm_rms_gauss,
-            "fwhm_median_moffat": self.fwhm_median_moffat,
-            "fwhm_max_moffat": self.fwhm_max_moffat,
-            "fwhm_min_moffat": self.fwhm_min_moffat,
-            "fwhm_sigma_moffat": self.fwhm_sigma_moffat,
-            "fwhm_rms_moffat": self.fwhm_rms_moffat,
-            "fwhm_median_sextractor": self.fwhm_median_sextractor,
-            "fwhm_max_sextractor": self.fwhm_max_sextractor,
-            "fwhm_min_sextractor": self.fwhm_min_sextractor,
-            "fwhm_sigma_sextractor": self.fwhm_sigma_sextractor,
-            "fwhm_rms_sextractor": self.fwhm_rms_sextractor,
+            "gauss": {
+                "fwhm_median": self.fwhm_median_gauss,
+                "fwhm_mean": np.nanmean(fwhm_gauss),
+                "fwhm_max": self.fwhm_max_gauss,
+                "fwhm_min": self.fwhm_min_gauss,
+                "fwhm_sigma": self.fwhm_sigma_gauss,
+                "fwhm_rms": self.fwhm_rms_gauss},
+            "moffat": {
+                "fwhm_median": self.fwhm_median_moffat,
+                "fwhm_mean": np.nanmean(fwhm_moffat),
+                "fwhm_max": self.fwhm_max_moffat,
+                "fwhm_min": self.fwhm_min_moffat,
+                "fwhm_sigma": self.fwhm_sigma_moffat,
+                "fwhm_rms": self.fwhm_rms_moffat},
+            "sextractor": {
+                "fwhm_median": self.fwhm_median_sextractor,
+                "fwhm_max": self.fwhm_max_sextractor,
+                "fwhm_min": self.fwhm_min_sextractor,
+                "fwhm_sigma": self.fwhm_sigma_sextractor,
+                "fwhm_rms": self.fwhm_rms_sextractor}
         }
         self.add_log(
             action=f"Calculated PSF FWHM statistics.",
@@ -1708,7 +1713,7 @@ class ImagingImage(Image):
             packages=["source-extractor", "psfex"]
         )
         self.update_output_file()
-        return results
+        return results, table.QTable(results)
 
     def trim(
             self,
