@@ -1651,6 +1651,7 @@ class ImagingImage(Image):
                         match_to: table.Table = None, frame: float = 15):
         self.open()
         self.load_source_cat()
+        u.debug_print(2, f"ImagingImage.psf_diagnostics(): {self}.source_cat_path ==", self.source_cat_path)
         stars_moffat, stars_gauss, stars_sex = ph.image_psf_diagnostics(
             hdu=self.hdu_list,
             cat=self.source_cat,
@@ -2377,6 +2378,8 @@ class ImagingImage(Image):
             coord: SkyCoord,
             ap_radius: units.Quantity = 2 * units.arcsec,
             ext: int = 0,
+            sigma_min: int = 1,
+            sigma_max: int = 10,
             **kwargs
     ):
 
@@ -2391,15 +2394,15 @@ class ImagingImage(Image):
         self.calculate_background(method="sep", mask=mask, ext=ext, **kwargs)
         rms = self.sep_background[ext].rms()
 
-        plt.imshow(rms)
-        plt.colorbar()
-        plt.show()
+        # plt.imshow(rms)
+        # plt.colorbar()
+        # plt.show()
 
         flux, _, _ = sep.sum_circle(rms, [x], [y], ap_radius_pix)
         sigma_flux = np.sqrt(flux)
 
         limits = {}
-        for i in range(1, 6):
+        for i in range(sigma_min, sigma_max + 1):
             n_sigma_flux = sigma_flux * i
             limit, _, _, _ = self.magnitude(flux=n_sigma_flux)
             limits[f"{i}-sigma"] = {
