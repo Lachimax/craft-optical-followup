@@ -2821,7 +2821,7 @@ class CoaddedImage(ImagingImage):
         return outputs
 
     def load_output_file(self):
-        outputs = p.load_output_file(self)
+        outputs = super().load_output_file()
         if outputs is not None:
             if "area_file" in outputs:
                 self.area_file = outputs["area_file"]
