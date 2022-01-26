@@ -1373,7 +1373,8 @@ class ImagingImage(Image):
         :return: Path of corrected file.
         """
         u.debug_print(1, "image.correct_astrometry(): tweak ==", tweak)
-        u.mkdir_check(output_dir)
+        if output_dir is not None:
+            u.mkdir_check(output_dir)
         base_filename = f"{self.name}_astrometry"
         success = solve_field(
             image_files=self.path,
@@ -1389,9 +1390,10 @@ class ImagingImage(Image):
         new_path = os.path.join(self.data_path, f"{base_filename}.new")
         new_new_path = os.path.join(self.data_path, f"{base_filename}.fits")
         os.rename(new_path, new_new_path)
-        if not os.path.isdir(output_dir):
-            raise ValueError(f"Invalid output directory {output_dir}")
+
         if output_dir is not None:
+            if not os.path.isdir(output_dir):
+                raise ValueError(f"Invalid output directory {output_dir}")
             for astrometry_product in filter(lambda f: f.startswith(base_filename), os.listdir(self.data_path)):
                 path = os.path.join(self.data_path, astrometry_product)
                 shutil.copy(path, output_dir)
@@ -1621,6 +1623,10 @@ class ImagingImage(Image):
         self.astrometry_stats["mean_offset"] = mean_offset.to(units.arcsec)
         self.astrometry_stats["median_offset"] = median_offset.to(units.arcsec)
         self.astrometry_stats["rms_offset"] = rms_offset.to(units.arcsec)
+        self.astrometry_stats["median_offset_x"] = np.nanmedian(matches_source_cat["X_OFFSET_FROM_REF"])
+        self.astrometry_stats["median_offset_y"] = np.nanmedian(matches_source_cat["Y_OFFSET_FROM_REF"])
+        self.astrometry_stats["mean_offset_x"] = np.nanmean(matches_source_cat["X_OFFSET_FROM_REF"])
+        self.astrometry_stats["mean_offset_y"] = np.nanmean(matches_source_cat["Y_OFFSET_FROM_REF"])
 
         self.astrometry_stats["mean_offset_local"] = mean_offset_local.to(units.arcsec)
         self.astrometry_stats["median_offset_local"] = median_offset_local.to(units.arcsec)
@@ -1634,8 +1640,12 @@ class ImagingImage(Image):
         self.astrometry_stats["star_tolerance"] = star_tolerance
         self.astrometry_stats["offset_tolerance"] = offset_tolerance
 
-        matches_source_cat["OFFSET_FROM_REF"] = distance
         self.send_column_to_source_cat(colname="OFFSET_FROM_REF", sample=matches_source_cat)
+        self.send_column_to_source_cat(colname="RA_OFFSET_FROM_REF", sample=matches_source_cat)
+        self.send_column_to_source_cat(colname="DEC_OFFSET_FROM_REF", sample=matches_source_cat)
+        self.send_column_to_source_cat(colname="PIX_OFFSET_FROM_REF", sample=matches_source_cat)
+        self.send_column_to_source_cat(colname="X_OFFSET_FROM_REF", sample=matches_source_cat)
+        self.send_column_to_source_cat(colname="Y_OFFSET_FROM_REF", sample=matches_source_cat)
 
         self.add_log(
             action=f"Calculated astrometry offset statistics.",
@@ -1703,6 +1713,7 @@ class ImagingImage(Image):
                 "fwhm_rms": self.fwhm_rms_moffat},
             "sextractor": {
                 "fwhm_median": self.fwhm_median_sextractor,
+                "fwhm_mean": np.nanmean(fwhm_sextractor),
                 "fwhm_max": self.fwhm_max_sextractor,
                 "fwhm_min": self.fwhm_min_sextractor,
                 "fwhm_sigma": self.fwhm_sigma_sextractor,
@@ -1714,7 +1725,7 @@ class ImagingImage(Image):
             packages=["source-extractor", "psfex"]
         )
         self.update_output_file()
-        return results, table.QTable(results)
+        return results
 
     def trim(
             self,
@@ -1867,6 +1878,8 @@ class ImagingImage(Image):
 
         source_cat = self.get_source_cat(dual=dual)
 
+        ra_scale, dec_scale = self.extract_pixel_scale()
+
         if star_tolerance is not None:
             source_cat = source_cat[source_cat["CLASS_STAR"] > star_tolerance]
 
@@ -1878,6 +1891,15 @@ class ImagingImage(Image):
             ra_col_2=ra_col,
             dec_col_2=dec_col,
             tolerance=offset_tolerance)
+
+        matches_source_cat["OFFSET_FROM_REF"] = distance.to(units.arcsec)
+        matches_source_cat["RA_OFFSET_FROM_REF"] = matches_source_cat["RA"] - matches_ext_cat[ra_col]
+        matches_source_cat["DEC_OFFSET_FROM_REF"] = matches_source_cat["DEC"] - matches_ext_cat[dec_col]
+
+        matches_source_cat["PIX_OFFSET_FROM_REF"] = distance.to(units.pix, dec_scale)
+        matches_source_cat["X_OFFSET_FROM_REF"] = matches_source_cat["RA_OFFSET_FROM_REF"].to(units.pix, ra_scale)
+        matches_source_cat["Y_OFFSET_FROM_REF"] = matches_source_cat["DEC_OFFSET_FROM_REF"].to(units.pix, dec_scale)
+
         return matches_source_cat, matches_ext_cat, distance
 
     def signal_to_noise_ccd(self, dual: bool = False):
@@ -2038,19 +2060,21 @@ class ImagingImage(Image):
         """
         pass
 
-    def plot_subimage(self, fig: plt.Figure,
-                      centre: SkyCoord,
-                      frame: units.Quantity,
-                      n: int = 1, n_x: int = 1, n_y: int = 1,
-                      cmap: str = 'viridis', show_cbar: bool = False,
-                      stretch: str = 'sqrt',
-                      vmin: float = None,
-                      vmax: float = None,
-                      show_grid: bool = False,
-                      ticks: int = None, interval: str = 'minmax',
-                      show_coords: bool = True, ylabel: str = None,
-                      reverse_y=False,
-                      **kwargs):
+    def plot_subimage(
+            self, fig: plt.Figure,
+            centre: SkyCoord,
+            frame: units.Quantity,
+            n: int = 1, n_x: int = 1, n_y: int = 1,
+            cmap: str = 'viridis', show_cbar: bool = False,
+            stretch: str = 'sqrt',
+            vmin: float = None,
+            vmax: float = None,
+            show_grid: bool = False,
+            ticks: int = None, interval: str = 'minmax',
+            show_coords: bool = True, ylabel: str = None,
+            reverse_y=False,
+            **kwargs
+    ):
         self.open()
         if frame.unit.is_equivalent(units.deg):
             world_frame = True
@@ -2959,6 +2983,14 @@ class HAWKICoaddedImage(ESOImagingImage):
             "airmass_err": 0.0,
             "catalogue": "2MASS"
         }
+
+    @classmethod
+    def header_keys(cls):
+        header_keys = super().header_keys()
+        header_keys.update({
+            "gain": "GAIN"
+        })
+        return header_keys
 
 
 class FORS2Image(ESOImagingImage):

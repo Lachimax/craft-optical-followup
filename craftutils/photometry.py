@@ -67,19 +67,21 @@ def image_psf_diagnostics(hdu: Union[str, fits.HDUList], cat: Union[str, table.T
 
         print(f"Num stars after match to other sextractor cat:", len(stars))
 
-    stars.add_column(np.zeros(len(stars)), name="GAUSSIAN_FWHM_FITTED")
-    stars.add_column(np.zeros(len(stars)), name="MOFFAT_FWHM_FITTED")
-    stars.add_column(np.zeros(len(stars)), name="MOFFAT_ALPHA_FITTED")
-    stars.add_column(np.zeros(len(stars)), name="MOFFAT_GAMMA_FITTED")
+    for colname in ["GAUSSIAN_FWHM_FITTED", "MOFFAT_FWHM_FITTED", "MOFFAT_ALPHA_FITTED", "MOFFAT_GAMMA_FITTED"]:
+        if colname not in stars.colnames:
+            stars.add_column(np.zeros(len(stars)), name=colname)
+
     if type(stars) is table.QTable:
-        stars["GAUSSIAN_FWHM_FITTED"] *= units.deg
-        stars["MOFFAT_FWHM_FITTED"] *= units.deg
+        if not isinstance(stars["GAUSSIAN_FWHM_FITTED"], units.Quantity):
+            stars["GAUSSIAN_FWHM_FITTED"] *= units.deg
+        if not isinstance(stars["MOFFAT_FWHM_FITTED"], units.Quantity):
+            stars["MOFFAT_FWHM_FITTED"] *= units.deg
 
     for j, star in enumerate(stars):
         ra = star["ALPHA_SKY"]
         dec = star["DELTA_SKY"]
 
-        window = ff.trim_frame_point(hdu=hdu, ra=ra, dec=dec, frame=frame, quiet=True)
+        window = ff.trim_frame_point(hdu=hdu, ra=ra, dec=dec, frame=frame)
         data = window[0].data
         _, scale = ff.get_pixel_scale(hdu, astropy_units=True)
 
