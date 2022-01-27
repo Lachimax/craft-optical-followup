@@ -309,15 +309,32 @@ class Image:
     def new_image(self, path: str):
         c = self.__class__
         new_image = c(path=path)
+        new_image.log = self.log.copy()
+        new_image.add_log(
+            f"Derived from {self.path}.",
+            method=self.new_image,
+            input_path=self.path,
+            output_path=path
+        )
         return new_image
 
     def copy(self, destination: str):
+        """
+        A note to future me: do copy, THEN make changes, or be prepared to suffer the consequences.
+        :param destination:
+        :return:
+        """
         u.debug_print(1, "Copying", self.path, "to", destination)
         shutil.copy(self.path, destination)
         new_image = self.new_image(path=destination)
         new_image.log = self.log.copy()
         u.debug_print(2, f"Image.copy(): {new_image}.log.log.keys() ==", new_image.log.log.keys())
-        new_image.add_log(f"Copied from {self.path} to {destination}.", method=self.copy)
+        new_image.add_log(
+            f"Copied from {self.path} to {destination}.",
+            method=self.copy,
+            input_path=self.path,
+            output_path=destination
+        )
         return new_image
 
     def load_output_file(self):
@@ -1372,6 +1389,7 @@ class ImagingImage(Image):
         :param output_dir: Directory in which to output
         :return: Path of corrected file.
         """
+        self.extract_pointing()
         u.debug_print(1, "image.correct_astrometry(): tweak ==", tweak)
         if output_dir is not None:
             u.mkdir_check(output_dir)
@@ -1381,8 +1399,8 @@ class ImagingImage(Image):
             base_filename=base_filename,
             overwrite=True,
             tweak=tweak,
-            guess_scale=False,
-            search_radius=None,
+            guess_scale=True,
+            search_radius=0.5 * units.arcmin,
             centre=self.pointing
         )
         if not success:
@@ -1402,8 +1420,7 @@ class ImagingImage(Image):
             output_dir = self.data_path
         final_file = os.path.join(output_dir, f"{base_filename}.fits")
         self.astrometry_corrected_path = final_file
-        new_image = self.copy(final_file)
-
+        new_image = self.new_image(final_file)
         new_image.add_log(
             "Astrometry corrected using Astrometry.net.",
             method=self.correct_astrometry,
@@ -2265,7 +2282,7 @@ class ImagingImage(Image):
         else:
             raise ValueError(f"Model {model} not recognised.")
 
-        inserted = self.copy(output)
+        inserted = self.new_image(output)
         u.debug_print(1, "ImagingImage.insert_synthetic_sources: output_cat", output_cat)
         inserted.synth_cat_path = output_cat
         inserted.add_log(

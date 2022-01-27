@@ -37,7 +37,7 @@ def solve_field(
         centre: SkyCoord = None,
         guess_scale: bool = True,
         time_limit: units.Quantity = None,
-        verify: bool = False,
+        verify: bool = True,
         *flags,
         **params):
     """

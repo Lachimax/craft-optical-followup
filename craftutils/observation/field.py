@@ -1575,23 +1575,13 @@ class ImagingEpoch(Epoch):
 
         self.astrometry_stats = {}
 
-        self.astrometry_params = {}
-        if "astrometry" in kwargs:
-            self.astrometry_params = kwargs["astrometry"]
-        self.coadd_params = {}
-        if "coadd" in kwargs:
-            self.coadd_params = kwargs["coadd"]
         self.registration_params = {}
-        if "registration" in kwargs:
-            self.registration_params = kwargs["registration"]
         self.normalisation_params = {}
         if "normalisation" in kwargs:
             self.normalisation_params = kwargs["normalisation"]
         self.photometric_calibration_params = {}
         if "photometric_calibration" in kwargs:
             self.photometric_calibration_params = kwargs["photometric_calibration"]
-
-        u.debug_print(2, f"ImagingEpoch.__init__(): {self.name}.astrometry_params ==", self.astrometry_params)
 
         # self.load_output_file(mode="imaging")
 
@@ -1609,21 +1599,35 @@ class ImagingEpoch(Epoch):
                 "method": cls.proc_correct_astrometry_frames,
                 "message": "Correct astrometry of individual frames?",
                 "default": True,
+                "keywords": {
+                    "tweak": True,
+                    "upper_only": True,
+                    "method": "individual"
+                }
             },
             "coadd": {
                 "method": cls.proc_coadd,
                 "message": "Coadd astrometry-corrected frames with Montage?",
-                "default": True
+                "default": True,
+                "keywords": {
+                    "frames": "astrometry" # normalised, trimmed
+                }
             },
             "correct_astrometry_coadded": {
                 "method": cls.proc_correct_astrometry_coadded,
                 "message": "Correct astrometry of coadded images?",
                 "default": False,
+                "keywords": {
+                    "tweak": True,
+                }
             },
             "trim_coadded": {
                 "method": cls.proc_trim_coadded,
                 "message": "Trim / reproject coadded images to same footprint?",
-                "default": True
+                "default": True,
+                "keywords": {
+                    "reproject": True # Reproject to same footprint?
+                             }
             },
             "source_extraction": {
                 "method": cls.proc_source_extraction,
@@ -1650,17 +1654,19 @@ class ImagingEpoch(Epoch):
         return stages
 
     def proc_register(self, output_dir: str, **kwargs):
-        u.debug_print(2, f"ImagingEpoch.proc_register(): {self.name}.registration_params", self.registration_params)
         self.frames_registered = {}
-        u.rmtree_check(output_dir)
         self.register(
             output_dir=output_dir,
-            **self.registration_params
+            **kwargs,
         )
 
     def register(
-            self, output_dir: str, frames: dict = None, template: Union[int, dict, image.ImagingImage, str] = 0,
-            **kwargs):
+            self,
+            output_dir: str,
+            frames: dict = None,
+            template: Union[int, dict, image.ImagingImage, str] = 0,
+            **kwargs
+    ):
         """
 
         :param output_dir:
@@ -1730,12 +1736,12 @@ class ImagingEpoch(Epoch):
             self.correct_astrometry_frames(
                 output_dir=output_dir,
                 frames=self.frames_registered,
-                **self.astrometry_params)
+                **kwargs)
         else:
             self.correct_astrometry_frames(
                 output_dir=output_dir,
                 frames=self.frames_normalised,
-                **self.astrometry_params)
+                **kwargs)
 
     def correct_astrometry_frames(self, output_dir: str, frames: dict = None, **kwargs):
         self.frames_astrometry = {}
@@ -1744,7 +1750,7 @@ class ImagingEpoch(Epoch):
         for fil in frames:
             astrometry_fil_path = os.path.join(output_dir, fil)
             for frame in frames[fil]:
-                new_frame = frame.correct_astrometry(output_dir=astrometry_fil_path, **self.astrometry_params)
+                new_frame = frame.correct_astrometry(output_dir=astrometry_fil_path, **kwargs)
                 if new_frame is not None:
                     self.add_frame_astrometry(new_frame)
                     self.astrometry_successful[fil][frame.name] = True
@@ -1755,10 +1761,10 @@ class ImagingEpoch(Epoch):
 
     def proc_coadd(self, output_dir: str, **kwargs):
         if "correct_astrometry_frames" in self.do_kwargs and not self.do_kwargs["correct_astrometry_frames"]:
-            self.coadd_params["frames"] = "normalised"
+            kwargs["frames"] = "normalised"
         else:
-            self.coadd_params["frames"] = "astrometry"
-        self.coadd(output_dir, **self.coadd_params)
+            kwargs["frames"] = "astrometry"
+        self.coadd(output_dir, **kwargs)
 
     def coadd(self, output_dir: str, frames: str = "astrometry"):
         """
@@ -1834,7 +1840,7 @@ class ImagingEpoch(Epoch):
         self.correct_astrometry_coadded(
             output_dir=output_dir,
             images=self.coadded,
-            **self.astrometry_params)
+            **kwargs)
 
     def correct_astrometry_coadded(self, output_dir: str, images: dict, **kwargs):
         self.coadded_astrometry = {}
@@ -1842,24 +1848,33 @@ class ImagingEpoch(Epoch):
         if images is None:
             images = self.coadded
 
+        if "tweak" in kwargs:
+            tweak = kwargs["tweak"]
+        else:
+            tweak = True
+
         for fil in images:
             img = images[fil]
             new_img = img.correct_astrometry(
                 output_dir=output_dir,
-                tweak=False
+                tweak=tweak
             )
 
             self.add_coadded_astrometry_image(new_img, key=fil)
-            # self.astrometry_diagnostics(images=self.coadded_astrometry)
 
     def proc_trim_coadded(self, output_dir: str, **kwargs):
         if "correct_astrometry_coadded" in self.do_kwargs and self.do_kwargs["correct_astrometry_coadded"]:
             images = self.coadded_astrometry
         else:
             images = self.coadded
-        self.trim_coadded(output_dir, images=images)
 
-    def trim_coadded(self, output_dir: str, images: dict = None):
+        if "reproject" in kwargs:
+            reproject = kwargs["reproject"]
+        else:
+            reproject = True
+        self.trim_coadded(output_dir, images=images, reproject=reproject)
+
+    def trim_coadded(self, output_dir: str, images: dict = None, reproject: bool = True):
         if images is None:
             images = self.coadded
         u.mkdir_check(output_dir)
@@ -1868,18 +1883,21 @@ class ImagingEpoch(Epoch):
             img = images[fil]
             output_path = os.path.join(output_dir, img.filename.replace(".fits", "_trimmed.fits"))
             trimmed = img.trim_from_area(output_path=output_path)
-            if template is None:
-                template = trimmed
-            else:
-                # Using the first image as a template, reproject this one into the pixel space (for alignment)
-                trimmed = trimmed.reproject(other_image=template, output_path=output_path)
+            if reproject:
+                if template is None:
+                    template = trimmed
+                else:
+                    # Using the first image as a template, reproject this one into the pixel space (for alignment)
+                    trimmed = trimmed.reproject(other_image=template, output_path=output_path)
             self.add_coadded_trimmed_image(trimmed, key=fil)
+        # self.astrometry_diagnostics(images=self.coadded_trimmed)
 
     def proc_source_extraction(self, output_dir: str, **kwargs):
         images = self.coadded_trimmed
         for fil in images:
             img = images[fil]
             configs = self.source_extractor_config
+
             img.psfex_path = None
             img.source_extraction_psf(
                 output_dir=output_dir,
@@ -2547,6 +2565,9 @@ class GSAOIImagingEpoch(ImagingEpoch):
                 "method": cls.proc_download,
                 "message": "Download raw data from Gemini archive?",
                 "default": True,
+                "keywords": {
+                    "overwrite_download": True
+                }
             },
             "initial_setup": stages_super["initial_setup"],
             "reduce_flats": {
@@ -3103,7 +3124,7 @@ class ESOImagingEpoch(ImagingEpoch):
 
         super_stages["initial_setup"].update(
             {
-                "keywords": "skip_esoreflex_copy"
+                "keywords": {"skip_esoreflex_copy": False}
             }
         )
 
@@ -3295,7 +3316,7 @@ class ESOImagingEpoch(ImagingEpoch):
                     for file in filter(lambda f: f.endswith(".fits"), os.listdir(output_subdir)):
                         path = os.path.join(output_subdir, file)
                         img = image.FORS2Image(path)
-                        self.add_frame_reduced(img)
+                        self.add_frame_background(img)
 
             else:
                 # The ESOReflex output directory is structured in a very specific way, which we now traverse.
