@@ -694,12 +694,13 @@ class Field:
 
     @classmethod
     def default_params(cls):
-        default_params = {"name": None,
-                          "type": "Field",
-                          "centre": objects.position_dictionary.copy(),
-                          "objects": [objects.Object.default_params()],
-                          "extent": 0.1 * units.deg
-                          }
+        default_params = {
+            "name": None,
+            "type": "Field",
+            "centre": objects.position_dictionary.copy(),
+            "objects": [objects.Object.default_params()],
+            "extent": 0.1 * units.deg
+        }
         return default_params
 
     @classmethod
@@ -876,13 +877,15 @@ class FRBField(Field):
             "type": "FRBField",
             "frb": objects.FRB.default_params(),
             "subtraction":
-                {"template_epochs":
-                     {"des": None,
-                      "fors2": None,
-                      "xshooter": None,
-                      "sdss": None
-                      }
-                 }
+                {
+                    "template_epochs":
+                        {
+                            "des": None,
+                            "fors2": None,
+                            "xshooter": None,
+                            "sdss": None
+                        }
+                }
         })
 
         return default_params
@@ -1187,13 +1190,17 @@ class Epoch:
         self.log.add_log(action=action, method=method, output_path=path, packages=packages)
         # self.update_output_file()
 
-    def stages(self):
+    @classmethod
+    def stages(cls):
         stages = {
             "initial_setup": {
-                "method": self.proc_initial_setup,
+                "method": cls.proc_initial_setup,
                 "message": "Do initial setup of files?",
                 "log_message": "Initial setup conducted.",
                 "default": True,
+                "keywords": {
+
+                }
             }
         }
 
@@ -1202,7 +1209,8 @@ class Epoch:
     def pipeline(self, no_query: bool = False, **kwargs):
         """
         Performs the pipeline methods given in stages()
-        :param no_query: If True, skips the query stage and performs all stages (unless "do" was provided on __init__)
+        :param no_query: If True, skips the query stage and performs all stages (unless "do" was provided on __init__),
+            in which case it will perform only those stages without query no matter what no_query is.
         :param kwargs:
         :return:
         """
@@ -1212,6 +1220,7 @@ class Epoch:
         # Loop through stages list specified in stages()
         stages = self.stages()
         u.debug_print(1, f"Epoch.pipeline(): type(self) ==", type(self))
+        u.debug_print(2, f"Epoch.pipeline(): stages ==", stages)
         for n, name in enumerate(stages):
             stage = stages[name]
             message = stage["message"]
@@ -1227,6 +1236,7 @@ class Epoch:
             if name in self.do_kwargs:
                 do_this = self.do_kwargs[name]
 
+            # Check if we should do this stage
             if do_this and (no_query or self.query_stage(
                     message=message,
                     n=n,
@@ -1244,7 +1254,7 @@ class Epoch:
                 else:
                     stage_kwargs = {}
 
-                if stage["method"](output_dir=output_dir, **stage_kwargs) is not False:
+                if stage["method"](self, output_dir=output_dir, **stage_kwargs) is not False:
                     self.stages_complete[f"{n}-{name}"] = Time.now()
 
                     if "log_message" in stage and stage["log_message"] is not None:
@@ -1462,6 +1472,14 @@ class Epoch:
             "program_id": None,
             "do": {}
         }
+        # Pull the list of applicable kwargs from the stage information
+        stages = cls.stages()
+        for stage in stages:
+            stage_info = stages[stage]
+            if "keywords" in stage_info:
+                default_params[stage] = stage_info["keywords"]
+            else:
+                default_params[stage] = {}
         return default_params
 
     @classmethod
@@ -1572,52 +1590,53 @@ class ImagingEpoch(Epoch):
 
         # self.load_output_file(mode="imaging")
 
-    def stages(self):
+    @classmethod
+    def stages(cls):
 
         stages = super().stages()
         stages.update({
             "register_frames": {
-                "method": self.proc_register,
+                "method": cls.proc_register,
                 "message": "Register frames using astroalign?",
                 "default": False,
             },
             "correct_astrometry_frames": {
-                "method": self.proc_correct_astrometry_frames,
+                "method": cls.proc_correct_astrometry_frames,
                 "message": "Correct astrometry of individual frames?",
                 "default": True,
             },
             "coadd": {
-                "method": self.proc_coadd,
+                "method": cls.proc_coadd,
                 "message": "Coadd astrometry-corrected frames with Montage?",
                 "default": True
             },
             "correct_astrometry_coadded": {
-                "method": self.proc_correct_astrometry_coadded,
+                "method": cls.proc_correct_astrometry_coadded,
                 "message": "Correct astrometry of coadded images?",
                 "default": False,
             },
             "trim_coadded": {
-                "method": self.proc_trim_coadded,
+                "method": cls.proc_trim_coadded,
                 "message": "Trim / reproject coadded images to same footprint?",
                 "default": True
             },
             "source_extraction": {
-                "method": self.proc_source_extraction,
+                "method": cls.proc_source_extraction,
                 "message": "Do source extraction and diagnostics?",
                 "default": True,
             },
             "photometric_calibration": {
-                "method": self.proc_photometric_calibration,
+                "method": cls.proc_photometric_calibration,
                 "message": "Do photometric calibration?",
                 "default": True,
             },
             "dual_mode_source_extraction": {
-                "method": self.proc_dual_mode_source_extraction,
+                "method": cls.proc_dual_mode_source_extraction,
                 "message": "Do source extraction in dual-mode, using deepest image as footprint?",
                 "default": True,
             },
             "get_photometry": {
-                "method": self.proc_get_photometry,
+                "method": cls.proc_get_photometry,
                 "message": "Get photometry?",
                 "default": True,
             }
@@ -2425,6 +2444,7 @@ class ImagingEpoch(Epoch):
     @classmethod
     def default_params(cls):
         default_params = super().default_params()
+
         default_params.update({
             "astrometry":
                 {"tweak": True
@@ -2438,22 +2458,22 @@ class ImagingEpoch(Epoch):
                  "kron_factor": 3.5,
                  "kron_radius_min": 1.0
                  },
-            "background_subtraction":
-                {"renormalise_centre": objects.position_dictionary.copy(),
-                 "test_synths":
-                     [{"position": objects.position_dictionary.copy(),
-                       "mags": {}
-                       }]
-
-                 },
+            # "background_subtraction":
+            #     {"renormalise_centre": objects.position_dictionary.copy(),
+            #      "test_synths":
+            #          [{"position": objects.position_dictionary.copy(),
+            #            "mags": {}
+            #            }]
+            #
+            #      },
             "skip":
                 {"esoreflex_copy": False,
                  "sextractor_individual": False,
-                 "astrometry_net": False,
                  "sextractor": False,
                  "esorex": False,
                  },
         })
+
         return default_params
 
     @classmethod
@@ -2514,27 +2534,28 @@ class GSAOIImagingEpoch(ImagingEpoch):
 
         self.load_output_file(mode="imaging")
 
-    def stages(self):
+    @classmethod
+    def stages(cls):
         stages_super = super().stages()
         stages = {
             "download": {
-                "method": self.proc_download,
+                "method": cls.proc_download,
                 "message": "Download raw data from Gemini archive?",
                 "default": True,
             },
             "initial_setup": stages_super["initial_setup"],
             "reduce_flats": {
-                "method": self.proc_reduce_flats,
+                "method": cls.proc_reduce_flats,
                 "message": "Reduce flat-field images?",
                 "default": True,
             },
             "reduce_science": {
-                "method": self.proc_reduce_science,
+                "method": cls.proc_reduce_science,
                 "message": "Reduce science images?",
                 "default": True,
             },
             "stack_science": {
-                "method": self.proc_stack_science,
+                "method": cls.proc_stack_science,
                 "message": "Stack science images with DISCO-STU?",
                 "default": True,
             }
@@ -2607,7 +2628,7 @@ class GSAOIImagingEpoch(ImagingEpoch):
         #     fil = img["filter_name"]
         #     fil = fil[:fil.find("_")]
         #     self.check_filter(fil)
-        print(self.filters)
+        u.debug_print(1, f"GSAOIImagingEpoch._inital_setup(): {self}.filters ==", self.filters)
         self.science_table = science_tbl
 
         # Get lists of flats for each filter.
@@ -2824,7 +2845,8 @@ class HubbleImagingEpoch(ImagingEpoch):
 
         self.load_output_file(mode="imaging")
 
-    def stages(self):
+    @classmethod
+    def stages(cls):
         super_stages = super().stages()
         stages = {
             "initial_setup": super_stages["initial_setup"],
@@ -2918,7 +2940,8 @@ class PanSTARRS1ImagingEpoch(ImagingEpoch):
 
     # TODO: Automatic cutout download; don't worry for now.
 
-    def stages(self):
+    @classmethod
+    def stages(cls):
         super_stages = super().stages()
         stages = {
             "download": super_stages["download"],
@@ -3069,27 +3092,39 @@ class ESOImagingEpoch(ImagingEpoch):
 
         self.load_output_file(mode="imaging")
 
-    def stages(self):
+    @classmethod
+    def stages(cls):
         super_stages = super().stages()
+
+        super_stages["initial_setup"].update(
+            {
+                "keywords": "skip_esoreflex_copy"
+            }
+        )
+
         stages = {
             "download": {
-                "method": self.proc_download,
+                "method": cls.proc_download,
                 "message": "Download raw data from ESO archive?",
                 "default": True,
             },
             "initial_setup": super_stages["initial_setup"],
             "sort_reduced": {
-                "method": self.proc_sort_reduced,
+                "method": cls.proc_sort_reduced,
                 "message": "Sort ESOReflex products? Requires reducing data with ESOReflex first.",
                 "default": True,
+                "keywords": {
+                    "alternate_dir": None,  # alternate directory to pull reduced files from.
+                    "delete_eso_output": False
+                }
             },
             "trim_reduced": {
-                "method": self.proc_trim_reduced,
+                "method": cls.proc_trim_reduced,
                 "message": "Trim reduced images?",
                 "default": True,
             },
             "convert_to_cs": {
-                "method": self.proc_convert_to_cs,
+                "method": cls.proc_convert_to_cs,
                 "message": "Convert image values to counts/second?",
                 "default": True,
             },
@@ -3209,95 +3244,130 @@ class ESOImagingEpoch(ImagingEpoch):
         self.update_output_file()
 
     def proc_sort_reduced(self, output_dir: str, **kwargs):
-        self._sort_after_esoreflex(output_dir=output_dir)
+        self._sort_after_esoreflex(output_dir=output_dir, **kwargs)
 
     def _sort_after_esoreflex(self, output_dir: str, **kwargs):
 
         self.frames_reduced = {}
         self.frames_esoreflex_backgrounds = {}
 
+        # Check for alternate directory.
+        if "alternate_dir" in kwargs and isinstance(kwargs["alternate_dir"], str):
+            eso_dir = kwargs["alternate_dir"]
+            expect_sorted = True
+        else:
+            eso_dir = p.config['esoreflex_output_dir']
+            expect_sorted = False
+
         if "delete_eso_output" in kwargs:
             delete_output = kwargs["delete_eso_output"]
         else:
             delete_output = False
 
-        eso_dir = p.config['esoreflex_output_dir']
         if os.path.isdir(eso_dir):
             data_dir = self.data_path
 
-            mjd = int(self.date.mjd)
-            obj = self.target.lower()
+            if expect_sorted:
+                print(f"Copying files from {eso_dir} to {output_dir}")
+                shutil.rmtree(output_dir)
+                shutil.copytree(
+                    eso_dir,
+                    output_dir,
+                )
 
-            print(f"Looking for data with object '{obj}' and MJD of observation {mjd} inside {eso_dir}")
-            # Look for files with the appropriate object and MJD, as recorded in output_values
+                for fil in filter(
+                        lambda d: os.path.isdir(
+                            os.path.join(output_dir, d)),
+                        os.listdir(output_dir)):
+                    output_subdir = os.path.join(output_dir, fil)
+                    science = os.path.join(output_subdir, "science")
+                    for file in filter(lambda f: f.endswith(".fits"), os.listdir(science)):
+                        path = os.path.join(science, file)
+                        img = image.FORS2Image(path)
+                        self.add_frame_reduced(img)
+                    backgrounds = os.path.join(output_subdir, "backgrounds")
+                    for file in filter(lambda f: f.endswith(".fits"), os.listdir(backgrounds)):
+                        path = os.path.join(backgrounds, file)
+                        img = image.FORS2Image(path)
+                        self.add_frame_reduced(img)
 
-            # List directories in eso_output_dir; these are dates on which data was reduced using ESOReflex.
-            date_dirs = filter(lambda d: os.path.isdir(os.path.join(eso_dir, d)), os.listdir(eso_dir))
-            date_dirs = map(lambda d: os.path.join(eso_dir, d), date_dirs)
-            for date_dir in date_dirs:
-                # List directories within 'reduction date' directories.
-                # These should represent individual images reduced.
+            else:
+                # The ESOReflex output directory is structured in a very specific way, which we now traverse.
+                mjd = int(self.date.mjd)
+                obj = self.target.lower()
 
-                print(f"Searching {date_dir}")
-                eso_subdirs = filter(
-                    lambda d: os.path.isdir(os.path.join(date_dir, d)),
-                    os.listdir(date_dir))
-                for subdirectory in eso_subdirs:
-                    subpath = os.path.join(date_dir, subdirectory)
-                    print(f"\tSearching {subpath}")
-                    # Get the files within the image directory.
-                    files = filter(lambda d: os.path.isfile(os.path.join(subpath, d)),
-                                   os.listdir(subpath))
-                    for file_name in files:
-                        # Retrieve the target object name from the fits file.
-                        file_path = os.path.join(subpath, file_name)
-                        file = image.FORS2Image(file_path)
-                        file_obj = file.extract_object().lower()
-                        file_mjd = int(file.extract_header_item('MJD-OBS'))
-                        file_filter = file.extract_filter()
-                        # Check the object name and observation date against those of the epoch we're concerned with.
-                        if file_obj == obj and file_mjd == mjd:
-                            # Check which type of file we have.
-                            if file_name.endswith("PHOT_BACKGROUND_SCI_IMG.fits"):
-                                file_destination = os.path.join(output_dir, "backgrounds")
-                                suffix = "PHOT_BACKGROUND_SCI_IMG.fits"
-                                file_type = "background"
-                            elif file_name.endswith("OBJECT_TABLE_SCI_IMG.fits"):
-                                file_destination = os.path.join(output_dir, "obj_tbls")
-                                suffix = "OBJECT_TABLE_SCI_IMG.fits"
-                                file_type = "object_table"
-                            elif file_name.endswith("SCIENCE_REDUCED_IMG.fits"):
-                                file_destination = os.path.join(output_dir, "science")
-                                suffix = "SCIENCE_REDUCED_IMG.fits"
-                                file_type = "science"
-                            else:
-                                file_destination = os.path.join(output_dir, "sources")
-                                suffix = "SOURCES_SCI_IMG.fits"
-                                file_type = "sources"
-                            # Make this directory, if it doesn't already exist.
-                            u.mkdir_check(file_destination)
-                            # Make a subdirectory by filter.
-                            file_destination = os.path.join(file_destination, file_filter)
-                            u.mkdir_check(file_destination)
-                            # Title new file.
-                            file_destination = os.path.join(
-                                file_destination,
-                                f"{self.name}_{subdirectory}_{suffix}")
-                            # Copy file to new location.
-                            print(f"Copying: {file_path} to \n\t {file_destination}")
-                            file.copy(file_destination)
-                            if delete_output and os.path.isfile(file_destination):
-                                os.remove(file_path)
-                            img = image.FORS2Image(file_destination)
-                            u.debug_print(1, "FILE_TYPE:")
-                            u.debug_print(1, file_type)
-                            if file_type == "science":
-                                self.add_frame_reduced(img)
-                            elif file_type == "background":
-                                self.add_frame_background(img)
+                print(f"Looking for data with object '{obj}' and MJD of observation {mjd} inside {eso_dir}")
+                # Look for files with the appropriate object and MJD, as recorded in output_values
 
+                # List directories in eso_output_dir; these are dates on which data was reduced using ESOReflex.
+                date_dirs = filter(lambda d: os.path.isdir(os.path.join(eso_dir, d)), os.listdir(eso_dir))
+                date_dirs = map(lambda d: os.path.join(eso_dir, d), date_dirs)
+                for date_dir in date_dirs:
+                    # List directories within 'reduction date' directories.
+                    # These should represent individual images reduced.
+
+                    print(f"Searching {date_dir}")
+                    eso_subdirs = filter(
+                        lambda d: os.path.isdir(os.path.join(date_dir, d)),
+                        os.listdir(date_dir))
+                    for subdirectory in eso_subdirs:
+                        subpath = os.path.join(date_dir, subdirectory)
+                        print(f"\tSearching {subpath}")
+                        # Get the files within the image directory.
+                        files = filter(lambda d: os.path.isfile(os.path.join(subpath, d)),
+                                       os.listdir(subpath))
+                        for file_name in files:
+                            # Retrieve the target object name from the fits file.
+                            file_path = os.path.join(subpath, file_name)
+                            file = image.FORS2Image(file_path)
+                            file_obj = file.extract_object().lower()
+                            file_mjd = int(file.extract_header_item('MJD-OBS'))
+                            file_filter = file.extract_filter()
+                            # Check the object name and observation date against those of the epoch we're concerned with.
+                            if file_obj == obj and file_mjd == mjd:
+                                # Check which type of file we have.
+                                if file_name.endswith("PHOT_BACKGROUND_SCI_IMG.fits"):
+                                    file_destination = os.path.join(output_dir, "backgrounds")
+                                    suffix = "PHOT_BACKGROUND_SCI_IMG.fits"
+                                    file_type = "background"
+                                elif file_name.endswith("OBJECT_TABLE_SCI_IMG.fits"):
+                                    file_destination = os.path.join(output_dir, "obj_tbls")
+                                    suffix = "OBJECT_TABLE_SCI_IMG.fits"
+                                    file_type = "object_table"
+                                elif file_name.endswith("SCIENCE_REDUCED_IMG.fits"):
+                                    file_destination = os.path.join(output_dir, "science")
+                                    suffix = "SCIENCE_REDUCED_IMG.fits"
+                                    file_type = "science"
+                                else:
+                                    file_destination = os.path.join(output_dir, "sources")
+                                    suffix = "SOURCES_SCI_IMG.fits"
+                                    file_type = "sources"
+                                # Make this directory, if it doesn't already exist.
+                                u.mkdir_check(file_destination)
+                                # Make a subdirectory by filter.
+                                file_destination = os.path.join(file_destination, file_filter)
+                                u.mkdir_check(file_destination)
+                                # Title new file.
+                                file_destination = os.path.join(
+                                    file_destination,
+                                    f"{self.name}_{subdirectory}_{suffix}")
+                                # Copy file to new location.
+                                print(f"Copying: {file_path} to \n\t {file_destination}")
+                                file.copy(file_destination)
+                                if delete_output and os.path.isfile(file_destination):
+                                    os.remove(file_path)
+                                img = image.FORS2Image(file_destination)
+                                u.debug_print(2, "ESOImagingEpoch._sort_after_esoreflex(): file_type ==", file_type)
+                                if file_type == "science":
+                                    self.add_frame_reduced(img)
+                                elif file_type == "background":
+                                    self.add_frame_background(img)
         else:
             raise IOError(f"ESO output directory '{eso_dir}' not found.")
+
+        if not self.frames_reduced:
+            u.debug_print(2, "ESOImagingEpoch._sort_after_esoreflex(): kwargs ==", kwargs)
+            print(f"WARNING: No reduced frames were found in the target directory {eso_dir}.")
 
     def proc_trim_reduced(self, output_dir: str, **kwargs):
         self.trim_reduced(
@@ -3544,11 +3614,29 @@ class HAWKIImagingEpoch(ESOImagingEpoch):
 class FORS2ImagingEpoch(ESOImagingEpoch):
     instrument_name = "vlt-fors2"
 
-    def stages(self):
+    @classmethod
+    def stages(cls):
 
-        ie_stages = ImagingEpoch.stages(self)
-        stages = super().stages()
-        stages.update(ie_stages)
+        eso_stages = super().stages()
+        ie_stages = ImagingEpoch.stages()
+
+        stages = {
+            "download": eso_stages["download"],
+            "initial_setup": eso_stages["initial_setup"],
+            "sort_reduced": eso_stages["sort_reduced"],
+            "trim_reduced": eso_stages["trim_reduced"],
+            "convert_to_cs": eso_stages["convert_to_cs"],
+            "register_frames": ie_stages["register_frames"],
+            "correct_astrometry_frames": ie_stages["correct_astrometry_frames"],
+            "coadd": ie_stages["coadd"],
+            "correct_astrometry_coadded": ie_stages["correct_astrometry_coadded"],
+            "trim_coadded": ie_stages["trim_coadded"],
+            "source_extraction": ie_stages["source_extraction"],
+            "photometric_calibration": ie_stages["photometric_calibration"],
+            "dual_mode_source_extraction": ie_stages["dual_mode_source_extraction"],
+            "get_photometry": ie_stages["get_photometry"]
+        }
+
         u.debug_print(2, f"FORS2ImagingEpoch.stages(): stages ==", stages)
         return stages
 
@@ -4237,9 +4325,11 @@ class SpectroscopyEpoch(Epoch):
     @classmethod
     def stages(cls):
         param_dict = super().stages()
-        param_dict.update({"2-pypeit_setup": None,
-                           "3-pypeit_run": None,
-                           "4-pypeit_flux_calib": None})
+        param_dict.update({
+            "2-pypeit_setup": None,
+            "3-pypeit_run": None,
+            "4-pypeit_flux_calib": None
+        })
         return param_dict
 
     @classmethod
@@ -4809,18 +4899,19 @@ class XShooterSpectroscopyEpoch(ESOSpectroscopyEpoch):
     @classmethod
     def stages(cls):
         param_dict = super().stages()
-        param_dict.update({"2-pypeit_setup": None,
-                           "3.1-pypeit_run_uvb": None,
-                           "3.2-pypeit_run_vis": None,
-                           "3.3-pypeit_run_nir": None,
-                           "4.1-pypeit_flux_calib_uvb": None,
-                           "4.2-pypeit_flux_calib_vis": None,
-                           "4.3-pypeit_flux_calib_nir": None,
-                           "5.1-pypeit_coadd_uvb": None,
-                           "5.2-pypeit_coadd_vis": None,
-                           "5.3-pypeit_coadd_nir": None,
-                           "6-convert_to_marz_format": None
-                           })
+        param_dict.update({
+            "2-pypeit_setup": None,
+            "3.1-pypeit_run_uvb": None,
+            "3.2-pypeit_run_vis": None,
+            "3.3-pypeit_run_nir": None,
+            "4.1-pypeit_flux_calib_uvb": None,
+            "4.2-pypeit_flux_calib_vis": None,
+            "4.3-pypeit_flux_calib_nir": None,
+            "5.1-pypeit_coadd_uvb": None,
+            "5.2-pypeit_coadd_vis": None,
+            "5.3-pypeit_coadd_nir": None,
+            "6-convert_to_marz_format": None
+        })
         return param_dict
 
     def _output_dict(self):
