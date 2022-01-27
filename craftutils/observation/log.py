@@ -47,7 +47,7 @@ class Log:
             input_path: str = None,
             output_path: str = None,
             packages: List[str] = None,
-            ancestor_logs: Union[Dict[dict, 'Log'], List[dict, 'Log']] = None
+            ancestor_logs: Union[Dict[str, Union[dict, 'Log']], List[Union[dict, 'Log']]] = None
     ):
         """
 
