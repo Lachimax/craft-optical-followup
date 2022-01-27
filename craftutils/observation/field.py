@@ -1575,14 +1575,6 @@ class ImagingEpoch(Epoch):
 
         self.astrometry_stats = {}
 
-        self.registration_params = {}
-        self.normalisation_params = {}
-        if "normalisation" in kwargs:
-            self.normalisation_params = kwargs["normalisation"]
-        self.photometric_calibration_params = {}
-        if "photometric_calibration" in kwargs:
-            self.photometric_calibration_params = kwargs["photometric_calibration"]
-
         # self.load_output_file(mode="imaging")
 
     @classmethod
@@ -1610,7 +1602,7 @@ class ImagingEpoch(Epoch):
                 "message": "Coadd astrometry-corrected frames with Montage?",
                 "default": True,
                 "keywords": {
-                    "frames": "astrometry" # normalised, trimmed
+                    "frames": "astrometry"  # normalised, trimmed
                 }
             },
             "correct_astrometry_coadded": {
@@ -1626,18 +1618,27 @@ class ImagingEpoch(Epoch):
                 "message": "Trim / reproject coadded images to same footprint?",
                 "default": True,
                 "keywords": {
-                    "reproject": True # Reproject to same footprint?
-                             }
+                    "reproject": True  # Reproject to same footprint?
+                }
             },
             "source_extraction": {
                 "method": cls.proc_source_extraction,
                 "message": "Do source extraction and diagnostics?",
                 "default": True,
+                "keywords": {
+                    "do_astrometry_diagnostics": True
+                }
             },
             "photometric_calibration": {
                 "method": cls.proc_photometric_calibration,
                 "message": "Do photometric calibration?",
                 "default": True,
+                "keywords": {
+                    "distance_tolerance": 0.2 * units.arcsec,
+                    "snr_tolerance": 200,
+                    "class_star_tolerance": 0.95,
+                    "image_type": "coadded_trimmed"
+                }
             },
             "dual_mode_source_extraction": {
                 "method": cls.proc_dual_mode_source_extraction,
@@ -1776,8 +1777,10 @@ class ImagingEpoch(Epoch):
         u.mkdir_check(output_dir)
         if frames == "astrometry":
             input_directory = self.paths['correct_astrometry_frames']
+            input_frames = self.frames_astrometry
         elif frames == "normalised":
-            input_directory = os.path.join(self.paths['convert_to_cs'], "science")
+            input_directory = os.path.join(self.paths['convert_to_cs'], "science"),
+            input_frames = self.frames_normalised
         else:
             raise ValueError(f"{frames} not recognised as frame type.")
 
@@ -1805,8 +1808,10 @@ class ImagingEpoch(Epoch):
             corr_dir = os.path.join(output_directory_fil, "corrdir")
             coadded_median = image.FORS2CoaddedImage(coadded_path)
             coadded_median.add_log(
-                "Co-added image using Montage from ",
-                input_path=input_directory_fil
+                "Co-added image using Montage; see ancestor_logs for images.",
+                input_path=input_directory_fil,
+                output_path=coadded_path,
+                ancestors=input_frames[fil]
             )
             ccds = []
             for proj_img_path in list(map(
@@ -1831,13 +1836,15 @@ class ImagingEpoch(Epoch):
             # TODO: Inject header
 
             combined_img = image.FORS2CoaddedImage(sigclip_path, area_file=area_final)
-            coadded_img = image.FORS2CoaddedImage(coadded_path)
-            coadded_img.load_headers()
-            combined_img.headers = coadded_img.headers
-            combined_img.write_fits_file()
+            coadded_median.load_headers()
+            combined_img.headers = coadded_median.headers
             combined_img.add_log(
-                "Co-add"
+                "Co-added image using Montage for reprojection & ccdproc for coaddition; see ancestor_logs for input images.",
+                input_path=input_directory_fil,
+                output_path=coadded_path,
+                ancestors=input_frames[fil]
             )
+            combined_img.write_fits_file()
             combined_img.update_output_file()
 
             self.add_coadded_image(sigclip_path, key=fil, mode="imaging")
@@ -1847,7 +1854,8 @@ class ImagingEpoch(Epoch):
         self.correct_astrometry_coadded(
             output_dir=output_dir,
             images=self.coadded,
-            **kwargs)
+            **kwargs
+        )
 
     def correct_astrometry_coadded(self, output_dir: str, images: dict, **kwargs):
         self.coadded_astrometry = {}
@@ -1900,6 +1908,12 @@ class ImagingEpoch(Epoch):
         # self.astrometry_diagnostics(images=self.coadded_trimmed)
 
     def proc_source_extraction(self, output_dir: str, **kwargs):
+        do_diag = True
+        if "do_astrometry_diagnostics" in kwargs:
+            do_diag = kwargs["astrometry_diagnostics"]
+        self.source_extraction(output_dir=output_dir, do_diagnostics=do_diag, **kwargs)
+
+    def source_extraction(self, output_dir: str, do_diagnostics: bool = True, **kwargs):
         images = self.coadded_trimmed
         for fil in images:
             img = images[fil]
@@ -1909,20 +1923,29 @@ class ImagingEpoch(Epoch):
             img.source_extraction_psf(
                 output_dir=output_dir,
                 phot_autoparams=f"{configs['kron_factor']},{configs['kron_radius_min']}")
-        offset_tolerance = 0.5 * units.arcsec
-        if "correct_astrometry_frames" in self.do_kwargs and not self.do_kwargs["correct_astrometry_frames"]:
-            offset_tolerance = 2.0 * units.arcsec
-        self.astrometry_diagnostics(images=images, offset_tolerance=offset_tolerance)
-        # self.psf_diagnostics()
+        if do_diagnostics:
+            offset_tolerance = 0.5 * units.arcsec
+            if "correct_astrometry_frames" in self.do_kwargs and not self.do_kwargs["correct_astrometry_frames"]:
+                offset_tolerance = 1.0 * units.arcsec
+            self.astrometry_diagnostics(images=images, offset_tolerance=offset_tolerance)
+            # self.psf_diagnostics()
 
     def proc_photometric_calibration(self, output_dir: str, **kwargs):
-        images = self.coadded_trimmed
-        self.photometric_calibration(output_path=output_dir, image_dict=images, **kwargs)
+        self.photometric_calibration(output_path=output_dir, **kwargs)
 
-    def photometric_calibration(self, image_dict: dict, output_path: str, images: str = "coadded", **kwargs):
+    def photometric_calibration(
+            self,
+            output_path: str,
+            **kwargs
+    ):
         u.mkdir_check(output_path)
 
-        kwargs.update(self.photometric_calibration_params)
+        if "image_type" in kwargs and kwargs["image_type"] is not None:
+            image_type = kwargs["image_type"]
+        else:
+            image_type = "coadded_trimmed"
+
+        image_dict = self._get_images(image_type=image_type)
 
         if "distance_tolerance" in kwargs and kwargs["distance_tolerance"] is not None:
             dist_tol = float(kwargs["distance_tolerance"]) * units.arcsec
@@ -1949,15 +1972,6 @@ class ImagingEpoch(Epoch):
             star_class_tolerance=star_class_tolerance
         )
 
-        if images == "coadded":
-            image_dict = self.coadded
-        else:
-            image_dict = self.coadded_astrometry
-
-        for fil in self.filters:
-            img = image_dict[fil]
-            u.debug_print(1, img.filter_name, img.depth)
-
         self.deepest_filter = deepest.filter_name
         self.deepest = deepest
 
@@ -1976,9 +1990,10 @@ class ImagingEpoch(Epoch):
         for fil in image_dict:
             img = image_dict[fil]
             configs = self.source_extractor_config
-            img.source_extraction_psf(output_dir=path,
-                                      phot_autoparams=f"{configs['kron_factor']},{configs['kron_radius_min']}",
-                                      template=self.deepest)
+            img.source_extraction_psf(
+                output_dir=path,
+                phot_autoparams=f"{configs['kron_factor']},{configs['kron_radius_min']}",
+                template=self.deepest)
 
     def proc_get_photometry(self, output_dir: str, **kwargs):
         if "correct_astrometry_coadded" in self.do_kwargs and self.do_kwargs["correct_astrometry_coadded"]:
@@ -2976,6 +2991,7 @@ class PanSTARRS1ImagingEpoch(ImagingEpoch):
     @classmethod
     def stages(cls):
         super_stages = super().stages()
+        super_stages["source_extraction"]["do_astrometry_diagnostics"] = False
         stages = {
             "download": super_stages["download"],
             "initial_setup": super_stages["initial_setup"],
@@ -2996,13 +3012,10 @@ class PanSTARRS1ImagingEpoch(ImagingEpoch):
         pass
 
     def proc_source_extraction(self, output_dir: str, **kwargs):
-        for fil in self.coadded:
-            img = self.coadded[fil]
-            self.set_path("source_extraction_dir", output_dir)
-            configs = self.source_extractor_config
-            img.source_extraction_psf(
-                output_dir=output_dir,
-                phot_autoparams=f"{configs['kron_factor']},{configs['kron_radius_min']}")
+        do_diag = False
+        if "do_astrometry_diagnostics" in kwargs:
+            do_diag = kwargs["astrometry_diagnostics"]
+        self.source_extraction(output_dir=output_dir, do_diagnostics=do_diag, **kwargs)
 
     def proc_get_photometry(self, output_dir: str, **kwargs):
         self.get_photometry(output_dir, image_type="coadded")
@@ -3160,6 +3173,9 @@ class ESOImagingEpoch(ImagingEpoch):
                 "method": cls.proc_convert_to_cs,
                 "message": "Convert image values to counts/second?",
                 "default": True,
+                "keywords": {
+                    "upper_only": False
+                }
             },
         }
         return stages
@@ -3406,7 +3422,8 @@ class ESOImagingEpoch(ImagingEpoch):
     def proc_trim_reduced(self, output_dir: str, **kwargs):
         self.trim_reduced(
             output_dir=output_dir,
-            **kwargs)
+            **kwargs
+        )
 
     def trim_reduced(self, output_dir: str, **kwargs):
 
@@ -3520,7 +3537,8 @@ class ESOImagingEpoch(ImagingEpoch):
     def proc_convert_to_cs(self, output_dir: str, **kwargs):
         self.convert_to_cs(
             output_dir=output_dir,
-            **self.normalisation_params)
+            **kwargs
+        )
 
     def convert_to_cs(self, output_dir: str, **kwargs):
 
@@ -3860,17 +3878,14 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
 
     def photometric_calibration(
             self,
-            image_dict: dict,
             output_path: str,
-            images: str = "coadded",
-            **kwargs):
+            **kwargs
+    ):
 
         import craftutils.wrap.esorex as esorex
 
         super().photometric_calibration(
             output_path=output_path,
-            image_dict=image_dict,
-            images=images,
             **kwargs
         )
 

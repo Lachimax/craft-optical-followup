@@ -280,16 +280,28 @@ class Image:
         return self.filename
 
     def add_log(
-            self, action: str, method=None,
-            input_path: str = None, output_path: str = None,
-            packages: List[str] = None, ext: int = 0):
+            self, action: str,
+            method=None,
+            input_path: str = None,
+            output_path: str = None,
+            packages: List[str] = None,
+            ext: int = 0,
+            ancestors: List['Image'] = None
+    ):
+
+        if ancestors is not None:
+            new_dict = {}
+            for img in ancestors:
+                new_dict[img.name] = img.log
 
         self.log.add_log(
             action=action,
             method=method,
             input_path=input_path,
             output_path=output_path,
-            packages=packages)
+            packages=packages,
+            ancestor_logs=ancestors
+        )
         self.add_history(note=action, ext=ext)
         # self.update_output_file()
 
