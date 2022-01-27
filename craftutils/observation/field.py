@@ -1236,6 +1236,8 @@ class Epoch:
             if name in self.do_kwargs:
                 do_this = self.do_kwargs[name]
 
+            u.debug_print(2, f"Epoch.pipeline(): {self}.stages_complete ==", self.stages_complete)
+
             # Check if we should do this stage
             if do_this and (no_query or self.query_stage(
                     message=message,
@@ -1255,7 +1257,7 @@ class Epoch:
                     stage_kwargs = {}
 
                 if stage["method"](self, output_dir=output_dir, **stage_kwargs) is not False:
-                    self.stages_complete[f"{n}-{name}"] = Time.now()
+                    self.stages_complete[name] = Time.now()
 
                     if "log_message" in stage and stage["log_message"] is not None:
                         log_message = stage["log_message"]
@@ -1314,6 +1316,8 @@ class Epoch:
         p.update_output_file(self)
 
     def check_done(self, stage: str):
+        u.debug_print(2, "Epoch.check_done(): stage ==", stage)
+        u.debug_print(2, f"Epoch.check_done(): {self}.stages_complete ==", self.stages_complete)
         if stage not in self.stages():
             raise ValueError(f"{stage} is not a valid stage for this Epoch.")
         if stage in self.stages_complete:
@@ -1326,7 +1330,7 @@ class Epoch:
         Helper method for asking the user if we need to do this stage of processing.
         If self.do is True, skips the query and returns True.
         :param message: Message to display.
-        :param stage_name: Stage number
+        :param n: Stage number
         :return:
         """
         # Check if n is an integer, and if so cast to int.
@@ -1338,6 +1342,7 @@ class Epoch:
         else:
             message = f"{n}. {message}"
             done = self.check_done(stage=stage_name)
+            u.debug_print(2, "Epoch.query_stage(): done ==", done)
             if done is not None:
                 time_since = (Time.now() - done).sec * units.second
                 time_since = u.relevant_timescale(time_since)
