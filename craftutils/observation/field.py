@@ -2915,16 +2915,6 @@ class HubbleImagingEpoch(ImagingEpoch):
         for fil in self.coadded:
             self.coadded[fil].zeropoint()
 
-    def proc_source_extraction(self, output_dir: str, **kwargs):
-        for fil in self.coadded:
-            img = self.coadded[fil]
-            img.psfex_path = None
-            configs = self.source_extractor_config
-            img.source_extraction_psf(
-                output_dir=output_dir,
-                phot_autoparams=f"{configs['kron_factor']},{configs['kron_radius_min']}"
-            )
-
     def proc_get_photometry(self, output_dir: str, **kwargs):
         self.get_photometry(output_dir, image_type="coadded", dual=False)
 
@@ -3884,12 +3874,17 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
 
         import craftutils.wrap.esorex as esorex
 
+        if "image_type" in kwargs and kwargs["image_type"] is not None:
+            image_type = kwargs["image_type"]
+        else:
+            image_type = "coadded_trimmed"
+
         super().photometric_calibration(
             output_path=output_path,
             **kwargs
         )
 
-        images = self._get_images(images)
+        images = self._get_images(image_type)
 
         bias_sets = self.sort_by_chip(self.frames_bias)
         flat_sets = {}
