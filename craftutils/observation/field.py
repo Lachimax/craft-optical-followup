@@ -3275,19 +3275,20 @@ class ESOImagingEpoch(ImagingEpoch):
                     output_dir,
                 )
 
-                for fil in filter(
-                        lambda d: os.path.isdir(
-                            os.path.join(output_dir, d)),
-                        os.listdir(output_dir)):
-                    output_subdir = os.path.join(output_dir, fil)
-                    science = os.path.join(output_subdir, "science")
-                    for file in filter(lambda f: f.endswith(".fits"), os.listdir(science)):
-                        path = os.path.join(science, file)
+                science = os.path.join(output_dir, "science")
+                for fil in filter(lambda d: os.path.isdir(os.path.join(science, d)), os.listdir(science)):
+                    output_subdir = os.path.join(science, fil)
+                    print(f"Adding reduced science images from {output_subdir}")
+                    for file in filter(lambda f: f.endswith(".fits"), os.listdir(output_subdir)):
+                        path = os.path.join(output_subdir, file)
                         img = image.FORS2Image(path)
                         self.add_frame_reduced(img)
-                    backgrounds = os.path.join(output_subdir, "backgrounds")
-                    for file in filter(lambda f: f.endswith(".fits"), os.listdir(backgrounds)):
-                        path = os.path.join(backgrounds, file)
+                backgrounds = os.path.join(output_dir, "backgrounds")
+                for fil in filter(lambda d: os.path.isdir(os.path.join(backgrounds, d)), os.listdir(backgrounds)):
+                    output_subdir = os.path.join(backgrounds, fil)
+                    print(f"Adding background images from {output_subdir}")
+                    for file in filter(lambda f: f.endswith(".fits"), os.listdir(output_subdir)):
+                        path = os.path.join(output_subdir, file)
                         img = image.FORS2Image(path)
                         self.add_frame_reduced(img)
 
