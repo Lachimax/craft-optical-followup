@@ -1804,6 +1804,10 @@ class ImagingEpoch(Epoch):
 
             corr_dir = os.path.join(output_directory_fil, "corrdir")
             coadded_median = image.FORS2CoaddedImage(coadded_path)
+            coadded_median.add_log(
+                "Co-added image using Montage from ",
+                input_path=input_directory_fil
+            )
             ccds = []
             for proj_img_path in list(map(
                     lambda m: os.path.join(corr_dir, m),
@@ -1831,6 +1835,9 @@ class ImagingEpoch(Epoch):
             coadded_img.load_headers()
             combined_img.headers = coadded_img.headers
             combined_img.write_fits_file()
+            combined_img.add_log(
+                "Co-add"
+            )
             combined_img.update_output_file()
 
             self.add_coadded_image(sigclip_path, key=fil, mode="imaging")
