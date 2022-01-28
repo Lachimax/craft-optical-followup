@@ -3942,12 +3942,12 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
 
                         img = images[fil]
                         img.zeropoint_best = {
-                            "zeropoint": phot_coeff_table["ZPOINT"] * units.mag,
-                            "zeropoint_err": phot_coeff_table["DZPOINT"],
+                            "zeropoint": phot_coeff_table["ZPOINT"][0] * units.mag,
+                            "zeropoint_err": phot_coeff_table["DZPOINT"][0],
                             "airmass": img.extract_airmass(),
                             "airmass_err": self.airmass_err[fil],
-                            "extinction": phot_coeff_table["EXT"],
-                            "extinction_err": phot_coeff_table["DEXT"],
+                            "extinction": phot_coeff_table["EXT"][0] * units.mag,
+                            "extinction_err": phot_coeff_table["DEXT"][0] * units.mag,
                             "catalogue": "calib_pipeline"
                         }
                         img.update_output_file()
