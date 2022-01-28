@@ -293,6 +293,7 @@ class Image:
             new_dict = {}
             for img in ancestors:
                 new_dict[img.name] = img.log
+            ancestors = new_dict
 
         self.log.add_log(
             action=action,
