@@ -1543,6 +1543,9 @@ class ImagingImage(Image):
         :param output_path:
         :return:
         """
+
+        quantity_support()
+
         if local_coord is None:
             local_coord = self.extract_pointing()
 

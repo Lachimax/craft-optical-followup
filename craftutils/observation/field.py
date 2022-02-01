@@ -1838,6 +1838,7 @@ class ImagingEpoch(Epoch):
             combined_img = image.FORS2CoaddedImage(sigclip_path, area_file=area_final)
             coadded_median.load_headers()
             combined_img.headers = coadded_median.headers
+            u.debug_print(3, f"ImagingEpoch.coadd(): {combined_img}.headers ==", combined_img.headers)
             combined_img.add_log(
                 "Co-added image using Montage for reprojection & ccdproc for coaddition; see ancestor_logs for input images.",
                 input_path=input_directory_fil,
