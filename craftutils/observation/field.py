@@ -1475,7 +1475,8 @@ class Epoch:
             "date": None,
             "target": None,
             "program_id": None,
-            "do": {}
+            "do": {},
+            "notes": []
         }
         # Pull the list of applicable kwargs from the stage information
         stages = cls.stages()
@@ -1593,7 +1594,7 @@ class ImagingEpoch(Epoch):
                 "default": True,
                 "keywords": {
                     "tweak": True,
-                    "upper_only": True,
+                    "upper_only": False,
                     "method": "individual"
                 }
             },
@@ -1831,7 +1832,7 @@ class ImagingEpoch(Epoch):
                 sigma_clip=True,
                 sigma_clip_func=np.nanmean,
                 sigma_clip_dev_func=np.nanstd,
-                sigma_clip_high_thresh=2.5
+                sigma_clip_high_thresh=2.0
             )
             # TODO: Inject header
 
@@ -1911,7 +1912,7 @@ class ImagingEpoch(Epoch):
     def proc_source_extraction(self, output_dir: str, **kwargs):
         do_diag = True
         if "do_astrometry_diagnostics" in kwargs:
-            do_diag = kwargs["astrometry_diagnostics"]
+            do_diag = kwargs["do_astrometry_diagnostics"]
         self.source_extraction(output_dir=output_dir, do_diagnostics=do_diag, **kwargs)
 
     def source_extraction(self, output_dir: str, do_diagnostics: bool = True, **kwargs):
@@ -1949,7 +1950,7 @@ class ImagingEpoch(Epoch):
         image_dict = self._get_images(image_type=image_type)
 
         if "distance_tolerance" in kwargs and kwargs["distance_tolerance"] is not None:
-            dist_tol = float(kwargs["distance_tolerance"]) * units.arcsec
+            dist_tol = u.check_quantity(kwargs["distance_tolerance"], units.arcsec, convert=True)
         else:
             dist_tol = 0.2 * units.arcsec
 
@@ -3295,6 +3296,9 @@ class ESOImagingEpoch(ImagingEpoch):
         if "alternate_dir" in kwargs and isinstance(kwargs["alternate_dir"], str):
             eso_dir = kwargs["alternate_dir"]
             expect_sorted = True
+            if "expect_sorted" in kwargs and isinstance(kwargs["expect_sorted"], bool):
+                expect_sorted = kwargs["expect_sorted"]
+
         else:
             eso_dir = p.config['esoreflex_output_dir']
             expect_sorted = False
