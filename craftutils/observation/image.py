@@ -1544,7 +1544,7 @@ class ImagingImage(Image):
         :return:
         """
 
-        quantity_support()
+        # quantity_support()
 
         if local_coord is None:
             local_coord = self.extract_pointing()
@@ -1559,6 +1559,8 @@ class ImagingImage(Image):
 
         u.debug_print(2, "ImagingImage.astrometry_diagnostics(): reference_cat ==", reference_cat)
         u.debug_print(2, f"ImagingImage.astrometry_diagnostics(): {self}.source_cat ==", self.source_cat)
+
+        plt.close()
 
         plt.scatter(self.source_cat["RA"], self.source_cat["DEC"], marker='x')
         plt.xlabel("Right Ascension (Catalogue)")
