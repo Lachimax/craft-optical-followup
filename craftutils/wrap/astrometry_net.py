@@ -5,7 +5,7 @@ from astropy.coordinates import SkyCoord
 
 from typing import Union
 
-from craftutils.utils import system_command, debug_print
+from craftutils.utils import system_command, debug_print, check_quantity
 
 
 def build_astrometry_index(input_fits_catalog: str, unique_id: int, output_index: str = None,
@@ -52,7 +52,7 @@ def solve_field(
 
     params["o"] = base_filename
     if time_limit is not None:
-        params["l"] = time_limit.to(units.second).value
+        params["l"] = check_quantity(time_limit, units.second).value
     if search_radius is not None:
         params["radius"] = search_radius.to(units.deg).value
     if centre is not None:

@@ -1412,7 +1412,7 @@ class ImagingImage(Image):
         self.close()
         return left, right, bottom, top
 
-    def correct_astrometry(self, output_dir: str = None, tweak: bool = True, **kwargs):
+    def correct_astrometry(self, output_dir: str = None, tweak: bool = True, time_limit: int = None, **kwargs):
         """
         Uses astrometry.net to solve the astrometry of the image. Solved image is output as a separate file.
         :param output_dir: Directory in which to output
@@ -1430,7 +1430,8 @@ class ImagingImage(Image):
             tweak=tweak,
             guess_scale=True,
             search_radius=0.5 * units.arcmin,
-            centre=self.pointing
+            centre=self.pointing,
+            time_limit=time_limit
         )
         if not success:
             return None
@@ -1456,6 +1457,46 @@ class ImagingImage(Image):
             packages=["astrometry.net"])
         new_image.update_output_file()
         return new_image
+
+    def correct_astrometry_coarse(
+            self,
+            output_dir: str = None,
+            cat: table.Table = None,
+            ext: int = 0,
+    ):
+        self.load_source_cat()
+        if self.source_cat is None:
+            self.source_extraction_psf(output_dir=output_dir)
+
+        if cat is None:
+            if self.epoch is not None:
+                cat = self.epoch.epoch_gaia_catalogue()
+            else:
+                raise ValueError(f"If image epoch is not assigned, cat must be provided.")
+        diagnostics = self.astrometry_diagnostics(
+            reference_cat=cat,
+            offset_tolerance=3 * units.arcsec
+        )
+        new_path = os.path.join(output_dir, self.filename.replace(".fits", "_astrometry.fits"))
+        new = self.copy(new_path)
+
+        new.load_headers()
+        if not np.isnan(diagnostics["median_offset_x"].value) and not np.isnan(diagnostics["median_offset_y"].value):
+            new.headers[ext]["CRPIX1"] -= diagnostics["median_offset_x"].value
+            new.headers[ext]["CRPIX2"] += diagnostics["median_offset_y"].value
+            new.add_log(
+                "Astrometry corrected using median offsets from reference catalogue.",
+                method=self.correct_astrometry_coarse,
+                input_path=self.path,
+                output_path=new_path,
+                ext=ext
+            )
+            new.write_fits_file()
+            return new
+        else:
+            u.rm_check(new_path)
+            return None
+
 
     def transfer_wcs(self, other_image: 'ImagingImage', ext: int = 0):
         other_image.load_headers()
@@ -1704,7 +1745,8 @@ class ImagingImage(Image):
             output_path=output_path
         )
         self.astrometry_err = self.astrometry_stats["rms_offset"]
-        self.headers[0]["ASTM_RMS"] = self.astrometry_err.value
+        if not np.isnan(self.astrometry_err.value):
+            self.headers[0]["ASTM_RMS"] = self.astrometry_err.value
         self.write_fits_file()
         self.update_output_file()
 
@@ -1827,8 +1869,6 @@ class ImagingImage(Image):
         new.data[ext] = new_data.value
         u.debug_print(1, "Image.concert_to_es() 2: new_data.unit ==", new_data.unit)
 
-        # TODO: Too much writing to disk here. Rewrite set_header_item to take and set multiple keys at once
-
         new.set_header_item(key="BUNIT", value=str(new_data.unit), ext=ext)
         # new.set_header_item(key="GAIN", value=1.0 * exp_time, ext=ext)
         new.set_header_item(key="GAIN", value=gain * exp_time, ext=ext)
@@ -1946,13 +1986,19 @@ class ImagingImage(Image):
             dec_col_2=dec_col,
             tolerance=offset_tolerance)
 
+        self.load_wcs()
+        x_cat, y_cat = self.wcs.all_world2pix(matches_ext_cat[ra_col], matches_ext_cat[dec_col], 0)
+        matches_ext_cat["x_image"] = x_cat
+        matches_ext_cat["y_image"] = y_cat
+
         matches_source_cat["OFFSET_FROM_REF"] = distance.to(units.arcsec)
         matches_source_cat["RA_OFFSET_FROM_REF"] = matches_source_cat["RA"] - matches_ext_cat[ra_col]
         matches_source_cat["DEC_OFFSET_FROM_REF"] = matches_source_cat["DEC"] - matches_ext_cat[dec_col]
 
         matches_source_cat["PIX_OFFSET_FROM_REF"] = distance.to(units.pix, dec_scale)
-        matches_source_cat["X_OFFSET_FROM_REF"] = matches_source_cat["RA_OFFSET_FROM_REF"].to(units.pix, ra_scale)
-        matches_source_cat["Y_OFFSET_FROM_REF"] = matches_source_cat["DEC_OFFSET_FROM_REF"].to(units.pix, dec_scale)
+
+        matches_source_cat["X_OFFSET_FROM_REF"] = matches_source_cat["X_IMAGE"] - x_cat * units.pix
+        matches_source_cat["Y_OFFSET_FROM_REF"] = matches_source_cat["Y_IMAGE"] - y_cat * units.pix
 
         return matches_source_cat, matches_ext_cat, distance
 
