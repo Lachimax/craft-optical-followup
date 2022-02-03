@@ -246,6 +246,7 @@ class Image:
         try:
             u.debug_print(1, f"Image.__init__(): {self}.instrument_name ==", self.instrument_name)
             self.instrument = inst.Instrument.from_params(instrument_name=self.instrument_name)
+
         except FileNotFoundError:
             u.debug_print(1, f"Image.__init__(): FileNotFoundError")
             self.instrument = None
@@ -608,6 +609,7 @@ class ImagingImage(Image):
 
         self.filter_name = None
         self.filter_short = None
+        self.filter = None
         self.pixel_scale_ra = None
         self.pixel_scale_dec = None
 
@@ -650,6 +652,8 @@ class ImagingImage(Image):
         self.fwhm_sigma_sextractor = None
         self.fwhm_rms_sextractor = None
 
+        self.astrometry_err = None
+
         self.sky_background = None
 
         self.airmass = None
@@ -665,6 +669,8 @@ class ImagingImage(Image):
 
         self.astrometry_corrected_path = None
         self.astrometry_stats = {}
+
+        self.extract_filter()
 
         self.load_output_file()
 
@@ -924,6 +930,13 @@ class ImagingImage(Image):
         self.wcs = wcs.WCS(header=self.headers[ext])
         return self.wcs
 
+    def extract_astrometry_err(self):
+        key = self.header_keys()["astrometry_err"]
+        self.astrometry_err = self.extract_header_item(key)
+        if self.astrometry_err is not None:
+            self.astrometry_err *= units.arcsec
+        return self.astrometry_err
+
     def extract_rotation_angle(self, ext: int = 0):
         self.load_headers()
         return ff.get_rotation_angle(header=self.headers[ext])
@@ -952,6 +965,9 @@ class ImagingImage(Image):
         self.filter_name = self.extract_header_item(key)
         if self.filter_name is not None:
             self.filter_short = self.filter_name[0]
+
+        if self.filter_name is not None and self.instrument is not None:
+            self.filter = self.instrument.filters[self.filter_name]
 
         return self.filter_name
 
@@ -1687,6 +1703,9 @@ class ImagingImage(Image):
             method=self.astrometry_diagnostics,
             output_path=output_path
         )
+        self.astrometry_err = self.astrometry_stats["rms_offset"]
+        self.headers[0]["ASTM_RMS"] = self.astrometry_err.value
+        self.write_fits_file()
         self.update_output_file()
 
         return self.astrometry_stats
@@ -2096,76 +2115,116 @@ class ImagingImage(Image):
         pass
 
     def plot_subimage(
-            self, fig: plt.Figure,
+            self,
             centre: SkyCoord,
             frame: units.Quantity,
+            ext: int = 0,
+            fig: plt.Figure = None,
             n: int = 1, n_x: int = 1, n_y: int = 1,
-            cmap: str = 'viridis', show_cbar: bool = False,
-            stretch: str = 'sqrt',
-            vmin: float = None,
-            vmax: float = None,
+            show_cbar: bool = False,
             show_grid: bool = False,
-            ticks: int = None, interval: str = 'minmax',
+            ticks: int = None,
             show_coords: bool = True, ylabel: str = None,
             reverse_y=False,
-            **kwargs
+            imshow_kwargs: dict = None,  # Can include cmap
+            normalize_kwargs: dict = None,  # Can include vmin, vmax
+            output_path: str = None,
+            **kwargs,
     ):
-        self.open()
-        if frame.unit.is_equivalent(units.deg):
-            world_frame = True
-            frame = frame.to(units.deg)
-        elif frame.unit.is_equivalent(units.pix):
-            world_frame = False
-            frame = frame.to(units.pix)
-        else:
-            raise units.UnitsError("Frame must have units pixels or angle, not", frame.unit)
+        self.load_data()
+        self.load_wcs()
+        _, scale = self.extract_pixel_scale()
+        x, y = self.wcs.all_world2pix(centre.ra.value, centre.dec.value, 0)
+        data = self.data[ext]
+        u.debug_print(1, "ImagingImage.plot_subimage(): frame ==", frame)
+        left, right, bottom, top = u.frame_from_centre(frame.to(units.pix, scale).value, x, y, data)
 
-        subplot, hdu_cut = pl.plot_subimage(
-            fig=fig, hdu=self.hdu_list,
-            ra=centre.ra.value,
-            dec=centre.dec.value,
-            frame=frame.value,
-            world_frame=world_frame,
-            n=n, n_x=n_x, n_y=n_y,
-            cmap=cmap, show_cbar=show_cbar, stretch=stretch,
-            vmin=vmin, vmax=vmax,
-            show_grid=show_grid,
-            ticks=ticks, interval=interval,
-            show_coords=show_coords,
-            ylabel=ylabel,
-            reverse_y=reverse_y,
-            **kwargs
+        if fig is None:
+            fig = plt.figure()
+
+        if normalize_kwargs is None:
+            normalize_kwargs = {}
+        if imshow_kwargs is None:
+            imshow_kwargs = {}
+
+        if "stretch" not in normalize_kwargs:
+            normalize_kwargs["stretch"] = SqrtStretch()
+        elif normalize_kwargs["stretch"] == "sqrt":
+            normalize_kwargs["stretch"] = SqrtStretch()
+        elif normalize_kwargs["stretch"] == "log":
+            normalize_kwargs["stretch"] = LogStretch()
+
+        if "interval" not in normalize_kwargs:
+            normalize_kwargs["interval"] = MinMaxInterval()
+
+        if "origin" not in imshow_kwargs:
+            imshow_kwargs["origin"] = "lower"
+
+        plot = fig.add_subplot(n_x, n_y, n, projection=self.wcs)
+        plot.imshow(
+            data,
+            norm=ImageNormalize(
+                data[bottom:top, left:right],
+                **normalize_kwargs
+            ),
+            **imshow_kwargs
         )
-        self.close()
-        return subplot, hdu_cut
+        plot.set_xlim(left, right)
+        plot.set_ylim(bottom, top)
+        plot.set_xlabel("Right Ascension (J2000)")
+        plot.set_ylabel("Declination (J2000)")
+
+        if output_path is not None:
+            fig.savefig(output_path)
+
+        other_args = {}
+        other_args["x"] = x
+        other_args["y"] = y
+
+        return plot, fig, other_args
+
+    def nice_frame(
+            self,
+            row: table.Row,
+            frame: units.Quantity = 10 * units.pix,
+    ):
+        self.extract_pixel_scale()
+        u.debug_print(1, "ImagingImage.nice_frame(): row['KRON_RADIUS'], row['A_WORLD'] ==", row['KRON_RADIUS'], row['A_WORLD'].to(units.arcsec))
+        kron_a = row['KRON_RADIUS'] * row['A_WORLD']
+        u.debug_print(1, "ImagingImage.nice_frame(): kron_a ==", kron_a)
+        pix_scale = self.pixel_scale_dec
+        u.debug_print(1, "ImagingImage.nice_frame(): self.pixel_scale_dec ==", self.pixel_scale_dec)
+        this_frame = max(
+            kron_a.to(units.pixel, pix_scale), frame) # + 5 * units.pix,
+        u.debug_print(1, "ImagingImage.nice_frame(): this_frame ==", this_frame)
+        return this_frame
 
     def plot_source_extractor_object(
-            self, row: table.Row,
+            self,
+            row: table.Row,
             ext: int = 0,
             frame: units.Quantity = 10 * units.pix,
             output: str = None,
             show: bool = False, title: str = None):
 
-        self.extract_pixel_scale()
         self.load_headers()
-        self.open()
         kron_a = row['KRON_RADIUS'] * row['A_WORLD']
         kron_b = row['KRON_RADIUS'] * row['B_WORLD']
-        pix_scale = self.pixel_scale_dec
         kron_theta = row['THETA_WORLD']
         # kron_theta = -kron_theta + ff.get_rotation_angle(
         #     header=self.headers[ext],
         #     astropy_units=True)
-        this_frame = max(kron_a.to(units.pixel, pix_scale) + 10 * units.pix,
-                         frame)
+        this_frame = self.nice_frame(row=row, frame=frame)
         mid_x = row["X_IMAGE"]
         mid_y = row["Y_IMAGE"]
         left = mid_x - this_frame
         right = mid_x + this_frame
         bottom = mid_y - this_frame
         top = mid_y + this_frame
+        self.open()
         image_cut = ff.trim(hdu=self.hdu_list, left=left, right=right, bottom=bottom, top=top)
         norm = pl.nice_norm(image=image_cut[ext].data)
+        title = u.latex_sanitise(title)
         plt.imshow(image_cut[0].data, origin='lower', norm=norm)
         pl.plot_gal_params(
             hdu=image_cut,
@@ -2177,15 +2236,16 @@ class ImagingImage(Image):
             world=True,
             show_centre=True
         )
-        pl.plot_gal_params(hdu=image_cut,
-                           ras=[row["RA"].value],
-                           decs=[row["DEC"].value],
-                           a=[kron_a.value],
-                           b=[kron_b.value],
-                           theta=[row["THETA_WORLD"].value],
-                           world=True,
-                           show_centre=True
-                           )
+        pl.plot_gal_params(
+            hdu=image_cut,
+            ras=[row["RA"].value],
+            decs=[row["DEC"].value],
+            a=[kron_a.value],
+            b=[kron_b.value],
+            theta=[row["THETA_WORLD"].value],
+            world=True,
+            show_centre=True
+        )
         if title is None:
             title = self.name
         plt.title(title)
@@ -2801,15 +2861,17 @@ class ImagingImage(Image):
     @classmethod
     def header_keys(cls):
         header_keys = super().header_keys()
-        header_keys.update({"filter": "FILTER",
-                            "ra": "CRVAL1",
-                            "dec": "CRVAL2",
-                            "ref_pix_x": "CRPIX1",
-                            "ref_pix_y": "CRPIX2",
-                            "ra_old": "_RVAL1",
-                            "dec_old": "_RVAL2",
-                            "airmass": "AIRMASS"
-                            })
+        header_keys.update({
+            "filter": "FILTER",
+            "ra": "CRVAL1",
+            "dec": "CRVAL2",
+            "ref_pix_x": "CRPIX1",
+            "ref_pix_y": "CRPIX2",
+            "ra_old": "_RVAL1",
+            "dec_old": "_RVAL2",
+            "airmass": "AIRMASS",
+            "astrometry_err": "ASTM_RMS"
+        })
         return header_keys
 
     @classmethod
