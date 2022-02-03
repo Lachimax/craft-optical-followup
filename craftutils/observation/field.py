@@ -1989,6 +1989,11 @@ class ImagingEpoch(Epoch):
         else:
             star_class_tolerance = 0.95
 
+        if "suppress_select" in kwargs and isinstance(kwargs["suppress_select"], bool):
+            suppress_select = float(kwargs["suppress_select"])
+        else:
+            suppress_select = False
+
         print("DISTANCE TOLERANCE:", dist_tol)
 
         deepest = self.zeropoint(
@@ -1996,7 +2001,8 @@ class ImagingEpoch(Epoch):
             output_path=output_path,
             distance_tolerance=dist_tol,
             snr_min=snr_tol,
-            star_class_tolerance=star_class_tolerance
+            star_class_tolerance=star_class_tolerance,
+            suppress_select=suppress_select
         )
 
         self.deepest_filter = deepest.filter_name

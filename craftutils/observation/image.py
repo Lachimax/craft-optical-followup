@@ -465,9 +465,13 @@ class Image:
         return self.extract_header_item(key)
 
     def extract_gain(self):
-        key = self.header_keys()["gain"]
-        u.debug_print(2, f"Image.extract_gain(): type({self})", type(self), key)
-        self.gain = self.extract_header_item(key) * units.electron / units.ct
+        self.gain = self.extract_header_item("GAIN")
+        if self.gain is None:
+            key = self.header_keys()["gain"]
+            u.debug_print(2, f"Image.extract_gain(): type({self})", type(self), key)
+            self.gain = self.extract_header_item(key) * units.electron / units.ct
+        if self.gain is not None:
+            self.gain *= units.electron / units.ct
         return self.gain
 
     def extract_date_obs(self):
@@ -2235,13 +2239,14 @@ class ImagingImage(Image):
             frame: units.Quantity = 10 * units.pix,
     ):
         self.extract_pixel_scale()
-        u.debug_print(1, "ImagingImage.nice_frame(): row['KRON_RADIUS'], row['A_WORLD'] ==", row['KRON_RADIUS'], row['A_WORLD'].to(units.arcsec))
+        u.debug_print(1, "ImagingImage.nice_frame(): row['KRON_RADIUS'], row['A_WORLD'] ==", row['KRON_RADIUS'],
+                      row['A_WORLD'].to(units.arcsec))
         kron_a = row['KRON_RADIUS'] * row['A_WORLD']
         u.debug_print(1, "ImagingImage.nice_frame(): kron_a ==", kron_a)
         pix_scale = self.pixel_scale_dec
         u.debug_print(1, "ImagingImage.nice_frame(): self.pixel_scale_dec ==", self.pixel_scale_dec)
         this_frame = max(
-            kron_a.to(units.pixel, pix_scale), frame) # + 5 * units.pix,
+            kron_a.to(units.pixel, pix_scale), frame)  # + 5 * units.pix,
         u.debug_print(1, "ImagingImage.nice_frame(): this_frame ==", this_frame)
         return this_frame
 

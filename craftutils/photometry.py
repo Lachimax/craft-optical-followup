@@ -435,6 +435,8 @@ def determine_zeropoint_sextractor(
     :return:
     """
 
+    plt.rc('text', usetex=False)
+
     output_path = u.check_trailing_slash(output_path)
 
     params = {}
@@ -575,7 +577,7 @@ def determine_zeropoint_sextractor(
                 cmap="plasma")
     plt.colorbar()
     plt.legend()
-    plt.title('Matches with ' + cat_name + ' Catalogue against ' + image_name + ' Image (Using SExtractor)')
+    plt.title(f'Matches with {cat_name} Catalogue against {image_name} Image (Using SExtractor)')
     plt.savefig(output_path + "4-matches_back.png")
     if show:
         plt.show()
