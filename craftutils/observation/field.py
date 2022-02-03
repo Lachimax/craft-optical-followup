@@ -9,6 +9,7 @@ from collections import OrderedDict
 
 import ccdproc
 import matplotlib.pyplot as plt
+from matplotlib.patches import Ellipse
 import numpy as np
 
 from astropy.time import Time
@@ -1186,8 +1187,20 @@ class Epoch:
     def __str__(self):
         return self.name
 
-    def add_log(self, action: str, method=None, path: str = None, packages: List[str] = None):
-        self.log.add_log(action=action, method=method, output_path=path, packages=packages)
+    def add_log(
+            self,
+            action: str,
+            method=None,
+            method_args=None,
+            path: str = None,
+            packages: List[str] = None,
+    ):
+        self.log.add_log(
+            action=action,
+            method=method,
+            method_args=method_args,
+            output_path=path,
+            packages=packages)
         # self.update_output_file()
 
     @classmethod
@@ -1263,7 +1276,7 @@ class Epoch:
                         log_message = stage["log_message"]
                     else:
                         log_message = f"Performed processing step {dir_name}."
-                    self.add_log(log_message, method=stage["method"], path=output_dir)
+                    self.add_log(log_message, method=stage["method"], path=output_dir, method_args=stage_kwargs)
 
                     self.update_output_file()
 
