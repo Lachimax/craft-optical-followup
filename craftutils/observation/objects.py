@@ -58,20 +58,21 @@ uncertainty_dict = {
 
 
 class PositionUncertainty:
-    def __init__(self,
-                 uncertainty: Union[float, units.Quantity, dict, tuple] = None,
-                 position: SkyCoord = None,
-                 ra_err_sys: Union[float, units.Quantity] = None,
-                 ra_err_stat: Union[float, units.Quantity] = None,
-                 dec_err_sys: Union[float, units.Quantity] = None,
-                 dec_err_stat: Union[float, units.Quantity] = None,
-                 a_stat: Union[float, units.Quantity] = None,
-                 a_sys: Union[float, units.Quantity] = None,
-                 b_stat: Union[float, units.Quantity] = None,
-                 b_sys: Union[float, units.Quantity] = None,
-                 theta: Union[float, units.Quantity] = None,
-                 sigma: float = None
-                 ):
+    def __init__(
+            self,
+            uncertainty: Union[float, units.Quantity, dict, tuple] = None,
+            position: SkyCoord = None,
+            ra_err_sys: Union[float, units.Quantity] = None,
+            ra_err_stat: Union[float, units.Quantity] = None,
+            dec_err_sys: Union[float, units.Quantity] = None,
+            dec_err_stat: Union[float, units.Quantity] = None,
+            a_stat: Union[float, units.Quantity] = None,
+            a_sys: Union[float, units.Quantity] = None,
+            b_stat: Union[float, units.Quantity] = None,
+            b_sys: Union[float, units.Quantity] = None,
+            theta: Union[float, units.Quantity] = None,
+            sigma: float = None
+    ):
         """
         If a single value is provided for uncertainty, the uncertainty ellipse will be assumed to be circular.
         Values in dictionary, if provided, override values given as arguments.
@@ -169,6 +170,9 @@ class PositionUncertainty:
         self.b_stat = b_stat
         self.theta = theta
 
+    def uncertainty_quadrature(self):
+        return np.sqrt(self.a_sys ** 2 + self.a_stat ** 2), np.sqrt(self.b_sys ** 2 + self.b_stat ** 2)
+
     @classmethod
     def default_params(cls):
         return {
@@ -188,7 +192,9 @@ class Object:
             name: str = None,
             position: Union[SkyCoord, str] = None,
             position_err: Union[float, units.Quantity, dict, PositionUncertainty, tuple] = 0.0 * units.arcsec,
-            field=None):
+            field=None,
+            plotting: dict = None
+    ):
         self.name = name
         self.position = a.attempt_skycoord(position)
         if type(position_err) is not PositionUncertainty:
@@ -209,6 +215,16 @@ class Object:
         self.extinction_power_law = None
         self.paths = {}
         self.load_output_file()
+        if isinstance(plotting, dict):
+            self.plotting_params = plotting
+            if "frame" in self.plotting_params:
+                self.plotting_params["frame"] = u.check_quantity(self.plotting_params["frame"], units.arcsec)
+        else:
+            self.plotting_params = {}
+
+    def position_from_cat_row(self):
+        self.position = SkyCoord(self.cat_row["RA"], self.cat_row["DEC"])
+        return self.position
 
     def get_photometry(self):
         for cat in self.field.cats:
@@ -222,7 +238,7 @@ class Object:
         return {
             "photometry": self.photometry,
             "irsa_extinction_path": self.irsa_extinction_path,
-            "extinction_law": self.extinction_power_law
+            "extinction_law": self.extinction_power_law,
         }
 
     def load_output_file(self):
@@ -489,7 +505,10 @@ class Object:
                     "b": 0.0 * units.arcsec,
                     "theta": 0.0 * units.arcsec,
                     "kron_radius": 3.5
-                }
+                },
+            "plotting": {
+                "frame": None
+            }
         }
         return default_params
 
@@ -513,12 +532,19 @@ class Object:
         else:
             selected = cls
 
+        if "plotting" in dictionary:
+            plotting = dictionary["plotting"]
+        else:
+            plotting = None
+
         if selected in (Object, FRB):
-            return selected(name=dictionary["name"],
-                            position=f"{ra} {dec}",
-                            position_err=position_err,
-                            field=field
-                            )
+            return selected(
+                name=dictionary["name"],
+                position=f"{ra} {dec}",
+                position_err=position_err,
+                field=field,
+                plotting=plotting
+            )
         else:
             return selected.from_dict(dictionary=dictionary, field=field)
 
@@ -564,13 +590,16 @@ class Galaxy(Object):
             position_err: Union[float, units.Quantity, dict, PositionUncertainty, tuple] = 0.0 * units.arcsec,
             z: float = 0.0,
             field=None,
+            plotting: dict = None,
             **kwargs
     ):
         super().__init__(
             name=name,
             position=position,
             position_err=position_err,
-            field=field)
+            field=field,
+            plotting=plotting
+        )
         self.z = z
         self.D_A = self.angular_size_distance()
         self.D_L = self.luminosity_distance()
@@ -655,13 +684,16 @@ class FRB(Object):
             position_err: Union[float, units.Quantity, dict, PositionUncertainty, tuple] = 0.0 * units.arcsec,
             host_galaxy: Galaxy = None,
             dm: Union[float, units.Quantity] = None,
-            field=None
+            field=None,
+            plotting: dict = None,
     ):
         super().__init__(
             name=name,
             position=position,
             position_err=position_err,
-            field=field)
+            field=field,
+            plotting=plotting
+        )
         self.host_galaxy = host_galaxy
         self.dm = dm
         if self.dm is not None:
