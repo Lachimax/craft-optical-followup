@@ -31,6 +31,8 @@ import craftutils.utils as u
 import craftutils.wrap.montage as montage
 import craftutils.wrap.dragons as dragons
 
+pl.latex_setup()
+
 config = p.config
 
 instruments_imaging = p.instruments_imaging
@@ -793,81 +795,79 @@ class FRBField(Field):
         self.epochs_imaging_old = {}
 
     def plot_host(
-            self, epoch: 'ImagingEpoch', fig: plt.Figure, fil: str,
+            self,
+            img: image.ImagingImage,
+            ext: int = 0,
+            fig: plt.Figure = None,
             centre: SkyCoord = None,
-            show_frb: bool = True, frame: units.Quantity = 30 * units.pix,
+            show_frb: bool = True,
+            frame: units.Quantity = 30 * units.pix,
             n: int = 1, n_x: int = 1, n_y: int = 1,
-            cmap: str = 'viridis', show_cbar: bool = False,
-            stretch: str = 'sqrt',
-            vmin: float = None,
-            vmax: float = None,
+            show_cbar: bool = False,
             show_grid: bool = False,
             ticks: int = None, interval: str = 'minmax',
             show_coords: bool = True,
             font_size: int = 12,
             reverse_y=False,
             frb_kwargs: dict = {},
-            **kwargs):
-
+            imshow_kwargs: dict = {},
+            normalize_kwargs: dict = {},
+            output_path: str = None,
+            **kwargs
+    ):
+        pl.latex_setup()
         if not isinstance(self.frb, objects.FRB):
             raise TypeError("self.frb has not been set properly for this FRBField.")
         if centre is None:
             centre = self.frb.host_galaxy.position
 
-        subplot, hdu_cut = epoch.plot_object(
-            fig=fig, frame=frame, fil=fil, img="coadded",
+        plot, fig, other_args = img.plot_subimage(
             centre=centre,
+            frame=frame,
+            ext=ext,
+            fig=fig,
             n=n, n_x=n_x, n_y=n_y,
-            cmap=cmap, show_cbar=show_cbar, stretch=stretch,
-            vmin=vmin, vmax=vmax,
-            show_grid=show_grid,
-            ticks=ticks, interval=interval,
-            show_coords=show_coords,
-            font_size=font_size,
-            reverse_y=reverse_y,
-            **kwargs
+            imshow_kwargs=imshow_kwargs,
+            normalize_kwargs=normalize_kwargs
         )
 
-        position = self.frb.position
-        ra = position.ra.value
-        dec = position.dec.value
-        uncertainty = self.frb.position_err
-
         if show_frb:
-            show_frb = 'quadrature'
+            import photutils
+            img.load_headers()
+            frb = self.frb.position
+            x, y = img.wcs.all_world2pix(frb.ra.value, frb.dec.value, 0)
+            uncertainty = self.frb.position_err
+            a, b = uncertainty.uncertainty_quadrature()
+            theta = uncertainty.theta.to(units.deg)
+            img_err = img.extract_astrometry_err()
+            if img_err is not None:
+                a = np.sqrt(a**2 + img_err**2)
+                b = np.sqrt(b**2 + img_err ** 2)
 
-        theta = uncertainty.theta.to(units.deg)
+            # e = Ellipse(
+            #     xy=(x, y),
+            #     width=a,
+            #     height=b,
+            #     angle=theta.value,
+            #     **frb_kwargs
+            # )
+            # e.set_facecolor('none')
+            # e.set_edgecolor('white')
+            # e.set_label("FRB localisation ellipse")
+            # plot.add_artist(e)
+            localisation = photutils.aperture.EllipticalAperture(
+                positions=[x, y],
+                a=a.to(units.pix, img.pixel_scale_dec).value,
+                b=b.to(units.pix, img.pixel_scale_dec).value,
+                theta=theta.to(units.rad).value,
+            )
+            localisation.plot(label="FRB localisation ellipse", color="white", **frb_kwargs)
+            plot.legend()
 
-        if show_frb in ['all', 'statistical']:
-            # Statistical
-            pl.plot_gal_params(hdu=hdu_cut,
-                               ras=[ra],
-                               decs=[dec],
-                               a=[uncertainty.a_stat.to(units.deg).value],
-                               b=[uncertainty.b_stat.to(units.deg).value],
-                               theta=[-theta.value], ls='.', **frb_kwargs)
-        if show_frb in ['all', 'statistical']:
-            # Systematic
-            pl.plot_gal_params(hdu=hdu_cut,
-                               ras=[ra],
-                               decs=[dec],
-                               a=[uncertainty.a_sys.to(units.deg).value],
-                               b=[uncertainty.b_sys.to(units.deg).value],
-                               theta=[-theta.value],
-                               ls='--', **frb_kwargs)
-        if show_frb in ['all', 'quadrature']:
-            a_quad = np.sqrt(uncertainty.a_stat ** 2 + uncertainty.a_sys ** 2).to(units.deg).value
-            b_quad = np.sqrt(uncertainty.b_stat ** 2 + uncertainty.b_sys ** 2).to(units.deg).value
-            pl.plot_gal_params(hdu=hdu_cut,
-                               ras=[ra],
-                               decs=[dec],
-                               a=[a_quad],
-                               b=[b_quad],
-                               theta=[-theta.value],
-                               ls='-', **frb_kwargs,
-                               label="FRB uncertainty")
+        if output_path is not None:
+            fig.savefig(output_path)
 
-        return subplot, hdu_cut
+        return plot, fig
 
     @classmethod
     def default_params(cls):
@@ -2053,6 +2053,38 @@ class ImagingEpoch(Epoch):
                 obj.update_output_file()
                 obj.estimate_galactic_extinction()
                 obj.write_plot_photometry()
+
+                if isinstance(self.field, FRBField):
+                    if "frame" in obj.plotting_params:
+                        frame = obj.plotting_params["frame"]
+                    else:
+                        frame = img.nice_frame(row=obj.cat_row)
+
+                    normalize_kwargs = None
+                    if fil in obj.plotting_params:
+                        if "normalize" in obj.plotting_params[fil]:
+                            normalize_kwargs = obj.plotting_params[fil]["normalize"]
+
+                    centre = obj.position_from_cat_row()
+                    fig = plt.figure(figsize=(6, 5))
+                    plot, fig = self.field.plot_host(
+                        img=img,
+                        fig=fig,
+                        centre=centre,
+                        show_frb=True,
+                        frame=frame,
+                        imshow_kwargs={
+                            "cmap": "plasma"
+                        },
+                        normalize_kwargs=normalize_kwargs
+                    )
+                    output_path = os.path.join(fil_output_path, f"{obj.name}_{fil}.pdf")
+                    name = obj.name
+                    name = name.replace("HG", "HG\,")
+                    img.extract_filter()
+                    plot.set_title(f"{name}, {u.latex_sanitise(img.filter.nice_name())}")
+                    fig.savefig(output_path)
+
             tbl = table.vstack(rows)
             tbl.write(os.path.join(fil_output_path, f"{self.field.name}_{self.name}_{fil}.ecsv"),
                       format="ascii.ecsv")
