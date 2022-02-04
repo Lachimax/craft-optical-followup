@@ -336,7 +336,7 @@ class Object:
         return ax
 
     def build_photometry_table_path(self):
-        return os.path.join(self.data_path, f"{self.name}_photometry.csv")
+        return os.path.join(self.data_path, f"{self.name}_photometry.ecsv")
 
     # TODO: Refactor photometry to use table instead of dict (not sure why I even did it that way to start with)
 

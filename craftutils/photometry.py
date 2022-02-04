@@ -494,7 +494,7 @@ def determine_zeropoint_sextractor(
     params['cat_ra_col'] = str(cat_ra_col)
     params['cat_dec_col'] = str(cat_dec_col)
     params['cat_flux_col'] = str(cat_mag_col)
-    params['sextractor_path'] = str(sextractor_cat)
+    # params['sextractor_path'] = str(sextractor_cat)
     params['sex_ra_col'] = str(sex_ra_col)
     params['sex_dec_col'] = str(sex_dec_col)
     params['sex_flux_col'] = str(flux_column)
@@ -950,23 +950,25 @@ def determine_zeropoint_sextractor(
     return params
 
 
-def zeropoint_science_field(epoch: str,
-                            instrument: str,
-                            test_name: str = None,
-                            sex_x_col: str = 'XPSF_IMAGE',
-                            sex_y_col: str = 'YPSF_IMAGE',
-                            sex_ra_col: str = 'ALPHAPSF_SKY',
-                            sex_dec_col: str = 'DELTAPSF_SKY',
-                            sex_flux_col: str = 'FLUX_PSF',
-                            stars_only: bool = True,
-                            star_class_col: str = 'CLASS_STAR',
-                            star_class_tol: float = 0.95,
-                            show_plots: bool = False,
-                            mag_range_sex_lower: float = -100.,
-                            mag_range_sex_upper: float = 100.,
-                            pix_tol: float = 5.,
-                            separate_chips=False,
-                            cat_name: str = "DES"):
+def zeropoint_science_field(
+        epoch: str,
+        instrument: str,
+        test_name: str = None,
+        sex_x_col: str = 'XPSF_IMAGE',
+        sex_y_col: str = 'YPSF_IMAGE',
+        sex_ra_col: str = 'ALPHAPSF_SKY',
+        sex_dec_col: str = 'DELTAPSF_SKY',
+        sex_flux_col: str = 'FLUX_PSF',
+        stars_only: bool = True,
+        star_class_col: str = 'CLASS_STAR',
+        star_class_tol: float = 0.95,
+        show_plots: bool = False,
+        mag_range_sex_lower: float = -100.,
+        mag_range_sex_upper: float = 100.,
+        pix_tol: float = 5.,
+        separate_chips=False,
+        cat_name: str = "DES"
+):
     properties = p.object_params_instrument(obj=epoch, instrument=instrument)
     frb_properties = p.object_params_frb(obj=epoch[:-2])
     outputs = p.object_output_params(obj=epoch, instrument=instrument)
