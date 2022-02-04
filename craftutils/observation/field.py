@@ -2123,10 +2123,6 @@ class ImagingEpoch(Epoch):
                 )
                 )
 
-
-
-
-
     def astrometry_diagnostics(
             self, images: dict = None,
             reference_cat: table.QTable = None,
