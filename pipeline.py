@@ -22,7 +22,7 @@ def main(
         do_not_reuse_masters: bool,
         overwrite_download: bool,
         distance_tolerance: float,
-        snr_tolerance: float,
+        snr_min: float,
         class_star_tolerance: float,
         debug_level: int,
 ):
@@ -176,7 +176,7 @@ def main(
         do_not_reuse_masters=do_not_reuse_masters,
         overwrite_download=overwrite_download,
         distance_tolerance=distance_tolerance,
-        snr_tolerance=snr_tolerance,
+        snr_min=snr_min,
         class_star_tolerance=class_star_tolerance
     )
 
@@ -217,7 +217,7 @@ if __name__ == '__main__':
         type=float
     )
     parser.add_argument(
-        "--snr_tolerance",
+        "--snr_min",
         help="Minimum SNR for photometric calibration",
         type=float)
     parser.add_argument(
@@ -256,7 +256,7 @@ if __name__ == '__main__':
         do_not_reuse_masters=args.do_not_reuse_masters,
         overwrite_download=args.o,
         distance_tolerance=args.distance_tolerance,
-        snr_tolerance=args.snr_tolerance,
+        snr_min=args.snr_min,
         class_star_tolerance=args.class_star_tolerance,
         debug_level=args.d,
         furby_path=args.furby,

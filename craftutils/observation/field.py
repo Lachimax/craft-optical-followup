@@ -842,8 +842,8 @@ class FRBField(Field):
             theta = uncertainty.theta.to(units.deg)
             img_err = img.extract_astrometry_err()
             if img_err is not None:
-                a = np.sqrt(a**2 + img_err**2)
-                b = np.sqrt(b**2 + img_err ** 2)
+                a = np.sqrt(a ** 2 + img_err ** 2)
+                b = np.sqrt(b ** 2 + img_err ** 2)
 
             # e = Ellipse(
             #     xy=(x, y),
@@ -1255,7 +1255,7 @@ class Epoch:
             if do_this and (no_query or self.query_stage(
                     message=message,
                     n=n,
-                    stage_name=name,
+                    stage_name=name
             )):
                 # Construct path; if dir_name is None then the step is pathless.
                 dir_name = f"{n}-{name}"
@@ -1278,7 +1278,7 @@ class Epoch:
                         log_message = f"Performed processing step {dir_name}."
                     self.add_log(log_message, method=stage["method"], path=output_dir, method_args=stage_kwargs)
 
-                    self.update_output_file()
+                self.update_output_file()
 
     def _pipeline_init(self, ):
         if self.data_path is not None:
@@ -1648,10 +1648,11 @@ class ImagingEpoch(Epoch):
                 "message": "Do photometric calibration?",
                 "default": True,
                 "keywords": {
-                    "distance_tolerance": 0.2 * units.arcsec,
-                    "snr_tolerance": 200,
+                    "distance_tolerance": None,
+                    "snr_min": 100,
                     "class_star_tolerance": 0.95,
-                    "image_type": "coadded_trimmed"
+                    "image_type": "coadded_trimmed",
+                    "preferred_zeropoint": {}
                 }
             },
             "dual_mode_source_extraction": {
@@ -1783,7 +1784,8 @@ class ImagingEpoch(Epoch):
                     print(f"{frame} astrometry successful.")
                     self.astrometry_successful[fil][frame.name] = False
 
-                u.debug_print(1, f"ImagingEpoch.correct_astrometry_frames(): {self}.astrometry_successful ==\n", self.astrometry_successful)
+                u.debug_print(1, f"ImagingEpoch.correct_astrometry_frames(): {self}.astrometry_successful ==\n",
+                              self.astrometry_successful)
                 self.update_output_file()
 
     def proc_coadd(self, output_dir: str, **kwargs):
@@ -1975,34 +1977,19 @@ class ImagingEpoch(Epoch):
         image_dict = self._get_images(image_type=image_type)
 
         if "distance_tolerance" in kwargs and kwargs["distance_tolerance"] is not None:
-            dist_tol = u.check_quantity(kwargs["distance_tolerance"], units.arcsec, convert=True)
-        else:
-            dist_tol = 0.2 * units.arcsec
+            kwargs["distance_tolerance"] = u.check_quantity(kwargs["distance_tolerance"], units.arcsec, convert=True)
+        if "snr_min" not in kwargs or kwargs["snr_min"] is None:
+            kwargs["snr_min"] = 100
+        if "class_star_tolerance" not in kwargs:
+            kwargs["star_class_tolerance"] = 0.95
+        if "suppress_select" not in kwargs:
+            kwargs["suppress_select"] = True
 
-        if "snr_tolerance" in kwargs and kwargs["snr_tolerance"] is not None:
-            snr_tol = float(kwargs["snr_tolerance"])
-        else:
-            snr_tol = 200
-
-        if "class_star_tolerance" in kwargs and kwargs["class_star_tolerance"] is not None:
-            star_class_tolerance = float(kwargs["class_star_tolerance"])
-        else:
-            star_class_tolerance = 0.95
-
-        if "suppress_select" in kwargs and isinstance(kwargs["suppress_select"], bool):
-            suppress_select = float(kwargs["suppress_select"])
-        else:
-            suppress_select = False
-
-        print("DISTANCE TOLERANCE:", dist_tol)
 
         deepest = self.zeropoint(
             image_dict=image_dict,
             output_path=output_path,
-            distance_tolerance=dist_tol,
-            snr_min=snr_tol,
-            star_class_tolerance=star_class_tolerance,
-            suppress_select=suppress_select
+            **kwargs
         )
 
         self.deepest_filter = deepest.filter_name
@@ -2149,10 +2136,11 @@ class ImagingEpoch(Epoch):
             self,
             image_dict: dict,
             output_path: str,
-            distance_tolerance: units.Quantity = 0.2 * units.arcsec,
+            distance_tolerance: units.Quantity = None,
             snr_min: float = 100.,
             star_class_tolerance: float = 0.95,
-            suppress_select: bool = False
+            suppress_select: bool = False,
+            **kwargs
     ):
         deepest = image_dict[self.filters[0]]
         for fil in self.filters:
@@ -2173,7 +2161,12 @@ class ImagingEpoch(Epoch):
                         star_class_tol=star_class_tolerance,
                     )
 
-            zeropoint, cat = img.select_zeropoint(suppress_select)
+            if "preferred_zeropoint" in kwargs and fil in kwargs["preferred_zeropoint"]:
+                preferred = kwargs["preferred_zeropoint"][fil]
+            else:
+                preferred = None
+
+            zeropoint, cat = img.select_zeropoint(suppress_select, preferred=preferred)
 
             img.estimate_depth(zeropoint_name=cat)
 
@@ -3930,10 +3923,8 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
                         self.update_output_file()
 
                 else:
-                    raise ValueError(f"Astrometry method {method} not recognised. Must be individual, pairwise or propagate_from_single")
-
-
-
+                    raise ValueError(
+                        f"Astrometry method {method} not recognised. Must be individual, pairwise or propagate_from_single")
 
     def photometric_calibration(
             self,
@@ -4010,16 +4001,18 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
                         phot_coeff_table = fits.open(phot_coeff_table)[1].data
 
                         img = images[fil]
-                        img.zeropoint_best = {
+                        img.zeropoints["calib_pipeline"] = {
                             "zeropoint": phot_coeff_table["ZPOINT"][0] * units.mag,
-                            "zeropoint_err": phot_coeff_table["DZPOINT"][0],
+                            "zeropoint_err": phot_coeff_table["DZPOINT"][0] * units.mag,
                             "airmass": img.extract_airmass(),
                             "airmass_err": self.airmass_err[fil],
                             "extinction": phot_coeff_table["EXT"][0] * units.mag,
                             "extinction_err": phot_coeff_table["DEXT"][0] * units.mag,
-                            "catalogue": "calib_pipeline"
+                            "catalogue": "calib_pipeline",
+                            "n_matches": None
                         }
-                        img.update_output_file()
+                        img.select_zeropoint(True)
+                        # img.update_output_file()
                     except SystemError:
                         print(
                             "System Error encountered while doing esorex processing; possibly impossible value encountered. Skipping.")

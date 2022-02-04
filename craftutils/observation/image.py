@@ -411,9 +411,19 @@ class Image:
     def get_id(self):
         return self.filename[:self.filename.find(".fits")]
 
-    def set_header_item(self, key: str, value, ext: int = 0):
-        # TODO: Accept dict of keys and values to add.
-        self.load_headers(force=True)
+    def set_header_items(self, items: dict, ext: int = 0, write: bool = True):
+        for key in items:
+            self.set_header_item(
+                key=key,
+                value=items[key],
+                ext=ext,
+                write=False
+            )
+        if write:
+            self.write_fits_file()
+
+    def set_header_item(self, key: str, value, ext: int = 0, write: bool = False):
+        self.load_headers()
         value = u.dequantify(value)
 
         if key in self.headers[ext]:
@@ -422,17 +432,20 @@ class Image:
         else:
             action = f"Created new FITS header item {key} with value {value} on ext {ext}."
 
+        u.debug_print(1, "Image.set_header_item(): key, value ==", key, value)
         self.headers[ext][key] = value
         # self.close()
-        # self.write_fits_file()
+
         self.add_log(
             action=action, method=self.set_header_item, ext=ext
         )
+        if write:
+            self.write_fits_file()
 
     def add_history(self, note: str, ext: int = 0):
         self.load_headers()
         self.headers[ext]["HISTORY"] = str(Time.now()) + ": " + note
-        self.write_fits_file()
+        # self.write_fits_file()
 
     def _extract_header_item(self, key: str, ext: int = 0):
         self.load_headers()
@@ -1077,9 +1090,11 @@ class ImagingImage(Image):
         u.debug_print(2, f"ImagingImage.load_output_file(): {self}.source_cat_path ==", self.source_cat_path)
         return outputs
 
-    def select_zeropoint(self, no_user_input: bool = False):
+    def select_zeropoint(self, no_user_input: bool = False, preferred: str = None):
 
         ranking = self.rank_photometric_cat()
+        if preferred is not None:
+            ranking.insert(0, preferred)
         zps = {}
         best = None
         for cat in ranking:
@@ -1103,11 +1118,28 @@ class ImagingImage(Image):
                 best = zeropoint_best["catalogue"]
         self.zeropoint_best = zeropoint_best
 
+        self.set_header_items(
+            items={
+                "PHOTZP": zeropoint_best["zeropoint"] - zeropoint_best["extinction"] * zeropoint_best["airmass"],
+                "PHOTZPER": np.sqrt(
+                    zeropoint_best["zeropoint_err"] ** 2 + u.uncertainty_product(
+                        zeropoint_best["extinction"] * zeropoint_best["airmass"],
+                        (zeropoint_best["extinction"], zeropoint_best["extinction_err"]),
+                        (zeropoint_best["airmass"], zeropoint_best["airmass_err"])
+                    ) ** 2
+                ),
+                "ZPCAT": zeropoint_best["catalogue"]
+            },
+            ext=0,
+            write=False
+        )
+
         self.add_log(
             action=f"Selected best zeropoint as {zeropoint_best['zeropoint']} +/- {zeropoint_best['zeropoint_err']}, from {zeropoint_best['catalogue']}",
             method=self.select_zeropoint
         )
         self.update_output_file()
+        self.write_fits_file()
         return self.zeropoint_best, best
 
     def zeropoint(
@@ -1129,7 +1161,7 @@ class ImagingImage(Image):
             star_class_tol: float = 0.95,
             mag_range_sex_lower: units.Quantity = -100. * units.mag,
             mag_range_sex_upper: units.Quantity = 100. * units.mag,
-            dist_tol: units.Quantity = 2. * units.arcsec,
+            dist_tol: units.Quantity = None,
             snr_cut=100
     ):
         self.signal_to_noise_measure()
@@ -1144,6 +1176,14 @@ class ImagingImage(Image):
         cat_dec_col = column_names['dec']
         cat_mag_col = column_names['mag_psf']
         cat_type = "csv"
+
+        if dist_tol is None:
+            self.load_headers()
+            self.extract_astrometry_err()
+            if self.astrometry_err is not None:
+                dist_tol = 2 * self.astrometry_err
+            else:
+                dist_tol = 2 * units.arcsec
 
         zp_dict = ph.determine_zeropoint_sextractor(
             sextractor_cat=self.source_cat,
@@ -1171,7 +1211,7 @@ class ImagingImage(Image):
             cat_type=cat_type,
             cat_zeropoint=cat_zeropoint,
             cat_zeropoint_err=cat_zeropoint_err,
-            snr_col='SNR_MEASURED',
+            snr_col='SNR_SE',
             snr_cut=snr_cut,
         )
 
@@ -1179,8 +1219,8 @@ class ImagingImage(Image):
             return None
         zp_dict['airmass'] = 0.0
         zp_dict['airmass_err'] = 0.0
-        zp_dict['extinction'] = 0.0
-        zp_dict['extinction_err'] = 0.0
+        zp_dict['extinction'] = 0.0 * units.mag
+        zp_dict['extinction_err'] = 0.0 * units.mag
         self.zeropoints[cat_name.lower()] = zp_dict
         self.zeropoint_output_paths[cat_name.lower()] = output_path
         self.add_log(
@@ -1500,7 +1540,6 @@ class ImagingImage(Image):
         else:
             u.rm_check(new_path)
             return None
-
 
     def transfer_wcs(self, other_image: 'ImagingImage', ext: int = 0):
         other_image.load_headers()
@@ -1871,17 +1910,21 @@ class ImagingImage(Image):
         # new_data *= gain
         new_data /= exp_time
         new.data[ext] = new_data.value
-        u.debug_print(1, "Image.concert_to_es() 2: new_data.unit ==", new_data.unit)
+        u.debug_print(1, "Image.concert_to_cs() 2: new_data.unit ==", new_data.unit)
 
-        new.set_header_item(key="BUNIT", value=str(new_data.unit), ext=ext)
-        # new.set_header_item(key="GAIN", value=1.0 * exp_time, ext=ext)
-        new.set_header_item(key="GAIN", value=gain * exp_time, ext=ext)
-        new.set_header_item(key="OLD_GAIN", value=gain, ext=ext)
-        new.set_header_item(key="EXPTIME", value=1.0, ext=ext)
-        new.set_header_item(key="OLD_EXPTIME", value=exp_time.value, ext=ext)
-        new.set_header_item(key="OLD_SATURATE", value=saturate, ext=ext)
-        # new.set_header_item(key="SATURATE", value=saturate * gain / exp_time, ext=ext)
-        new.set_header_item(key="SATURATE", value=saturate / exp_time, ext=ext)
+        new.set_header_items(
+            items={
+                "BUNIT": str(new_data.unit),
+                "GAIN": gain * exp_time,
+                "OLD_GAIN": gain,
+                "EXPTIME": 1.0,
+                "OLD_EXPTIME": exp_time.value,
+                "OLD_SATURATE": saturate,
+                "SATURATE": saturate / exp_time
+            },
+            ext=ext,
+            write=False
+        )
 
         new.add_log(
             action=f"Converted image data on ext {ext} to cts / s, using exptime of {exp_time}.",
