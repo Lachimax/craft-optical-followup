@@ -1985,7 +1985,6 @@ class ImagingEpoch(Epoch):
         if "suppress_select" not in kwargs:
             kwargs["suppress_select"] = True
 
-
         deepest = self.zeropoint(
             image_dict=image_dict,
             output_path=output_path,
@@ -2043,7 +2042,7 @@ class ImagingEpoch(Epoch):
                 # Get nearest Source-Extractor object:
                 nearest, separation = img.find_object(obj.position, dual=dual)
                 rows.append(nearest)
-                u.debug_print(1, "NEAREST", nearest.colnames)
+                u.debug_print(2, "ImagingImage.get_photometry(): nearest.colnames ==", nearest.colnames)
                 err = nearest[f'MAGERR_AUTO_ZP_best']
                 print("FILTER:", fil)
                 print(f"MAG_AUTO = {nearest['MAG_AUTO_ZP_best']} +/- {err}")
@@ -2102,12 +2101,31 @@ class ImagingEpoch(Epoch):
                     img.extract_filter()
                     plot.set_title(f"{name}, {u.latex_sanitise(img.filter.nice_name())}")
                     fig.savefig(output_path)
+                    fig.savefig(output_path.replace(".pdf", ".png"))
 
             tbl = table.vstack(rows)
             tbl.write(os.path.join(fil_output_path, f"{self.field.name}_{self.name}_{fil}.ecsv"),
                       format="ascii.ecsv")
             tbl.write(os.path.join(fil_output_path, f"{self.field.name}_{self.name}_{fil}.csv"),
                       format="ascii.csv")
+
+            nice_name = f"{self.field.name}_{self.instrument.nice_name().replace('/', '-')}_{fil.replace('_', '-')}_{self.date.strftime('%Y-%m-%d')}.fits"
+
+            img.copy_with_outputs(os.path.join(
+                self.data_path,
+                nice_name)
+            )
+
+            if config["refined_data_dir"] is not None:
+                img.copy_with_outputs(os.path.join(
+                    config["refined_data_dir"],
+                    nice_name
+                )
+                )
+
+
+
+
 
     def astrometry_diagnostics(
             self, images: dict = None,
