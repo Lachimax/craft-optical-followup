@@ -339,6 +339,8 @@ class Image:
         :return:
         """
         u.debug_print(1, "Copying", self.path, "to", destination)
+        if os.path.isdir(destination):
+            destination = os.path.join(destination, self.filename)
         shutil.copy(self.path, destination)
         new_image = self.new_image(path=destination)
         new_image.log = self.log.copy()
@@ -349,6 +351,13 @@ class Image:
             input_path=self.path,
             output_path=destination
         )
+        return new_image
+
+    def copy_with_outputs(self, destination: str):
+        new_image = self.copy(destination)
+        self.update_output_file()
+        shutil.copy(self.output_file, destination.replace(".fits", "_outputs.yaml"))
+        new_image.load_output_file()
         return new_image
 
     def load_output_file(self):
@@ -3056,6 +3065,7 @@ class CoaddedImage(ImagingImage):
         new_image.area_file = self.area_file
         new_image.update_output_file()
         return new_image
+
 
     @classmethod
     def select_child_class(cls, instrument: str, **kwargs):
