@@ -42,44 +42,70 @@ surveys = p.surveys
 
 u.mkdir_check_nested(config["table_dir"])
 
+
+def _construct_column_lists(columns: dict):
+    dtypes = []
+    un = []
+    colnames = []
+    for colname in columns:
+        val = columns[colname]
+        colnames.append(colname)
+        if isinstance(val, units.Unit):
+            dtypes.append(units.Quantity)
+            un.append(val)
+        else:
+            dtypes.append(val)
+            un.append(None)
+    return colnames, dtypes, un
+
+
 master_table = None
 master_table_path = os.path.join(config["table_dir"], "master_imaging_table.ecsv")
-master_table_columns = [
-    "field_name",
-    "epoch_name",
-    "date_utc",
-    "mjd",
-    "instrument",
-    "filter_name",
-    "filter_lambda_eff",
-    "n_frames",
-    "n_included",
-    "frame_exp_time",
-    "total_exp_time",
-    "psf_fwhm",
-    "program_id"
-]
+master_table_columns = {
+    "field_name": str,
+    "epoch_name": str,
+    "date_utc": str,
+    "mjd": units.day,
+    "instrument": str,
+    "filter_name": str,
+    "filter_lambda_eff": units.micron,
+    "n_frames": int,
+    "n_included": int,
+    "frame_exp_time": units.second,
+    "total_exp_time": units.second,
+    "psf_fwhm": units.arcsec,
+    "program_id": str
+}
 
 objects_table = None
-master_objects_path = os.path.join(config["table_dir"], "master_objects_table.ecsv")
-master_objects_columns = [
-    "field_name",
-    "object_name",
-    #""
-    "mag_best_{:s}", # The magnitude from the deepest image
-    "mag_best_err",
-    "mag_mean",
-    "mag_mean_err"
-]
+master_objects_path = os.path.join(config["table_dir"], "master_select_objects_table.ecsv")
+master_objects_columns = {
+    "field_name": None,
+    "object_name": None,
+    "ra": units.deg,
+    "ra_err": units.deg,
+    "dec": units.deg,
+    "dec_err": units.deg,
+    "a": units.deg,
+    "a_err": units.deg,
+    "b": units.deg,
+    "b_err": units.deg,
+    "kron_radius": None,
+    "mag_best_{:s}": units.mag,  # The magnitude from the deepest image in that band
+    "mag_best_{:s}_err": units.mag,
+    "mag_mean_{:s}": units.mag,
+    "mag_mean_{:s}_err": units.mag
+}
 
-photometry_table = None
-master_photometry_path = os.path.join(config["table_dir"], "photometry")
-u.mkdir_check(master_photometry_path)
-master_photometry_columns = [
-    "field_name",
-    "object_name",
-    #""
-]
+
+# photometry_table = None
+# master_photometry_path = os.path.join(config["table_dir"], "photometry")
+# u.mkdir_check(master_photometry_path)
+# master_photometry_columns = [
+#     "field_name",
+#     "object_name",
+#     #""
+# ]
 
 
 def load_master_table(force: bool = False):
@@ -88,6 +114,8 @@ def load_master_table(force: bool = False):
         if os.path.isfile(master_table_path):
             master_table = table.QTable.read(master_table_path, format="ascii.ecsv")
         else:
+            colnames, dtypes, un = _construct_column_lists(columns=master_table_columns)
+            master_table = table.QTable([[None]] * len(colnames), names=colnames, units=un, dtype=dtypes)
 
     return master_table
 
