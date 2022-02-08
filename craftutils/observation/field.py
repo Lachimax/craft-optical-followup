@@ -47,15 +47,22 @@ def _construct_column_lists(columns: dict):
     dtypes = []
     un = []
     colnames = []
+    default_data = []
     for colname in columns:
         val = columns[colname]
         colnames.append(colname)
-        if isinstance(val, units.Unit):
-            dtypes.append(units.Quantity)
+        if isinstance(val, units.Unit) or isinstance(val, units.IrreducibleUnit):
+            dtype = units.Quantity
             un.append(val)
         else:
-            dtypes.append(val)
+            dtype = val
+
             un.append(None)
+        if dtype is str:
+            dtypes.append("U64")
+        else:
+            dtypes.append(dtype)
+        default_data.append(dtype(0))
     return colnames, dtypes, un
 
 
@@ -115,7 +122,7 @@ def load_master_table(force: bool = False):
             master_table = table.QTable.read(master_table_path, format="ascii.ecsv")
         else:
             colnames, dtypes, un = _construct_column_lists(columns=master_table_columns)
-            master_table = table.QTable([[None]] * len(colnames), names=colnames, units=un, dtype=dtypes)
+            master_table = table.QTable(data=[[0]] * len(colnames), names=colnames, units=un, dtype=dtypes)
 
     return master_table
 
