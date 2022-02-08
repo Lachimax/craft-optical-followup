@@ -189,6 +189,8 @@ class Filter:
         self.transmission_table_filter_atmosphere = None
         self.transmission_table_filter_atmosphere_path = None
 
+        self.photometry_table = None
+
         self.load_output_file()
 
     def __str__(self):
@@ -414,6 +416,16 @@ class Filter:
     def _build_param_path(cls, instrument_name: str, filter_name: str):
         path = Instrument._build_filter_dir(instrument_name=instrument_name)
         return os.path.join(path, f"{filter_name}.yaml")
+
+    @classmethod
+    def _build_photometry_table_path(cls, instrument_name: str, filter_name: str):
+        return os.path.join(
+            cls._build_data_path(
+                instrument_name=instrument_name,
+                filter_name=filter_name,
+            ),
+            f"{filter_name}_photometry.ecsv"
+        )
 
 
 class FORS2Filter(Filter):
