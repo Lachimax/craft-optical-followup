@@ -86,6 +86,13 @@ def attempt_skycoord(coord: Union[SkyCoord, str, tuple, list, np.ndarray]):
         raise TypeError(f"coord is {type(coord)}; must be of type SkyCoord, str, tuple, list, or numpy array")
 
 
+def coord_string(coord: SkyCoord):
+    s = coord.to_string("hmsdms")
+    ra = s[:s.find(" ")]
+    dec = s[s.find(" ") + 1:]
+    return ra, dec
+
+
 def calculate_error_ellipse(frb: Union[str, dict], error: str = 'quadrature'):
     """
     Calculates the parameters of the uncertainty ellipse of an FRB, for use in plotting.

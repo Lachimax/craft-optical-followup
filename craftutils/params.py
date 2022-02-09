@@ -159,6 +159,9 @@ config = check_for_config()
 param_dir = u.check_trailing_slash(config['param_dir'])
 project_path = u.check_trailing_slash(config['proj_dir'])
 data_path = u.check_trailing_slash(config["top_data_dir"])
+furby_path = None
+if "furby_dir" in config and config["furby_dir"] is not None:
+    furby_path = u.check_trailing_slash(config["furby_dir"])
 
 
 def get_project_git_hash(short: bool = False):

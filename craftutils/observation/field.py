@@ -31,6 +31,7 @@ import craftutils.spectroscopy as spec
 import craftutils.utils as u
 import craftutils.wrap.montage as montage
 import craftutils.wrap.dragons as dragons
+import craftutils.observation as observation
 
 pl.latex_setup()
 
@@ -40,91 +41,6 @@ instruments_imaging = p.instruments_imaging
 instruments_spectroscopy = p.instruments_spectroscopy
 surveys = p.surveys
 
-u.mkdir_check_nested(config["table_dir"])
-
-
-def _construct_column_lists(columns: dict):
-    dtypes = []
-    un = []
-    colnames = []
-    default_data = []
-    for colname in columns:
-        val = columns[colname]
-        colnames.append(colname)
-        if isinstance(val, units.Unit) or isinstance(val, units.IrreducibleUnit):
-            dtype = units.Quantity
-            un.append(val)
-        else:
-            dtype = val
-
-            un.append(None)
-        if dtype is str:
-            dtypes.append("U64")
-        else:
-            dtypes.append(dtype)
-        default_data.append(dtype(0))
-    return colnames, dtypes, un
-
-
-master_table = None
-master_table_path = os.path.join(config["table_dir"], "master_imaging_table.ecsv")
-master_table_columns = {
-    "field_name": str,
-    "epoch_name": str,
-    "date_utc": str,
-    "mjd": units.day,
-    "instrument": str,
-    "filter_name": str,
-    "filter_lambda_eff": units.micron,
-    "n_frames": int,
-    "n_included": int,
-    "frame_exp_time": units.second,
-    "total_exp_time": units.second,
-    "psf_fwhm": units.arcsec,
-    "program_id": str
-}
-
-objects_table = None
-master_objects_path = os.path.join(config["table_dir"], "master_select_objects_table.ecsv")
-master_objects_columns = {
-    "field_name": None,
-    "object_name": None,
-    "ra": units.deg,
-    "ra_err": units.deg,
-    "dec": units.deg,
-    "dec_err": units.deg,
-    "a": units.deg,
-    "a_err": units.deg,
-    "b": units.deg,
-    "b_err": units.deg,
-    "kron_radius": None,
-    "mag_best_{:s}": units.mag,  # The magnitude from the deepest image in that band
-    "mag_best_{:s}_err": units.mag,
-    "mag_mean_{:s}": units.mag,
-    "mag_mean_{:s}_err": units.mag
-}
-
-
-# photometry_table = None
-# master_photometry_path = os.path.join(config["table_dir"], "photometry")
-# u.mkdir_check(master_photometry_path)
-# master_photometry_columns = [
-#     "field_name",
-#     "object_name",
-#     #""
-# ]
-
-
-def load_master_table(force: bool = False):
-    global master_table
-    if force or master_table is None:
-        if os.path.isfile(master_table_path):
-            master_table = table.QTable.read(master_table_path, format="ascii.ecsv")
-        else:
-            colnames, dtypes, un = _construct_column_lists(columns=master_table_columns)
-            master_table = table.QTable(data=[[0]] * len(colnames), names=colnames, units=un, dtype=dtypes)
-
-    return master_table
 
 
 def _output_img_list(lst: list):
@@ -843,6 +759,67 @@ class Field:
         path = u.mkdir_check_args(p.param_dir, "fields", field_name)
         return os.path.join(path, f"{field_name}.yaml")
 
+    @classmethod
+    def new_params_from_input(cls, field_name: str, field_param_path: str):
+        _, field_class = u.select_option(
+            message="Which type of field would you like to create?",
+            options={"FRB field": FRBField,
+                     "Standard (calibration) field": StandardField,
+                     "Normal field": Field
+                     })
+
+        pos_coord = None
+        while pos_coord is None:
+            ra = u.user_input(
+                "Please enter the Right Ascension of the field target, in the format 00h00m00.0s or as a decimal number of degrees"
+                " (for an FRB field, this should be the FRB coordinates). Eg: 13h19m14.08s, 199.80867")
+            ra_err = 0.0
+            if field_class is FRBField:
+                ra_err = u.user_input("If you know the uncertainty in the FRB localisation RA, you can enter "
+                                      "that now (in true arcseconds, not in RA units). Otherwise, leave blank.")
+                if ra_err in ["", " "]:
+                    ra_err = 0.0
+            dec = u.user_input(
+                "Please enter the Declination of the field target, in the format 00d00m00.0s or as a decimal number of degrees"
+                " (for an FRB field, this should be the FRB coordinates). Eg: -18d50m16.7s, -18.83797222")
+            dec_err = 0.0
+            if field_class is FRBField:
+                dec_err = u.user_input("If you know the uncertainty in the FRB localisation Dec, you can enter "
+                                       "that now, in arcseconds. Otherwise, leave blank.")
+                if dec_err in ["", " "]:
+                    dec_err = 0.0
+            try:
+                pos_coord = am.attempt_skycoord((ra, dec))
+            except ValueError:
+                print("Invalid values encountered when parsing coordinates. Please try again.")
+
+        ra_float = pos_coord.ra
+        dec_float = pos_coord.dec
+
+        s = pos_coord.to_string("hmsdms")
+        ra = s[:s.find(" ")]
+        dec = s[s.find(" ") + 1:]
+
+        position = {"dec": {"decimal": dec_float, "dms": dec},
+                    "ra": {"decimal": ra_float, "hms": ra}}
+
+        field_param_path_yaml = os.path.join(field_param_path, f"{field_name}.yaml")
+        yaml_dict = field_class.new_yaml(
+            name=field_name,
+            path=field_param_path,
+            centre=position,
+        )
+        if field_class is FRBField:
+            yaml_dict["frb"]["position"] = position
+            yaml_dict["frb"]["position_err"]["a"]["stat"] = float(ra_err)
+            yaml_dict["frb"]["position_err"]["b"]["stat"] = float(dec_err)
+            yaml_dict["frb"]["host_galaxy"]["position"] = position
+
+            p.save_params(field_param_path_yaml, yaml_dict)
+
+        print(f"Template parameter file created at '{field_param_path_yaml}'")
+        input("Please edit this file before proceeding, then press Enter to continue.")
+
 
 class StandardField(Field):
     pass
@@ -972,7 +949,8 @@ class FRBField(Field):
                             "xshooter": None,
                             "sdss": None
                         }
-                }
+                },
+            "furby_frb": False,
         })
 
         return default_params
@@ -1021,8 +999,23 @@ class FRBField(Field):
         field_name = furby_dict["Name"]
         frb = objects.FRB.default_params()
         coords = objects.position_dictionary.copy()
-        coords["ra"]["decimal"] = furby_dict["RA"]
-        coords["dec"]["decimal"] = furby_dict["DEC"]
+
+        ra = furby_dict["RA"]
+        dec = furby_dict["DEC"]
+
+        pos_coord = am.attempt_skycoord((ra * units.deg, dec * units.deg))
+        ra_str, dec_str = am.coord_string(pos_coord)
+
+        coords["ra"]["decimal"] = ra
+        coords["dec"]["decimal"] = dec
+        coords["ra"]["hms"] = ra_str
+        coords["dec"]["dms"] = dec_str
+
+        furby_table = observation.load_furby_table()
+        if furby_table is not None:
+            row = furby_table[furby_table["Name"] == field_name][0]
+            frb["position_err"]["a"]["stat"] = row["sig_ra"]
+            frb["position_err"]["b"]["stat"] = row["sig_dec"]
 
         frb["dm"] = furby_dict["DM"] * objects.dm_units
         frb["name"] = field_name
@@ -1036,6 +1029,7 @@ class FRBField(Field):
             frb=frb,
             snr=furby_dict["S/N"]
         )
+
         return param_dict
 
     @classmethod
@@ -1152,6 +1146,7 @@ class FRBField(Field):
         param_path_upper = os.path.join(p.param_dir, "fields", new_frb)
         u.mkdir_check(param_path_upper)
         p.save_params(file=os.path.join(param_path_upper, f"{new_frb}.yaml"), dictionary=new_params)
+
 
     def gather_epochs_old(self):
         print("Searching for old-format imaging epoch param files...")

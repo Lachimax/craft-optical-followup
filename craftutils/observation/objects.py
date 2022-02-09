@@ -217,7 +217,7 @@ class Object:
         self.load_output_file()
         if isinstance(plotting, dict):
             self.plotting_params = plotting
-            if "frame" in self.plotting_params:
+            if "frame" in self.plotting_params and self.plotting_params["frame"] is not None:
                 self.plotting_params["frame"] = u.check_quantity(self.plotting_params["frame"], units.arcsec)
         else:
             self.plotting_params = {}

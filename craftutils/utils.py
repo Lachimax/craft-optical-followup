@@ -244,7 +244,7 @@ def check_quantity(number: Union[float, int, units.Quantity], unit: units.Unit, 
     :param convert: If True, convert compatible Quantity to units unit.
     :return:
     """
-    if type(number) is not units.Quantity:
+    if type(number) is not units.Quantity: #and number is not None:
         number *= unit
     elif number.unit != unit:
         if not allow_mismatch:
