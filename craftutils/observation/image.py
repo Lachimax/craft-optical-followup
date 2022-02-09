@@ -396,12 +396,14 @@ class Image:
                 try:
                     unit = units.Unit(unit)
                     self.data = list(map(lambda h: h.data * unit, self.hdu_list))
+                # If unit could not be parsed, assume counts
                 except ValueError:
-                    self.data = list(map(lambda h: h.data, self.hdu_list))
+                    self.data = list(map(lambda h: h.data * units.ct, self.hdu_list))
             else:
+                # If unit does not exist, assume counts
                 u.debug_print(1, f"Image.load_data(): {self}.path:", self.path)
                 u.debug_print(1, f"Image.load_data() 2: {self}.hdu_list:", self.hdu_list)
-                self.data = list(map(lambda h: h.data, self.hdu_list))
+                self.data = list(map(lambda h: h.data * units.ct, self.hdu_list))
             self.close()
         else:
             u.debug_print(1, "Data already loaded.")
@@ -992,7 +994,7 @@ class ImagingImage(Image):
         if self.filter_name is not None:
             self.filter_short = self.filter_name[0]
 
-        if self.filter_name is not None and self.instrument is not None:
+        if self.filter_name is not None and self.instrument is not None and self.filter_name in self.instrument.filters:
             self.filter = self.instrument.filters[self.filter_name]
 
         return self.filter_name
@@ -1915,7 +1917,6 @@ class ImagingImage(Image):
 
         new.load_data()
         new_data = new.data[ext]
-        u.debug_print(1, "Image.convert_to_cs() 1: new_data.unit ==", new_data.unit)
         # new_data *= gain
         new_data /= exp_time
         new.data[ext] = new_data.value
@@ -2329,6 +2330,7 @@ class ImagingImage(Image):
         norm = pl.nice_norm(image=image_cut[ext].data)
         title = u.latex_sanitise(title)
         plt.imshow(image_cut[0].data, origin='lower', norm=norm)
+        # theta =
         pl.plot_gal_params(
             hdu=image_cut,
             ras=[row["RA"].value],
@@ -3065,7 +3067,6 @@ class CoaddedImage(ImagingImage):
         new_image.area_file = self.area_file
         new_image.update_output_file()
         return new_image
-
 
     @classmethod
     def select_child_class(cls, instrument: str, **kwargs):

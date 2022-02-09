@@ -42,7 +42,6 @@ instruments_spectroscopy = p.instruments_spectroscopy
 surveys = p.surveys
 
 
-
 def _output_img_list(lst: list):
     """
     Turns a list of images into a YAML-able list of paths.
@@ -308,6 +307,18 @@ def _check_do_list(do: Union[list, str]):
                 raise ValueError("do string is not correctly formatted.")
             do = list(map(int, do.split(char)))
     return do
+
+
+def detect_instrument(path: str, ext: int = 0):
+    with fits.open(path) as file:
+        if "INSTRUME" in file[ext].header:
+            inst_str = file[ext].header["INSTRUME"]
+            if "FORS2" in inst_str:
+                return "vlt_fors2"
+            elif "HAWKI" in inst_str:
+                return "vlt_hawki"
+        else:
+            raise ValueError(f"Could not establish instrument from file header on {path}.")
 
 
 class Field:
@@ -1146,7 +1157,6 @@ class FRBField(Field):
         param_path_upper = os.path.join(p.param_dir, "fields", new_frb)
         u.mkdir_check(param_path_upper)
         p.save_params(file=os.path.join(param_path_upper, f"{new_frb}.yaml"), dictionary=new_params)
-
 
     def gather_epochs_old(self):
         print("Searching for old-format imaging epoch param files...")
@@ -2153,7 +2163,7 @@ class ImagingEpoch(Epoch):
                 obj.write_plot_photometry()
 
                 if isinstance(self.field, FRBField):
-                    if "frame" in obj.plotting_params:
+                    if "frame" in obj.plotting_params and obj.plotting_params["frame"] is not None:
                         frame = obj.plotting_params["frame"]
                     else:
                         frame = img.nice_frame(row=obj.cat_row)
@@ -3476,6 +3486,7 @@ class ESOImagingEpoch(ImagingEpoch):
                     print(f"Adding reduced science images from {output_subdir}")
                     for file in filter(lambda f: f.endswith(".fits"), os.listdir(output_subdir)):
                         path = os.path.join(output_subdir, file)
+                        # TODO: This (and other FORS2Image instances in this method WILL NOT WORK WITH HAWKI. Must make more flexible.
                         img = image.FORS2Image(path)
                         self.add_frame_reduced(img)
                 backgrounds = os.path.join(output_dir, "backgrounds")
@@ -3515,6 +3526,9 @@ class ESOImagingEpoch(ImagingEpoch):
                         for file_name in files:
                             # Retrieve the target object name from the fits file.
                             file_path = os.path.join(subpath, file_name)
+                            inst_file = image.detect_instrument(file_path)
+                            if inst_file != "vlt_fors2":
+                                continue
                             file = image.FORS2Image(file_path)
                             file_obj = file.extract_object().lower()
                             file_mjd = int(file.extract_header_item('MJD-OBS'))
