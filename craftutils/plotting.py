@@ -648,6 +648,9 @@ def plot_all_params(image: Union[str, fits.hdu.HDUList], cat: Union[str, Table, 
 
     image, path = ff.path_or_hdu(image)
 
+    if isinstance(cat, str):
+        cat = Table.read(cat, format="ascii.sextractor")
+
     data = image[0].data
 
     wcs_image = wcs.WCS(header=image[0].header)
