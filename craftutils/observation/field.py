@@ -329,7 +329,8 @@ class Field:
             param_path: str = None,
             data_path: str = None,
             objs: Union[List[objects.Object], dict] = None,
-            extent: units.Quantity = None
+            extent: units.Quantity = None,
+            **kwargs
     ):
         """
 
@@ -844,7 +845,9 @@ class FRBField(Field):
                  data_path: str = None,
                  objs: List[objects.Object] = None,
                  frb: Union[objects.FRB, dict] = None,
-                 extent: units.Quantity = None):
+                 extent: units.Quantity = None,
+                 **kwargs
+                 ):
         if centre_coords is None:
             if frb is not None:
                 centre_coords = frb.position
@@ -868,6 +871,9 @@ class FRBField(Field):
             if self.frb.host_galaxy is not None:
                 self.add_object(self.frb.host_galaxy)
         self.epochs_imaging_old = {}
+        self.furby_frb = False
+        if "furby_frb" in kwargs:
+            self.furby_frb = kwargs["furby_frb"]
 
     def plot_host(
             self,
@@ -1024,7 +1030,7 @@ class FRBField(Field):
 
         furby_table = observation.load_furby_table()
         if furby_table is not None:
-            row = furby_table[furby_table["Name"] == field_name][0]
+            row, _ = observation.get_row(furby_table, field_name)
             frb["position_err"]["a"]["stat"] = row["sig_ra"]
             frb["position_err"]["b"]["stat"] = row["sig_dec"]
 
@@ -1038,7 +1044,8 @@ class FRBField(Field):
             path=output_path,
             centre=coords,
             frb=frb,
-            snr=furby_dict["S/N"]
+            snr=furby_dict["S/N"],
+            furby_frb=True
         )
 
         return param_dict
@@ -1076,6 +1083,10 @@ class FRBField(Field):
             extent = param_dict["extent"]
         else:
             extent = None
+        furby_frb = False
+        if "furby_frb" in param_dict:
+            furby_frb = param_dict["furby_frb"]
+
         field = cls(
             name=name,
             centre_coords=f"{centre_ra} {centre_dec}",
@@ -1083,7 +1094,8 @@ class FRBField(Field):
             data_path=os.path.join(config["top_data_dir"], param_dict["data_path"]),
             objs=param_dict["objects"],
             frb=param_dict["frb"],
-            extent=extent
+            extent=extent,
+            furby_frb=furby_frb
         )
 
         return field
@@ -2186,13 +2198,28 @@ class ImagingEpoch(Epoch):
                         },
                         normalize_kwargs=normalize_kwargs
                     )
-                    output_path = os.path.join(fil_output_path, f"{obj.name}_{fil}.pdf")
+                    output_path = os.path.join(fil_output_path, f"{obj.name_filesys}_{fil}.pdf")
                     name = obj.name
                     name = name.replace("HG", "HG\,")
                     img.extract_filter()
                     plot.set_title(f"{name}, {u.latex_sanitise(img.filter.nice_name())}")
                     fig.savefig(output_path)
                     fig.savefig(output_path.replace(".pdf", ".png"))
+
+                    print("FURBY Field", self.field.furby_frb)
+
+                    # Do FURBY-specific stuff
+                    # if self.field.furby_frb and ("Host" in name or "HG" in name) and fil == "R_SPECIAL":
+                    #     observation.load_furby_table()
+                    #     row, index = observation.get_row(observation.furby_table, self.field.name)
+                    #     # if observation.furby_table.colnames:
+                    #     # row["R_obs"] = True
+                    #     # row["R_rdx"] = True
+                    #     # row["R_UT"] = self.date.isot
+                    #     # row["RA_Host"] = obj.position.ra.value
+                    #     # row["DEC_Host"] = obj.position.dec.value
+                    #     observation.furby_table[index] = row
+                    #     observation.write_furby_table()
 
             tbl = table.vstack(rows)
             tbl.write(os.path.join(fil_output_path, f"{self.field.name}_{self.name}_{fil}.ecsv"),
@@ -2207,12 +2234,14 @@ class ImagingEpoch(Epoch):
                 nice_name)
             )
 
-            if config["refined_data_dir"] is not None:
+            if config["refined_data_dir"] is not None: # and not self.field.furby_frb:
                 img.copy_with_outputs(os.path.join(
                     config["refined_data_dir"],
                     nice_name
                 )
                 )
+
+
 
     def astrometry_diagnostics(
             self, images: dict = None,

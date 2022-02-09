@@ -80,6 +80,35 @@ master_objects_columns = {
 }
 
 furby_table = None
+furby_table_columns = {
+    "Name": str,
+    "RA_FRB": float,
+    "DEC_FRB": float,
+    "JNAME": str,
+    "DM_FRB": float,
+    "sig_ra": float,
+    "sig_dec": float,
+    "CRACO": bool,
+    "pass_loc": bool,
+    "DM_ISM": float,
+    "pass_MW": bool,
+    "EBV": float,
+    "pass_star": bool,
+    "pass_img": bool,
+    "R_OB": bool,
+    "K_OB": bool,
+    "R_obs": bool,
+    "K_obs": bool,
+    "R_rdx": bool,
+    "K_rdx": bool,
+    "R_UT": str,
+    "K_UT": str,
+    "PATH": bool,
+    "max_POx": float,
+    "RA_Host": float,
+    "DEC_Host": float
+}
+furby_table_path = os.path.join(p.furby_path, "craco_fu", "data", "craco_fu_db.csv")
 
 
 # photometry_table = None
@@ -124,8 +153,22 @@ def load_furby_table(force: bool = False):
     if force or furby_table is None:
         path = _build_furby_table_path()
         if path is not None:
-            furby_table = table.QTable.read(path, format="ascii.csv")
+            _, dtypes, _ = _construct_column_lists(columns=master_table_columns)
+            furby_table = table.Table.read(path, format="ascii.csv", dtype=dtypes)
         else:
             furby_table = None
 
     return furby_table
+
+
+def write_furby_table():
+    global furby_table
+
+    path = _build_furby_table_path()
+    if path is not None:
+        furby_table.write(path, format="ascii.csv")
+
+
+def get_row(tbl: table.Table, field_name: str):
+    is_name = tbl["Name"] == field_name
+    return tbl[is_name][0], is_name.argmax()

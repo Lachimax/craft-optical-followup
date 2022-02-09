@@ -196,6 +196,7 @@ class Object:
             plotting: dict = None
     ):
         self.name = name
+        self.name_filesys = name.replace(" ", "-")
         self.position = a.attempt_skycoord(position)
         if type(position_err) is not PositionUncertainty:
             self.position_err = PositionUncertainty(uncertainty=position_err, position=self.position)
@@ -255,9 +256,9 @@ class Object:
     def check_data_path(self):
         if self.field is not None:
             u.debug_print(2, "", self.name)
-            self.data_path = os.path.join(self.field.data_path, "objects", self.name)
+            self.data_path = os.path.join(self.field.data_path, "objects", self.name_filesys)
             u.mkdir_check(self.data_path)
-            self.output_file = os.path.join(self.data_path, f"{self.name}_outputs.yaml")
+            self.output_file = os.path.join(self.data_path, f"{self.name_filesys}_outputs.yaml")
             return True
         else:
             return False
@@ -273,7 +274,7 @@ class Object:
         :return: matplotlib ax object containing plot info
         """
         if output is None:
-            output = os.path.join(self.data_path, f"{self.name}_photometry.pdf")
+            output = os.path.join(self.data_path, f"{self.name_filesys}_photometry.pdf")
 
         ax = self.plot_photometry(**kwargs)
         ax.legend()
@@ -336,7 +337,7 @@ class Object:
         return ax
 
     def build_photometry_table_path(self):
-        return os.path.join(self.data_path, f"{self.name}_photometry.ecsv")
+        return os.path.join(self.data_path, f"{self.name_filesys}_photometry.ecsv")
 
     # TODO: Refactor photometry to use table instead of dict (not sure why I even did it that way to start with)
 
@@ -434,7 +435,7 @@ class Object:
         )
         ax.set_ylim(0, 0.6)
         ax.legend()
-        plt.savefig(os.path.join(self.data_path, f"{self.name}_irsa_extinction.pdf"))
+        plt.savefig(os.path.join(self.data_path, f"{self.name_filesys}_irsa_extinction.pdf"))
         plt.close()
         self.extinction_power_law = {
             "amplitude": fitted.amplitude.value * fitted.amplitude.unit,
@@ -466,7 +467,7 @@ class Object:
     def retrieve_extinction_table(self, force: bool = False):
         self.load_extinction_table()
         if force or self.irsa_extinction is None:
-            raw_path = os.path.join(self.data_path, f"{self.name}_irsa_extinction.ecsv")
+            raw_path = os.path.join(self.data_path, f"{self.name_filesys}_irsa_extinction.ecsv")
             r.save_irsa_extinction(
                 ra=self.position.ra.value,
                 dec=self.position.dec.value,
@@ -476,7 +477,7 @@ class Object:
             for colname in ext_tbl.colnames:
                 if str(ext_tbl[colname].unit) == "mags":
                     ext_tbl[colname]._set_unit(units.mag)
-            tbl_path = os.path.join(self.data_path, f"{self.name}_galactic_extinction.ecsv")
+            tbl_path = os.path.join(self.data_path, f"{self.name_filesys}_galactic_extinction.ecsv")
             ext_tbl.write(tbl_path, overwrite=True, format="ascii.ecsv")
             self.irsa_extinction = ext_tbl
             self.irsa_extinction_path = tbl_path
