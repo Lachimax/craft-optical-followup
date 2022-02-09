@@ -2234,19 +2234,19 @@ class ImagingEpoch(Epoch):
                 nice_name)
             )
 
-            if config["refined_data_dir"] is not None: # and not self.field.furby_frb:
+            if config["refined_data_dir"] is not None:  # and not self.field.furby_frb:
                 img.copy_with_outputs(os.path.join(
                     config["refined_data_dir"],
                     nice_name
                 )
                 )
 
-
-
     def astrometry_diagnostics(
-            self, images: dict = None,
+            self,
+            images: dict = None,
             reference_cat: table.QTable = None,
-            offset_tolerance: units.Quantity = 0.5 * units.arcsec):
+            offset_tolerance: units.Quantity = 0.5 * units.arcsec
+    ):
 
         if images is None:
             images = self.coadded_trimmed
@@ -2575,7 +2575,9 @@ class ImagingEpoch(Epoch):
             return False
 
     def plot_object(
-            self, img: str, fil: str, fig: plt.Figure,
+            self, img: str,
+            fil: str,
+            fig: plt.Figure,
             centre: SkyCoord,
             frame: units.Quantity = 30 * units.pix,
             n: int = 1, n_x: int = 1, n_y: int = 1,
@@ -2612,6 +2614,9 @@ class ImagingEpoch(Epoch):
             **kwargs
         )
         return subplot, hdu_cut
+
+    def push_to_table(self):
+        pass
 
     @classmethod
     def from_params(cls, name: str, instrument: str, field: Union[Field, str] = None, old_format: bool = False):
