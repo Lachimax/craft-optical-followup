@@ -53,8 +53,8 @@ master_imaging_table_columns = {
     "program_id": str,
     "zeropoint": units.mag,
     "zeropoint_err": units.mag,
-    "ext_atm": units.mag,
-    "ext_atm_err": units.mag,
+    # "extinction_atm": units.mag,
+    # "extinction_atm_err": units.mag,
 }
 
 objects_table = None
@@ -140,6 +140,7 @@ def write_master_epoch_table():
         raise ValueError("master_table not loaded.")
     else:
         master_imaging_table.sort(["field_name", "epoch_name"])
+        print(master_imaging_table)
         master_imaging_table.write(master_imaging_table_path, format="ascii.ecsv")
         master_imaging_table.write(master_imaging_table_path.replace(".ecsv", ".csv"), format="ascii.csv")
 

@@ -2204,8 +2204,6 @@ class ImagingEpoch(Epoch):
                     fig.savefig(output_path)
                     fig.savefig(output_path.replace(".pdf", ".png"))
 
-                    print("FURBY Field", self.field.furby_frb)
-
                     # Do FURBY-specific stuff
                     # if self.field.furby_frb and ("Host" in name or "HG" in name) and fil == "R_SPECIAL":
                     #     observation.load_furby_table()
@@ -2238,6 +2236,8 @@ class ImagingEpoch(Epoch):
                     nice_name
                 )
                 )
+
+            self.push_to_table()
 
     def astrometry_diagnostics(
             self,
@@ -2688,7 +2688,10 @@ class ImagingEpoch(Epoch):
             row["frame_exp_time"] = self.exp_time_mean[fil].round()
             row["total_exp_time"] = row["n_frames"] * row["frame_exp_time"]
             row["total_exp_time_included"] = row["n_frames_included"] * row["frame_exp_time"]
-            row["psf_fwhm"] = coadded[fil].psf
+            row["psf_fwhm"] = self.psf_stats[fil]["gauss"]["fwhm_median"]
+            row["program_id"] = self.program_id
+            row["zeropoint"] = coadded[fil].extract_header_item("PHOTZP")
+            row["zeropoint_err"] = coadded[fil].extract_header_item("PHOTZPER")
 
             if index is None:
                 observation.master_imaging_table.add_row(row)
