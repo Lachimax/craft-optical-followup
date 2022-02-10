@@ -1028,9 +1028,9 @@ class FRBField(Field):
         coords["ra"]["hms"] = ra_str
         coords["dec"]["dms"] = dec_str
 
-        furby_table = observation.load_furby_table()
-        if furby_table is not None:
-            row, _ = observation.get_row(furby_table, field_name)
+        observation.load_furby_table()
+        row, _ = observation.get_row_furby(field_name)
+        if row is not None:
             frb["position_err"]["a"]["stat"] = row["sig_ra"]
             frb["position_err"]["b"]["stat"] = row["sig_dec"]
 
@@ -1681,16 +1681,19 @@ class ImagingEpoch(Epoch):
         self.frames_registered = {}
         self.frames_astrometry = {}
         self.astrometry_successful = {}
+        self.frames_final = None
 
         self.std_pointings = {}
         self.std_objects = {}
 
         self.coadded_trimmed = {}
         self.coadded_astrometry = {}
+        self.coadded_final = None
 
         self.gaia_catalogue = None
 
         self.astrometry_stats = {}
+        self.psf_stats = {}
 
         # self.load_output_file(mode="imaging")
 
@@ -1892,10 +1895,7 @@ class ImagingEpoch(Epoch):
                 self.update_output_file()
 
     def proc_coadd(self, output_dir: str, **kwargs):
-        if "correct_astrometry_frames" in self.do_kwargs and not self.do_kwargs["correct_astrometry_frames"]:
-            kwargs["frames"] = "normalised"
-        else:
-            kwargs["frames"] = "astrometry"
+        kwargs["frames"] = self.frames_final
         self.coadd(output_dir, **kwargs)
 
     def coadd(self, output_dir: str, frames: str = "astrometry"):
@@ -1908,12 +1908,11 @@ class ImagingEpoch(Epoch):
         u.mkdir_check(output_dir)
         if frames == "astrometry":
             input_directory = self.paths['correct_astrometry_frames']
-            input_frames = self.frames_astrometry
         elif frames == "normalised":
             input_directory = os.path.join(self.paths['convert_to_cs'], "science"),
-            input_frames = self.frames_normalised
         else:
             raise ValueError(f"{frames} not recognised as frame type.")
+        input_frames = self._get_frames(frames)
 
         print(f"Coadding {frames} frames, with input directory {input_directory}")
         for fil in self.filters:
@@ -2037,7 +2036,6 @@ class ImagingEpoch(Epoch):
                     # Using the first image as a template, reproject this one into the pixel space (for alignment)
                     trimmed = trimmed.reproject(other_image=template, output_path=output_path)
             self.add_coadded_trimmed_image(trimmed, key=fil)
-        # self.astrometry_diagnostics(images=self.coadded_trimmed)
 
     def proc_source_extraction(self, output_dir: str, **kwargs):
         do_diag = True
@@ -2046,7 +2044,7 @@ class ImagingEpoch(Epoch):
         self.source_extraction(output_dir=output_dir, do_diagnostics=do_diag, **kwargs)
 
     def source_extraction(self, output_dir: str, do_diagnostics: bool = True, **kwargs):
-        images = self.coadded_trimmed
+        images = self._get_images("final")
         for fil in images:
             img = images[fil]
             configs = self.source_extractor_config
@@ -2060,7 +2058,7 @@ class ImagingEpoch(Epoch):
             if "correct_astrometry_frames" in self.do_kwargs and not self.do_kwargs["correct_astrometry_frames"]:
                 offset_tolerance = 1.0 * units.arcsec
             self.astrometry_diagnostics(images=images, offset_tolerance=offset_tolerance)
-            # self.psf_diagnostics()
+            self.psf_diagnostics(images=images)
 
     def proc_photometric_calibration(self, output_dir: str, **kwargs):
         self.photometric_calibration(output_path=output_dir, **kwargs)
@@ -2249,7 +2247,7 @@ class ImagingEpoch(Epoch):
     ):
 
         if images is None:
-            images = self.coadded_trimmed
+            images = self._get_images("final")
 
         if reference_cat is None:
             reference_cat = self.epoch_gaia_catalogue()
@@ -2265,6 +2263,21 @@ class ImagingEpoch(Epoch):
 
         self.update_output_file()
         return self.astrometry_stats
+
+    def psf_diagnostics(
+            self,
+            images: dict = None
+    ):
+        if images is None:
+            images = self._get_images("final")
+
+        for fil in images:
+            img = images[fil]
+            self.psf_stats[fil] = img.psf_diagnostics()
+
+        self.update_output_file()
+        return self.psf_stats
+
 
     def zeropoint(
             self,
@@ -2309,6 +2322,12 @@ class ImagingEpoch(Epoch):
         return deepest
 
     def _get_images(self, image_type: str):
+        if image_type == "final":
+            if self.coadded_final is not None:
+                image_type = self.coadded_final
+            else:
+                raise ValueError("coadded_final has not been set.")
+
         if image_type == "coadded_trimmed":
             image_dict = self.coadded_trimmed
         elif image_type == "coadded":
@@ -2317,6 +2336,30 @@ class ImagingEpoch(Epoch):
             image_dict = self.coadded_astrometry
         else:
             raise ValueError(f"Images type '{image_type}' not recognised.")
+        return image_dict
+
+    def _get_frames(self, frame_type: str):
+        if frame_type == "final":
+            if self.frames_final is not None:
+                frame_type = self.frames_final
+            else:
+                raise ValueError("frames_final has not been set.")
+
+        if frame_type == "science":
+            image_dict = self.frames_science
+        elif frame_type == "reduced":
+            image_dict = self.frames_reduced
+        elif frame_type == "trimmed":
+            image_dict = self.frames_trimmed
+        elif frame_type == "normalised":
+            image_dict = self.frames_normalised
+        elif frame_type == "registered":
+            image_dict = self.frames_normalised
+        elif frame_type == "astrometry":
+            image_dict = self.frames_astrometry
+        else:
+            raise ValueError(f"Frame type '{frame_type}' not recognised.")
+
         return image_dict
 
     def guess_data_path(self):
@@ -2354,7 +2397,8 @@ class ImagingEpoch(Epoch):
             "airmass_mean": self.airmass_mean,
             "airmass_err": self.airmass_err,
             "astrometry_successful": self.astrometry_successful,
-            "astrometry_stats": self.astrometry_stats
+            "astrometry_stats": self.astrometry_stats,
+            "psf_stats": self.psf_stats
         })
         return output_dict
 
@@ -2379,6 +2423,10 @@ class ImagingEpoch(Epoch):
                 self.airmass_mean = outputs["airmass_mean"]
             if "airmass_err" in outputs:
                 self.airmass_err = outputs["airmass_err"]
+            if "psf_stats" in outputs:
+                self.psf_stats = outputs["psf_stats"]
+            if "astrometry_stats" in outputs:
+                self.astrometry_stats = outputs["astrometry_stats"]
             if "frames_raw" in outputs:
                 for frame in outputs["frames_raw"]:
                     self.add_frame_raw(raw_frame=frame)
@@ -2616,7 +2664,39 @@ class ImagingEpoch(Epoch):
         return subplot, hdu_cut
 
     def push_to_table(self):
-        pass
+
+        observation.load_master_imaging_table()
+
+        frames = self._get_frames("final")
+        coadded = self._get_images("final")
+
+        for fil in self.filters:
+
+            row, index = observation.get_row_epoch(self.name)
+            if row is None:
+                row = observation.master_imaging_table[0]
+
+            row["field_name"] = self.field.name
+            row["epoch_name"] = self.name
+            row["date_utc"] = self.date.isot
+            row["mjd"] = self.date.mjd * units.day
+            row["instrument"] = self.instrument_name
+            row["filter_name"] = fil
+            row["filter_lambda_eff"] = self.instrument.filters[fil].lambda_eff
+            row["n_frames"] = len(self.frames_reduced[fil])
+            row["n_frames_included"] = len(frames[fil])
+            row["frame_exp_time"] = self.exp_time_mean[fil].round()
+            row["total_exp_time"] = row["n_frames"] * row["frame_exp_time"]
+            row["total_exp_time_included"] = row["n_frames_included"] * row["frame_exp_time"]
+            row["psf_fwhm"] = coadded[fil].psf
+
+            if index is None:
+                observation.master_imaging_table.add_row(row)
+            else:
+                observation.master_imaging_table[index] = row
+
+        observation.write_master_epoch_table()
+
 
     @classmethod
     def from_params(cls, name: str, instrument: str, field: Union[Field, str] = None, old_format: bool = False):
@@ -3619,6 +3699,7 @@ class ESOImagingEpoch(ImagingEpoch):
             **kwargs
         )
 
+
     def trim_reduced(self, output_dir: str, **kwargs):
 
         u.mkdir_check(os.path.join(output_dir, "backgrounds"))
@@ -3885,6 +3966,21 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
 
         u.debug_print(2, f"FORS2ImagingEpoch.stages(): stages ==", stages)
         return stages
+
+    def _pipeline_init(self):
+        super()._pipeline_init()
+        self.frames_final = "astrometry"
+        # If told not to correct astrometry on frames:
+        if "correct_astrometry_frames" in self.do_kwargs and not self.do_kwargs["correct_astrometry_frames"]:
+            # If not told to register frames
+            if "register_frames" in self.do_kwargs and not self.do_kwargs["register_frames"]:
+                self.frames_final = "normalised"
+            else:
+                self.frames_final = "registered"
+
+        self.coadded_final = "coadded_trimmed"
+
+
 
     def _register(self, frames: dict, fil: str, tmp: image.ImagingImage, n_template: int, output_dir: str):
         pairs = self.pair_files(images=frames[fil])

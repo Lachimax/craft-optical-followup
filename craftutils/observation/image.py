@@ -668,6 +668,8 @@ class ImagingImage(Image):
         self.fwhm_sigma_moffat = None
         self.fwhm_rms_moffat = None
 
+        self.psf_stats = {}
+
         self.fwhm_max_gauss = None
         self.fwhm_median_gauss = None
         self.fwhm_min_gauss = None
@@ -1086,6 +1088,8 @@ class ImagingImage(Image):
                 self.fwhm_psfex = outputs["fwhm_psfex"]
             if "fwhm_psfex" in outputs:
                 self.fwhm_pix_psfex = outputs["fwhm_pix_psfex"]
+            if "psf_stats" in outputs:
+                self.psf_stats = outputs["psf_stats"]
             if "psfex_successful" in outputs:
                 self.psfex_successful = outputs["psfex_successful"]
             if "zeropoints" in outputs:
@@ -1806,9 +1810,10 @@ class ImagingImage(Image):
 
         return self.astrometry_stats
 
-    def psf_diagnostics(self, star_class_tol: float = 0.95,
-                        mag_max: float = 0.0 * units.mag, mag_min: float = -7.0 * units.mag,
-                        match_to: table.Table = None, frame: float = 15):
+    def psf_diagnostics(
+            self, star_class_tol: float = 0.95,
+            mag_max: float = 0.0 * units.mag, mag_min: float = -7.0 * units.mag,
+            match_to: table.Table = None, frame: float = 15):
         self.open()
         self.load_source_cat()
         u.debug_print(2, f"ImagingImage.psf_diagnostics(): {self}.source_cat_path ==", self.source_cat_path)
@@ -1819,7 +1824,8 @@ class ImagingImage(Image):
             mag_max=mag_max,
             mag_min=mag_min,
             match_to=match_to,
-            frame=frame)
+            frame=frame
+        )
 
         fwhm_gauss = stars_gauss["GAUSSIAN_FWHM_FITTED"]
         self.fwhm_median_gauss = np.nanmedian(fwhm_gauss)
@@ -1847,33 +1853,38 @@ class ImagingImage(Image):
         self.close()
 
         results = {
+            "n_stars": len(stars_gauss),
+            "fwhm_psfex": self.fwhm_psfex.to(units.arcsec),
             "gauss": {
-                "fwhm_median": self.fwhm_median_gauss,
-                "fwhm_mean": np.nanmean(fwhm_gauss),
-                "fwhm_max": self.fwhm_max_gauss,
-                "fwhm_min": self.fwhm_min_gauss,
-                "fwhm_sigma": self.fwhm_sigma_gauss,
-                "fwhm_rms": self.fwhm_rms_gauss},
+                "fwhm_median": self.fwhm_median_gauss.to(units.arcsec),
+                "fwhm_mean": np.nanmean(fwhm_gauss).to(units.arcsec),
+                "fwhm_max": self.fwhm_max_gauss.to(units.arcsec),
+                "fwhm_min": self.fwhm_min_gauss.to(units.arcsec),
+                "fwhm_sigma": self.fwhm_sigma_gauss.to(units.arcsec),
+                "fwhm_rms": self.fwhm_rms_gauss.to(units.arcsec)
+            },
             "moffat": {
-                "fwhm_median": self.fwhm_median_moffat,
-                "fwhm_mean": np.nanmean(fwhm_moffat),
-                "fwhm_max": self.fwhm_max_moffat,
-                "fwhm_min": self.fwhm_min_moffat,
-                "fwhm_sigma": self.fwhm_sigma_moffat,
-                "fwhm_rms": self.fwhm_rms_moffat},
+                "fwhm_median": self.fwhm_median_moffat.to(units.arcsec),
+                "fwhm_mean": np.nanmean(fwhm_moffat).to(units.arcsec),
+                "fwhm_max": self.fwhm_max_moffat.to(units.arcsec),
+                "fwhm_min": self.fwhm_min_moffat.to(units.arcsec),
+                "fwhm_sigma": self.fwhm_sigma_moffat.to(units.arcsec),
+                "fwhm_rms": self.fwhm_rms_moffat.to(units.arcsec)
+            },
             "sextractor": {
-                "fwhm_median": self.fwhm_median_sextractor,
-                "fwhm_mean": np.nanmean(fwhm_sextractor),
-                "fwhm_max": self.fwhm_max_sextractor,
-                "fwhm_min": self.fwhm_min_sextractor,
-                "fwhm_sigma": self.fwhm_sigma_sextractor,
-                "fwhm_rms": self.fwhm_rms_sextractor}
+                "fwhm_median": self.fwhm_median_sextractor.to(units.arcsec),
+                "fwhm_mean": np.nanmean(fwhm_sextractor).to(units.arcsec),
+                "fwhm_max": self.fwhm_max_sextractor.to(units.arcsec),
+                "fwhm_min": self.fwhm_min_sextractor.to(units.arcsec),
+                "fwhm_sigma": self.fwhm_sigma_sextractor.to(units.arcsec),
+                "fwhm_rms": self.fwhm_rms_sextractor.to(units.arcsec)}
         }
         self.add_log(
             action=f"Calculated PSF FWHM statistics.",
             method=self.psf_diagnostics,
             packages=["source-extractor", "psfex"]
         )
+        self.psf_stats = results
         self.update_output_file()
         return results
 

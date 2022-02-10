@@ -34,9 +34,9 @@ def _construct_column_lists(columns: dict):
     return colnames, dtypes, un
 
 
-master_table = None
-master_table_path = os.path.join(config["table_dir"], "master_imaging_table.ecsv")
-master_table_columns = {
+master_imaging_table = None
+master_imaging_table_path = os.path.join(config["table_dir"], "master_imaging_table.ecsv")
+master_imaging_table_columns = {
     "field_name": str,
     "epoch_name": str,
     "date_utc": str,
@@ -45,9 +45,10 @@ master_table_columns = {
     "filter_name": str,
     "filter_lambda_eff": units.micron,
     "n_frames": int,
-    "n_included": int,
+    "n_frames_included": int,
     "frame_exp_time": units.second,
     "total_exp_time": units.second,
+    "total_exp_time_included": units.second,
     "psf_fwhm": units.arcsec,
     "program_id": str,
     "zeropoint": units.mag,
@@ -121,23 +122,26 @@ furby_table_path = os.path.join(p.furby_path, "craco_fu", "data", "craco_fu_db.c
 # ]
 
 
-def load_master_table(force: bool = False):
-    global master_table
-    if force or master_table is None:
-        if os.path.isfile(master_table_path):
-            master_table = table.QTable.read(master_table_path, format="ascii.ecsv")
+def load_master_imaging_table(force: bool = False):
+    global master_imaging_table
+    if force or master_imaging_table is None:
+        if os.path.isfile(master_imaging_table_path):
+            master_imaging_table = table.QTable.read(master_imaging_table_path, format="ascii.ecsv")
         else:
-            colnames, dtypes, un = _construct_column_lists(columns=master_table_columns)
-            master_table = table.QTable(data=[[0]] * len(colnames), names=colnames, units=un, dtype=dtypes)
+            colnames, dtypes, un = _construct_column_lists(columns=master_imaging_table_columns)
+            master_imaging_table = table.QTable(data=[[0]] * len(colnames), names=colnames, units=un, dtype=dtypes)
+            # master_epoch_table.remove_row(0)
 
-    return master_table
+    return master_imaging_table
 
 
-def write_master_table():
-    if master_table is None:
+def write_master_epoch_table():
+    if master_imaging_table is None:
         raise ValueError("master_table not loaded.")
     else:
-        pass
+        master_imaging_table.sort(["field_name", "epoch_name"])
+        master_imaging_table.write(master_imaging_table_path, format="ascii.ecsv")
+        master_imaging_table.write(master_imaging_table_path.replace(".ecsv", ".csv"), format="ascii.csv")
 
 
 def _build_furby_table_path():
@@ -153,7 +157,7 @@ def load_furby_table(force: bool = False):
     if force or furby_table is None:
         path = _build_furby_table_path()
         if path is not None:
-            _, dtypes, _ = _construct_column_lists(columns=master_table_columns)
+            _, dtypes, _ = _construct_column_lists(columns=master_imaging_table_columns)
             furby_table = table.Table.read(path, format="ascii.csv", dtype=dtypes)
         else:
             furby_table = None
@@ -169,6 +173,23 @@ def write_furby_table():
         furby_table.write(path, format="ascii.csv")
 
 
-def get_row(tbl: table.Table, field_name: str):
-    is_name = tbl["Name"] == field_name
-    return tbl[is_name][0], is_name.argmax()
+def get_row(tbl: table.Table, colval: str, colname: str):
+    is_name = tbl[colname] == colval
+    if sum(is_name) == 0:
+        return None, None
+    else:
+        return tbl[is_name][0], is_name.argmax()
+
+
+def get_row_furby(field_name: str):
+    if furby_table is not None:
+        return get_row(tbl=furby_table, colval=field_name, colname="Name")
+    else:
+        return None
+
+
+def get_row_epoch(epoch_name: str):
+    if master_imaging_table is not None:
+        return get_row(tbl=master_imaging_table, colval=epoch_name, colname="epoch_name")
+    else:
+        return None
