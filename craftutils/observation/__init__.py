@@ -109,8 +109,6 @@ furby_table_columns = {
     "RA_Host": float,
     "DEC_Host": float
 }
-furby_table_path = os.path.join(p.furby_path, "craco_fu", "data", "craco_fu_db.csv")
-
 
 # photometry_table = None
 # master_photometry_path = os.path.join(config["table_dir"], "photometry")

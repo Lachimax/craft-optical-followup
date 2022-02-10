@@ -291,6 +291,13 @@ def _retrieve_eso_epoch(epoch: Union['ESOImagingEpoch', 'ESOSpectroscopyEpoch'],
 
     if r:
         os.system(f"uncompress {path}/*.Z -f")
+
+    for file in os.listdir(path):
+        shutil.move(
+            os.path.join(path, file),
+            os.path.join(path, file.replace(":", "_"))
+        )
+
     return r
 
 
@@ -2429,6 +2436,7 @@ class ImagingEpoch(Epoch):
                 self.astrometry_stats = outputs["astrometry_stats"]
             if "frames_raw" in outputs:
                 for frame in outputs["frames_raw"]:
+                    print(frame)
                     self.add_frame_raw(raw_frame=frame)
             if "frames_reduced" in outputs:
                 for fil in outputs["frames_reduced"]:
@@ -2535,7 +2543,9 @@ class ImagingEpoch(Epoch):
         return frame
 
     def add_frame_raw(self, raw_frame: Union[image.ImagingImage, str]):
+        print(raw_frame)
         raw_frame, fil = self._check_frame(frame=raw_frame, frame_type="raw")
+        print(raw_frame)
         u.debug_print(
             2,
             f"add_frame_raw(): Adding frame {raw_frame.name}, type {raw_frame.frame_type}, to {self}, type {type(self)}")
