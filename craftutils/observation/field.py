@@ -2436,7 +2436,6 @@ class ImagingEpoch(Epoch):
                 self.astrometry_stats = outputs["astrometry_stats"]
             if "frames_raw" in outputs:
                 for frame in outputs["frames_raw"]:
-                    print(frame)
                     self.add_frame_raw(raw_frame=frame)
             if "frames_reduced" in outputs:
                 for fil in outputs["frames_reduced"]:
@@ -2543,9 +2542,7 @@ class ImagingEpoch(Epoch):
         return frame
 
     def add_frame_raw(self, raw_frame: Union[image.ImagingImage, str]):
-        print(raw_frame)
         raw_frame, fil = self._check_frame(frame=raw_frame, frame_type="raw")
-        print(raw_frame)
         u.debug_print(
             2,
             f"add_frame_raw(): Adding frame {raw_frame.name}, type {raw_frame.frame_type}, to {self}, type {type(self)}")
@@ -3997,10 +3994,8 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
 
     def _register(self, frames: dict, fil: str, tmp: image.ImagingImage, n_template: int, output_dir: str):
         pairs = self.pair_files(images=frames[fil])
-        u.debug_print(2, pairs)
         if n_template >= 0:
             tmp = pairs[n_template]
-        u.debug_print(1, "TMP", tmp)
 
         for i, pair in enumerate(pairs):
             if not isinstance(pair, tuple):
@@ -4318,7 +4313,6 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
                     else:
                         is_paired = False
                         pair = img_1
-                u.debug_print(1, "PAIR:")
                 if isinstance(pair, tuple):
                     u.debug_print(1, str(pair[0]), ",", str(pair[1]))
                 else:
