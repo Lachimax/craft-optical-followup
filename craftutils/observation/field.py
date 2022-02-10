@@ -33,7 +33,7 @@ import craftutils.wrap.montage as montage
 import craftutils.wrap.dragons as dragons
 import craftutils.observation as observation
 
-pl.latex_setup()
+# pl.latex_setup()
 
 config = p.config
 
@@ -2237,7 +2237,7 @@ class ImagingEpoch(Epoch):
                 nice_name)
             )
 
-            if config["refined_data_dir"] is not None:  # and not self.field.furby_frb:
+            if "refined_data_dir" in config and config["refined_data_dir"] is not None:  # and not self.field.furby_frb:
                 img.copy_with_outputs(os.path.join(
                     config["refined_data_dir"],
                     nice_name

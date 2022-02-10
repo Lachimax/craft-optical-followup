@@ -4,6 +4,7 @@ import os
 from typing import Union
 
 import matplotlib.pyplot as plt
+import matplotlib
 import numpy as np
 import photutils
 
@@ -557,6 +558,10 @@ def latex_setup():
 
     plt.rcParams['font.serif'] = ['Times']
     plt.rcParams['axes.linewidth'] = 2.
+
+def latex_off():
+    plt.rcdefaults()
+    plt.rcParams.update(matplotlib.rcParamsDefault)
 
 
 def plot_file(path: str, label: str = None, colour: str = None, show: bool = False):
