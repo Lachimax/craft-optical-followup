@@ -31,7 +31,7 @@ import craftutils.spectroscopy as spec
 import craftutils.utils as u
 import craftutils.wrap.montage as montage
 import craftutils.wrap.dragons as dragons
-import craftutils.observation as observation
+import craftutils.observation as obs
 
 # pl.latex_setup()
 
@@ -1036,8 +1036,8 @@ class FRBField(Field):
         coords["ra"]["hms"] = ra_str
         coords["dec"]["dms"] = dec_str
 
-        observation.load_furby_table()
-        row, _ = observation.get_row_furby(field_name)
+        obs.load_furby_table()
+        row, _ = obs.get_row_furby(field_name)
         if row is not None:
             frb["position_err"]["a"]["stat"] = row["sig_ra"]
             frb["position_err"]["b"]["stat"] = row["sig_dec"]
@@ -2137,7 +2137,7 @@ class ImagingEpoch(Epoch):
         :return:
         """
 
-        # observation.load_master
+        obs.load_master_objects_table()
 
         image_dict = self._get_images(image_type=image_type)
         u.mkdir_check(path)
@@ -2675,14 +2675,14 @@ class ImagingEpoch(Epoch):
 
     def push_to_table(self):
 
-        observation.load_master_imaging_table()
+        obs.load_master_imaging_table()
 
         frames = self._get_frames("final")
         coadded = self._get_images("final")
 
         for fil in self.filters:
 
-            row, index = observation.get_row_epoch(self.name, fil=fil)
+            row, index = obs.get_row_epoch(self.name, fil=fil)
             if row is None:
                 row = {}  # copy.deepcopy(observation.master_imaging_table[0])
 
@@ -2706,11 +2706,11 @@ class ImagingEpoch(Epoch):
             row["last_processed"] = Time.now().strftime("%Y-%m-%dT%H:%M:%S")
 
             if index is None:
-                observation.master_imaging_table.add_row(row)
+                obs.master_imaging_table.add_row(row)
             else:
-                observation.master_imaging_table[index] = row
+                obs.master_imaging_table[index] = row
 
-        observation.write_master_imaging_table()
+        obs.write_master_imaging_table()
 
     @classmethod
     def from_params(cls, name: str, instrument: str, field: Union[Field, str] = None, old_format: bool = False):

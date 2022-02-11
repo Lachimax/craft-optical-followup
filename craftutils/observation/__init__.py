@@ -12,20 +12,32 @@ config = p.config
 u.mkdir_check_nested(config["table_dir"])
 
 
-def _construct_column_lists(columns: dict):
+def _construct_column_lists(columns: dict, filters: list = None):
     dtypes = []
     un = []
     colnames = []
     default_data = []
+    columns_revised = {}
     for colname in columns:
-        val = columns[colname]
-        colnames.append(colname)
+
+        if "{:s}" in colname:
+            for fil in filters:
+                colname_fil = colname.format(fil)
+                colnames.append(colname_fil)
+                columns_revised[colname_fil] = columns[colname]
+
+        else:
+            colnames.append(colname)
+            columns_revised[colname] = columns[colname]
+
+    for colname in colnames:
+        val = columns_revised[colname]
+
         if isinstance(val, units.Unit) or isinstance(val, units.IrreducibleUnit):
             dtype = units.Quantity
             un.append(val)
         else:
             dtype = val
-
             un.append(None)
         if dtype is str:
             dtypes.append("U32")
@@ -63,9 +75,9 @@ master_imaging_table_columns = {
 master_objects_table = None
 master_objects_path = os.path.join(config["table_dir"], "master_select_objects_table.ecsv")
 master_objects_columns = {
-    "field_name": None,
-    "object_name": None,
     "jname": str,
+    "field_name": str,
+    "object_name": str,
     "ra": units.deg,
     "ra_err": units.deg,
     "dec": units.deg,
@@ -75,7 +87,7 @@ master_objects_columns = {
     "b": units.arcsec,
     "b_err": units.arcsec,
     "theta": units.deg,
-    "kron_radius": None,
+    "kron_radius": float,
     "mag_best_{:s}": units.mag,  # The magnitude from the deepest image in that band
     "mag_best_{:s}_err": units.mag,
     "mag_mean_{:s}": units.mag,
@@ -125,9 +137,15 @@ furby_table_columns = {
 #     ""
 # ]
 
-def load_master_table(tbl: Union[None, table.Table], tbl_columns: dict, tbl_path: str, force: bool = True):
+def load_master_table(
+        tbl: Union[None, table.Table],
+        tbl_columns: dict,
+        tbl_path: str,
+        force: bool = False,
+        filters: list = None
+):
     if force or tbl is None:
-        colnames, dtypes, un = _construct_column_lists(columns=tbl_columns)
+        colnames, dtypes, un = _construct_column_lists(columns=tbl_columns, filters=filters)
         if not os.path.isfile(tbl_path):
             tbl = table.QTable(data=[[0]] * len(colnames), names=colnames, units=un, dtype=dtypes)
             for i, colname in enumerate(colnames):
@@ -163,12 +181,25 @@ def load_master_imaging_table(force: bool = False):
     return master_imaging_table
 
 
+def load_master_objects_table(force: bool = False):
+    global master_objects_table
+
+    master_objects_table = load_master_table(
+        tbl=master_objects_table,
+        tbl_columns=master_objects_columns,
+        tbl_path=master_objects_path,
+        force=force
+    )
+
+    return master_imaging_table
+
+
 def write_master_imaging_table():
     if master_imaging_table is None:
         raise ValueError("master_table not loaded.")
     else:
         master_imaging_table.sort(["field_name", "epoch_name", "filter_name"])
-        master_imaging_table.write(master_imaging_table_path, format="ascii.ecsv")
+        master_imaging_table.write(master_imaging_table_path, format="ascii.ecsv", overwrite=True)
         master_imaging_table.write(master_imaging_table_path.replace(".ecsv", ".csv"), format="ascii.csv",
                                    overwrite=True)
 

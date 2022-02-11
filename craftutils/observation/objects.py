@@ -33,6 +33,7 @@ import craftutils.astrometry as a
 import craftutils.utils as u
 import craftutils.observation.instrument as inst
 import craftutils.retrieve as r
+import craftutils.observation as obs
 
 try:
     cosmology = cosmo.Planck18
@@ -493,8 +494,31 @@ class Object:
                 u.debug_print(1, "Loading irsa_extinction from", self.irsa_extinction_path)
                 self.irsa_extinction = table.QTable.read(self.irsa_extinction_path, format="ascii.ecsv")
 
+    def jname(self):
+        s_ra, s_dec = a.coord_string(self.position)
+        ra_second = str(np.round(float(s_ra[s_ra.find("m") + 1:s_ra.find("s")]), 3)).ljust(6, "0")
+        dec_second = str(np.round(float(s_dec[s_dec.find("m") + 1:s_dec.find("s")]), 2)).ljust(5, "0")
+        s_ra = s_ra[:s_ra.find("m")].replace("h", "")
+        s_dec = s_dec[:s_dec.find("m")].replace("d", "")
+        return f"J{s_ra}{ra_second}{s_dec}{dec_second}"
+
     def push_to_table(self):
-        pass
+        jname = self.jname()
+        row, index = obs.get_row_epoch(tbl=obs.master_objects_table, colname="jname", colval=jname)
+
+        if row is None:
+            row = {}
+        row["jname"] = jname
+        row["field_name"] = self.field.name
+        row["object_name"] = self.name
+        row["ra"] = self.position.ra
+        # row["ra_err"] = self.position_err.
+        # row["dec"] = self.dec
+
+        # Get best position, best magnitude etc.
+
+        for instrument in self.photometry:
+            pass
 
 
     @classmethod

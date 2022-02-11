@@ -843,6 +843,7 @@ class ImagingImage(Image):
             output_path=output_dir,
             packages=["psfex", "source-extractor"]
         )
+
         self.update_output_file()
 
     def _load_source_cat_sextractor(self, path: str):
@@ -854,6 +855,11 @@ class ImagingImage(Image):
             source_cat["Y_IMAGE"],
             1
         ) * units.deg
+        if self.astrometry_err is not None:
+            source_cat["RA_ERR"] = np.sqrt(
+                source_cat["ERRX2_WORLD"].to(units.arcsec ** 2) + self.astrometry_err ** 2)
+            source_cat["DEC_ERR"] = np.sqrt(
+                source_cat["ERRY2_WORLD"].to(units.arcsec ** 2) + self.astrometry_err ** 2)
 
         return source_cat
 
@@ -1809,6 +1815,12 @@ class ImagingImage(Image):
             output_path=output_path
         )
         self.astrometry_err = self.astrometry_stats["rms_offset"]
+
+        self.source_cat["RA_ERR"] = np.sqrt(
+            self.source_cat["ERRX2_WORLD"].to(units.arcsec ** 2) + self.astrometry_err ** 2)
+        self.source_cat["DEC_ERR"] = np.sqrt(
+            self.source_cat["ERRY2_WORLD"].to(units.arcsec ** 2) + self.astrometry_err ** 2)
+
         if not np.isnan(self.astrometry_err.value):
             self.headers[0]["ASTM_RMS"] = self.astrometry_err.value
         self.write_fits_file()
