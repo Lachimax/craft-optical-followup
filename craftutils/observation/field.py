@@ -669,13 +669,14 @@ class Field:
             u.mkdir_check(index_path)
             cat_index_path = os.path.join(index_path, cat_name)
             prefix = f"{cat_name}_index_{self.name}"
-            am.generate_astrometry_indices(cat_name=cat_name,
-                                           cat=cat_path,
-                                           fits_cat_output=cat_path.replace(".csv", ".fits"),
-                                           output_file_prefix=prefix,
-                                           index_output_dir=cat_index_path,
-                                           unique_id_prefix=int(self.name.replace("FRB", ""))
-                                           )
+            am.generate_astrometry_indices(
+                cat_name=cat_name,
+                cat=cat_path,
+                fits_cat_output=cat_path.replace(".csv", ".fits"),
+                output_file_prefix=prefix,
+                index_output_dir=cat_index_path,
+                unique_id_prefix=int(self.name.replace("FRB", ""))
+            )
 
     def get_path(self, key):
         if key in self.paths:
@@ -2135,6 +2136,9 @@ class ImagingEpoch(Epoch):
         :param path: Path to which to write the data products.
         :return:
         """
+
+        # observation.load_master
+
         image_dict = self._get_images(image_type=image_type)
         u.mkdir_check(path)
         # Loop through filters
@@ -2284,7 +2288,6 @@ class ImagingEpoch(Epoch):
 
         self.update_output_file()
         return self.psf_stats
-
 
     def zeropoint(
             self,
@@ -2679,9 +2682,9 @@ class ImagingEpoch(Epoch):
 
         for fil in self.filters:
 
-            row, index = observation.get_row_epoch(self.name)
+            row, index = observation.get_row_epoch(self.name, fil=fil)
             if row is None:
-                row = observation.master_imaging_table[0]
+                row = {}  # copy.deepcopy(observation.master_imaging_table[0])
 
             row["field_name"] = self.field.name
             row["epoch_name"] = self.name
@@ -2689,24 +2692,25 @@ class ImagingEpoch(Epoch):
             row["mjd"] = self.date.mjd * units.day
             row["instrument"] = self.instrument_name
             row["filter_name"] = fil
-            row["filter_lambda_eff"] = self.instrument.filters[fil].lambda_eff
+            row["filter_lambda_eff"] = self.instrument.filters[fil].lambda_eff.to(units.Angstrom).round(3)
             row["n_frames"] = len(self.frames_reduced[fil])
             row["n_frames_included"] = len(frames[fil])
             row["frame_exp_time"] = self.exp_time_mean[fil].round()
             row["total_exp_time"] = row["n_frames"] * row["frame_exp_time"]
             row["total_exp_time_included"] = row["n_frames_included"] * row["frame_exp_time"]
             row["psf_fwhm"] = self.psf_stats[fil]["gauss"]["fwhm_median"]
-            row["program_id"] = self.program_id
-            row["zeropoint"] = coadded[fil].extract_header_item("PHOTZP")
-            row["zeropoint_err"] = coadded[fil].extract_header_item("PHOTZPER")
+            row["program_id"] = str(self.program_id)
+            row["zeropoint"] = coadded[fil].extract_header_item("PHOTZP") * units.mag
+            row["zeropoint_err"] = coadded[fil].extract_header_item("PHOTZPER") * units.mag
+            row["zeropoint_source"] = coadded[fil].extract_header_item("ZPCAT")
+            row["last_processed"] = Time.now().strftime("%Y-%m-%dT%H:%M:%S")
 
             if index is None:
                 observation.master_imaging_table.add_row(row)
             else:
                 observation.master_imaging_table[index] = row
 
-        observation.write_master_epoch_table()
-
+        observation.write_master_imaging_table()
 
     @classmethod
     def from_params(cls, name: str, instrument: str, field: Union[Field, str] = None, old_format: bool = False):
@@ -3566,6 +3570,8 @@ class ESOImagingEpoch(ImagingEpoch):
             self.set_date(tmp.extract_date_obs())
         if self.target is None:
             self.set_target(tmp.extract_object())
+        if self.program_id is None:
+            self.set_program_id(tmp.extract_program_id())
 
         self.update_output_file()
 
@@ -3708,7 +3714,6 @@ class ESOImagingEpoch(ImagingEpoch):
             output_dir=output_dir,
             **kwargs
         )
-
 
     def trim_reduced(self, output_dir: str, **kwargs):
 
@@ -3989,8 +3994,6 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
                 self.frames_final = "registered"
 
         self.coadded_final = "coadded_trimmed"
-
-
 
     def _register(self, frames: dict, fil: str, tmp: image.ImagingImage, n_template: int, output_dir: str):
         pairs = self.pair_files(images=frames[fil])

@@ -493,6 +493,10 @@ class Object:
                 u.debug_print(1, "Loading irsa_extinction from", self.irsa_extinction_path)
                 self.irsa_extinction = table.QTable.read(self.irsa_extinction_path, format="ascii.ecsv")
 
+    def push_to_table(self):
+        pass
+
+
     @classmethod
     def default_params(cls):
         default_params = {

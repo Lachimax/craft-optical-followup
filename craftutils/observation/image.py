@@ -455,7 +455,7 @@ class Image:
 
     def add_history(self, note: str, ext: int = 0):
         self.load_headers()
-        self.headers[ext]["HISTORY"] = str(Time.now()) + ": " + note
+        self.headers[ext]["HISTORY"] = str(Time.now().strftime("%Y-%m-%dT%H:%M:%S")) + ": " + note
         # self.write_fits_file()
 
     def _extract_header_item(self, key: str, ext: int = 0):
@@ -487,6 +487,10 @@ class Image:
     def extract_unit(self):
         key = self.header_keys()["unit"]
         return self.extract_header_item(key)
+
+    def extract_program_id(self):
+        key = self.header_keys()["program_id"]
+        return str(self.extract_header_item(key))
 
     def extract_gain(self):
         self.gain = self.extract_header_item("GAIN")
@@ -568,7 +572,9 @@ class Image:
             "object": "OBJECT",
             "instrument": "INSTRUME",
             "unit": "BUNIT",
-            "saturate": "SATURATE"}
+            "saturate": "SATURATE",
+            "program_id": "PROG_ID"
+        }
         return header_keys
 
     @classmethod
@@ -3160,16 +3166,6 @@ class ESOImagingImage(ImagingImage, ESOImage):
         return self.airmass
 
     @classmethod
-    def header_keys(cls) -> dict:
-        header_keys = super().header_keys()
-        header_keys.update(ESOImage.header_keys())
-        header_keys.update({"noise_read": "HIERARCH ESO DET OUT1 RON",
-                            "filter": "HIERARCH ESO INS FILT1 NAME",
-                            "gain": "HIERARCH ESO DET OUT1 GAIN",
-                            })
-        return header_keys
-
-    @classmethod
     def count_exposures(cls, image_paths: list):
         # Counts only chip 1 images
         n = 0
@@ -3255,6 +3251,18 @@ class FORS2Image(ESOImagingImage):
             "panstarrs1",
             "sdss",
             "skymapper"]
+
+    @classmethod
+    def header_keys(cls) -> dict:
+        header_keys = super().header_keys()
+        header_keys.update(ESOImage.header_keys())
+        header_keys.update({
+            "noise_read": "HIERARCH ESO DET OUT1 RON",
+            "filter": "HIERARCH ESO INS FILT1 NAME",
+            "gain": "HIERARCH ESO DET OUT1 GAIN",
+            "program_id": "HIERARCH ESO OBS PROG ID",
+        })
+        return header_keys
 
 
 class FORS2CoaddedImage(CoaddedImage):
