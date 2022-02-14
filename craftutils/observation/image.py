@@ -29,7 +29,10 @@ from astropy.visualization import quantity_support
 
 from ccdproc import cosmicray_lacosmic
 
-from astroalign import register
+try:
+    from astroalign import register
+except ModuleNotFoundError:
+    print("Astroalign not installed; frame registration will not be available.")
 
 import photutils
 
