@@ -36,7 +36,10 @@ except ModuleNotFoundError:
 
 import photutils
 
-import sep
+try:
+    import sep
+except ModuleNotFoundError:
+    print("sep not installed; some photometry-related functionality will be unavailable.")
 
 import craftutils.utils as u
 import craftutils.astrometry as a
