@@ -401,16 +401,17 @@ class Image:
 
             self.data = []
             for i, h in enumerate(self.hdu_list):
-                this_unit = units.Unit(unit[i])
+                if units[i] is not None:
+                    this_unit = units.Unit(unit[i])
                 if h.data is not None:
                     try:
                         self.data.append(h.data * this_unit)
-                    except ValueError:
+                    except TypeError or ValueError:
                         # If unit could not be parsed, assume counts
                         self.data.append(h.data * units.ct, self.hdu_list)
                 else:
                     self.data.append(None)
-                
+
             self.close()
         else:
             u.debug_print(1, "Data already loaded.")
