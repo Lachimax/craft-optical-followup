@@ -395,21 +395,22 @@ class Image:
 
     def load_data(self, force: bool = False):
         if self.data is None or force:
-            unit = self.extract_unit()
+            unit = self.extract_units()
             self.open()
             u.debug_print(1, f"Image.load_data() 1: {self}.hdu_list:", self.hdu_list)
-            if unit is not None:
-                try:
-                    unit = units.Unit(unit)
-                    self.data = list(map(lambda h: h.data * unit, self.hdu_list))
-                # If unit could not be parsed, assume counts
-                except ValueError:
-                    self.data = list(map(lambda h: h.data * units.ct, self.hdu_list))
-            else:
-                # If unit does not exist, assume counts
-                u.debug_print(1, f"Image.load_data(): {self}.path:", self.path)
-                u.debug_print(1, f"Image.load_data() 2: {self}.hdu_list:", self.hdu_list)
-                self.data = list(map(lambda h: h.data * units.ct, self.hdu_list))
+
+            self.data = []
+            for i, h in enumerate(self.hdu_list):
+                this_unit = units.Unit(unit[i])
+                if h.data is not None:
+                    try:
+                        self.data.append(h.data * this_unit)
+                    except ValueError:
+                        # If unit could not be parsed, assume counts
+                        self.data.append(h.data * units.ct, self.hdu_list)
+                else:
+                    self.data.append(None)
+                
             self.close()
         else:
             u.debug_print(1, "Data already loaded.")
@@ -471,7 +472,7 @@ class Image:
         else:
             return None
 
-    def extract_header_item(self, key: str, ext: int = 0):
+    def extract_header_item(self, key: str, ext: int = 0, accept_absent: bool = False):
         # Check in the given HDU, then check all headers.
         value = self._extract_header_item(key=key, ext=ext)
         u.debug_print(2, "")
@@ -480,7 +481,7 @@ class Image:
         u.debug_print(2, f"\t key ==", key)
         u.debug_print(2, f"\t value ==", value)
         u.debug_print(2, "")
-        if value is None:
+        if value is None and not accept_absent:
             for ext in range(len(self.headers)):
                 value = self._extract_header_item(key=key, ext=ext)
                 if value is not None:
@@ -493,6 +494,13 @@ class Image:
     def extract_unit(self):
         key = self.header_keys()["unit"]
         return self.extract_header_item(key)
+
+    def extract_units(self):
+        key = self.header_keys()["unit"]
+        un = []
+        for i, header in enumerate(self.headers):
+            un.append(self.extract_header_item(key, ext=i, accept_absent=True))
+        return un
 
     def extract_program_id(self):
         key = self.header_keys()["program_id"]
