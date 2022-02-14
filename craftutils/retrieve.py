@@ -26,6 +26,11 @@ except ModuleNotFoundError:
     print("This version of astroquery does not support IRSA dust. Related functions will not be available.")
 
 try:
+    import astroquery.ipac.irsa as irsa
+except ModuleNotFoundError:
+    print("This version of astroquery does not support IRSA. Related functions will not be available.")
+
+try:
     from pyvo import dal
 except ModuleNotFoundError:
     print("Pyvo not installed. Functions using pyvo will not be available.")
@@ -50,6 +55,14 @@ def cat_columns(cat, f: str = None):
     else:
         f = ""
 
+    if cat == '2mass':
+        f = f.lower()
+        return {
+            'mag_psf': f"{f}_m", # 2MASS doesn't have psf-fit magnitudes, so we make do with the regular magnitudes
+            'mag_psf_err': f"{f}_cmsig",
+            'ra': 'ra',
+            'dec': 'dec',
+        }
     if cat == 'delve':
         f = f.lower()
         return {
@@ -643,6 +656,30 @@ def update_frb_irsa_extinction(frb: str):
         return values, ext_str
     else:
         print("IRSA Dust Tool data already retrieved.")
+
+
+def retrieve_2mass_photometry(ra: float, dec: float, radius: units.Quantity = 0.2 * units.deg):
+    print(f"Querying IRSA archive for 2MASS sources centred on RA={ra}, DEC={dec}.")
+    table = irsa.Irsa.query_region(
+        SkyCoord(
+            ra,
+            dec, unit=(units.deg, units.deg)
+        ),
+        catalog='fp_psc', radius=radius)
+
+    return table
+
+
+def save_2mass_photometry(ra: float, dec: float, output: str, radius: units.Quantity = 0.2 * units.deg):
+    table = retrieve_2mass_photometry(ra=ra, dec=dec, radius=radius)
+    if len(table) > 0:
+        u.mkdir_check_nested(path=output)
+        print(f"Saving 2MASS catalogue to {output}")
+        table.write(output, format="ascii.csv")
+        return str(table)
+    else:
+        print("No data retrieved from Gaia DR2")
+        return None
 
 
 sdss_filters = ["u", "g", "r", "i", "z"]
@@ -1591,6 +1628,7 @@ keys = p.keys()
 fors2_filters_retrievable = ["I_BESS", "R_SPEC", "b_HIGH", "v_HIGH"]
 mast_catalogues = ['panstarrs1']
 photometry_catalogues = {
+    '2mass': save_2mass_photometry,
     'delve': save_delve_photometry,
     'des': save_des_photometry,
     'sdss': save_sdss_photometry,

@@ -470,6 +470,9 @@ def determine_zeropoint_sextractor(
     # Import the catalogue of the sky region.
     if cat_type != 'sextractor':
         cat = table.QTable.read(cat_path, format='ascii.csv')
+        if cat_mag_col not in cat.colnames:
+            print(f"{cat_mag_col} not found in {cat_name}; is this band included?")
+            return None
         cat = cat.filled(fill_value=-999.)
         cat[cat_ra_col] *= units.deg
         cat[cat_dec_col] *= units.deg
