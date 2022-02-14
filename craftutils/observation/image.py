@@ -401,7 +401,7 @@ class Image:
 
             self.data = []
             for i, h in enumerate(self.hdu_list):
-                if units[i] is not None:
+                if unit[i] is not None:
                     this_unit = units.Unit(unit[i])
                 if h.data is not None:
                     try:
