@@ -23,12 +23,15 @@ except ModuleNotFoundError:
 try:
     import astroquery.ipac.irsa.irsa_dust as irsa_dust
 except ModuleNotFoundError:
-    print("This version of astroquery does not support IRSA dust. Related functions will not be available.")
+    import astroquery.irsa_dust as irsa_dust
+    # print("This version of astroquery does not support IRSA dust. Related functions will not be available.")
 
 try:
     import astroquery.ipac.irsa as irsa
 except ModuleNotFoundError:
-    print("This version of astroquery does not support IRSA. Related functions will not be available.")
+    import astroquery.irsa as irsa
+
+    # print("This version of astroquery does not support IRSA. Related functions will not be available.")
 
 try:
     from pyvo import dal
@@ -58,7 +61,7 @@ def cat_columns(cat, f: str = None):
     if cat == '2mass':
         f = f.lower()
         return {
-            'mag_psf': f"{f}_m", # 2MASS doesn't have psf-fit magnitudes, so we make do with the regular magnitudes
+            'mag_psf': f"{f}_m",  # 2MASS doesn't have psf-fit magnitudes, so we make do with the regular magnitudes
             'mag_psf_err': f"{f}_cmsig",
             'ra': 'ra',
             'dec': 'dec',
