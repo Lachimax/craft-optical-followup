@@ -19,16 +19,15 @@ def _construct_column_lists(columns: dict, filters: list = None):
     default_data = []
     columns_revised = {}
     for colname in columns:
+        # if "{:s}" in colname:
+        #     for fil in filters:
+        #         colname_fil = colname.format(fil)
+        #         colnames.append(colname_fil)
+        #         columns_revised[colname_fil] = columns[colname]
 
-        if "{:s}" in colname:
-            for fil in filters:
-                colname_fil = colname.format(fil)
-                colnames.append(colname_fil)
-                columns_revised[colname_fil] = columns[colname]
-
-        else:
-            colnames.append(colname)
-            columns_revised[colname] = columns[colname]
+        # else:
+        colnames.append(colname)
+        columns_revised[colname] = columns[colname]
 
     for colname in colnames:
         val = columns_revised[colname]
@@ -188,6 +187,7 @@ def load_master_objects_table(force: bool = False):
         tbl=master_objects_table,
         tbl_columns=master_objects_columns,
         tbl_path=master_objects_path,
+        # filters=filters,
         force=force
     )
 

@@ -746,19 +746,21 @@ class Field:
         field_type = param_dict["type"]
         centre_ra, centre_dec = p.select_coords(param_dict["centre"])
 
-        if "extent" in param_dict:
-            extent = param_dict["extent"]
-        else:
-            extent = None
+        # if "extent" in param_dict:
+        #     extent = param_dict["extent"]
+        # else:
+        #     extent = None
+        #
+        # if "survey" in param_dict
 
         if field_type == "Field":
             return cls(
-                name=name,
+                # name=name,
                 centre_coords=f"{centre_ra} {centre_dec}",
-                param_path=param_file,
-                data_path=os.path.join(config["top_data_dir"], param_dict["data_path"]),
+                # param_path=param_file,
+                # data_path=os.path.join(config["top_data_dir"], param_dict["data_path"]),
                 objs=param_dict["objects"],
-                extent=extent
+                **param_dict
             )
         elif field_type == "FRBField":
             return FRBField.from_file(param_file)
@@ -791,10 +793,23 @@ class Field:
     def new_params_from_input(cls, field_name: str, field_param_path: str):
         _, field_class = u.select_option(
             message="Which type of field would you like to create?",
-            options={"FRB field": FRBField,
-                     "Standard (calibration) field": StandardField,
-                     "Normal field": Field
-                     })
+            options={
+                "FRB field": FRBField,
+                "Standard (calibration) field": StandardField,
+                "Normal field": Field
+            })
+
+        survey_options = survey.Survey.list_surveys()
+        survey_options.append("New survey")
+        survey_options.append("None")
+        survey_name = u.select_option(
+            message="Which survey is this field a part of?",
+            options=survey_options
+        )
+        if survey_name == "New survey":
+            survey_name = survey.Survey.new_param_from_input()
+        elif survey_name == "None":
+            survey_name = None
 
         pos_coord = None
         while pos_coord is None:
@@ -832,7 +847,12 @@ class Field:
                     "ra": {"decimal": ra_float, "hms": ra}}
 
         field_param_path_yaml = os.path.join(field_param_path, f"{field_name}.yaml")
-        yaml_dict = field_class.new_yaml(path=field_param_path, name=field_name, centre=position)
+        yaml_dict = field_class.new_yaml(
+            path=field_param_path,
+            name=field_name,
+            centre=position,
+            survey=survey_name
+        )
         if field_class is FRBField:
             yaml_dict["frb"]["position"] = position
             yaml_dict["frb"]["position_err"]["a"]["stat"] = float(ra_err)
@@ -870,7 +890,8 @@ class FRBField(Field):
                          param_path=param_path,
                          data_path=data_path,
                          objs=objs,
-                         extent=extent
+                         extent=extent,
+                         **kwargs
                          )
 
         self.frb = frb
@@ -1087,23 +1108,24 @@ class FRBField(Field):
 
         centre_ra, centre_dec = p.select_coords(param_dict["centre"])
 
-        if "extent" in param_dict:
-            extent = param_dict["extent"]
-        else:
-            extent = None
-        furby_frb = False
-        if "furby_frb" in param_dict:
-            furby_frb = param_dict["furby_frb"]
+        # if "extent" in param_dict:
+        #     extent = param_dict["extent"]
+        # else:
+        #     extent = None
+        # survey_name = None
+        # if "survey" in param_dict:
+        #     survey_name = param_dict["survey"]
 
         field = cls(
-            name=name,
+            # name=name,
             centre_coords=f"{centre_ra} {centre_dec}",
-            param_path=param_file,
-            data_path=os.path.join(config["top_data_dir"], param_dict["data_path"]),
+            # param_path=param_file,
+            # data_path=os.path.join(config["top_data_dir"], param_dict["data_path"]),
             objs=param_dict["objects"],
-            frb=param_dict["frb"],
-            extent=extent,
-            furby_frb=furby_frb
+            # frb=param_dict["frb"],
+            **param_dict
+            # extent=extent,
+            # survey=survey_name
         )
 
         return field
@@ -1479,6 +1501,8 @@ class Epoch:
                 return True
             if opt == 2:
                 exit(0)
+
+    # def set_survey(self):
 
     def set_program_id(self, program_id: str):
         self.program_id = program_id
@@ -2230,10 +2254,14 @@ class ImagingEpoch(Epoch):
 
             if isinstance(self.field.survey, survey.Survey):
                 refined_path = self.field.survey.refined_stage_path
-                if self.refined_path is not None:
+                if refined_path is not None:
                     img.copy_with_outputs(os.path.join(
-                        os.path.join(refined_path, self.field.name, ),
-                        nice_name))
+                        refined_path,
+                        self.field.name,
+                        f"{self.instrument_name}_{fil}",
+                        nice_name
+                    )
+                    )
 
             self.push_to_table()
 
@@ -3545,17 +3573,29 @@ class ESOImagingEpoch(ImagingEpoch):
         inst_reflex_dir = os.path.join(config["esoreflex_input_dir"], inst_reflex_dir)
         u.mkdir_check_nested(inst_reflex_dir, remove_last=False)
 
+        survey_raw_path = None
+        if isinstance(self.field.survey, survey.Survey) and self.field.survey.raw_stage_path is not None:
+            survey_raw_path = os.path.join(self.field.survey.raw_stage_path, self.field.name, self.instrument_name)
+            u.mkdir_check_nested(survey_raw_path, remove_last=False)
+
         if not ("skip_esoreflex_copy" in kwargs and kwargs["skip_esoreflex_copy"]):
             for file in os.listdir(raw_dir):
                 print(f"Copying {file} to ESOReflex input directory...")
-                shutil.copy(os.path.join(raw_dir, file), os.path.join(config["esoreflex_input_dir"], inst_reflex_dir))
+                origin = os.path.join(raw_dir, file)
+                shutil.copy(origin, os.path.join(config["esoreflex_input_dir"], inst_reflex_dir))
                 print("Done.")
-                if isinstance(self.field, FRBField) and self.field.furby_frb:
-                    print(f"Copying {file} to ESOReflex input directory...")
-                    shutil.copy(os.path.join(raw_dir, file),
-                                os.path.join(config["esoreflex_input_dir"], inst_reflex_dir))
-                    print("Done.")
 
+                if survey_raw_path is not None:
+                    survey_raw_path_file = os.path.join(
+                        survey_raw_path,
+                        file
+                    )
+                    print(f"Copying {file} to {survey_raw_path_file}...")
+                    shutil.copy(
+                        origin,
+                        survey_raw_path_file
+                    )
+                    print("Done.")
 
         tmp = self.frames_science[self.filters[0]][0]
         if self.date is None:

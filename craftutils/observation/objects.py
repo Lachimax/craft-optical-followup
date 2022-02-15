@@ -233,7 +233,13 @@ class Object:
 
     def position_from_cat_row(self):
         self.position = SkyCoord(self.cat_row["RA"], self.cat_row["DEC"])
-        self.position_err = PositionUncertainty(ra_err_stat=self.cat_row["RA_ERR"], dec_err_stat=self.cat_row["DEC_ERR"])
+        self.position_err = PositionUncertainty(
+            ra_err_stat=self.cat_row["RA_ERR"],
+            ra_err_sys=0.0 * units.arcsec,
+            dec_err_stat=self.cat_row["DEC_ERR"],
+            dec_err_sys=0.0 * units.arcsec,
+            position=self.position
+        )
         return self.position
 
     def get_photometry(self):
@@ -527,12 +533,10 @@ class Object:
         row["dec"] = self.position.dec
         row["dec_err"] = dec_err
 
-
         # Get best position, best magnitude etc.
 
         for instrument in self.photometry:
             pass
-
 
     @classmethod
     def default_params(cls):

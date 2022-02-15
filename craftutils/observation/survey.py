@@ -5,6 +5,7 @@ from typing import Union
 import craftutils.params as p
 import craftutils.utils as u
 
+
 # TODO: Parent class for all param loading etc, with children Instrument, Survey etc.
 
 class Survey:
@@ -20,6 +21,9 @@ class Survey:
 
         if "raw_stage_path" in kwargs:
             self.raw_stage_path = kwargs["raw_stage_path"]
+            if self.raw_stage_path[0] != "/":
+                self.raw_stage_path = os.path.join(p.data_path, self.raw_stage_path)
+
         self.refined_stage_path = None
         if "refined_stage_path" in kwargs:
             self.refined_stage_path = kwargs["refined_stage_path"]
@@ -34,8 +38,15 @@ class Survey:
         return self._build_param_dir(survey_name=self.name)
 
     @classmethod
+    def _build_survey_dir(cls):
+        path = os.path.join(p.param_dir, "surveys")
+        u.mkdir_check(path)
+        return path
+
+    @classmethod
     def _build_param_dir(cls, survey_name: str):
-        path = os.path.join(p.param_dir, "surveys", survey_name)
+        path = cls._build_survey_dir()
+        path = os.path.join(path, survey_name)
         u.mkdir_check_nested(path, remove_last=False)
         return path
 
@@ -51,7 +62,7 @@ class Survey:
 
     @classmethod
     def _build_data_path(cls, survey_name: str):
-        path = os.path.join(p.data_path, "surveys")
+        path = cls._build_survey_dir()
         u.mkdir_check(path)
         path = os.path.join(path, survey_name)
         u.mkdir_check(path)
@@ -100,4 +111,26 @@ class Survey:
         u.debug_print(1, "Survey.from_params(): path ==", path)
         return cls.from_file(param_file=path)
 
+    @classmethod
+    def list_surveys(cls):
+        param_path = cls._build_survey_dir()
+        surveys = list(
+            filter(lambda d: os.path.isdir(
+                os.path.join(param_path, d)
+            ) and os.path.isfile(
+                os.path.join(param_path, d, f"{d}.yaml")),
+                   os.listdir(param_path)
+                   )
+        )
+
+        return surveys.sort()
+
+
+    @classmethod
+    def new_param_from_input(cls):
+        survey_name = u.user_input(
+            message="Enter survey name:"
+        )
+        cls.new_param(survey_name)
+        return survey_name
 

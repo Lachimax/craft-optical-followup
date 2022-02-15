@@ -347,6 +347,7 @@ class Image:
         u.debug_print(1, "Copying", self.path, "to", destination)
         if os.path.isdir(destination):
             destination = os.path.join(destination, self.filename)
+        u.mkdir_check_nested(destination)
         shutil.copy(self.path, destination)
         new_image = self.new_image(path=destination)
         new_image.log = self.log.copy()
@@ -870,6 +871,7 @@ class ImagingImage(Image):
             source_cat["Y_IMAGE"],
             1
         ) * units.deg
+        self.extract_astrometry_err()
         if self.astrometry_err is not None:
             source_cat["RA_ERR"] = np.sqrt(
                 source_cat["ERRX2_WORLD"].to(units.arcsec ** 2) + self.astrometry_err ** 2)
