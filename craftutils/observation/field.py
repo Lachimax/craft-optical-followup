@@ -20,10 +20,12 @@ import astropy.io.fits as fits
 
 import craftutils.astrometry as am
 import craftutils.fits_files as ff
+import craftutils.observation as obs
 import craftutils.observation.objects as objects
 import craftutils.observation.image as image
 import craftutils.observation.instrument as inst
 import craftutils.observation.log as log
+import craftutils.observation.survey as survey
 import craftutils.params as p
 import craftutils.plotting as pl
 import craftutils.retrieve as retrieve
@@ -31,7 +33,6 @@ import craftutils.spectroscopy as spec
 import craftutils.utils as u
 import craftutils.wrap.montage as montage
 import craftutils.wrap.dragons as dragons
-import craftutils.observation as obs
 
 # pl.latex_setup()
 
@@ -398,6 +399,12 @@ class Field:
 
         self.extent = extent
 
+        self.survey = None
+        if "survey" in kwargs:
+            self.survey = kwargs["survey"]
+        if isinstance(self.survey, str):
+            self.survey = survey.Survey.from_params(self.survey)
+
     def __str__(self):
         return f"{self.name}"
 
@@ -724,7 +731,8 @@ class Field:
             "type": "Field",
             "centre": objects.position_dictionary.copy(),
             "objects": [objects.Object.default_params()],
-            "extent": 0.1 * units.deg
+            "extent": 0.1 * units.deg,
+            "survey": None
         }
         return default_params
 
@@ -824,11 +832,7 @@ class Field:
                     "ra": {"decimal": ra_float, "hms": ra}}
 
         field_param_path_yaml = os.path.join(field_param_path, f"{field_name}.yaml")
-        yaml_dict = field_class.new_yaml(
-            name=field_name,
-            path=field_param_path,
-            centre=position,
-        )
+        yaml_dict = field_class.new_yaml(path=field_param_path, name=field_name, centre=position)
         if field_class is FRBField:
             yaml_dict["frb"]["position"] = position
             yaml_dict["frb"]["position_err"]["a"]["stat"] = float(ra_err)
@@ -879,9 +883,6 @@ class FRBField(Field):
             if self.frb.host_galaxy is not None:
                 self.add_object(self.frb.host_galaxy)
         self.epochs_imaging_old = {}
-        self.furby_frb = False
-        if "furby_frb" in kwargs:
-            self.furby_frb = kwargs["furby_frb"]
 
     def plot_host(
             self,
@@ -975,7 +976,6 @@ class FRBField(Field):
                             "sdss": None
                         }
                 },
-            "furby_frb": False,
         })
 
         return default_params
@@ -1053,7 +1053,7 @@ class FRBField(Field):
             centre=coords,
             frb=frb,
             snr=furby_dict["S/N"],
-            furby_frb=True
+            survey="furby"
         )
 
         return param_dict
@@ -2215,19 +2215,6 @@ class ImagingEpoch(Epoch):
                     fig.savefig(output_path)
                     fig.savefig(output_path.replace(".pdf", ".png"))
 
-                    # Do FURBY-specific stuff
-                    # if self.field.furby_frb and ("Host" in name or "HG" in name) and fil == "R_SPECIAL":
-                    #     observation.load_furby_table()
-                    #     row, index = observation.get_row(observation.furby_table, self.field.name)
-                    #     # if observation.furby_table.colnames:
-                    #     # row["R_obs"] = True
-                    #     # row["R_rdx"] = True
-                    #     # row["R_UT"] = self.date.isot
-                    #     # row["RA_Host"] = obj.position.ra.value
-                    #     # row["DEC_Host"] = obj.position.dec.value
-                    #     observation.furby_table[index] = row
-                    #     observation.write_furby_table()
-
             tbl = table.vstack(rows)
             tbl.write(os.path.join(fil_output_path, f"{self.field.name}_{self.name}_{fil}.ecsv"),
                       format="ascii.ecsv")
@@ -2241,12 +2228,12 @@ class ImagingEpoch(Epoch):
                 nice_name)
             )
 
-            if "refined_data_dir" in config and config["refined_data_dir"] is not None:  # and not self.field.furby_frb:
-                img.copy_with_outputs(os.path.join(
-                    config["refined_data_dir"],
-                    nice_name
-                )
-                )
+            if isinstance(self.field.survey, survey.Survey):
+                refined_path = self.field.survey.refined_stage_path
+                if self.refined_path is not None:
+                    img.copy_with_outputs(os.path.join(
+                        os.path.join(refined_path, self.field.name, ),
+                        nice_name))
 
             self.push_to_table()
 
@@ -3560,10 +3547,15 @@ class ESOImagingEpoch(ImagingEpoch):
 
         if not ("skip_esoreflex_copy" in kwargs and kwargs["skip_esoreflex_copy"]):
             for file in os.listdir(raw_dir):
-                print("Copying to ESOReflex input directory...")
-
+                print(f"Copying {file} to ESOReflex input directory...")
                 shutil.copy(os.path.join(raw_dir, file), os.path.join(config["esoreflex_input_dir"], inst_reflex_dir))
                 print("Done.")
+                if isinstance(self.field, FRBField) and self.field.furby_frb:
+                    print(f"Copying {file} to ESOReflex input directory...")
+                    shutil.copy(os.path.join(raw_dir, file),
+                                os.path.join(config["esoreflex_input_dir"], inst_reflex_dir))
+                    print("Done.")
+
 
         tmp = self.frames_science[self.filters[0]][0]
         if self.date is None:

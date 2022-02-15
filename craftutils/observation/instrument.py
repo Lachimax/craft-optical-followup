@@ -69,20 +69,20 @@ class Instrument:
         return default_params
 
     @classmethod
-    def new_yaml(cls, instrument_name: str = None, path: str = None, quiet: bool = False, **kwargs):
+    def new_yaml(cls, instrument_name: str = None, path: str = None, **kwargs):
         param_dict = cls.default_params()
         param_dict["name"] = instrument_name
         param_dict.update(kwargs)
         if instrument_name is not None:
             param_dict["data_path"] = cls._build_data_path(instrument_name=instrument_name)
         if path is not None:
-            p.save_params(file=path, dictionary=param_dict, quiet=quiet)
+            p.save_params(file=path, dictionary=param_dict)
         return param_dict
 
     @classmethod
-    def new_param(cls, instrument_name: str = None, quiet: bool = False, **kwargs):
+    def new_param(cls, instrument_name: str = None, **kwargs):
         path = cls._build_param_path(instrument_name=instrument_name)
-        cls.new_yaml(path=path, instrument_name=instrument_name, quiet=quiet, **kwargs)
+        cls.new_yaml(instrument_name=instrument_name, path=path, **kwargs)
 
     @classmethod
     def from_file(cls, param_file: Union[str, dict]):

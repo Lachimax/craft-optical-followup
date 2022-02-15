@@ -2405,6 +2405,7 @@ class ImagingImage(Image):
         return
 
     def plot(self, fig: plt.Figure = None, ext: int = 0, **kwargs):
+
         if fig is None:
             fig = plt.figure(figsize=(12, 12), dpi=1000)
         ax, fig = self.wcs_axes(fig=fig)

@@ -5,5 +5,4 @@ furby_dir: null
 param_dir: param/
 proj_dir: <some_directory>/craft-optical-followup/
 top_data_dir: <data_directory>
-refined_data_dir: null
 table_dir: null
