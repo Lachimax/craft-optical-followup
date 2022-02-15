@@ -317,18 +317,6 @@ def _check_do_list(do: Union[list, str]):
     return do
 
 
-def detect_instrument(path: str, ext: int = 0):
-    with fits.open(path) as file:
-        if "INSTRUME" in file[ext].header:
-            inst_str = file[ext].header["INSTRUME"]
-            if "FORS2" in inst_str:
-                return "vlt_fors2"
-            elif "HAWKI" in inst_str:
-                return "vlt_hawki"
-        else:
-            raise ValueError(f"Could not establish instrument from file header on {path}.")
-
-
 class Field:
     def __init__(
             self,

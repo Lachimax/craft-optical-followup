@@ -235,6 +235,17 @@ def fits_table_all(input_path: str, output_path: str = "", science_only: bool = 
     return out_file
 
 
+def detect_instrument(path: str, ext: int = 0):
+    with fits.open(path) as file:
+        if "INSTRUME" in file[ext].header:
+            inst_str = file[ext].header["INSTRUME"]
+            if "FORS2" in inst_str:
+                return "vlt_fors2"
+            elif "HAWKI" in inst_str:
+                return "vlt_hawki"
+        else:
+            raise ValueError(f"Could not establish instrument from file header on {path}.")
+
 class Image:
     instrument_name = "dummy"
 
