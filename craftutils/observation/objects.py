@@ -141,13 +141,12 @@ class PositionUncertainty:
             raise ValueError(
                 "Either all ellipse values (a, b, theta) or all equatorial values (ra, dec, position) must be provided.")
 
+        ra_err_sys = u.check_quantity(number=ra_err_sys, unit=units.hourangle / 3600)
+        ra_err_stat = u.check_quantity(number=ra_err_stat, unit=units.hourangle / 3600)
+        dec_err_sys = u.check_quantity(number=dec_err_sys, unit=units.arcsec)
+        dec_err_stat = u.check_quantity(number=dec_err_stat, unit=units.arcsec)
         # Convert equatorial uncertainty to ellipse with theta=0
         if not ellipse:
-            ra_err_sys = u.check_quantity(number=ra_err_sys, unit=units.hourangle / 3600)
-            ra_err_stat = u.check_quantity(number=ra_err_stat, unit=units.hourangle / 3600)
-            dec_err_sys = u.check_quantity(number=dec_err_sys, unit=units.arcsec)
-            dec_err_stat = u.check_quantity(number=dec_err_stat, unit=units.arcsec)
-
             ra = position.ra
             dec = position.dec
             a_sys = SkyCoord(0.0 * units.degree, dec).separation(SkyCoord(ra_err_sys, dec))
@@ -171,8 +170,16 @@ class PositionUncertainty:
         self.b_stat = b_stat
         self.theta = theta
 
+        self.ra_sys = ra_err_sys
+        self.dec_sys = dec_err_sys
+        self.ra_stat = ra_err_stat
+        self.dec_stat = dec_err_stat
+
     def uncertainty_quadrature(self):
         return np.sqrt(self.a_sys ** 2 + self.a_stat ** 2), np.sqrt(self.b_sys ** 2 + self.b_stat ** 2)
+
+    def uncertainty_quadrature_equ(self):
+        return np.sqrt(self.ra_sys ** 2 + self.ra_stat ** 2), np.sqrt(self.dec_stat ** 2 + self.dec_stat ** 2)
 
     @classmethod
     def default_params(cls):
@@ -226,6 +233,7 @@ class Object:
 
     def position_from_cat_row(self):
         self.position = SkyCoord(self.cat_row["RA"], self.cat_row["DEC"])
+        self.position_err = PositionUncertainty(ra_err_stat=self.cat_row["RA_ERR"], dec_err_stat=self.cat_row["DEC_ERR"])
         return self.position
 
     def get_photometry(self):
@@ -508,12 +516,17 @@ class Object:
 
         if row is None:
             row = {}
+
+        ra_err, dec_err = self.position_err.uncertainty_quadrature_equ()
+
         row["jname"] = jname
         row["field_name"] = self.field.name
         row["object_name"] = self.name
         row["ra"] = self.position.ra
-        # row["ra_err"] = self.position_err.
-        # row["dec"] = self.dec
+        row["ra_err"] = ra_err
+        row["dec"] = self.position.dec
+        row["dec_err"] = dec_err
+
 
         # Get best position, best magnitude etc.
 
