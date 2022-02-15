@@ -415,6 +415,8 @@ class Image:
             for i, h in enumerate(self.hdu_list):
                 if unit[i] is not None:
                     this_unit = units.Unit(unit[i])
+                else:
+                    this_unit = units.ct
                 if h.data is not None:
                     try:
                         self.data.append(h.data * this_unit)
