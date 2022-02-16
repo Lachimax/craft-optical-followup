@@ -1175,17 +1175,20 @@ class ImagingImage(Image):
                 best = zeropoint_best["catalogue"]
         self.zeropoint_best = zeropoint_best
 
-        self.set_header_items(
-            items={
-                "PHOTZP": zeropoint_best["zeropoint"] - zeropoint_best["extinction"] * zeropoint_best["airmass"],
-                "PHOTZPER": np.sqrt(
+        zp = zeropoint_best["zeropoint"] - zeropoint_best["extinction"] * zeropoint_best["airmass"]
+        zp_err = np.sqrt(
                     zeropoint_best["zeropoint_err"] ** 2 + u.uncertainty_product(
                         zeropoint_best["extinction"] * zeropoint_best["airmass"],
                         (zeropoint_best["extinction"], zeropoint_best["extinction_err"]),
                         (zeropoint_best["airmass"], zeropoint_best["airmass_err"])
                     ) ** 2
-                ),
-                "ZPCAT": zeropoint_best["catalogue"]
+                )
+
+        self.set_header_items(
+            items={
+                "ZP": zp,
+                "ZP_ERR": zp_err,
+                "ZPCAT": zeropoint_best["catalogue"],
             },
             ext=0,
             write=False
@@ -1552,11 +1555,13 @@ class ImagingImage(Image):
         final_file = os.path.join(output_dir, f"{base_filename}.fits")
         self.astrometry_corrected_path = final_file
         new_image = self.new_image(final_file)
+        new_image.set_header_item("GAIA", True)
         new_image.add_log(
             "Astrometry corrected using Astrometry.net.",
             method=self.correct_astrometry,
             packages=["astrometry.net"])
         new_image.update_output_file()
+        new_image.write_fits_file()
         return new_image
 
     def correct_astrometry_coarse(
@@ -1564,6 +1569,7 @@ class ImagingImage(Image):
             output_dir: str = None,
             cat: table.Table = None,
             ext: int = 0,
+            cat_name: str = None
     ):
         self.load_source_cat()
         if self.source_cat is None:
@@ -1592,6 +1598,7 @@ class ImagingImage(Image):
                 output_path=new_path,
                 ext=ext
             )
+            new.set_header_item("GAIA", True)
             new.write_fits_file()
             return new
         else:

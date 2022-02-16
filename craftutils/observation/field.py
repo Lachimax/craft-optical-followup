@@ -1900,6 +1900,7 @@ class ImagingEpoch(Epoch):
                     new_frame = frame.correct_astrometry_coarse(
                         output_dir=astrometry_fil_path,
                         cat=self.gaia_catalogue,
+                        cat_name="gaia"
                     )
 
                 if new_frame is not None:
@@ -2240,9 +2241,12 @@ class ImagingEpoch(Epoch):
                 nice_name)
             )
 
+            print(self.field.survey, type(self.field.survey))
             if isinstance(self.field.survey, survey.Survey):
+                print("survey is good")
                 refined_path = self.field.survey.refined_stage_path
                 if refined_path is not None:
+                    print("refined_path is good")
                     img.copy_with_outputs(os.path.join(
                         refined_path,
                         self.field.name,
@@ -2703,8 +2707,8 @@ class ImagingEpoch(Epoch):
             row["total_exp_time_included"] = row["n_frames_included"] * row["frame_exp_time"]
             row["psf_fwhm"] = self.psf_stats[fil]["gauss"]["fwhm_median"]
             row["program_id"] = str(self.program_id)
-            row["zeropoint"] = coadded[fil].extract_header_item("PHOTZP") * units.mag
-            row["zeropoint_err"] = coadded[fil].extract_header_item("PHOTZPER") * units.mag
+            row["zeropoint"] = coadded[fil].extract_header_item("ZP") * units.mag
+            row["zeropoint_err"] = coadded[fil].extract_header_item("ZP_ERR") * units.mag
             row["zeropoint_source"] = coadded[fil].extract_header_item("ZPCAT")
             row["last_processed"] = Time.now().strftime("%Y-%m-%dT%H:%M:%S")
 
