@@ -19,13 +19,13 @@ class Survey:
             self.formatted_name = kwargs["formatted_name"]
         self.raw_stage_path = None
 
-        if "raw_stage_path" in kwargs:
+        if "raw_stage_path" in kwargs and isinstance(kwargs["raw_stage_path"], str):
             self.raw_stage_path = kwargs["raw_stage_path"]
             if self.raw_stage_path[0] != "/":
                 self.raw_stage_path = os.path.join(p.data_path, self.raw_stage_path)
 
         self.refined_stage_path = None
-        if "refined_stage_path" in kwargs:
+        if "refined_stage_path" in kwargs and isinstance(kwargs["refined_stage_path"], str):
             self.refined_stage_path = kwargs["refined_stage_path"]
             if self.refined_stage_path[0] != "/":
                 self.refined_stage_path = os.path.join(p.data_path, self.refined_stage_path)
@@ -33,6 +33,9 @@ class Survey:
         self.program_ids = {}
         if "program_ids" in kwargs:
             self.program_ids = kwargs["program_ids"]
+
+    def __str__(self):
+        return str(self.name)
 
     def guess_param_dir(self):
         return self._build_param_dir(survey_name=self.name)

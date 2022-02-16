@@ -267,7 +267,7 @@ def dequantify(number: Union[float, int, units.Quantity], unit: units.Unit = Non
     :param unit:
     :return:
     """
-    if type(number) is units.Quantity:
+    if isinstance(number, units.Quantity):
         if unit is not None:
             number = check_quantity(number=number, unit=unit, convert=True)
         return number.value
