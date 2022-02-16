@@ -101,7 +101,8 @@ def inject_header(file_path: str, input_directory: str,
         f"FILTER": template.extract_filter(),
         f"INSTRUME": template.instrument_name,
         f"RON": template.extract_noise_read().value,
-        f"BUNIT": template.extract_unit()
+        f"BUNIT": template.extract_unit(),
+        f"GAIA": template.extract_header_item("GAIA")
     }
 
     frame_paths = list(map(lambda f: os.path.join(input_directory, f), table["PATH"]))
