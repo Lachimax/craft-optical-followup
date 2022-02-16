@@ -111,7 +111,9 @@ def fits_table(input_path: str, output_path: str = "", science_only: bool = True
     for i, f in enumerate(files_fits):
         data = {'identifier': f}
         file_path = os.path.join(input_path, f)
-        image = Image.from_fits(path=file_path)
+        instrument = detect_instrument(file_path)
+        cls = ImagingImage.select_child_class(instrument)
+        image = cls.from_fits(path=file_path)
         header = image.load_headers()[0]
         if science_only:
             frame_type = image.extract_frame_type()
@@ -1980,6 +1982,7 @@ class ImagingImage(Image):
         gain = self.extract_gain()
         exp_time = self.extract_exposure_time()
         saturate = self.extract_saturate()
+        read_noise = self.extract_noise_read()
 
         new.load_data()
         new_data = new.data[ext]
@@ -1996,7 +1999,9 @@ class ImagingImage(Image):
                 "EXPTIME": 1.0,
                 "OLD_EXPTIME": exp_time.value,
                 "OLD_SATURATE": saturate,
-                "SATURATE": saturate / exp_time
+                "SATURATE": saturate / exp_time,
+                "RON": read_noise / exp_time,
+                "OLD_RON": read_noise
             },
             ext=ext,
             write=False

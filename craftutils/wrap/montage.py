@@ -52,7 +52,7 @@ def make_header(table_path: str, output_path: str):
 
 def check_input_images(input_directory: str,
                        **kwargs):
-    table = fits_table_all(input_directory, science_only=False)
+    table = fits_table_all(input_directory, science_only=True)
     table.sort("FILENAME")
 
     keys = header_keys()
@@ -69,11 +69,11 @@ def check_input_images(input_directory: str,
     gain = np.round(template[gain_key])
     for file in table[1:]:
         if np.round(float(file[exptime_key])) != exptime:
-            raise ValueError("Input files have different EXPTIME")
+            raise ValueError(f"Input files have different EXPTIME ({file[exptime_key]} != {exptime}), file {file['filename']}")
         if file[instrument_key] != instrument:
-            raise ValueError("Input files were taken with different instruments.")
+            raise ValueError(f"Input files were taken with different instruments ({file[instrument_key]} != {instrument}), file {file['filename']}.")
         if np.round(file[gain_key]) != gain:
-            raise ValueError(f"Files specify different gains {gain, file[gain_key]}")
+            raise ValueError(f"Files specify different gains ({gain} != {file[gain_key]}, file {file['filename']}")
 
 
 def inject_header(file_path: str, input_directory: str,
