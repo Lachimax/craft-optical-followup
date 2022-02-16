@@ -34,6 +34,10 @@ class Survey:
         if "program_ids" in kwargs:
             self.program_ids = kwargs["program_ids"]
 
+        self.extra_commands = []
+        if "extra_commands" in kwargs:
+            self.extra_commands = kwargs["extra_commands"]
+
     def __str__(self):
         return str(self.name)
 
@@ -78,7 +82,8 @@ class Survey:
             "formatted_name": None,
             "raw_stage_path": None,
             "refined_stage_path": None,
-            "program_ids": {}  # Dict should have instrument names as keys and a list of strings for each value.
+            "program_ids": {},  # Dict should have instrument names as keys and a list of strings for each value.
+            "extra_commands": [] # Commands to be executed by shell at completion of last step (NOT YET IMPLEMENTED)
         }
         return default_params
 

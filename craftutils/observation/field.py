@@ -1902,11 +1902,14 @@ class ImagingEpoch(Epoch):
                         cat=self.gaia_catalogue,
                         cat_name="gaia"
                     )
+                    success_str = "coarse"
+                else:
+                    success_str = "astrometry.net"
 
                 if new_frame is not None:
                     print(f"{frame} astrometry successful.")
                     self.add_frame_astrometry(new_frame)
-                    self.astrometry_successful[fil][frame.name] = True
+                    self.astrometry_successful[fil][frame.name] = success_str
                 else:
                     print(f"{frame} astrometry successful.")
                     self.astrometry_successful[fil][frame.name] = False
@@ -2241,19 +2244,30 @@ class ImagingEpoch(Epoch):
                 nice_name)
             )
 
-            print(self.field.survey, type(self.field.survey))
             if isinstance(self.field.survey, survey.Survey):
-                print("survey is good")
                 refined_path = self.field.survey.refined_stage_path
+
                 if refined_path is not None:
-                    print("refined_path is good")
-                    img.copy_with_outputs(os.path.join(
-                        refined_path,
-                        self.field.name,
-                        f"{self.instrument_name}_{fil}",
-                        nice_name
-                    )
-                    )
+                    print(self.field.survey.name)
+                    if self.field.survey.name == "FURBY":
+                        cwd = os.getcwd()
+                        os.chdir(refined_path)
+
+                        u.system_command_verbose(
+                            f"furby_archive {self.field.name} {img.filter.band_name} {img.path} --clobber"
+                        )
+
+                        os.chdir(cwd)
+                    else:
+                        img.copy_with_outputs(
+                            os.path.join(
+                                refined_path,
+                                self.field.name,
+                                f"{self.instrument_name}_{fil}",
+                                nice_name
+                            )
+                        )
+
 
             self.push_to_table()
 
@@ -3598,6 +3612,15 @@ class ESOImagingEpoch(ImagingEpoch):
             self.set_program_id(tmp.extract_program_id())
 
         self.update_output_file()
+
+        if str(self.field.survey) == "FURBY":
+            u.system_command_verbose(f"furby_vlt_ob {self.field.name} {tmp.filter.band_name} --observed {self.date}")
+            # u.system_command_verbose(f"furby_vlt_ob {self.field.name} {tmp.filter.band_name} --completed")
+
+        try:
+            u.system_command_verbose("esoreflex")
+        except SystemError:
+            print("Could not open ESO Reflex; may not be installed, or installed to other environment.")
 
     def proc_sort_reduced(self, output_dir: str, **kwargs):
         self._sort_after_esoreflex(output_dir=output_dir, **kwargs)

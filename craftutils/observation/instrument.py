@@ -157,6 +157,11 @@ class Filter:
         self.formatted_name = None
         if "formatted_name" in kwargs:
             self.formatted_name = kwargs["formatted_name"]
+        self.band_name = None
+        if "band_name" in kwargs:
+            self.band_name = kwargs["band_name"]
+        elif self.name is not None:
+            self.band_name = self.name[0]
 
         self.svo_id = None
         self.svo_instrument = None
@@ -374,12 +379,14 @@ class Filter:
     def default_params(cls):
         default_params = {
             "name": None,
+            "band_name": None,
+            "formatted_name": None,
             "instrument": None,
             "data_path": None,
             "svo_service": {
                 "filter_id": None,
                 "instrument": None,
-            }
+            },
         }
         return default_params
 
