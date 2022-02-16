@@ -216,7 +216,12 @@ def fits_table_all(input_path: str, output_path: str = "", science_only: bool = 
         data = {}
         data["FILENAME"] = f
         file_path = os.path.join(input_path, f)
-        image = Image.from_fits(path=file_path)
+        instrument = detect_instrument(file_path, fail_quietly=True)
+        if instrument is None:
+            print(f"Instrument could not be detected for {file_path}.")
+            continue
+        cls = ImagingImage.select_child_class(instrument=instrument)
+        image = cls.from_fits(path=file_path)
         if science_only:
             frame_type = image.extract_frame_type()
             if frame_type not in ("science", "science_reduced"):
@@ -237,16 +242,19 @@ def fits_table_all(input_path: str, output_path: str = "", science_only: bool = 
     return out_file
 
 
-def detect_instrument(path: str, ext: int = 0):
+def detect_instrument(path: str, ext: int = 0, fail_quietly: bool = False):
     with fits.open(path) as file:
         if "INSTRUME" in file[ext].header:
             inst_str = file[ext].header["INSTRUME"]
             if "FORS2" in inst_str:
-                return "vlt_fors2"
+                return "vlt-fors2"
             elif "HAWKI" in inst_str:
-                return "vlt_hawki"
+                return "vlt-hawki"
         else:
-            raise ValueError(f"Could not establish instrument from file header on {path}.")
+            if not fail_quietly:
+                raise ValueError(f"Could not establish instrument from file header on {path}.")
+            else:
+                return None
 
 class Image:
     instrument_name = "dummy"
