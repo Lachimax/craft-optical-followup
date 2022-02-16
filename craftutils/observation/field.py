@@ -1351,7 +1351,7 @@ class Epoch:
         self._pipeline_init()
         u.debug_print(2, "Epoch.pipeline(): kwargs ==", kwargs)
 
-        # Loop through stages list specified in stages()
+        # Loop through stages list specified in self.stages()
         stages = self.stages()
         u.debug_print(1, f"Epoch.pipeline(): type(self) ==", type(self))
         u.debug_print(2, f"Epoch.pipeline(): stages ==", stages)
@@ -1556,9 +1556,12 @@ class Epoch:
     def _add_coadded(self, img: Union[str, image.Image], key: str, image_dict: dict):
         if isinstance(img, str):
             u.debug_print(2, f"Epoch._add_coadded(): {self.name}.instrument_name ==", self.instrument_name)
-            cls = image.CoaddedImage.select_child_class(instrument=self.instrument_name)
-            u.debug_print(2, f"Epoch._add_coadded(): cls ==", cls)
-            img = cls(path=img, instrument_name=self.instrument_name)
+            if os.path.isfile(img):
+                cls = image.CoaddedImage.select_child_class(instrument=self.instrument_name)
+                u.debug_print(2, f"Epoch._add_coadded(): cls ==", cls)
+                img = cls(path=img, instrument_name=self.instrument_name)
+            else:
+                return None
         img.epoch = self
         image_dict[key] = img
         return img
@@ -1930,20 +1933,21 @@ class ImagingEpoch(Epoch):
         :return:
         """
         u.mkdir_check(output_dir)
-        if frames == "astrometry":
-            input_directory = self.paths['correct_astrometry_frames']
-        elif frames == "normalised":
-            input_directory = os.path.join(self.paths['convert_to_cs'], "science"),
-        else:
-            raise ValueError(f"{frames} not recognised as frame type.")
+        frame_dict = self._get_frames(frame_type=frames)
         input_frames = self._get_frames(frames)
 
-        print(f"Coadding {frames} frames, with input directory {input_directory}")
+        print(f"Coadding {frames} frames.")
         for fil in self.filters:
-            input_directory_fil = os.path.join(input_directory, fil)
+
+            frame_list = frame_dict[fil]
             output_directory_fil = os.path.join(output_dir, fil)
             u.rmtree_check(output_directory_fil)
             u.mkdir_check(output_directory_fil)
+            input_directory_fil = os.path.join(output_directory_fil, "inputdir")
+            u.mkdir_check(input_directory_fil)
+            for frame in frame_list:
+                frame.copy_with_outputs(input_directory_fil)
+
             coadded_path = montage.standard_script(
                 input_directory=input_directory_fil,
                 output_directory=output_directory_fil,
