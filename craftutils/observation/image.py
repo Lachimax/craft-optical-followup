@@ -1628,8 +1628,8 @@ class ImagingImage(Image):
     def shift_wcs(self, delta_ra: units.Quantity, delta_dec: units.Quantity, ext: int = 0):
         delta_ra = u.dequantify(delta_ra, unit=units.deg)
         delta_dec = u.dequantify(delta_dec, unit=units.deg)
-        self.headers["CRVAL1"] -= delta_ra
-        self.headers["CRVAL2"] += delta_dec
+        self.headers[ext]["CRVAL1"] -= delta_ra
+        self.headers[ext]["CRVAL2"] += delta_dec
         pass
 
     def transfer_wcs(self, other_image: 'ImagingImage', ext: int = 0):
