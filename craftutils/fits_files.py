@@ -454,8 +454,18 @@ def detect_edges(file: Union['fits.HDUList', 'str'], value: float = 0.0, ext: in
 
     height = data.shape[0]
     mid_y = int(height / 2)
+
     slice_hor = data[mid_y]
+    print(slice_hor, value)
     slice_hor_nonzero = np.nonzero(slice_hor - value)[0]
+
+    while len(slice_hor_nonzero) == 0:
+        mid_y = int(mid_y / 2)
+        if mid_y == 0:
+            raise ValueError("mid_y got stuck.")
+        slice_hor = data[mid_y]
+        slice_hor_nonzero = np.nonzero(slice_hor - value)[0]
+
     left = slice_hor_nonzero[0]
     right = slice_hor_nonzero[-1]
 
@@ -468,8 +478,6 @@ def detect_edges(file: Union['fits.HDUList', 'str'], value: float = 0.0, ext: in
 
     if path:
         file.close()
-
-    print(left, right, bottom, top)
 
     return left, right, bottom, top
 
@@ -758,7 +766,7 @@ def subimage_edges(data: np.ndarray, x, y, frame):
     right = x + frame
     bottom, top, left, right = check_subimage_edges(
         data=data, bottom=bottom, top=top, left=left, right=right,
-                                                    )
+    )
     return bottom, top, left, right
 
 
@@ -983,8 +991,6 @@ def write_sextractor_script_shift(file: 'str', shift_param: 'str', shift_param_v
                 par) + ' -CATALOG_NAME ' + cat_name + '_' + str(i + 1) + '.cat\n')
         output.writelines('mkdir ' + cats_dir + '\n')
         output.writelines('mv *.cat ' + cats_dir)
-
-
 
 
 def stack(files: list, output: str = None, directory: str = '', stack_type: str = 'median', inherit: bool = True,
