@@ -1628,7 +1628,7 @@ class ImagingImage(Image):
     def shift_wcs(self, delta_ra: units.Quantity, delta_dec: units.Quantity, ext: int = 0):
         delta_ra = u.dequantify(delta_ra, unit=units.deg)
         delta_dec = u.dequantify(delta_dec, unit=units.deg)
-        self.headers[ext]["CRVAL1"] -= delta_ra
+        self.headers[ext]["CRVAL1"] += delta_ra
         self.headers[ext]["CRVAL2"] += delta_dec
         pass
 
@@ -3157,6 +3157,7 @@ class CoaddedImage(ImagingImage):
             **kwargs
         )
         new_image.area_file = self.area_file
+        new_image.update_output_file()
         return new_image
 
     def copy(self, destination: str):
