@@ -649,7 +649,7 @@ def sort_by_filter(path: 'str'):
             sh.move(path + file, filter_path)
 
 
-def get_pixel_scale(file: Union['fits.hdu_list.hdulist.HDUList', 'str'], layer: int = 0, astropy_units: bool = False):
+def get_pixel_scale(file: Union['fits.hdu_list.hdulist.HDUList', 'str'], ext: int = 0, astropy_units: bool = False):
     """
     Using the FITS file header, obtains the pixel scale of the file (in degrees).
     Declination scale is the true angular size of the pixel.
@@ -662,8 +662,8 @@ def get_pixel_scale(file: Union['fits.hdu_list.hdulist.HDUList', 'str'], layer: 
 
     file, path = path_or_hdu(file)
 
-    header = file[layer].header
-    image = file[layer].data
+    header = file[ext].header
+    image = file[ext].data
 
     # To take (very roughly) into account the spherical distortion to the RA, we obtain an RA pixel scale by dividing
     # the difference in RA across the image by the number of pixels. It's good enough to give an average value, and the

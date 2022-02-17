@@ -256,6 +256,7 @@ def detect_instrument(path: str, ext: int = 0, fail_quietly: bool = False):
             else:
                 return None
 
+
 class Image:
     instrument_name = "dummy"
     num_chips = 1
@@ -1038,10 +1039,10 @@ class ImagingImage(Image):
         self.load_wcs()
         return self.wcs.calc_footprint()
 
-    def extract_pixel_scale(self, layer: int = 0, force: bool = False):
+    def extract_pixel_scale(self, ext: int = 0, force: bool = False):
         if force or self.pixel_scale_ra is None or self.pixel_scale_dec is None:
             self.open()
-            self.pixel_scale_ra, self.pixel_scale_dec = ff.get_pixel_scale(self.hdu_list, layer=layer,
+            self.pixel_scale_ra, self.pixel_scale_dec = ff.get_pixel_scale(self.hdu_list, ext=ext,
                                                                            astropy_units=True)
             self.close()
         else:
@@ -1194,12 +1195,12 @@ class ImagingImage(Image):
 
         zp = zeropoint_best["zeropoint"] - zeropoint_best["extinction"] * zeropoint_best["airmass"]
         zp_err = np.sqrt(
-                    zeropoint_best["zeropoint_err"] ** 2 + u.uncertainty_product(
-                        zeropoint_best["extinction"] * zeropoint_best["airmass"],
-                        (zeropoint_best["extinction"], zeropoint_best["extinction_err"]),
-                        (zeropoint_best["airmass"], zeropoint_best["airmass_err"])
-                    ) ** 2
-                )
+            zeropoint_best["zeropoint_err"] ** 2 + u.uncertainty_product(
+                zeropoint_best["extinction"] * zeropoint_best["airmass"],
+                (zeropoint_best["extinction"], zeropoint_best["extinction_err"]),
+                (zeropoint_best["airmass"], zeropoint_best["airmass_err"])
+            ) ** 2
+        )
 
         self.set_header_items(
             items={
@@ -1606,10 +1607,16 @@ class ImagingImage(Image):
         new_path = os.path.join(output_dir, self.filename.replace(".fits", "_astrometry.fits"))
         new = self.copy(new_path)
 
+        ra_scale, dec_scale = self.extract_pixel_scale(ext=ext)
+
         new.load_headers()
         if not np.isnan(diagnostics["median_offset_x"].value) and not np.isnan(diagnostics["median_offset_y"].value):
-            new.headers[ext]["CRPIX1"] -= diagnostics["median_offset_x"].value
-            new.headers[ext]["CRPIX2"] += diagnostics["median_offset_y"].value
+
+            new.shift_wcs(
+                delta_ra=diagnostics["median_offset_x"].to(units.deg, ra_scale).value,
+                delta_dec=diagnostics["median_offset_y"].to(units.deg, dec_scale).value
+            )
+
             new.add_log(
                 "Astrometry corrected using median offsets from reference catalogue.",
                 method=self.correct_astrometry_coarse,
@@ -1630,7 +1637,11 @@ class ImagingImage(Image):
         delta_dec = u.dequantify(delta_dec, unit=units.deg)
         self.headers[ext]["CRVAL1"] += delta_ra
         self.headers[ext]["CRVAL2"] += delta_dec
-        pass
+        self.add_log(
+            f"Shifted WCS coordinate reference value by RA+={delta_ra}, DEC+={delta_dec}.",
+            method=self.shift_wcs,
+            ext=ext
+        )
 
     def transfer_wcs(self, other_image: 'ImagingImage', ext: int = 0):
         other_image.load_headers()
