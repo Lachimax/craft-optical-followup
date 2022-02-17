@@ -38,6 +38,8 @@ def solve_field(
         guess_scale: bool = True,
         time_limit: units.Quantity = None,
         verify: bool = True,
+        odds_to_tune_up: float = 1e6,
+        odds_to_solve: float = 1e9,
         *flags,
         **params):
     """
@@ -51,13 +53,15 @@ def solve_field(
     """
 
     params["o"] = base_filename
+    params["odds-to-tune-up"] = odds_to_tune_up
+    params["odds-to-solve"] = odds_to_solve
     if time_limit is not None:
         params["l"] = check_quantity(time_limit, units.second).value
     if search_radius is not None:
         params["radius"] = search_radius.to(units.deg).value
     if centre is not None:
         params["ra"] = centre.ra.to(units.deg).value
-        params["dec"] = centre.ra.to(units.deg).value
+        params["dec"] = centre.dec.to(units.deg).value
     debug_print(1, "solve_field(): tweak ==", tweak)
 
     flags = list(flags)
@@ -69,6 +73,7 @@ def solve_field(
         flags.append("T")
     if not verify:
         flags.append("y")
+
 
     system_command("solve-field", image_files, False, True, *flags, **params)
     if isinstance(image_files, list):
