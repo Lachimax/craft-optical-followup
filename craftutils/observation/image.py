@@ -1510,8 +1510,9 @@ class ImagingImage(Image):
 
         if trim:
             frame_value = new_image.detect_frame_value(ext=ext)
-            left, right, bottom, top = new_image.detect_edges(frame_value=frame_value)
-            new_image.trim(left=left, right=right, bottom=bottom, top=top, output_path=output_path)
+            if frame_value is not None:
+                left, right, bottom, top = new_image.detect_edges(frame_value=frame_value)
+                new_image.trim(left=left, right=right, bottom=bottom, top=top, output_path=output_path)
 
         new_image.add_log(
             action=f"Registered and reprojected to footprint of {target} using astroalign.",
@@ -1549,7 +1550,7 @@ class ImagingImage(Image):
             overwrite=True,
             tweak=tweak,
             guess_scale=True,
-            search_radius=0.5 * units.arcmin,
+            search_radius=4.0 * units.arcmin,
             centre=self.pointing,
             time_limit=time_limit
         )
