@@ -258,6 +258,7 @@ def detect_instrument(path: str, ext: int = 0, fail_quietly: bool = False):
 
 class Image:
     instrument_name = "dummy"
+    num_chips = 1
 
     def __init__(self, path: str, frame_type: str = None, instrument_name: str = None, logg: log.Log = None):
         self.path = path
@@ -518,7 +519,7 @@ class Image:
             return value
 
     def extract_chip_number(self):
-        chip = 0
+        chip = 1
         self.chip_number = chip
         return chip
 
@@ -1496,7 +1497,7 @@ class ImagingImage(Image):
         data_source = u.sanitise_endianness(data_source)
         data_target = target.data[ext]
         data_target = u.sanitise_endianness(data_target)
-        u.debug_print(1, f"Attempting registration of {self.name} against {target.name}")
+        u.debug_print(0, f"Attempting registration of {self.name} against {target.name}")
         registered, footprint = register(data_source, data_target)
 
         self.copy(output_path)
@@ -1504,6 +1505,7 @@ class ImagingImage(Image):
             new_file[0].data = registered
             u.debug_print(1, "Writing registered image to", output_path)
             new_file.writeto(output_path, overwrite=True)
+            print(output_path)
 
         new_image = self.new_image(path=output_path)
         new_image.transfer_wcs(target)
@@ -1615,12 +1617,20 @@ class ImagingImage(Image):
                 output_path=new_path,
                 ext=ext
             )
-            new.set_header_item("GAIA", True)
+            if cat_name == 'GAIA':
+                new.set_header_item("GAIA", True)
             new.write_fits_file()
             return new
         else:
             u.rm_check(new_path)
             return None
+
+    def shift_wcs(self, delta_ra: units.Quantity, delta_dec: units.Quantity, ext: int = 0):
+        delta_ra = u.dequantify(delta_ra, unit=units.deg)
+        delta_dec = u.dequantify(delta_dec, unit=units.deg)
+        self.headers["CRVAL1"] -= delta_ra
+        self.headers["CRVAL2"] += delta_dec
+        pass
 
     def transfer_wcs(self, other_image: 'ImagingImage', ext: int = 0):
         other_image.load_headers()
@@ -3248,6 +3258,7 @@ class ESOImagingImage(ImagingImage, ESOImage):
 
 
 class HAWKICoaddedImage(ESOImagingImage):
+    num_chips = 4
     instrument_name = "vlt-hawki"
 
     def zeropoint(
@@ -3274,6 +3285,7 @@ class HAWKICoaddedImage(ESOImagingImage):
 
 class FORS2Image(ESOImagingImage):
     instrument_name = "vlt-fors2"
+    num_chips = 2
 
     def __init__(self, path: str, frame_type: str = None, **kwargs):
         super().__init__(path=path, frame_type=frame_type, instrument_name=self.instrument_name)
