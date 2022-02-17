@@ -858,16 +858,17 @@ class StandardField(Field):
 
 
 class FRBField(Field):
-    def __init__(self,
-                 name: str = None,
-                 centre_coords: Union[SkyCoord, str] = None,
-                 param_path: str = None,
-                 data_path: str = None,
-                 objs: List[objects.Object] = None,
-                 frb: Union[objects.FRB, dict] = None,
-                 extent: units.Quantity = None,
-                 **kwargs
-                 ):
+    def __init__(
+            self,
+            name: str = None,
+            centre_coords: Union[SkyCoord, str] = None,
+            param_path: str = None,
+            data_path: str = None,
+            objs: List[objects.Object] = None,
+            frb: Union[objects.FRB, dict] = None,
+            extent: units.Quantity = None,
+            **kwargs
+    ):
         if centre_coords is None:
             if frb is not None:
                 centre_coords = frb.position
@@ -1221,6 +1222,7 @@ epoch_stage_dirs = {"0-download": "0-data_with_raw_calibs",
 class Epoch:
     instrument_name = "dummy-instrument"
     mode = "dummy_mode"
+    frame_class = image.Image
 
     def __init__(
             self,
@@ -1675,6 +1677,7 @@ class Epoch:
 class ImagingEpoch(Epoch):
     instrument_name = "dummy-instrument"
     mode = "imaging"
+    frame_class = image.ImagingImage
 
     def __init__(
             self,
@@ -1747,6 +1750,10 @@ class ImagingEpoch(Epoch):
                 "method": cls.proc_register,
                 "message": "Register frames using astroalign?",
                 "default": False,
+                "keywords": {
+                    "template": 0,
+                    "include_chips": "all"
+                }
             },
             "correct_astrometry_frames": {
                 "method": cls.proc_correct_astrometry_frames,
@@ -1834,7 +1841,7 @@ class ImagingEpoch(Epoch):
 
         :param output_dir:
         :param frames:
-        :param tmp: There are three options for this parameter:
+        :param template: There are three options for this parameter:
             int: An integer specifying the position of the image in the list to use as the template for
             alignment (ie, each filter will use the same list position)
             dict: a dictionary with keys reflecting the filter names, with values specifying the list position as above
@@ -1869,25 +1876,32 @@ class ImagingEpoch(Epoch):
             output_dir_fil = os.path.join(output_dir, fil)
             u.mkdir_check(output_dir_fil)
 
-            self._register(frames=frames, fil=fil, tmp=tmp, output_dir=output_dir_fil, n_template=n_template)
+            self._register(frames=frames, fil=fil, tmp=tmp, output_dir=output_dir_fil, n_template=n_template, **kwargs)
 
-    def _register(self, frames: dict, fil: str, tmp: image.ImagingImage, n_template: int, output_dir: str):
-        for i, frame in enumerate(frames[fil]):
+    def _register(self, frames: dict, fil: str, tmp: image.ImagingImage, n_template: int, output_dir: str, **kwargs):
 
-            if i != n_template:
-                registered = frame.register(
-                    target=tmp,
-                    output_path=os.path.join(
-                        output_dir,
-                        frame.name.replace(".fits", "_registered.fits"))
-                )
-                self.add_frame_registered(registered)
-            else:
-                registered = frame.copy(
-                    os.path.join(
-                        output_dir,
-                        tmp.name.replace(".fits", "_registered.fits")))
-                self.add_frame_registered(registered)
+        include_chips = list(range(1, self.frame_class.num_chips + 1))
+        if "include_chips" in kwargs and isinstance(kwargs["include_chips"], list):
+            include_chips = kwargs["include_chips"]
+
+        frames_by_chip = self.sort_by_chip(frames[fil])
+
+        for chip in include_chips:
+            for i, frame in enumerate(frames_by_chip[chip]):
+                if i != n_template:
+                    registered = frame.register(
+                        target=tmp,
+                        output_path=os.path.join(
+                            output_dir,
+                            frame.filename.replace(".fits", "_registered.fits"))
+                    )
+                    self.add_frame_registered(registered)
+                else:
+                    registered = frame.copy(
+                        os.path.join(
+                            output_dir,
+                            tmp.filename.replace(".fits", "_registered.fits")))
+                    self.add_frame_registered(registered)
 
     def proc_correct_astrometry_frames(self, output_dir: str, **kwargs):
 
@@ -1940,21 +1954,22 @@ class ImagingEpoch(Epoch):
                                   self.astrometry_successful)
                     self.update_output_file()
 
-                print("first_success", first_success)
-
                 if 'registration_template' in kwargs and kwargs['registration_template'] is not None:
                     first_success = image.ImagingImage(kwargs['registration_template'])
                 elif first_success is None:
                     tmp = frames_by_chip[chip][0]
-                    print(f"There were no successful frames for chip {chip} using astrometry.net; performing coarse correction on {tmp}.")
+                    print(
+                        f"There were no successful frames for chip {chip} using astrometry.net; performing coarse correction on {tmp}.")
                     first_success = tmp.correct_astrometry_coarse(
-                            output_dir=astrometry_fil_path,
-                            cat=self.gaia_catalogue,
-                            cat_name="gaia"
-                        )
+                        output_dir=astrometry_fil_path,
+                        cat=self.gaia_catalogue,
+                        cat_name="gaia"
+                    )
                     self.add_frame_astrometry(first_success)
                     self.astrometry_successful[fil][tmp.name] = "coarse"
                     self.update_output_file()
+
+                print("first_success", first_success)
 
                 print()
                 print(f"Re-processing failed frames for chip {chip} with astroalign, with template {first_success}:")
@@ -2316,8 +2331,8 @@ class ImagingEpoch(Epoch):
                         img.copy_with_outputs(
                             os.path.join(
                                 refined_path,
-                                self.field.name,
-                                f"{self.instrument_name}_{fil}",
+                                # self.field.name,
+                                # f"{self.instrument_name}_{fil}",
                                 nice_name
                             )
                         )
@@ -2438,7 +2453,7 @@ class ImagingEpoch(Epoch):
         elif frame_type == "normalised":
             image_dict = self.frames_normalised
         elif frame_type == "registered":
-            image_dict = self.frames_normalised
+            image_dict = self.frames_registered
         elif frame_type == "astrometry":
             image_dict = self.frames_astrometry
         else:
@@ -2916,6 +2931,7 @@ class GSAOIImagingEpoch(ImagingEpoch):
     will be empty even if the files are actually being tracked correctly. See eg science_table instead.
     """
     instrument_name = "gs-aoi"
+    frame_class = image.GSAOIImage
 
     def __init__(
             self,
@@ -4053,10 +4069,12 @@ class ESOImagingEpoch(ImagingEpoch):
 
 class HAWKIImagingEpoch(ESOImagingEpoch):
     instrument_name = "vlt-hawki"
+    # frame_class = imag
 
 
 class FORS2ImagingEpoch(ESOImagingEpoch):
     instrument_name = "vlt-fors2"
+    frame_class = image.FORS2Image
 
     @classmethod
     def stages(cls):
@@ -4097,33 +4115,33 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
 
         self.coadded_final = "coadded_trimmed"
 
-    def _register(self, frames: dict, fil: str, tmp: image.ImagingImage, n_template: int, output_dir: str):
-        pairs = self.pair_files(images=frames[fil])
-        if n_template >= 0:
-            tmp = pairs[n_template]
-
-        for i, pair in enumerate(pairs):
-            if not isinstance(pair, tuple):
-                pair = [pair]
-            if i != n_template:
-                for j, frame in enumerate(pair):
-                    if isinstance(tmp, tuple):
-                        template = tmp[j]
-                    else:
-                        template = tmp
-                    u.debug_print(2, frame.filename.replace("_norm.fits", "_registered.fits"))
-                    registered = frame.register(
-                        target=template,
-                        output_path=os.path.join(
-                            output_dir,
-                            frame.filename.replace("_norm.fits", "_registered.fits"))
-                    )
-                    self.add_frame_registered(registered)
-            else:
-                for j, frame in enumerate(pair):
-                    registered = frame.copy(
-                        os.path.join(output_dir, frame.filename.replace("_norm.fits", "_registered.fits")))
-                    self.add_frame_registered(registered)
+    # def _register(self, frames: dict, fil: str, tmp: image.ImagingImage, n_template: int, output_dir: str, **kwargs):
+    #     pairs = self.pair_files(images=frames[fil])
+    #     if n_template >= 0:
+    #         tmp = pairs[n_template]
+    #
+    #     for i, pair in enumerate(pairs):
+    #         if not isinstance(pair, tuple):
+    #             pair = [pair]
+    #         if i != n_template:
+    #             for j, frame in enumerate(pair):
+    #                 if isinstance(tmp, tuple):
+    #                     template = tmp[j]
+    #                 else:
+    #                     template = tmp
+    #                 u.debug_print(2, frame.filename.replace("_norm.fits", "_registered.fits"))
+    #                 registered = frame.register(
+    #                     target=template,
+    #                     output_path=os.path.join(
+    #                         output_dir,
+    #                         frame.filename.replace("_norm.fits", "_registered.fits"))
+    #                 )
+    #                 self.add_frame_registered(registered)
+    #         else:
+    #             for j, frame in enumerate(pair):
+    #                 registered = frame.copy(
+    #                     os.path.join(output_dir, frame.filename.replace("_norm.fits", "_registered.fits")))
+    #                 self.add_frame_registered(registered)
 
     def correct_astrometry_frames(self, output_dir: str, frames: dict = None, **kwargs):
         """
@@ -4374,7 +4392,6 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
                         print(
                             "System Error encountered while doing esorex processing; possibly impossible value encountered. Skipping.")
 
-
     @classmethod
     def pair_files(cls, images: list):
         pairs = []
@@ -4491,6 +4508,7 @@ class SpectroscopyEpoch(Epoch):
     instrument_name = "dummy-instrument"
     mode = "spectrocopy"
     grisms = {}
+    frame_class = image.Spectrum
 
     def __init__(self,
                  param_path: str = None,
