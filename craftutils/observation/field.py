@@ -1942,28 +1942,34 @@ class ImagingEpoch(Epoch):
 
                 print("first_success", first_success)
 
-                if first_success is None:
-                    print(f"There were no successful frames for chip {chip} using astrometry.net; performing coarse correction on first frame.")
-                    first_success = frames_by_chip[chip][0].correct_astrometry_coarse(
+                if 'registration_template' in kwargs and kwargs['registration_template'] is not None:
+                    first_success = image.ImagingImage(kwargs['registration_template'])
+                elif first_success is None:
+                    tmp = frames_by_chip[chip][0]
+                    print(f"There were no successful frames for chip {chip} using astrometry.net; performing coarse correction on {tmp}.")
+                    first_success = tmp.correct_astrometry_coarse(
                             output_dir=astrometry_fil_path,
                             cat=self.gaia_catalogue,
                             cat_name="gaia"
                         )
                     self.add_frame_astrometry(first_success)
-                    self.astrometry_successful[fil][first_success.name] = "coarse"
+                    self.astrometry_successful[fil][tmp.name] = "coarse"
+                    self.update_output_file()
 
                 print()
-                print(f"Re-processing failed frames for chip {chip} with astroalign:")
+                print(f"Re-processing failed frames for chip {chip} with astroalign, with template {first_success}:")
                 print()
                 for frame in frames_by_chip[chip]:
                     if not self.astrometry_successful[fil][frame.name]:
+                        print(f"Running astroalign on {frame}...")
                         new_frame = frame.register(
                             target=first_success,
                             output_path=os.path.join(astrometry_fil_path,
-                                                     frame.filename.replace(".fits", "astrometry.fits")),
+                                                     frame.filename.replace(".fits", "_astrometry.fits")),
                         )
                         self.add_frame_astrometry(new_frame)
                         self.astrometry_successful[fil][frame.name] = "astroalign"
+                    self.update_output_file()
 
     def proc_coadd(self, output_dir: str, **kwargs):
         kwargs["frames"] = self.frames_final
