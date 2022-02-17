@@ -294,6 +294,7 @@ class Image:
         self.object = None
         self.pointing = None
         self.saturate = None
+        self.chip_number = None
 
         if logg is None:
             self.log = log.Log()
@@ -515,6 +516,11 @@ class Image:
             return None
         else:
             return value
+
+    def extract_chip_number(self):
+        chip = 0
+        self.chip_number = chip
+        return chip
 
     def extract_unit(self):
         key = self.header_keys()["unit"]

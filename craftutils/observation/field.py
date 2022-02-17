@@ -1542,6 +1542,21 @@ class Epoch:
         params[param] = p_dict[param]
         p.save_params(file=self.param_path, dictionary=params)
 
+    @classmethod
+    def sort_by_chip(cls, images: list):
+        chips = {}
+
+        for img in images:
+            chip_this = img.extract_chip_number()
+            if chip_this is None:
+                print(f"The chip number for {img.name} could not be determined.")
+            else:
+                if chip_this not in chips:
+                    chips[chip_this] = []
+                chips[chip_this].append(img)
+
+        return chips
+
     def add_frame_raw(self, raw_frame: Union[image.ImagingImage, str]):
         u.debug_print(
             2,
@@ -1571,8 +1586,11 @@ class Epoch:
 
     def sort_frame(self, frame: image.Image, sort_key: str = None):
         frame.extract_frame_type()
-        u.debug_print(2,
-                      f"sort_frame(); Adding frame {frame.name}, type {frame.frame_type}, to {self}, type {type(self)}")
+        u.debug_print(
+            2,
+            f"sort_frame(); Adding frame {frame.name}, type {frame.frame_type}, to {self}, type {type(self)}")
+
+        # chip = frame.extract_chip_number()
 
         if frame.frame_type == "bias" and frame not in self.frames_bias:
             self.frames_bias.append(frame)
@@ -1893,33 +1911,59 @@ class ImagingEpoch(Epoch):
 
         if frames is None:
             frames = self.frames_reduced
+
         for fil in frames:
-            astrometry_fil_path = os.path.join(output_dir, fil)
-            for frame in frames[fil]:
-                new_frame = frame.correct_astrometry(output_dir=astrometry_fil_path, **kwargs)
-
-                if new_frame is None:
-                    print(f"{new_frame} Astrometry.net unsuccessful; attempting coarse correction.")
-                    new_frame = frame.correct_astrometry_coarse(
+            frames_by_chip = self.sort_by_chip(frames[fil])
+            for chip in frames_by_chip:
+                print()
+                print(f"Processing frames for chip {chip} in astrometry.net:")
+                print()
+                first_success = None
+                astrometry_fil_path = os.path.join(output_dir, fil)
+                for frame in frames_by_chip[chip]:
+                    new_frame = frame.correct_astrometry(
                         output_dir=astrometry_fil_path,
-                        cat=self.gaia_catalogue,
-                        cat_name="gaia"
+                        **kwargs
                     )
-                    success_str = "coarse"
-                else:
-                    success_str = "astrometry.net"
 
-                if new_frame is not None:
-                    print(f"{frame} astrometry successful.")
-                    self.add_frame_astrometry(new_frame)
-                    self.astrometry_successful[fil][frame.name] = success_str
-                else:
-                    print(f"{frame} astrometry successful.")
-                    self.astrometry_successful[fil][frame.name] = False
+                    if new_frame is not None:
+                        print(f"{frame} astrometry successful.")
+                        self.add_frame_astrometry(new_frame)
+                        self.astrometry_successful[fil][frame.name] = "astrometry.net"
+                        if first_success is None:
+                            first_success = new_frame
+                    else:
+                        print(f"{frame} Astrometry.net unsuccessful; adding frame to astroalign queue.")
+                        self.astrometry_successful[fil][frame.name] = False
 
-                u.debug_print(1, f"ImagingEpoch.correct_astrometry_frames(): {self}.astrometry_successful ==\n",
-                              self.astrometry_successful)
-                self.update_output_file()
+                    u.debug_print(1, f"ImagingEpoch.correct_astrometry_frames(): {self}.astrometry_successful ==\n",
+                                  self.astrometry_successful)
+                    self.update_output_file()
+
+                print("first_success", first_success)
+
+                if first_success is None:
+                    print(f"There were no successful frames for chip {chip} using astrometry.net; performing coarse correction on first frame.")
+                    first_success = frames_by_chip[chip][0].correct_astrometry_coarse(
+                            output_dir=astrometry_fil_path,
+                            cat=self.gaia_catalogue,
+                            cat_name="gaia"
+                        )
+                    self.add_frame_astrometry(first_success)
+                    self.astrometry_successful[fil][first_success.name] = "coarse"
+
+                print()
+                print(f"Re-processing failed frames for chip {chip} with astroalign:")
+                print()
+                for frame in frames_by_chip[chip]:
+                    if not self.astrometry_successful[fil][frame.name]:
+                        new_frame = frame.register(
+                            target=first_success,
+                            output_path=os.path.join(astrometry_fil_path,
+                                                     frame.filename.replace(".fits", "astrometry.fits")),
+                        )
+                        self.add_frame_astrometry(new_frame)
+                        self.astrometry_successful[fil][frame.name] = "astroalign"
 
     def proc_coadd(self, output_dir: str, **kwargs):
         kwargs["frames"] = self.frames_final
@@ -2272,7 +2316,6 @@ class ImagingEpoch(Epoch):
                             )
                         )
 
-
             self.push_to_table()
 
     def astrometry_diagnostics(
@@ -2462,6 +2505,8 @@ class ImagingEpoch(Epoch):
                 self.psf_stats = outputs["psf_stats"]
             if "astrometry_stats" in outputs:
                 self.astrometry_stats = outputs["astrometry_stats"]
+            if "astrometry_successful" in outputs:
+                self.astrometry_successful = outputs["astrometry_successful"]
             if "frames_raw" in outputs:
                 for frame in outputs["frames_raw"]:
                     self.add_frame_raw(raw_frame=frame)
@@ -4186,7 +4231,9 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
 
                 elif method == "propagate_from_single":
                     # Sort frames by upper or lower chip.
-                    upper, lower = self.sort_by_chip(frames[fil])
+                    chips = self.sort_by_chip(frames[fil])
+                    upper = chips[1]
+                    lower = chips[2]
                     if upper_only:
                         lower = []
                     for j, lst in enumerate((upper, lower)):
@@ -4248,11 +4295,14 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
         images = self._get_images(image_type)
 
         bias_sets = self.sort_by_chip(self.frames_bias)
+        bias_sets = (bias_sets[1], bias_sets[2])
         flat_sets = {}
         std_sets = {}
         for fil in self.filters:
-            flat_sets[fil] = self.sort_by_chip(self.frames_flat[fil])
-            std_sets[fil] = self.sort_by_chip(self.frames_standard[fil])
+            flat_chips = self.sort_by_chip(self.frames_flat[fil])
+            flat_sets[fil] = flat_chips[1], flat_chips[2]
+            std_chips = self.sort_by_chip(self.frames_standard[fil])
+            std_sets[fil] = std_chips[1], std_chips[2]
 
         chips = ("up", "down")
         for i, chip in enumerate(chips):
@@ -4318,21 +4368,6 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
                         print(
                             "System Error encountered while doing esorex processing; possibly impossible value encountered. Skipping.")
 
-    @classmethod
-    def sort_by_chip(cls, images: list):
-        upper = []
-        lower = []
-
-        for img in images:
-            chip_this = img.extract_chip_number()
-            if chip_this == 1:
-                upper.append(img)
-            elif chip_this == 2:
-                lower.append(img)
-            else:
-                print(f"The chip number for {img.name} could not be determined.")
-
-        return upper, lower
 
     @classmethod
     def pair_files(cls, images: list):
