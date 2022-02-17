@@ -2191,10 +2191,10 @@ class ImagingEpoch(Epoch):
         print("DEEPEST FILTER:", self.deepest_filter, self.deepest.depth["secure"]["SNR_MEASURED"]["5-sigma"])
 
     def proc_dual_mode_source_extraction(self, output_dir: str, **kwargs):
-        if "correct_astrometry_coadded" in self.do_kwargs and self.do_kwargs["correct_astrometry_coadded"]:
-            image_type = "coadded_astrometry"
+        if "image_type" in kwargs and isinstance(kwargs["image_type"], str):
+            image_type = kwargs["image_type"]
         else:
-            image_type = "coadded_trimmed"
+            image_type = "final"
         self.dual_mode_source_extraction(output_dir, image_type)
 
     def dual_mode_source_extraction(self, path: str, image_type: str = "coadded_trimmed"):
@@ -2209,10 +2209,10 @@ class ImagingEpoch(Epoch):
                 template=self.deepest)
 
     def proc_get_photometry(self, output_dir: str, **kwargs):
-        if "correct_astrometry_coadded" in self.do_kwargs and self.do_kwargs["correct_astrometry_coadded"]:
-            image_type = "coadded_astrometry"
+        if "image_type" in kwargs and isinstance(kwargs["image_type"], str):
+            image_type = kwargs["image_type"]
         else:
-            image_type = "coadded_trimmed"
+            image_type = "final"
         self.get_photometry(output_dir, image_type=image_type)
 
     def get_photometry(self, path: str, image_type: str = "coadded_trimmed", dual: bool = True):
