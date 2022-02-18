@@ -1175,7 +1175,9 @@ class ImagingImage(Image):
         for cat in ranking:
             if cat in self.zeropoints:
                 zp = self.zeropoints[cat]
-                zps[f"{cat} {zp['zeropoint']} +/- {zp['zeropoint_err']} {zp['n_matches']}"] = zp
+                print(cat)
+                print(zp)
+                zps[f"{cat} {zp['zeropoint_img']} +/- {zp['zeropoint_img_err']}, {zp['n_matches']} stars"] = zp
                 if best is None:
                     best = cat
 
@@ -1183,8 +1185,9 @@ class ImagingImage(Image):
             raise ValueError("No zeropoints are present to select from.")
 
         zeropoint_best = self.zeropoints[best]
+
         print(
-            f"For {self.name}, we have selected a zeropoint of {zeropoint_best['zeropoint']} +/- {zeropoint_best['zeropoint_err']}, "
+            f"For {self.name}, we have selected a zeropoint of {zeropoint_best['zeropoint_img']} +/- {zeropoint_best['zeropoint_img_err']}, "
             f"from {zeropoint_best['catalogue']}.")
         if not no_user_input:
             select_own = u.select_yn(message="Would you like to select another?", default=False)
@@ -1193,19 +1196,10 @@ class ImagingImage(Image):
                 best = zeropoint_best["catalogue"]
         self.zeropoint_best = zeropoint_best
 
-        zp = zeropoint_best["zeropoint"] - zeropoint_best["extinction"] * zeropoint_best["airmass"]
-        zp_err = np.sqrt(
-            zeropoint_best["zeropoint_err"] ** 2 + u.uncertainty_product(
-                zeropoint_best["extinction"] * zeropoint_best["airmass"],
-                (zeropoint_best["extinction"], zeropoint_best["extinction_err"]),
-                (zeropoint_best["airmass"], zeropoint_best["airmass_err"])
-            ) ** 2
-        )
-
         self.set_header_items(
             items={
-                "ZP": zp,
-                "ZP_ERR": zp_err,
+                "ZP": zeropoint_best["zeropoint_img"],
+                "ZP_ERR": zeropoint_best["zeropoint_img_err"],
                 "ZPCAT": zeropoint_best["catalogue"],
             },
             ext=0,
@@ -1295,19 +1289,60 @@ class ImagingImage(Image):
 
         if zp_dict is None:
             return None
-        zp_dict['airmass'] = 0.0
-        zp_dict['airmass_err'] = 0.0
-        zp_dict['extinction'] = 0.0 * units.mag
-        zp_dict['extinction_err'] = 0.0 * units.mag
-        self.zeropoints[cat_name.lower()] = zp_dict
+
+        zp_dict.update(self.add_zeropoint(
+            # catalogue=cat_name,
+            # zeropoint=zp_dict["zeropoint"],
+            # zeropoint_err=zp_dict["zeropoint_err"],
+            extinction=0.0 * units.mag,
+            extinction_err=0.0 * units.mag,
+            # airmass=0.0,
+            airmass_err=0.0,
+            # n_matches=zp_dict["n_matches"],
+            **zp_dict
+        ))
         self.zeropoint_output_paths[cat_name.lower()] = output_path
         self.add_log(
-            action=f"Calculated zeropoint as {zp_dict['zeropoint']} +/- {zp_dict['zeropoint_err']}, from {zp_dict['catalogue']}.",
+            action=f"Calculated zeropoint as {zp_dict['zeropoint_img']} +/- {zp_dict['zeropoint_img_err']}, from {zp_dict['catalogue']}.",
             method=self.zeropoint,
             output_path=output_path
         )
         self.update_output_file()
         return self.zeropoints[cat_name.lower()]
+
+    def add_zeropoint(
+            self,
+            catalogue: str,
+            zeropoint: Union[float, units.Quantity],
+            zeropoint_err: Union[float, units.Quantity],
+            extinction: Union[float, units.Quantity],
+            extinction_err: Union[float, units.Quantity],
+            airmass: float,
+            airmass_err: float,
+            n_matches: int = None,
+            **kwargs
+    ):
+        zp_dict = kwargs.copy()
+        zp_dict.update({
+            "zeropoint": u.check_quantity(zeropoint, units.mag),
+            "zeropoint_err": u.check_quantity(zeropoint_err, units.mag),
+            "extinction": u.check_quantity(extinction, units.mag),
+            "extinction_err": u.check_quantity(extinction_err, units.mag),
+            "airmass": airmass,
+            "airmass_err": airmass_err,
+            "catalogue": catalogue.lower(),
+            "n_matches": n_matches,
+        })
+        zp_dict["zeropoint_img"] = zp_dict["zeropoint"] - zp_dict["extinction"] * zp_dict["airmass"]
+        zp_dict['zeropoint_img_err'] = np.sqrt(
+            zp_dict["zeropoint_err"] ** 2 + u.uncertainty_product(
+                zp_dict["extinction"] * zp_dict["airmass"],
+                (zp_dict["extinction"], zp_dict["extinction_err"]),
+                (zp_dict["airmass"], zp_dict["airmass_err"])
+            ) ** 2
+        )
+        self.zeropoints[catalogue.lower()] = zp_dict
+        return zp_dict
 
     def aperture_areas(self):
         self.load_source_cat()
@@ -3441,21 +3476,18 @@ class FORS2CoaddedImage(CoaddedImage):
             else:
                 airmass_err = 0.0
 
-            zp_dict = {
-                "zeropoint": row["zeropoint"],
-                "zeropoint_err": row["zeropoint_err"],
-                "airmass": self.extract_airmass(),
-                "airmass_err": airmass_err,
-                "extinction": row["extinction"],
-                "extinction_err": row["extinction_err"],
-                "mjd_measured": row["mjd_obs"],
-                "delta_t": row["mjd_obs"] - self.mjd_obs,
-                "n_matches": "n/a",
-                "catalogue": "fors2_qc1_archive"
-            }
-
-            self.zeropoints["instrument_archive"] = zp_dict
-            self.zeropoint_best = zp_dict
+            self.add_zeropoint(
+                zeropoint=row["zeropoint"],
+                zeropoint_err=row["zeropoint_err"],
+                airmass=self.extract_airmass(),
+                airmass_err=airmass_err,
+                extinction=row["extinction"],
+                extinction_err=row["extinction_err"],
+                mjd_measured=row["mjd_obs"],
+                delta_t=row["mjd_obs"] - self.mjd_obs,
+                n_matches=None,
+                catalogue="instrument_archive"
+            )
 
             self.extinction_atmospheric = row["extinction"]
             self.extinction_atmospheric_err = row["extinction_err"]

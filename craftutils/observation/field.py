@@ -1806,7 +1806,8 @@ class ImagingEpoch(Epoch):
                     "snr_min": 100,
                     "class_star_tolerance": 0.95,
                     "image_type": "coadded_trimmed",
-                    "preferred_zeropoint": {}
+                    "preferred_zeropoint": {},
+                    "suppress_select": False
                 }
             },
             "dual_mode_source_extraction": {
@@ -2177,7 +2178,7 @@ class ImagingEpoch(Epoch):
         if "class_star_tolerance" not in kwargs:
             kwargs["star_class_tolerance"] = 0.95
         if "suppress_select" not in kwargs:
-            kwargs["suppress_select"] = True
+            kwargs["suppress_select"] = False
 
         deepest = self.zeropoint(
             image_dict=image_dict,
@@ -2189,6 +2190,49 @@ class ImagingEpoch(Epoch):
         self.deepest = deepest
 
         print("DEEPEST FILTER:", self.deepest_filter, self.deepest.depth["secure"]["SNR_MEASURED"]["5-sigma"])
+
+    def zeropoint(
+            self,
+            image_dict: dict,
+            output_path: str,
+            distance_tolerance: units.Quantity = None,
+            snr_min: float = 100.,
+            star_class_tolerance: float = 0.95,
+            suppress_select: bool = False,
+            **kwargs
+    ):
+        deepest = image_dict[self.filters[0]]
+        for fil in self.filters:
+            img = image_dict[fil]
+            img.zeropoints = {}
+            for cat_name in retrieve.photometry_catalogues:
+                if cat_name == "gaia":
+                    continue
+                fil_path = os.path.join(output_path, fil)
+                u.mkdir_check(fil_path)
+                if f"in_{cat_name}" in self.field.cats and self.field.cats[f"in_{cat_name}"]:
+                    img.zeropoint(
+                        cat_path=self.field.get_path(f"cat_csv_{cat_name}"),
+                        output_path=os.path.join(fil_path, cat_name),
+                        cat_name=cat_name,
+                        dist_tol=distance_tolerance,
+                        show=False,
+                        snr_cut=snr_min,
+                        star_class_tol=star_class_tolerance,
+                    )
+
+            if "preferred_zeropoint" in kwargs and fil in kwargs["preferred_zeropoint"]:
+                preferred = kwargs["preferred_zeropoint"][fil]
+            else:
+                preferred = None
+
+            zeropoint, cat = img.select_zeropoint(suppress_select, preferred=preferred)
+
+            img.estimate_depth(zeropoint_name=cat)
+
+            deepest = image.deepest(deepest, img)
+
+        return deepest
 
     def proc_dual_mode_source_extraction(self, output_dir: str, **kwargs):
         if "image_type" in kwargs and isinstance(kwargs["image_type"], str):
@@ -2377,48 +2421,6 @@ class ImagingEpoch(Epoch):
 
         self.update_output_file()
         return self.psf_stats
-
-    def zeropoint(
-            self,
-            image_dict: dict,
-            output_path: str,
-            distance_tolerance: units.Quantity = None,
-            snr_min: float = 100.,
-            star_class_tolerance: float = 0.95,
-            suppress_select: bool = False,
-            **kwargs
-    ):
-        deepest = image_dict[self.filters[0]]
-        for fil in self.filters:
-            img = image_dict[fil]
-            for cat_name in retrieve.photometry_catalogues:
-                if cat_name == "gaia":
-                    continue
-                fil_path = os.path.join(output_path, fil)
-                u.mkdir_check(fil_path)
-                if f"in_{cat_name}" in self.field.cats and self.field.cats[f"in_{cat_name}"]:
-                    img.zeropoint(
-                        cat_path=self.field.get_path(f"cat_csv_{cat_name}"),
-                        output_path=os.path.join(fil_path, cat_name),
-                        cat_name=cat_name,
-                        dist_tol=distance_tolerance,
-                        show=False,
-                        snr_cut=snr_min,
-                        star_class_tol=star_class_tolerance,
-                    )
-
-            if "preferred_zeropoint" in kwargs and fil in kwargs["preferred_zeropoint"]:
-                preferred = kwargs["preferred_zeropoint"][fil]
-            else:
-                preferred = None
-
-            zeropoint, cat = img.select_zeropoint(suppress_select, preferred=preferred)
-
-            img.estimate_depth(zeropoint_name=cat)
-
-            deepest = image.deepest(deepest, img)
-
-        return deepest
 
     def _get_images(self, image_type: str):
         if image_type == "final":
@@ -4313,6 +4315,7 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
 
         super().photometric_calibration(
             output_path=output_path,
+            suppress_select=True,
             **kwargs
         )
 
@@ -4375,22 +4378,29 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
 
                         phot_coeff_table = fits.open(phot_coeff_table)[1].data
 
-                        img = images[fil]
-                        img.zeropoints["calib_pipeline"] = {
-                            "zeropoint": phot_coeff_table["ZPOINT"][0] * units.mag,
-                            "zeropoint_err": phot_coeff_table["DZPOINT"][0] * units.mag,
-                            "airmass": img.extract_airmass(),
-                            "airmass_err": self.airmass_err[fil],
-                            "extinction": phot_coeff_table["EXT"][0] * units.mag,
-                            "extinction_err": phot_coeff_table["DEXT"][0] * units.mag,
-                            "catalogue": "calib_pipeline",
-                            "n_matches": None
-                        }
-                        img.select_zeropoint(True)
+                        print(f"Chip {chip}, zeropoint {phot_coeff_table['ZPOINT'][0] * units.mag}")
+
+                        if chip == 1:
+                            img = images[fil]
+                            img.add_zeropoint(
+                                zeropoint=phot_coeff_table["ZPOINT"][0] * units.mag,
+                                zeropoint_err=phot_coeff_table["DZPOINT"][0] * units.mag,
+                                airmass=img.extract_airmass(),
+                                airmass_err=self.airmass_err[fil],
+                                extinction=phot_coeff_table["EXT"][0] * units.mag,
+                                extinction_err=phot_coeff_table["DEXT"][0] * units.mag,
+                                catalogue="calib_pipeline",
+                                n_matches=None,
+                            )
+
                         # img.update_output_file()
                     except SystemError:
                         print(
                             "System Error encountered while doing esorex processing; possibly impossible value encountered. Skipping.")
+
+        for fil in self.filters:
+            img = images[fil]
+            img.select_zeropoint()
 
     @classmethod
     def pair_files(cls, images: list):

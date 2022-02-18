@@ -486,7 +486,7 @@ def determine_zeropoint_sextractor(
 
     params['time'] = str(time.Time.now())
     params['catalogue'] = str(cat_name)
-    params['airmass'] = float(ff.get_airmass(image))
+    params['airmass'] = 0.0
     print('Airmass:', params['airmass'])
     params['exp_time'] = exp_time = u.check_quantity(exp_time, units.second)
     params['pix_tol'] = dist_tol
