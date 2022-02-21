@@ -404,6 +404,12 @@ def mkdir_check_nested(path: str, remove_last: bool = True):
     mkdir_check_args(*levels)
     # mkdir_check(path_orig)
 
+def move_check(origin: str, destination: str):
+    if os.path.exists(origin):
+        mkdir_check_nested(destination)
+        shutil.move(origin, destination)
+
+
 
 def mkdir_check_args(*args: str):
     path = ""
