@@ -259,7 +259,7 @@ class Object:
             dec: units.Quantity, dec_err: units.Quantity,
             kron_radius: float,
             separation_from_given: units.Quantity = None,
-            epoch_date: time.Time = None,
+            epoch_date: str = None,
             **kwargs
     ):
         photometry = {
@@ -400,8 +400,6 @@ class Object:
                 fil = instrument.filters[filter_name]
                 for epoch in self.photometry[instrument_name][filter_name]:
                     phot_dict = self.photometry[instrument_name][filter_name][epoch].copy()
-                    if isinstance(phot_dict["epoch_date"], time.Time):
-                        phot_dict["epoch_date"] = str(phot_dict["epoch_date"].isot)
                     phot_dict["band"] = filter_name
                     phot_dict["instrument"] = instrument_name
                     phot_dict["lambda_eff"] = u.check_quantity(

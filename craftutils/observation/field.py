@@ -2315,7 +2315,7 @@ class ImagingEpoch(Epoch):
                     dec_err=np.sqrt(nearest["ERRY2_WORLD"]),
                     kron_radius=nearest["KRON_RADIUS"],
                     separation_from_given=separation,
-                    epoch_date=self.date
+                    epoch_date=str(self.date.isot)
                 )
 
                 if isinstance(self.field, FRBField):
