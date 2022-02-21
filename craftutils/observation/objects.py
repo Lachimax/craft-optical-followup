@@ -400,6 +400,8 @@ class Object:
                 fil = instrument.filters[filter_name]
                 for epoch in self.photometry[instrument_name][filter_name]:
                     phot_dict = self.photometry[instrument_name][filter_name][epoch].copy()
+                    if isinstance(phot_dict["epoch_date"], time.Time):
+                        phot_dict["epoch_date"] = phot_dict["epoch_date"].isot
                     phot_dict["band"] = filter_name
                     phot_dict["instrument"] = instrument_name
                     phot_dict["lambda_eff"] = u.check_quantity(
