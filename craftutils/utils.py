@@ -284,6 +284,28 @@ def sort_dict_by_value(dictionary: dict):
     return sorted_dict
 
 
+def is_path_absolute(path: str):
+    """
+    Returns True if path begins with / and False otherwise.
+    :param path:
+    :return:
+    """
+    return path[0] == "/"
+
+
+def make_absolute_path(higher_path: str, path: str):
+    """
+    If a path is not absolute, makes it into one within higher_path. Higher_path should be absolute.
+    :param path:
+    :param higher_path:
+    :return:
+    """
+    if not is_path_absolute(higher_path):
+        raise ValueError(f"higher_path {higher_path} is not absolute.")
+    if not is_path_absolute(path):
+        path = os.path.join(higher_path, path)
+    return path
+
 def check_trailing_slash(path: str):
     """
     Adds a slash to the end of a string if it is missing.
