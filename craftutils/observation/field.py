@@ -1383,7 +1383,8 @@ class Epoch:
                 # Construct path; if dir_name is None then the step is pathless.
                 dir_name = f"{n}-{name}"
                 output_dir = os.path.join(self.data_path, dir_name)
-                u.rmtree_check(output_dir)
+                output_dir_backup = output_dir + "_backup"
+                shutil.move(output_dir, output_dir_backup)
                 u.mkdir_check_nested(output_dir, remove_last=False)
                 self.paths[name] = output_dir
 
@@ -1400,6 +1401,8 @@ class Epoch:
                     else:
                         log_message = f"Performed processing step {dir_name}."
                     self.add_log(log_message, method=stage["method"], path=output_dir, method_args=stage_kwargs)
+
+                    u.rmtree_check(output_dir_backup)
 
                 self.update_output_file()
 
