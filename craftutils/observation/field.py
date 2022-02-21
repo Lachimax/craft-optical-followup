@@ -1384,7 +1384,8 @@ class Epoch:
                 dir_name = f"{n}-{name}"
                 output_dir = os.path.join(self.data_path, dir_name)
                 output_dir_backup = output_dir + "_backup"
-                shutil.move(output_dir, output_dir_backup)
+                u.rmtree_check(output_dir_backup)
+                u.move_check(output_dir, output_dir_backup)
                 u.mkdir_check_nested(output_dir, remove_last=False)
                 self.paths[name] = output_dir
 
@@ -2278,6 +2279,7 @@ class ImagingEpoch(Epoch):
             fil_output_path = os.path.join(path, fil)
             u.mkdir_check(fil_output_path)
             img = image_dict[fil]
+
             img.calibrate_magnitudes(zeropoint_name="best", dual=dual)
             rows = []
             for obj in self.field.objects:
@@ -2298,22 +2300,23 @@ class ImagingEpoch(Epoch):
                     title=f"{obj.name}, {fil}-band, {nearest['MAG_AUTO_ZP_best'].round(3).value} ± {err.round(3)}")
                 obj.cat_row = nearest
                 print()
-                if self.instrument_name not in obj.photometry:
-                    obj.photometry[self.instrument_name] = {}
-                obj.photometry[self.instrument_name][fil] = {
-                    "mag": nearest['MAG_AUTO_ZP_best'],
-                    "mag_err": err,
-                    "a": nearest['A_WORLD'],
-                    "b": nearest['B_WORLD'],
-                    "ra": nearest['ALPHA_SKY'],
-                    "ra_err": np.sqrt(nearest["ERRX2_WORLD"]),
-                    "dec": nearest['DELTA_SKY'],
-                    "dec_err": np.sqrt(nearest["ERRY2_WORLD"]),
-                    "kron_radius": nearest["KRON_RADIUS"],
-                    "separation_from_given": separation.to(units.arcsec)}
-                obj.update_output_file()
-                obj.estimate_galactic_extinction()
-                obj.write_plot_photometry()
+                obj.add_photometry(
+                    instrument=self.instrument_name,
+                    fil=fil,
+                    epoch_name=self.name,
+                    mag=nearest['MAG_AUTO_ZP_best'],
+                    mag_err=err,
+                    ellipse_a=nearest['A_WORLD'],
+                    ellipse_b=nearest['B_WORLD'],
+                    ellipse_theta=nearest['THETA_WORLD'],
+                    ra=nearest['RA'],
+                    ra_err=np.sqrt(nearest["ERRX2_WORLD"]),
+                    dec=nearest['DEC'],
+                    dec_err=np.sqrt(nearest["ERRY2_WORLD"]),
+                    kron_radius=nearest["KRON_RADIUS"],
+                    separation_from_given=separation,
+                    epoch_date=self.date
+                )
 
                 if isinstance(self.field, FRBField):
                     if "frame" in obj.plotting_params and obj.plotting_params["frame"] is not None:
@@ -2385,6 +2388,12 @@ class ImagingEpoch(Epoch):
                         )
 
             self.push_to_table()
+
+            for obj in self.field.objects:
+                obj.update_output_file()
+                obj.estimate_galactic_extinction()
+                obj.write_plot_photometry()
+                # obj.push_to_table()
 
     def astrometry_diagnostics(
             self,
@@ -4346,6 +4355,9 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
             )
 
             for fil in self.filters:
+                img = images[fil]
+                if "calib_pipeline" in img.zeropoints:
+                    img.zeropoints.pop("calib_pipeline")
                 flat_set = list(map(lambda b: b.path, flat_sets[fil][i]))
                 fil_dir = os.path.join(output_path, fil)
                 u.mkdir_check(fil_dir)
@@ -4383,8 +4395,9 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
 
                         print(f"Chip {chip}, zeropoint {phot_coeff_table['ZPOINT'][0] * units.mag}")
 
-                        if chip == 1:
-                            img = images[fil]
+                        # The intention here is that a chip 1 zeropoint override a chip 2 zeropoint, but
+                        # if chip 1 doesn't work a chip 2 one will do.
+                        if chip == 1 or "calib_pipeline" not in img.zeropoints:
                             img.add_zeropoint(
                                 zeropoint=phot_coeff_table["ZPOINT"][0] * units.mag,
                                 zeropoint_err=phot_coeff_table["DZPOINT"][0] * units.mag,

@@ -196,12 +196,26 @@ def load_master_objects_table(force: bool = False):
 
 def write_master_imaging_table():
     if master_imaging_table is None:
-        raise ValueError("master_table not loaded.")
+        raise ValueError("master_imaging_table not loaded.")
     else:
         master_imaging_table.sort(["field_name", "epoch_name", "filter_name"])
         master_imaging_table.write(master_imaging_table_path, format="ascii.ecsv", overwrite=True)
-        master_imaging_table.write(master_imaging_table_path.replace(".ecsv", ".csv"), format="ascii.csv",
-                                   overwrite=True)
+        master_imaging_table.write(
+            master_imaging_table_path.replace(".ecsv", ".csv"),
+            format="ascii.csv",
+            overwrite=True)
+
+
+def write_master_objects_table():
+    if master_objects_table is None:
+        raise ValueError("master_imaging_table not loaded")
+    else:
+        master_objects_table.sort("jname")
+        master_imaging_table.write(master_objects_path, format="ascii.ecsv", overwrite=True)
+        master_imaging_table.write(
+            master_objects_path.replace(".ecsv", ".csv"),
+            format="ascii.csv",
+            overwrite=True)
 
 
 def _build_furby_table_path():

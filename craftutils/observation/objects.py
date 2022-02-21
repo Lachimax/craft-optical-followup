@@ -1,4 +1,4 @@
-from typing import Union, Tuple
+from typing import Union, Tuple, List
 import os
 
 import matplotlib.figure
@@ -7,6 +7,7 @@ import numpy as np
 
 from astropy.coordinates import SkyCoord
 import astropy.units as units
+import astropy.time as time
 import astropy.table as table
 import astropy.cosmology as cosmo
 from astropy.modeling import models, fitting
@@ -246,6 +247,47 @@ class Object:
         for cat in self.field.cats:
             pass
 
+    def add_photometry(
+            self,
+            instrument: Union[str, inst.Instrument],
+            fil: Union[str, inst.Filter],
+            epoch_name: str,
+            mag: units.Quantity, mag_err: units.Quantity,
+            ellipse_a: units.Quantity, ellipse_b: units.Quantity,
+            ellipse_theta: units.Quantity,
+            ra: units.Quantity, ra_err: units.Quantity,
+            dec: units.Quantity, dec_err: units.Quantity,
+            kron_radius: float,
+            separation_from_given: units.Quantity = None,
+            epoch_date: time.Time = None,
+            **kwargs
+    ):
+        photometry = {
+            "instrument": str(instrument),
+            "filter": str(fil),
+            "epoch_name": epoch_name,
+            "mag": u.check_quantity(mag, unit=units.mag),
+            "mag_err": u.check_quantity(mag_err, unit=units.mag),
+            "a": u.check_quantity(ellipse_a, unit=units.arcsec, convert=True),
+            "b": u.check_quantity(ellipse_b, unit=units.arcsec, convert=True),
+            "theta": u.check_quantity(ellipse_theta, unit=units.deg, convert=True),
+            "ra": u.check_quantity(ra, units.deg, convert=True),
+            "ra_err": u.check_quantity(ra_err, units.deg, convert=True),
+            "dec": u.check_quantity(dec, units.deg, convert=True),
+            "dec_err": u.check_quantity(dec_err, units.deg, convert=True),
+            "kron_radius": float(kron_radius),
+            "separation_from_given": u.check_quantity(separation_from_given, units.arcsec, convert=True),
+            "epoch_date": epoch_date
+        }
+
+        kwargs.update(photometry)
+        if instrument not in self.photometry:
+            self.photometry[instrument] = {}
+        if fil not in self.photometry[instrument]:
+            self.photometry[instrument][fil] = {}
+        self.photometry[instrument][fil][epoch_name] = kwargs
+        return kwargs
+
     def find_in_cat(self, cat_name: str):
         cat = self.field.load_catalogue(cat_name=cat_name)
         pass
@@ -312,42 +354,25 @@ class Object:
         if "ecolor" not in kwargs:
             kwargs["ecolor"] = "black"
 
+        self.estimate_galactic_extinction()
+        self.photometry_to_table()
+
         with quantity_support():
-            for instrument_name in self.photometry:
-                instrument = inst.Instrument.from_params(instrument_name)
-                lambda_eff = units.Quantity(list(map(
-                    lambda f: instrument.filters[f].lambda_eff,
-                    self.photometry[instrument_name]
-                ))).to(units.Angstrom)
-                mag = units.Quantity(list(map(
-                    lambda f: self.photometry[instrument_name][f]["mag"],
-                    self.photometry[instrument_name]
-                )))
-                mag_err = units.Quantity(list(map(
-                    lambda f: self.photometry[instrument_name][f]["mag_err"],
-                    self.photometry[instrument_name]
-                )))
-
-                mag_corrected = units.Quantity(list(map(
-                    lambda f: self.photometry[instrument_name][f]["mag_ext_corrected"],
-                    self.photometry[instrument_name]
-                )))
-
-                ax.errorbar(
-                    lambda_eff,
-                    mag,
-                    yerr=mag_err,
-                    label=instrument_name,
-                    **kwargs,
-                )
-                ax.scatter(
-                    lambda_eff,
-                    mag_corrected,
-                    color="violet",
-                    label="Corrected for Galactic extinction"
-                )
-                ax.set_ylabel("Apparent magnitude")
-                ax.set_xlabel("$\lambda_\mathrm{eff}$ (\AA)")
+            ax.errorbar(
+                self.photometry_tbl["lambda_eff"],
+                self.photometry_tbl["mag"],
+                yerr=self.photometry_tbl["mag_err"],
+                label="Magnitude",
+                **kwargs,
+            )
+            ax.scatter(
+                self.photometry_tbl["lambda_eff"],
+                self.photometry_tbl["mag_ext_corrected"],
+                # color="violet",
+                label="Corrected for Galactic extinction"
+            )
+            ax.set_ylabel("Apparent magnitude")
+            ax.set_xlabel("$\lambda_\mathrm{eff}$ (\AA)")
             ax.invert_yaxis()
         return ax
 
@@ -356,7 +381,7 @@ class Object:
 
     # TODO: Refactor photometry to use table instead of dict (not sure why I even did it that way to start with)
 
-    def photometry_to_table(self, output: str = None, fmt: str = "ascii.ecsv"):
+    def photometry_to_table(self, output: str = None, fmts: List[str] = ("ascii.ecsv", "ascii.csv")):
         """
         Converts the photometry information, which is stored internally as a dictionary, into an astropy QTable.
         :param output: Where to write table.
@@ -373,17 +398,20 @@ class Object:
             instrument = inst.Instrument.from_params(instrument_name)
             for filter_name in self.photometry[instrument_name]:
                 fil = instrument.filters[filter_name]
-                phot_dict = self.photometry[instrument_name][filter_name].copy()
-                phot_dict["band"] = filter_name
-                phot_dict["instrument"] = instrument_name
-                phot_dict["lambda_eff"] = u.check_quantity(
-                    number=fil.lambda_eff,
-                    unit=units.Angstrom)
-                tbl = table.QTable([phot_dict])
-                tbls.append(tbl)
+                for epoch in self.photometry[instrument_name][filter_name]:
+                    phot_dict = self.photometry[instrument_name][filter_name][epoch].copy()
+                    phot_dict["band"] = filter_name
+                    phot_dict["instrument"] = instrument_name
+                    phot_dict["lambda_eff"] = u.check_quantity(
+                        number=fil.lambda_eff,
+                        unit=units.Angstrom
+                    )
+                    tbl = table.QTable([phot_dict])
+                    tbls.append(tbl)
         self.photometry_tbl = table.vstack(tbls)
 
-        self.photometry_tbl.write(output, format=fmt, overwrite=True)
+        for fmt in fmts:
+            self.photometry_tbl.write(output.replace(".ecsv", fmt[fmt.find("."):]), format=fmt, overwrite=True)
         return self.photometry_tbl
 
     def estimate_galactic_extinction(self, ax=None, r_v: float = 3.1, **kwargs):
@@ -400,7 +428,7 @@ class Object:
         fitter = fitting.LevMarLSQFitter()
         fitted = fitter(power_law, lambda_eff_tbl, self.irsa_extinction["A_SandF"].value)
 
-        tbl = self.photometry_to_table()
+        tbl = self.photometry_to_table(fmts=["ascii.ecsv", "ascii.csv"])
 
         x = np.linspace(0, 80000, 1000) * units.Angstrom
 
@@ -461,6 +489,7 @@ class Object:
         for row in tbl:
             instrument = row["instrument"]
             band = row["band"]
+            epoch_name = row["epoch_name"]
 
             # if row["lambda_eff"] > max(lambda_eff_tbl) or row["lambda_eff"] < min(lambda_eff_tbl):
             #     key = "ext_gal_pl"
@@ -469,12 +498,11 @@ class Object:
             #     key = "ext_gal_interp"
             #     self.photometry[instrument][band]["ext_gal_type"] = "interpolated"
             key = "ext_gal_sandf"
-            self.photometry[instrument][band]["ext_gal_type"] = "s_and_f"
-            self.photometry[instrument][band]["ext_gal"] = row[key]
-            u.debug_print(1, key, row['mag'], row[key])
-            self.photometry[instrument][band]["mag_ext_corrected"] = row["mag"] - row[key]
+            self.photometry[instrument][band][epoch_name]["ext_gal_type"] = "s_and_f"
+            self.photometry[instrument][band][epoch_name]["ext_gal"] = row[key]
+            self.photometry[instrument][band][epoch_name]["mag_ext_corrected"] = row["mag"] - row[key]
 
-        tbl_2 = self.photometry_to_table()
+        # tbl_2 = self.photometry_to_table()
         # tbl_2.update(tbl)
         # tbl_2.write(self.build_photometry_table_path().replace("photometry", "photemetry_extended"))
         return ax
@@ -516,6 +544,9 @@ class Object:
         s_dec = s_dec[:s_dec.find("m")].replace("d", "")
         return f"J{s_ra}{ra_second}{s_dec}{dec_second}"
 
+    def select_best_photometry(self, ):
+        pass
+
     def push_to_table(self):
         jname = self.jname()
         row, index = obs.get_row_epoch(tbl=obs.master_objects_table, colname="jname", colval=jname)
@@ -535,8 +566,12 @@ class Object:
 
         # Get best position, best magnitude etc.
 
-        for instrument in self.photometry:
-            pass
+        # for instrument in self.photometry:
+        #
+        # obs.w
+
+        obs.master_objects_table.add_row(row)
+        obs.write_master_imaging_table()
 
     @classmethod
     def default_params(cls):
@@ -683,11 +718,12 @@ class Galaxy(Object):
     def absolute_photometry(self, internal_extinction: units.Quantity = 0.0 * units.mag):
         for instrument in self.photometry:
             for fil in self.photometry[instrument]:
-                abs_mag = self.absolute_magnitude(
-                    apparent_magnitude=self.photometry[instrument][fil]["mag"],
-                    internal_extinction=internal_extinction
-                )
-                self.photometry[instrument][fil]["abs_mag"] = abs_mag
+                for epoch in self.photometry[instrument][fil]:
+                    abs_mag = self.absolute_magnitude(
+                        apparent_magnitude=self.photometry[instrument][fil][epoch]["mag"],
+                        internal_extinction=internal_extinction
+                    )
+                    self.photometry[instrument][fil][epoch]["abs_mag"] = abs_mag
         self.update_output_file()
 
     def projected_distance(self, angle: units.Quantity):

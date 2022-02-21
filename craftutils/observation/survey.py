@@ -20,15 +20,11 @@ class Survey:
         self.raw_stage_path = None
 
         if "raw_stage_path" in kwargs and isinstance(kwargs["raw_stage_path"], str):
-            self.raw_stage_path = kwargs["raw_stage_path"]
-            if self.raw_stage_path[0] != "/":
-                self.raw_stage_path = os.path.join(p.data_path, self.raw_stage_path)
+            self.raw_stage_path = u.make_absolute_path(p.data_path, kwargs["raw_stage_path"])
 
         self.refined_stage_path = None
         if "refined_stage_path" in kwargs and isinstance(kwargs["refined_stage_path"], str):
-            self.refined_stage_path = kwargs["refined_stage_path"]
-            if self.refined_stage_path[0] != "/":
-                self.refined_stage_path = os.path.join(p.data_path, self.refined_stage_path)
+            self.refined_stage_path = u.make_absolute_path(p.data_path, kwargs["refined_stage_path"])
 
         self.program_ids = {}
         if "program_ids" in kwargs:
@@ -37,6 +33,13 @@ class Survey:
         self.extra_commands = []
         if "extra_commands" in kwargs:
             self.extra_commands = kwargs["extra_commands"]
+
+        self.table_dir = None
+        if "table_dir" in kwargs:
+            self.table_dir = kwargs["table_dir"]
+
+        self.epoch_table = None
+        self.photometry_table = None
 
     def __str__(self):
         return str(self.name)

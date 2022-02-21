@@ -735,8 +735,6 @@ class ImagingImage(Image):
         self.fwhm_sigma_sextractor = None
         self.fwhm_rms_sextractor = None
 
-        self.astrometry_err = None
-
         self.sky_background = None
 
         self.airmass = None
@@ -750,6 +748,9 @@ class ImagingImage(Image):
 
         self.depth = {}
 
+        self.astrometry_err = None
+        self.ra_err = None
+        self.dec_err = None
         self.astrometry_corrected_path = None
         self.astrometry_stats = {}
 
@@ -905,9 +906,9 @@ class ImagingImage(Image):
         self.extract_astrometry_err()
         if self.astrometry_err is not None:
             source_cat["RA_ERR"] = np.sqrt(
-                source_cat["ERRX2_WORLD"].to(units.arcsec ** 2) + self.astrometry_err ** 2)
+                source_cat["ERRX2_WORLD"].to(units.arcsec ** 2) + self.ra_err ** 2)
             source_cat["DEC_ERR"] = np.sqrt(
-                source_cat["ERRY2_WORLD"].to(units.arcsec ** 2) + self.astrometry_err ** 2)
+                source_cat["ERRY2_WORLD"].to(units.arcsec ** 2) + self.dec_err ** 2)
 
         return source_cat
 
@@ -1023,6 +1024,10 @@ class ImagingImage(Image):
     def extract_astrometry_err(self):
         key = self.header_keys()["astrometry_err"]
         self.astrometry_err = self.extract_header_item(key)
+        key = self.header_keys()["ra_err"]
+        self.ra_err = self.extract_header_item(key)
+        key = self.header_keys()["dec_err"]
+        self.dec_err = self.extract_header_item(key)
         if self.astrometry_err is not None:
             self.astrometry_err *= units.arcsec
         return self.astrometry_err
@@ -1845,9 +1850,14 @@ class ImagingImage(Image):
 
         matches_coord = SkyCoord(matches_source_cat["RA"], matches_source_cat["DEC"])
 
+        offset_ra = matches_source_cat["RA"] - matches_ext_cat[ra_col]
+        offset_dec = matches_source_cat["DEC"] - matches_ext_cat[dec_col]
+
         mean_offset = np.mean(distance)
         median_offset = np.median(distance)
         rms_offset = np.sqrt(np.mean(distance ** 2))
+        rms_offset_ra = np.sqrt(np.mean(offset_ra ** 2))
+        rms_offset_dec = np.sqrt(np.mean(offset_dec ** 2))
 
         ref = self.extract_pointing()
         ref_distance = ref.separation(matches_coord)
@@ -1895,6 +1905,8 @@ class ImagingImage(Image):
         self.astrometry_stats["mean_offset"] = mean_offset.to(units.arcsec)
         self.astrometry_stats["median_offset"] = median_offset.to(units.arcsec)
         self.astrometry_stats["rms_offset"] = rms_offset.to(units.arcsec)
+        self.astrometry_stats["rms_offset_ra"] = rms_offset_ra.to(units.arcsec)
+        self.astrometry_stats["rms_offset_dec"] = rms_offset_dec.to(units.arcsec)
         self.astrometry_stats["median_offset_x"] = np.nanmedian(matches_source_cat["X_OFFSET_FROM_REF"])
         self.astrometry_stats["median_offset_y"] = np.nanmedian(matches_source_cat["Y_OFFSET_FROM_REF"])
         self.astrometry_stats["mean_offset_x"] = np.nanmean(matches_source_cat["X_OFFSET_FROM_REF"])
@@ -1925,11 +1937,13 @@ class ImagingImage(Image):
             output_path=output_path
         )
         self.astrometry_err = self.astrometry_stats["rms_offset"]
+        self.ra_err = self.astrometry_stats["rms_offset_ra"]
+        self.dec_err = self.astrometry_stats["rms_offset_dec"]
 
         self.source_cat["RA_ERR"] = np.sqrt(
-            self.source_cat["ERRX2_WORLD"].to(units.arcsec ** 2) + self.astrometry_err ** 2)
+            self.source_cat["ERRX2_WORLD"].to(units.arcsec ** 2) + self.ra_err ** 2)
         self.source_cat["DEC_ERR"] = np.sqrt(
-            self.source_cat["ERRY2_WORLD"].to(units.arcsec ** 2) + self.astrometry_err ** 2)
+            self.source_cat["ERRY2_WORLD"].to(units.arcsec ** 2) + self.dec_err ** 2)
 
         if not np.isnan(self.astrometry_err.value):
             self.headers[0]["ASTM_RMS"] = self.astrometry_err.value
@@ -3118,7 +3132,9 @@ class ImagingImage(Image):
             "ra_old": "_RVAL1",
             "dec_old": "_RVAL2",
             "airmass": "AIRMASS",
-            "astrometry_err": "ASTM_RMS"
+            "astrometry_err": "ASTM_RMS",
+            "ra_err": "RA_RMS",
+            "dec_err": "DEC_RMS"
         })
         return header_keys
 
