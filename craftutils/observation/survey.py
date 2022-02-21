@@ -130,8 +130,9 @@ class Survey:
                    os.listdir(param_path)
                    )
         )
+        surveys.sort()
 
-        return surveys.sort()
+        return surveys
 
 
     @classmethod

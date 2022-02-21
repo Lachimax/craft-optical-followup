@@ -790,7 +790,7 @@ class Field:
         survey_options = survey.Survey.list_surveys()
         survey_options.append("New survey")
         survey_options.append("None")
-        survey_name = u.select_option(
+        _, survey_name = u.select_option(
             message="Which survey is this field a part of?",
             options=survey_options
         )
