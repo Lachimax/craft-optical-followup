@@ -2315,7 +2315,10 @@ class ImagingEpoch(Epoch):
                     dec_err=np.sqrt(nearest["ERRY2_WORLD"]),
                     kron_radius=nearest["KRON_RADIUS"],
                     separation_from_given=separation,
-                    epoch_date=str(self.date.isot)
+                    epoch_date=str(self.date.isot),
+                    class_star=nearest["CLASS_STAR"],
+                    mag_psf=nearest["MAG_PSF_ZP_best"],
+                    mag_psf_err=nearest["MAGERR_PSF_ZP_best"]
                 )
 
                 if isinstance(self.field, FRBField):
@@ -2393,7 +2396,7 @@ class ImagingEpoch(Epoch):
                 obj.update_output_file()
                 obj.estimate_galactic_extinction()
                 obj.write_plot_photometry()
-                # obj.push_to_table()
+                obj.push_to_table()
 
     def astrometry_diagnostics(
             self,
@@ -2787,9 +2790,11 @@ class ImagingEpoch(Epoch):
 
         for fil in self.filters:
 
-            row, index = obs.get_row_epoch(self.name, fil=fil)
+            row, index = obs.get_row_epoch(tbl=obs.master_imaging_table, epoch_name=self.name, fil=fil)
             if row is None:
                 row = {}  # copy.deepcopy(observation.master_imaging_table[0])
+
+            img = coadded[fil]
 
             row["field_name"] = self.field.name
             row["epoch_name"] = self.name
@@ -2809,6 +2814,7 @@ class ImagingEpoch(Epoch):
             row["zeropoint_err"] = coadded[fil].extract_header_item("ZP_ERR") * units.mag
             row["zeropoint_source"] = coadded[fil].extract_header_item("ZPCAT")
             row["last_processed"] = Time.now().strftime("%Y-%m-%dT%H:%M:%S")
+            row["depth"] = img.depth["secure"]["SNR_SE"]["5-sigma"]
 
             if index is None:
                 obs.master_imaging_table.add_row(row)

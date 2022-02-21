@@ -260,6 +260,8 @@ class Object:
             kron_radius: float,
             separation_from_given: units.Quantity = None,
             epoch_date: str = None,
+            class_star: float = None,
+            mag_psf: units.Quantity = None, mag_psf_err: units.Quantity = None,
             **kwargs
     ):
         photometry = {
@@ -277,7 +279,10 @@ class Object:
             "dec_err": u.check_quantity(dec_err, units.deg, convert=True),
             "kron_radius": float(kron_radius),
             "separation_from_given": u.check_quantity(separation_from_given, units.arcsec, convert=True),
-            "epoch_date": epoch_date
+            "epoch_date": str(epoch_date),
+            "class_star": float(class_star),
+            "mag_psf": u.check_quantity(mag_psf, unit=units.mag),
+            "mag_psf_err": u.check_quantity(mag_psf_err, unit=units.mag),
         }
 
         kwargs.update(photometry)
@@ -432,7 +437,7 @@ class Object:
 
         x = np.linspace(0, 80000, 1000) * units.Angstrom
 
-        a_v = r_v * self.ebv_sandf
+        a_v = (r_v * self.ebv_sandf).value
 
         tbl["ext_gal_sandf"] = extinction.fitzpatrick99(tbl["lambda_eff"], a_v, r_v) * units.mag
         tbl["ext_gal_pl"] = fitted(tbl["lambda_eff"]) * units.mag
@@ -528,7 +533,7 @@ class Object:
         if force or self.ebv_sandf is None:
             # Get E(B-V) at this coordinate.
             tbl = r.retrieve_irsa_details(coord=self.position)
-            self.ebv_sandf = tbl["ext SandF ref"]
+            self.ebv_sandf = tbl["ext SandF ref"] * units.mag
 
     def load_extinction_table(self, force: bool = False):
         if force or self.irsa_extinction is None:
@@ -544,34 +549,81 @@ class Object:
         s_dec = s_dec[:s_dec.find("m")].replace("d", "")
         return f"J{s_ra}{ra_second}{s_dec}{dec_second}"
 
-    def select_best_photometry(self, ):
-        pass
+    def select_photometry(self, fil: str, instrument: str):
+        if self.photometry_tbl is None:
+            self.photometry_to_table()
+        fil_photom = self.photometry_tbl[self.photometry_tbl["band"] == fil]
+        fil_photom = fil_photom[fil_photom["instrument"] == instrument]
+        mean = {}
+        mean["mag"] = np.mean(fil_photom["mag"])
+        mean["mag_err"] = np.mean(fil_photom["mag_err"])
+        mean["mag_psf"] = np.mean(fil_photom["mag_psf"])
+        mean["mag_psf_err"] = np.mean(fil_photom["mag_psf_err"])
+        # TODO: Just meaning the whole table is probably not the best way to estimate uncertainties.
+        return fil_photom[np.argmin(fil_photom["mag"])], mean
+
+    def select_psf_photometry(self):
+        if self.photometry_tbl is None:
+            self.photometry_to_table()
+        return self.photometry_tbl[np.argmin(self.photometry_tbl["mag_psf_err"])]
+
+    def select_best_position(self):
+        if self.photometry_tbl is None:
+            self.photometry_to_table()
+        idx = np.argmin(self.photometry_tbl["ra_err"] * self.photometry_tbl["dec_err"])
+        return self.photometry_tbl[idx]
 
     def push_to_table(self):
         jname = self.jname()
-        row, index = obs.get_row_epoch(tbl=obs.master_objects_table, colname="jname", colval=jname)
+        row, index = obs.get_row(tbl=obs.master_objects_table, colname="jname", colval=jname)
 
         if row is None:
             row = {}
 
-        ra_err, dec_err = self.position_err.uncertainty_quadrature_equ()
+        best_position = self.select_best_position()
+        best_psf = self.select_psf_photometry()
 
         row["jname"] = jname
         row["field_name"] = self.field.name
         row["object_name"] = self.name
-        row["ra"] = self.position.ra
-        row["ra_err"] = ra_err
-        row["dec"] = self.position.dec
-        row["dec_err"] = dec_err
+        row["ra"] = best_position["ra"]
+        row["ra_err"] = best_position["ra_err"]
+        row["dec"] = best_position["dec"]
+        row["dec_err"] = best_position["dec_err"]
+        row[f"e_b-v"] = self.ebv_sandf
+        row[f"class_star"] = best_psf["class_star"]
 
-        # Get best position, best magnitude etc.
 
-        # for instrument in self.photometry:
-        #
+        # TODO: Get a and b from deepest image
+
+        for instrument in self.photometry:
+            for fil in self.photometry[instrument]:
+
+                band_str = f"{instrument}_{fil.replace('_', '-')}"
+
+                obs.add_columns_to_master_objects(band_str)
+
+                best_photom, mean_photom = self.select_photometry(fil, instrument)
+
+                row[f"mag_best_{band_str}"] = best_photom["mag"]
+                row[f"mag_best_{band_str}_err"] = best_photom["mag_err"]
+                row[f"mag_mean_{band_str}"] = mean_photom["mag"]
+                row[f"mag_mean_{band_str}_err"] = mean_photom["mag_err"]
+                row[f"ext_gal_{band_str}"] = best_photom["ext_gal"]
+                row[f"epoch_best_{band_str}"] = best_photom[f"epoch_name"]
+                row[f"epoch_best_date_{band_str}"] = best_photom[f"epoch_date"]
+                row[f"mag_psf_best_{band_str}"] = best_photom[f"mag_psf"]
+                row[f"mag_psf_best_{band_str}_err"] = best_photom[f"mag_psf_err"]
+                row[f"mag_psf_mean_{band_str}"] = mean_photom[f"mag_psf"]
+                row[f"mag_psf_mean_{band_str}_err"] = mean_photom[f"mag_psf_err"]
+
         # obs.w
 
-        obs.master_objects_table.add_row(row)
-        obs.write_master_imaging_table()
+        if index is None:
+            obs.master_objects_table.add_row(row)
+        else:
+            obs.master_objects_table[index] = row
+        obs.write_master_objects_table()
 
     @classmethod
     def default_params(cls):

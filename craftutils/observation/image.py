@@ -904,9 +904,10 @@ class ImagingImage(Image):
             1
         ) * units.deg
         self.extract_astrometry_err()
-        if self.astrometry_err is not None:
+        if self.ra_err is not None:
             source_cat["RA_ERR"] = np.sqrt(
                 source_cat["ERRX2_WORLD"].to(units.arcsec ** 2) + self.ra_err ** 2)
+        if self.dec_err is not None:
             source_cat["DEC_ERR"] = np.sqrt(
                 source_cat["ERRY2_WORLD"].to(units.arcsec ** 2) + self.dec_err ** 2)
 
@@ -1030,6 +1031,10 @@ class ImagingImage(Image):
         self.dec_err = self.extract_header_item(key)
         if self.astrometry_err is not None:
             self.astrometry_err *= units.arcsec
+        if self.ra_err is not None:
+            self.ra_err *= units.arcsec
+        if self.dec_err is not None:
+            self.dec_err *= units.arcsec
         return self.astrometry_err
 
     def extract_rotation_angle(self, ext: int = 0):
@@ -1940,6 +1945,8 @@ class ImagingImage(Image):
         self.ra_err = self.astrometry_stats["rms_offset_ra"]
         self.dec_err = self.astrometry_stats["rms_offset_dec"]
 
+        print(self.astrometry_err, self.ra_err, self.dec_err)
+
         self.source_cat["RA_ERR"] = np.sqrt(
             self.source_cat["ERRX2_WORLD"].to(units.arcsec ** 2) + self.ra_err ** 2)
         self.source_cat["DEC_ERR"] = np.sqrt(
@@ -1947,6 +1954,8 @@ class ImagingImage(Image):
 
         if not np.isnan(self.astrometry_err.value):
             self.headers[0]["ASTM_RMS"] = self.astrometry_err.value
+            self.headers[0]["RA_RMS"] = self.ra_err.value
+            self.headers[0]["DEC_RMS"] = self.dec_err.value
         self.write_fits_file()
         self.update_output_file()
 
