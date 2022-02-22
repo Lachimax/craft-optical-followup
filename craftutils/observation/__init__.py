@@ -62,13 +62,14 @@ def add_columns_by_fil(tbl: table.QTable, coldict: dict, fil: str):
 
 def add_columns_to_master_objects(fil: str):
     print(f"Adding columns for {fil} to master objects table")
-    load_master_all_objects_table()
     load_master_objects_table()
     global master_objects_table
-    global master_objects_all_table
     add_columns_by_fil(tbl=master_objects_table, coldict=master_objects_columns, fil=fil)
-    add_columns_by_fil(tbl=master_objects_all_table, coldict=master_objects_columns, fil=fil)
     write_master_objects_table()
+
+    load_master_all_objects_table()
+    global master_objects_all_table
+    add_columns_by_fil(tbl=master_objects_all_table, coldict=master_objects_columns, fil=fil)
     write_master_all_objects_table()
 
 
@@ -237,18 +238,20 @@ def load_master_objects_table(force: bool = False):
 
     return master_objects_table
 
+
 def load_master_all_objects_table(force: bool = False):
     global master_objects_all_table
 
     master_objects_all_table = load_master_table(
         tbl=master_objects_all_table,
         tbl_columns=master_objects_columns,
-        tbl_path=master_objects_path,
+        tbl_path=master_objects_all_path,
         # filters=filters,
         force=force
     )
 
     return master_objects_all_table
+
 
 def write_master_imaging_table():
     if master_imaging_table is None:

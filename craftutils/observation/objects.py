@@ -678,6 +678,8 @@ class Object:
 
         # obs.w
 
+        print("select ==", select)
+        print()
         if select:
             if index is None:
                 obs.master_objects_table.add_row(row)
