@@ -62,9 +62,14 @@ def add_columns_by_fil(tbl: table.QTable, coldict: dict, fil: str):
 
 def add_columns_to_master_objects(fil: str):
     print(f"Adding columns for {fil} to master objects table")
+    load_master_all_objects_table()
+    load_master_objects_table()
     global master_objects_table
+    global master_objects_all_table
     add_columns_by_fil(tbl=master_objects_table, coldict=master_objects_columns, fil=fil)
+    add_columns_by_fil(tbl=master_objects_all_table, coldict=master_objects_columns, fil=fil)
     write_master_objects_table()
+    write_master_all_objects_table()
 
 
 master_imaging_table = None
@@ -95,6 +100,8 @@ master_imaging_table_columns = {
 
 master_objects_table = None
 master_objects_path = os.path.join(config["table_dir"], "master_select_objects_table.ecsv")
+master_objects_all_table = None
+master_objects_all_path = os.path.join(config["table_dir"], "master_all_objects_table.ecsv")
 master_objects_columns = {
     "jname": str,
     "field_name": str,
@@ -103,11 +110,16 @@ master_objects_columns = {
     "ra_err": units.deg,
     "dec": units.deg,
     "dec_err": units.deg,
+    "epoch_position": str,
+    "epoch_position_date": str,
     "a": units.arcsec,
     "a_err": units.arcsec,
     "b": units.arcsec,
     "b_err": units.arcsec,
     "theta": units.deg,
+    "epoch_ellipse": str,
+    "epoch_ellipse_date": str,
+    "theta_err": units.deg,
     "kron_radius": float,
     "mag_best_{:s}": units.mag,  # The magnitude from the deepest image in that band
     "mag_best_{:s}_err": units.mag,
@@ -223,8 +235,20 @@ def load_master_objects_table(force: bool = False):
         force=force
     )
 
-    return master_imaging_table
+    return master_objects_table
 
+def load_master_all_objects_table(force: bool = False):
+    global master_objects_all_table
+
+    master_objects_all_table = load_master_table(
+        tbl=master_objects_all_table,
+        tbl_columns=master_objects_columns,
+        tbl_path=master_objects_path,
+        # filters=filters,
+        force=force
+    )
+
+    return master_objects_all_table
 
 def write_master_imaging_table():
     if master_imaging_table is None:
@@ -234,6 +258,18 @@ def write_master_imaging_table():
         master_imaging_table.write(master_imaging_table_path, format="ascii.ecsv", overwrite=True)
         master_imaging_table.write(
             master_imaging_table_path.replace(".ecsv", ".csv"),
+            format="ascii.csv",
+            overwrite=True)
+
+
+def write_master_all_objects_table():
+    if master_objects_all_table is None:
+        raise ValueError("master_imaging_table not loaded")
+    else:
+        master_objects_all_table.sort("jname")
+        master_objects_all_table.write(master_objects_all_path, format="ascii.ecsv", overwrite=True)
+        master_objects_all_table.write(
+            master_objects_all_path.replace(".ecsv", ".csv"),
             format="ascii.csv",
             overwrite=True)
 

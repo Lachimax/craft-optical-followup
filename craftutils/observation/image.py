@@ -47,11 +47,12 @@ import craftutils.fits_files as ff
 import craftutils.photometry as ph
 import craftutils.params as p
 import craftutils.plotting as pl
+import craftutils.observation.log as log
+import craftutils.observation.objects as objects
 from craftutils.stats import gaussian_distributed_point
 import craftutils.observation.instrument as inst
 import craftutils.wrap.source_extractor as se
 import craftutils.wrap.psfex as psfex
-import craftutils.observation.log as log
 from craftutils.wrap.astrometry_net import solve_field
 from craftutils.retrieve import cat_columns
 
@@ -427,7 +428,10 @@ class Image:
             self.data = []
             for i, h in enumerate(self.hdu_list):
                 if unit[i] is not None:
-                    this_unit = units.Unit(unit[i])
+                    try:
+                        this_unit = units.Unit(unit[i])
+                    except ValueError:
+                        this_unit = units.ct
                 else:
                     this_unit = units.ct
                 if h.data is not None:
@@ -998,6 +1002,38 @@ class ImagingImage(Image):
             u.debug_print(1, "Writing dual-mode source catalogue to", self.source_cat_dual_path)
             self.source_cat_dual.write(self.source_cat_dual_path, format="ascii.ecsv", overwrite=True)
 
+    def push_source_cat(self, dual: bool = True):
+        source_cat = self.get_source_cat(dual=dual)
+        for i, row in enumerate(source_cat):
+            print(f"Row {i} of {len(source_cat)}")
+            obj = objects.Object(row=row, field=self.epoch.field)
+            print(obj.jname())
+            obj.add_photometry(
+                instrument=self.instrument_name,
+                fil=self.filter_name,
+                epoch_name=self.epoch.name,
+                mag=row['MAG_AUTO_ZP_best'],
+                mag_err=row[f'MAGERR_AUTO_ZP_best'],
+                ellipse_a=row['A_WORLD'],
+                ellipse_a_err=row["ERRA_WORLD"],
+                ellipse_b=row['B_WORLD'],
+                ellipse_b_err=row["ERRB_WORLD"],
+                ellipse_theta=row['THETA_WORLD'],
+                ellipse_theta_err=row['ERRTHETA_WORLD'],
+                ra=row['RA'],
+                ra_err=np.sqrt(row["ERRX2_WORLD"]),
+                dec=row['DEC'],
+                dec_err=np.sqrt(row["ERRY2_WORLD"]),
+                kron_radius=row["KRON_RADIUS"],
+                separation_from_given=None,
+                epoch_date=str(self.epoch.date.isot),
+                class_star=row["CLASS_STAR"],
+                mag_psf=row["MAG_PSF_ZP_best"],
+                mag_psf_err=row["MAGERR_PSF_ZP_best"],
+                image_depth=self.depth["secure"]["SNR_SE"][f"5-sigma"]
+            )
+            obj.push_to_table(select=False)
+
     def load_synth_cat(self, force: bool = False):
         if force or self.synth_cat is None:
             if self.synth_cat_path is not None:
@@ -1185,8 +1221,6 @@ class ImagingImage(Image):
         for cat in ranking:
             if cat in self.zeropoints:
                 zp = self.zeropoints[cat]
-                print(cat)
-                print(zp)
                 zps[f"{cat} {zp['zeropoint_img']} +/- {zp['zeropoint_img_err']}, {zp['n_matches']} stars"] = zp
                 if best is None:
                     best = cat
