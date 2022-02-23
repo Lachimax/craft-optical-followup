@@ -2069,7 +2069,8 @@ class ImagingEpoch(Epoch):
             )
             # TODO: Inject header
 
-            combined_img = image.FORS2CoaddedImage(sigclip_path, area_file=area_final)
+            combined_img = image.FORS2CoaddedImage(sigclip_path)
+            combined_img.area_file=area_final
             coadded_median.load_headers()
             combined_img.headers = coadded_median.headers
             u.debug_print(3, f"ImagingEpoch.coadd(): {combined_img}.headers ==", combined_img.headers)
@@ -2152,6 +2153,8 @@ class ImagingEpoch(Epoch):
         for fil in images:
             img = images[fil]
             output_path = os.path.join(output_dir, img.filename.replace(".fits", "_trimmed.fits"))
+            print("trim_coadded img.path:", img.path)
+            print("trim_coadded img.area_file:", img.area_file)
             trimmed = img.trim_from_area(output_path=output_path)
             if reproject:
                 if template is None:
@@ -2506,11 +2509,11 @@ class ImagingEpoch(Epoch):
     def _get_frames(self, frame_type: str):
         if frame_type == "final":
             if self.frames_final is not None:
-                image_dict = self.frames_final
+                frame_type = self.frames_final
             else:
                 raise ValueError("frames_final has not been set.")
 
-        elif frame_type == "science":
+        if frame_type == "science":
             image_dict = self.frames_science
         elif frame_type == "reduced":
             image_dict = self.frames_reduced
