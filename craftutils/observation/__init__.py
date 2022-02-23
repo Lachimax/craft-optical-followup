@@ -206,7 +206,7 @@ def add_column(tbl: table.QTable, colname: str, dtype, unit):
             dtype = str
             val = dtype("0" * 32)
         else:
-            val = dtype(0)
+            val = dtype(-999)
         tbl.add_column([val] * len(tbl), name=colname)
         if unit is not None:
             tbl[colname] *= unit
