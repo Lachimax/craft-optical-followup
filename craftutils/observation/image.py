@@ -42,7 +42,7 @@ except ModuleNotFoundError:
     print("sep not installed; some photometry-related functionality will be unavailable.")
 
 import craftutils.utils as u
-import craftutils.astrometry as a
+import craftutils.astrometry as astm
 import craftutils.fits_files as ff
 import craftutils.photometry as ph
 import craftutils.params as p
@@ -2246,7 +2246,7 @@ class ImagingImage(Image):
         if star_tolerance is not None:
             source_cat = source_cat[source_cat["CLASS_STAR"] > star_tolerance]
 
-        matches_source_cat, matches_ext_cat, distance = a.match_catalogs(
+        matches_source_cat, matches_ext_cat, distance = astm.match_catalogs(
             cat_1=source_cat,
             cat_2=cat,
             ra_col_1="RA",
@@ -2523,6 +2523,7 @@ class ImagingImage(Image):
             output: str = None,
             show: bool = False, title: str = None):
 
+        plt.close()
         self.load_headers()
         kron_a = row['KRON_RADIUS'] * row['A_WORLD']
         kron_b = row['KRON_RADIUS'] * row['B_WORLD']
@@ -3157,6 +3158,26 @@ class ImagingImage(Image):
             err=self.sep_background.rms(),
             gain=self.extract_gain().value)
         return flux, fluxerr, flag
+
+    def sep_elliptical_photometry(
+            self,
+            centre: SkyCoord,
+            a_ellipse: units.Quantity,
+            b_ellipse: units.Quantity,
+            theta: units.Quantity,
+            ext: int = 0,
+    ):
+        self.calculate_background(ext=ext)
+        self.load_wcs(ext=ext)
+        x, y = self.wcs.all_world2pix(centre.ra.value, centre.dec.value, 0)
+        flux, fluxerr, flag = sep.sum_ellipse(
+            self.data_sub_bkg,
+            x, y,
+            err=self.sep_background.rms(),
+            gain=self.extract_gain().value
+        )
+
+        pass
 
     @classmethod
     def select_child_class(cls, instrument: str, **kwargs):

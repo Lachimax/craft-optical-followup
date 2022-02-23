@@ -124,12 +124,13 @@ master_objects_columns = {
     "kron_radius": float,
     "mag_best_{:s}": units.mag,  # The magnitude from the deepest image in that band
     "mag_best_{:s}_err": units.mag,
+    "snr_best_{:s}": float,
     "mag_mean_{:s}": units.mag,
     "mag_mean_{:s}_err": units.mag,
-    "ext_gal_{:s}": units.mag,
-    "e_b-v": units.mag,
     "epoch_best_{:s}": str,
     "epoch_best_date_{:s}": str,
+    "ext_gal_{:s}": units.mag,
+    "e_b-v": units.mag,
     "class_star": float,
     "mag_psf_best_{:s}": units.mag,
     "mag_psf_best_{:s}_err": units.mag,
@@ -187,7 +188,7 @@ def load_master_table(
         colnames, dtypes, un = _construct_column_lists(columns=tbl_columns)
 
         if not os.path.isfile(tbl_path):
-            tbl = table.QTable(data=[[0]] * len(colnames), names=colnames, units=un, dtype=dtypes)
+            tbl = table.QTable(data=[[-999]] * len(colnames), names=colnames, units=un, dtype=dtypes)
             for i, colname in enumerate(colnames):
                 print(i, colname)
                 if isinstance(dtypes[i], str):
