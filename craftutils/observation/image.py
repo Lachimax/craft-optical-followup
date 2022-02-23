@@ -262,7 +262,13 @@ class Image:
     instrument_name = "dummy"
     num_chips = 1
 
-    def __init__(self, path: str, frame_type: str = None, instrument_name: str = None, logg: log.Log = None):
+    def __init__(
+            self,
+            path: str,
+            frame_type: str = None,
+            instrument_name: str = None,
+            logg: log.Log = None,
+    ):
         self.path = path
         self.output_file = path.replace(".fits", "_outputs.yaml")
         self.data_path, self.filename = os.path.split(self.path)
@@ -687,7 +693,13 @@ class ESOImage(Image):
 
 
 class ImagingImage(Image):
-    def __init__(self, path: str, frame_type: str = None, instrument_name: str = None):
+    def __init__(
+            self,
+            path: str,
+            frame_type: str = None,
+            instrument_name: str = None,
+            load_outputs: bool = True
+    ):
         super().__init__(path=path, frame_type=frame_type, instrument_name=instrument_name)
 
         self.wcs = None
@@ -760,7 +772,8 @@ class ImagingImage(Image):
 
         self.extract_filter()
 
-        self.load_output_file()
+        if load_outputs:
+            self.load_output_file()
 
     def source_extraction(
             self, configuration_file: str,
@@ -3209,16 +3222,22 @@ class CoaddedImage(ImagingImage):
             path: str,
             frame_type: str = None,
             instrument_name: str = None,
-            area_file: str = None
     ):
         super().__init__(
             path=path,
             frame_type=frame_type,
-            instrument_name=instrument_name
+            instrument_name=instrument_name,
+            load_outputs=False
         )
-        self.area_file = area_file  # string
+
+        self.area_file = None
+
+        self.load_output_file()
+
         if self.area_file is None:
             self.area_file = self.path.replace(".fits", "_area.fits")
+
+
 
     def trim(
             self,
@@ -3490,14 +3509,12 @@ class FORS2CoaddedImage(CoaddedImage):
             self,
             path: str,
             frame_type: str = None,
-            area_file: str = None,
             **kwargs
     ):
         super().__init__(
             path=path,
             frame_type=frame_type,
             instrument_name=self.instrument_name,
-            area_file=area_file
         )
 
     def zeropoint(
