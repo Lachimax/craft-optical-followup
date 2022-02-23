@@ -3204,8 +3204,18 @@ class ImagingImage(Image):
 
 
 class CoaddedImage(ImagingImage):
-    def __init__(self, path: str, frame_type: str = None, instrument_name: str = None, area_file: str = None):
-        super().__init__(path=path, frame_type=frame_type, instrument_name=instrument_name)
+    def __init__(
+            self,
+            path: str,
+            frame_type: str = None,
+            instrument_name: str = None,
+            area_file: str = None
+    ):
+        super().__init__(
+            path=path,
+            frame_type=frame_type,
+            instrument_name=instrument_name
+        )
         self.area_file = area_file  # string
         if self.area_file is None:
             self.area_file = self.path.replace(".fits", "_area.fits")
@@ -3236,6 +3246,25 @@ class CoaddedImage(ImagingImage):
         trimmed.update_output_file()
         return trimmed
 
+    def register(self, target: 'ImagingImage', output_path: str, ext: int = 0, trim: bool = True):
+        new_img = super().register(
+            target=target,
+            output_path=output_path,
+            ext=ext,
+            trim=trim
+        )
+        import reproject as rp
+        area = new_img.copy(new_img.path.replace(".fits", "_area.fits"))
+        area.load_data()
+        reprojected, footprint = rp.reproject_exact(self.area_file, new_img.headers[ext], parallel=True)
+        area.data[ext] = reprojected
+        area.area_file = None
+        area.write_fits_file()
+
+        new_img.area_file = area.path
+        return new_img
+
+
     def trim_from_area(self, output_path: str = None):
         left, right, bottom, top = ff.detect_edges_area(self.area_file)
         trimmed = self.trim(left=left, right=right, bottom=bottom, top=top, output_path=output_path)
@@ -3261,8 +3290,9 @@ class CoaddedImage(ImagingImage):
             tweak=tweak,
             **kwargs
         )
-        new_image.area_file = self.area_file
-        new_image.update_output_file()
+        if new_image is not None:
+            new_image.area_file = self.area_file
+            new_image.update_output_file()
         return new_image
 
     def copy(self, destination: str):

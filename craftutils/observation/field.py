@@ -1989,8 +1989,9 @@ class ImagingEpoch(Epoch):
                         print(f"Running astroalign on {frame}...")
                         new_frame = frame.register(
                             target=first_success,
-                            output_path=os.path.join(astrometry_fil_path,
-                                                     frame.filename.replace(".fits", "_astrometry.fits")),
+                            output_path=os.path.join(
+                                astrometry_fil_path,
+                                frame.filename.replace(".fits", "_astrometry.fits")),
                         )
                         self.add_frame_astrometry(new_frame)
                         self.astrometry_successful[fil][frame.name] = "astroalign"
@@ -2102,14 +2103,34 @@ class ImagingEpoch(Epoch):
         else:
             tweak = True
 
+        first_success = None
+        unsuccessful = []
         for fil in images:
             img = images[fil]
             new_img = img.correct_astrometry(
                 output_dir=output_dir,
                 tweak=tweak
             )
+            if new_img is None:
+                print(f"{img} Astrometry.net unsuccessful; adding image to astroalign queue.")
+                unsuccessful.append(fil)
+            else:
+                if first_success is None:
+                    first_success = new_img
+                self.add_coadded_astrometry_image(new_img, key=fil)
 
-            self.add_coadded_astrometry_image(new_img, key=fil)
+        if first_success is not None:
+            for fil in unsuccessful:
+                img = images[fil]
+                new_img = img.register(
+                    target=first_success,
+                    output_path=os.path.join(
+                        output_dir,
+                        img.filename.replace(".fits", "_astrometry.fits")
+                    )
+                )
+                self.add_coadded_astrometry_image(new_img, key=fil)
+
 
     def proc_trim_coadded(self, output_dir: str, **kwargs):
         if "correct_astrometry_coadded" in self.do_kwargs and self.do_kwargs["correct_astrometry_coadded"]:
@@ -2485,11 +2506,11 @@ class ImagingEpoch(Epoch):
     def _get_frames(self, frame_type: str):
         if frame_type == "final":
             if self.frames_final is not None:
-                frame_type = self.frames_final
+                image_dict = self.frames_final
             else:
                 raise ValueError("frames_final has not been set.")
 
-        if frame_type == "science":
+        elif frame_type == "science":
             image_dict = self.frames_science
         elif frame_type == "reduced":
             image_dict = self.frames_reduced
@@ -2529,8 +2550,10 @@ class ImagingEpoch(Epoch):
             "deepest": deepest,
             "deepest_filter": self.deepest_filter,
             "coadded": _output_img_dict_single(self.coadded),
+            "coadded_final": self.coadded_final,
             "coadded_trimmed": _output_img_dict_single(self.coadded_trimmed),
             "coadded_astrometry": _output_img_dict_single(self.coadded_astrometry),
+            "frames_final": self.frames_final,
             "frames_raw": _output_img_list(self.frames_raw),
             "frames_reduced": _output_img_dict_list(self.frames_reduced),
             "frames_normalised": _output_img_dict_list(self.frames_normalised),
@@ -4168,10 +4191,9 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
         self.frames_final = "astrometry"
         # If told not to correct astrometry on frames:
         if "correct_astrometry_frames" in self.do_kwargs and not self.do_kwargs["correct_astrometry_frames"]:
-            # If not told to register frames
-            if "register_frames" in self.do_kwargs and not self.do_kwargs["register_frames"]:
-                self.frames_final = "normalised"
-            else:
+            self.frames_final = "normalised"
+            # If told to register frames
+            if "register_frames" in self.do_kwargs and self.do_kwargs["register_frames"]:
                 self.frames_final = "registered"
 
         self.coadded_final = "coadded_trimmed"
