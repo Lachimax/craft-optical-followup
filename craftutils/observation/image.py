@@ -11,7 +11,9 @@ from copy import deepcopy
 
 import ccdproc
 import numpy as np
+
 import matplotlib.pyplot as plt
+from matplotlib.patches import Ellipse
 
 import astropy
 import astropy.io.fits as fits
@@ -1027,12 +1029,13 @@ class ImagingImage(Image):
                 epoch_name=self.epoch.name,
                 mag=row['MAG_AUTO_ZP_best'],
                 mag_err=row[f'MAGERR_AUTO_ZP_best'],
+                snr=row[f'SNR_SE'],
                 ellipse_a=row['A_WORLD'],
                 ellipse_a_err=row["ERRA_WORLD"],
                 ellipse_b=row['B_WORLD'],
                 ellipse_b_err=row["ERRB_WORLD"],
-                ellipse_theta=row['THETA_WORLD'],
-                ellipse_theta_err=row['ERRTHETA_WORLD'],
+                ellipse_theta=row['THETA_J2000'],
+                ellipse_theta_err=row['ERRTHETA_J2000'],
                 ra=row['RA'],
                 ra_err=np.sqrt(row["ERRX2_WORLD"]),
                 dec=row['DEC'],
@@ -1043,7 +1046,9 @@ class ImagingImage(Image):
                 class_star=row["CLASS_STAR"],
                 mag_psf=row["MAG_PSF_ZP_best"],
                 mag_psf_err=row["MAGERR_PSF_ZP_best"],
-                image_depth=self.depth["secure"]["SNR_SE"][f"5-sigma"]
+                snr_psf=row["FLUX_PSF"] / row["FLUXERR_PSF"],
+                image_depth=self.depth["secure"]["SNR_SE"][f"5-sigma"],
+                image_path=self.path
             )
             obj.push_to_table(select=False)
 
@@ -2009,9 +2014,14 @@ class ImagingImage(Image):
         return self.astrometry_stats
 
     def psf_diagnostics(
-            self, star_class_tol: float = 0.95,
-            mag_max: float = 0.0 * units.mag, mag_min: float = -7.0 * units.mag,
-            match_to: table.Table = None, frame: float = 15):
+            self,
+            star_class_tol: float = 0.95,
+            mag_max: float = 0.0 * units.mag,
+            mag_min: float = -7.0 * units.mag,
+            match_to: table.Table = None,
+            frame: float = 15,
+            ext: int = 0
+    ):
         self.open()
         self.load_source_cat()
         u.debug_print(2, f"ImagingImage.psf_diagnostics(): {self}.source_cat_path ==", self.source_cat_path)
@@ -2022,7 +2032,8 @@ class ImagingImage(Image):
             mag_max=mag_max,
             mag_min=mag_min,
             match_to=match_to,
-            frame=frame
+            frame=frame,
+            ext=ext
         )
 
         fwhm_gauss = stars_gauss["GAUSSIAN_FWHM_FITTED"]
@@ -2077,6 +2088,7 @@ class ImagingImage(Image):
                 "fwhm_sigma": self.fwhm_sigma_sextractor.to(units.arcsec),
                 "fwhm_rms": self.fwhm_rms_sextractor.to(units.arcsec)}
         }
+        self.headers[ext]["PSF_FWHM"] = self.fwhm_median_gauss.to(units.arcsec)
         self.add_log(
             action=f"Calculated PSF FWHM statistics.",
             method=self.psf_diagnostics,
@@ -2328,7 +2340,10 @@ class ImagingImage(Image):
             a = cat_obj["A_WORLD"].to(units.pix, scale).value
             b = cat_obj["B_WORLD"].to(units.pix, scale).value
 
-            theta = u.world_angle_se_to_pu(cat_obj["THETA_WORLD"])
+            theta = u.world_angle_se_to_pu(
+                cat_obj["THETA_WORLD"],
+                rot_angle=self.extract_rotation_angle()
+            )
 
             ap = photutils.aperture.EllipticalAperture(
                 [x, y],
@@ -2475,8 +2490,8 @@ class ImagingImage(Image):
         if "origin" not in imshow_kwargs:
             imshow_kwargs["origin"] = "lower"
 
-        plot = fig.add_subplot(n_x, n_y, n, projection=self.wcs)
-        plot.imshow(
+        ax = fig.add_subplot(n_x, n_y, n, projection=self.wcs)
+        ax.imshow(
             data,
             norm=ImageNormalize(
                 data[bottom:top, left:right],
@@ -2484,10 +2499,10 @@ class ImagingImage(Image):
             ),
             **imshow_kwargs
         )
-        plot.set_xlim(left, right)
-        plot.set_ylim(bottom, top)
-        plot.set_xlabel("Right Ascension (J2000)")
-        plot.set_ylabel("Declination (J2000)")
+        ax.set_xlim(left, right)
+        ax.set_ylim(bottom, top)
+        ax.set_xlabel("Right Ascension (J2000)")
+        ax.set_ylabel("Declination (J2000)")
 
         if output_path is not None:
             fig.savefig(output_path)
@@ -2496,11 +2511,11 @@ class ImagingImage(Image):
         other_args["x"] = x
         other_args["y"] = y
 
-        return plot, fig, other_args
+        return ax, fig, other_args
 
     def nice_frame(
             self,
-            row: table.Row,
+            row: Union[table.Row, dict],
             frame: units.Quantity = 10 * units.pix,
     ):
         self.extract_pixel_scale()
@@ -2527,7 +2542,6 @@ class ImagingImage(Image):
         self.load_headers()
         kron_a = row['KRON_RADIUS'] * row['A_WORLD']
         kron_b = row['KRON_RADIUS'] * row['B_WORLD']
-        kron_theta = row['THETA_WORLD']
         # kron_theta = -kron_theta + ff.get_rotation_angle(
         #     header=self.headers[ext],
         #     astropy_units=True)
@@ -2550,7 +2564,7 @@ class ImagingImage(Image):
             decs=[row["DEC"].value],
             a=[row["A_WORLD"].value],
             b=[row["B_WORLD"].value],
-            theta=[row["THETA_WORLD"].value],
+            theta=[row["THETA_J2000"].value + 90],
             world=True,
             show_centre=True
         )
@@ -3162,22 +3176,86 @@ class ImagingImage(Image):
     def sep_elliptical_photometry(
             self,
             centre: SkyCoord,
-            a_ellipse: units.Quantity,
-            b_ellipse: units.Quantity,
-            theta: units.Quantity,
+            a_world: units.Quantity,
+            b_world: units.Quantity,
+            theta_world: units.Quantity,
+            kron_radius: float = 1.,
             ext: int = 0,
+            plot: str = None
     ):
         self.calculate_background(ext=ext)
         self.load_wcs(ext=ext)
+        self.extract_pixel_scale()
         x, y = self.wcs.all_world2pix(centre.ra.value, centre.dec.value, 0)
-        flux, fluxerr, flag = sep.sum_ellipse(
-            self.data_sub_bkg,
-            x, y,
+        a = (a_world.to(units.pix, self.pixel_scale_dec)).value
+        b = (b_world.to(units.pix, self.pixel_scale_dec)).value
+        theta = (theta_world - self.extract_rotation_angle(ext=ext)).to(units.rad).value
+
+        flux, flux_err, flag = sep.sum_ellipse(
+            data=self.data_sub_bkg,
+            x=x, y=y,
+            a=a, b=b,
+            r=kron_radius,
+            theta=theta,
             err=self.sep_background.rms(),
-            gain=self.extract_gain().value
+            gain=self.extract_gain().value,
         )
 
-        pass
+        if isinstance(plot, str):
+            this_frame = self.nice_frame({
+                'A_WORLD': a,
+                'B_WORLD': b,
+                'KRON_RADIUS': kron_radius
+            })
+            ax, fig, _ = self.plot_subimage(
+                centre=centre,
+                frame=this_frame,
+                ext=ext)
+            e = Ellipse(
+                xy=(x, y),
+                width=a,
+                height=b,
+                angle=theta * 180. / np.pi)
+            e.set_facecolor('none')
+            e.set_edgecolor('white')
+            ax.add_artist(e)
+
+            fig.savefig(plot)
+
+        return flux, flux_err, flag
+
+    def sep_elliptical_magnitude(
+            self,
+            centre: SkyCoord,
+            a_world: units.Quantity,
+            b_world: units.Quantity,
+            theta_world: units.Quantity,
+            kron_radius: float = 1.,
+            ext: int = 0,
+            plot: str = None
+    ):
+        flux, flux_err, flags = self.sep_elliptical_photometry(
+            centre=centre,
+            a_world=a_world,
+            b_world=b_world,
+            theta_world=theta_world,
+            kron_radius=kron_radius,
+            ext=ext,
+            plot=plot
+        )
+
+        snr = flux / flux_err
+        if snr < 3:
+            mag, _, _, _ = self.magnitude(
+                flux_err
+            )
+            mag_err = -999.
+        else:
+            mag, mag_err, _, _ = self.magnitude(
+                flux, flux_err
+            )
+
+        return mag, mag_err, snr
 
     @classmethod
     def select_child_class(cls, instrument: str, **kwargs):
@@ -3258,8 +3336,6 @@ class CoaddedImage(ImagingImage):
         if self.area_file is None:
             self.area_file = self.path.replace(".fits", "_area.fits")
 
-
-
     def trim(
             self,
             left: Union[int, units.Quantity] = None,
@@ -3303,7 +3379,6 @@ class CoaddedImage(ImagingImage):
 
         new_img.area_file = area.path
         return new_img
-
 
     def trim_from_area(self, output_path: str = None):
         left, right, bottom, top = ff.detect_edges_area(self.area_file)

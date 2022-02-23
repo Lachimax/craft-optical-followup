@@ -133,6 +133,7 @@ master_objects_columns = {
     "e_b-v": units.mag,
     "class_star": float,
     "mag_psf_best_{:s}": units.mag,
+    "snr_psf_best_{:s}": float,
     "mag_psf_best_{:s}_err": units.mag,
     "mag_psf_mean_{:s}": units.mag,
     "mag_psf_mean_{:s}_err": units.mag,

@@ -41,9 +41,17 @@ quantity_support()
 gain_unit = units.electron / units.ct
 
 
-def image_psf_diagnostics(hdu: Union[str, fits.HDUList], cat: Union[str, table.Table], star_class_tol: float = 0.9,
-                          mag_max: float = 0.0 * units.mag, mag_min: float = -7.0 * units.mag,
-                          match_to: table.Table = None, frame: float = 15, use_sextractor: bool = True):
+def image_psf_diagnostics(
+        hdu: Union[str, fits.HDUList],
+        cat: Union[str, table.Table],
+        star_class_tol: float = 0.9,
+        mag_max: float = 0.0 * units.mag,
+        mag_min: float = -7.0 * units.mag,
+        match_to: table.Table = None,
+        frame: float = 15,
+        use_sextractor: bool = True,
+        ext: int = 0
+):
     hdu, path = ff.path_or_hdu(hdu=hdu)
     hdu = copy.deepcopy(hdu)
     cat = u.path_or_table(cat)
@@ -57,13 +65,14 @@ def image_psf_diagnostics(hdu: Union[str, fits.HDUList], cat: Union[str, table.T
     print(f"Initial num stars:", len(stars))
 
     if match_to is not None:
-        stars, stars_match = a.match_catalogs(cat_1=stars,
-                                              cat_2=match_to,
-                                              ra_col_1="ALPHA_SKY",
-                                              dec_col_1="DELTA_SKY",
-                                              ra_col_2="ALPHA_SKY",
-                                              dec_col_2="DELTA_SKY",
-                                              tolerance=2 * units.arcsec)
+        stars, stars_match = a.match_catalogs(
+            cat_1=stars,
+            cat_2=match_to,
+            ra_col_1="RA",
+            dec_col_1="DEC",
+            ra_col_2="RA",
+            dec_col_2="DEC",
+            tolerance=2 * units.arcsec)
 
         print(f"Num stars after match to other sextractor cat:", len(stars))
 
@@ -82,7 +91,7 @@ def image_psf_diagnostics(hdu: Union[str, fits.HDUList], cat: Union[str, table.T
         dec = star["DELTA_SKY"]
 
         window = ff.trim_frame_point(hdu=hdu, ra=ra, dec=dec, frame=frame)
-        data = window[0].data
+        data = window[ext].data
         _, scale = ff.get_pixel_scale(hdu, astropy_units=True)
 
         mean, median, stddev = stats.sigma_clipped_stats(data)

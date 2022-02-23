@@ -21,7 +21,6 @@ import craftutils.utils as u
 
 
 # TODO: Fill in docstrings.
-# TODO: Sanitise pipeline inputs (ie check if object name is valid)
 
 def get_rotation_angle(header: fits.header, astropy_units=False):
     """
@@ -29,12 +28,12 @@ def get_rotation_angle(header: fits.header, astropy_units=False):
     :param header:
     :return theta: rotation angle, in degrees.
     """
-    if 'CROTA2' in header:
-        theta = header['CROTA2']
-    else:
-        wcs_ob = wcs.WCS(header)
-        matrix = wcs_ob.pixel_scale_matrix
-        theta = np.arctan2(matrix[1, 1], matrix[1, 0]) * 180 / np.pi - 90
+    # if 'CROTA2' in header:
+    #     theta = header['CROTA2']
+    # else:
+    wcs_ob = wcs.WCS(header)
+    matrix = wcs_ob.pixel_scale_matrix
+    theta = np.arctan2(matrix[1, 1], matrix[1, 0]) * 180 / np.pi - 90
 
     if astropy_units:
         theta *= units.deg

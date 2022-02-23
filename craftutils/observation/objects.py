@@ -30,11 +30,12 @@ except ImportError:
     frb_installed = False
 
 import craftutils.params as p
-import craftutils.astrometry as a
+import craftutils.astrometry as astm
 import craftutils.utils as u
 import craftutils.observation.instrument as inst
 import craftutils.retrieve as r
 import craftutils.observation as obs
+import craftutils.observation.image as image
 
 try:
     cosmology = cosmo.Planck18
@@ -213,7 +214,7 @@ class Object:
         if self.cat_row is not None:
             self.position_from_cat_row()
         else:
-            self.position = a.attempt_skycoord(position)
+            self.position = astm.attempt_skycoord(position)
             if type(position_err) is not PositionUncertainty:
                 self.position_err = PositionUncertainty(uncertainty=position_err, position=self.position)
             self.position_galactic = None
@@ -244,6 +245,11 @@ class Object:
         else:
             self.plotting_params = {}
 
+        self.a = None
+        self.b = None
+        self.theta = None
+        self.kron = None
+
     def set_name_filesys(self):
         if self.name is not None:
             self.name_filesys = self.name.replace(" ", "-")
@@ -265,22 +271,67 @@ class Object:
         for cat in self.field.cats:
             pass
 
+    def get_good_photometry(self):
+        self.estimate_galactic_extinction()
+        deepest = self.select_deepest()
+        deepest_dict = self.photometry[deepest["instrument"]][deepest["band"]][deepest["epoch"]]
+        deepest_path = deepest_dict["image_path"]
+        cls = image.CoaddedImage.select_child_class(instrument=deepest["instrument"])
+        deepest_img = cls(path=deepest_path)
+        deepest_fwhm = deepest_img.extract_header_item("PSF_FWHM")
+        mag, mag_err = deepest_img.sep_elliptical_magnitude(
+            centre=self.position,
+            a_world=self.a,
+            b_world=self.b,
+            theta_world=self.theta,
+            kron_radius=self.kron
+        )
+        deepest_dict["mag_sep"] = mag
+        deepest_dict["mag_sep_err"] = mag_err
+
+        for instrument in self.photometry:
+            for band in self.photometry[instrument]:
+                for epoch in self.photometry[instrument][band]:
+                    phot_dict = self.photometry[instrument][band][epoch]
+                    if phot_dict["image_path"] == deepest_path:
+                        continue
+                    cls = image.CoaddedImage.select_child_class(instrument=instrument)
+                    img = cls(path=phot_dict["image_path"])
+                    fwhm = img.extract_header_item("PSF_FWHM")
+                    fwhm_ratio = fwhm / deepest_fwhm
+                    mag, mag_err, snr = deepest_img.sep_elliptical_magnitude(
+                        centre=self.position,
+                        a_world=self.a,
+                        b_world=self.b,
+                        theta_world=self.theta,
+                        kron_radius=self.kron * fwhm_ratio,
+                        plot=os.path.join(self.data_path, f"{instrument} {band}")
+                    )
+                    phot_dict["mag_sep"] = mag
+                    phot_dict["mag_sep_err"] = mag_err
+                    phot_dict["snr_sep"] = snr
+
+        self.update_output_file()
+
     def add_photometry(
             self,
             instrument: Union[str, inst.Instrument],
             fil: Union[str, inst.Filter],
             epoch_name: str,
             mag: units.Quantity, mag_err: units.Quantity,
+            snr: float,
             ellipse_a: units.Quantity, ellipse_a_err: units.Quantity,
             ellipse_b: units.Quantity, ellipse_b_err: units.Quantity,
             ellipse_theta: units.Quantity, ellipse_theta_err: units.Quantity,
             ra: units.Quantity, ra_err: units.Quantity,
             dec: units.Quantity, dec_err: units.Quantity,
             kron_radius: float,
+            image_path: str,
             separation_from_given: units.Quantity = None,
             epoch_date: str = None,
             class_star: float = None,
             mag_psf: units.Quantity = None, mag_psf_err: units.Quantity = None,
+            snr_psf: float = None,
             image_depth: units.Quantity = None,
             **kwargs
     ):
@@ -290,6 +341,7 @@ class Object:
             "epoch_name": epoch_name,
             "mag": u.check_quantity(mag, unit=units.mag),
             "mag_err": u.check_quantity(mag_err, unit=units.mag),
+            "snr": float(snr),
             "a": u.check_quantity(ellipse_a, unit=units.arcsec, convert=True),
             "a_err": u.check_quantity(ellipse_a_err, unit=units.arcsec, convert=True),
             "b": u.check_quantity(ellipse_b, unit=units.arcsec, convert=True),
@@ -306,7 +358,9 @@ class Object:
             "class_star": float(class_star),
             "mag_psf": u.check_quantity(mag_psf, unit=units.mag),
             "mag_psf_err": u.check_quantity(mag_psf_err, unit=units.mag),
-            "image_depth": u.check_quantity(image_depth, unit=units.mag)
+            "snr_psf": float(snr_psf),
+            "image_depth": u.check_quantity(image_depth, unit=units.mag),
+            "image_path": image_path
         }
 
         kwargs.update(photometry)
@@ -569,7 +623,7 @@ class Object:
                 self.irsa_extinction = table.QTable.read(self.irsa_extinction_path, format="ascii.ecsv")
 
     def jname(self):
-        s_ra, s_dec = a.coord_string(self.position)
+        s_ra, s_dec = astm.coord_string(self.position)
         ra_second = str(np.round(float(s_ra[s_ra.find("m") + 1:s_ra.find("s")]), 4)).ljust(6, "0")
         dec_second = str(np.round(float(s_dec[s_dec.find("m") + 1:s_dec.find("s")]), 3)).ljust(5, "0")
         s_ra = s_ra[:s_ra.find("m")].replace("h", "")
@@ -589,18 +643,29 @@ class Object:
         self.get_photometry_table(output=local_output)
         fil_photom = self.photometry_tbl[self.photometry_tbl["band"] == fil]
         fil_photom = fil_photom[fil_photom["instrument"] == instrument]
-        mean = {}
-        mean["mag"] = np.mean(fil_photom["mag"])
-        mean["mag_err"] = np.mean(fil_photom["mag_err"])
-        mean["mag_psf"] = np.mean(fil_photom["mag_psf"])
-        mean["mag_psf_err"] = np.mean(fil_photom["mag_psf_err"])
+        mean = {
+            "mag": np.mean(fil_photom["mag"]),
+            "mag_err": np.mean(fil_photom["mag_err"]),
+            "mag_psf": np.mean(fil_photom["mag_psf"]),
+            "mag_psf_err": np.mean(fil_photom["mag_psf_err"])
+        }
         # TODO: Just meaning the whole table is probably not the best way to estimate uncertainties.
-        return fil_photom[np.argmin(fil_photom["mag"])], mean
+        return fil_photom[np.argmax(fil_photom["snr"])], mean
 
+    def select_photometry_sep(self, fil: str, instrument: str, local_output: bool = True):
+        fil_photom = self.photometry_tbl[self.photometry_tbl["band"] == fil]
+        fil_photom = fil_photom[fil_photom["instrument"] == instrument]
+        mean = {
+            "mag": np.mean(fil_photom["mag_sep"]),
+            "mag_err": np.mean(fil_photom["mag_sep_err"]),
+            "mag_psf": np.mean(fil_photom["mag_psf"]),
+            "mag_psf_err": np.mean(fil_photom["mag_psf_err"])
+        }
+        return fil_photom[np.argmax(fil_photom["snr_sep"])]
 
     def select_psf_photometry(self, local_output: bool = True):
         self.get_photometry_table(output=local_output)
-        idx = np.argmin(self.photometry_tbl["mag_psf_err"])
+        idx = np.argmax(self.photometry_tbl["snr_psf"])
         return self.photometry_tbl[idx]
 
     def select_best_position(self, local_output: bool = True):
@@ -610,7 +675,20 @@ class Object:
 
     def select_deepest(self, local_output: bool = True):
         self.get_photometry_table(output=local_output)
-        idx = np.argmax(self.photometry_tbl["image_depth"])
+        idx = np.argmax(self.photometry_tbl["snr"])
+        deepest = self.photometry_tbl[idx]
+        self.a = deepest["a"]
+        self.b = deepest["b"]
+        self.theta = deepest["theta"]
+        self.kron = deepest["kron_radius"]
+        ra = deepest["ra"]
+        dec = deepest["dec"]
+        self.position = SkyCoord(ra, dec)
+        return deepest
+
+    def select_deepest_sep(self, local_output: bool = True):
+        self.get_photometry_table(output=local_output)
+        idx = np.argmax(self.photometry_tbl["snr_sep"])
         return self.photometry_tbl[idx]
 
     def push_to_table(self, select: bool = False, local_output: bool = True):
@@ -630,19 +708,22 @@ class Object:
         if row is None:
             row = {}
 
-        best_position = self.select_best_position(local_output=local_output)
+        if select:
+            self.get_good_photometry()
+
+        # best_position = self.select_best_position(local_output=local_output)
         best_psf = self.select_psf_photometry(local_output=local_output)
         deepest = self.select_deepest(local_output=local_output)
 
         row["jname"] = jname
         row["field_name"] = self.field.name
         row["object_name"] = self.name
-        row["ra"] = best_position["ra"]
-        row["ra_err"] = best_position["ra_err"]
-        row["dec"] = best_position["dec"]
-        row["dec_err"] = best_position["dec_err"]
-        row["epoch_position"] = best_position["epoch_name"]
-        row["epoch_position_date"] = best_position["epoch_date"]
+        row["ra"] = deepest["ra"]
+        row["ra_err"] = deepest["ra_err"]
+        row["dec"] = deepest["dec"]
+        row["dec_err"] = deepest["dec_err"]
+        row["epoch_position"] = deepest["epoch_name"]
+        row["epoch_position_date"] = deepest["epoch_date"]
         row["a"] = deepest["a"]
         row["a_err"] = deepest["a_err"]
         row["b"] = deepest["b"]
@@ -659,20 +740,26 @@ class Object:
 
                 band_str = f"{instrument}_{fil.replace('_', '-')}"
                 obs.add_columns_to_master_objects(band_str)
-                best_photom, mean_photom = self.select_photometry(fil, instrument, local_output=local_output)
 
-                row[f"mag_best_{band_str}"] = best_photom["mag"]
-                row[f"mag_best_{band_str}_err"] = best_photom["mag_err"]
-                row[f"mag_mean_{band_str}"] = mean_photom["mag"]
-                row[f"mag_mean_{band_str}_err"] = mean_photom["mag_err"]
-                if "ext_gal" in best_photom:
-                    row[f"ext_gal_{band_str}"] = best_photom["ext_gal"]
+                if select:
+                    best_photom, mean_photom = self.select_photometry_sep(fil, instrument, local_output=local_output)
                 else:
-                    row[f"ext_gal_{band_str}"] = best_photom["ext_gal_sandf"]
-                row[f"epoch_best_{band_str}"] = best_photom[f"epoch_name"]
-                row[f"epoch_best_date_{band_str}"] = best_photom[f"epoch_date"]
+                    best_photom, mean_photom = self.select_photometry(fil, instrument, local_output=local_output)
+
+                row[f"mag_best_{band_str}"] = best_photom["mag_sep"]
+                row[f"mag_best_{band_str}_err"] = best_photom["mag_err"]
+                row[f"snr_best_{band_str}"] = best_photom["snr"]
+                row[f"mag_mean_{band_str}"] = best_photom["mag"]
+                row[f"mag_mean_{band_str}_err"] = mean_photom["mag_err"]
+                if "ext_gal" in mean_photom:
+                    row[f"ext_gal_{band_str}"] = mean_photom["ext_gal"]
+                else:
+                    row[f"ext_gal_{band_str}"] = mean_photom["ext_gal_sandf"]
+                row[f"epoch_best_{band_str}"] = mean_photom[f"epoch_name"]
+                row[f"epoch_best_date_{band_str}"] = mean_photom[f"epoch_date"]
                 row[f"mag_psf_best_{band_str}"] = best_photom[f"mag_psf"]
                 row[f"mag_psf_best_{band_str}_err"] = best_photom[f"mag_psf_err"]
+                row[f"snr_psf_best_{band_str}"] = best_photom["snr_psf"]
                 row[f"mag_psf_mean_{band_str}"] = mean_photom[f"mag_psf"]
                 row[f"mag_psf_mean_{band_str}_err"] = mean_photom[f"mag_psf_err"]
 
@@ -692,8 +779,6 @@ class Object:
             else:
                 obs.master_objects_all_table[index] = row
             obs.write_master_all_objects_table()
-
-
 
     @classmethod
     def default_params(cls):

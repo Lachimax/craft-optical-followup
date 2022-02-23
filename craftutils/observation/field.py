@@ -2336,6 +2336,7 @@ class ImagingEpoch(Epoch):
                     epoch_name=self.name,
                     mag=nearest['MAG_AUTO_ZP_best'],
                     mag_err=err,
+                    snr=nearest['SNR_SE'],
                     ellipse_a=nearest['A_WORLD'],
                     ellipse_a_err=nearest["ERRA_WORLD"],
                     ellipse_b=nearest['B_WORLD'],
@@ -2352,6 +2353,7 @@ class ImagingEpoch(Epoch):
                     class_star=nearest["CLASS_STAR"],
                     mag_psf=nearest["MAG_PSF_ZP_best"],
                     mag_psf_err=nearest["MAGERR_PSF_ZP_best"],
+                    snr_psf=nearest["FLUX_PSF"] / nearest["FLUXERR_PSF"],
                     image_depth=img.depth["secure"]["SNR_SE"][f"5-sigma"]
                 )
 
