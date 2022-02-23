@@ -2373,7 +2373,8 @@ class ImagingEpoch(Epoch):
                         os.chdir(refined_path)
 
                         u.system_command_verbose(
-                            f"furby_archive {self.field.name} {img.filter.band_name} {img.path} --clobber"
+                            f"furby_archive {self.field.name} {img.filter.band_name} {img.path} --clobber",
+                            error_on_exit_code=False
                         )
 
                         os.chdir(cwd)
