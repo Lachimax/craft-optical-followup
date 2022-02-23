@@ -12,7 +12,7 @@ config = p.config
 u.mkdir_check_nested(config["table_dir"])
 
 
-def _construct_column_lists(columns: dict, filters: list = None):
+def _construct_column_lists(columns: dict):
     dtypes = []
     un = []
     colnames = []
@@ -25,25 +25,52 @@ def _construct_column_lists(columns: dict, filters: list = None):
         #         colnames.append(colname_fil)
         #         columns_revised[colname_fil] = columns[colname]
 
-        # else:
-        colnames.append(colname)
-        columns_revised[colname] = columns[colname]
+        if "{:s}" not in colname:
+            colnames.append(colname)
+            columns_revised[colname] = columns[colname]
 
     for colname in colnames:
         val = columns_revised[colname]
 
-        if isinstance(val, units.Unit) or isinstance(val, units.IrreducibleUnit):
-            dtype = units.Quantity
-            un.append(val)
-        else:
-            dtype = val
-            un.append(None)
-        if dtype is str:
-            dtypes.append("U32")
-        else:
-            dtypes.append(dtype)
-        default_data.append(dtype(0))
+        dtype, unit = split_dtype(val)
+        dtypes.append(dtype)
+        un.append(unit)
+
     return colnames, dtypes, un
+
+
+def split_dtype(val):
+    if isinstance(val, units.Unit) or isinstance(val, units.IrreducibleUnit):
+        dtype = units.Quantity
+        unit = val
+    else:
+        dtype = val
+        unit = None
+    if dtype is str:
+        dtype = "U32"
+
+    return dtype, unit
+
+
+def add_columns_by_fil(tbl: table.QTable, coldict: dict, fil: str):
+    for col in coldict:
+        if "{:s}" in col:
+            dtype, unit = split_dtype(coldict[col])
+            col = col.format(fil)
+            add_column(tbl=tbl, colname=col, dtype=dtype, unit=unit)
+
+
+def add_columns_to_master_objects(fil: str):
+    print(f"Adding columns for {fil} to master objects table")
+    load_master_objects_table()
+    global master_objects_table
+    add_columns_by_fil(tbl=master_objects_table, coldict=master_objects_columns, fil=fil)
+    write_master_objects_table()
+
+    load_master_all_objects_table()
+    global master_objects_all_table
+    add_columns_by_fil(tbl=master_objects_all_table, coldict=master_objects_columns, fil=fil)
+    write_master_all_objects_table()
 
 
 master_imaging_table = None
@@ -67,12 +94,15 @@ master_imaging_table_columns = {
     "zeropoint_err": units.mag,
     "zeropoint_source": str,
     "last_processed": str,
+    "depth": units.mag
     # "extinction_atm": units.mag,
     # "extinction_atm_err": units.mag,
 }
 
 master_objects_table = None
 master_objects_path = os.path.join(config["table_dir"], "master_select_objects_table.ecsv")
+master_objects_all_table = None
+master_objects_all_path = os.path.join(config["table_dir"], "master_all_objects_table.ecsv")
 master_objects_columns = {
     "jname": str,
     "field_name": str,
@@ -81,19 +111,31 @@ master_objects_columns = {
     "ra_err": units.deg,
     "dec": units.deg,
     "dec_err": units.deg,
+    "epoch_position": str,
+    "epoch_position_date": str,
     "a": units.arcsec,
     "a_err": units.arcsec,
     "b": units.arcsec,
     "b_err": units.arcsec,
     "theta": units.deg,
+    "epoch_ellipse": str,
+    "epoch_ellipse_date": str,
+    "theta_err": units.deg,
     "kron_radius": float,
     "mag_best_{:s}": units.mag,  # The magnitude from the deepest image in that band
     "mag_best_{:s}_err": units.mag,
+    "snr_best_{:s}": float,
     "mag_mean_{:s}": units.mag,
     "mag_mean_{:s}_err": units.mag,
+    "epoch_best_{:s}": str,
+    "epoch_best_date_{:s}": str,
     "ext_gal_{:s}": units.mag,
-    "e_bv": units.mag,
-    "epoch_best": str
+    "e_b-v": units.mag,
+    "class_star": float,
+    "mag_psf_best_{:s}": units.mag,
+    "mag_psf_best_{:s}_err": units.mag,
+    "mag_psf_mean_{:s}": units.mag,
+    "mag_psf_mean_{:s}_err": units.mag,
 }
 
 furby_table = None
@@ -141,30 +183,34 @@ def load_master_table(
         tbl_columns: dict,
         tbl_path: str,
         force: bool = False,
-        filters: list = None
 ):
     if force or tbl is None:
-        colnames, dtypes, un = _construct_column_lists(columns=tbl_columns, filters=filters)
+        colnames, dtypes, un = _construct_column_lists(columns=tbl_columns)
+
         if not os.path.isfile(tbl_path):
-            tbl = table.QTable(data=[[0]] * len(colnames), names=colnames, units=un, dtype=dtypes)
+            tbl = table.QTable(data=[[-999]] * len(colnames), names=colnames, units=un, dtype=dtypes)
             for i, colname in enumerate(colnames):
+                print(i, colname)
                 if isinstance(dtypes[i], str):
                     tbl[colname][0] = "0" * 32
             tbl.write(tbl_path, format="ascii.ecsv")
         tbl = table.QTable.read(tbl_path, format="ascii.ecsv")
         for i, colname in enumerate(colnames):
-            if colname not in tbl.colnames:
-                dtype = dtypes[i]
-                if isinstance(dtype, str):
-                    dtype = str
-                    val = dtype("0" * 32)
-                else:
-                    val = dtype(0)
-                tbl.add_column([val] * len(tbl), name=colname)
-                if un[i] is not None:
-                    tbl[colname] *= un[i]
+            add_column(tbl=tbl, colname=colname, dtype=dtypes[i], unit=un[i])
 
     return tbl
+
+
+def add_column(tbl: table.QTable, colname: str, dtype, unit):
+    if colname not in tbl.colnames:
+        if isinstance(dtype, str):
+            dtype = str
+            val = dtype("0" * 32)
+        else:
+            val = dtype(-999)
+        tbl.add_column([val] * len(tbl), name=colname)
+        if unit is not None:
+            tbl[colname] *= unit
 
 
 def load_master_imaging_table(force: bool = False):
@@ -191,7 +237,21 @@ def load_master_objects_table(force: bool = False):
         force=force
     )
 
-    return master_imaging_table
+    return master_objects_table
+
+
+def load_master_all_objects_table(force: bool = False):
+    global master_objects_all_table
+
+    master_objects_all_table = load_master_table(
+        tbl=master_objects_all_table,
+        tbl_columns=master_objects_columns,
+        tbl_path=master_objects_all_path,
+        # filters=filters,
+        force=force
+    )
+
+    return master_objects_all_table
 
 
 def write_master_imaging_table():
@@ -206,13 +266,25 @@ def write_master_imaging_table():
             overwrite=True)
 
 
+def write_master_all_objects_table():
+    if master_objects_all_table is None:
+        raise ValueError("master_imaging_table not loaded")
+    else:
+        master_objects_all_table.sort("jname")
+        master_objects_all_table.write(master_objects_all_path, format="ascii.ecsv", overwrite=True)
+        master_objects_all_table.write(
+            master_objects_all_path.replace(".ecsv", ".csv"),
+            format="ascii.csv",
+            overwrite=True)
+
+
 def write_master_objects_table():
     if master_objects_table is None:
         raise ValueError("master_imaging_table not loaded")
     else:
         master_objects_table.sort("jname")
-        master_imaging_table.write(master_objects_path, format="ascii.ecsv", overwrite=True)
-        master_imaging_table.write(
+        master_objects_table.write(master_objects_path, format="ascii.ecsv", overwrite=True)
+        master_objects_table.write(
             master_objects_path.replace(".ecsv", ".csv"),
             format="ascii.csv",
             overwrite=True)
@@ -274,10 +346,10 @@ def get_row_furby(field_name: str):
         return None
 
 
-def get_row_epoch(epoch_name: str, fil: str = None):
+def get_row_epoch(tbl: table.Table, epoch_name: str, fil: str = None):
     if master_imaging_table is not None:
         row, index = _get_row_two_conditions(
-            tbl=master_imaging_table,
+            tbl=tbl,
             colname_1="epoch_name", colval_1=epoch_name,
             colname_2="filter_name", colval_2=fil)
         return row, index

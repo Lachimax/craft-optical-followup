@@ -871,7 +871,7 @@ def determine_zeropoint_sextractor(
     plt.plot(x_clipped, line_clipped, c='green', label='Fixed slope = 1')
     plt.legend()
     plt.suptitle("Magnitude Comparisons")
-    plt.xlabel("Magnitude in " + cat_name + " g-band")
+    plt.xlabel("Magnitude in " + cat_name)
     plt.ylabel("SExtractor Magnitude in " + image_name)
     plt.savefig(output_path + "7-" + cat_name + "catvsex_clipped.png")
     if show:

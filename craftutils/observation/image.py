@@ -42,16 +42,17 @@ except ModuleNotFoundError:
     print("sep not installed; some photometry-related functionality will be unavailable.")
 
 import craftutils.utils as u
-import craftutils.astrometry as a
+import craftutils.astrometry as astm
 import craftutils.fits_files as ff
 import craftutils.photometry as ph
 import craftutils.params as p
 import craftutils.plotting as pl
+import craftutils.observation.log as log
+import craftutils.observation.objects as objects
 from craftutils.stats import gaussian_distributed_point
 import craftutils.observation.instrument as inst
 import craftutils.wrap.source_extractor as se
 import craftutils.wrap.psfex as psfex
-import craftutils.observation.log as log
 from craftutils.wrap.astrometry_net import solve_field
 from craftutils.retrieve import cat_columns
 
@@ -261,7 +262,13 @@ class Image:
     instrument_name = "dummy"
     num_chips = 1
 
-    def __init__(self, path: str, frame_type: str = None, instrument_name: str = None, logg: log.Log = None):
+    def __init__(
+            self,
+            path: str,
+            frame_type: str = None,
+            instrument_name: str = None,
+            logg: log.Log = None,
+    ):
         self.path = path
         self.output_file = path.replace(".fits", "_outputs.yaml")
         self.data_path, self.filename = os.path.split(self.path)
@@ -427,7 +434,10 @@ class Image:
             self.data = []
             for i, h in enumerate(self.hdu_list):
                 if unit[i] is not None:
-                    this_unit = units.Unit(unit[i])
+                    try:
+                        this_unit = units.Unit(unit[i])
+                    except ValueError:
+                        this_unit = units.ct
                 else:
                     this_unit = units.ct
                 if h.data is not None:
@@ -683,7 +693,13 @@ class ESOImage(Image):
 
 
 class ImagingImage(Image):
-    def __init__(self, path: str, frame_type: str = None, instrument_name: str = None):
+    def __init__(
+            self,
+            path: str,
+            frame_type: str = None,
+            instrument_name: str = None,
+            load_outputs: bool = True
+    ):
         super().__init__(path=path, frame_type=frame_type, instrument_name=instrument_name)
 
         self.wcs = None
@@ -756,7 +772,8 @@ class ImagingImage(Image):
 
         self.extract_filter()
 
-        self.load_output_file()
+        if load_outputs:
+            self.load_output_file()
 
     def source_extraction(
             self, configuration_file: str,
@@ -904,9 +921,10 @@ class ImagingImage(Image):
             1
         ) * units.deg
         self.extract_astrometry_err()
-        if self.astrometry_err is not None:
+        if self.ra_err is not None:
             source_cat["RA_ERR"] = np.sqrt(
                 source_cat["ERRX2_WORLD"].to(units.arcsec ** 2) + self.ra_err ** 2)
+        if self.dec_err is not None:
             source_cat["DEC_ERR"] = np.sqrt(
                 source_cat["ERRY2_WORLD"].to(units.arcsec ** 2) + self.dec_err ** 2)
 
@@ -997,6 +1015,38 @@ class ImagingImage(Image):
             u.debug_print(1, "Writing dual-mode source catalogue to", self.source_cat_dual_path)
             self.source_cat_dual.write(self.source_cat_dual_path, format="ascii.ecsv", overwrite=True)
 
+    def push_source_cat(self, dual: bool = True):
+        source_cat = self.get_source_cat(dual=dual)
+        for i, row in enumerate(source_cat):
+            print(f"Row {i} of {len(source_cat)}")
+            obj = objects.Object(row=row, field=self.epoch.field)
+            print(obj.jname())
+            obj.add_photometry(
+                instrument=self.instrument_name,
+                fil=self.filter_name,
+                epoch_name=self.epoch.name,
+                mag=row['MAG_AUTO_ZP_best'],
+                mag_err=row[f'MAGERR_AUTO_ZP_best'],
+                ellipse_a=row['A_WORLD'],
+                ellipse_a_err=row["ERRA_WORLD"],
+                ellipse_b=row['B_WORLD'],
+                ellipse_b_err=row["ERRB_WORLD"],
+                ellipse_theta=row['THETA_WORLD'],
+                ellipse_theta_err=row['ERRTHETA_WORLD'],
+                ra=row['RA'],
+                ra_err=np.sqrt(row["ERRX2_WORLD"]),
+                dec=row['DEC'],
+                dec_err=np.sqrt(row["ERRY2_WORLD"]),
+                kron_radius=row["KRON_RADIUS"],
+                separation_from_given=None,
+                epoch_date=str(self.epoch.date.isot),
+                class_star=row["CLASS_STAR"],
+                mag_psf=row["MAG_PSF_ZP_best"],
+                mag_psf_err=row["MAGERR_PSF_ZP_best"],
+                image_depth=self.depth["secure"]["SNR_SE"][f"5-sigma"]
+            )
+            obj.push_to_table(select=False)
+
     def load_synth_cat(self, force: bool = False):
         if force or self.synth_cat is None:
             if self.synth_cat_path is not None:
@@ -1030,6 +1080,10 @@ class ImagingImage(Image):
         self.dec_err = self.extract_header_item(key)
         if self.astrometry_err is not None:
             self.astrometry_err *= units.arcsec
+        if self.ra_err is not None:
+            self.ra_err *= units.arcsec
+        if self.dec_err is not None:
+            self.dec_err *= units.arcsec
         return self.astrometry_err
 
     def extract_rotation_angle(self, ext: int = 0):
@@ -1180,8 +1234,6 @@ class ImagingImage(Image):
         for cat in ranking:
             if cat in self.zeropoints:
                 zp = self.zeropoints[cat]
-                print(cat)
-                print(zp)
                 zps[f"{cat} {zp['zeropoint_img']} +/- {zp['zeropoint_img_err']}, {zp['n_matches']} stars"] = zp
                 if best is None:
                     best = cat
@@ -1940,6 +1992,8 @@ class ImagingImage(Image):
         self.ra_err = self.astrometry_stats["rms_offset_ra"]
         self.dec_err = self.astrometry_stats["rms_offset_dec"]
 
+        print(self.astrometry_err, self.ra_err, self.dec_err)
+
         self.source_cat["RA_ERR"] = np.sqrt(
             self.source_cat["ERRX2_WORLD"].to(units.arcsec ** 2) + self.ra_err ** 2)
         self.source_cat["DEC_ERR"] = np.sqrt(
@@ -1947,6 +2001,8 @@ class ImagingImage(Image):
 
         if not np.isnan(self.astrometry_err.value):
             self.headers[0]["ASTM_RMS"] = self.astrometry_err.value
+            self.headers[0]["RA_RMS"] = self.ra_err.value
+            self.headers[0]["DEC_RMS"] = self.dec_err.value
         self.write_fits_file()
         self.update_output_file()
 
@@ -2190,7 +2246,7 @@ class ImagingImage(Image):
         if star_tolerance is not None:
             source_cat = source_cat[source_cat["CLASS_STAR"] > star_tolerance]
 
-        matches_source_cat, matches_ext_cat, distance = a.match_catalogs(
+        matches_source_cat, matches_ext_cat, distance = astm.match_catalogs(
             cat_1=source_cat,
             cat_2=cat,
             ra_col_1="RA",
@@ -2467,6 +2523,7 @@ class ImagingImage(Image):
             output: str = None,
             show: bool = False, title: str = None):
 
+        plt.close()
         self.load_headers()
         kron_a = row['KRON_RADIUS'] * row['A_WORLD']
         kron_b = row['KRON_RADIUS'] * row['B_WORLD']
@@ -3102,6 +3159,26 @@ class ImagingImage(Image):
             gain=self.extract_gain().value)
         return flux, fluxerr, flag
 
+    def sep_elliptical_photometry(
+            self,
+            centre: SkyCoord,
+            a_ellipse: units.Quantity,
+            b_ellipse: units.Quantity,
+            theta: units.Quantity,
+            ext: int = 0,
+    ):
+        self.calculate_background(ext=ext)
+        self.load_wcs(ext=ext)
+        x, y = self.wcs.all_world2pix(centre.ra.value, centre.dec.value, 0)
+        flux, fluxerr, flag = sep.sum_ellipse(
+            self.data_sub_bkg,
+            x, y,
+            err=self.sep_background.rms(),
+            gain=self.extract_gain().value
+        )
+
+        pass
+
     @classmethod
     def select_child_class(cls, instrument: str, **kwargs):
         if instrument is None:
@@ -3161,11 +3238,27 @@ class ImagingImage(Image):
 
 
 class CoaddedImage(ImagingImage):
-    def __init__(self, path: str, frame_type: str = None, instrument_name: str = None, area_file: str = None):
-        super().__init__(path=path, frame_type=frame_type, instrument_name=instrument_name)
-        self.area_file = area_file  # string
+    def __init__(
+            self,
+            path: str,
+            frame_type: str = None,
+            instrument_name: str = None,
+    ):
+        super().__init__(
+            path=path,
+            frame_type=frame_type,
+            instrument_name=instrument_name,
+            load_outputs=False
+        )
+
+        self.area_file = None
+
+        self.load_output_file()
+
         if self.area_file is None:
             self.area_file = self.path.replace(".fits", "_area.fits")
+
+
 
     def trim(
             self,
@@ -3193,6 +3286,25 @@ class CoaddedImage(ImagingImage):
         trimmed.update_output_file()
         return trimmed
 
+    def register(self, target: 'ImagingImage', output_path: str, ext: int = 0, trim: bool = True):
+        new_img = super().register(
+            target=target,
+            output_path=output_path,
+            ext=ext,
+            trim=trim
+        )
+        import reproject as rp
+        area = new_img.copy(new_img.path.replace(".fits", "_area.fits"))
+        area.load_data()
+        reprojected, footprint = rp.reproject_exact(self.area_file, new_img.headers[ext], parallel=True)
+        area.data[ext] = reprojected
+        area.area_file = None
+        area.write_fits_file()
+
+        new_img.area_file = area.path
+        return new_img
+
+
     def trim_from_area(self, output_path: str = None):
         left, right, bottom, top = ff.detect_edges_area(self.area_file)
         trimmed = self.trim(left=left, right=right, bottom=bottom, top=top, output_path=output_path)
@@ -3218,8 +3330,9 @@ class CoaddedImage(ImagingImage):
             tweak=tweak,
             **kwargs
         )
-        new_image.area_file = self.area_file
-        new_image.update_output_file()
+        if new_image is not None:
+            new_image.area_file = self.area_file
+            new_image.update_output_file()
         return new_image
 
     def copy(self, destination: str):
@@ -3417,14 +3530,12 @@ class FORS2CoaddedImage(CoaddedImage):
             self,
             path: str,
             frame_type: str = None,
-            area_file: str = None,
             **kwargs
     ):
         super().__init__(
             path=path,
             frame_type=frame_type,
             instrument_name=self.instrument_name,
-            area_file=area_file
         )
 
     def zeropoint(

@@ -245,6 +245,8 @@ def check_quantity(
     :param convert: If True, convert compatible Quantity to units unit.
     :return:
     """
+    if number is None:
+        return None
     if not isinstance(number, units.Quantity): #and number is not None:
         number *= unit
     elif number.unit != unit:
