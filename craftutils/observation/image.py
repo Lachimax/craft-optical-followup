@@ -869,14 +869,17 @@ class ImagingImage(Image):
             template=template,
             **configs
         )
+        dual = False
         if template is not None:
+            dual = True
+        if dual:
             self.source_cat_sextractor_dual_path = cat_path
         else:
             self.source_cat_sextractor_path = cat_path
         self.load_source_cat_sextractor(force=True)
         self.load_source_cat_sextractor_dual(force=True)
 
-        if template is not None:
+        if dual:
             cat = self.source_cat_dual
         else:
             cat = self.source_cat
@@ -895,7 +898,7 @@ class ImagingImage(Image):
                 template=template,
                 **configs
             )
-            if template is not None:
+            if dual:
                 self.source_cat_sextractor_dual_path = cat_path
             else:
                 self.source_cat_sextractor_path = cat_path
@@ -910,6 +913,7 @@ class ImagingImage(Image):
             output_path=output_dir,
             packages=["psfex", "source-extractor"]
         )
+        self.signal_to_noise_measure(dual=dual)
 
         self.update_output_file()
 
@@ -1093,7 +1097,7 @@ class ImagingImage(Image):
 
     def extract_rotation_angle(self, ext: int = 0):
         self.load_headers()
-        return ff.get_rotation_angle(header=self.headers[ext])
+        return ff.get_rotation_angle(header=self.headers[ext], astropy_units=True)
 
     def extract_wcs_footprint(self):
         """
@@ -1861,102 +1865,103 @@ class ImagingImage(Image):
 
         plt.close()
 
-        plt.scatter(self.source_cat["RA"], self.source_cat["DEC"], marker='x')
-        plt.xlabel("Right Ascension (Catalogue)")
-        plt.ylabel("Declination (Catalogue)")
-        # plt.colorbar(label="Offset of measured position from catalogue (\")")
-        if show_plots:
-            plt.show()
-        plt.savefig(os.path.join(output_path, f"{self.name}_sourcecat_sky.pdf"))
-        plt.close()
+        with quantity_support():
+            plt.scatter(self.source_cat["RA"].value, self.source_cat["DEC"].value, marker='x')
+            plt.xlabel("Right Ascension (Catalogue)")
+            plt.ylabel("Declination (Catalogue)")
+            # plt.colorbar(label="Offset of measured position from catalogue (\")")
+            if show_plots:
+                plt.show()
+            plt.savefig(os.path.join(output_path, f"{self.name}_sourcecat_sky.pdf"))
+            plt.close()
 
-        plt.scatter(reference_cat[ra_col], reference_cat[dec_col], marker='x')
-        plt.xlabel("Right Ascension (Catalogue)")
-        plt.ylabel("Declination (Catalogue)")
-        # plt.colorbar(label="Offset of measured position from catalogue (\")")
-        if show_plots:
-            plt.show()
-        plt.savefig(os.path.join(output_path, f"{self.name}_referencecat_sky.pdf"))
-        plt.close()
+            plt.scatter(reference_cat[ra_col].value, reference_cat[dec_col].value, marker='x')
+            plt.xlabel("Right Ascension (Catalogue)")
+            plt.ylabel("Declination (Catalogue)")
+            # plt.colorbar(label="Offset of measured position from catalogue (\")")
+            if show_plots:
+                plt.show()
+            plt.savefig(os.path.join(output_path, f"{self.name}_referencecat_sky.pdf"))
+            plt.close()
 
-        self.load_wcs()
-        ref_cat_coords = SkyCoord(reference_cat[ra_col], reference_cat[dec_col])
-        in_footprint = self.wcs.footprint_contains(ref_cat_coords)
+            self.load_wcs()
+            ref_cat_coords = SkyCoord(reference_cat[ra_col], reference_cat[dec_col])
+            in_footprint = self.wcs.footprint_contains(ref_cat_coords)
 
-        plt.scatter(self.source_cat["RA"],
-                    self.source_cat["DEC"],
-                    marker='x')
-        plt.scatter(reference_cat[ra_col][in_footprint],
-                    reference_cat[dec_col][in_footprint],
-                    marker='x')
-        plt.xlabel("Right Ascension (Catalogue)")
-        plt.ylabel("Declination (Catalogue)")
-        # plt.colorbar(label="Offset of measured position from catalogue (\")")
-        if show_plots:
-            plt.show()
-        plt.savefig(os.path.join(output_path, f"{self.name}_bothcats_sky.pdf"))
-        plt.close()
+            plt.scatter(self.source_cat["RA"],
+                        self.source_cat["DEC"],
+                        marker='x')
+            plt.scatter(reference_cat[ra_col][in_footprint],
+                        reference_cat[dec_col][in_footprint],
+                        marker='x')
+            plt.xlabel("Right Ascension (Catalogue)")
+            plt.ylabel("Declination (Catalogue)")
+            # plt.colorbar(label="Offset of measured position from catalogue (\")")
+            if show_plots:
+                plt.show()
+            plt.savefig(os.path.join(output_path, f"{self.name}_bothcats_sky.pdf"))
+            plt.close()
 
-        matches_source_cat, matches_ext_cat, distance = self.match_to_cat(
-            cat=reference_cat,
-            ra_col=ra_col,
-            dec_col=dec_col,
-            offset_tolerance=offset_tolerance,
-            star_tolerance=star_tolerance
-        )
+            matches_source_cat, matches_ext_cat, distance = self.match_to_cat(
+                cat=reference_cat,
+                ra_col=ra_col,
+                dec_col=dec_col,
+                offset_tolerance=offset_tolerance,
+                star_tolerance=star_tolerance
+            )
 
-        matches_coord = SkyCoord(matches_source_cat["RA"], matches_source_cat["DEC"])
+            matches_coord = SkyCoord(matches_source_cat["RA"], matches_source_cat["DEC"])
 
-        offset_ra = matches_source_cat["RA"] - matches_ext_cat[ra_col]
-        offset_dec = matches_source_cat["DEC"] - matches_ext_cat[dec_col]
+            offset_ra = matches_source_cat["RA"] - matches_ext_cat[ra_col]
+            offset_dec = matches_source_cat["DEC"] - matches_ext_cat[dec_col]
 
-        mean_offset = np.mean(distance)
-        median_offset = np.median(distance)
-        rms_offset = np.sqrt(np.mean(distance ** 2))
-        rms_offset_ra = np.sqrt(np.mean(offset_ra ** 2))
-        rms_offset_dec = np.sqrt(np.mean(offset_dec ** 2))
+            mean_offset = np.mean(distance)
+            median_offset = np.median(distance)
+            rms_offset = np.sqrt(np.mean(distance ** 2))
+            rms_offset_ra = np.sqrt(np.mean(offset_ra ** 2))
+            rms_offset_dec = np.sqrt(np.mean(offset_dec ** 2))
 
-        ref = self.extract_pointing()
-        ref_distance = ref.separation(matches_coord)
+            ref = self.extract_pointing()
+            ref_distance = ref.separation(matches_coord)
 
-        local_distance = local_coord.separation(matches_coord)
-        distance_local = distance[local_distance <= local_radius]
-        u.debug_print(2, distance_local)
-        mean_offset_local = np.mean(distance_local)
-        median_offset_local = np.median(distance_local)
-        rms_offset_local = np.sqrt(np.mean(distance_local ** 2))
+            local_distance = local_coord.separation(matches_coord)
+            distance_local = distance[local_distance <= local_radius]
+            u.debug_print(2, distance_local)
+            mean_offset_local = np.mean(distance_local)
+            median_offset_local = np.median(distance_local)
+            rms_offset_local = np.sqrt(np.mean(distance_local ** 2))
 
-        plt.scatter(ref_distance.to(units.arcsec), distance.to(units.arcsec))
-        plt.xlabel("Distance from reference pixel (\")")
-        plt.ylabel("Offset (\")")
-        if show_plots:
-            plt.show()
-        plt.savefig(os.path.join(output_path, f"{self.name}_astrometry_offset_v_ref.pdf"))
-        plt.close()
+            plt.scatter(ref_distance.to(units.arcsec), distance.to(units.arcsec))
+            plt.xlabel("Distance from reference pixel (\")")
+            plt.ylabel("Offset (\")")
+            if show_plots:
+                plt.show()
+            plt.savefig(os.path.join(output_path, f"{self.name}_astrometry_offset_v_ref.pdf"))
+            plt.close()
 
-        plt.hist(distance.to(units.arcsec).value)
-        plt.xlabel("Offset (\")")
-        if show_plots:
-            plt.show()
-        plt.savefig(os.path.join(output_path, f"{self.name}_astrometry_offset_hist.pdf"))
-        plt.close()
+            plt.hist(distance.to(units.arcsec).value)
+            plt.xlabel("Offset (\")")
+            if show_plots:
+                plt.show()
+            plt.savefig(os.path.join(output_path, f"{self.name}_astrometry_offset_hist.pdf"))
+            plt.close()
 
-        plt.scatter(matches_ext_cat[ra_col], matches_ext_cat[dec_col], c=distance.to(units.arcsec), marker='x')
-        plt.xlabel("Right Ascension (Catalogue)")
-        plt.ylabel("Declination (Catalogue)")
-        plt.colorbar(label="Offset of measured position from catalogue (\")")
-        if show_plots:
-            plt.show()
-        plt.savefig(os.path.join(output_path, f"{self.name}_astrometry_offset_sky.pdf"))
-        plt.close()
+            plt.scatter(matches_ext_cat[ra_col], matches_ext_cat[dec_col], c=distance.to(units.arcsec), marker='x')
+            plt.xlabel("Right Ascension (Catalogue)")
+            plt.ylabel("Declination (Catalogue)")
+            plt.colorbar(label="Offset of measured position from catalogue (\")")
+            if show_plots:
+                plt.show()
+            plt.savefig(os.path.join(output_path, f"{self.name}_astrometry_offset_sky.pdf"))
+            plt.close()
 
-        fig = plt.figure(figsize=(12, 12), dpi=1000)
-        self.plot_catalogue(
-            cat=reference_cat[in_footprint],
-            ra_col=ra_col, dec_col=dec_col,
-            fig=fig,
-            colour_column=mag_col,
-            cbar_label=mag_col)
+            fig = plt.figure(figsize=(12, 12), dpi=1000)
+            self.plot_catalogue(
+                cat=reference_cat[in_footprint],
+                ra_col=ra_col, dec_col=dec_col,
+                fig=fig,
+                colour_column=mag_col,
+                cbar_label=mag_col)
         # fig.savefig(os.path.join(output_path, f"{self.name}_cat_overplot.pdf"))
 
         self.astrometry_stats["mean_offset"] = mean_offset.to(units.arcsec)
@@ -2088,7 +2093,7 @@ class ImagingImage(Image):
                 "fwhm_sigma": self.fwhm_sigma_sextractor.to(units.arcsec),
                 "fwhm_rms": self.fwhm_rms_sextractor.to(units.arcsec)}
         }
-        self.headers[ext]["PSF_FWHM"] = self.fwhm_median_gauss.to(units.arcsec)
+        self.headers[ext]["PSF_FWHM"] = self.fwhm_median_gauss.to(units.arcsec).value
         self.add_log(
             action=f"Calculated PSF FWHM statistics.",
             method=self.psf_diagnostics,
@@ -2564,7 +2569,7 @@ class ImagingImage(Image):
             decs=[row["DEC"].value],
             a=[row["A_WORLD"].value],
             b=[row["B_WORLD"].value],
-            theta=[row["THETA_J2000"].value + 90],
+            theta=[row["THETA_IMAGE"].value + 90],
             world=True,
             show_centre=True
         )
@@ -2574,7 +2579,7 @@ class ImagingImage(Image):
             decs=[row["DEC"].value],
             a=[kron_a.value],
             b=[kron_b.value],
-            theta=[row["THETA_WORLD"].value],
+            theta=[row["THETA_IMAGE"].value + 90],
             world=True,
             show_centre=True
         )
@@ -3166,10 +3171,10 @@ class ImagingImage(Image):
         self.extract_pixel_scale()
         pixel_radius = aperture_radius.to(units.pix, self.pixel_scale_dec)
         flux, fluxerr, flag = sep.sum_circle(
-            self.data_sub_bkg,
+            self.data_sub_bkg[ext],
             x, y,
             pixel_radius.value,
-            err=self.sep_background.rms(),
+            err=self.sep_background[ext].rms(),
             gain=self.extract_gain().value)
         return flux, fluxerr, flag
 
@@ -3187,38 +3192,74 @@ class ImagingImage(Image):
         self.load_wcs(ext=ext)
         self.extract_pixel_scale()
         x, y = self.wcs.all_world2pix(centre.ra.value, centre.dec.value, 0)
-        a = (a_world.to(units.pix, self.pixel_scale_dec)).value
-        b = (b_world.to(units.pix, self.pixel_scale_dec)).value
-        theta = (theta_world - self.extract_rotation_angle(ext=ext)).to(units.rad).value
+        x = u.check_iterable(x)
+        y = u.check_iterable(y)
+        a = u.check_iterable((a_world.to(units.pix, self.pixel_scale_dec)).value)
+        b = u.check_iterable((b_world.to(units.pix, self.pixel_scale_dec)).value)
+        kron_radius = u.check_iterable(kron_radius)
+        rotation_angle = self.extract_rotation_angle(ext=ext)
+        print(theta_world, rotation_angle)
+        theta_deg = theta_world - rotation_angle + 90 * units.deg
+        theta = u.theta_range(theta_deg.to(units.rad)).value
+        print(theta_deg)
+        print(theta, a, b, x, y, kron_radius)
 
         flux, flux_err, flag = sep.sum_ellipse(
-            data=self.data_sub_bkg,
+            data=self.data_sub_bkg[ext],
             x=x, y=y,
             a=a, b=b,
             r=kron_radius,
             theta=theta,
-            err=self.sep_background.rms(),
+            err=self.sep_background[ext].rms(),
             gain=self.extract_gain().value,
         )
 
         if isinstance(plot, str):
+            # objects = sep.extract(self.data_sub_bkg[ext], 1.5, err=self.sep_background[ext].rms())
             this_frame = self.nice_frame({
-                'A_WORLD': a,
-                'B_WORLD': b,
+                'A_WORLD': a_world,
+                'B_WORLD': b_world,
                 'KRON_RADIUS': kron_radius
             })
+
             ax, fig, _ = self.plot_subimage(
                 centre=centre,
                 frame=this_frame,
                 ext=ext)
+            ax, fig, _ = self.plot_subimage(
+                centre=centre,
+                frame=this_frame,
+                ext=ext)
+            #
+            # for i in range(len(objects)):
+            #     e = Ellipse(
+            #         xy=(objects["x"][i], objects["y"][i]),
+            #         width=6*objects["a"][i],
+            #         height=6*objects["b"][i],
+            #         angle=objects["theta"][i] * 180. / np.pi)
+            #     e.set_facecolor('none')
+            #     e.set_edgecolor('red')
+            #     ax.add_artist(e)
+
             e = Ellipse(
-                xy=(x, y),
-                width=a,
-                height=b,
-                angle=theta * 180. / np.pi)
+                xy=(x[0], y[0]),
+                width=2*kron_radius[0]*a[0],
+                height=2*kron_radius[0]*b[0],
+                angle=theta[0] * 180. / np.pi)
             e.set_facecolor('none')
             e.set_edgecolor('white')
             ax.add_artist(e)
+
+            e = Ellipse(
+                xy=(x[0], y[0]),
+                width=2*a[0],
+                height=2*b[0],
+                angle=theta[0] * 180. / np.pi)
+            e.set_facecolor('none')
+            e.set_edgecolor('white')
+            ax.add_artist(e)
+
+            ax.set_title(f"{a[0], b[0], kron_radius[0]}")
 
             fig.savefig(plot)
 

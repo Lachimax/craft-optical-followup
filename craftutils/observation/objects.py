@@ -274,20 +274,22 @@ class Object:
     def get_good_photometry(self):
         self.estimate_galactic_extinction()
         deepest = self.select_deepest()
-        deepest_dict = self.photometry[deepest["instrument"]][deepest["band"]][deepest["epoch"]]
+        deepest_dict = self.photometry[deepest["instrument"]][deepest["band"]][deepest["epoch_name"]]
         deepest_path = deepest_dict["image_path"]
         cls = image.CoaddedImage.select_child_class(instrument=deepest["instrument"])
         deepest_img = cls(path=deepest_path)
         deepest_fwhm = deepest_img.extract_header_item("PSF_FWHM")
-        mag, mag_err = deepest_img.sep_elliptical_magnitude(
+        mag, mag_err, snr = deepest_img.sep_elliptical_magnitude(
             centre=self.position,
             a_world=self.a,
             b_world=self.b,
             theta_world=self.theta,
-            kron_radius=self.kron
+            kron_radius=self.kron,
+            plot=os.path.join(self.data_path, f"{self.name_filesys}_{deepest['instrument']}_{deepest['band']}.png")
         )
-        deepest_dict["mag_sep"] = mag
-        deepest_dict["mag_sep_err"] = mag_err
+        deepest_dict["mag_sep"] = mag[0]
+        deepest_dict["mag_sep_err"] = mag_err[0]
+        deepest_dict["snr_sep"] = snr[0]
 
         for instrument in self.photometry:
             for band in self.photometry[instrument]:
@@ -305,11 +307,11 @@ class Object:
                         b_world=self.b,
                         theta_world=self.theta,
                         kron_radius=self.kron * fwhm_ratio,
-                        plot=os.path.join(self.data_path, f"{instrument} {band}")
+                        plot=os.path.join(self.data_path, f"{self.name_filesys}_{instrument}_{band}.png")
                     )
-                    phot_dict["mag_sep"] = mag
-                    phot_dict["mag_sep_err"] = mag_err
-                    phot_dict["snr_sep"] = snr
+                    phot_dict["mag_sep"] = mag[0]
+                    phot_dict["mag_sep_err"] = mag_err[0]
+                    phot_dict["snr_sep"] = snr[0]
 
         self.update_output_file()
 
@@ -661,7 +663,7 @@ class Object:
             "mag_psf": np.mean(fil_photom["mag_psf"]),
             "mag_psf_err": np.mean(fil_photom["mag_psf_err"])
         }
-        return fil_photom[np.argmax(fil_photom["snr_sep"])]
+        return fil_photom[np.argmax(fil_photom["snr_sep"])], mean
 
     def select_psf_photometry(self, local_output: bool = True):
         self.get_photometry_table(output=local_output)
@@ -693,7 +695,6 @@ class Object:
 
     def push_to_table(self, select: bool = False, local_output: bool = True):
         jname = self.jname()
-        self.estimate_galactic_extinction()
 
         for instrument in self.photometry:
             for fil in self.photometry[instrument]:
@@ -708,8 +709,10 @@ class Object:
         if row is None:
             row = {}
 
+        self.estimate_galactic_extinction()
         if select:
             self.get_good_photometry()
+            self.photometry_to_table()
 
         # best_position = self.select_best_position(local_output=local_output)
         best_psf = self.select_psf_photometry(local_output=local_output)
@@ -743,20 +746,23 @@ class Object:
 
                 if select:
                     best_photom, mean_photom = self.select_photometry_sep(fil, instrument, local_output=local_output)
+                    row[f"mag_best_{band_str}"] = best_photom["mag_sep"]
+                    row[f"mag_best_{band_str}_err"] = best_photom["mag_sep_err"]
+                    row[f"snr_best_{band_str}"] = best_photom["snr_sep"]
+
                 else:
                     best_photom, mean_photom = self.select_photometry(fil, instrument, local_output=local_output)
+                    row[f"mag_best_{band_str}"] = best_photom["mag"]
+                    row[f"mag_best_{band_str}_err"] = best_photom["mag_err"]
+                    row[f"snr_best_{band_str}"] = best_photom["snr"]
 
-                row[f"mag_best_{band_str}"] = best_photom["mag_sep"]
-                row[f"mag_best_{band_str}_err"] = best_photom["mag_err"]
-                row[f"snr_best_{band_str}"] = best_photom["snr"]
-                row[f"mag_mean_{band_str}"] = best_photom["mag"]
+                row[f"mag_mean_{band_str}"] = mean_photom["mag"]
                 row[f"mag_mean_{band_str}_err"] = mean_photom["mag_err"]
-                if "ext_gal" in mean_photom:
-                    row[f"ext_gal_{band_str}"] = mean_photom["ext_gal"]
-                else:
-                    row[f"ext_gal_{band_str}"] = mean_photom["ext_gal_sandf"]
-                row[f"epoch_best_{band_str}"] = mean_photom[f"epoch_name"]
-                row[f"epoch_best_date_{band_str}"] = mean_photom[f"epoch_date"]
+                row[f"ext_gal_{band_str}"] = best_photom["ext_gal"]
+                # else:
+                #     row[f"ext_gal_{band_str}"] = best_photom["ext_gal_sandf"]
+                row[f"epoch_best_{band_str}"] = best_photom[f"epoch_name"]
+                row[f"epoch_best_date_{band_str}"] = best_photom[f"epoch_date"]
                 row[f"mag_psf_best_{band_str}"] = best_photom[f"mag_psf"]
                 row[f"mag_psf_best_{band_str}_err"] = best_photom[f"mag_psf_err"]
                 row[f"snr_psf_best_{band_str}"] = best_photom["snr_psf"]

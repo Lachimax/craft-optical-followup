@@ -1056,7 +1056,7 @@ class FRBField(Field):
         frb["name"] = field_name
         frb["position"] = coords.copy()
         frb["position_err"]["healpix_path"] = healpix_path
-        frb["host_galaxy"]["name"] = field_name + " Host"
+        frb["host_galaxy"]["name"] = "HG" + field_name[3:]
         param_dict = cls.new_yaml(
             name=field_name,
             path=output_path,
@@ -1774,7 +1774,8 @@ class ImagingEpoch(Epoch):
                 "message": "Coadd astrometry-corrected frames with Montage?",
                 "default": True,
                 "keywords": {
-                    "frames": "astrometry"  # normalised, trimmed
+                    "frames": "astrometry",  # normalised, trimmed
+                    "sigma_clip": 1.5
                 }
             },
             "correct_astrometry_coadded": {
@@ -2001,7 +2002,7 @@ class ImagingEpoch(Epoch):
         kwargs["frames"] = self.frames_final
         self.coadd(output_dir, **kwargs)
 
-    def coadd(self, output_dir: str, frames: str = "astrometry"):
+    def coadd(self, output_dir: str, frames: str = "astrometry", sigma_clip: float = 1.5):
         """
         Use Montage to coadd individual frames.
         :param output_dir: Directory in which to write data products.
@@ -2065,12 +2066,13 @@ class ImagingEpoch(Epoch):
                 sigma_clip=True,
                 sigma_clip_func=np.nanmean,
                 sigma_clip_dev_func=np.nanstd,
-                sigma_clip_high_thresh=1.5
+                sigma_clip_high_thresh=sigma_clip,
+                sigma_clip_low_thresh=sigma_clip
             )
             # TODO: Inject header
 
             combined_img = image.FORS2CoaddedImage(sigclip_path)
-            combined_img.area_file=area_final
+            combined_img.area_file = area_final
             coadded_median.load_headers()
             combined_img.headers = coadded_median.headers
             u.debug_print(3, f"ImagingEpoch.coadd(): {combined_img}.headers ==", combined_img.headers)
@@ -2131,7 +2133,6 @@ class ImagingEpoch(Epoch):
                     )
                 )
                 self.add_coadded_astrometry_image(new_img, key=fil)
-
 
     def proc_trim_coadded(self, output_dir: str, **kwargs):
         if "correct_astrometry_coadded" in self.do_kwargs and self.do_kwargs["correct_astrometry_coadded"]:
@@ -2292,7 +2293,6 @@ class ImagingEpoch(Epoch):
             image_type = "final"
         self.get_photometry(output_dir, image_type=image_type)
 
-
     def get_photometry(self, path: str, image_type: str = "coadded_trimmed", dual: bool = True):
         """
         Retrieve photometric properties of key objects and write to disk.
@@ -2325,7 +2325,7 @@ class ImagingEpoch(Epoch):
                 print(f"A = {nearest['A_WORLD'].to(units.arcsec)}; B = {nearest['B_WORLD'].to(units.arcsec)}")
                 img.plot_source_extractor_object(
                     nearest,
-                    output=os.path.join(fil_output_path, f"{obj.name}.png"),
+                    output=os.path.join(fil_output_path, f"{obj.name_filesys}.png"),
                     show=False,
                     title=f"{obj.name}, {fil}-band, {nearest['MAG_AUTO_ZP_best'].round(3).value} ± {err.round(3)}")
                 obj.cat_row = nearest
@@ -2354,7 +2354,8 @@ class ImagingEpoch(Epoch):
                     mag_psf=nearest["MAG_PSF_ZP_best"],
                     mag_psf_err=nearest["MAGERR_PSF_ZP_best"],
                     snr_psf=nearest["FLUX_PSF"] / nearest["FLUXERR_PSF"],
-                    image_depth=img.depth["secure"]["SNR_SE"][f"5-sigma"]
+                    image_depth=img.depth["secure"]["SNR_SE"][f"5-sigma"],
+                    image_path=img.path
                 )
 
                 if isinstance(self.field, FRBField):
@@ -3374,7 +3375,6 @@ class HubbleImagingEpoch(ImagingEpoch):
 
     def proc_get_photometry(self, output_dir: str, **kwargs):
         self.get_photometry(output_dir, image_type="coadded", dual=False)
-
 
     def add_coadded_image(self, img: Union[str, image.Image], key: str, **kwargs):
         if isinstance(img, str):
@@ -4409,8 +4409,6 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
             suppress_select=True,
             **kwargs
         )
-
-
 
         images = self._get_images(image_type)
 
