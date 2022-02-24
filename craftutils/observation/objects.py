@@ -702,9 +702,9 @@ class Object:
                 obs.add_columns_to_master_objects(band_str)
 
         if select:
-            row, index = obs.get_row(tbl=obs.master_objects_table, colname="object_name", colval=jname)
+            row, index = obs.get_row(tbl=obs.master_objects_table, colname="object_name", colval=self.name)
         else:
-            row, index = obs.get_row(tbl=obs.master_objects_all_table, colname="object_name", colval=jname)
+            row, index = obs.get_row(tbl=obs.master_objects_all_table, colname="object_name", colval=self.name)
 
         if row is None:
             row = {}
