@@ -1769,6 +1769,9 @@ class ImagingEpoch(Epoch):
                     "method": "individual"
                 }
             },
+            # "frame_diagnostics": {
+            #     "method": self.proc
+            # }
             "coadd": {
                 "method": cls.proc_coadd,
                 "message": "Coadd astrometry-corrected frames with Montage?",
@@ -4179,6 +4182,7 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
             "convert_to_cs": eso_stages["convert_to_cs"],
             "register_frames": ie_stages["register_frames"],
             "correct_astrometry_frames": ie_stages["correct_astrometry_frames"],
+#            "frame_diagnostics": ie_stages["frame_diagnostics"],
             "coadd": ie_stages["coadd"],
             "correct_astrometry_coadded": ie_stages["correct_astrometry_coadded"],
             "trim_coadded": ie_stages["trim_coadded"],

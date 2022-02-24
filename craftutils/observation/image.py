@@ -3199,7 +3199,7 @@ class ImagingImage(Image):
         kron_radius = u.check_iterable(kron_radius)
         rotation_angle = self.extract_rotation_angle(ext=ext)
         print(theta_world, rotation_angle)
-        theta_deg = theta_world - rotation_angle + 90 * units.deg
+        theta_deg = -theta_world - rotation_angle # + 90 * units.deg
         theta = u.theta_range(theta_deg.to(units.rad)).value
         print(theta_deg)
         print(theta, a, b, x, y, kron_radius)
@@ -3215,31 +3215,30 @@ class ImagingImage(Image):
         )
 
         if isinstance(plot, str):
-            # objects = sep.extract(self.data_sub_bkg[ext], 1.5, err=self.sep_background[ext].rms())
+            objects = sep.extract(self.data_sub_bkg[ext], 1.5, err=self.sep_background[ext].rms())
             this_frame = self.nice_frame({
                 'A_WORLD': a_world,
                 'B_WORLD': b_world,
                 'KRON_RADIUS': kron_radius
             })
 
+            plt.close()
+
             ax, fig, _ = self.plot_subimage(
                 centre=centre,
                 frame=this_frame,
                 ext=ext)
-            ax, fig, _ = self.plot_subimage(
-                centre=centre,
-                frame=this_frame,
-                ext=ext)
-            #
-            # for i in range(len(objects)):
-            #     e = Ellipse(
-            #         xy=(objects["x"][i], objects["y"][i]),
-            #         width=6*objects["a"][i],
-            #         height=6*objects["b"][i],
-            #         angle=objects["theta"][i] * 180. / np.pi)
-            #     e.set_facecolor('none')
-            #     e.set_edgecolor('red')
-            #     ax.add_artist(e)
+
+            for i in range(len(objects)):
+                e = Ellipse(
+                    xy=(objects["x"][i], objects["y"][i]),
+                    width=4*objects["a"][i],
+                    height=4*objects["b"][i],
+                    angle=objects["theta"][i] * 180. / np.pi)
+                e.set_facecolor('none')
+                e.set_edgecolor('red')
+                ax.add_artist(e)
+                ax.text(objects["x"][i], objects["y"][i], objects["theta"][i] * 180. / np.pi)
 
             e = Ellipse(
                 xy=(x[0], y[0]),
@@ -3259,7 +3258,7 @@ class ImagingImage(Image):
             e.set_edgecolor('white')
             ax.add_artist(e)
 
-            ax.set_title(f"{a[0], b[0], kron_radius[0]}")
+            ax.set_title(f"{a[0], b[0], kron_radius[0], theta[0] * 180. / np.pi}")
 
             fig.savefig(plot)
 

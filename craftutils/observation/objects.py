@@ -278,7 +278,7 @@ class Object:
         deepest_path = deepest_dict["image_path"]
         cls = image.CoaddedImage.select_child_class(instrument=deepest["instrument"])
         deepest_img = cls(path=deepest_path)
-        deepest_fwhm = deepest_img.extract_header_item("PSF_FWHM")
+        deepest_fwhm = deepest_img.extract_header_item("PSF_FWHM") * units.arcsec
         mag, mag_err, snr = deepest_img.sep_elliptical_magnitude(
             centre=self.position,
             a_world=self.a,
@@ -299,14 +299,14 @@ class Object:
                         continue
                     cls = image.CoaddedImage.select_child_class(instrument=instrument)
                     img = cls(path=phot_dict["image_path"])
-                    fwhm = img.extract_header_item("PSF_FWHM")
-                    fwhm_ratio = fwhm / deepest_fwhm
-                    mag, mag_err, snr = deepest_img.sep_elliptical_magnitude(
+                    fwhm = img.extract_header_item("PSF_FWHM") * units.arcsec
+                    delta_fwhm = fwhm - deepest_fwhm
+                    mag, mag_err, snr = img.sep_elliptical_magnitude(
                         centre=self.position,
-                        a_world=self.a,
-                        b_world=self.b,
+                        a_world=self.a, #+ delta_fwhm,
+                        b_world=self.b, #+ delta_fwhm,
                         theta_world=self.theta,
-                        kron_radius=self.kron * fwhm_ratio,
+                        kron_radius=self.kron,
                         plot=os.path.join(self.data_path, f"{self.name_filesys}_{instrument}_{band}.png")
                     )
                     phot_dict["mag_sep"] = mag[0]
@@ -702,9 +702,9 @@ class Object:
                 obs.add_columns_to_master_objects(band_str)
 
         if select:
-            row, index = obs.get_row(tbl=obs.master_objects_table, colname="jname", colval=jname)
+            row, index = obs.get_row(tbl=obs.master_objects_table, colname="object_name", colval=jname)
         else:
-            row, index = obs.get_row(tbl=obs.master_objects_all_table, colname="jname", colval=jname)
+            row, index = obs.get_row(tbl=obs.master_objects_all_table, colname="object_name", colval=jname)
 
         if row is None:
             row = {}
