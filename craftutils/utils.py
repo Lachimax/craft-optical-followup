@@ -121,6 +121,16 @@ def check_iterable(obj):
     return obj
 
 
+def theta_range(theta: units. Quantity):
+    theta = check_iterable(theta.copy())
+    theta = units.Quantity(theta)
+
+    theta[theta > 90 * units.deg] -= 180 * units.deg
+    theta[theta < -90 * units.deg] += 180 * units.deg
+
+    return theta
+
+
 def sanitise_endianness(array: np.ndarray):
     """
     If the data is big endian, swap the byte order to make it little endian. Special thanks to this link:
