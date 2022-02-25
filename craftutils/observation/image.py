@@ -3215,7 +3215,7 @@ class ImagingImage(Image):
         )
 
         if isinstance(plot, str):
-            objects = sep.extract(self.data_sub_bkg[ext], 1.5, err=self.sep_background[ext].rms())
+            # objects = sep.extract(self.data_sub_bkg[ext], 1.5, err=self.sep_background[ext].rms())
             this_frame = self.nice_frame({
                 'A_WORLD': a_world,
                 'B_WORLD': b_world,
@@ -3229,16 +3229,16 @@ class ImagingImage(Image):
                 frame=this_frame,
                 ext=ext)
 
-            for i in range(len(objects)):
-                e = Ellipse(
-                    xy=(objects["x"][i], objects["y"][i]),
-                    width=4*objects["a"][i],
-                    height=4*objects["b"][i],
-                    angle=objects["theta"][i] * 180. / np.pi)
-                e.set_facecolor('none')
-                e.set_edgecolor('red')
-                ax.add_artist(e)
-                ax.text(objects["x"][i], objects["y"][i], objects["theta"][i] * 180. / np.pi)
+            # for i in range(len(objects)):
+            #     e = Ellipse(
+            #         xy=(objects["x"][i], objects["y"][i]),
+            #         width=4*objects["a"][i],
+            #         height=4*objects["b"][i],
+            #         angle=objects["theta"][i] * 180. / np.pi)
+            #     e.set_facecolor('none')
+            #     e.set_edgecolor('red')
+            #     ax.add_artist(e)
+            #     ax.text(objects["x"][i], objects["y"][i], objects["theta"][i] * 180. / np.pi)
 
             e = Ellipse(
                 xy=(x[0], y[0]),
@@ -3289,11 +3289,12 @@ class ImagingImage(Image):
             mag, _, _, _ = self.magnitude(
                 flux_err
             )
-            mag_err = -999.
+            mag_err = [-999. * units.mag]
         else:
             mag, mag_err, _, _ = self.magnitude(
                 flux, flux_err
             )
+
 
         return mag, mag_err, snr
 

@@ -285,7 +285,7 @@ class Object:
             b_world=self.b,
             theta_world=self.theta,
             kron_radius=self.kron,
-            plot=os.path.join(self.data_path, f"{self.name_filesys}_{deepest['instrument']}_{deepest['band']}.png")
+            plot=os.path.join(self.data_path, f"{self.name_filesys}_{deepest['instrument']}_{deepest['band']}_{deepest['epoch_name']}.png")
         )
         deepest_dict["mag_sep"] = mag[0]
         deepest_dict["mag_sep_err"] = mag_err[0]
@@ -307,7 +307,7 @@ class Object:
                         b_world=self.b, #+ delta_fwhm,
                         theta_world=self.theta,
                         kron_radius=self.kron,
-                        plot=os.path.join(self.data_path, f"{self.name_filesys}_{instrument}_{band}.png")
+                        plot=os.path.join(self.data_path, f"{self.name_filesys}_{instrument}_{band}_{epoch}.png")
                     )
                     phot_dict["mag_sep"] = mag[0]
                     phot_dict["mag_sep_err"] = mag_err[0]
@@ -484,6 +484,7 @@ class Object:
             for filter_name in self.photometry[instrument_name]:
                 fil = instrument.filters[filter_name]
                 for epoch in self.photometry[instrument_name][filter_name]:
+
                     phot_dict = self.photometry[instrument_name][filter_name][epoch].copy()
                     phot_dict["band"] = filter_name
                     phot_dict["instrument"] = instrument_name
@@ -491,9 +492,13 @@ class Object:
                         number=fil.lambda_eff,
                         unit=units.Angstrom
                     )
-                    tbl = table.QTable([phot_dict])
-                    tbls.append(tbl)
-        self.photometry_tbl = table.vstack(tbls)
+                    print(phot_dict)
+                    #tbl = table.QTable([phot_dict])
+                    tbls.append(phot_dict)
+        tbl = tbls[-2]
+
+        self.photometry_tbl = table.QTable(tbls)
+        print(self.photometry_tbl)
 
         if output is not False:
             for fmt in fmts:
@@ -626,8 +631,8 @@ class Object:
 
     def jname(self):
         s_ra, s_dec = astm.coord_string(self.position)
-        ra_second = str(np.round(float(s_ra[s_ra.find("m") + 1:s_ra.find("s")]), 4)).ljust(6, "0")
-        dec_second = str(np.round(float(s_dec[s_dec.find("m") + 1:s_dec.find("s")]), 3)).ljust(5, "0")
+        ra_second = str(np.round(float(s_ra[s_ra.find("m") + 1:s_ra.find("s")]), 2)).ljust(6, "0")
+        dec_second = str(np.round(float(s_dec[s_dec.find("m") + 1:s_dec.find("s")]), 1)).ljust(5, "0")
         s_ra = s_ra[:s_ra.find("m")].replace("h", "")
         s_dec = s_dec[:s_dec.find("m")].replace("d", "")
         name = f"J{s_ra}{ra_second}{s_dec}{dec_second}"
@@ -713,10 +718,13 @@ class Object:
         if select:
             self.get_good_photometry()
             self.photometry_to_table()
+            deepest = self.select_deepest_sep(local_output=local_output)
+        else:
+            deepest = self.select_deepest(local_output=local_output)
 
         # best_position = self.select_best_position(local_output=local_output)
         best_psf = self.select_psf_photometry(local_output=local_output)
-        deepest = self.select_deepest(local_output=local_output)
+
 
         row["jname"] = jname
         row["field_name"] = self.field.name

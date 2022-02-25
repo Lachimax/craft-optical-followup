@@ -1787,6 +1787,7 @@ class ImagingEpoch(Epoch):
                 "default": False,
                 "keywords": {
                     "tweak": True,
+                    "astroalign_template": None
                 }
             },
             "trim_coadded": {
@@ -2109,6 +2110,11 @@ class ImagingEpoch(Epoch):
         else:
             tweak = True
 
+        if "astroalign_template" in kwargs:
+            aa_template = kwargs["astroalign_template"]
+        else:
+            aa_template = None
+
         first_success = None
         unsuccessful = []
         for fil in images:
@@ -2124,6 +2130,10 @@ class ImagingEpoch(Epoch):
                 if first_success is None:
                     first_success = new_img
                 self.add_coadded_astrometry_image(new_img, key=fil)
+
+        if first_success is None and aa_template is not None:
+            cls = image.detect_instrument(path=aa_template)
+            first_success = cls(path=aa_template)
 
         if first_success is not None:
             for fil in unsuccessful:
@@ -2316,7 +2326,7 @@ class ImagingEpoch(Epoch):
             img.calibrate_magnitudes(zeropoint_name="best", dual=dual)
             rows = []
             for obj in self.field.objects:
-                # obj.load_output_file()
+                obj.load_output_file()
                 plt.close()
                 # Get nearest Source-Extractor object:
                 nearest, separation = img.find_object(obj.position, dual=dual)
