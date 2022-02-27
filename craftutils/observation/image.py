@@ -2544,6 +2544,9 @@ class ImagingImage(Image):
             show: bool = False, title: str = None):
 
         plt.close()
+        fig = plt.figure()
+        ax = fig.add_subplot()
+
         self.load_headers()
         kron_a = row['KRON_RADIUS'] * row['A_WORLD']
         kron_b = row['KRON_RADIUS'] * row['B_WORLD']
@@ -2560,8 +2563,7 @@ class ImagingImage(Image):
         self.open()
         image_cut = ff.trim(hdu=self.hdu_list, left=left, right=right, bottom=bottom, top=top)
         norm = pl.nice_norm(image=image_cut[ext].data)
-        title = u.latex_sanitise(title)
-        plt.imshow(image_cut[0].data, origin='lower', norm=norm)
+        ax.imshow(image_cut[0].data, origin='lower', norm=norm)
         # theta =
         pl.plot_gal_params(
             hdu=image_cut,
@@ -2569,7 +2571,7 @@ class ImagingImage(Image):
             decs=[row["DEC"].value],
             a=[row["A_WORLD"].value],
             b=[row["B_WORLD"].value],
-            theta=[row["THETA_IMAGE"].value + 90],
+            theta=[row["THETA_IMAGE"].value],
             world=True,
             show_centre=True
         )
@@ -2579,17 +2581,20 @@ class ImagingImage(Image):
             decs=[row["DEC"].value],
             a=[kron_a.value],
             b=[kron_b.value],
-            theta=[row["THETA_IMAGE"].value + 90],
+            theta=[row["THETA_IMAGE"].value],
             world=True,
             show_centre=True
         )
         if title is None:
             title = self.name
-        plt.title(title)
-        plt.savefig(os.path.join(output))
+        title = u.latex_sanitise(title)
+        print(plt.rcParams)
+        ax.set_title(title)
+        fig.savefig(os.path.join(output))
         if show:
-            plt.show()
+            fig.show()
         self.close()
+        plt.close(fig)
         return
 
     def plot(self, fig: plt.Figure = None, ext: int = 0, **kwargs):

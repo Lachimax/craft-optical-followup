@@ -559,6 +559,7 @@ def latex_setup():
     plt.rcParams['font.serif'] = ['Times']
     plt.rcParams['axes.linewidth'] = 2.
 
+
 def latex_off():
     plt.rcdefaults()
     plt.rcParams.update(matplotlib.rcParamsDefault)
@@ -582,11 +583,12 @@ def plot_file(path: str, label: str = None, colour: str = None, show: bool = Fal
         plt.show()
 
 
-def plot_gal_params(hdu: fits.HDUList, ras: Union[list, np.ndarray, float], decs: Union[list, np.ndarray, float],
-                    a: Union[list, np.ndarray, float], b: Union[list, np.ndarray, float],
-                    theta: Union[list, np.ndarray, float], colour: str = 'white',
-                    show_centre: bool = False,
-                    label: str = None, world: bool = True, world_axes: bool = True, **kwargs):
+def plot_gal_params(
+        hdu: fits.HDUList, ras: Union[list, np.ndarray, float], decs: Union[list, np.ndarray, float],
+        a: Union[list, np.ndarray, float], b: Union[list, np.ndarray, float],
+        theta: Union[list, np.ndarray, float], colour: str = 'white',
+        show_centre: bool = False,
+        label: str = None, world: bool = True, world_axes: bool = True, **kwargs):
     """
 
     :param hdu:

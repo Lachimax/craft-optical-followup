@@ -2340,7 +2340,8 @@ class ImagingEpoch(Epoch):
                     nearest,
                     output=os.path.join(fil_output_path, f"{obj.name_filesys}.png"),
                     show=False,
-                    title=f"{obj.name}, {fil}-band, {nearest['MAG_AUTO_ZP_best'].round(3).value} ± {err.round(3)}")
+                    title=f"{obj.name}, {fil}-band, {nearest['MAG_AUTO_ZP_best'].round(3).value} ± {err.round(3)}"
+                )
                 obj.cat_row = nearest
                 print()
                 obj.add_photometry(
@@ -2399,9 +2400,11 @@ class ImagingEpoch(Epoch):
                     name = obj.name
                     name = name.replace("HG", "HG\,")
                     img.extract_filter()
-                    plot.set_title(f"{name}, {u.latex_sanitise(img.filter.nice_name())}")
+                    plot.set_title(u.latex_sanitise(f"{name}, {img.filter.nice_name()}"))
                     fig.savefig(output_path)
                     fig.savefig(output_path.replace(".pdf", ".png"))
+                    plt.close(fig)
+                    pl.latex_off()
 
             tbl = table.vstack(rows)
             tbl.write(os.path.join(fil_output_path, f"{self.field.name}_{self.name}_{fil}.ecsv"),

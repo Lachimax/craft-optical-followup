@@ -492,13 +492,10 @@ class Object:
                         number=fil.lambda_eff,
                         unit=units.Angstrom
                     )
-                    print(phot_dict)
                     #tbl = table.QTable([phot_dict])
                     tbls.append(phot_dict)
-        tbl = tbls[-2]
 
         self.photometry_tbl = table.QTable(tbls)
-        print(self.photometry_tbl)
 
         if output is not False:
             for fmt in fmts:
@@ -779,7 +776,7 @@ class Object:
 
         # obs.w
 
-        print("select ==", select)
+        u.debug_print(2, "Object.push_to_table(): select ==", select)
         print()
         if select:
             if index is None:
