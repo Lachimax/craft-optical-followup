@@ -21,6 +21,16 @@ import craftutils.wrap.astrometry_net as astrometry_net
 from craftutils.retrieve import cat_columns, load_catalogue
 
 
+def jname(coord: SkyCoord, ra_precision: int = 2, dec_precision: int = 1):
+    s_ra, s_dec = coord_string(coord)
+    ra_second = str(np.round(float(s_ra[s_ra.find("m") + 1:s_ra.find("s")]), ra_precision)).ljust(6, "0")
+    dec_second = str(np.round(float(s_dec[s_dec.find("m") + 1:s_dec.find("s")]), dec_precision)).ljust(5, "0")
+    s_ra = s_ra[:s_ra.find("m")].replace("h", "")
+    s_dec = s_dec[:s_dec.find("m")].replace("d", "")
+    name = f"J{s_ra}{ra_second}{s_dec}{dec_second}"
+    return name
+
+
 def correct_gaia_to_epoch(gaia_cat: Union[str, table.QTable], new_epoch: time.Time):
     gaia_cat = load_catalogue(cat_name="gaia", cat=gaia_cat)
     epochs = list(map(lambda y: f"J{y}", gaia_cat['ref_epoch']))
