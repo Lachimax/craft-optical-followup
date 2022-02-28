@@ -3111,8 +3111,14 @@ class FORS2StandardEpoch(StandardEpoch, ImagingEpoch):
         if output_path is None:
             output_path = os.path.join(self.data_path, "photometric_calibration")
 
+        u.mkdir_check_nested(output_path)
         print("frames_reduced:")
         print(self.frames_reduced)
+
+        self.source_extraction(
+            output_dir=output_path,
+            do_diagnostics=False
+        )
 
         zeropoints = self.zeropoint(
             image_dict=self.frames_reduced,
