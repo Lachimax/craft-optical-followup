@@ -2245,7 +2245,8 @@ class ImagingEpoch(Epoch):
             img.psfex_path = None
             img.source_extraction_psf(
                 output_dir=output_dir,
-                phot_autoparams=f"{configs['kron_factor']},{configs['kron_radius_min']}")
+                phot_autoparams=f"{configs['kron_factor']},{configs['kron_radius_min']}"
+            )
         if do_diagnostics:
             offset_tolerance = 0.5 * units.arcsec
             if "correct_astrometry_frames" in self.do_kwargs and not self.do_kwargs["correct_astrometry_frames"]:
@@ -3101,6 +3102,17 @@ class FORS2StandardEpoch(StandardEpoch, ImagingEpoch):
     frame_class = image.FORS2Image
     instrument_name = "vlt-fors2"
 
+    def source_extraction(self, output_dir: str, do_diagnostics: bool = True, **kwargs):
+        for fil in self.frames_reduced:
+            for img in self.frames_reduced[fil]:
+                configs = self.source_extractor_config
+
+                img.psfex_path = None
+                img.source_extraction_psf(
+                    output_dir=output_dir,
+                    phot_autoparams=f"3.5,1.0"
+                )
+
     def photometric_calibration(
             self,
             output_path: str = None,
@@ -3120,15 +3132,13 @@ class FORS2StandardEpoch(StandardEpoch, ImagingEpoch):
             do_diagnostics=False
         )
 
-        zeropoints = self.zeropoint(
+        self.zeropoint(
             image_dict=self.frames_reduced,
             output_path=output_path,
             suppress_select=True,
             zp_dict=zeropoints,
             **kwargs
         )
-
-        return zeropoints
 
     def zeropoint(
             self,
@@ -3168,16 +3178,13 @@ class FORS2StandardEpoch(StandardEpoch, ImagingEpoch):
                         )
 
                         chip = img.extract_chip_number()
-                        zp_dict[chip][fil][cat_name][img.name] = zp
 
                 if "preferred_zeropoint" in kwargs and fil in kwargs["preferred_zeropoint"]:
                     preferred = kwargs["preferred_zeropoint"][fil]
                 else:
                     preferred = None
 
-                zeropoint, cat = img.select_zeropoint(suppress_select, preferred=preferred)
-
-        return zp_dict
+                img.select_zeropoint(suppress_select, preferred=preferred)
 
 
 class GSAOIImagingEpoch(ImagingEpoch):
@@ -4549,6 +4556,19 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
                     raise ValueError(
                         f"Astrometry method {method} not recognised. Must be individual, pairwise or propagate_from_single")
 
+    def estimate_atmospheric_extinction(self, mjd: int):
+        fils = []
+        lambdas = []
+        extinctions = []
+        for fil_name in inst.FORS2Filter.qc1_retrievable:
+            fil = inst.Filter.from_params(fil_name, instrument_name="vlt-fors2")
+            fil.retrieve_calibration_table()
+            fils.append(fil)
+
+            lambdas.append(fil.lambda_eff)
+            # extinctions.append(fil.)
+
+
     def photometric_calibration(
             self,
             output_path: str,
@@ -4685,8 +4705,6 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
                 else:
                     print(f"Insufficient standard observations to calculate esorex zeropoint for {img}")
 
-        zeropoints_std = {}
-
         print("Estimating zeropoints from standard observations...")
         print(self.frames_standard)
         print(std_sets)
@@ -4694,7 +4712,7 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
         print(self.filters)
         for jname in self.std_epochs:
             std_epoch = self.std_epochs[jname]
-            zeropoints_std[jname] = std_epoch.photometric_calibration()
+            std_epoch.photometric_calibration()
             for fil in images:
                 img = images[fil]
                 for std in std_epoch.frames_reduced:

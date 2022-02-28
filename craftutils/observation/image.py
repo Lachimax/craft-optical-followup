@@ -1241,6 +1241,9 @@ class ImagingImage(Image):
 
     def select_zeropoint(self, no_user_input: bool = False, preferred: str = None):
 
+        if not self.zeropoints:
+            return None
+
         ranking = self.rank_photometric_cat()
         if preferred is not None:
             ranking.insert(0, preferred)
@@ -1253,7 +1256,9 @@ class ImagingImage(Image):
                     zps.append(zp)
 
         zp_tbl = table.QTable(zps)
-        zp_tbl.sort("selection_index", reverse=True)
+        print(zps)
+        print(zp_tbl)
+        zp_tbl.sort(["selection_index"], reverse=True)
         zp_tbl.write(os.path.join(self.data_path, f"{self.name}_zeropoints.ecsv"), format="ascii.ecsv")
 #        zp_tbl.write(os.path.join(self.data_path, f"{self.name}_zeropoints.csv"), format="ascii.csv")
         best_row = zp_tbl[0]
