@@ -10,6 +10,8 @@ import craftutils.params as p
 import craftutils.utils as u
 from craftutils.retrieve import save_svo_filter, save_fors2_calib
 
+active_instruments = {}
+active_filters = {}
 
 class Instrument:
     def __init__(self, **kwargs):
@@ -30,6 +32,8 @@ class Instrument:
 
         self.filters = {}
         self.gather_filters()
+
+        active_instruments[self.name] = self
 
     def __str__(self):
         return str(self.name)
@@ -96,6 +100,8 @@ class Instrument:
 
     @classmethod
     def from_params(cls, instrument_name: str):
+        if instrument_name in active_instruments:
+            return active_instruments[instrument_name]
         path = cls._build_param_path(instrument_name=instrument_name)
         u.debug_print(1, "Instrument.from_params(): instrument_name ==", instrument_name)
         u.debug_print(1, "Instrument.from_params(): path ==", path)
@@ -197,6 +203,8 @@ class Filter:
         self.photometry_table = None
 
         self.load_output_file()
+
+        active_filters[f"{self.instrument}_{self.name}"] = self
 
     def __str__(self):
         return f"{self.instrument}.{self.name}"
@@ -372,6 +380,9 @@ class Filter:
 
     @classmethod
     def from_params(cls, filter_name: str, instrument_name: str):
+        band_str = f"{instrument_name}_{filter_name}"
+        if band_str in active_filters:
+            return active_filters[band_str]
         path = cls._build_param_path(instrument_name=instrument_name, filter_name=filter_name)
         return cls.from_file(param_file=path)
 

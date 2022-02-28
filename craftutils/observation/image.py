@@ -66,6 +66,8 @@ instrument_header = {
     "HAWKI": "vlt-hawki"
 }
 
+active_images = {}
+
 
 # TODO: Make this list all fits files, then write wrapper that eliminates non-science images and use that in scripts.
 def fits_table(input_path: str, output_path: str = "", science_only: bool = True):
@@ -306,6 +308,8 @@ class Image:
         self.pointing = None
         self.saturate = None
         self.chip_number = None
+        self.airmass = None
+        self.airmass_err = 0.0
 
         if logg is None:
             self.log = log.Log()
@@ -755,8 +759,6 @@ class ImagingImage(Image):
 
         self.sky_background = None
 
-        self.airmass = None
-
         self.zeropoints = {}
         self.zeropoint_output_paths = {}
         self.zeropoint_best = None
@@ -1132,6 +1134,10 @@ class ImagingImage(Image):
     def extract_airmass(self):
         key = self.header_keys()["airmass"]
         self.airmass = self.extract_header_item(key)
+        key = self.header_keys()["airmass_err"]
+        self.airmass_err = self.extract_header_item(key)
+        if self.airmass_err is None:
+            self.airmass_err = 0.0
         return self.airmass
 
     def extract_pointing(self):
@@ -1238,28 +1244,41 @@ class ImagingImage(Image):
         ranking = self.rank_photometric_cat()
         if preferred is not None:
             ranking.insert(0, preferred)
-        zps = {}
-        best = None
-        for cat in ranking:
+        zps = []
+        for i, cat in enumerate(ranking):
             if cat in self.zeropoints:
-                zp = self.zeropoints[cat]
-                zps[f"{cat} {zp['zeropoint_img']} +/- {zp['zeropoint_img_err']}, {zp['n_matches']} stars"] = zp
-                if best is None:
-                    best = cat
+                for img_name in self.zeropoints[cat]:
+                    zp = self.zeropoints[cat][img_name]
+                    zp["selection_index"] = 1 / ((i+1) * zp['zeropoint_img_err'])
+                    zps.append(zp)
 
-        if best is None:
+        zp_tbl = table.QTable(zps)
+        zp_tbl.sort("selection_index", reverse=True)
+        zp_tbl.write(os.path.join(self.data_path, f"{self.name}_zeropoints.ecsv"), format="ascii.ecsv")
+#        zp_tbl.write(os.path.join(self.data_path, f"{self.name}_zeropoints.csv"), format="ascii.csv")
+        best_row = zp_tbl[0]
+        best_cat = best_row["catalogue"]
+        best_img = best_row["image_name"]
+
+        if best_cat is None:
             raise ValueError("No zeropoints are present to select from.")
 
-        zeropoint_best = self.zeropoints[best]
-
+        zeropoint_best = self.zeropoints[best_cat][best_img]
         print(
-            f"For {self.name}, we have selected a zeropoint of {zeropoint_best['zeropoint_img']} +/- {zeropoint_best['zeropoint_img_err']}, "
-            f"from {zeropoint_best['catalogue']}.")
+            f"For {self.name}, we have selected a zeropoint of {zeropoint_best['zeropoint_img']} "
+            f"+/- {zeropoint_best['zeropoint_img_err']}, "
+            f"from {zeropoint_best['catalogue']} on {zeropoint_best['image_name']}.")
         if not no_user_input:
             select_own = u.select_yn(message="Would you like to select another?", default=False)
             if select_own:
+                zps = {}
+                for i, row in enumerate(zp_tbl):
+                    pick_str = f"{row['catalogue']} {row['zeropoint_img']} +/- {row['zeropoint_img_err']}, " \
+                                     f"{row['n_matches']} stars, " \
+                                     f"from {row['image_name']}"
+                    zps[pick_str] = self.zeropoints[row['catalogue']][row['image_name']]
                 _, zeropoint_best = u.select_option(message="Select best zeropoint:", options=zps)
-                best = zeropoint_best["catalogue"]
+                best_cat = zeropoint_best["catalogue"]
         self.zeropoint_best = zeropoint_best
 
         self.set_header_items(
@@ -1278,7 +1297,7 @@ class ImagingImage(Image):
         )
         self.update_output_file()
         self.write_fits_file()
-        return self.zeropoint_best, best
+        return self.zeropoint_best, best_cat
 
     def zeropoint(
             self,
@@ -1365,6 +1384,7 @@ class ImagingImage(Image):
             # airmass=0.0,
             airmass_err=0.0,
             # n_matches=zp_dict["n_matches"],
+            image_name="self",
             **zp_dict
         ))
         self.zeropoint_output_paths[cat_name.lower()] = output_path
@@ -1386,6 +1406,7 @@ class ImagingImage(Image):
             airmass: float,
             airmass_err: float,
             n_matches: int = None,
+            image_name: str = "self",
             **kwargs
     ):
         zp_dict = kwargs.copy()
@@ -1398,6 +1419,7 @@ class ImagingImage(Image):
             "airmass_err": airmass_err,
             "catalogue": catalogue.lower(),
             "n_matches": n_matches,
+            "image_name": image_name
         })
         zp_dict["zeropoint_img"] = zp_dict["zeropoint"] - zp_dict["extinction"] * zp_dict["airmass"]
         zp_dict['zeropoint_img_err'] = np.sqrt(
@@ -1407,8 +1429,40 @@ class ImagingImage(Image):
                 (zp_dict["airmass"], zp_dict["airmass_err"])
             ) ** 2
         )
-        self.zeropoints[catalogue.lower()] = zp_dict
+
+        img_key = image_name
+
+        cat_key = catalogue.lower()
+        if cat_key not in self.zeropoints:
+            self.zeropoints[cat_key] = {}
+        self.zeropoints[cat_key][img_key] = zp_dict
         return zp_dict
+
+    def add_zeropoint_from_other(self, other: 'ImagingImage'):
+        if other.filter_name != self.filter_name:
+            raise ValueError(
+                f"Zeropoints must come from images with the same filter; other filter {other.filter_name} does not match this filter {self.filter_name}.")
+        if other.instrument_name != self.instrument_name:
+            raise ValueError(
+                f"Zeropoints must come from images with the same instrument; other instrument {other.instrument_name} does not match this instrument {self.instrument_name}.")
+
+        airmass = self.extract_airmass()
+        airmass_err = self.airmass_err
+
+        airmass_other = other.extract_airmass()
+        airmass_other_err = other.airmass_err
+
+        delta_airmass = airmass - airmass_other
+        delta_airmass_err = u.uncertainty_sum(airmass_err, airmass_other_err)
+
+        for zeropoint in other.zeropoints['self']:
+            self.add_zeropoint(
+                **zeropoint.update({
+                    "airmass": delta_airmass,
+                    "airmass_err": delta_airmass_err,
+                    "image_name": other.name
+                })
+            )
 
     def aperture_areas(self):
         self.load_source_cat()
@@ -1439,7 +1493,7 @@ class ImagingImage(Image):
             mags = self.magnitude(
                 flux=cat["FLUX_AUTO"],
                 flux_err=cat["FLUXERR_AUTO"],
-                zeropoint_name=zeropoint_name
+                cat_name=zeropoint_name
             )
 
             cat[f"MAG_AUTO_ZP_{zeropoint_name}"] = mags[0]
@@ -1450,7 +1504,7 @@ class ImagingImage(Image):
             mags = self.magnitude(
                 flux=cat["FLUX_PSF"],
                 flux_err=cat["FLUXERR_PSF"],
-                zeropoint_name=zeropoint_name
+                cat_name=zeropoint_name
             )
 
             cat[f"MAG_PSF_ZP_{zeropoint_name}"] = mags[0]
@@ -1473,23 +1527,26 @@ class ImagingImage(Image):
             self,
             flux: units.Quantity,
             flux_err: units.Quantity = 0 * units.ct,
-            zeropoint_name: str = 'best'
+            cat_name: str = 'best',
+            img_name: str = None
     ):
 
-        if zeropoint_name == "best":
+        if cat_name == "best":
             zp_dict = self.zeropoint_best
-        elif zeropoint_name not in self.zeropoints:
-            raise KeyError(f"Zeropoint {zeropoint_name} does not exist.")
+        elif cat_name not in self.zeropoints:
+            raise KeyError(f"Zeropoint {cat_name} does not exist.")
+        elif img_name not in self.zeropoints[cat_name]:
+            raise KeyError(f"Zeropoint from {img_name} does not exist")
         else:
-            zp_dict = self.zeropoints[zeropoint_name]
+            zp_dict = self.zeropoints[cat_name][img_name]
 
         mag, mag_err = ph.magnitude_complete(
             flux=flux,
             flux_err=flux_err,
             exp_time=self.extract_exposure_time(),
             exp_time_err=0.0 * units.second,
-            zeropoint=zp_dict['zeropoint'],
-            zeropoint_err=zp_dict['zeropoint_err'],
+            zeropoint=zp_dict['zeropoint_img'],
+            zeropoint_err=zp_dict['zeropoint_img_err'],
             airmass=zp_dict['airmass'],
             airmass_err=zp_dict['airmass_err'],
             ext=zp_dict['extinction'],
@@ -1503,8 +1560,8 @@ class ImagingImage(Image):
             flux_err=flux_err,
             exp_time=self.extract_exposure_time(),
             exp_time_err=0.0 * units.second,
-            zeropoint=zp_dict['zeropoint'],
-            zeropoint_err=zp_dict['zeropoint_err'],
+            zeropoint=zp_dict['zeropoint_img'],
+            zeropoint_err=zp_dict['zeropoint_img_err'],
             airmass=zp_dict['airmass'],
             airmass_err=zp_dict['airmass_err'],
             ext=0.0 * units.mag,
@@ -1515,7 +1572,7 @@ class ImagingImage(Image):
 
         return mag, mag_err, mag_no_ext_corr, mag_no_ext_corr_err
 
-    def estimate_depth(self, zeropoint_name: str, dual: bool = False):
+    def estimate_depth(self, zeropoint_name: str="best", dual: bool = False):
         """
         Use various measures of S/N to estimate image depth at a range of sigmas.
         :param zeropoint_name:
@@ -1539,7 +1596,7 @@ class ImagingImage(Image):
         source_cat.sort("FLUX_AUTO")
 
         for sigma in range(1, 6):
-            for snr_key in ["SNR_CCD", "SNR_MEASURED", "SNR_SE"]:
+            for snr_key in ["SNR_SE"]: #["SNR_CCD", "SNR_MEASURED", "SNR_SE"]:
                 u.debug_print(1, "ImagingImage.estimate_depth(): snr_key, sigma ==", snr_key, sigma)
                 self.depth["max"][snr_key] = {}
                 self.depth["secure"][snr_key] = {}
@@ -2323,57 +2380,60 @@ class ImagingImage(Image):
         return source_cat["SNR_CCD"]
 
     def signal_to_noise_measure(self, dual: bool = False):
+        print("Measuring signal-to-noise of sources...")
         source_cat = self.get_source_cat(dual=dual)
 
-        self.load_data()
-        _, scale = self.extract_pixel_scale()
-        mask = self.generate_mask(method='sep')
-        mask = mask.astype(bool)
-        bkg = self.calculate_background(method='sep', mask=mask)
-        rms = bkg.rms()
+        source_cat["SNR_SE"] = source_cat["FLUX_AUTO"] / source_cat["FLUXERR_AUTO"]
 
-        gain = self.extract_gain() / units.electron
-
-        snrs = []
-        snrs_se = []
-        sigma_fluxes = []
-
-        for cat_obj in source_cat:
-            x = cat_obj["X_IMAGE"].value - 1
-            y = cat_obj["Y_IMAGE"].value - 1
-
-            a = cat_obj["A_WORLD"].to(units.pix, scale).value
-            b = cat_obj["B_WORLD"].to(units.pix, scale).value
-
-            theta = u.world_angle_se_to_pu(
-                cat_obj["THETA_WORLD"],
-                rot_angle=self.extract_rotation_angle()
-            )
-
-            ap = photutils.aperture.EllipticalAperture(
-                [x, y],
-                a=a,
-                b=b,
-                theta=theta
-            )
-
-            ap_mask = ap.to_mask(method='center')
-
-            flux = cat_obj["FLUX_AUTO"]
-
-            ap_rms = ap_mask.multiply(rms)
-            sigma_flux = np.sqrt(ap_rms.sum()) * units.ct
-            snr = flux / np.sqrt(sigma_flux ** 2 + flux / gain)
-
-            snr_se = flux / cat_obj["FLUXERR_AUTO"].value
-
-            snrs.append(snr.value)
-            sigma_fluxes.append(sigma_flux.value)
-            snrs_se.append(snr_se.value)
-
-        source_cat["SNR_MEASURED"] = snrs
-        source_cat["NOISE_MEASURED"] = sigma_fluxes
-        source_cat["SNR_SE"] = snrs_se
+        # self.load_data()
+        # _, scale = self.extract_pixel_scale()
+        # mask = self.generate_mask(method='sep')
+        # mask = mask.astype(bool)
+        # bkg = self.calculate_background(method='sep', mask=mask)
+        # rms = bkg.rms()
+        #
+        # gain = self.extract_gain() / units.electron
+        #
+        # snrs = []
+        # snrs_se = []
+        # sigma_fluxes = []
+        #
+        # for cat_obj in source_cat:
+        #     x = cat_obj["X_IMAGE"].value - 1
+        #     y = cat_obj["Y_IMAGE"].value - 1
+        #
+        #     a = cat_obj["A_WORLD"].to(units.pix, scale).value
+        #     b = cat_obj["B_WORLD"].to(units.pix, scale).value
+        #
+        #     theta = u.world_angle_se_to_pu(
+        #         cat_obj["THETA_WORLD"],
+        #         rot_angle=self.extract_rotation_angle()
+        #     )
+        #
+        #     ap = photutils.aperture.EllipticalAperture(
+        #         [x, y],
+        #         a=a,
+        #         b=b,
+        #         theta=theta
+        #     )
+        #
+        #     ap_mask = ap.to_mask(method='center')
+        #
+        #     flux = cat_obj["FLUX_AUTO"]
+        #
+        #     ap_rms = ap_mask.multiply(rms)
+        #     sigma_flux = np.sqrt(ap_rms.sum()) * units.ct
+        #     snr = flux / np.sqrt(sigma_flux ** 2 + flux / gain)
+        #
+        #     snr_se = flux / cat_obj["FLUXERR_AUTO"].value
+        #
+        #     snrs.append(snr.value)
+        #     sigma_fluxes.append(sigma_flux.value)
+        #     snrs_se.append(snr_se.value)
+        #
+        # source_cat["SNR_MEASURED"] = snrs
+        # source_cat["NOISE_MEASURED"] = sigma_fluxes
+        # source_cat["SNR_SE"] = snrs_se
 
         self._set_source_cat(source_cat=source_cat, dual=dual)
 
@@ -2670,6 +2730,7 @@ class ImagingImage(Image):
 
         self.extract_pixel_scale()
 
+        # TODO: Fix treatment of zeropoint here
         if model == "gaussian":
             file, sources = ph.insert_point_sources_to_file(
                 file=self.path,
@@ -3204,7 +3265,7 @@ class ImagingImage(Image):
         kron_radius = u.check_iterable(kron_radius)
         rotation_angle = self.extract_rotation_angle(ext=ext)
         print(theta_world, rotation_angle)
-        theta_deg = -theta_world - rotation_angle # + 90 * units.deg
+        theta_deg = -theta_world - rotation_angle  # + 90 * units.deg
         theta = u.theta_range(theta_deg.to(units.rad)).value
         print(theta_deg)
         print(theta, a, b, x, y, kron_radius)
@@ -3247,8 +3308,8 @@ class ImagingImage(Image):
 
             e = Ellipse(
                 xy=(x[0], y[0]),
-                width=2*kron_radius[0]*a[0],
-                height=2*kron_radius[0]*b[0],
+                width=2 * kron_radius[0] * a[0],
+                height=2 * kron_radius[0] * b[0],
                 angle=theta[0] * 180. / np.pi)
             e.set_facecolor('none')
             e.set_edgecolor('white')
@@ -3256,8 +3317,8 @@ class ImagingImage(Image):
 
             e = Ellipse(
                 xy=(x[0], y[0]),
-                width=2*a[0],
-                height=2*b[0],
+                width=2 * a[0],
+                height=2 * b[0],
                 angle=theta[0] * 180. / np.pi)
             e.set_facecolor('none')
             e.set_edgecolor('white')
@@ -3300,7 +3361,6 @@ class ImagingImage(Image):
                 flux, flux_err
             )
 
-
         return mag, mag_err, snr
 
     @classmethod
@@ -3333,6 +3393,7 @@ class ImagingImage(Image):
             "ra_old": "_RVAL1",
             "dec_old": "_RVAL2",
             "airmass": "AIRMASS",
+            "airmass_err": "AIRMASS_ERR",
             "astrometry_err": "ASTM_RMS",
             "ra_err": "RA_RMS",
             "dec_err": "DEC_RMS"
@@ -3746,7 +3807,7 @@ class FORS2CoaddedImage(CoaddedImage):
             )
             self.update_output_file()
 
-            return self.zeropoints["instrument_archive"]
+            return self.zeropoints["instrument_archive"]["self"]
         else:
             return None
 
@@ -3951,7 +4012,7 @@ class Spec1DCoadded(Spectrum):
 
 def deepest(
         img_1: ImagingImage, img_2: ImagingImage, sigma: int = 5, depth_type: str = "secure",
-        snr_type: str = "SNR_MEASURED"):
+        snr_type: str = "SNR_SE"):
     if img_1.depth[depth_type][snr_type][f"{sigma}-sigma"] > \
             img_2.depth[depth_type][snr_type][f"{sigma}-sigma"]:
         return img_1

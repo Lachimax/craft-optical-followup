@@ -42,6 +42,9 @@ instruments_imaging = p.instruments_imaging
 instruments_spectroscopy = p.instruments_spectroscopy
 surveys = p.surveys
 
+active_fields = {}
+active_epochs = {}
+
 
 def _output_img_list(lst: list):
     """
@@ -392,6 +395,8 @@ class Field:
             self.survey = kwargs["survey"]
         if isinstance(self.survey, str):
             self.survey = survey.Survey.from_params(self.survey)
+
+        active_fields[self.name] = self
 
     def __str__(self):
         return f"{self.name}"
@@ -755,6 +760,8 @@ class Field:
 
     @classmethod
     def from_params(cls, name):
+        if name in active_fields:
+            return active_fields[name]
         print("Initializing field...")
         path = cls.build_param_path(field_name=name)
         return cls.from_file(param_file=path)
@@ -860,6 +867,7 @@ class StandardField(Field):
 
         param_path = os.path.join(p.param_dir, "fields", name, f"{name}.yaml")
         if not os.path.isfile(param_path):
+            u.mkdir_check_nested(param_path)
             self.new_yaml(
                 name=name,
                 path=param_path,
@@ -1239,7 +1247,7 @@ class Epoch:
         u.debug_print(2, f"__init__(): {self.name}.data_path ==", self.data_path)
         self.instrument_name = instrument
         try:
-            self.instrument = inst.Instrument.from_params(instrument_name=instrument)
+            self.instrument = inst.Instrument.from_params(instrument_name=str(instrument))
         except FileNotFoundError:
             self.instrument = None
 
@@ -1369,6 +1377,7 @@ class Epoch:
                     n=n,
                     stage_name=name
             )):
+                print(f"Performing processing step {n}: {name}")
                 # Construct path; if dir_name is None then the step is pathless.
                 dir_name = f"{n}-{name}"
                 output_dir = os.path.join(self.data_path, dir_name)
@@ -1669,13 +1678,14 @@ class Epoch:
 
 class StandardEpoch(Epoch):
     instrument_name = "dummy-instrument"
+
     def __init__(
             self,
             centre_coords: SkyCoord,
             instrument: str,
-            frames_standard: Dict[str, List[image.ImagingImage]] = None,
-            frames_flat: Dict[str, List[image.ImagingImage]] = None,
-            frames_bias: List[image.ImagingImage] = None,
+            frames_standard: Dict[str, List[image.ImagingImage]] = {},
+            frames_flat: Dict[str, List[image.ImagingImage]] = {},
+            frames_bias: List[image.ImagingImage] = [],
             date: Union[str, Time] = None,
             **kwargs
     ):
@@ -1694,8 +1704,8 @@ class StandardEpoch(Epoch):
             param_path=param_path,
             name=f"{field.name}_{date}",
             field=field,
-            data_path=os.path.join(field.data_path, "imaging", instrument, name),
-            instrument=instrument,
+            data_path=os.path.join(field.data_path, "imaging", str(instrument), name),
+            instrument=str(instrument),
             date=date,
             **kwargs
         )
@@ -1767,10 +1777,12 @@ class ImagingEpoch(Epoch):
         self.astrometry_successful = {}
         self.frames_final = None
 
-        self.std_pointings = {}
+        self.std_pointings = []
         self.std_objects = {}
+        self.std_epochs = {}
 
         self.coadded_trimmed = {}
+        self.coadded_unprojected = {}
         self.coadded_astrometry = {}
         self.coadded_final = None
 
@@ -2206,12 +2218,16 @@ class ImagingEpoch(Epoch):
             print("trim_coadded img.path:", img.path)
             print("trim_coadded img.area_file:", img.area_file)
             trimmed = img.trim_from_area(output_path=output_path)
+            self.add_coadded_unprojected_image(trimmed, key=fil)
             if reproject:
                 if template is None:
                     template = trimmed
                 else:
                     # Using the first image as a template, reproject this one into the pixel space (for alignment)
-                    trimmed = trimmed.reproject(other_image=template, output_path=output_path)
+                    trimmed = trimmed.reproject(
+                        other_image=template,
+                        output_path=output_path.replace(".fits", "_reprojected.fits")
+                    )
             self.add_coadded_trimmed_image(trimmed, key=fil)
 
     def proc_source_extraction(self, output_dir: str, **kwargs):
@@ -2269,10 +2285,16 @@ class ImagingEpoch(Epoch):
             **kwargs
         )
 
+        for fil in image_dict:
+            if self.coadded_unprojected[fil] is not None:
+                self.coadded_unprojected[fil].zeropoints = image_dict[fil].zeropoints
+                self.coadded_unprojected[fil].zeropoint_best = image_dict[fil].zeropoint_best
+                self.coadded_unprojected[fil].update_output_file()
+
         self.deepest_filter = deepest.filter_name
         self.deepest = deepest
 
-        print("DEEPEST FILTER:", self.deepest_filter, self.deepest.depth["secure"]["SNR_MEASURED"]["5-sigma"])
+        print("DEEPEST FILTER:", self.deepest_filter, self.deepest.depth["secure"]["SNR_SE"]["5-sigma"])
 
     def zeropoint(
             self,
@@ -2311,7 +2333,7 @@ class ImagingEpoch(Epoch):
 
             zeropoint, cat = img.select_zeropoint(suppress_select, preferred=preferred)
 
-            img.estimate_depth(zeropoint_name=cat)
+            img.estimate_depth(zeropoint_name="best")
 
             deepest = image.deepest(deepest, img)
 
@@ -2405,7 +2427,8 @@ class ImagingEpoch(Epoch):
                     mag_psf_err=nearest["MAGERR_PSF_ZP_best"],
                     snr_psf=nearest["FLUX_PSF"] / nearest["FLUXERR_PSF"],
                     image_depth=img.depth["secure"]["SNR_SE"][f"5-sigma"],
-                    image_path=img.path
+                    image_path=img.path,
+                    good_image_path=self.coadded_unprojected[fil].path
                 )
 
                 if isinstance(self.field, FRBField):
@@ -2448,6 +2471,13 @@ class ImagingEpoch(Epoch):
             tbl.write(os.path.join(fil_output_path, f"{self.field.name}_{self.name}_{fil}.csv"),
                       format="ascii.csv")
 
+        for fil in self.coadded_unprojected:
+
+            img = self.coadded_unprojected[fil]
+
+            if img is None:
+                continue
+
             nice_name = f"{self.field.name}_{self.instrument.nice_name().replace('/', '-')}_{fil.replace('_', '-')}_{self.date.strftime('%Y-%m-%d')}.fits"
 
             img.copy_with_outputs(os.path.join(
@@ -2480,12 +2510,12 @@ class ImagingEpoch(Epoch):
                             )
                         )
 
-            self.push_to_table()
+        self.push_to_table()
 
-            for obj in self.field.objects:
-                obj.update_output_file()
-                obj.write_plot_photometry()
-                obj.push_to_table(select=True)
+        for obj in self.field.objects:
+            obj.update_output_file()
+            obj.write_plot_photometry()
+            obj.push_to_table(select=True)
 
     def proc_get_photometry_all(self, output_dir: str, **kwargs):
         if "image_type" in kwargs and isinstance(kwargs["image_type"], str):
@@ -2556,6 +2586,8 @@ class ImagingEpoch(Epoch):
             image_dict = self.coadded_trimmed
         elif image_type == "coadded":
             image_dict = self.coadded
+        elif image_type == "coadded_unprojected":
+            image_dict = self.coadded_unprojected
         elif image_type == "coadded_astrometry":
             image_dict = self.coadded_astrometry
         else:
@@ -2611,7 +2643,9 @@ class ImagingEpoch(Epoch):
             "coadded": _output_img_dict_single(self.coadded),
             "coadded_final": self.coadded_final,
             "coadded_trimmed": _output_img_dict_single(self.coadded_trimmed),
+            "coadded_unprojected": _output_img_dict_single(self.coadded_unprojected),
             "coadded_astrometry": _output_img_dict_single(self.coadded_astrometry),
+            "std_pointings": self.std_pointings,
             "frames_final": self.frames_final,
             "frames_raw": _output_img_list(self.frames_raw),
             "frames_reduced": _output_img_dict_list(self.frames_reduced),
@@ -2687,11 +2721,18 @@ class ImagingEpoch(Epoch):
                     if outputs["coadded_trimmed"][fil] is not None:
                         u.debug_print(1, f"Attempting to load coadded_trimmed[{fil}]")
                         self.add_coadded_trimmed_image(img=outputs["coadded_trimmed"][fil], key=fil, **kwargs)
+            if "coadded_unprojected" in outputs:
+                for fil in outputs["coadded_unprojected"]:
+                    if outputs["coadded_unprojected"][fil] is not None:
+                        u.debug_print(1, f"Attempting to load coadded_unprojected[{fil}]")
+                        self.add_coadded_unprojected_image(img=outputs["coadded_unprojected"][fil], key=fil, **kwargs)
             if "coadded_astrometry" in outputs:
                 for fil in outputs["coadded_astrometry"]:
                     if outputs["coadded_astrometry"][fil] is not None:
                         u.debug_print(1, f"Attempting to load coadded_astrometry[{fil}]")
                         self.add_coadded_astrometry_image(img=outputs["coadded_astrometry"][fil], key=fil, **kwargs)
+            if "std_pointings" in outputs:
+                self.std_pointings = outputs["std_pointings"]
 
         return outputs
 
@@ -2790,6 +2831,9 @@ class ImagingEpoch(Epoch):
     def add_coadded_trimmed_image(self, img: Union[str, image.Image], key: str, **kwargs):
         return self._add_coadded(img=img, key=key, image_dict=self.coadded_trimmed)
 
+    def add_coadded_unprojected_image(self, img: Union[str, image.Image], key: str, **kwargs):
+        return self._add_coadded(img=img, key=key, image_dict=self.coadded_unprojected)
+
     def add_coadded_astrometry_image(self, img: Union[str, image.Image], key: str, **kwargs):
         return self._add_coadded(img=img, key=key, image_dict=self.coadded_astrometry)
 
@@ -2829,6 +2873,8 @@ class ImagingEpoch(Epoch):
                 self.coadded[fil] = None
             if fil not in self.coadded_trimmed:
                 self.coadded_trimmed[fil] = None
+            if fil not in self.coadded_unprojected:
+                self.coadded_unprojected[fil] = None
             if fil not in self.coadded_astrometry:
                 self.coadded_astrometry[fil] = None
             if fil not in self.exp_time_mean:
@@ -2839,8 +2885,6 @@ class ImagingEpoch(Epoch):
                 self.airmass_mean[fil] = None
             if fil not in self.airmass_err:
                 self.airmass_err[fil] = None
-            if fil not in self.std_pointings:
-                self.std_pointings[fil] = []
             if fil not in self.astrometry_stats:
                 self.astrometry_stats[fil] = {}
             return True
@@ -2932,6 +2976,8 @@ class ImagingEpoch(Epoch):
 
     @classmethod
     def from_params(cls, name: str, instrument: str, field: Union[Field, str] = None, old_format: bool = False):
+        if name in active_epochs:
+            return active_epochs[name]
         instrument = instrument.lower()
         field_name, field = cls._from_params_setup(name=name, field=field)
         if old_format:
@@ -3060,105 +3106,13 @@ class FORS2StandardEpoch(StandardEpoch, ImagingEpoch):
             output_path: str = None,
             **kwargs
     ):
-        import craftutils.wrap.esorex as esorex
-
         zeropoints = {}
 
         if output_path is None:
             output_path = os.path.join(self.data_path, "photometric_calibration")
 
-        bias_sets = self.sort_by_chip(self.frames_bias)
-        bias_sets = (bias_sets[1], bias_sets[2])
-        flat_sets = {}
-        std_sets = {}
-        for fil in self.filters:
-            flat_chips = self.sort_by_chip(self.frames_flat[fil])
-            if flat_chips:
-                flat_sets[fil] = flat_chips[1], flat_chips[2]
-            std_chips = self.sort_by_chip(self.frames_standard[fil])
-            if std_chips:
-                std_sets[fil] = std_chips[1], std_chips[2]
-
-        chips = ("up", "down")
-        for i, chip in enumerate(chips):
-            bias_set = bias_sets[i]
-
-            zeropoints[chip] = {}
-
-            master_bias = esorex.fors_bias(
-                bias_frames=list(map(lambda b: b.path, bias_set)),
-                output_dir=output_path,
-                output_filename=f"master_bias_{chip}.fits",
-                sof_name=f"bias_{chip}.sof"
-            )
-
-            for fil in self.filters:
-                zeropoints[chip][fil] = {}
-                if fil not in flat_sets or fil not in bias_sets:
-                    continue
-
-                if "calib_pipeline" in zeropoints[fil]:
-                    zeropoints[fil].pop("calib_pipeline")
-                flat_set = list(map(lambda b: b.path, flat_sets[fil][i]))
-                fil_dir = os.path.join(output_path, fil)
-                u.mkdir_check(fil_dir)
-                master_sky_flat_img = esorex.fors_img_sky_flat(
-                    flat_frames=flat_set,
-                    master_bias=master_bias,
-                    output_dir=fil_dir,
-                    output_filename=f"master_sky_flat_img_{chip}.fits",
-                    sof_name=f"flat_{chip}"
-                )
-
-                aligned_phots = []
-                for std in std_sets[fil][i]:
-                    std_dir = os.path.join(fil_dir, std.name)
-                    u.mkdir_check(std_dir)
-                    aligned_phot, std_reduced = esorex.fors_zeropoint(
-                        standard_img=std.path,
-                        master_bias=master_bias,
-                        master_sky_flat_img=master_sky_flat_img,
-                        output_dir=std_dir,
-                        chip_num=i + 1
-                    )
-                    aligned_phots.append(aligned_phot)
-                    self.add_frame_reduced(std_reduced)
-
-                if len(aligned_phots) > 1:
-                    try:
-                        phot_coeff_table = esorex.fors_photometry(
-                            aligned_phot=aligned_phots,
-                            master_sky_flat_img=master_sky_flat_img,
-                            output_dir=fil_dir,
-                            chip_num=i + 1,
-                        )
-
-                        phot_coeff_table = fits.open(phot_coeff_table)[1].data
-
-                        print(f"Chip {chip}, zeropoint {phot_coeff_table['ZPOINT'][0] * units.mag}")
-
-                        this_zp = {
-                            "zeropoint": phot_coeff_table["ZPOINT"][0] * units.mag,
-                            "zeropoint_err": phot_coeff_table["DZPOINT"][0] * units.mag,
-                            "extinction": phot_coeff_table["EXT"][0] * units.mag,
-                            "extinction_err": phot_coeff_table["DEXT"][0] * units.mag,
-                            "catalogue": "calib_pipeline",
-                            "n_matches": None
-                        }
-
-                        zeropoints[chip][fil]["calib_pipeline"] = this_zp
-
-                        for std in self.frames_reduced[fil]:
-                            if std.extract_chip_number() == chip:
-                                std.add_zeropoint(
-                                    airmass=std.extract_airmass(),
-                                    airmass_err=0.,
-                                    **this_zp
-                                )
-
-                    except SystemError:
-                        print(
-                            "System Error encountered while doing esorex processing; possibly impossible value encountered. Skipping.")
+        print("frames_reduced:")
+        print(self.frames_reduced)
 
         zeropoints = self.zeropoint(
             image_dict=self.frames_reduced,
@@ -3186,34 +3140,36 @@ class FORS2StandardEpoch(StandardEpoch, ImagingEpoch):
         else:
             zp_dict = {}
 
+        zp_dict[1] = {}
+        zp_dict[2] = {}
         for fil in self.filters:
-            img = image_dict[fil]
-            img.zeropoints = {}
-            for cat_name in retrieve.photometry_catalogues:
-                if cat_name == "gaia":
-                    continue
-                fil_path = os.path.join(output_path, fil)
-                u.mkdir_check(fil_path)
-                if f"in_{cat_name}" in self.field.cats and self.field.cats[f"in_{cat_name}"]:
-                    zp = img.zeropoint(
-                        cat_path=self.field.get_path(f"cat_csv_{cat_name}"),
-                        output_path=os.path.join(fil_path, cat_name),
-                        cat_name=cat_name,
-                        dist_tol=distance_tolerance,
-                        show=False,
-                        snr_cut=snr_min,
-                        star_class_tol=star_class_tolerance,
-                    )
+            for img in image_dict[fil]:
+                img.zeropoints = {}
+                for cat_name in retrieve.photometry_catalogues:
+                    if cat_name == "gaia":
+                        continue
+                    fil_path = os.path.join(output_path, fil)
+                    u.mkdir_check_nested(fil_path, remove_last=False)
+                    if f"in_{cat_name}" in self.field.cats and self.field.cats[f"in_{cat_name}"]:
+                        zp = img.zeropoint(
+                            cat_path=self.field.get_path(f"cat_csv_{cat_name}"),
+                            output_path=os.path.join(fil_path, cat_name),
+                            cat_name=cat_name,
+                            dist_tol=distance_tolerance,
+                            show=False,
+                            snr_cut=snr_min,
+                            star_class_tol=star_class_tolerance,
+                        )
 
-                    chip = img.extract_chip_number()
-                    zp_dict[chip][fil][cat_name][img.name] = zp
+                        chip = img.extract_chip_number()
+                        zp_dict[chip][fil][cat_name][img.name] = zp
 
-            if "preferred_zeropoint" in kwargs and fil in kwargs["preferred_zeropoint"]:
-                preferred = kwargs["preferred_zeropoint"][fil]
-            else:
-                preferred = None
+                if "preferred_zeropoint" in kwargs and fil in kwargs["preferred_zeropoint"]:
+                    preferred = kwargs["preferred_zeropoint"][fil]
+                else:
+                    preferred = None
 
-            zeropoint, cat = img.select_zeropoint(suppress_select, preferred=preferred)
+                zeropoint, cat = img.select_zeropoint(suppress_select, preferred=preferred)
 
         return zp_dict
 
@@ -3916,30 +3872,6 @@ class ESOImagingEpoch(ImagingEpoch):
                 f"_initial_setup(): Adding frame {img.name}, type {img.frame_type}, to {self}, type {type(self)}")
             self.add_frame_raw(img)
 
-        std_dir = os.path.join(data_dir, 'standards')
-        u.mkdir_check(std_dir)
-
-        # Collect pointings of standard-star observations.
-        for fil in self.frames_standard:
-
-            std_filter_dir = os.path.join(std_dir, fil)
-            self.set_path(f"standard_dir_{fil}", std_filter_dir)
-            u.mkdir_check(std_filter_dir)
-            for img in self.frames_standard[fil]:
-                pointing = img.extract_pointing()
-
-                if pointing not in self.std_pointings[fil]:
-                    self.std_pointings[fil].append(pointing)
-                    # pointing_dir = os.path.join(std_filter_dir, f"RA{pointing.ra.value}_DEC{pointing.dec.value}")
-                    # u.mkdir_check(pointing_dir)
-                    # pointing_dir = os.path.join(pointing_dir, "0-raw_stds")
-                    # u.mkdir_check(pointing_dir)
-                    #
-                    # path_dest = os.path.join(pointing_dir, img.filename)
-                    # shutil.copy(img.path, path_dest)
-                    # img.path = path_dest
-                    # img.update_output_file()
-
         # Collect and save some stats on those filters:
         for i, fil in enumerate(self.filters):
             exp_times = list(map(lambda frame: frame.extract_exposure_time().value, self.frames_science[fil]))
@@ -4616,6 +4548,8 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
             output_path: str,
             **kwargs
     ):
+        import craftutils.wrap.esorex as esorex
+
         if "image_type" in kwargs and kwargs["image_type"] is not None:
             image_type = kwargs["image_type"]
         else:
@@ -4631,36 +4565,148 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
             **kwargs
         )
 
+        # Do esorex reduction of standard images, and attempt esorex zeropoints if there are enough different
+        # observations
         images = self._get_images(image_type)
-
-        cls = StandardEpoch.select_child_class(instrument=self.instrument)
-
-        for fil in self.std_pointings:
-            for pointing in self.std_pointings[fil]:
-                std_epoch = cls(
-                    centre_coords=pointing,
-                    instrument=self.instrument,
-                    frames_standard=self.frames_standard,
-                    frames_flat=self.frames_flat,
-                    frames_bias=self.frames_bias,
-                    date=self.date
-                )
-                std_epoch.photometric_calibration()
-
+        # Split up bias images by chip
+        bias_sets = self.sort_by_chip(self.frames_bias)
+        bias_sets = (bias_sets[1], bias_sets[2])
+        flat_sets = {}
+        std_sets = {}
+        # Split up the flats and standards by filter and chip
         for fil in self.filters:
+            flat_chips = self.sort_by_chip(self.frames_flat[fil])
+            if flat_chips:
+                flat_sets[fil] = flat_chips[1], flat_chips[2]
+            std_chips = self.sort_by_chip(self.frames_standard[fil])
+            if std_chips:
+                std_sets[fil] = std_chips[1], std_chips[2]
 
-            # The intention here is that a chip 1 zeropoint override a chip 2 zeropoint, but
-            # if chip 1 doesn't work a chip 2 one will do.
-            # if chip == 1 or "calib_pipeline" not in img.zeropoints:
-            # airmass = img.extract_airmass(),
-            # airmass_err = self.airmass_err[fil],
+        chips = ("up", "down")
+        for i, chip in enumerate(chips):
+            bias_set = bias_sets[i]
+            # For each chip, generate a master bias image
+            master_bias = esorex.fors_bias(
+                bias_frames=list(map(lambda b: b.path, bias_set)),
+                output_dir=output_path,
+                output_filename=f"master_bias_{chip}.fits",
+                sof_name=f"bias_{chip}.sof"
+            )
 
+            for fil in images:
+                # Generate master flat per-filter, per-chip
+                if fil not in flat_sets:
+                    continue
+                img = images[fil]
+                if "calib_pipeline" in img.zeropoints:
+                    img.zeropoints.pop("calib_pipeline")
+                flat_set = list(map(lambda b: b.path, flat_sets[fil][i]))
+                fil_dir = os.path.join(output_path, fil)
+                u.mkdir_check(fil_dir)
+                master_sky_flat_img = esorex.fors_img_sky_flat(
+                    flat_frames=flat_set,
+                    master_bias=master_bias,
+                    output_dir=fil_dir,
+                    output_filename=f"master_sky_flat_img_{chip}.fits",
+                    sof_name=f"flat_{chip}"
+                )
+
+                aligned_phots = []
+                for std in std_sets[fil][i]:
+                    # generate or load an appropriate StandardEpoch
+                    # (and StandardField in the background)
+                    pointing = std.extract_pointing()
+                    jname = astm.jname(pointing, 0, 0)
+                    if pointing not in self.std_pointings:
+                        self.std_pointings.append(pointing)
+                    if jname not in self.std_epochs:
+                        std_epoch = FORS2StandardEpoch(
+                            centre_coords=pointing,
+                            instrument=self.instrument,
+                            frames_flat=self.frames_flat,
+                            frames_bias=self.frames_bias,
+                            date=self.date
+                        )
+                        self.std_epochs[jname] = std_epoch
+                    else:
+                        std_epoch = self.std_epochs[jname]
+                    std_epoch.add_frame_raw(std)
+                    # For each raw standard, reduce
+                    std_dir = os.path.join(fil_dir, std.name)
+                    u.mkdir_check(std_dir)
+                    aligned_phot, std_reduced = esorex.fors_zeropoint(
+                        standard_img=std.path,
+                        master_bias=master_bias,
+                        master_sky_flat_img=master_sky_flat_img,
+                        output_dir=std_dir,
+                        chip_num=i + 1
+                    )
+                    aligned_phots.append(aligned_phot)
+                    std_epoch.add_frame_reduced(std_reduced)
+
+                if len(aligned_phots) > 1:
+                    try:
+                        phot_coeff_table = esorex.fors_photometry(
+                            aligned_phot=aligned_phots,
+                            master_sky_flat_img=master_sky_flat_img,
+                            output_dir=fil_dir,
+                            chip_num=i + 1,
+                        )
+
+                        phot_coeff_table = fits.open(phot_coeff_table)[1].data
+
+                        print(f"Chip {chip}, zeropoint {phot_coeff_table['ZPOINT'][0] * units.mag}")
+
+                        # The intention here is that a chip 1 zeropoint override a chip 2 zeropoint, but
+                        # if chip 1 doesn't work a chip 2 one will do.
+                        if chip == 1 or "calib_pipeline" not in img.zeropoints:
+                            img.add_zeropoint(
+                                zeropoint=phot_coeff_table["ZPOINT"][0] * units.mag,
+                                zeropoint_err=phot_coeff_table["DZPOINT"][0] * units.mag,
+                                airmass=img.extract_airmass(),
+                                airmass_err=self.airmass_err[fil],
+                                extinction=phot_coeff_table["EXT"][0] * units.mag,
+                                extinction_err=phot_coeff_table["DEXT"][0] * units.mag,
+                                catalogue="calib_pipeline",
+                                n_matches=None,
+                            )
+
+                        # img.update_output_file()
+                    except SystemError:
+                        print(
+                            "System error encountered while doing esorex processing; possibly impossible value encountered. Skipping.")
+
+                else:
+                    print(f"Insufficient standard observations to calculate esorex zeropoint for {img}")
+
+        zeropoints_std = {}
+
+        print("Estimating zeropoints from standard observations...")
+        print(self.frames_standard)
+        print(std_sets)
+        print(self.std_epochs)
+        print(self.filters)
+        for jname in self.std_epochs:
+            std_epoch = self.std_epochs[jname]
+            zeropoints_std[jname] = std_epoch.photometric_calibration()
+            for fil in images:
+                img = images[fil]
+                for std in std_epoch.frames_reduced:
+                    img.add_zeropoint_from_other(std)
+
+        for fil in images:
             if "preferred_zeropoint" in kwargs and fil in kwargs["preferred_zeropoint"]:
                 preferred = kwargs["preferred_zeropoint"][fil]
             else:
                 preferred = None
             img = images[fil]
+
             img.select_zeropoint(suppress_select, preferred=preferred)
+
+            if self.coadded_unprojected[fil] is not None:
+                self.coadded_unprojected[fil].zeropoints = img.zeropoints
+                self.coadded_unprojected[fil].zeropoint_best = img.zeropoints_best
+                self.coadded_unprojected[fil].update_output_file()
 
     @classmethod
     def pair_files(cls, images: list):
@@ -5109,6 +5155,8 @@ class SpectroscopyEpoch(Epoch):
 
     @classmethod
     def from_params(cls, name, field: Union[Field, str] = None, instrument: str = None):
+        if name in active_epochs:
+            return active_epochs[name]
         print("Initializing epoch...")
         instrument = instrument.lower()
         field_name, field = cls._from_params_setup(name=name, field=field)
