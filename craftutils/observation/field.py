@@ -572,9 +572,10 @@ class Field:
 
     def _mode_data_path(self, mode: str):
         if self.data_path is not None:
-            path = os.path.join(self.data_path, mode)
-            u.mkdir_check(path)
-            return path
+            path = os.path.join(self.data_path_relative, mode)
+            path_abs = os.path.join(self.data_path, mode)
+            u.mkdir_check(path_abs)
+            return path, path_abs
         else:
             raise ValueError(f"data_path is not set for {self}.")
 
@@ -592,25 +593,27 @@ class Field:
         return path
 
     def _instrument_data_path(self, mode: str, instrument: str):
-        path = os.path.join(self._mode_data_path(mode=mode), instrument)
-        u.mkdir_check(path)
-        return path
+        path, path_abs = self._mode_data_path(mode=mode)
+        path = os.path.join(path, instrument)
+        path_abs = os.path.join(path_abs, instrument)
+        u.mkdir_check(path_abs)
+        return path, path_abs
 
     def _epoch_param_path(self, mode: str, instrument: str, epoch_name: str):
         return os.path.join(self._instrument_param_path(mode=mode, instrument=instrument), f"{epoch_name}.yaml")
 
     def _epoch_data_path(self, mode: str, instrument: str, date: Time, epoch_name: str, survey: bool = False):
         if survey:
-            path = self._instrument_data_path(mode=mode, instrument=instrument)
+            path, path_abs = self._instrument_data_path(mode=mode, instrument=instrument)
         else:
             if date is None:
                 name_str = epoch_name
             else:
                 name_str = f"{date}-{epoch_name}"
-            path = os.path.join(
-                self._instrument_data_path(mode=mode, instrument=instrument),
-                name_str)
-        u.mkdir_check(path)
+            path, path_abs = self._instrument_data_path(mode=mode, instrument=instrument)
+            path = os.path.join(path, name_str)
+            path_abs = os.path.join(path_abs, name_str)
+        u.mkdir_check(path_abs)
         return path
 
     def retrieve_catalogues(self, force_update: bool = False):
@@ -1240,8 +1243,10 @@ class Epoch:
         self.name = name
         self.field = field
         self.data_path = None
+        self.data_path_relative = None
         if data_path is not None:
             self.data_path = os.path.join(p.data_path, data_path)
+            self.data_path_relative = data_path
         if data_path is not None:
             u.mkdir_check_nested(self.data_path)
         u.debug_print(2, f"__init__(): {self.name}.data_path ==", self.data_path)
@@ -3451,10 +3456,25 @@ class GSAOIImagingEpoch(ImagingEpoch):
 
         if field is None:
             field = param_dict.pop("field")
+
+        if field is None:
+            field = param_dict.pop("field")
         if 'target' in param_dict:
             target = param_dict.pop('target')
         else:
             target = None
+
+        if "field" in param_dict:
+            param_dict.pop("field")
+        if "instrument" in param_dict:
+            param_dict.pop("instrument")
+        if "name" in param_dict:
+            param_dict.pop("name")
+        if "param_path" in param_dict:
+            param_dict.pop("param_path")
+
+        print(field)
+        print(param_dict)
 
         return cls(
             name=name,
