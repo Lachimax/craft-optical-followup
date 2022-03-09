@@ -3405,7 +3405,7 @@ class GSAOIImagingEpoch(ImagingEpoch):
         for fil in self.filters:
             dragons.disco(
                 redux_dir=self.paths["redux_dir"],
-                expression=f"(filter_name==\"{fil}\" and observation_class==\"science\")",
+                expression=f"filter_name==\"{fil}\" and observation_class==\"science\"",
                 output=f"{self.name}_{fil}_stacked.fits",
                 file_glob="*_skySubtracted.fits",
                 refcat=self.field.paths["cat_csv_gaia"],
