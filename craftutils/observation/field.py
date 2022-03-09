@@ -1280,7 +1280,6 @@ class Epoch:
 
         # Data reduction paths
         self.paths = {}
-        self._path_0_raw()
 
         # Frames
         self.frames_raw = []
