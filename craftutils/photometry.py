@@ -10,7 +10,6 @@ import photutils as ph
 from photutils.datasets import make_model_sources_image
 import matplotlib.pyplot as plt
 from scipy.ndimage import shift
-import psfex
 
 import astropy.stats as stats
 import astropy.wcs as wcs
@@ -30,8 +29,6 @@ import craftutils.utils as u
 import craftutils.plotting as plotting
 import craftutils.retrieve as r
 import craftutils.astrometry as a
-
-from craftutils.wrap.psfex import load_psfex
 
 quantity_support()
 
@@ -1849,6 +1846,8 @@ def insert_synthetic_point_sources_psfex(
     :param saturate:
     :return:
     """
+
+    import psfex
 
     if not isinstance(mag, Iterable):
         mag = np.array([mag])
