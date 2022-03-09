@@ -1129,10 +1129,11 @@ def system_command(
 
 
 def system_command_verbose(command: str, suppress_print: bool = False, error_on_exit_code: bool = True, suppress_path: bool = False):
-    if not suppress_path:
-        print("In:", os.getcwd())
+
     if not suppress_print:
         print()
+        if not suppress_path:
+            print("In:", os.getcwd())
         print("Executing:")
         print(command)
         print()

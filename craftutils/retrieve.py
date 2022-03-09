@@ -1538,11 +1538,17 @@ def save_gemini_calibs(output: str, obs_date: Time, instrument: str = 'GSAOI', f
 
     save_gemini_files(flats, output=output, overwrite=overwrite)
 
+    print("Found flats:")
+    print(flats)
+
     standards = gemini.Observations.query_criteria(
         instrument=instrument,
         observation_class="partnerCal",
         program_id=f"GS-CAL{date_early.strftime('%y%m%d')}",
     )
+
+    print("Found standards:")
+    print(flats)
 
     standards = standards[standards["filter_name"] == fil]
 
