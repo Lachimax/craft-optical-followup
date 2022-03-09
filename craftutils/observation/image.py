@@ -1,34 +1,24 @@
 # Code by Lachlan Marnoch, 2021
-import copy
 import math
 import string
 import os
 import shutil
-import sys
-import warnings
 from typing import Union, Tuple, List
 from copy import deepcopy
 
-try:
-    import ccdproc
-    from ccdproc import cosmicray_lacosmic
-except ImportError:
-    print('There is a problem with ccdproc. Some functionality will not be available.')
 import numpy as np
 
 import matplotlib.pyplot as plt
 from matplotlib.patches import Ellipse
 
-import astropy
 import astropy.io.fits as fits
 import astropy.table as table
 import astropy.wcs as wcs
 import astropy.units as units
-from astropy.stats import sigma_clipped_stats, SigmaClip
+from astropy.stats import SigmaClip
 
 from astropy.visualization import (
-    ImageNormalize, LogStretch, SqrtStretch, ZScaleInterval, MinMaxInterval,
-    PowerStretch, wcsaxes)
+    ImageNormalize, LogStretch, SqrtStretch, MinMaxInterval)
 from astropy.coordinates import SkyCoord
 from astropy.time import Time
 from astropy.visualization import quantity_support
@@ -463,14 +453,15 @@ class Image:
         return self.data
 
     def to_ccddata(self, unit: Union[str, units.Unit]):
+        import ccdproc
         if unit is None:
             return ccdproc.CCDData.read(self.path)
         else:
             return ccdproc.CCDData.read(self.path, unit=unit)
 
-    @classmethod
-    def from_ccddata(self, ccddata: ccdproc.CCDData, path: str):
-        pass
+    # @classmethod
+    # def from_ccddata(self, ccddata: 'ccdproc.CCDData', path: str):
+    #     pass
 
     def get_id(self):
         return self.filename[:self.filename.find(".fits")]
@@ -2240,6 +2231,7 @@ class ImagingImage(Image):
         return new
 
     def clean_cosmic_rays(self, output_path: str, ext: int = 0):
+        from ccdproc import cosmicray_lacosmic
         cleaned = self.copy(output_path)
         cleaned.load_data()
         data = cleaned.data[ext]
