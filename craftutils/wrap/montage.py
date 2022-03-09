@@ -6,7 +6,6 @@ from typing import List, Union
 import numpy as np
 
 import astropy.io.fits as fits
-from ccdproc import combine, CCDData
 
 import craftutils.utils as u
 from craftutils.observation.image import fits_table_all
@@ -275,8 +274,7 @@ def standard_script(
         output_file_name: str = None,
         ignore_differences: bool = False,
         coadd_types: Union[List[str], str] = 'median',
-        add_with_ccdproc: Union[List[bool], bool] = False,
-        unit="electron / second",
+        # unit="electron / second",
         do_inject_header: bool = True,
         **kwargs
 ):
@@ -348,8 +346,6 @@ def standard_script(
 
     if isinstance(coadd_types, str):
         coadd_types = [coadd_types]
-    if isinstance(add_with_ccdproc, bool):
-        add_with_ccdproc = len(coadd_types) * [add_with_ccdproc]
 
     file_paths = []
 
