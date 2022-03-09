@@ -185,9 +185,6 @@ def disco(redux_dir: str,
     if ignore_objcat:
         sys_str += " --ignore_objcat"
 
-    print()
-    print(sys_str)
-    print()
-    os.system(sys_str)
+    u.system_command_verbose(sys_str)
 
     os.chdir(pwd)

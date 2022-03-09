@@ -1536,13 +1536,35 @@ def save_gemini_calibs(output: str, obs_date: Time, instrument: str = 'GSAOI', f
         date_early -= 1
         date_late += 1
 
-        print("Found flats:")
-        print(flats)
-
     save_gemini_files(flats, output=output, overwrite=overwrite)
 
     print("Found flats for fil :")
     print(flats)
+
+    standards = {}
+
+    date_early = obs_date.copy()
+    date_late = obs_date.copy()
+    while len(standards) == 0:
+        program_id = f"GS-CAL{date_early.strftime('%Y%m%d')}"
+        print(f"Searching for domeflats in {program_id}...")
+        standards = gemini.Observations.query_criteria(
+            instrument=instrument,
+            observation_class="partnerCal",
+            program_id=f"GS-CAL{date_early.strftime('%y%m%d')}",
+        )
+        standards = standards[standards["filter_name"] == fil]
+        if len(flats) == 0:
+            program_id = f"GS-CAL{date_late.strftime('%Y%m%d')}"
+            print(f"Searching for domeflats in {program_id}...")
+            standards = gemini.Observations.query_criteria(
+                instrument=instrument,
+                observation_class="partnerCal",
+                program_id=f"GS-CAL{date_late.strftime('%y%m%d')}",
+            )
+            standards = standards[standards["filter_name"] == fil]
+        date_early -= 1
+        date_late += 1
 
     standards = gemini.Observations.query_criteria(
         instrument=instrument,
