@@ -817,7 +817,7 @@ class Field:
         while pos_coord is None:
             ra = u.user_input(
                 "Please enter the Right Ascension of the field target, in the format 00h00m00.0s or as a decimal number of degrees"
-                " (for an FRB field, this should be the FRB coordinates). Eg: 13h19m14.08s, 199.80867")
+                " (for an FRB field, this should be the FRB coordinates). Eg: 13h19m14.08s, 199.80867d")
             ra_err = 0.0
             if field_class is FRBField:
                 ra_err = u.user_input("If you know the uncertainty in the FRB localisation RA, you can enter "
@@ -826,7 +826,7 @@ class Field:
                     ra_err = 0.0
             dec = u.user_input(
                 "Please enter the Declination of the field target, in the format 00d00m00.0s or as a decimal number of degrees"
-                " (for an FRB field, this should be the FRB coordinates). Eg: -18d50m16.7s, -18.83797222")
+                " (for an FRB field, this should be the FRB coordinates). Eg: -18d50m16.7s, -18.83797222d")
             dec_err = 0.0
             if field_class is FRBField:
                 dec_err = u.user_input("If you know the uncertainty in the FRB localisation Dec, you can enter "
@@ -4735,6 +4735,7 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
             for fil in images:
                 img = images[fil]
                 for std in std_epoch.frames_reduced:
+                    print(std, type(std))
                     img.add_zeropoint_from_other(std)
 
         for fil in images:
