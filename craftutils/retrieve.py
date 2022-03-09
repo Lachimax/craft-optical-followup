@@ -1534,11 +1534,14 @@ def save_gemini_calibs(output: str, obs_date: Time, instrument: str = 'GSAOI', f
         date_early -= 1
         date_late += 1
 
+        print("Found flats:")
+        print(flats)
+
     flats = flats[flats["filter_name"] == fil]
 
     save_gemini_files(flats, output=output, overwrite=overwrite)
 
-    print("Found flats:")
+    print("Found flats for fil :")
     print(flats)
 
     standards = gemini.Observations.query_criteria(
@@ -1548,7 +1551,7 @@ def save_gemini_calibs(output: str, obs_date: Time, instrument: str = 'GSAOI', f
     )
 
     print("Found standards:")
-    print(flats)
+    print(standards)
 
     standards = standards[standards["filter_name"] == fil]
 
