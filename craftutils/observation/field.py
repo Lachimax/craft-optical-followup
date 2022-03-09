@@ -4734,7 +4734,7 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
             std_epoch.photometric_calibration()
             for fil in images:
                 img = images[fil]
-                for std in std_epoch.frames_reduced:
+                for std in std_epoch.frames_reduced[fil]:
                     print(std, type(std))
                     img.add_zeropoint_from_other(std)
 
