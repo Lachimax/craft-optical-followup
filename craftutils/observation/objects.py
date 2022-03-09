@@ -1,13 +1,11 @@
 from typing import Union, Tuple, List
 import os
 
-import matplotlib.figure
 import matplotlib.pyplot as plt
 import numpy as np
 
 from astropy.coordinates import SkyCoord
 import astropy.units as units
-import astropy.time as time
 import astropy.table as table
 import astropy.cosmology as cosmo
 from astropy.modeling import models, fitting

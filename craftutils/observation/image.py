@@ -11,6 +11,7 @@ from copy import deepcopy
 
 try:
     import ccdproc
+    from ccdproc import cosmicray_lacosmic
 except ImportError:
     print('There is a problem with ccdproc. Some functionality will not be available.')
 import numpy as np
@@ -31,8 +32,6 @@ from astropy.visualization import (
 from astropy.coordinates import SkyCoord
 from astropy.time import Time
 from astropy.visualization import quantity_support
-
-from ccdproc import cosmicray_lacosmic
 
 try:
     from astroalign import register
