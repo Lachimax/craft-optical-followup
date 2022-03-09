@@ -3349,7 +3349,7 @@ class GSAOIImagingEpoch(ImagingEpoch):
             print(flats_list)
 
             self.flats_lists[fil] = os.path.join(redux_dir, flats_list_name)
-            self.flats[fil] = flats_list
+            self.frames_flat[fil] = flats_list
 
         # Get list of standard observations:
         std_tbl_name = "std_objects.csv"
@@ -3442,7 +3442,7 @@ class GSAOIImagingEpoch(ImagingEpoch):
             if "std" in outputs:
                 self.std_lists = outputs["std"]
             if "flats" in outputs:
-                self.flats = outputs["flats"]
+                self.frames_flat = outputs["flats"]
         return outputs
 
     @classmethod
