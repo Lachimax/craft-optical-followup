@@ -50,11 +50,8 @@ def data_select(
         expression=expression,
         output=output
     )
-    print()
-    print(sys_str)
-    print("In:", os.getcwd())
-    print()
-    os.system(sys_str)
+
+    u.system_command_verbose(sys_str)
 
     data_list = None
     if output is not None:

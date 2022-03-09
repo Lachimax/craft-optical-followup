@@ -1429,10 +1429,6 @@ class Epoch:
     def _initial_setup(self, output_dir: str, **kwargs):
         pass
 
-    def _path_0_raw(self):
-        if self.data_path is not None and "raw_dir" not in self.paths:
-            self.paths["raw_dir"] = os.path.join(self.data_path, epoch_stage_dirs["0-download"])
-
     def load_output_file(self, **kwargs):
         outputs = p.load_output_file(self)
         if type(outputs) is dict:
@@ -3299,8 +3295,8 @@ class GSAOIImagingEpoch(ImagingEpoch):
 
     def _initial_setup(self, output_dir: str, **kwargs):
         data_dir = self.data_path
-        raw_dir = self.paths["raw_dir"]
-        self.paths["redux_dir"] = redux_dir = os.path.join(data_dir, "1-reduced")
+        raw_dir = self.paths["download"]
+        self.paths["redux_dir"] = redux_dir = os.path.join(data_dir, "redux")
         u.mkdir_check(redux_dir)
         # DO the initial database setup for DRAGONS.
         dragons.caldb_init(redux_dir=redux_dir)
@@ -4904,6 +4900,10 @@ class SpectroscopyEpoch(Epoch):
         self._pypeit_file = None
         self._pypeit_sorted_file = None
         self._pypeit_coadd1d_file = None
+
+    def _path_0_raw(self):
+        if self.data_path is not None and "raw_dir" not in self.paths:
+            self.paths["raw_dir"] = os.path.join(self.data_path, epoch_stage_dirs["0-download"])
 
     def proc_pypeit_flux(self, no_query: bool = False, **kwargs):
         if no_query or self.query_stage("Do fluxing with PypeIt?", stage_name='4-pypeit_flux_calib'):
