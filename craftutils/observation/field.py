@@ -3408,11 +3408,11 @@ class GSAOIImagingEpoch(ImagingEpoch):
                 expression=f"filter_name==\"{fil}\" and observation_class==\"science\"",
                 output=f"{self.name}_{fil}_stacked.fits",
                 file_glob="*_skySubtracted.fits",
-                refcat=self.field.paths["cat_csv_gaia"],
-                refcat_format="ascii.csv",
-                refcat_ra="ra",
-                refcat_dec="dec",
-                ignore_objcat=False
+                #refcat=self.field.paths["cat_csv_gaia"],
+                #refcat_format="ascii.csv",
+                #refcat_ra="ra",
+                #refcat_dec="dec",
+                #ignore_objcat=False
             )
 
     def check_filter(self, fil: str):
