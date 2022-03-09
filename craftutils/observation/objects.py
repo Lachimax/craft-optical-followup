@@ -33,7 +33,6 @@ import craftutils.utils as u
 import craftutils.observation.instrument as inst
 import craftutils.retrieve as r
 import craftutils.observation as obs
-import craftutils.observation.image as image
 
 try:
     cosmology = cosmo.Planck18
@@ -282,6 +281,9 @@ class Object:
             pass
 
     def get_good_photometry(self):
+
+        import craftutils.observation.image as image
+
         self.estimate_galactic_extinction()
         deepest = self.select_deepest()
         deepest_dict = self.photometry[deepest["instrument"]][deepest["band"]][deepest["epoch_name"]]
