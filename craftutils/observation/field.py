@@ -7,7 +7,11 @@ from typing import Union, List, Dict
 import shutil
 from collections import OrderedDict
 
-import ccdproc
+try:
+    import ccdproc
+except ImportError:
+    print('There is a problem with ccdproc. Some functionality will not be available.')
+
 import matplotlib.pyplot as plt
 from matplotlib.patches import Ellipse
 import numpy as np
