@@ -1523,6 +1523,7 @@ def save_gemini_calibs(output: str, obs_date: Time, instrument: str = 'GSAOI', f
             observation_class='dayCal',
             program_id=program_id,
         )
+        flats = flats[flats["filter_name"] == fil]
         if len(flats) == 0:
             program_id = f"GS-CAL{date_late.strftime('%Y%m%d')}"
             print(f"Searching for domeflats in {program_id}...")
@@ -1531,13 +1532,12 @@ def save_gemini_calibs(output: str, obs_date: Time, instrument: str = 'GSAOI', f
                 observation_class='dayCal',
                 program_id=f"GS-CAL{date_late.strftime('%y%m%d')}",
             )
+            flats = flats[flats["filter_name"] == fil]
         date_early -= 1
         date_late += 1
 
         print("Found flats:")
         print(flats)
-
-    flats = flats[flats["filter_name"] == fil]
 
     save_gemini_files(flats, output=output, overwrite=overwrite)
 
