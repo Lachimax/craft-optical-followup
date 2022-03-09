@@ -1453,14 +1453,16 @@ class ImagingImage(Image):
         delta_airmass = airmass - airmass_other
         delta_airmass_err = u.uncertainty_sum(airmass_err, airmass_other_err)
 
-        for zeropoint in other.zeropoints['self']:
-            self.add_zeropoint(
-                **zeropoint.update({
-                    "airmass": delta_airmass,
-                    "airmass_err": delta_airmass_err,
-                    "image_name": other.name
-                })
-            )
+        for source in other.zeropoints:
+            if 'self' in other.zeropoints[source]:
+                zeropoint = other.zeropoints[source]['self']
+                self.add_zeropoint(
+                    **zeropoint.update({
+                        "airmass": delta_airmass,
+                        "airmass_err": delta_airmass_err,
+                        "image_name": other.name
+                    })
+                )
 
     def aperture_areas(self):
         self.load_source_cat()
