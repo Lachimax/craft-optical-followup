@@ -4750,7 +4750,7 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
 
             if self.coadded_unprojected[fil] is not None:
                 self.coadded_unprojected[fil].zeropoints = img.zeropoints
-                self.coadded_unprojected[fil].zeropoint_best = img.zeropoints_best
+                self.coadded_unprojected[fil].zeropoint_best = img.zeropoint_best
                 self.coadded_unprojected[fil].update_output_file()
 
     @classmethod
