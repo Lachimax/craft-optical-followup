@@ -1456,12 +1456,13 @@ class ImagingImage(Image):
         for source in other.zeropoints:
             if 'self' in other.zeropoints[source]:
                 zeropoint = other.zeropoints[source]['self']
+                zeropoint.update({
+                    "airmass": delta_airmass,
+                    "airmass_err": delta_airmass_err,
+                    "image_name": other.name
+                })
                 self.add_zeropoint(
-                    **zeropoint.update({
-                        "airmass": delta_airmass,
-                        "airmass_err": delta_airmass_err,
-                        "image_name": other.name
-                    })
+                    **zeropoint
                 )
 
     def aperture_areas(self):
