@@ -143,7 +143,7 @@ def disco(redux_dir: str,
           output: str = None,
           file_glob: str = "*_skySubtracted.fits",
           refcat: str = None,
-          refcat_format: str = "ascii.csv",
+          refcat_format: str = None, #"ascii.csv",
           refcat_ra: str = None,
           refcat_dec: str = None,
           ignore_objcat: bool = False

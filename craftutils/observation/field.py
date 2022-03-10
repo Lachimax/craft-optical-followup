@@ -3407,7 +3407,7 @@ class GSAOIImagingEpoch(ImagingEpoch):
                 redux_dir=self.paths["redux_dir"],
                 expression=f"filter_name==\"{fil}\" and observation_class==\"science\"",
                 output=f"{self.name}_{fil}_stacked.fits",
-                file_glob="*_skySubtracted.fits",
+                file_glob="*_sky*ed.fits",
                 #refcat=self.field.paths["cat_csv_gaia"],
                 #refcat_format="ascii.csv",
                 #refcat_ra="ra",
