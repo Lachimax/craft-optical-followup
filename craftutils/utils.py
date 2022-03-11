@@ -1128,9 +1128,12 @@ def system_command(
     return system_command_verbose(command=sys_str, suppress_print=suppress_print, error_on_exit_code=error_on_exit_code)
 
 
-def system_command_verbose(command: str, suppress_print: bool = False, error_on_exit_code: bool = True):
+def system_command_verbose(command: str, suppress_print: bool = False, error_on_exit_code: bool = True, suppress_path: bool = False):
+
     if not suppress_print:
         print()
+        if not suppress_path:
+            print("In:", os.getcwd())
         print("Executing:")
         print(command)
         print()

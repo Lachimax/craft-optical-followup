@@ -7,7 +7,11 @@ from typing import Union, List, Dict
 import shutil
 from collections import OrderedDict
 
-import ccdproc
+try:
+    import ccdproc
+except ImportError:
+    print('There is a problem with ccdproc. Some functionality will not be available.')
+
 import matplotlib.pyplot as plt
 from matplotlib.patches import Ellipse
 import numpy as np
@@ -572,9 +576,10 @@ class Field:
 
     def _mode_data_path(self, mode: str):
         if self.data_path is not None:
-            path = os.path.join(self.data_path, mode)
-            u.mkdir_check(path)
-            return path
+            path = os.path.join(self.data_path_relative, mode)
+            path_abs = os.path.join(self.data_path, mode)
+            u.mkdir_check(path_abs)
+            return path, path_abs
         else:
             raise ValueError(f"data_path is not set for {self}.")
 
@@ -592,25 +597,27 @@ class Field:
         return path
 
     def _instrument_data_path(self, mode: str, instrument: str):
-        path = os.path.join(self._mode_data_path(mode=mode), instrument)
-        u.mkdir_check(path)
-        return path
+        path, path_abs = self._mode_data_path(mode=mode)
+        path = os.path.join(path, instrument)
+        path_abs = os.path.join(path_abs, instrument)
+        u.mkdir_check(path_abs)
+        return path, path_abs
 
     def _epoch_param_path(self, mode: str, instrument: str, epoch_name: str):
         return os.path.join(self._instrument_param_path(mode=mode, instrument=instrument), f"{epoch_name}.yaml")
 
     def _epoch_data_path(self, mode: str, instrument: str, date: Time, epoch_name: str, survey: bool = False):
         if survey:
-            path = self._instrument_data_path(mode=mode, instrument=instrument)
+            path, path_abs = self._instrument_data_path(mode=mode, instrument=instrument)
         else:
             if date is None:
                 name_str = epoch_name
             else:
                 name_str = f"{date}-{epoch_name}"
-            path = os.path.join(
-                self._instrument_data_path(mode=mode, instrument=instrument),
-                name_str)
-        u.mkdir_check(path)
+            path, path_abs = self._instrument_data_path(mode=mode, instrument=instrument)
+            path = os.path.join(path, name_str)
+            path_abs = os.path.join(path_abs, name_str)
+        u.mkdir_check(path_abs)
         return path
 
     def retrieve_catalogues(self, force_update: bool = False):
@@ -810,7 +817,7 @@ class Field:
         while pos_coord is None:
             ra = u.user_input(
                 "Please enter the Right Ascension of the field target, in the format 00h00m00.0s or as a decimal number of degrees"
-                " (for an FRB field, this should be the FRB coordinates). Eg: 13h19m14.08s, 199.80867")
+                " (for an FRB field, this should be the FRB coordinates). Eg: 13h19m14.08s, 199.80867d")
             ra_err = 0.0
             if field_class is FRBField:
                 ra_err = u.user_input("If you know the uncertainty in the FRB localisation RA, you can enter "
@@ -819,7 +826,7 @@ class Field:
                     ra_err = 0.0
             dec = u.user_input(
                 "Please enter the Declination of the field target, in the format 00d00m00.0s or as a decimal number of degrees"
-                " (for an FRB field, this should be the FRB coordinates). Eg: -18d50m16.7s, -18.83797222")
+                " (for an FRB field, this should be the FRB coordinates). Eg: -18d50m16.7s, -18.83797222d")
             dec_err = 0.0
             if field_class is FRBField:
                 dec_err = u.user_input("If you know the uncertainty in the FRB localisation Dec, you can enter "
@@ -1240,8 +1247,10 @@ class Epoch:
         self.name = name
         self.field = field
         self.data_path = None
+        self.data_path_relative = None
         if data_path is not None:
             self.data_path = os.path.join(p.data_path, data_path)
+            self.data_path_relative = data_path
         if data_path is not None:
             u.mkdir_check_nested(self.data_path)
         u.debug_print(2, f"__init__(): {self.name}.data_path ==", self.data_path)
@@ -1271,7 +1280,6 @@ class Epoch:
 
         # Data reduction paths
         self.paths = {}
-        self._path_0_raw()
 
         # Frames
         self.frames_raw = []
@@ -1419,10 +1427,6 @@ class Epoch:
 
     def _initial_setup(self, output_dir: str, **kwargs):
         pass
-
-    def _path_0_raw(self):
-        if self.data_path is not None and "raw_dir" not in self.paths:
-            self.paths["raw_dir"] = os.path.join(self.data_path, epoch_stage_dirs["0-download"])
 
     def load_output_file(self, **kwargs):
         outputs = p.load_output_file(self)
@@ -2365,7 +2369,7 @@ class ImagingEpoch(Epoch):
             image_type = "final"
         self.get_photometry(output_dir, image_type=image_type)
 
-    def get_photometry(self, path: str, image_type: str = "coadded_trimmed", dual: bool = True):
+    def get_photometry(self, path: str, image_type: str = "final", dual: bool = True):
         """
         Retrieve photometric properties of key objects and write to disk.
         :param path: Path to which to write the data products.
@@ -2475,11 +2479,14 @@ class ImagingEpoch(Epoch):
         for fil in self.coadded_unprojected:
 
             img = self.coadded_unprojected[fil]
+            #img_projected = image_dict[fil]
 
             if img is None:
                 continue
 
             nice_name = f"{self.field.name}_{self.instrument.nice_name().replace('/', '-')}_{fil.replace('_', '-')}_{self.date.strftime('%Y-%m-%d')}.fits"
+
+            #img.
 
             img.copy_with_outputs(os.path.join(
                 self.data_path,
@@ -3290,8 +3297,8 @@ class GSAOIImagingEpoch(ImagingEpoch):
 
     def _initial_setup(self, output_dir: str, **kwargs):
         data_dir = self.data_path
-        raw_dir = self.paths["raw_dir"]
-        self.paths["redux_dir"] = redux_dir = os.path.join(data_dir, "1-reduced")
+        raw_dir = self.paths["download"]
+        self.paths["redux_dir"] = redux_dir = os.path.join(data_dir, "redux")
         u.mkdir_check(redux_dir)
         # DO the initial database setup for DRAGONS.
         dragons.caldb_init(redux_dir=redux_dir)
@@ -3340,7 +3347,7 @@ class GSAOIImagingEpoch(ImagingEpoch):
             print(flats_list)
 
             self.flats_lists[fil] = os.path.join(redux_dir, flats_list_name)
-            self.flats[fil] = flats_list
+            self.frames_flat[fil] = flats_list
 
         # Get list of standard observations:
         std_tbl_name = "std_objects.csv"
@@ -3401,14 +3408,14 @@ class GSAOIImagingEpoch(ImagingEpoch):
         for fil in self.filters:
             dragons.disco(
                 redux_dir=self.paths["redux_dir"],
-                expression=f"(filter_name==\"{fil}\" and observation_class==\"science\")",
+                expression=f"filter_name==\"{fil}\" and observation_class==\"science\"",
                 output=f"{self.name}_{fil}_stacked.fits",
-                file_glob="*_skySubtracted.fits",
-                refcat=self.field.paths["cat_csv_gaia"],
-                refcat_format="ascii.csv",
-                refcat_ra="ra",
-                refcat_dec="dec",
-                ignore_objcat=False
+                file_glob="*_sky*ed.fits",
+                #refcat=self.field.paths["cat_csv_gaia"],
+                #refcat_format="ascii.csv",
+                #refcat_ra="ra",
+                #refcat_dec="dec",
+                #ignore_objcat=False
             )
 
     def check_filter(self, fil: str):
@@ -3433,7 +3440,7 @@ class GSAOIImagingEpoch(ImagingEpoch):
             if "std" in outputs:
                 self.std_lists = outputs["std"]
             if "flats" in outputs:
-                self.flats = outputs["flats"]
+                self.frames_flat = outputs["flats"]
         return outputs
 
     @classmethod
@@ -3451,10 +3458,25 @@ class GSAOIImagingEpoch(ImagingEpoch):
 
         if field is None:
             field = param_dict.pop("field")
+
+        if field is None:
+            field = param_dict.pop("field")
         if 'target' in param_dict:
             target = param_dict.pop('target')
         else:
             target = None
+
+        if "field" in param_dict:
+            param_dict.pop("field")
+        if "instrument" in param_dict:
+            param_dict.pop("instrument")
+        if "name" in param_dict:
+            param_dict.pop("name")
+        if "param_path" in param_dict:
+            param_dict.pop("param_path")
+
+        print(field)
+        print(param_dict)
 
         return cls(
             name=name,
@@ -4715,8 +4737,10 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
             std_epoch.photometric_calibration()
             for fil in images:
                 img = images[fil]
-                for std in std_epoch.frames_reduced:
-                    img.add_zeropoint_from_other(std)
+                if fil in std_epoch.frames_reduced:
+                    for std in std_epoch.frames_reduced[fil]:
+                        print(std, type(std))
+                        img.add_zeropoint_from_other(std)
 
         for fil in images:
             if "preferred_zeropoint" in kwargs and fil in kwargs["preferred_zeropoint"]:
@@ -4729,7 +4753,7 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
 
             if self.coadded_unprojected[fil] is not None:
                 self.coadded_unprojected[fil].zeropoints = img.zeropoints
-                self.coadded_unprojected[fil].zeropoint_best = img.zeropoints_best
+                self.coadded_unprojected[fil].zeropoint_best = img.zeropoint_best
                 self.coadded_unprojected[fil].update_output_file()
 
     @classmethod
@@ -4880,6 +4904,10 @@ class SpectroscopyEpoch(Epoch):
         self._pypeit_file = None
         self._pypeit_sorted_file = None
         self._pypeit_coadd1d_file = None
+
+    def _path_0_raw(self):
+        if self.data_path is not None and "raw_dir" not in self.paths:
+            self.paths["raw_dir"] = os.path.join(self.data_path, epoch_stage_dirs["0-download"])
 
     def proc_pypeit_flux(self, no_query: bool = False, **kwargs):
         if no_query or self.query_stage("Do fluxing with PypeIt?", stage_name='4-pypeit_flux_calib'):
