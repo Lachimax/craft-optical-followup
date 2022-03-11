@@ -2369,7 +2369,7 @@ class ImagingEpoch(Epoch):
             image_type = "final"
         self.get_photometry(output_dir, image_type=image_type)
 
-    def get_photometry(self, path: str, image_type: str = "coadded_trimmed", dual: bool = True):
+    def get_photometry(self, path: str, image_type: str = "final", dual: bool = True):
         """
         Retrieve photometric properties of key objects and write to disk.
         :param path: Path to which to write the data products.
@@ -2479,11 +2479,14 @@ class ImagingEpoch(Epoch):
         for fil in self.coadded_unprojected:
 
             img = self.coadded_unprojected[fil]
+            #img_projected = image_dict[fil]
 
             if img is None:
                 continue
 
             nice_name = f"{self.field.name}_{self.instrument.nice_name().replace('/', '-')}_{fil.replace('_', '-')}_{self.date.strftime('%Y-%m-%d')}.fits"
+
+            #img.
 
             img.copy_with_outputs(os.path.join(
                 self.data_path,
