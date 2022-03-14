@@ -315,6 +315,14 @@ class Image:
     def __str__(self):
         return self.filename
 
+    def copy_headers(
+            self,
+            other: 'Image'
+    ):
+        other.load_headers()
+        self.headers = other.headers
+        self.write_fits_file()
+
     def add_log(
             self, action: str,
             method=None,
@@ -1245,7 +1253,7 @@ class ImagingImage(Image):
             if cat in self.zeropoints:
                 for img_name in self.zeropoints[cat]:
                     zp = self.zeropoints[cat][img_name]
-                    zp["selection_index"] = 1 / ((i+1) * zp['zeropoint_img_err'])
+                    zp["selection_index"] = 1 / ((i + 1) * zp['zeropoint_img_err'])
                     zps.append(zp)
 
         zp_tbl = table.QTable(zps)
@@ -1253,7 +1261,7 @@ class ImagingImage(Image):
         print(zp_tbl)
         zp_tbl.sort(["selection_index"], reverse=True)
         zp_tbl.write(os.path.join(self.data_path, f"{self.name}_zeropoints.ecsv"), format="ascii.ecsv")
-#        zp_tbl.write(os.path.join(self.data_path, f"{self.name}_zeropoints.csv"), format="ascii.csv")
+        #        zp_tbl.write(os.path.join(self.data_path, f"{self.name}_zeropoints.csv"), format="ascii.csv")
         best_row = zp_tbl[0]
         best_cat = best_row["catalogue"]
         best_img = best_row["image_name"]
@@ -1272,8 +1280,8 @@ class ImagingImage(Image):
                 zps = {}
                 for i, row in enumerate(zp_tbl):
                     pick_str = f"{row['catalogue']} {row['zeropoint_img']} +/- {row['zeropoint_img_err']}, " \
-                                     f"{row['n_matches']} stars, " \
-                                     f"from {row['image_name']}"
+                               f"{row['n_matches']} stars, " \
+                               f"from {row['image_name']}"
                     zps[pick_str] = self.zeropoints[row['catalogue']][row['image_name']]
                 _, zeropoint_best = u.select_option(message="Select best zeropoint:", options=zps)
                 best_cat = zeropoint_best["catalogue"]
@@ -1573,7 +1581,7 @@ class ImagingImage(Image):
 
         return mag, mag_err, mag_no_ext_corr, mag_no_ext_corr_err
 
-    def estimate_depth(self, zeropoint_name: str="best", dual: bool = False):
+    def estimate_depth(self, zeropoint_name: str = "best", dual: bool = False):
         """
         Use various measures of S/N to estimate image depth at a range of sigmas.
         :param zeropoint_name:
@@ -1597,7 +1605,7 @@ class ImagingImage(Image):
         source_cat.sort("FLUX_AUTO")
 
         for sigma in range(1, 6):
-            for snr_key in ["SNR_SE"]: #["SNR_CCD", "SNR_MEASURED", "SNR_SE"]:
+            for snr_key in ["SNR_SE"]:  # ["SNR_CCD", "SNR_MEASURED", "SNR_SE"]:
                 u.debug_print(1, "ImagingImage.estimate_depth(): snr_key, sigma ==", snr_key, sigma)
                 self.depth["max"][snr_key] = {}
                 self.depth["secure"][snr_key] = {}
@@ -2650,7 +2658,6 @@ class ImagingImage(Image):
         if title is None:
             title = self.name
         title = u.latex_sanitise(title)
-        print(plt.rcParams)
         ax.set_title(title)
         fig.savefig(os.path.join(output))
         if show:

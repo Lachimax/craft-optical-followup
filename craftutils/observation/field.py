@@ -1263,8 +1263,8 @@ class Epoch:
         self.date = date
         if isinstance(self.date, datetime.date):
             self.date = str(self.date)
-        if isinstance(self.date, str):
-            self.date = Time(self.date, out_subfmt="date")
+        print(self.date, type(self.date))
+        self.date = Time(self.date, out_subfmt="date")
         self.program_id = program_id
         self.target = target
 
@@ -1314,6 +1314,12 @@ class Epoch:
 
     def __str__(self):
         return self.name
+
+    def date_str(self, include_time: bool = False):
+        if include_time:
+            return str(self.date.isot)
+        else:
+            return self.date.strftime('%Y-%m-%d')
 
     def add_log(
             self,
@@ -2385,6 +2391,7 @@ class ImagingEpoch(Epoch):
             fil_output_path = os.path.join(path, fil)
             u.mkdir_check(fil_output_path)
             img = image_dict[fil]
+            print("Getting photometry for", img)
 
             img.calibrate_magnitudes(zeropoint_name="best", dual=dual)
             rows = []
@@ -2479,14 +2486,15 @@ class ImagingEpoch(Epoch):
         for fil in self.coadded_unprojected:
 
             img = self.coadded_unprojected[fil]
-            #img_projected = image_dict[fil]
+            img_projected = image_dict[fil]
 
             if img is None:
                 continue
 
             nice_name = f"{self.field.name}_{self.instrument.nice_name().replace('/', '-')}_{fil.replace('_', '-')}_{self.date.strftime('%Y-%m-%d')}.fits"
 
-            #img.
+            if img != img_projected:
+                img.copy_headers(img_projected)
 
             img.copy_with_outputs(os.path.join(
                 self.data_path,
@@ -3411,11 +3419,11 @@ class GSAOIImagingEpoch(ImagingEpoch):
                 expression=f"filter_name==\"{fil}\" and observation_class==\"science\"",
                 output=f"{self.name}_{fil}_stacked.fits",
                 file_glob="*_sky*ed.fits",
-                #refcat=self.field.paths["cat_csv_gaia"],
-                #refcat_format="ascii.csv",
-                #refcat_ra="ra",
-                #refcat_dec="dec",
-                #ignore_objcat=False
+                # refcat=self.field.paths["cat_csv_gaia"],
+                # refcat_format="ascii.csv",
+                # refcat_ra="ra",
+                # refcat_dec="dec",
+                # ignore_objcat=False
             )
 
     def check_filter(self, fil: str):
@@ -3964,7 +3972,9 @@ class ESOImagingEpoch(ImagingEpoch):
         self.update_output_file()
 
         if str(self.field.survey) == "FURBY":
-            u.system_command_verbose(f"furby_vlt_ob {self.field.name} {tmp.filter.band_name} --observed {self.date}")
+            u.system_command_verbose(
+                f"furby_vlt_ob {self.field.name} {tmp.filter.band_name} --observed {self.date_str()}"
+            )
             # u.system_command_verbose(f"furby_vlt_ob {self.field.name} {tmp.filter.band_name} --completed")
 
         try:
@@ -4589,7 +4599,6 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
 
             lambdas.append(fil.lambda_eff)
             # extinctions.append(fil.)
-
 
     def photometric_calibration(
             self,
