@@ -1264,7 +1264,8 @@ class Epoch:
         if isinstance(self.date, datetime.date):
             self.date = str(self.date)
         print(self.date, type(self.date))
-        self.date = Time(self.date, out_subfmt="date")
+        if not isinstance(self.date, Time):
+            self.date = Time(self.date, out_subfmt="date")
         self.program_id = program_id
         self.target = target
 
@@ -4610,7 +4611,7 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
         if "image_type" in kwargs and kwargs["image_type"] is not None:
             image_type = kwargs["image_type"]
         else:
-            image_type = "coadded_trimmed"
+            image_type = "final"
 
         suppress_select = False
         if "suppress_select" in kwargs and kwargs["suppress_select"] is not None:
