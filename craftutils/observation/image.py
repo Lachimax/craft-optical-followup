@@ -936,6 +936,34 @@ class ImagingImage(Image):
 
         return source_cat
 
+    def world_to_pixel(self, coord: SkyCoord, origin: int = 0) -> np.ndarray:
+        """
+        Turns a sky coordinate into image pixel coordinates;
+        :param coord: SkyCoord object to convert to pixel coordinates; essentially a wrapper for SkyCoord.to_pixel()
+        :param origin: Do you want pixel indexing that starts at 1 (FITS convention) or 0 (numpy convention)?
+        :return: xp, yp: numpy.ndarray, the pixel coordinates.
+        """
+        self.load_wcs()
+        return coord.to_pixel(self.wcs, origin=origin)
+
+    def pixel_to_world(
+            self,
+            x: Union[float, np.ndarray, units.Quantity],
+            y: Union[float, np.ndarray, units.Quantity],
+            origin: int = 0
+    ) -> SkyCoord:
+        """
+        Uses the image's wcs to turn pixel coordinates into sky; essentially a wrapper for SkyCoord.from_pixel().
+        :param x: Pixel x-coordinate. Can be provided as an astropy Quantity with units pix, or as a raw number.
+        :param y: Pixel y-coordinate. Can be provided as an astropy Quantity with units pix, or as a raw number.
+        :param origin: Do you want pixel indexing that starts at 1 (FITS convention) or 0 (numpy convention)?
+        :return coord: SkyCoord reflecting the sky coordinates.
+        """
+        self.load_wcs()
+        x = u.dequantify(x, unit=units.pix)
+        y = u.dequantify(y, unit=units.pix)
+        return SkyCoord.from_pixel(x, y, wcs=self.wcs, origin=origin)
+
     def load_data(self, force: bool = False):
         super().load_data()
         self.data_sub_bkg = [None] * len(self.data)
