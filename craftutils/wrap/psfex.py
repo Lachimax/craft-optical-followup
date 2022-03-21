@@ -8,8 +8,6 @@ from astropy.modeling import models, fitting, Fittable2DModel, Parameter
 
 from scipy.ndimage import shift
 
-from typing import Union
-
 import craftutils.fits_files as ff
 from craftutils.utils import system_command
 
@@ -59,14 +57,59 @@ def psfex(catalog: str, output_name: str = None, output_dir: str = None, **kwarg
     return psfex_path
 
 
+def load_psfex_oversampled(model: Union[str, 'astropy.io.fits.HDUList'], x: float, y: float):
+    """
+    Since PSFEx generates a model using basis vectors, with the linear combination dependent on image position, this is
+    used to collapse that into a useable kernel for convolution and insertion purposes.
+    See https://psfex.readthedocs.io/en/latest/Appendices.html
+    This function will return the PSFEx output with the pixel scale of the PSFEx output. To retrieve an image with
+    the same pixel scale as the original science image, use load_psfex()
+    :param model: Path to PSFEx-generated model, as a FITS file (usually ends in .psf); OR HDUList representing the
+        file.
+    :param x: pixel x-coordinate to use for model input
+    :param y: pixel y-coordinate to use for model input
+    :return: numpy.ndarray representing the PSF model as an image.
+        """
+
+    model, path = ff.path_or_hdu(model)
+
+    header = model[1].header
+
+    a = model[1].data[0][0]
+
+    x = (x - header['POLZERO1']) / header['POLSCAL1']
+    y = (y - header['POLZERO2']) / header['POLSCAL2']
+
+    if len(a) == 3:
+        psf = a[0] + a[1] * x + a[2] * y
+
+    elif len(a) == 6:
+        psf = a[0] + a[1] * x + a[2] * x ** 2 + a[3] * y + a[4] * y ** 2 + a[5] * x * y
+
+    elif len(a) == 10:
+        psf = a[0] + a[1] * x + a[2] * x ** 2 + a[3] * x ** 3 + a[4] * y + a[5] * x * y + a[6] * x ** 2 * y + \
+              a[7] * y ** 2 + a[8] * x * y ** 2 + a[9] * y ** 3
+
+    else:
+        raise ValueError("I haven't accounted for polynomials of order > 3. My bad.")
+
+    if path:
+        model.close()
+
+    return psf
+
+
 def load_psfex(model_path: str, x: float, y: float):
     """
-    Since PSFEx generates a model that is dependent on image position, this is used to collapse that into a useable kernel
-    for convolution and insertion purposes. See https://psfex.readthedocs.io/en/latest/Appendices.html
-    :param model_path:
-    :param x:
-    :param y:
-    :return:
+    Since PSFEx generates a model using basis vectors, with the linear combination dependent on image position, this is
+    used to collapse that into a useable kernel for convolution and insertion purposes.
+    See https://psfex.readthedocs.io/en/latest/Appendices.html
+    This function will return the PSFEx output to the pixel scale of the original image. To keep an oversampled PSF
+    model image, use load_psfex_oversampled()
+    :param model_path: Path to PSFEx-generated model, as a FITS file (usually ends in .psf)
+    :param x: pixel x-coordinate to use for model input
+    :param y: pixel y-coordinate to use for model input
+    :return: numpy.ndarray representing the PSF model as an image.
     """
 
     psfex_model = pex.PSFEx(model_path)
