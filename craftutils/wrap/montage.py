@@ -110,6 +110,11 @@ def inject_header(file_path: str, input_directory: str,
 
     insert_dict["NCOMBINE"] = n_frames
 
+    if ["OLD_EXPTIME"] in table.colnames:
+        insert_dict["OLD_EXPTIME"] = np.nanmean(table["OLD_EXPTIME"])
+    if ["OLD_GAIN"] in table.colnames:
+        insert_dict["OLD_GAIN"] = np.nanmean(table["OLD_GAIN"])
+
     if important_keys["filter"] in table.colnames:
         insert_dict["FILTER"] = table[important_keys["filter"]][0]
 
