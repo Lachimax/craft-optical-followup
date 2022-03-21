@@ -31,8 +31,6 @@ import craftutils.plotting as plotting
 import craftutils.retrieve as r
 import craftutils.astrometry as a
 
-from craftutils.wrap.psfex import load_psfex
-
 quantity_support()
 
 # TODO: End-to-end pipeline script?

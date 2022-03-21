@@ -808,7 +808,22 @@ class ImagingImage(Image):
         self.update_output_file()
         return output_path
 
-    def psfex(self, output_dir: str, force: bool = False, **kwargs):
+    def psfex(
+            self,
+            output_dir: str,
+            force: bool = False,
+            set_attributes: bool = True,
+            **kwargs
+    ):
+        """
+        Run PSFEx on this image to obtain a PSF model.
+        :param output_dir: path to directory to write PSFEx outputs to.
+        :param force: If False, and this object already has a PSF model, we just return the one that already exists.
+        :param kwargs:
+        :param set_attributes: If True, this Image's psfex_path, psfex_output, fwhm_pix_psfex and fwhm_psfex will be set
+            according to the PSFEx output.
+        :return: HDUList representing the PSF model FITS file.
+        """
         if force or self.psfex_path is None:
             config = p.path_to_config_sextractor_config_pre_psfex()
             output_params = p.path_to_config_sextractor_param_pre_psfex()
@@ -3248,7 +3263,7 @@ class ImagingImage(Image):
         kron_radius = u.check_iterable(kron_radius)
         rotation_angle = self.extract_rotation_angle(ext=ext)
         print(theta_world, rotation_angle)
-        theta_deg = -theta_world - rotation_angle # + 90 * units.deg
+        theta_deg = -theta_world - rotation_angle  # + 90 * units.deg
         theta = u.theta_range(theta_deg.to(units.rad)).value
         print(theta_deg)
         print(theta, a, b, x, y, kron_radius)
@@ -3291,8 +3306,8 @@ class ImagingImage(Image):
 
             e = Ellipse(
                 xy=(x[0], y[0]),
-                width=2*kron_radius[0]*a[0],
-                height=2*kron_radius[0]*b[0],
+                width=2 * kron_radius[0] * a[0],
+                height=2 * kron_radius[0] * b[0],
                 angle=theta[0] * 180. / np.pi)
             e.set_facecolor('none')
             e.set_edgecolor('white')
@@ -3300,8 +3315,8 @@ class ImagingImage(Image):
 
             e = Ellipse(
                 xy=(x[0], y[0]),
-                width=2*a[0],
-                height=2*b[0],
+                width=2 * a[0],
+                height=2 * b[0],
                 angle=theta[0] * 180. / np.pi)
             e.set_facecolor('none')
             e.set_edgecolor('white')
