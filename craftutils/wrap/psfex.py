@@ -9,7 +9,7 @@ from astropy.modeling import models, fitting, Fittable2DModel, Parameter
 from scipy.ndimage import shift
 
 import craftutils.fits_files as ff
-from craftutils.utils import system_command
+from craftutils.utils import system_command, check_iterable
 
 
 class PSFExModel(Fittable2DModel):
@@ -77,26 +77,36 @@ def load_psfex_oversampled(model: Union[str, 'astropy.io.fits.HDUList'], x: floa
 
     a = model[1].data[0][0]
 
-    x = (x - header['POLZERO1']) / header['POLSCAL1']
-    y = (y - header['POLZERO2']) / header['POLSCAL2']
+    xs = check_iterable(x)
+    ys = check_iterable(y)
 
-    if len(a) == 3:
-        psf = a[0] + a[1] * x + a[2] * y
+    psfs = []
 
-    elif len(a) == 6:
-        psf = a[0] + a[1] * x + a[2] * x ** 2 + a[3] * y + a[4] * y ** 2 + a[5] * x * y
+    for i, x in enumerate(xs):
 
-    elif len(a) == 10:
-        psf = a[0] + a[1] * x + a[2] * x ** 2 + a[3] * x ** 3 + a[4] * y + a[5] * x * y + a[6] * x ** 2 * y + \
-              a[7] * y ** 2 + a[8] * x * y ** 2 + a[9] * y ** 3
+        y = ys[i]
 
-    else:
-        raise ValueError("I haven't accounted for polynomials of order > 3. My bad.")
+        x = (x - header['POLZERO1']) / header['POLSCAL1']
+        y = (y - header['POLZERO2']) / header['POLSCAL2']
+
+        if len(a) == 3:
+            psf = a[0] + a[1] * x + a[2] * y
+
+        elif len(a) == 6:
+            psf = a[0] + a[1] * x + a[2] * x ** 2 + a[3] * y + a[4] * y ** 2 + a[5] * x * y
+
+        elif len(a) == 10:
+            psf = a[0] + a[1] * x + a[2] * x ** 2 + a[3] * x ** 3 + a[4] * y + a[5] * x * y + a[6] * x ** 2 * y + \
+                  a[7] * y ** 2 + a[8] * x * y ** 2 + a[9] * y ** 3
+
+            psfs.append(psf)
+        else:
+            raise ValueError("I haven't accounted for polynomials of order > 3. My bad.")
 
     if path:
         model.close()
 
-    return psf
+    return psfs
 
 
 def load_psfex(model_path: str, x: float, y: float):
@@ -113,9 +123,17 @@ def load_psfex(model_path: str, x: float, y: float):
     """
 
     psfex_model = pex.PSFEx(model_path)
-    psf = psfex_model.get_rec(y, x)
-    centre_psf_x, centre_psf_y = psfex_model.get_center(y, x)
-    centre_x, centre_y = psf.shape[1] / 2, psf.shape[0] / 2
-    psf = shift(psf, (centre_x - centre_psf_y, centre_y - centre_psf_x))
+    xs = check_iterable(x)
+    ys = check_iterable(y)
+    psfs = []
 
-    return psf
+    for i, x in enumerate(xs):
+        y = ys[i]
+
+        psf = psfex_model.get_rec(y, x)
+        centre_psf_x, centre_psf_y = psfex_model.get_center(y, x)
+        centre_x, centre_y = psf.shape[1] / 2, psf.shape[0] / 2
+        psf = shift(psf, (centre_x - centre_psf_y, centre_y - centre_psf_x))
+        psfs.append(psf)
+
+    return psfs
