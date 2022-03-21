@@ -2163,7 +2163,23 @@ class ImagingImage(Image):
 
         return image
 
+    def convert_from_cs(self, output_path: str, ext: int = 0):
+        """
+        NOT IMPLEMENTED.
+        Assuming units of counts / second, converts the image back to total counts.
+        :param output_path: Path to write converted file to.
+        :param ext: FITS extension to modify.
+        :return new: ImagingImage object representing the modified file.
+        """
+        pass
+
     def convert_to_cs(self, output_path: str, ext: int = 0):
+        """
+        Converts the image to flux (units of counts per second) and writes to a new file.
+        :param output_path: Path to write converted file to.
+        :param ext: FITS extension to modify.
+        :return new: ImagingImage object representing the modified file.
+        """
         new = self.copy(output_path)
         gain = self.extract_gain()
         exp_time = self.extract_exposure_time()
