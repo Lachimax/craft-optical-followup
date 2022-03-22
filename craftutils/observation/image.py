@@ -833,12 +833,12 @@ class ImagingImage(Image):
                 parameters_file=output_params,
                 catalog_name=f"{self.name}_psfex.fits",
             )
-            self.psfex_path = psfex.psfex(catalog=catalog, output_dir=output_dir, **kwargs)
-            self.psfex_output = fits.open(self.psfex_path)
-            self.extract_pixel_scale()
-            pix_scale = self.pixel_scale_dec
-            self.fwhm_pix_psfex = self.psfex_output[1].header['PSF_FWHM'] * units.pixel
-            self.fwhm_psfex = self.fwhm_pix_psfex.to(units.arcsec, pix_scale)
+            if set_attributes:
+                self.psfex_path = psfex.psfex(catalog=catalog, output_dir=output_dir, **kwargs)
+                self.extract_pixel_scale()
+                pix_scale = self.pixel_scale_dec
+                self.fwhm_pix_psfex = self.psfex_output[1].header['PSF_FWHM'] * units.pixel
+                self.fwhm_psfex = self.fwhm_pix_psfex.to(units.arcsec, pix_scale)
 
             self.add_log(
                 action="PSF modelled using psfex.",
@@ -848,11 +848,20 @@ class ImagingImage(Image):
             )
             self.update_output_file()
 
-        return self.load_psfex_output()
+        if set_attributes:
+            return self.load_psfex_output()
+        else:
+            fits.open(self.psfex_path)
 
     def load_psfex_output(self, force: bool = False):
         if force or self.psfex_output is None:
             self.psfex_output = fits.open(self.psfex_path)
+
+    def load_psfex_image(self, x: float, y: float, match_pixel_scale: bool = True):
+        if match_pixel_scale:
+            return psfex.load_psfex(model_path=self.psfex_path, x=x, y=y)
+        else:
+            return psfex.load_psfex_oversampled(model=self.psfex_path, x=x, y=y)
 
     def source_extraction_psf(
             self,
