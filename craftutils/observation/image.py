@@ -834,7 +834,11 @@ class ImagingImage(Image):
                 parameters_file=output_params,
                 catalog_name=f"{self.name}_psfex.fits",
             )
-            psfex_path = psfex.psfex(catalog=catalog, output_dir=output_dir, **kwargs)
+            psfex_path = psfex.psfex(
+                catalog=catalog,
+                output_dir=output_dir,
+                **kwargs
+            )
             psfex_output = fits.open(psfex_path)
             if set_attributes:
                 self.psfex_path = psfex_path
@@ -3440,7 +3444,7 @@ class ImagingImage(Image):
         new.psfex(
             output_dir=output_dir,
             PSF_SAMPLING=0.5,  # Equivalent to GALFIT fine-sampling factor = 2
-            PSF_SIZE=25 / self.pixel_scale_dec.value,
+            # PSF_SIZE=50,
             force=True,
             set_attributes=True  # Don't overwrite the PSF model we already have
         )
@@ -3455,11 +3459,12 @@ class ImagingImage(Image):
             psf_path,
             overwrite=True
         )
+        new.load_data()
         data = new.data[ext].copy()
         new.close()
 
         for frame in range(frame_lower, frame_upper + 1):
-            margins = u.frame_from_centre(frame, x, y, data)
+            margins = u.frame_from_centre(frame, x[0], y[0], data)
             print("Generating mask...")
             data_trim = u.trim_image(data, margins=margins)
             mask_path = os.path.join(output_dir, f"{self.name}_mask_{frame}.fits")

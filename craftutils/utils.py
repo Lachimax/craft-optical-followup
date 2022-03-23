@@ -1102,7 +1102,10 @@ def system_command(
         command: str, arguments: Union[str, list] = None,
         suppress_print: bool = False,
         error_on_exit_code: bool = True,
-        *flags, **params):
+        force_single_dash: bool = False,
+        *flags,
+        **params
+):
     if command in [""]:
         raise ValueError("Empty command.")
     if " " in command:
@@ -1115,7 +1118,7 @@ def system_command(
             sys_str += f" {argument}"
     for param in params:
         debug_print(2, "utils.system_command(): flag ==", param, "len", len(param))
-        if len(param) == 1:
+        if len(param) == 1 or force_single_dash:
             sys_str += f" -{param} {params[param]}"
         elif len(param) > 1:
             sys_str += f" --{param} {params[param]}"
