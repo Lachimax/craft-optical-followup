@@ -2076,6 +2076,7 @@ class ImagingEpoch(Epoch):
             combined_img = image.FORS2CoaddedImage(sigclip_path)
             combined_img.area_file = area_final
             coadded_median.load_headers()
+            combined_img.load_data()
             combined_img.headers = coadded_median.headers
             # Dispose of the extra extensions ccdproc adds in, they confuse source-extractor
             combined_img.data = [combined_img.data[0]]
