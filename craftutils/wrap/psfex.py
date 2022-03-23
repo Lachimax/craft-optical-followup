@@ -1,10 +1,13 @@
 import os
-from typing import Union
 
 import numpy as np
-import psfex as pex
 
-from astropy.modeling import models, fitting, Fittable2DModel, Parameter
+try:
+    import psfex as pex
+except ImportError:
+    print("psfex not installed; some functionality will not be available.")
+
+from astropy.modeling import Fittable2DModel, Parameter
 
 from scipy.ndimage import shift
 

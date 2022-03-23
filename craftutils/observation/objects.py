@@ -1,13 +1,11 @@
 from typing import Union, Tuple, List
 import os
 
-import matplotlib.figure
 import matplotlib.pyplot as plt
 import numpy as np
 
 from astropy.coordinates import SkyCoord
 import astropy.units as units
-import astropy.time as time
 import astropy.table as table
 import astropy.cosmology as cosmo
 from astropy.modeling import models, fitting
@@ -35,7 +33,6 @@ import craftutils.utils as u
 import craftutils.observation.instrument as inst
 import craftutils.retrieve as r
 import craftutils.observation as obs
-import craftutils.observation.image as image
 
 try:
     cosmology = cosmo.Planck18
@@ -59,6 +56,18 @@ uncertainty_dict = {
     "stat": 0.0
 }
 
+def skycoord_to_position_dict(skycoord: SkyCoord):
+    ra_float = skycoord.ra
+    dec_float = skycoord.dec
+
+    s = skycoord.to_string("hmsdms")
+    ra = s[:s.find(" ")]
+    dec = s[s.find(" ") + 1:]
+
+    position = {"dec": {"decimal": dec_float, "dms": dec},
+                "ra": {"decimal": ra_float, "hms": ra}}
+
+    return position
 
 class PositionUncertainty:
     def __init__(
@@ -272,10 +281,14 @@ class Object:
             pass
 
     def get_good_photometry(self):
+
+        import craftutils.observation.image as image
+
         self.estimate_galactic_extinction()
         deepest = self.select_deepest()
         deepest_dict = self.photometry[deepest["instrument"]][deepest["band"]][deepest["epoch_name"]]
-        deepest_path = deepest_dict["image_path"]
+        deepest_path = deepest_dict["good_image_path"]
+
         cls = image.CoaddedImage.select_child_class(instrument=deepest["instrument"])
         deepest_img = cls(path=deepest_path)
         deepest_fwhm = deepest_img.extract_header_item("PSF_FWHM") * units.arcsec
@@ -329,6 +342,7 @@ class Object:
             dec: units.Quantity, dec_err: units.Quantity,
             kron_radius: float,
             image_path: str,
+            good_image_path: str = None,
             separation_from_given: units.Quantity = None,
             epoch_date: str = None,
             class_star: float = None,
@@ -337,6 +351,8 @@ class Object:
             image_depth: units.Quantity = None,
             **kwargs
     ):
+        if good_image_path is None:
+            good_image_path = image_path
         photometry = {
             "instrument": str(instrument),
             "filter": str(fil),
@@ -362,7 +378,8 @@ class Object:
             "mag_psf_err": u.check_quantity(mag_psf_err, unit=units.mag),
             "snr_psf": float(snr_psf),
             "image_depth": u.check_quantity(image_depth, unit=units.mag),
-            "image_path": image_path
+            "image_path": image_path,
+            "good_image_path": good_image_path
         }
 
         kwargs.update(photometry)
@@ -627,12 +644,11 @@ class Object:
                 self.irsa_extinction = table.QTable.read(self.irsa_extinction_path, format="ascii.ecsv")
 
     def jname(self):
-        s_ra, s_dec = astm.coord_string(self.position)
-        ra_second = str(np.round(float(s_ra[s_ra.find("m") + 1:s_ra.find("s")]), 2)).ljust(6, "0")
-        dec_second = str(np.round(float(s_dec[s_dec.find("m") + 1:s_dec.find("s")]), 1)).ljust(5, "0")
-        s_ra = s_ra[:s_ra.find("m")].replace("h", "")
-        s_dec = s_dec[:s_dec.find("m")].replace("d", "")
-        name = f"J{s_ra}{ra_second}{s_dec}{dec_second}"
+        name = astm.jname(
+            coord=self.position,
+            ra_precision=2,
+            dec_precision=1
+        )
         if self.name is None:
             self.name = name
         return name

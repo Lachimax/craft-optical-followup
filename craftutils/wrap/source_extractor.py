@@ -28,6 +28,7 @@ def source_extractor(
     if output_dir is None:
         output_dir = os.getcwd()
     else:
+        u.mkdir_check(output_dir)
         os.chdir(output_dir)
 
     if copy_params:

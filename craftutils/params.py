@@ -806,7 +806,7 @@ def params_init(param_file: Union[str, dict]):
         param_file = u.sanitise_file_ext(filename=param_file, ext="yaml")
         param_dict = load_params(file=param_file)
         if param_dict is None:
-            return None, None, None  # raise FileNotFoundError(f"No parameter file found at {param_file}.")
+            return None, param_file, None  # raise FileNotFoundError(f"No parameter file found at {param_file}.")
         name = u.get_filename(path=param_file, include_ext=False)
         param_dict["param_path"] = param_file
     else:
