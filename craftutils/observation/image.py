@@ -824,6 +824,7 @@ class ImagingImage(Image):
             according to the PSFEx output.
         :return: HDUList representing the PSF model FITS file.
         """
+        psfex_output = None
         if force or self.psfex_path is None:
             config = p.path_to_config_sextractor_config_pre_psfex()
             output_params = p.path_to_config_sextractor_param_pre_psfex()
@@ -833,11 +834,13 @@ class ImagingImage(Image):
                 parameters_file=output_params,
                 catalog_name=f"{self.name}_psfex.fits",
             )
+            psfex_path = psfex.psfex(catalog=catalog, output_dir=output_dir, **kwargs)
+            psfex_output = fits.open(psfex_path)
             if set_attributes:
-                self.psfex_path = psfex.psfex(catalog=catalog, output_dir=output_dir, **kwargs)
+                self.psfex_path = psfex_path
                 self.extract_pixel_scale()
                 pix_scale = self.pixel_scale_dec
-                self.fwhm_pix_psfex = self.psfex_output[1].header['PSF_FWHM'] * units.pixel
+                self.fwhm_pix_psfex = psfex_output[1].header['PSF_FWHM'] * units.pixel
                 self.fwhm_psfex = self.fwhm_pix_psfex.to(units.arcsec, pix_scale)
 
             self.add_log(
@@ -851,13 +854,15 @@ class ImagingImage(Image):
         if set_attributes:
             return self.load_psfex_output()
         else:
-            fits.open(self.psfex_path)
+            return psfex_output
 
     def load_psfex_output(self, force: bool = False):
         if force or self.psfex_output is None:
             self.psfex_output = fits.open(self.psfex_path)
 
-    def load_psfex_image(self, x: float, y: float, match_pixel_scale: bool = True):
+
+
+    def psf_image(self, x: float, y: float, match_pixel_scale: bool = True):
         if match_pixel_scale:
             return psfex.load_psfex(model_path=self.psfex_path, x=x, y=y)
         else:
