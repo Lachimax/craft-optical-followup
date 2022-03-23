@@ -6,7 +6,6 @@ from typing import List, Union
 import numpy as np
 
 import astropy.io.fits as fits
-from ccdproc import combine, CCDData
 
 import craftutils.utils as u
 from craftutils.observation.image import fits_table_all
@@ -110,9 +109,9 @@ def inject_header(file_path: str, input_directory: str,
 
     insert_dict["NCOMBINE"] = n_frames
 
-    if ["OLD_EXPTIME"] in table.colnames:
+    if "OLD_EXPTIME" in table.colnames:
         insert_dict["OLD_EXPTIME"] = np.nanmean(table["OLD_EXPTIME"])
-    if ["OLD_GAIN"] in table.colnames:
+    if "OLD_GAIN" in table.colnames:
         insert_dict["OLD_GAIN"] = np.nanmean(table["OLD_GAIN"])
 
     if important_keys["filter"] in table.colnames:
