@@ -860,8 +860,6 @@ class ImagingImage(Image):
         if force or self.psfex_output is None:
             self.psfex_output = fits.open(self.psfex_path)
 
-
-
     def psf_image(self, x: float, y: float, match_pixel_scale: bool = True):
         if match_pixel_scale:
             return psfex.load_psfex(model_path=self.psfex_path, x=x, y=y)
@@ -3206,7 +3204,6 @@ class ImagingImage(Image):
             self,
             mask: np.ndarray = None,
             ext: int = 0,
-            mask_type: str = 'zeroed-out',
             **generate_mask_kwargs
     ):
         self.load_data()
@@ -3218,13 +3215,16 @@ class ImagingImage(Image):
         return np.ma.MaskedArray(self.data[ext].copy(), mask=mask)
 
     def write_mask(
-            self, output_path: str,
+            self,
+            output_path: str,
             ext: int = 0,
             **mask_kwargs
-    ):
+    ) -> 'ImagingImage':
         """
-        Not yet implemented.
-        :param path:
+        Generates and writes a source mask to a FITS file.
+        Any argument accepted by generate_mask() can be passed as a keyword.
+        :param output_path: path to write the mask file to.
+        :param ext: FITS extension to modify.
         :return:
         """
 
@@ -3239,6 +3239,7 @@ class ImagingImage(Image):
             output_path=output_path,
         )
         mask_file.update_output_file()
+        return mask_file
 
     def sep_aperture_photometry(
             self, x: float, y: float,
@@ -3373,8 +3374,122 @@ class ImagingImage(Image):
                 flux, flux_err
             )
 
-
         return mag, mag_err, snr
+
+    def make_galfit_version(self, output_path: str = None, ext: int = 0):
+        """
+        Generate a version of this file for use with GALFIT.
+        Modifies header item GAIN to conform to GALFIT's expectations (outlined in the GALFIT User Manual,
+        http://users.obs.carnegiescience.edu/peng/work/galfit/galfit.html)
+        :param output_path: path to write modified file to.
+        :param ext: FITS extension to modify header of.
+        :return:
+        """
+        if output_path is None:
+            output_path = self.path.replace(".fits", "_galfit.fits")
+        new = self.copy(output_path)
+        new.load_headers()
+        new.set_header_items(
+            {
+                "GAIN": self.extract_header_item(key="OLD_EXPTIME", ext=ext) *
+                        self.extract_header_item(key="OLD_GAIN", ext=ext)
+            }
+        )
+        new.write_fits_file()
+        return new
+
+
+
+    def galfit(
+            self,
+            coords: SkyCoord,
+            output_dir: str = None,
+            frame_lower: int = 30,
+            frame_upper: int = 100,
+            ext: int = 0,
+            model_guesses: dict = None
+    ):
+        import frb.galaxies.galfit as galfit
+
+        if model_guesses is None:
+            model_guesses = {
+                "int_mag": 0.0,
+                "r_e": 3.0,
+                "n": 1.0,
+                "axis_ratio":  1.0,
+                "PA": 0.0
+            }
+
+        x, y = self.world_to_pixel(
+            coord=coords,
+            origin=1
+        )
+        x = u.check_iterable(x)
+        y = u.check_iterable(y)
+        self.extract_pixel_scale()
+        if output_dir is None:
+            output_dir = self.data_path
+        new = self.make_galfit_version(
+            output_path=os.path.join(output_dir, self.filename.replace(".fits", "_galfit.fits"))
+        )
+        new.open()
+        hdu = new.hdu_list[ext]
+        data = hdu.data
+        # We obtain an oversampled PSF, because GALFIT works best with one.
+        psfex_path = os.path.join(output_dir, f"{self.name}_psfex.psf")
+        new.psfex(
+            output_dir=output_dir,
+            PSF_SAMPLING=0.5,  # Equivalent to GALFIT fine-sampling factor = 2
+            PSF_SIZE=25 / self.pixel_scale_dec.value,
+            force=True,
+            set_attributes=True  # Don't overwrite the PSF model we already have
+        )
+        # Load oversampled PSF image
+        psf_img = new.psf_image(x=x[0], y=y[0], match_pixel_scale=False)[0]
+        psf_img /= np.max(psf_img)
+        # Write our PSF image to disk for GALFIT to find
+        psf_hdu = fits.hdu.PrimaryHDU(psf_img)
+        psf_hdu_list = fits.hdu.HDUList(psf_hdu)
+        psf_path = os.path.join(output_dir, f"{self.name}_psf.fits")
+        psf_hdu_list.writeto(
+            psf_path,
+            overwrite=True
+        )
+        data = new.data[ext].copy()
+        new.close()
+
+        for frame in range(frame_lower, frame_upper + 1):
+            margins = u.frame_from_centre(frame, x, y, data)
+            print("Generating mask...")
+            data_trim = u.trim_image(data, margins=margins)
+            mask_path = os.path.join(output_dir, f"{self.name}_mask_{frame}.fits")
+            mask = new.write_mask(
+                output_path=mask_path,
+                unmasked=coords,
+                ext=ext,
+                method="sep",
+                obj_value=1,
+                back_value=0,
+                margins=margins
+            )
+            mask_data = mask.data[ext]
+
+            galfit.run(
+                imgfile=new.path,
+                psffile=psf_path,
+                outdir=output_dir,
+                configfile=f"{self.name}_{frame}.feedme",
+                finesample=2,
+                badpix=mask_path,
+                region=margins,
+                convobox=frame * 2,
+                zeropoint=self.zeropoint_best["zeropoint_img"].value,
+                position=(x, y),
+                skip_sky=False,
+                **model_guesses
+            )
+
+        shutil.copy(p.path_to_config_galfit(), output_dir)
 
     @classmethod
     def select_child_class(cls, instrument: str, **kwargs):

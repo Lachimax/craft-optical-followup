@@ -69,7 +69,7 @@ def load_psfex_oversampled(model: Union[str, 'astropy.io.fits.HDUList'], x: floa
     :param x: pixel x-coordinate to use for model input
     :param y: pixel y-coordinate to use for model input
     :return: numpy.ndarray representing the PSF model as an image.
-        """
+    """
 
     model, path = ff.path_or_hdu(model)
 
