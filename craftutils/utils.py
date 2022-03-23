@@ -121,7 +121,7 @@ def check_iterable(obj):
     return obj
 
 
-def theta_range(theta: units. Quantity):
+def theta_range(theta: units.Quantity):
     theta = check_iterable(theta.copy())
     theta = units.Quantity(theta)
 
@@ -243,7 +243,7 @@ def check_dict(key: str, dictionary: dict, na_values: Union[tuple, list] = (None
 
 def check_quantity(
         number: Union[float, int, units.Quantity], unit: units.Unit, allow_mismatch: bool = True,
-                   convert: bool = False):
+        convert: bool = False):
     """
     If the passed number is not a Quantity, turns it into one with the passed unit. If it is already a Quantity,
     checks the unit; if the unit is compatible with the passed unit, the quantity is returned unchanged (unless convert
@@ -257,7 +257,7 @@ def check_quantity(
     """
     if number is None:
         return None
-    if not isinstance(number, units.Quantity): #and number is not None:
+    if not isinstance(number, units.Quantity):  # and number is not None:
         number *= unit
     elif number.unit != unit:
         if not allow_mismatch:
@@ -317,6 +317,7 @@ def make_absolute_path(higher_path: str, path: str):
     if not is_path_absolute(path):
         path = os.path.join(higher_path, path)
     return path
+
 
 def check_trailing_slash(path: str):
     """
@@ -438,11 +439,11 @@ def mkdir_check_nested(path: str, remove_last: bool = True):
     mkdir_check_args(*levels)
     # mkdir_check(path_orig)
 
+
 def move_check(origin: str, destination: str):
     if os.path.exists(origin):
         mkdir_check_nested(destination)
         shutil.move(origin, destination)
-
 
 
 def mkdir_check_args(*args: str):
@@ -1128,9 +1129,16 @@ def system_command(
     return system_command_verbose(command=sys_str, suppress_print=suppress_print, error_on_exit_code=error_on_exit_code)
 
 
-def system_command_verbose(command: str, suppress_print: bool = False, error_on_exit_code: bool = True):
+def system_command_verbose(
+        command: str,
+        suppress_print: bool = False,
+        error_on_exit_code: bool = True,
+        suppress_path: bool = False
+):
     if not suppress_print:
         print()
+        if not suppress_path:
+            print("In:", os.getcwd())
         print("Executing:")
         print(command)
         print()
