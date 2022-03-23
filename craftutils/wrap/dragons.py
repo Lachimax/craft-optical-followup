@@ -50,11 +50,8 @@ def data_select(
         expression=expression,
         output=output
     )
-    print()
-    print(sys_str)
-    print("In:", os.getcwd())
-    print()
-    os.system(sys_str)
+
+    u.system_command_verbose(sys_str)
 
     data_list = None
     if output is not None:
@@ -146,7 +143,7 @@ def disco(redux_dir: str,
           output: str = None,
           file_glob: str = "*_skySubtracted.fits",
           refcat: str = None,
-          refcat_format: str = "ascii.csv",
+          refcat_format: str = None, #"ascii.csv",
           refcat_ra: str = None,
           refcat_dec: str = None,
           ignore_objcat: bool = False
@@ -188,9 +185,6 @@ def disco(redux_dir: str,
     if ignore_objcat:
         sys_str += " --ignore_objcat"
 
-    print()
-    print(sys_str)
-    print()
-    os.system(sys_str)
+    u.system_command_verbose(sys_str)
 
     os.chdir(pwd)

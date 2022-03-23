@@ -196,13 +196,14 @@ def fors_zeropoint(
     u.system_command_verbose(f"{eso_bin_path} fors_zeropoint {sof_path}")
 
     master_path = os.path.join(output_dir, "aligned_phot.fits")
+    std_path = os.path.join(output_dir, "standard_reduced_img.fits")
     if output_filename is not None:
         final_path = os.path.join(output_dir, output_filename)
         shutil.move(master_path, final_path)
     else:
         final_path = master_path
     os.chdir(old_dir)
-    return final_path
+    return final_path, std_path
 
 
 def fors_photometry(

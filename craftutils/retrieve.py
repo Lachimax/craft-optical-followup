@@ -1517,32 +1517,73 @@ def save_gemini_calibs(output: str, obs_date: Time, instrument: str = 'GSAOI', f
     date_late = obs_date.copy()
     while len(flats) == 0:
         program_id = f"GS-CAL{date_early.strftime('%Y%m%d')}"
-        print(f"Searching for domeflats in {program_id}...")
+        print(f"Searching for {fil} domeflats in {program_id}...")
         flats = gemini.Observations.query_criteria(
             instrument=instrument,
             observation_class='dayCal',
             program_id=program_id,
         )
+        print(f"Found {len(flats)} flats total.")
+        flats = flats[flats["filter_name"] == fil]
+        print(f"Found {len(flats)} flats for filter {fil}.")
         if len(flats) == 0:
             program_id = f"GS-CAL{date_late.strftime('%Y%m%d')}"
-            print(f"Searching for domeflats in {program_id}...")
+            print(f"Searching for {fil} domeflats in {program_id}...")
             flats = gemini.Observations.query_criteria(
                 instrument=instrument,
                 observation_class='dayCal',
                 program_id=f"GS-CAL{date_late.strftime('%y%m%d')}",
             )
+            flats = flats[flats["filter_name"] == fil]
+            print(f"Found {len(flats)} flats total.")
+            flats = flats[flats["filter_name"] == fil]
+            print(f"Found {len(flats)} flats for filter {fil}.")
         date_early -= 1
         date_late += 1
 
-    flats = flats[flats["filter_name"] == fil]
-
     save_gemini_files(flats, output=output, overwrite=overwrite)
+
+    print(f"Found flats for filter {fil}:")
+    print(flats)
+
+    standards = {}
+
+    date_early = obs_date.copy()
+    date_late = obs_date.copy()
+    while len(standards) == 0 and (obs_date - date_early) < 365:
+        program_id = f"GS-CAL{date_early.strftime('%Y%m%d')}"
+        print(f"Searching for {fil} standards in {program_id}...")
+        standards = gemini.Observations.query_criteria(
+            instrument=instrument,
+            observation_class="partnerCal",
+            program_id=f"GS-CAL{date_early.strftime('%y%m%d')}",
+        )
+        print(f"Found {len(standards)} standards total.")
+        standards = standards[standards["filter_name"] == fil]
+        print(f"Found {len(standards)} standards for filter {fil}.")
+        if len(standards) == 0:
+            program_id = f"GS-CAL{date_late.strftime('%Y%m%d')}"
+            print(f"Searching for {fil} standards in {program_id}...")
+            standards = gemini.Observations.query_criteria(
+                instrument=instrument,
+                observation_class="partnerCal",
+                program_id=f"GS-CAL{date_late.strftime('%y%m%d')}",
+            )
+            standards = standards[standards["filter_name"] == fil]
+            print(f"Found {len(standards)} standards total.")
+            standards = standards[standards["filter_name"] == fil]
+            print(f"Found {len(standards)} standards for filter {fil}.")
+        date_early -= 1
+        date_late += 1
 
     standards = gemini.Observations.query_criteria(
         instrument=instrument,
         observation_class="partnerCal",
         program_id=f"GS-CAL{date_early.strftime('%y%m%d')}",
     )
+
+    print("Found standards:")
+    print(standards)
 
     standards = standards[standards["filter_name"] == fil]
 

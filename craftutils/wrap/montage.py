@@ -6,7 +6,6 @@ from typing import List, Union
 import numpy as np
 
 import astropy.io.fits as fits
-from ccdproc import combine, CCDData
 
 import craftutils.utils as u
 from craftutils.observation.image import fits_table_all
@@ -69,17 +68,20 @@ def check_input_images(input_directory: str,
     gain = np.round(template[gain_key])
     for file in table[1:]:
         if np.round(float(file[exptime_key])) != exptime:
-            raise ValueError(f"Input files have different EXPTIME ({file[exptime_key]} != {exptime}), file {file['filename']}")
+            raise ValueError(
+                f"Input files have different EXPTIME ({file[exptime_key]} != {exptime}), file {file['filename']}")
         if file[instrument_key] != instrument:
-            raise ValueError(f"Input files were taken with different instruments ({file[instrument_key]} != {instrument}), file {file['filename']}.")
+            raise ValueError(
+                f"Input files were taken with different instruments ({file[instrument_key]} != {instrument}), file {file['filename']}.")
         if np.round(file[gain_key]) != gain:
             raise ValueError(f"Files specify different gains ({gain} != {file[gain_key]}, file {file['filename']}")
 
 
-def inject_header(file_path: str, input_directory: str,
-                  extra_items: dict = None, keys: dict = None,
-                  coadd_type: str = 'median', ext: int = 0,
-                  instrument: str = "vlt-fors2"):
+def inject_header(
+        file_path: str, input_directory: str,
+        extra_items: dict = None, keys: dict = None,
+        coadd_type: str = 'median', ext: int = 0,
+        instrument: str = "vlt-fors2"):
     table = fits_table_all(input_directory, science_only=False)
     table.sort("FILENAME")
 
@@ -91,8 +93,13 @@ def inject_header(file_path: str, input_directory: str,
     template = img.ImagingImage.from_fits(table[0]["PATH"])
     cls = type(template)
 
+    airmasses = np.float64(table[important_keys['airmass']])
+    airmass_mean = np.nanmean(airmasses)
+
     insert_dict = {
-        f"AIRMASS": np.nanmean(np.float64(table[important_keys['airmass']])),
+        f"AIRMASS": airmass_mean,
+        f"AIRMASS_ERR": max(np.nanmax(airmasses) - airmass_mean,
+                            airmass_mean - np.nanmin(airmasses)),
         f"SATURATE": np.nanmean(np.float64(table[important_keys['saturate']])),
         f"OBJECT": template.extract_object(),
         f"MJD-OBS": float(np.nanmin(np.float64(table[important_keys["mjd-obs"]]))),
@@ -267,8 +274,7 @@ def standard_script(
         output_file_name: str = None,
         ignore_differences: bool = False,
         coadd_types: Union[List[str], str] = 'median',
-        add_with_ccdproc: Union[List[bool], bool] = False,
-        unit="electron / second",
+        # unit="electron / second",
         do_inject_header: bool = True,
         **kwargs
 ):
@@ -340,8 +346,6 @@ def standard_script(
 
     if isinstance(coadd_types, str):
         coadd_types = [coadd_types]
-    if isinstance(add_with_ccdproc, bool):
-        add_with_ccdproc = len(coadd_types) * [add_with_ccdproc]
 
     file_paths = []
 
