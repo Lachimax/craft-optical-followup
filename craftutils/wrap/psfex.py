@@ -99,9 +99,10 @@ def load_psfex_oversampled(model: Union[str, 'astropy.io.fits.HDUList'], x: floa
             psf = a[0] + a[1] * x + a[2] * x ** 2 + a[3] * x ** 3 + a[4] * y + a[5] * x * y + a[6] * x ** 2 * y + \
                   a[7] * y ** 2 + a[8] * x * y ** 2 + a[9] * y ** 3
 
-            psfs.append(psf)
         else:
             raise ValueError("I haven't accounted for polynomials of order > 3. My bad.")
+
+        psfs.append(psf)
 
     if path:
         model.close()
