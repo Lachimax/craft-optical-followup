@@ -2,6 +2,8 @@ import os
 
 import numpy as np
 
+from typing import Union
+
 try:
     import psfex as pex
 except ImportError:
