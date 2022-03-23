@@ -2073,12 +2073,12 @@ class ImagingEpoch(Epoch):
                 sigma_clip_high_thresh=sigma_clip,
                 sigma_clip_low_thresh=sigma_clip
             )
-            # TODO: Inject header
-
             combined_img = image.FORS2CoaddedImage(sigclip_path)
             combined_img.area_file = area_final
             coadded_median.load_headers()
             combined_img.headers = coadded_median.headers
+            # Dispose of the extra extensions ccdproc adds in, they confuse source-extractor
+            combined_img.data = [combined_img.data[0]]
             u.debug_print(3, f"ImagingEpoch.coadd(): {combined_img}.headers ==", combined_img.headers)
             combined_img.add_log(
                 "Co-added image using Montage for reprojection & ccdproc for coaddition; see ancestor_logs for input images.",
