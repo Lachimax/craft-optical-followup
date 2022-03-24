@@ -3491,7 +3491,7 @@ class ImagingImage(Image):
                 "r_e": 3.0,
                 "n": 1.0,
                 "axis_ratio":  1.0,
-                "PA": 0.0
+                "pa": 0.0
             }
 
         x, y = self.world_to_pixel(
@@ -3533,6 +3533,8 @@ class ImagingImage(Image):
         data = new.data[ext].copy()
         new.close()
 
+
+
         for frame in range(frame_lower, frame_upper + 1):
             margins = u.frame_from_centre(frame, x[0], y[0], data)
             print("Generating mask...")
@@ -3554,12 +3556,13 @@ class ImagingImage(Image):
                 psffile=psf_path,
                 outdir=output_dir,
                 configfile=f"{self.name}_{frame}.feedme",
+                outfile=os.path.join(output_dir, f"{self.name}_galfit_out_{frame}.fits"),
                 finesample=2,
                 badpix=mask_path,
                 region=margins,
-                convobox=frame * 2,
+                convobox=(frame * 2, frame * 2),
                 zeropoint=self.zeropoint_best["zeropoint_img"].value,
-                position=(x, y),
+                position=(int(x[0]), int(y[0])),
                 skip_sky=False,
                 **model_guesses
             )
