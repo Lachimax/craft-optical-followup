@@ -615,6 +615,13 @@ class Image:
         self.saturate = saturate * units.ct
         return self.saturate
 
+    def remove_extra_extensions(self, ext: int = 0):
+        self.load_headers()
+        self.load_data()
+        self.headers = [self.headers[ext]]
+        self.data = [self.data[ext]]
+        self.write_fits_file()
+
     def write_fits_file(self):
         with fits.open(self.path, mode="update") as file:
             for i in range(len(self.headers)):
@@ -2298,9 +2305,10 @@ class ImagingImage(Image):
                 "EXPTIME": 1.0,
                 "OLD_EXPTIME": exp_time.value,
                 "OLD_SATURATE": saturate,
-                "SATURATE": saturate / exp_time,
-                "RON": read_noise / exp_time,
-                "OLD_RON": read_noise
+                "SATURATE": saturate / exp_time.value,
+                "RON": read_noise / exp_time.value,
+                "OLD_RON": read_noise,
+                "INTTIME": exp_time.value
             },
             ext=ext,
             write=False
@@ -3510,14 +3518,18 @@ class ImagingImage(Image):
         hdu = new.hdu_list[ext]
         data = hdu.data
         # We obtain an oversampled PSF, because GALFIT works best with one.
-        psfex_path = os.path.join(output_dir, f"{self.name}_psfex.psf")
-        new.psfex(
-            output_dir=output_dir,
-            PSF_SAMPLING=0.5,  # Equivalent to GALFIT fine-sampling factor = 2
-            # PSF_SIZE=50,
-            force=True,
-            set_attributes=True  # Don't overwrite the PSF model we already have
-        )
+        psfex_path = os.path.join(output_dir, f"{self.name}_galfit_psfex.psf")
+        if not os.path.isfile(psfex_path):
+            new.psfex(
+                output_dir=output_dir,
+                PSF_SAMPLING=0.5,  # Equivalent to GALFIT fine-sampling factor = 2
+                # PSF_SIZE=50,
+                force=True,
+                set_attributes=True
+            )
+        else:
+            new.psfex_path = psfex_path
+            new.load_psfex_output()
         # Load oversampled PSF image
         psf_img = new.psf_image(x=x[0], y=y[0], match_pixel_scale=False)[0]
         psf_img /= np.max(psf_img)
@@ -3533,7 +3545,7 @@ class ImagingImage(Image):
         data = new.data[ext].copy()
         new.close()
 
-
+        gf_tbls = []
 
         for frame in range(frame_lower, frame_upper + 1):
             margins = u.frame_from_centre(frame, x[0], y[0], data)
@@ -3549,14 +3561,14 @@ class ImagingImage(Image):
                 back_value=0,
                 margins=margins
             )
-            mask_data = mask.data[ext]
-
+            mask_data = u.trim_image(mask.data[ext], margins=margins)
+            img_block_path = os.path.join(output_dir, f"{self.name}_galfit_out_{frame}.fits")
             galfit.run(
                 imgfile=new.path,
                 psffile=psf_path,
                 outdir=output_dir,
                 configfile=f"{self.name}_{frame}.feedme",
-                outfile=os.path.join(output_dir, f"{self.name}_galfit_out_{frame}.fits"),
+                outfile=img_block_path,
                 finesample=2,
                 badpix=mask_path,
                 region=margins,
@@ -3566,8 +3578,29 @@ class ImagingImage(Image):
                 skip_sky=False,
                 **model_guesses
             )
+            try:
+                img_block = fits.open(img_block_path, mode='update')
+            except FileNotFoundError:
+                return None
+
+            results_table = table.QTable(img_block[4].data)
+            results_table["frame"] = [frame]
+            gf_tbls.append(results_table)
+
+            img_block.append(img_block[3].copy())
+            img_block[5].data *= np.invert(mask_data.astype(bool)).astype(int)  # + #
+            img_block[5].data += mask_data * np.median(img_block[3].data)
+
+            img_block.append(img_block[1].copy())
+            img_block[6].data *= np.invert(mask_data.astype(bool)).astype(int)  # + #
+            img_block[6].data += mask_data * np.median(img_block[1].data)
+            img_block.close()
+
+        gf_tbl = table.vstack(gf_tbls)
 
         shutil.copy(p.path_to_config_galfit(), output_dir)
+
+        return gf_tbl
 
     @classmethod
     def select_child_class(cls, instrument: str, **kwargs):

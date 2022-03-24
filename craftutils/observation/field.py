@@ -1897,6 +1897,9 @@ class ImagingEpoch(Epoch):
         )
         return stages
 
+    def n_frames(self, fil: str):
+        return len(self.frames_reduced[fil])
+
     def proc_register(self, output_dir: str, **kwargs):
         self.frames_registered = {}
         self.register(
@@ -2969,11 +2972,11 @@ class ImagingEpoch(Epoch):
             row["instrument"] = self.instrument_name
             row["filter_name"] = fil
             row["filter_lambda_eff"] = self.instrument.filters[fil].lambda_eff.to(units.Angstrom).round(3)
-            row["n_frames"] = len(self.frames_reduced[fil])
-            row["n_frames_included"] = len(frames[fil])
+            row["n_frames"] = self.n_frames(fil)
+            row["n_frames_included"] = coadded[fil].extract_header_item("NCOMBINE")
             row["frame_exp_time"] = self.exp_time_mean[fil].round()
-            row["total_exp_time"] = row["n_frames"] * row["frame_exp_time"]
-            row["total_exp_time_included"] = row["n_frames_included"] * row["frame_exp_time"]
+            row["total_exp_time"] = coadded[fil].extract_header_item("NCOMBINE")
+            row["total_exp_time_included"] = coadded[fil].extract_header_item("INTIME")
             row["psf_fwhm"] = self.psf_stats[fil]["gauss"]["fwhm_median"]
             row["program_id"] = str(self.program_id)
             row["zeropoint"] = coadded[fil].extract_header_item("ZP") * units.mag
@@ -3174,6 +3177,7 @@ class FORS2StandardEpoch(StandardEpoch, ImagingEpoch):
         zp_dict[2] = {}
         for fil in self.filters:
             for img in image_dict[fil]:
+                img.remove_extra_extensions()
                 img.zeropoints = {}
                 for cat_name in retrieve.photometry_catalogues:
                     if cat_name == "gaia":
@@ -4363,6 +4367,10 @@ class HAWKIImagingEpoch(ESOImagingEpoch):
 class FORS2ImagingEpoch(ESOImagingEpoch):
     instrument_name = "vlt-fors2"
     frame_class = image.FORS2Image
+
+    def n_frames(self, fil: str):
+        frame_pairs = self.pair_files(self.frames_reduced[fil])
+        return len(frame_pairs)
 
     @classmethod
     def stages(cls):
