@@ -623,14 +623,22 @@ class Image:
         self.write_fits_file()
 
     def write_fits_file(self):
-        with fits.open(self.path, mode="update") as file:
-            for i in range(len(self.headers)):
-                if self.headers is not None:
-                    if i >= len(file):
-                        file.append(fits.ImageHDU())
-                    file[i].header = self.headers[i]
-                if self.data is not None:
-                    file[i].data = u.dequantify(self.data[i])
+        self.open()
+        for i in range(len(self.headers)):
+            if i >= len(self.hdu_list):
+                self.hdu_list.append(fits.ImageHDU())
+            if self.headers is not None:
+                self.hdu_list[i].header = self.headers[i]
+            if self.data is not None:
+                self.hdu_list[i].data = u.dequantify(self.data[i])
+
+        while len(self.hdu_list) > len(self.headers):
+            self.hdu_list.pop(-1)
+            print(len(self.hdu_list))
+
+        self.hdu_list.writeto(self.path, overwrite=True)
+
+        self.close()
 
     @classmethod
     def header_keys(cls):
