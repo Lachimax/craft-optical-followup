@@ -2975,8 +2975,9 @@ class ImagingEpoch(Epoch):
             row["n_frames"] = self.n_frames(fil)
             row["n_frames_included"] = coadded[fil].extract_header_item("NCOMBINE")
             row["frame_exp_time"] = self.exp_time_mean[fil].round()
-            row["total_exp_time"] = coadded[fil].extract_header_item("NCOMBINE")
-            row["total_exp_time_included"] = coadded[fil].extract_header_item("INTIME")
+            row["total_exp_time"] = row["n_frames"] * row["frame_exp_time"]
+            inttime = coadded[fil].extract_header_item("INTTIME") * units.second
+            row["total_exp_time_included"] = inttime
             row["psf_fwhm"] = self.psf_stats[fil]["gauss"]["fwhm_median"]
             row["program_id"] = str(self.program_id)
             row["zeropoint"] = coadded[fil].extract_header_item("ZP") * units.mag
