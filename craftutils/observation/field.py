@@ -3122,6 +3122,7 @@ class FORS2StandardEpoch(StandardEpoch, ImagingEpoch):
     def source_extraction(self, output_dir: str, do_diagnostics: bool = True, **kwargs):
         for fil in self.frames_reduced:
             for img in self.frames_reduced[fil]:
+                img.remove_extra_extensions()
                 configs = self.source_extractor_config
 
                 img.psfex_path = None
@@ -3177,7 +3178,6 @@ class FORS2StandardEpoch(StandardEpoch, ImagingEpoch):
         zp_dict[2] = {}
         for fil in self.filters:
             for img in image_dict[fil]:
-                img.remove_extra_extensions()
                 img.zeropoints = {}
                 for cat_name in retrieve.photometry_catalogues:
                     if cat_name == "gaia":
