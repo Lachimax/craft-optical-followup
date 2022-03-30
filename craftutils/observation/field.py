@@ -3167,7 +3167,7 @@ class FORS2StandardEpoch(StandardEpoch, ImagingEpoch):
             output_path: str,
             distance_tolerance: units.Quantity = None,
             snr_min: float = 100.,
-            star_class_tolerance: float = 0.95,
+            star_class_tolerance: float = 0.9,
             suppress_select: bool = False,
             **kwargs
     ):
@@ -3182,6 +3182,8 @@ class FORS2StandardEpoch(StandardEpoch, ImagingEpoch):
         for fil in self.filters:
             for img in image_dict[fil]:
                 img.zeropoints = {}
+                cats = retrieve.photometry_catalogues
+                cats.append("eso_calib_cats")
                 for cat_name in retrieve.photometry_catalogues:
                     if cat_name == "gaia":
                         continue
@@ -4710,7 +4712,7 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
             img = image_dict[fil]
             if f"ext_{fil}" in ext_row.colnames:
                 img.extinction_atmospheric = ext_row[f"ext_{fil}"]
-                img.extinction_atmospheric = ext_row[f"ext_err_{fil}"]
+                img.extinction_atmospheric_err = ext_row[f"ext_err_{fil}"]
 
         super().photometric_calibration(
             output_path=output_path,

@@ -1331,8 +1331,6 @@ class ImagingImage(Image):
                     zps.append(zp)
 
         zp_tbl = table.QTable(zps)
-        print(zps)
-        print(zp_tbl)
         zp_tbl.sort(["selection_index"], reverse=True)
         zp_tbl.write(os.path.join(self.data_path, f"{self.name}_zeropoints.ecsv"), format="ascii.ecsv")
         #        zp_tbl.write(os.path.join(self.data_path, f"{self.name}_zeropoints.csv"), format="ascii.csv")
