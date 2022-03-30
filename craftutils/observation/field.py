@@ -1606,7 +1606,8 @@ class Epoch:
             f"sort_frame(); Adding frame {frame.name}, type {frame.frame_type}, to {self}, type {type(self)}")
 
         # chip = frame.extract_chip_number()
-
+        # print(frame.frame_type)
+        u.debug_print(2, f"Epoch.sort_frame(): {type(self.frames_science)=}")
         if frame.frame_type == "bias" and frame not in self.frames_bias:
             self.frames_bias.append(frame)
 
@@ -3916,23 +3917,26 @@ class ESOImagingEpoch(ImagingEpoch):
             # The below will also update the filter list.
             u.debug_print(
                 2,
-                f"_initial_setup(): Adding frame {img.name}, type {img.frame_type}, to {self}, type {type(self)}")
+                f"_initial_setup(): Adding frame {img.name}, type {img.frame_type}/{type(img)}, to {self}, type {type(self)}")
             self.add_frame_raw(img)
 
+        u.debug_print(2, f"ESOImagingEpoch._initial_setup(): {self.frames_science=}")
         # Collect and save some stats on those filters:
         for i, fil in enumerate(self.filters):
-            exp_times = list(map(lambda frame: frame.extract_exposure_time().value, self.frames_science[fil]))
-            u.debug_print(1, "exposure times:")
-            u.debug_print(1, exp_times)
-            self.exp_time_mean[fil] = np.nanmean(exp_times) * units.second
-            self.exp_time_err[fil] = np.nanstd(exp_times) * units.second
+            if self.frames_science[fil]:
+                exp_times = list(map(lambda frame: frame.extract_exposure_time().value, self.frames_science[fil]))
+                u.debug_print(1, "exposure times:")
+                u.debug_print(1, exp_times)
+                self.exp_time_mean[fil] = np.nanmean(exp_times) * units.second
+                self.exp_time_err[fil] = np.nanstd(exp_times) * units.second
 
-            airmasses = list(map(lambda frame: frame.extract_airmass(), self.frames_science[fil]))
-            self.airmass_mean[fil] = np.nanmean(airmasses)
-            self.airmass_err[fil] = max(np.nanmax(airmasses) - self.airmass_mean[fil],
-                                        self.airmass_mean[fil] - np.nanmin(airmasses))
-
-            print(f'Copying {fil} calibration data to standard folder...')
+                airmasses = list(map(lambda frame: frame.extract_airmass(), self.frames_science[fil]))
+                print(airmasses)
+                self.airmass_mean[fil] = np.nanmean(airmasses)
+                self.airmass_err[fil] = max(
+                    np.nanmax(airmasses) - self.airmass_mean[fil],
+                    self.airmass_mean[fil] - np.nanmin(airmasses)
+                )
 
         inst_reflex_dir = {
             "vlt-fors2": "fors",

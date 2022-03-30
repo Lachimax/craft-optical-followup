@@ -3620,7 +3620,7 @@ class ImagingImage(Image):
         elif instrument == "vlt-fors2":
             return FORS2Image
         elif instrument == "vlt-hawki":
-            return HAWKICoaddedImage
+            return HAWKIImage
         elif instrument == "gs-aoi":
             return GSAOIImage
         elif "hst" in instrument:
@@ -3778,6 +3778,8 @@ class CoaddedImage(ImagingImage):
             return CoaddedImage
         elif instrument == "vlt-fors2":
             return FORS2CoaddedImage
+        elif instrument == "vlt-hawki":
+            return HAWKICoaddedImage
         else:
             return CoaddedImage
             # raise ValueError(f"Unrecognised instrument {instrument}")
@@ -3833,10 +3835,13 @@ class ESOImagingImage(ImagingImage, ESOImage):
             self.frame_type = "flat"
         elif obj == "STD":
             self.frame_type = "standard"
+        elif obj == "DARK":
+            self.frame_type = "dark"
         elif category == "SCIENCE":
             self.frame_type = "science"
         elif category == "SCIENCE_REDUCED_IMG":
             self.frame_type = "science_reduced"
+        u.debug_print(2, f"ESOImagingImage.extract_frame_type(): {obj=}, {category=}, {self.frame_type=}")
         return self.frame_type
 
     def extract_airmass(self):
@@ -3861,6 +3866,20 @@ class ESOImagingImage(ImagingImage, ESOImage):
                 n += 1
         return n
 
+    @classmethod
+    def header_keys(cls) -> dict:
+        header_keys = super().header_keys()
+        header_keys.update(ESOImage.header_keys())
+        header_keys.update({
+            "noise_read": "HIERARCH ESO DET OUT1 RON",
+            "filter": "HIERARCH ESO INS FILT1 NAME",
+            "gain": "HIERARCH ESO DET OUT1 GAIN",
+            "program_id": "HIERARCH ESO OBS PROG ID",
+        })
+        return header_keys
+
+class HAWKIImage(ESOImagingImage):
+    instrument_name = "vlt-hawki"
 
 class HAWKICoaddedImage(ESOImagingImage):
     num_chips = 4
@@ -3938,18 +3957,6 @@ class FORS2Image(ESOImagingImage):
             "panstarrs1",
             "sdss",
             "skymapper"]
-
-    @classmethod
-    def header_keys(cls) -> dict:
-        header_keys = super().header_keys()
-        header_keys.update(ESOImage.header_keys())
-        header_keys.update({
-            "noise_read": "HIERARCH ESO DET OUT1 RON",
-            "filter": "HIERARCH ESO INS FILT1 NAME",
-            "gain": "HIERARCH ESO DET OUT1 GAIN",
-            "program_id": "HIERARCH ESO OBS PROG ID",
-        })
-        return header_keys
 
 
 class FORS2CoaddedImage(CoaddedImage):
