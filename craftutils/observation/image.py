@@ -1541,7 +1541,9 @@ class ImagingImage(Image):
                 zeropoint.update({
                     "airmass": delta_airmass,
                     "airmass_err": delta_airmass_err,
-                    "image_name": other.name
+                    "image_name": other.name,
+                    "extinction": self.extinction_atmospheric,
+                    "extinction_err": self.extinction_atmospheric_err
                 })
                 self.add_zeropoint(
                     **zeropoint
@@ -3659,8 +3661,8 @@ class ImagingImage(Image):
         """
 
         return [
-            "calib_pipeline",
             "instrument_archive",
+            "calib_pipeline",
             "des",
             "delve",
             "panstarrs1",

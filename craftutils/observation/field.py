@@ -21,6 +21,7 @@ from astropy.coordinates import SkyCoord
 import astropy.units as units
 import astropy.table as table
 import astropy.io.fits as fits
+from astropy.modeling import models, fitting
 
 import craftutils.astrometry as astm
 import craftutils.fits_files as ff
@@ -2811,6 +2812,7 @@ class ImagingEpoch(Epoch):
                 return None, None
         fil = frame.extract_filter()
         frame.epoch = self
+
         return frame, fil
 
     def _add_frame(self, frame: Union[image.ImagingImage, str], frames_dict: dict, frame_type: str):
@@ -4596,17 +4598,95 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
                     raise ValueError(
                         f"Astrometry method {method} not recognised. Must be individual, pairwise or propagate_from_single")
 
-    def estimate_atmospheric_extinction(self, mjd: int):
-        fils = []
-        lambdas = []
-        extinctions = []
+    def estimate_atmospheric_extinction(self, n: int = 10, output: str = None):
+        mjd = self.date.mjd
+        fils_known = []
+        tbls_known = {}
+
+        fils_find = []
+
         for fil_name in inst.FORS2Filter.qc1_retrievable:
             fil = inst.Filter.from_params(fil_name, instrument_name="vlt-fors2")
             fil.retrieve_calibration_table()
-            fils.append(fil)
+            fils_known.append(fil)
+            tbls_known[fil_name] = fil.get_nearest_calib_rows(mjd=mjd, n=n)
 
-            lambdas.append(fil.lambda_eff)
-            # extinctions.append(fil.)
+        fils_known.sort(key=lambda f: f.lambda_eff)
+
+        lambdas_known = list(map(lambda f: f.lambda_eff.value, fils_known))
+
+        results_tbl = {
+            "mjd": [],
+            "curve_err": [],
+        }
+
+        for fil_name in self.filters:
+            if fil_name not in inst.FORS2Filter.qc1_retrievable:
+                fil = inst.Filter.from_params(fil_name, instrument_name="vlt-fors2")
+                fils_find.append(fil)
+                results_tbl[f"ext_{fil_name}"] = []
+                # results_tbl[f"ext_err_{fil_name}"] = []
+                results_tbl[f"stat_err_{fil_name}"] = []
+
+        fils_find.sort(key=lambda f: f.lambda_eff)
+        lambdas_find = list(map(lambda f: f.lambda_eff.value, fils_find))
+
+        if output is None:
+            output = self.data_path
+
+        for i in range(n):
+            extinctions_known = []
+            extinctions_known_err = []
+            mjd = None
+            mjds = []
+            for fil in fils_known:
+                tbl = tbls_known[fil.name]
+                if mjd is None:
+                    mjd = tbl[i]["mjd_obs"]
+                mjds.append(tbl[i]["mjd_obs"])
+                extinctions_known.append(tbl[i]["extinction"].value)
+                extinctions_known_err.append(tbl[i]["extinction_err"].value)
+            results_tbl["mjd"].append(mjd)
+            extinctions_known_err = np.array(extinctions_known_err)
+            model_init = models.PowerLaw1D()
+            fitter = fitting.LevMarLSQFitter()
+            model = fitter(model_init, lambdas_known, extinctions_known, weights=1/extinctions_known_err)
+
+            curve_err = u.root_mean_squared_error(model_values=model(lambdas_known), obs_values=extinctions_known)
+
+            results_tbl["curve_err"].append(curve_err)
+
+            extinctions_find = model(lambdas_find)
+
+            lambda_eff_fit = np.linspace(3000, 10000)
+            plt.plot(lambda_eff_fit, model(lambda_eff_fit))
+            plt.scatter(lambdas_known, extinctions_known, label="Known")
+            for j, m in enumerate(mjds):
+                plt.text(lambdas_known[j], extinctions_known[j], m)
+            plt.scatter(lambdas_find, extinctions_find, label="fitted")
+            plt.xlabel("$\lambda_{eff}$ (Ang)")
+            plt.ylabel("Extinction (mag)")
+            plt.savefig(os.path.join(output, f"extinction_fit_mjd_{mjd}.png"))
+            plt.close()
+
+            for fil in fils_find:
+                results_tbl[f"ext_{fil.name}"].append(model(fil.lambda_eff.value))
+
+        for fil in fils_find:
+            results_tbl[f"stat_err_{fil.name}"] = [np.std(results_tbl[f"ext_{fil.name}"])] * n
+
+        results_tbl = table.QTable(results_tbl)
+        for fil in fils_find:
+            results_tbl[f"ext_err_{fil.name}"] = np.sqrt(results_tbl[f"stat_err_{fil.name}"]**2 + results_tbl[f"curve_err"]**2) * units.mag
+            results_tbl[f"stat_err_{fil.name}"] *= units.mag
+            results_tbl[f"ext_{fil.name}"] *= units.mag
+        results_tbl[f"curve_err"] *= units.mag
+
+        i, nrst = u.find_nearest(results_tbl["mjd"], self.date.mjd)
+
+        results_tbl.write(os.path.join(output, "fitted_extinction.csv"), format="ascii.csv")
+
+        return results_tbl[i], results_tbl
 
     def photometric_calibration(
             self,
@@ -4623,6 +4703,13 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
         suppress_select = False
         if "suppress_select" in kwargs and kwargs["suppress_select"] is not None:
             suppress_select = kwargs.pop("suppress_select")
+
+        ext_row, ext_tbl = self.estimate_atmospheric_extinction(output=output_path)
+        image_dict = self._get_images(image_type=image_type)
+        for fil in image_dict:
+            img = image_dict[fil]
+            fil.extinction_atmospheric = ext_row[f"ext_{fil}"]
+            fil.extinction_atmospheric = ext_row[f"ext_err_{fil}"]
 
         super().photometric_calibration(
             output_path=output_path,
