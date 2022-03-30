@@ -3969,7 +3969,11 @@ class ESOImagingEpoch(ImagingEpoch):
                     )
                     print("Done.")
 
-        tmp = self.frames_science[self.filters[0]][0]
+        # This line looks for a non-empty frames_science list
+        i = 0
+        while not self.frames_science[self.filters[i]]:
+            i += 1
+        tmp = self.frames_science[self.filters[i]][0]
         if self.date is None:
             self.set_date(tmp.extract_date_obs())
         if self.target is None:
