@@ -4708,8 +4708,9 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
         image_dict = self._get_images(image_type=image_type)
         for fil in image_dict:
             img = image_dict[fil]
-            fil.extinction_atmospheric = ext_row[f"ext_{fil}"]
-            fil.extinction_atmospheric = ext_row[f"ext_err_{fil}"]
+            if f"ext_{fil}" in ext_row.colnames:
+                img.extinction_atmospheric = ext_row[f"ext_{fil}"]
+                img.extinction_atmospheric = ext_row[f"ext_err_{fil}"]
 
         super().photometric_calibration(
             output_path=output_path,
