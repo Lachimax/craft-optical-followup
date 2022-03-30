@@ -1264,7 +1264,7 @@ class Epoch:
         if isinstance(self.date, datetime.date):
             self.date = str(self.date)
         print(self.date, type(self.date))
-        if not isinstance(self.date, Time):
+        if not isinstance(self.date, Time) and self.date is not None:
             self.date = Time(self.date, out_subfmt="date")
         self.program_id = program_id
         self.target = target
