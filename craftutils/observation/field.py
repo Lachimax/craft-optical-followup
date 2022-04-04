@@ -438,7 +438,9 @@ class Field:
             for instrument in filter(lambda d: os.path.isdir(os.path.join(mode_path, d)), os.listdir(mode_path)):
                 instrument_path = os.path.join(mode_path, instrument)
                 print(f"Looking in {instrument_path}")
-                for epoch_param in filter(lambda f: f.endswith(".yaml"), os.listdir(instrument_path)):
+                epoch_params = list(filter(lambda f: f.endswith(".yaml"), os.listdir(instrument_path)))
+                epoch_params.sort()
+                for epoch_param in epoch_params:
                     epoch_name = epoch_param[:epoch_param.find(".yaml")]
                     param_path = os.path.join(instrument_path, epoch_param)
                     epoch = p.load_params(file=param_path)
@@ -744,6 +746,8 @@ class Field:
             return None
         # Check data_dir path for relevant .yamls (output_values, etc.)
 
+        if param_dict is None:
+            raise FileNotFoundError(f"There is no param file for {name}")
         field_type = param_dict["type"]
         centre_ra, centre_dec = p.select_coords(param_dict["centre"])
         coord_str = f"{centre_ra} {centre_dec}"
@@ -1987,6 +1991,9 @@ class ImagingEpoch(Epoch):
 
         self.frames_astrometry = {}
 
+        if "upper_only" in kwargs:
+            print(f"upper_only={kwargs['upper_only']}")
+
         if "register_frames" in self.do_kwargs and self.do_kwargs["register_frames"]:
             self.correct_astrometry_frames(
                 output_dir=output_dir,
@@ -3183,7 +3190,7 @@ class FORS2StandardEpoch(StandardEpoch, ImagingEpoch):
             for img in image_dict[fil]:
                 img.zeropoints = {}
                 cats = retrieve.photometry_catalogues
-                cats.append("eso_calib_cats")
+                # cats.append("eso_calib_cats")
                 for cat_name in retrieve.photometry_catalogues:
                     if cat_name == "gaia":
                         continue
