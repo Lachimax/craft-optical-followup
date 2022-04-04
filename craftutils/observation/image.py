@@ -615,15 +615,30 @@ class Image:
         self.saturate = saturate * units.ct
         return self.saturate
 
+    def remove_extra_extensions(self, ext: int = 0):
+        self.load_headers()
+        self.load_data()
+        self.headers = [self.headers[ext]]
+        self.data = [self.data[ext]]
+        self.write_fits_file()
+
     def write_fits_file(self):
-        with fits.open(self.path, mode="update") as file:
-            for i in range(len(self.headers)):
-                if self.headers is not None:
-                    if i >= len(file):
-                        file.append(fits.ImageHDU())
-                    file[i].header = self.headers[i]
-                if self.data is not None:
-                    file[i].data = u.dequantify(self.data[i])
+        self.open()
+        for i in range(len(self.headers)):
+            if i >= len(self.hdu_list):
+                self.hdu_list.append(fits.ImageHDU())
+            if self.headers is not None:
+                self.hdu_list[i].header = self.headers[i]
+            if self.data is not None:
+                self.hdu_list[i].data = u.dequantify(self.data[i])
+
+        while len(self.hdu_list) > len(self.headers):
+            self.hdu_list.pop(-1)
+            print(len(self.hdu_list))
+
+        self.hdu_list.writeto(self.path, overwrite=True)
+
+        self.close()
 
     @classmethod
     def header_keys(cls):
@@ -811,7 +826,23 @@ class ImagingImage(Image):
         self.update_output_file()
         return output_path
 
-    def psfex(self, output_dir: str, force: bool = False, **kwargs):
+    def psfex(
+            self,
+            output_dir: str,
+            force: bool = False,
+            set_attributes: bool = True,
+            **kwargs
+    ):
+        """
+        Run PSFEx on this image to obtain a PSF model.
+        :param output_dir: path to directory to write PSFEx outputs to.
+        :param force: If False, and this object already has a PSF model, we just return the one that already exists.
+        :param kwargs:
+        :param set_attributes: If True, this Image's psfex_path, psfex_output, fwhm_pix_psfex and fwhm_psfex will be set
+            according to the PSFEx output.
+        :return: HDUList representing the PSF model FITS file.
+        """
+        psfex_output = None
         if force or self.psfex_path is None:
             config = p.path_to_config_sextractor_config_pre_psfex()
             output_params = p.path_to_config_sextractor_param_pre_psfex()
@@ -821,12 +852,18 @@ class ImagingImage(Image):
                 parameters_file=output_params,
                 catalog_name=f"{self.name}_psfex.fits",
             )
-            self.psfex_path = psfex.psfex(catalog=catalog, output_dir=output_dir, **kwargs)
-            self.psfex_output = fits.open(self.psfex_path)
-            self.extract_pixel_scale()
-            pix_scale = self.pixel_scale_dec
-            self.fwhm_pix_psfex = self.psfex_output[1].header['PSF_FWHM'] * units.pixel
-            self.fwhm_psfex = self.fwhm_pix_psfex.to(units.arcsec, pix_scale)
+            psfex_path = psfex.psfex(
+                catalog=catalog,
+                output_dir=output_dir,
+                **kwargs
+            )
+            psfex_output = fits.open(psfex_path)
+            if set_attributes:
+                self.psfex_path = psfex_path
+                self.extract_pixel_scale()
+                pix_scale = self.pixel_scale_dec
+                self.fwhm_pix_psfex = psfex_output[1].header['PSF_FWHM'] * units.pixel
+                self.fwhm_psfex = self.fwhm_pix_psfex.to(units.arcsec, pix_scale)
 
             self.add_log(
                 action="PSF modelled using psfex.",
@@ -836,11 +873,20 @@ class ImagingImage(Image):
             )
             self.update_output_file()
 
-        return self.load_psfex_output()
+        if set_attributes:
+            return self.load_psfex_output()
+        else:
+            return psfex_output
 
     def load_psfex_output(self, force: bool = False):
         if force or self.psfex_output is None:
             self.psfex_output = fits.open(self.psfex_path)
+
+    def psf_image(self, x: float, y: float, match_pixel_scale: bool = True):
+        if match_pixel_scale:
+            return psfex.load_psfex(model_path=self.psfex_path, x=x, y=y)
+        else:
+            return psfex.load_psfex_oversampled(model=self.psfex_path, x=x, y=y)
 
     def source_extraction_psf(
             self,
@@ -938,6 +984,34 @@ class ImagingImage(Image):
                 source_cat["ERRY2_WORLD"].to(units.arcsec ** 2) + self.dec_err ** 2)
 
         return source_cat
+
+    def world_to_pixel(self, coord: SkyCoord, origin: int = 0) -> np.ndarray:
+        """
+        Turns a sky coordinate into image pixel coordinates;
+        :param coord: SkyCoord object to convert to pixel coordinates; essentially a wrapper for SkyCoord.to_pixel()
+        :param origin: Do you want pixel indexing that starts at 1 (FITS convention) or 0 (numpy convention)?
+        :return: xp, yp: numpy.ndarray, the pixel coordinates.
+        """
+        self.load_wcs()
+        return coord.to_pixel(self.wcs, origin=origin)
+
+    def pixel_to_world(
+            self,
+            x: Union[float, np.ndarray, units.Quantity],
+            y: Union[float, np.ndarray, units.Quantity],
+            origin: int = 0
+    ) -> SkyCoord:
+        """
+        Uses the image's wcs to turn pixel coordinates into sky; essentially a wrapper for SkyCoord.from_pixel().
+        :param x: Pixel x-coordinate. Can be provided as an astropy Quantity with units pix, or as a raw number.
+        :param y: Pixel y-coordinate. Can be provided as an astropy Quantity with units pix, or as a raw number.
+        :param origin: Do you want pixel indexing that starts at 1 (FITS convention) or 0 (numpy convention)?
+        :return coord: SkyCoord reflecting the sky coordinates.
+        """
+        self.load_wcs()
+        x = u.dequantify(x, unit=units.pix)
+        y = u.dequantify(y, unit=units.pix)
+        return SkyCoord.from_pixel(x, y, wcs=self.wcs, origin=origin)
 
     def load_data(self, force: bool = False):
         super().load_data()
@@ -1257,8 +1331,6 @@ class ImagingImage(Image):
                     zps.append(zp)
 
         zp_tbl = table.QTable(zps)
-        print(zps)
-        print(zp_tbl)
         zp_tbl.sort(["selection_index"], reverse=True)
         zp_tbl.write(os.path.join(self.data_path, f"{self.name}_zeropoints.ecsv"), format="ascii.ecsv")
         #        zp_tbl.write(os.path.join(self.data_path, f"{self.name}_zeropoints.csv"), format="ascii.csv")
@@ -1467,7 +1539,9 @@ class ImagingImage(Image):
                 zeropoint.update({
                     "airmass": delta_airmass,
                     "airmass_err": delta_airmass_err,
-                    "image_name": other.name
+                    "image_name": other.name,
+                    "extinction": self.extinction_atmospheric,
+                    "extinction_err": self.extinction_atmospheric_err
                 })
                 self.add_zeropoint(
                     **zeropoint
@@ -2201,7 +2275,23 @@ class ImagingImage(Image):
 
         return image
 
+    def convert_from_cs(self, output_path: str, ext: int = 0):
+        """
+        NOT IMPLEMENTED.
+        Assuming units of counts / second, converts the image back to total counts.
+        :param output_path: Path to write converted file to.
+        :param ext: FITS extension to modify.
+        :return new: ImagingImage object representing the modified file.
+        """
+        pass
+
     def convert_to_cs(self, output_path: str, ext: int = 0):
+        """
+        Converts the image to flux (units of counts per second) and writes to a new file.
+        :param output_path: Path to write converted file to.
+        :param ext: FITS extension to modify.
+        :return new: ImagingImage object representing the modified file.
+        """
         new = self.copy(output_path)
         gain = self.extract_gain()
         exp_time = self.extract_exposure_time()
@@ -2223,9 +2313,10 @@ class ImagingImage(Image):
                 "EXPTIME": 1.0,
                 "OLD_EXPTIME": exp_time.value,
                 "OLD_SATURATE": saturate,
-                "SATURATE": saturate / exp_time,
-                "RON": read_noise / exp_time,
-                "OLD_RON": read_noise
+                "SATURATE": saturate / exp_time.value,
+                "RON": read_noise / exp_time.value,
+                "OLD_RON": read_noise,
+                "INTTIME": exp_time.value
             },
             ext=ext,
             write=False
@@ -3203,7 +3294,6 @@ class ImagingImage(Image):
             self,
             mask: np.ndarray = None,
             ext: int = 0,
-            mask_type: str = 'zeroed-out',
             **generate_mask_kwargs
     ):
         self.load_data()
@@ -3215,13 +3305,16 @@ class ImagingImage(Image):
         return np.ma.MaskedArray(self.data[ext].copy(), mask=mask)
 
     def write_mask(
-            self, output_path: str,
+            self,
+            output_path: str,
             ext: int = 0,
             **mask_kwargs
-    ):
+    ) -> 'ImagingImage':
         """
-        Not yet implemented.
-        :param path:
+        Generates and writes a source mask to a FITS file.
+        Any argument accepted by generate_mask() can be passed as a keyword.
+        :param output_path: path to write the mask file to.
+        :param ext: FITS extension to modify.
         :return:
         """
 
@@ -3236,6 +3329,7 @@ class ImagingImage(Image):
             output_path=output_path,
         )
         mask_file.update_output_file()
+        return mask_file
 
     def sep_aperture_photometry(
             self, x: float, y: float,
@@ -3372,6 +3466,150 @@ class ImagingImage(Image):
 
         return mag, mag_err, snr
 
+    def make_galfit_version(self, output_path: str = None, ext: int = 0):
+        """
+        Generate a version of this file for use with GALFIT.
+        Modifies header item GAIN to conform to GALFIT's expectations (outlined in the GALFIT User Manual,
+        http://users.obs.carnegiescience.edu/peng/work/galfit/galfit.html)
+        :param output_path: path to write modified file to.
+        :param ext: FITS extension to modify header of.
+        :return:
+        """
+        if output_path is None:
+            output_path = self.path.replace(".fits", "_galfit.fits")
+        new = self.copy(output_path)
+        new.load_headers()
+        new.set_header_items(
+            {
+                "GAIN": self.extract_header_item(key="OLD_EXPTIME", ext=ext) *
+                        self.extract_header_item(key="OLD_GAIN", ext=ext)
+            }
+        )
+        new.write_fits_file()
+        return new
+
+
+
+    def galfit(
+            self,
+            coords: SkyCoord,
+            output_dir: str = None,
+            frame_lower: int = 30,
+            frame_upper: int = 100,
+            ext: int = 0,
+            model_guesses: dict = None
+    ):
+        import frb.galaxies.galfit as galfit
+
+        if model_guesses is None:
+            model_guesses = {
+                "int_mag": 0.0,
+                "r_e": 3.0,
+                "n": 1.0,
+                "axis_ratio":  1.0,
+                "pa": 0.0
+            }
+
+        x, y = self.world_to_pixel(
+            coord=coords,
+            origin=1
+        )
+        x = u.check_iterable(x)
+        y = u.check_iterable(y)
+        self.extract_pixel_scale()
+        if output_dir is None:
+            output_dir = self.data_path
+        new = self.make_galfit_version(
+            output_path=os.path.join(output_dir, self.filename.replace(".fits", "_galfit.fits"))
+        )
+        new.open()
+        hdu = new.hdu_list[ext]
+        data = hdu.data
+        # We obtain an oversampled PSF, because GALFIT works best with one.
+        psfex_path = os.path.join(output_dir, f"{self.name}_galfit_psfex.psf")
+        if not os.path.isfile(psfex_path):
+            new.psfex(
+                output_dir=output_dir,
+                PSF_SAMPLING=0.5,  # Equivalent to GALFIT fine-sampling factor = 2
+                # PSF_SIZE=50,
+                force=True,
+                set_attributes=True
+            )
+        else:
+            new.psfex_path = psfex_path
+            new.load_psfex_output()
+        # Load oversampled PSF image
+        psf_img = new.psf_image(x=x[0], y=y[0], match_pixel_scale=False)[0]
+        psf_img /= np.max(psf_img)
+        # Write our PSF image to disk for GALFIT to find
+        psf_hdu = fits.hdu.PrimaryHDU(psf_img)
+        psf_hdu_list = fits.hdu.HDUList(psf_hdu)
+        psf_path = os.path.join(output_dir, f"{self.name}_psf.fits")
+        psf_hdu_list.writeto(
+            psf_path,
+            overwrite=True
+        )
+        new.load_data()
+        data = new.data[ext].copy()
+        new.close()
+
+        gf_tbls = []
+
+        for frame in range(frame_lower, frame_upper + 1):
+            margins = u.frame_from_centre(frame, x[0], y[0], data)
+            print("Generating mask...")
+            data_trim = u.trim_image(data, margins=margins)
+            mask_path = os.path.join(output_dir, f"{self.name}_mask_{frame}.fits")
+            mask = new.write_mask(
+                output_path=mask_path,
+                unmasked=coords,
+                ext=ext,
+                method="sep",
+                obj_value=1,
+                back_value=0,
+                margins=margins
+            )
+            mask_data = u.trim_image(mask.data[ext], margins=margins)
+            img_block_path = os.path.join(output_dir, f"{self.name}_galfit_out_{frame}.fits")
+            galfit.run(
+                imgfile=new.path,
+                psffile=psf_path,
+                outdir=output_dir,
+                configfile=f"{self.name}_{frame}.feedme",
+                outfile=img_block_path,
+                finesample=2,
+                badpix=mask_path,
+                region=margins,
+                convobox=(frame * 2, frame * 2),
+                zeropoint=self.zeropoint_best["zeropoint_img"].value,
+                position=(int(x[0]), int(y[0])),
+                skip_sky=False,
+                **model_guesses
+            )
+            try:
+                img_block = fits.open(img_block_path, mode='update')
+            except FileNotFoundError:
+                return None
+
+            results_table = table.QTable(img_block[4].data)
+            results_table["frame"] = [frame]
+            gf_tbls.append(results_table)
+
+            img_block.append(img_block[3].copy())
+            img_block[5].data *= np.invert(mask_data.astype(bool)).astype(int)  # + #
+            img_block[5].data += mask_data * np.median(img_block[3].data)
+
+            img_block.append(img_block[1].copy())
+            img_block[6].data *= np.invert(mask_data.astype(bool)).astype(int)  # + #
+            img_block[6].data += mask_data * np.median(img_block[1].data)
+            img_block.close()
+
+        gf_tbl = table.vstack(gf_tbls)
+
+        shutil.copy(p.path_to_config_galfit(), output_dir)
+
+        return gf_tbl
+
     @classmethod
     def select_child_class(cls, instrument: str, **kwargs):
         if instrument is None:
@@ -3421,8 +3659,8 @@ class ImagingImage(Image):
         """
 
         return [
-            "calib_pipeline",
             "instrument_archive",
+            "calib_pipeline",
             "des",
             "delve",
             "panstarrs1",

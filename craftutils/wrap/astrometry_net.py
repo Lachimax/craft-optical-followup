@@ -75,7 +75,7 @@ def solve_field(
         flags.append("y")
 
 
-    system_command("solve-field", image_files, False, True, *flags, **params)
+    system_command("solve-field", image_files, False, True, False, *flags, **params)
     if isinstance(image_files, list):
         image_path = image_files[0]
     else:

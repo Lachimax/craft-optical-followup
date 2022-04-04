@@ -511,6 +511,30 @@ class FORS2Filter(Filter):
         i, nrst = u.find_nearest(self.calibration_table["mjd_obs"], mjd)
         return self.calibration_table[i]
 
+    def get_extinction(self, mjd: float):
+        row = self.get_nearest_calib_row(mjd=mjd)
+        return row["extinction"], row["extinction_err"]
+
+    def get_nearest_calib_rows(self, mjd: float, n: int = 7):
+        # self.retrieve_calibration_table()
+        row_prime = self.get_nearest_calib_row(mjd=mjd)
+        rows = [row_prime]
+        mjd_low = mjd - 1
+        mjd_high = mjd + 1
+        while len(rows) < n:
+            row = self.get_nearest_calib_row(mjd=mjd_high)
+            if row not in rows:
+                rows.append(row)
+            row = self.get_nearest_calib_row(mjd=mjd_low)
+            if row not in rows:
+                rows.append(row)
+            # print(mjd_low, mjd_high)
+            mjd_low -= 1
+            mjd_high += 1
+        tbl = table.QTable(rows=rows, names=rows[0].colnames)
+        tbl.sort("mjd_obs")
+        return tbl
+
     def _output_dict(self):
         output_dict = super()._output_dict()
         output_dict.update(

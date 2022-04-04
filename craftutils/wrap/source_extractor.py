@@ -48,13 +48,7 @@ def source_extractor(
         sys_str += f" -PARAMETERS_NAME {parameters_file}"
     for param in configs:
         sys_str += f" -{param.upper()} {configs[param]}"
-    print()
-    print(sys_str)
-    print()
-    os.system(sys_str)
-    print()
-    print(sys_str)
-    print()
+    u.system_command_verbose(sys_str, error_on_exit_code=True)
     catalog_path = os.path.join(output_dir, catalog_name)
     os.chdir(old_dir)
     return catalog_path

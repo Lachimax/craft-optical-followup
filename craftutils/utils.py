@@ -121,7 +121,7 @@ def check_iterable(obj):
     return obj
 
 
-def theta_range(theta: units. Quantity):
+def theta_range(theta: units.Quantity):
     theta = check_iterable(theta.copy())
     theta = units.Quantity(theta)
 
@@ -243,7 +243,7 @@ def check_dict(key: str, dictionary: dict, na_values: Union[tuple, list] = (None
 
 def check_quantity(
         number: Union[float, int, units.Quantity], unit: units.Unit, allow_mismatch: bool = True,
-                   convert: bool = False):
+        convert: bool = False):
     """
     If the passed number is not a Quantity, turns it into one with the passed unit. If it is already a Quantity,
     checks the unit; if the unit is compatible with the passed unit, the quantity is returned unchanged (unless convert
@@ -257,7 +257,7 @@ def check_quantity(
     """
     if number is None:
         return None
-    if not isinstance(number, units.Quantity): #and number is not None:
+    if not isinstance(number, units.Quantity):  # and number is not None:
         number *= unit
     elif number.unit != unit:
         if not allow_mismatch:
@@ -317,6 +317,7 @@ def make_absolute_path(higher_path: str, path: str):
     if not is_path_absolute(path):
         path = os.path.join(higher_path, path)
     return path
+
 
 def check_trailing_slash(path: str):
     """
@@ -438,11 +439,11 @@ def mkdir_check_nested(path: str, remove_last: bool = True):
     mkdir_check_args(*levels)
     # mkdir_check(path_orig)
 
+
 def move_check(origin: str, destination: str):
     if os.path.exists(origin):
         mkdir_check_nested(destination)
         shutil.move(origin, destination)
-
 
 
 def mkdir_check_args(*args: str):
@@ -621,8 +622,17 @@ def root_mean_squared_error(model_values, obs_values, weights=None, quiet=True):
         print("MSE:", mse)
     return np.sqrt(mse)
 
+def bucket_mode(data: np.ndarray, precision: int):
+    """
+    With help from https://www.statology.org/numpy-mode/
+    :param data:
+    :param precision:
+    :return:
+    """
+    vals, counts = np.unique(np.round(data, precision), return_counts=True)
+    return vals[counts == np.max(counts)]
 
-def mode(lst: 'list'):
+def mode(lst: list):
     return max(set(lst), key=list.count)
 
 
@@ -1101,7 +1111,10 @@ def system_command(
         command: str, arguments: Union[str, list] = None,
         suppress_print: bool = False,
         error_on_exit_code: bool = True,
-        *flags, **params):
+        force_single_dash: bool = False,
+        *flags,
+        **params
+):
     if command in [""]:
         raise ValueError("Empty command.")
     if " " in command:
@@ -1114,7 +1127,7 @@ def system_command(
             sys_str += f" {argument}"
     for param in params:
         debug_print(2, "utils.system_command(): flag ==", param, "len", len(param))
-        if len(param) == 1:
+        if len(param) == 1 or force_single_dash:
             sys_str += f" -{param} {params[param]}"
         elif len(param) > 1:
             sys_str += f" --{param} {params[param]}"
@@ -1128,8 +1141,12 @@ def system_command(
     return system_command_verbose(command=sys_str, suppress_print=suppress_print, error_on_exit_code=error_on_exit_code)
 
 
-def system_command_verbose(command: str, suppress_print: bool = False, error_on_exit_code: bool = True, suppress_path: bool = False):
-
+def system_command_verbose(
+        command: str,
+        suppress_print: bool = False,
+        error_on_exit_code: bool = True,
+        suppress_path: bool = False
+):
     if not suppress_print:
         print()
         if not suppress_path:
