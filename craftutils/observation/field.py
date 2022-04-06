@@ -1425,7 +1425,8 @@ class Epoch:
 
                 self.update_output_file()
 
-    def _pipeline_init(self, ):
+    def _pipeline_init(self):
+        self.field.retrieve_catalogues()
         if self.data_path is not None:
             u.debug_print(2, f"{self}._pipeline_init(): self.data_path ==", self.data_path)
             u.mkdir_check_nested(self.data_path)
