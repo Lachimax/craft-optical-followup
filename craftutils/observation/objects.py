@@ -298,7 +298,7 @@ class Object:
             b_world=self.b,
             theta_world=self.theta,
             kron_radius=self.kron,
-            plot=os.path.join(self.data_path, f"{self.name_filesys}_{deepest['instrument']}_{deepest['band']}_{deepest['epoch_name']}.png")
+            output=os.path.join(self.data_path, f"{self.name_filesys}_{deepest['instrument']}_{deepest['band']}_{deepest['epoch_name']}")
         )
         deepest_dict["mag_sep"] = mag[0]
         deepest_dict["mag_sep_err"] = mag_err[0]
@@ -320,7 +320,7 @@ class Object:
                         b_world=self.b, #+ delta_fwhm,
                         theta_world=self.theta,
                         kron_radius=self.kron,
-                        plot=os.path.join(self.data_path, f"{self.name_filesys}_{instrument}_{band}_{epoch}.png")
+                        output=os.path.join(self.data_path, f"{self.name_filesys}_{instrument}_{band}_{epoch}")
                     )
                     phot_dict["mag_sep"] = mag[0]
                     phot_dict["mag_sep_err"] = mag_err[0]

@@ -1334,7 +1334,7 @@ class ImagingImage(Image):
         if len(zp_tbl) > 0 and "selection_index" in zp_tbl.colnames:
             zp_tbl.sort(["selection_index"], reverse=True)
             zp_tbl.write(os.path.join(self.data_path, f"{self.name}_zeropoints.ecsv"), format="ascii.ecsv")
-        #        zp_tbl.write(os.path.join(self.data_path, f"{self.name}_zeropoints.csv"), format="ascii.csv")
+            #        zp_tbl.write(os.path.join(self.data_path, f"{self.name}_zeropoints.csv"), format="ascii.csv")
             best_row = zp_tbl[0]
             best_cat = best_row["catalogue"]
             best_img = best_row["image_name"]
@@ -2169,11 +2169,16 @@ class ImagingImage(Image):
             mag_min: float = -7.0 * units.mag,
             match_to: table.Table = None,
             frame: float = 15,
-            ext: int = 0
+            ext: int = 0,
+            target: SkyCoord = None,
+            near_radius: units.Quantity = 1 * units.arcmin,
+            output_path: str = None
     ):
         self.open()
         self.load_source_cat()
         u.debug_print(2, f"ImagingImage.psf_diagnostics(): {self}.source_cat_path ==", self.source_cat_path)
+        if output_path is None:
+            output_path = self.data_path
         stars_moffat, stars_gauss, stars_sex = ph.image_psf_diagnostics(
             hdu=self.hdu_list,
             cat=self.source_cat,
@@ -2182,7 +2187,10 @@ class ImagingImage(Image):
             mag_min=mag_min,
             match_to=match_to,
             frame=frame,
-            ext=ext
+            near_centre=target,
+            near_radius=near_radius,
+            output=output_path,
+            ext=ext,
         )
 
         fwhm_gauss = stars_gauss["GAUSSIAN_FWHM_FITTED"]
@@ -2211,6 +2219,8 @@ class ImagingImage(Image):
         self.close()
 
         results = {
+            "target": SkyCoord,
+            "radius": near_radius,
             "n_stars": len(stars_gauss),
             "fwhm_psfex": self.fwhm_psfex.to(units.arcsec),
             "gauss": {
@@ -2238,6 +2248,7 @@ class ImagingImage(Image):
                 "fwhm_rms": self.fwhm_rms_sextractor.to(units.arcsec)}
         }
         self.headers[ext]["PSF_FWHM"] = self.fwhm_median_gauss.to(units.arcsec).value
+        self.headers[ext]["PSF_FWHM_ERR"] = self.fwhm_sigma_gauss.to(units.arcsec).value
         self.add_log(
             action=f"Calculated PSF FWHM statistics.",
             method=self.psf_diagnostics,
@@ -2629,13 +2640,17 @@ class ImagingImage(Image):
             imshow_kwargs: dict = None,  # Can include cmap
             normalize_kwargs: dict = None,  # Can include vmin, vmax
             output_path: str = None,
+            mask: np.ndarray = None,
             **kwargs,
     ):
         self.load_data()
         self.load_wcs()
         _, scale = self.extract_pixel_scale()
         x, y = self.wcs.all_world2pix(centre.ra.value, centre.dec.value, 0)
-        data = self.data[ext]
+        data = self.data[ext] * 1.0
+        if mask is not None:
+            data = np.invert(mask.astype(bool)).astype(int)
+            data += mask * np.median(self.data[ext])
         u.debug_print(1, "ImagingImage.plot_subimage(): frame ==", frame)
         left, right, bottom, top = u.frame_from_centre(frame.to(units.pix, scale).value, x, y, data)
 
@@ -3359,7 +3374,7 @@ class ImagingImage(Image):
             theta_world: units.Quantity,
             kron_radius: float = 1.,
             ext: int = 0,
-            plot: str = None
+            output: str = None,
     ):
         self.calculate_background(ext=ext)
         self.load_wcs(ext=ext)
@@ -3377,6 +3392,12 @@ class ImagingImage(Image):
         print(theta_deg)
         print(theta, a, b, x, y, kron_radius)
 
+        mask = self.generate_mask(
+            unmasked=centre,
+            ext=ext,
+            method="sep"
+        )
+
         flux, flux_err, flag = sep.sum_ellipse(
             data=self.data_sub_bkg[ext],
             x=x, y=y,
@@ -3385,9 +3406,10 @@ class ImagingImage(Image):
             theta=theta,
             err=self.sep_background[ext].rms(),
             gain=self.extract_gain().value,
+            mask=mask
         )
 
-        if isinstance(plot, str):
+        if isinstance(output, str):
             # objects = sep.extract(self.data_sub_bkg[ext], 1.5, err=self.sep_background[ext].rms())
             this_frame = self.nice_frame({
                 'A_WORLD': a_world,
@@ -3400,7 +3422,9 @@ class ImagingImage(Image):
             ax, fig, _ = self.plot_subimage(
                 centre=centre,
                 frame=this_frame,
-                ext=ext)
+                ext=ext,
+                mask=mask
+            )
 
             # for i in range(len(objects)):
             #     e = Ellipse(
@@ -3433,7 +3457,7 @@ class ImagingImage(Image):
 
             ax.set_title(f"{a[0], b[0], kron_radius[0], theta[0] * 180. / np.pi}")
 
-            fig.savefig(plot)
+            fig.savefig(output + ".png")
 
         return flux, flux_err, flag
 
@@ -3445,7 +3469,7 @@ class ImagingImage(Image):
             theta_world: units.Quantity,
             kron_radius: float = 1.,
             ext: int = 0,
-            plot: str = None
+            output: str = None
     ):
         flux, flux_err, flags = self.sep_elliptical_photometry(
             centre=centre,
@@ -3454,7 +3478,7 @@ class ImagingImage(Image):
             theta_world=theta_world,
             kron_radius=kron_radius,
             ext=ext,
-            plot=plot
+            output=output
         )
 
         snr = flux / flux_err
@@ -3492,8 +3516,6 @@ class ImagingImage(Image):
         new.write_fits_file()
         return new
 
-
-
     def galfit(
             self,
             coords: SkyCoord,
@@ -3510,7 +3532,7 @@ class ImagingImage(Image):
                 "int_mag": 0.0,
                 "r_e": 3.0,
                 "n": 1.0,
-                "axis_ratio":  1.0,
+                "axis_ratio": 1.0,
                 "pa": 0.0
             }
 
