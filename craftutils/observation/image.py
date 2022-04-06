@@ -1317,7 +1317,7 @@ class ImagingImage(Image):
     def select_zeropoint(self, no_user_input: bool = False, preferred: str = None):
 
         if not self.zeropoints:
-            return None
+            return None, None
 
         ranking = self.rank_photometric_cat()
         if preferred is not None:
@@ -1331,48 +1331,52 @@ class ImagingImage(Image):
                     zps.append(zp)
 
         zp_tbl = table.QTable(zps)
-        zp_tbl.sort(["selection_index"], reverse=True)
-        zp_tbl.write(os.path.join(self.data_path, f"{self.name}_zeropoints.ecsv"), format="ascii.ecsv")
+        if len(zp_tbl) > 0 and "selection_index" in zp_tbl.colnames:
+            zp_tbl.sort(["selection_index"], reverse=True)
+            zp_tbl.write(os.path.join(self.data_path, f"{self.name}_zeropoints.ecsv"), format="ascii.ecsv")
         #        zp_tbl.write(os.path.join(self.data_path, f"{self.name}_zeropoints.csv"), format="ascii.csv")
-        best_row = zp_tbl[0]
-        best_cat = best_row["catalogue"]
-        best_img = best_row["image_name"]
+            best_row = zp_tbl[0]
+            best_cat = best_row["catalogue"]
+            best_img = best_row["image_name"]
 
-        if best_cat is None:
-            raise ValueError("No zeropoints are present to select from.")
+            if best_cat is None:
+                raise ValueError("No zeropoints are present to select from.")
 
-        zeropoint_best = self.zeropoints[best_cat][best_img]
-        print(
-            f"For {self.name}, we have selected a zeropoint of {zeropoint_best['zeropoint_img']} "
-            f"+/- {zeropoint_best['zeropoint_img_err']}, "
-            f"from {zeropoint_best['catalogue']} on {zeropoint_best['image_name']}.")
-        if not no_user_input:
-            select_own = u.select_yn(message="Would you like to select another?", default=False)
-            if select_own:
-                zps = {}
-                for i, row in enumerate(zp_tbl):
-                    pick_str = f"{row['catalogue']} {row['zeropoint_img']} +/- {row['zeropoint_img_err']}, " \
-                               f"{row['n_matches']} stars, " \
-                               f"from {row['image_name']}"
-                    zps[pick_str] = self.zeropoints[row['catalogue']][row['image_name']]
-                _, zeropoint_best = u.select_option(message="Select best zeropoint:", options=zps)
-                best_cat = zeropoint_best["catalogue"]
-        self.zeropoint_best = zeropoint_best
+            zeropoint_best = self.zeropoints[best_cat][best_img]
+            print(
+                f"For {self.name}, we have selected a zeropoint of {zeropoint_best['zeropoint_img']} "
+                f"+/- {zeropoint_best['zeropoint_img_err']}, "
+                f"from {zeropoint_best['catalogue']} on {zeropoint_best['image_name']}.")
+            if not no_user_input:
+                select_own = u.select_yn(message="Would you like to select another?", default=False)
+                if select_own:
+                    zps = {}
+                    for i, row in enumerate(zp_tbl):
+                        pick_str = f"{row['catalogue']} {row['zeropoint_img']} +/- {row['zeropoint_img_err']}, " \
+                                   f"{row['n_matches']} stars, " \
+                                   f"from {row['image_name']}"
+                        zps[pick_str] = self.zeropoints[row['catalogue']][row['image_name']]
+                    _, zeropoint_best = u.select_option(message="Select best zeropoint:", options=zps)
+                    best_cat = zeropoint_best["catalogue"]
+            self.zeropoint_best = zeropoint_best
 
-        self.set_header_items(
-            items={
-                "ZP": zeropoint_best["zeropoint_img"],
-                "ZP_ERR": zeropoint_best["zeropoint_img_err"],
-                "ZPCAT": zeropoint_best["catalogue"],
-            },
-            ext=0,
-            write=False
-        )
+            self.set_header_items(
+                items={
+                    "ZP": zeropoint_best["zeropoint_img"],
+                    "ZP_ERR": zeropoint_best["zeropoint_img_err"],
+                    "ZPCAT": zeropoint_best["catalogue"],
+                },
+                ext=0,
+                write=False
+            )
 
-        self.add_log(
-            action=f"Selected best zeropoint as {zeropoint_best['zeropoint']} +/- {zeropoint_best['zeropoint_err']}, from {zeropoint_best['catalogue']}",
-            method=self.select_zeropoint
-        )
+            self.add_log(
+                action=f"Selected best zeropoint as {zeropoint_best['zeropoint']} +/- {zeropoint_best['zeropoint_err']}, from {zeropoint_best['catalogue']}",
+                method=self.select_zeropoint
+            )
+        else:
+            best_cat = None
+
         self.update_output_file()
         self.write_fits_file()
         return self.zeropoint_best, best_cat

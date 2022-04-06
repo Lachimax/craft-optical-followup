@@ -622,6 +622,7 @@ def root_mean_squared_error(model_values, obs_values, weights=None, quiet=True):
         print("MSE:", mse)
     return np.sqrt(mse)
 
+
 def bucket_mode(data: np.ndarray, precision: int):
     """
     With help from https://www.statology.org/numpy-mode/
@@ -631,6 +632,7 @@ def bucket_mode(data: np.ndarray, precision: int):
     """
     vals, counts = np.unique(np.round(data, precision), return_counts=True)
     return vals[counts == np.max(counts)]
+
 
 def mode(lst: list):
     return max(set(lst), key=list.count)
