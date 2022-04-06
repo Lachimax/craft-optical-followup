@@ -46,8 +46,13 @@ def image_psf_diagnostics(
         mag_min: float = -7.0 * units.mag,
         match_to: table.Table = None,
         frame: float = 15,
-        use_sextractor: bool = True,
-        ext: int = 0
+        ext: int = 0,
+        near_centre: SkyCoord = None,
+        near_radius: units.Quantity = None,
+        ra_col: str = "RA",
+        dec_col: str = "DEC",
+        output: str = None,
+        min_stars: int = 30
 ):
     hdu, path = ff.path_or_hdu(hdu=hdu)
     hdu = copy.deepcopy(hdu)
@@ -61,14 +66,31 @@ def image_psf_diagnostics(
 
     print(f"Initial num stars:", len(stars))
 
+    if near_radius is not None:
+        if near_centre is None:
+            header = hdu[ext].header
+            wcs_this = wcs.WCS(header)
+            near_centre = SkyCoord.from_pixel(header["CRPIX1"], header["CRPIX2"], wcs_this, origin=1)
+
+        ra = stars[ra_col]
+        dec = stars[dec_col]
+        coords = SkyCoord(ra, dec)
+
+        stars_near = []
+        while len(stars_near) < min_stars:
+            stars_near = stars[near_centre.separation(coords) < near_radius]
+            print(f"Num stars within {near_radius} of {near_centre}:", len(stars_near))
+            near_radius += 0.5 * units.arcmin
+        stars = stars_near
+
     if match_to is not None:
         stars, stars_match = a.match_catalogs(
             cat_1=stars,
             cat_2=match_to,
-            ra_col_1="RA",
-            dec_col_1="DEC",
-            ra_col_2="RA",
-            dec_col_2="DEC",
+            ra_col_1=ra_col,
+            dec_col_1=dec_col,
+            ra_col_2=ra_col,
+            dec_col_2=dec_col,
             tolerance=2 * units.arcsec)
 
         print(f"Num stars after match to other sextractor cat:", len(stars))
@@ -84,12 +106,12 @@ def image_psf_diagnostics(
             stars["MOFFAT_FWHM_FITTED"] *= units.deg
 
     for j, star in enumerate(stars):
-        ra = star["ALPHA_SKY"]
-        dec = star["DELTA_SKY"]
+        ra = star[ra_col]
+        dec = star[dec_col]
 
-        window = ff.trim_frame_point(hdu=hdu, ra=ra, dec=dec, frame=frame)
+        window = ff.trim_frame_point(hdu=hdu, ra=ra, dec=dec, frame=frame, ext=ext)
         data = window[ext].data
-        _, scale = ff.get_pixel_scale(hdu, astropy_units=True)
+        _, scale = ff.get_pixel_scale(hdu, astropy_units=True, ext=ext)
 
         mean, median, stddev = stats.sigma_clipped_stats(data)
         data -= median
@@ -121,17 +143,35 @@ def image_psf_diagnostics(
 
         stars[j] = star
 
-    clipped = sigma_clip(stars["MOFFAT_FWHM_FITTED"], masked=True)
+    clipped = sigma_clip(stars["MOFFAT_FWHM_FITTED"], masked=True, sigma=2)
     stars_clip_moffat = stars[~clipped.mask]
-    print(f"Num stars after sigma clipping w. astropy Moffat PSF:", len(stars))
+    print(f"Num stars after sigma clipping w. astropy Moffat PSF:", len(stars_clip_moffat))
 
-    clipped = sigma_clip(stars["GAUSSIAN_FWHM_FITTED"], masked=True)
+    clipped = sigma_clip(stars["GAUSSIAN_FWHM_FITTED"], masked=True, sigma=2)
     stars_clip_gauss = stars[~clipped.mask]
-    print(f"Num stars after sigma clipping w. astropy Gaussian PSF:", len(stars))
+    print(f"Num stars after sigma clipping w. astropy Gaussian PSF:", len(stars_clip_gauss))
 
-    clipped = sigma_clip(stars["FWHM_WORLD"], masked=True)
+    clipped = sigma_clip(stars["FWHM_WORLD"], masked=True, sigma=2)
     stars_clip_sex = stars[~clipped.mask]
-    print(f"Num stars after sigma clipping w. Sextractor PSF:", len(stars))
+    print(f"Num stars after sigma clipping w. Sextractor PSF:", len(stars_clip_sex))
+
+    if output is not None:
+
+        for colname in ["MOFFAT_FWHM_FITTED", "GAUSSIAN_FWHM_FITTED", "FWHM_WORLD"]:
+            plt.hist(
+                stars[colname].to(units.arcsec),
+                label="Full sample"
+            )
+            plt.hist(
+                stars_clip_moffat[colname].to(units.arcsec),
+                edgecolor='black',
+                linewidth=1.2,
+                label="Sigma-clipped",
+                fc=(0, 0, 0, 0)
+            )
+            plt.legend()
+            plt.savefig(os.path.join(output, f"psf_histogram_{colname}.png"))
+            plt.close()
 
     return stars_clip_moffat, stars_clip_gauss, stars_clip_sex
 
