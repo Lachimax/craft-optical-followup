@@ -677,9 +677,9 @@ class Object:
         fil_photom = fil_photom[fil_photom["instrument"] == instrument]
         mean = {
             "mag": np.mean(fil_photom["mag_sep"]),
-            "mag_err": np.mean(fil_photom["mag_sep_err"]),
+            "mag_err": np.std(fil_photom["mag_sep"]),
             "mag_psf": np.mean(fil_photom["mag_psf"]),
-            "mag_psf_err": np.mean(fil_photom["mag_psf_err"])
+            "mag_psf_err": np.std(fil_photom["mag_psf"])
         }
         return fil_photom[np.argmax(fil_photom["snr_sep"])], mean
 
