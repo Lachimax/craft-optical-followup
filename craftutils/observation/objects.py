@@ -308,10 +308,10 @@ class Object:
             for band in self.photometry[instrument]:
                 for epoch in self.photometry[instrument][band]:
                     phot_dict = self.photometry[instrument][band][epoch]
-                    if phot_dict["image_path"] == deepest_path:
+                    if phot_dict["good_image_path"] == deepest_path:
                         continue
                     cls = image.CoaddedImage.select_child_class(instrument=instrument)
-                    img = cls(path=phot_dict["image_path"])
+                    img = cls(path=phot_dict["good_image_path"])
                     fwhm = img.extract_header_item("PSF_FWHM") * units.arcsec
                     delta_fwhm = fwhm - deepest_fwhm
                     mag, mag_err, snr = img.sep_elliptical_magnitude(
