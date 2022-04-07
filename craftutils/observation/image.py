@@ -2243,7 +2243,7 @@ class ImagingImage(Image):
         self.close()
 
         results = {
-            "target": SkyCoord,
+            "target": target,
             "radius": near_radius,
             "n_stars": len(stars_gauss),
             "fwhm_psfex": self.fwhm_psfex.to(units.arcsec),
@@ -2302,8 +2302,8 @@ class ImagingImage(Image):
             left=left, right=right, bottom=bottom, top=top,
             new_path=output_path
         )
-        image = self.__class__(path=output_path, instrument_name=self.instrument_name)
-        image.log = self.log.copy()
+        image = self.copy_with_outputs(output_path)
+        # image.log = self.log.copy()
 
         image.add_log(
             action=f"Trimmed image to margins left={left}, right={right}, bottom={bottom}, top={top}",
@@ -2672,12 +2672,14 @@ class ImagingImage(Image):
         self.load_wcs()
         _, scale = self.extract_pixel_scale()
         x, y = self.wcs.all_world2pix(centre.ra.value, centre.dec.value, 0)
-        data = self.data[ext] * 1.0
-        if mask is not None:
-            data = np.invert(mask.astype(bool)).astype(int)
-            data += mask * np.median(self.data[ext])
-        u.debug_print(1, "ImagingImage.plot_subimage(): frame ==", frame)
+        data = self.data[ext].value * 1.0
         left, right, bottom, top = u.frame_from_centre(frame.to(units.pix, scale).value, x, y, data)
+        print(type(data), data[bottom:top, left:right])
+        if mask is not None:
+            data_masked = data * np.invert(mask.astype(bool)).astype(int)
+            data_masked += mask * np.nanmedian(data[bottom:top, left:right])
+            data = data_masked
+        u.debug_print(1, "ImagingImage.plot_subimage(): frame ==", frame)
 
         if fig is None:
             fig = plt.figure()
@@ -3431,7 +3433,7 @@ class ImagingImage(Image):
             theta=theta,
             err=self.sep_background[ext].rms(),
             gain=self.extract_gain().value,
-            mask=mask
+            mask=mask.astype(bool)
         )
 
         if isinstance(output, str):
