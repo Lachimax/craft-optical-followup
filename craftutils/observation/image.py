@@ -1664,7 +1664,12 @@ class ImagingImage(Image):
 
         return mag, mag_err, mag_no_ext_corr, mag_no_ext_corr_err
 
-    def estimate_depth(self, zeropoint_name: str = "best", dual: bool = False):
+    def estimate_depth(
+            self,
+            zeropoint_name: str = "best",
+            dual: bool = False,
+            star_tolerance: float = 0.9
+    ):
         """
         Use various measures of S/N to estimate image depth at a range of sigmas.
         :param zeropoint_name:
@@ -1691,27 +1696,41 @@ class ImagingImage(Image):
             for snr_key in ["SNR_SE"]:  # ["SNR_CCD", "SNR_MEASURED", "SNR_SE"]:
                 u.debug_print(1, "ImagingImage.estimate_depth(): snr_key, sigma ==", snr_key, sigma)
                 self.depth["max"][snr_key] = {}
+                self.depth["point_max"][snr_key] = {}
                 self.depth["secure"][snr_key] = {}
+                self.depth["point_secure"][snr_key] = {}
                 # Faintest source at x-sigma:
                 u.debug_print(
                     1, f"ImagingImage.estimate_depth(): source_cat[{snr_key}].unit ==",
                     source_cat[snr_key].unit)
                 cat_more_xsigma = source_cat[source_cat[snr_key] > sigma]
+                cat_more_xsigma_point = cat_more_xsigma[cat_more_xsigma["CLASS_STAR"] > star_tolerance]
                 print(f"Sources > {sigma}-sigma:", len(cat_more_xsigma))
                 self.depth["max"][snr_key][f"{sigma}-sigma"] = np.max(cat_more_xsigma[f"MAG_AUTO_ZP_{zeropoint_name}"])
+                self.depth["point_max"][snr_key][f"{sigma}-sigma"] = np.max(cat_more_xsigma_point[f"MAG_AUTO_ZP_{zeropoint_name}"])
+
 
                 # Brightest source less than x-sigma (kind of)
                 source_less_sigma = source_cat[source_cat[snr_key] < sigma]
                 if len(source_less_sigma) > 0:
                     source_less_sigma = source_less_sigma[source_less_sigma[snr_key] != np.inf]
-                    source_less_sigma = source_less_sigma[source_less_sigma[snr_key] != np.nan]
                     i = np.argmax(source_less_sigma["FLUX_AUTO"])
                     i, _ = u.find_nearest(source_cat["NUMBER"], source_less_sigma[i]["NUMBER"])
                     i += 1
                     src_lim = source_cat[i]
+
+                    source_less_sigma_point = source_less_sigma[source_less_sigma["CLASS_STAR"] > star_tolerance]
+                    i = np.argmax(source_less_sigma_point["FLUX_AUTO"])
+                    i, _ = u.find_nearest(source_cat["NUMBER"], source_less_sigma_point[i]["NUMBER"])
+                    i += 1
+                    src_lim_point = source_cat[i]
                 else:
                     src_lim = source_cat[0]
+
                 self.depth["secure"][snr_key][f"{sigma}-sigma"] = src_lim[f"MAG_AUTO_ZP_{zeropoint_name}"]
+                self.depth["point_secure"][snr_key][f"{sigma}-sigma"] = src_lim_point[f"MAG_AUTO_ZP_{zeropoint_name}"]
+
+
 
         source_cat.sort("NUMBER")
         self.add_log(
