@@ -1405,7 +1405,7 @@ class Epoch:
                 u.rmtree_check(output_dir_backup)
                 u.move_check(output_dir, output_dir_backup)
                 u.mkdir_check_nested(output_dir, remove_last=False)
-                self.paths[name] = output_dir
+                self.set_path(name, output_dir)
 
                 if name in self.param_file:
                     stage_kwargs = self.param_file[name]
@@ -1444,7 +1444,8 @@ class Epoch:
     def load_output_file(self, **kwargs):
         outputs = p.load_output_file(self)
         if type(outputs) is dict:
-            self.stages_complete.update(outputs["stages"])
+            if "stages" in outputs:
+                self.stages_complete.update(outputs["stages"])
             if "coadded" in outputs:
                 for fil in outputs["coadded"]:
                     if outputs["coadded"][fil] is not None:
@@ -3891,7 +3892,8 @@ class ESOImagingEpoch(ImagingEpoch):
         return r
 
     def _initial_setup(self, output_dir: str, **kwargs):
-        raw_dir = self.paths["download"]
+        print(self.paths)
+        raw_dir = self.get_path("download")
         data_dir = self.data_path
         data_title = self.name
 
