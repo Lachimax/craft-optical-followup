@@ -30,8 +30,6 @@ import craftutils.plotting as plotting
 import craftutils.retrieve as r
 import craftutils.astrometry as a
 
-quantity_support()
-
 # TODO: End-to-end pipeline script?
 # TODO: Change expected types to Union
 
@@ -155,23 +153,26 @@ def image_psf_diagnostics(
     stars_clip_sex = stars[~clipped.mask]
     print(f"Num stars after sigma clipping w. Sextractor PSF:", len(stars_clip_sex))
 
+    plt.close()
     if output is not None:
 
-        for colname in ["MOFFAT_FWHM_FITTED", "GAUSSIAN_FWHM_FITTED", "FWHM_WORLD"]:
-            plt.hist(
-                stars[colname].to(units.arcsec),
-                label="Full sample"
-            )
-            plt.hist(
-                stars_clip_moffat[colname].to(units.arcsec),
-                edgecolor='black',
-                linewidth=1.2,
-                label="Sigma-clipped",
-                fc=(0, 0, 0, 0)
-            )
-            plt.legend()
-            plt.savefig(os.path.join(output, f"psf_histogram_{colname}.png"))
-            plt.close()
+        with quantity_support():
+
+            for colname in ["MOFFAT_FWHM_FITTED", "GAUSSIAN_FWHM_FITTED", "FWHM_WORLD"]:
+                plt.hist(
+                    stars[colname].to(units.arcsec),
+                    label="Full sample"
+                )
+                plt.hist(
+                    stars_clip_moffat[colname].to(units.arcsec),
+                    edgecolor='black',
+                    linewidth=1.2,
+                    label="Sigma-clipped",
+                    fc=(0, 0, 0, 0)
+                )
+                plt.legend()
+                plt.savefig(os.path.join(output, f"psf_histogram_{colname}.png"))
+                plt.close()
 
     return stars_clip_moffat, stars_clip_gauss, stars_clip_sex
 
