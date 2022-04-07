@@ -643,15 +643,20 @@ class Image:
     @classmethod
     def header_keys(cls):
         header_keys = {
+            "integration_time": "INTTIME",
             "exposure_time": "EXPTIME",
+            "exposure_time_old": "OLD_EXPTIME",
             "noise_read": "RON",
+            "noise_read_old": "OLD_RON",
             "gain": "GAIN",
+            "gain_old": "OLD_GAIN",
             "date-obs": "DATE-OBS",
             "mjd-obs": "MJD-OBS",
             "object": "OBJECT",
             "instrument": "INSTRUME",
             "unit": "BUNIT",
             "saturate": "SATURATE",
+            "saturate_old": "OLD_SATURATE",
             "program_id": "PROG_ID"
         }
         return header_keys
@@ -2320,18 +2325,19 @@ class ImagingImage(Image):
         new.data[ext] = new_data.value
         u.debug_print(1, "Image.concert_to_cs() 2: new_data.unit ==", new_data.unit)
 
+        header_keys = self.header_keys()
         new.set_header_items(
             items={
-                "BUNIT": str(new_data.unit),
-                "GAIN": gain * exp_time,
-                "OLD_GAIN": gain,
-                "EXPTIME": 1.0,
-                "OLD_EXPTIME": exp_time.value,
-                "OLD_SATURATE": saturate,
-                "SATURATE": saturate / exp_time.value,
-                "RON": read_noise / exp_time.value,
-                "OLD_RON": read_noise,
-                "INTTIME": exp_time.value
+                header_keys["noise_read"]: str(new_data.unit),
+                header_keys["gain"]: gain * exp_time,
+                header_keys["gain_old"]: gain,
+                header_keys["exposure_time"]: 1.0,
+                header_keys["exposure_time_old"]: exp_time.value,
+                header_keys["saturate_old"]: saturate,
+                header_keys["saturate"]: saturate / exp_time.value,
+                header_keys["noise_read"]: read_noise / exp_time.value,
+                header_keys["noise_read_old"]: read_noise,
+                header_keys["integration_time"]: exp_time.value
             },
             ext=ext,
             write=False
