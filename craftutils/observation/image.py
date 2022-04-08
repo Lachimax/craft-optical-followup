@@ -1685,9 +1685,11 @@ class ImagingImage(Image):
 
         # "max" stores the magnitude of the faintest object with S/N > x sigma
         self.depth["max"] = {}
+        self.depth["point_max"] = {}
         # "secure" finds the brightest object with S/N < x sigma, then increments to the
         # overall; thus giving the faintest magnitude at which we can be confident of a detection
         self.depth["secure"] = {}
+        self.depth["point_secure"] = {}
 
         # We do this to ensure that, in the "secure" step, object i+1 is the next-brightest in the catalogue
         source_cat.sort("FLUX_AUTO")
@@ -1712,6 +1714,7 @@ class ImagingImage(Image):
 
                 # Brightest source less than x-sigma (kind of)
                 source_less_sigma = source_cat[source_cat[snr_key] < sigma]
+                src_lim_point = None
                 if len(source_less_sigma) > 0:
                     source_less_sigma = source_less_sigma[source_less_sigma[snr_key] != np.inf]
                     i = np.argmax(source_less_sigma["FLUX_AUTO"])
@@ -1720,16 +1723,19 @@ class ImagingImage(Image):
                     src_lim = source_cat[i]
 
                     source_less_sigma_point = source_less_sigma[source_less_sigma["CLASS_STAR"] > star_tolerance]
-                    i = np.argmax(source_less_sigma_point["FLUX_AUTO"])
-                    i, _ = u.find_nearest(source_cat["NUMBER"], source_less_sigma_point[i]["NUMBER"])
-                    i += 1
-                    src_lim_point = source_cat[i]
+                    if len(source_less_sigma_point) > 0:
+                        i = np.argmax(source_less_sigma_point["FLUX_AUTO"])
+                        i, _ = u.find_nearest(source_cat["NUMBER"], source_less_sigma_point[i]["NUMBER"])
+                        i += 1
+                        src_lim_point = source_cat[i]
                 else:
                     src_lim = source_cat[0]
 
                 self.depth["secure"][snr_key][f"{sigma}-sigma"] = src_lim[f"MAG_AUTO_ZP_{zeropoint_name}"]
-                self.depth["point_secure"][snr_key][f"{sigma}-sigma"] = src_lim_point[f"MAG_AUTO_ZP_{zeropoint_name}"]
-
+                if src_lim_point is not None:
+                    self.depth["point_secure"][snr_key][f"{sigma}-sigma"] = src_lim_point[f"MAG_AUTO_ZP_{zeropoint_name}"]
+                else:
+                    self.depth["point_secure"][snr_key][f"{sigma}-sigma"] = None
 
 
         source_cat.sort("NUMBER")
