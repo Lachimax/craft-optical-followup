@@ -630,6 +630,7 @@ def std_err_intercept(
         y_obs: np.ndarray,
         x_obs: np.ndarray,
         y_weights: np.ndarray = None,
+        x_weights: np.ndarray = None,
 ):
     """
     https://sites.chem.utoronto.ca/chemistry/coursenotes/analsci/stats/ErrRegr.html
@@ -644,8 +645,15 @@ def std_err_intercept(
     print("s_regression:", s_regression)
     n = len(x_obs)
     x_mean = np.nanmean(x_obs)
-    print("x_mean:", s_regression)
-    s = s_regression * np.sqrt(np.nansum(x_obs ** 2) / (n * np.nansum((x_obs - x_mean) ** 2)))
+    print("x_mean:", x_mean)
+
+    if x_weights is None:
+        x_weights = 1
+    else:
+        x_weights = x_weights / np.linalg.norm(x_weights, ord=1)
+        n = 1
+
+    s = s_regression * np.sqrt(np.nansum(x_weights * x_obs ** 2) / (n * np.nansum((x_obs - x_mean) ** 2)))
     print("std_err_intercept:", s)
     return s
 

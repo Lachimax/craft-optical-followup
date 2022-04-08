@@ -1331,8 +1331,12 @@ class ImagingImage(Image):
         for i, cat in enumerate(ranking):
             if cat in self.zeropoints:
                 for img_name in self.zeropoints[cat]:
+                    if img_name == "self":
+                        j = 2
+                    else:
+                        j = 1
                     zp = self.zeropoints[cat][img_name]
-                    zp["selection_index"] = 1 / ((i + 1) * zp['zeropoint_img_err'])
+                    zp["selection_index"] = 1 / ((i + 1) * j * zp['zeropoint_img_err'])
                     zps.append(zp)
 
         zp_tbl = table.QTable(zps)
@@ -1359,7 +1363,7 @@ class ImagingImage(Image):
                     for i, row in enumerate(zp_tbl):
                         pick_str = f"{row['catalogue']} {row['zeropoint_img']} +/- {row['zeropoint_img_err']}, " \
                                    f"{row['n_matches']} stars, " \
-                                   f"from {row['image_name']}"
+                                   f"from {row['image_name']} (selection index {row['selection_index']})"
                         zps[pick_str] = self.zeropoints[row['catalogue']][row['image_name']]
                     _, zeropoint_best = u.select_option(message="Select best zeropoint:", options=zps)
                     best_cat = zeropoint_best["catalogue"]
@@ -1419,6 +1423,7 @@ class ImagingImage(Image):
         cat_ra_col = column_names['ra']
         cat_dec_col = column_names['dec']
         cat_mag_col = column_names['mag_psf']
+        cat_mag_col_err = column_names['mag_psf_err']
         cat_type = "csv"
 
         if dist_tol is None:
@@ -1440,6 +1445,7 @@ class ImagingImage(Image):
             cat_ra_col=cat_ra_col,
             cat_dec_col=cat_dec_col,
             cat_mag_col=cat_mag_col,
+            cat_mag_col_err=cat_mag_col_err,
             sex_ra_col=sex_ra_col,
             sex_dec_col=sex_dec_col,
             sex_x_col=sex_x_col,
@@ -3722,8 +3728,8 @@ class ImagingImage(Image):
             "calib_pipeline",
             "des",
             "delve",
-            "panstarrs1",
             "sdss",
+            "panstarrs1",
             "skymapper"
         ]
 
