@@ -591,35 +591,102 @@ def get_column_names_sextractor(path):
     return columns
 
 
-def mean_squared_error(model_values, obs_values, weights=None, quiet=True):
+def std_err_slope(
+        y_model: np.ndarray,
+        y_obs: np.ndarray,
+        x_obs: np.ndarray,
+        y_weights: np.ndarray = None,
+        x_weights: np.ndarray = None,
+):
+    """
+    https://sites.chem.utoronto.ca/chemistry/coursenotes/analsci/stats/ErrRegr.html
+    https://www.statology.org/standard-error-of-regression-slope/
+    :param y_model:
+    :param y_obs:
+    :param y_weights:
+    :return:
+    """
+
+    s_regression = root_mean_squared_error(
+        model_values=y_model,
+        obs_values=y_obs,
+        weights=y_weights,
+        dof_correction = 2
+    )
+
+    # if x_weights is None:
+    #     x_weights = 1
+    # else:
+    #     x_weights = x_weights / np.linalg.norm(x_weights, ord=1)
+    #     n = 1
+
+    x_mean = np.nanmean(x_obs)
+    s = s_regression / np.sqrt(np.nansum(x_obs - x_mean))
+    return s
+
+
+def std_err_intercept(
+        y_model: np.ndarray,
+        y_obs: np.ndarray,
+        x_obs: np.ndarray,
+        y_weights: np.ndarray = None,
+):
+    """
+    https://sites.chem.utoronto.ca/chemistry/coursenotes/analsci/stats/ErrRegr.html
+    :return:
+    """
+    s_regression = root_mean_squared_error(
+        model_values=y_model,
+        obs_values=y_obs,
+        weights=y_weights,
+        dof_correction=2
+    )
+    print("s_regression:", s_regression)
+    n = len(x_obs)
+    x_mean = np.nanmean(x_obs)
+    print("x_mean:", s_regression)
+    s = s_regression * np.sqrt(np.nansum(x_obs ** 2) / (n * np.nansum((x_obs - x_mean) ** 2)))
+    print("std_err_intercept:", s)
+    return s
+
+
+def mean_squared_error(model_values, obs_values, weights=None, dof_correction: int = 2):
     """
     Weighting from https://stats.stackexchange.com/questions/230517/weighted-root-mean-square-error
     :param model_values:
     :param obs_values:
     :param weights:
     :param quiet:
+    :param dof_correction: see https://sites.chem.utoronto.ca/chemistry/coursenotes/analsci/stats/ErrRegr.html
     :return:
     """
     if len(model_values) != len(obs_values):
         raise ValueError("Arrays must be the same length.")
     n = len(model_values)
-    if not quiet:
-        print("n:", n)
     if weights is None:
         weights = 1
     else:
         weights = weights / np.linalg.norm(weights, ord=1)
         n = 1
-        if not quiet:
-            print("Normalised weights:", np.sum(weights))
+        dof_correction = 0
 
-    return (1 / n) * np.sum(weights * (obs_values - model_values) ** 2)
+    return (1 / (n - dof_correction)) * np.nansum(weights * (obs_values - model_values) ** 2)
 
 
-def root_mean_squared_error(model_values, obs_values, weights=None, quiet=True):
-    mse = mean_squared_error(model_values=model_values, obs_values=obs_values, weights=weights, quiet=quiet)
-    if not quiet:
-        print("MSE:", mse)
+def root_mean_squared_error(
+        model_values: np.ndarray,
+        obs_values: np.ndarray,
+        weights: np.ndarray = None,
+        dof_correction: int = 2
+):
+    mse = mean_squared_error(
+        model_values=model_values,
+        obs_values=obs_values,
+        weights=weights,
+        dof_correction=dof_correction
+    )
+    print("mse:", mse)
+    print("rmse:", np.sqrt(mse))
     return np.sqrt(mse)
 
 
