@@ -4763,12 +4763,15 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
         for i, chip in enumerate(chips):
             bias_set = bias_sets[i]
             # For each chip, generate a master bias image
-            master_bias = esorex.fors_bias(
-                bias_frames=list(map(lambda b: b.path, bias_set)),
-                output_dir=output_path,
-                output_filename=f"master_bias_{chip}.fits",
-                sof_name=f"bias_{chip}.sof"
-            )
+            try:
+                master_bias = esorex.fors_bias(
+                    bias_frames=list(map(lambda b: b.path, bias_set)),
+                    output_dir=output_path,
+                    output_filename=f"master_bias_{chip}.fits",
+                    sof_name=f"bias_{chip}.sof"
+                )
+            except SystemError:
+                continue
 
             for fil in images:
                 # Generate master flat per-filter, per-chip
@@ -4780,13 +4783,16 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
                 flat_set = list(map(lambda b: b.path, flat_sets[fil][i]))
                 fil_dir = os.path.join(output_path, fil)
                 u.mkdir_check(fil_dir)
-                master_sky_flat_img = esorex.fors_img_sky_flat(
-                    flat_frames=flat_set,
-                    master_bias=master_bias,
-                    output_dir=fil_dir,
-                    output_filename=f"master_sky_flat_img_{chip}.fits",
-                    sof_name=f"flat_{chip}"
-                )
+                try:
+                    master_sky_flat_img = esorex.fors_img_sky_flat(
+                        flat_frames=flat_set,
+                        master_bias=master_bias,
+                        output_dir=fil_dir,
+                        output_filename=f"master_sky_flat_img_{chip}.fits",
+                        sof_name=f"flat_{chip}"
+                    )
+                except SystemError:
+                    continue
 
                 aligned_phots = []
                 if fil in std_sets:
