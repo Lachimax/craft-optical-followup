@@ -22,6 +22,7 @@ import astropy.units as units
 import astropy.table as table
 import astropy.io.fits as fits
 from astropy.modeling import models, fitting
+from astropy.stats import sigma_clip
 
 import craftutils.astrometry as astm
 import craftutils.fits_files as ff
@@ -94,7 +95,7 @@ def _output_img_dict_list(dictionary: dict):
             out_dict[fil] = None
         elif len(dictionary[fil]) > 0:
             if isinstance(dictionary[fil][0], image.Image):
-                out_dict[fil] = list(map(lambda f: f.path, dictionary[fil]))
+                out_dict[fil] = list(set(map(lambda f: f.path, dictionary[fil])))
                 out_dict[fil].sort()
             elif isinstance(dictionary[fil][0], str):
                 out_dict[fil] = dictionary[fil]
@@ -1797,6 +1798,7 @@ class ImagingEpoch(Epoch):
         self.frames_registered = {}
         self.frames_astrometry = {}
         self.astrometry_successful = {}
+        self.frames_diagnosed = {}
         self.frames_final = None
 
         self.std_pointings = []
@@ -1810,6 +1812,7 @@ class ImagingEpoch(Epoch):
 
         self.gaia_catalogue = None
 
+        self.frame_stats = {}
         self.astrometry_stats = {}
         self.psf_stats = {}
 
@@ -1839,9 +1842,11 @@ class ImagingEpoch(Epoch):
                     "method": "individual"
                 }
             },
-            # "frame_diagnostics": {
-            #     "method": self.proc
-            # }
+            "frame_diagnostics": {
+                "method": cls.proc_frame_diagnostics,
+                "message": "Run diagnostics on individual frames?",
+                "default": False,
+            },
             "coadd": {
                 "method": cls.proc_coadd,
                 "message": "Coadd astrometry-corrected frames with Montage?",
@@ -2077,6 +2082,118 @@ class ImagingEpoch(Epoch):
                         self.add_frame_astrometry(new_frame)
                         self.astrometry_successful[fil][frame.name] = "astroalign"
                     self.update_output_file()
+
+    def proc_frame_diagnostics(self, output_dir: str, **kwargs):
+        if "frames" in kwargs:
+            frames = kwargs["frames"]
+        else:
+            frames = self.frames_final
+
+        frame_dict = self._get_frames(frames)
+
+        self.frame_psf_diagnostics(output_dir, frame_dict=frame_dict)
+
+        self.frames_final = "diagnosed"
+
+    def frame_psf_diagnostics(self, output_dir: str, frame_dict: dict, chip: int = 1, sigma: float = 1.):
+        for fil in frame_dict:
+            frame_list = frame_dict[fil]
+            # Grab one chip only, to save time
+            frame_lists = self.sort_by_chip(images=frame_list)
+            frame_list_chip = frame_lists[chip]
+            match_cat = None
+
+            names = []
+
+            fwhms_mean_psfex = []
+            fwhms_mean_gauss = []
+            fwhms_mean_moffat = []
+            fwhms_mean_se = []
+
+            fwhms_median_psfex = []
+            fwhms_median_gauss = []
+            fwhms_median_moffat = []
+            fwhms_median_se = []
+
+            sigma_gauss = []
+            sigma_moffat = []
+            sigma_se = []
+
+            for frame in frame_list_chip:
+                configs = self.source_extractor_config
+                frame.psfex_path = None
+                frame.source_extraction_psf(
+                    output_dir=output_dir,
+                    phot_autoparams=f"{configs['kron_factor']},{configs['kron_radius_min']}"
+                )
+                if match_cat is None:
+                    match_cat = frame.source_cat
+                offset_tolerance = 0.5 * units.arcsec
+                # If the frames haven't been astrometrically corrected, give some extra leeway
+                if "correct_astrometry_frames" in self.do_kwargs and not self.do_kwargs["correct_astrometry_frames"]:
+                    offset_tolerance = 1.0 * units.arcsec
+                frame_stats, stars_moffat, stars_gauss, stars_sex = frame.psf_diagnostics(
+                    match_to=match_cat
+                )
+
+                names.append(frame.name)
+
+                fwhms_mean_psfex.append(frame_stats["fwhm_psfex"].value)
+                fwhms_mean_gauss.append(frame_stats["gauss"]["fwhm_mean"].value)
+                fwhms_mean_moffat.append(frame_stats["moffat"]["fwhm_mean"].value)
+                fwhms_mean_se.append(frame_stats["sextractor"]["fwhm_mean"].value)
+
+                fwhms_median_psfex.append(frame_stats["fwhm_psfex"].value)
+                fwhms_median_gauss.append(frame_stats["gauss"]["fwhm_median"].value)
+                fwhms_median_moffat.append(frame_stats["moffat"]["fwhm_median"].value)
+                fwhms_median_se.append(frame_stats["sextractor"]["fwhm_median"].value)
+
+                sigma_gauss.append(frame_stats["gauss"]["fwhm_sigma"].value)
+                sigma_moffat.append(frame_stats["moffat"]["fwhm_sigma"].value)
+                sigma_se.append(frame_stats["sextractor"]["fwhm_sigma"].value)
+
+                self.frame_stats[fil][frame.name] = frame_stats
+
+            median_all = np.median(fwhms_mean_gauss)
+            sigma_all = np.std(fwhms_median_gauss)
+            upper_limit = median_all + (sigma * sigma_all)
+
+            plt.close()
+
+            plt.title(f"PSF FWHM Mean")
+            plt.ylabel("FWHM (\")")
+            plt.errorbar(names, fwhms_mean_gauss, yerr=sigma_gauss, fmt="o", label="Gaussian")
+            plt.errorbar(names, fwhms_mean_moffat, yerr=sigma_gauss, fmt="o", label="Moffat")
+            plt.errorbar(names, fwhms_mean_se, yerr=sigma_gauss, fmt="o", label="Source Extractor")
+            plt.plot([0, len(names)], [upper_limit, upper_limit], c="black", label="Clip threshold")
+            plt.legend()
+            plt.xticks(rotation=-90)
+            plt.tight_layout()
+            plt.savefig(os.path.join(output_dir, f"{fil}_psf_diagnostics_mean.png"))
+            plt.close()
+
+            plt.title(f"PSF FWHM Median")
+            plt.ylabel("FWHM (\")")
+            plt.errorbar(names, fwhms_median_gauss, yerr=sigma_gauss, fmt="o", label="Gaussian")
+            plt.errorbar(names, fwhms_median_moffat, yerr=sigma_gauss, fmt="o", label="Moffat")
+            plt.errorbar(names, fwhms_median_se, yerr=sigma_gauss, fmt="o", label="Source Extractor")
+            plt.plot([0, len(names)], [upper_limit, upper_limit], c="black", label="Clip threshold")
+            plt.legend()
+            plt.xticks(rotation=-90)
+            plt.tight_layout()
+            plt.savefig(os.path.join(output_dir, f"{fil}_psf_diagnostics_median.png"))
+            plt.close()
+
+            self.frames_diagnosed[fil] = []
+            for i, fwhm_median in enumerate(fwhms_median_gauss):
+                if fwhm_median < upper_limit:
+                    print(f"Median PSF FWHM {fwhm_median} < upper limit {upper_limit}")
+                    for chip in frame_lists:
+                        print(f"\tAdding {frame_lists[chip][i]}")
+                        self.add_frame_diagnosed(frame_lists[chip][i])
+                else:
+                    print(f"Median PSF FWHM {fwhm_median} > upper limit {upper_limit}")
+
 
     def proc_coadd(self, output_dir: str, **kwargs):
         kwargs["frames"] = self.frames_final
@@ -2604,7 +2721,7 @@ class ImagingEpoch(Epoch):
 
         for fil in images:
             img = images[fil]
-            self.psf_stats[fil] = img.psf_diagnostics()
+            self.psf_stats[fil], _, _, _ = img.psf_diagnostics()
 
         self.update_output_file()
         return self.psf_stats
@@ -2647,6 +2764,8 @@ class ImagingEpoch(Epoch):
             image_dict = self.frames_registered
         elif frame_type == "astrometry":
             image_dict = self.frames_astrometry
+        elif frame_type == "diagnosed":
+            image_dict = self.frames_diagnosed
         else:
             raise ValueError(f"Frame type '{frame_type}' not recognised.")
 
@@ -2686,6 +2805,7 @@ class ImagingEpoch(Epoch):
             "frames_normalised": _output_img_dict_list(self.frames_normalised),
             "frames_registered": _output_img_dict_list(self.frames_registered),
             "frames_astrometry": _output_img_dict_list(self.frames_astrometry),
+            "frames_diagnosed": _output_img_dict_list(self.frames_diagnosed),
             "exp_time_mean": self.exp_time_mean,
             "exp_time_err": self.exp_time_err,
             "airmass_mean": self.airmass_mean,
@@ -2724,28 +2844,33 @@ class ImagingEpoch(Epoch):
             if "astrometry_successful" in outputs:
                 self.astrometry_successful = outputs["astrometry_successful"]
             if "frames_raw" in outputs:
-                for frame in outputs["frames_raw"]:
+                for frame in set(outputs["frames_raw"]):
                     self.add_frame_raw(raw_frame=frame)
             if "frames_reduced" in outputs:
                 for fil in outputs["frames_reduced"]:
                     if outputs["frames_reduced"][fil] is not None:
-                        for frame in outputs["frames_reduced"][fil]:
+                        for frame in set(outputs["frames_reduced"][fil]):
                             self.add_frame_reduced(reduced_frame=frame)
             if "frames_normalised" in outputs:
                 for fil in outputs["frames_normalised"]:
                     if outputs["frames_normalised"][fil] is not None:
-                        for frame in outputs["frames_normalised"][fil]:
+                        for frame in set(outputs["frames_normalised"][fil]):
                             self.add_frame_normalised(norm_frame=frame)
             if "frames_registered" in outputs:
                 for fil in outputs["frames_registered"]:
                     if outputs["frames_registered"][fil] is not None:
-                        for frame in outputs["frames_registered"][fil]:
+                        for frame in set(outputs["frames_registered"][fil]):
                             self.add_frame_registered(registered_frame=frame)
             if "frames_astrometry" in outputs:
                 for fil in outputs["frames_astrometry"]:
                     if outputs["frames_astrometry"][fil] is not None:
-                        for frame in outputs["frames_astrometry"][fil]:
+                        for frame in set(outputs["frames_astrometry"][fil]):
                             self.add_frame_astrometry(astrometry_frame=frame)
+            if "frames_diagnosed" in outputs:
+                for fil in outputs["frames_diagnosed"]:
+                    if outputs["frames_diagnosed"][fil] is not None:
+                        for frame in set(outputs["frames_diagnosed"][fil]):
+                            self.add_frame_diagnosed(diagnosed_frame=frame)
             if "coadded" in outputs:
                 for fil in outputs["coadded"]:
                     if outputs["coadded"][fil] is not None:
@@ -2860,6 +2985,9 @@ class ImagingEpoch(Epoch):
     def add_frame_astrometry(self, astrometry_frame: Union[str, image.ImagingImage]):
         return self._add_frame(frame=astrometry_frame, frames_dict=self.frames_astrometry, frame_type="astrometry")
 
+    def add_frame_diagnosed(self, diagnosed_frame: Union[str, image.ImagingImage]):
+        return self._add_frame(frame=diagnosed_frame, frames_dict=self.frames_diagnosed, frame_type="diagnosed")
+
     def add_frame_normalised(self, norm_frame: Union[str, image.ImagingImage]):
         return self._add_frame(frame=norm_frame, frames_dict=self.frames_normalised, frame_type="reduced")
 
@@ -2902,6 +3030,9 @@ class ImagingEpoch(Epoch):
             if fil not in self.frames_registered:
                 if isinstance(self.frames_registered, dict):
                     self.frames_registered[fil] = []
+            if fil not in self.frames_diagnosed:
+                if isinstance(self.frames_diagnosed, dict):
+                    self.frames_diagnosed[fil] = []
             if fil not in self.frames_astrometry:
                 self.frames_astrometry[fil] = []
             if fil not in self.coadded:
@@ -2922,6 +3053,8 @@ class ImagingEpoch(Epoch):
                 self.airmass_err[fil] = None
             if fil not in self.astrometry_stats:
                 self.astrometry_stats[fil] = {}
+            if fil not in self.frame_stats:
+                self.frame_stats[fil] = {}
             return True
         else:
             return False
@@ -4407,7 +4540,7 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
             "convert_to_cs": eso_stages["convert_to_cs"],
             "register_frames": ie_stages["register_frames"],
             "correct_astrometry_frames": ie_stages["correct_astrometry_frames"],
-            #            "frame_diagnostics": ie_stages["frame_diagnostics"],
+            "frame_diagnostics": ie_stages["frame_diagnostics"],
             "coadd": ie_stages["coadd"],
             "correct_astrometry_coadded": ie_stages["correct_astrometry_coadded"],
             "trim_coadded": ie_stages["trim_coadded"],
@@ -4430,6 +4563,8 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
             # If told to register frames
             if "register_frames" in self.do_kwargs and self.do_kwargs["register_frames"]:
                 self.frames_final = "registered"
+            if "frame_diagnostics" in self.do_kwargs and self.do_kwargs["frame_diagnostics"]:
+                self.frames_final = "diagnosed"
 
         self.coadded_final = "coadded_trimmed"
 

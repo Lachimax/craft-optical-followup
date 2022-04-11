@@ -43,6 +43,7 @@ def image_psf_diagnostics(
         mag_max: float = 0.0 * units.mag,
         mag_min: float = -7.0 * units.mag,
         match_to: table.Table = None,
+        match_tolerance: units.Quantity = 1 * units.arcsec,
         frame: float = 15,
         ext: int = 0,
         near_centre: SkyCoord = None,
@@ -65,31 +66,35 @@ def image_psf_diagnostics(
     print(f"Initial num stars:", len(stars))
 
     if near_radius is not None:
+        header = hdu[ext].header
+        wcs_this = wcs.WCS(header)
         if near_centre is None:
-            header = hdu[ext].header
-            wcs_this = wcs.WCS(header)
             near_centre = SkyCoord.from_pixel(header["CRPIX1"], header["CRPIX2"], wcs_this, origin=1)
 
         ra = stars[ra_col]
         dec = stars[dec_col]
         coords = SkyCoord(ra, dec)
 
-        stars_near = []
-        while len(stars_near) < min_stars:
+        img_width = max(header["NAXIS1"], header["NAXIS2"]) * units.pix
+        _, scale = ff.get_pixel_scale(hdu, ext=ext, astropy_units=True)
+        img_width_ang = img_width.to(units.arcsec, scale)
+        stars_near = stars[near_centre.separation(coords) < near_radius]
+        print("len(stars_near):", len(stars_near), "near_radius:", near_radius, "img_width_ang:", img_width_ang)
+        while len(stars_near) < min_stars and near_radius < img_width_ang:
             stars_near = stars[near_centre.separation(coords) < near_radius]
             print(f"Num stars within {near_radius} of {near_centre}:", len(stars_near))
             near_radius += 0.5 * units.arcmin
         stars = stars_near
 
     if match_to is not None:
-        stars, stars_match = a.match_catalogs(
+        stars, stars_match, distance = a.match_catalogs(
             cat_1=stars,
             cat_2=match_to,
             ra_col_1=ra_col,
             dec_col_1=dec_col,
             ra_col_2=ra_col,
             dec_col_2=dec_col,
-            tolerance=2 * units.arcsec)
+            tolerance=match_tolerance)
 
         print(f"Num stars after match to other sextractor cat:", len(stars))
 

@@ -2205,7 +2205,7 @@ class ImagingImage(Image):
             mag_max: float = 0.0 * units.mag,
             mag_min: float = -7.0 * units.mag,
             match_to: table.Table = None,
-            frame: float = 15,
+            frame: float = None,
             ext: int = 0,
             target: SkyCoord = None,
             near_radius: units.Quantity = 1 * units.arcmin,
@@ -2213,6 +2213,9 @@ class ImagingImage(Image):
     ):
         self.open()
         self.load_source_cat()
+        if frame is None:
+            _, scale = self.extract_pixel_scale()
+            frame = (4 * units.arcsec).to(units.pix, scale).value
         u.debug_print(2, f"ImagingImage.psf_diagnostics(): {self}.source_cat_path ==", self.source_cat_path)
         if output_path is None:
             output_path = self.data_path
@@ -2293,7 +2296,7 @@ class ImagingImage(Image):
         )
         self.psf_stats = results
         self.update_output_file()
-        return results
+        return results, stars_moffat, stars_gauss, stars_sex
 
     def trim(
             self,
