@@ -50,6 +50,8 @@ surveys = p.surveys
 active_fields = {}
 active_epochs = {}
 
+zeropoint_yaml = os.path.join(p.data_path, f"zeropoints.yaml")
+
 
 def _output_img_list(lst: list):
     """
@@ -1426,12 +1428,12 @@ class Epoch:
                 self.update_output_file()
 
     def _pipeline_init(self):
-        self.field.retrieve_catalogues()
         if self.data_path is not None:
             u.debug_print(2, f"{self}._pipeline_init(): self.data_path ==", self.data_path)
             u.mkdir_check_nested(self.data_path)
         else:
             raise ValueError(f"data_path has not been set for {self}")
+        self.field.retrieve_catalogues()
         self.do = _check_do_list(self.do)
 
     def proc_initial_setup(self, output_dir: str, **kwargs):
@@ -2329,6 +2331,12 @@ class ImagingEpoch(Epoch):
             suppress_select: bool = False,
             **kwargs
     ):
+
+
+
+        zeropoints = p.load_params(zeropoint_yaml)
+        if zeropoints is None:
+            zeropoints = {}
         deepest = image_dict[self.filters[0]]
         for fil in self.filters:
             img = image_dict[fil]
@@ -2356,9 +2364,18 @@ class ImagingEpoch(Epoch):
 
             zeropoint, cat = img.select_zeropoint(suppress_select, preferred=preferred)
 
+            if fil not in zeropoints:
+                zeropoints[fil] = {}
+            for cat in img.zeropoints:
+                if cat not in zeropoints[fil]:
+                    zeropoints[fil][cat] = {}
+                zeropoints[fil][cat][self.date_str()] = img.zeropoints[cat]
+
             img.estimate_depth(zeropoint_name="best")
 
             deepest = image.deepest(deepest, img)
+
+        p.save_params(zeropoint_yaml, zeropoints)
 
         return deepest
 
