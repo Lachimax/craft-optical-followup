@@ -1554,7 +1554,7 @@ class ImagingImage(Image):
                 zeropoint.update({
                     "airmass": delta_airmass,
                     "airmass_err": delta_airmass_err,
-                    "image_name": other.filename,
+                    "image_name": other.path,
                     "extinction": self.extinction_atmospheric,
                     "extinction_err": self.extinction_atmospheric_err
                 })

@@ -1568,7 +1568,9 @@ class Epoch:
 
     @classmethod
     def sort_by_chip(cls, images: list):
-        chips = {}
+        chips = {
+            1: [],
+            2: []}
 
         for img in images:
             chip_this = img.extract_chip_number()
@@ -2332,11 +2334,6 @@ class ImagingEpoch(Epoch):
             **kwargs
     ):
 
-
-
-        zeropoints = p.load_params(zeropoint_yaml)
-        if zeropoints is None:
-            zeropoints = {}
         deepest = image_dict[self.filters[0]]
         for fil in self.filters:
             img = image_dict[fil]
@@ -2361,21 +2358,13 @@ class ImagingEpoch(Epoch):
                 preferred = kwargs["preferred_zeropoint"][fil]
             else:
                 preferred = None
+                preferred = None
 
             zeropoint, cat = img.select_zeropoint(suppress_select, preferred=preferred)
-
-            if fil not in zeropoints:
-                zeropoints[fil] = {}
-            for cat in img.zeropoints:
-                if cat not in zeropoints[fil]:
-                    zeropoints[fil][cat] = {}
-                zeropoints[fil][cat][self.date_str()] = img.zeropoints[cat]
 
             img.estimate_depth(zeropoint_name="best")
 
             deepest = image.deepest(deepest, img)
-
-        p.save_params(zeropoint_yaml, zeropoints)
 
         return deepest
 
@@ -4679,7 +4668,7 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
             extinctions_known_err = np.array(extinctions_known_err)
             model_init = models.PowerLaw1D()
             fitter = fitting.LevMarLSQFitter()
-            model = fitter(model_init, lambdas_known, extinctions_known, weights=1/extinctions_known_err)
+            model = fitter(model_init, lambdas_known, extinctions_known, weights=1 / extinctions_known_err)
 
             curve_err = u.root_mean_squared_error(model_values=model(lambdas_known), obs_values=extinctions_known)
 
@@ -4710,7 +4699,8 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
 
         results_tbl = table.QTable(results_tbl)
         for fil in fils_find:
-            results_tbl[f"ext_err_{fil.name}"] = np.sqrt(results_tbl[f"stat_err_{fil.name}"]**2 + results_tbl[f"curve_err"]**2) * units.mag
+            results_tbl[f"ext_err_{fil.name}"] = np.sqrt(
+                results_tbl[f"stat_err_{fil.name}"] ** 2 + results_tbl[f"curve_err"] ** 2) * units.mag
             results_tbl[f"stat_err_{fil.name}"] *= units.mag
             results_tbl[f"ext_{fil.name}"] *= units.mag
         results_tbl[f"curve_err"] *= units.mag
@@ -4756,6 +4746,7 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
         images = self._get_images(image_type)
         # Split up bias images by chip
         bias_sets = self.sort_by_chip(self.frames_bias)
+
         bias_sets = (bias_sets[1], bias_sets[2])
         flat_sets = {}
         std_sets = {}
@@ -4881,6 +4872,10 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
                         print(std, type(std))
                         img.add_zeropoint_from_other(std)
 
+        zeropoints = p.load_params(zeropoint_yaml)
+        if zeropoints is None:
+            zeropoints = {}
+
         for fil in images:
             if "preferred_zeropoint" in kwargs and fil in kwargs["preferred_zeropoint"]:
                 preferred = kwargs["preferred_zeropoint"][fil]
@@ -4890,10 +4885,19 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
 
             img.select_zeropoint(suppress_select, preferred=preferred)
 
+            if fil not in zeropoints:
+                zeropoints[fil] = {}
+            for cat in img.zeropoints:
+                if cat not in zeropoints[fil]:
+                    zeropoints[fil][cat] = {}
+                zeropoints[fil][cat][self.date_str()] = img.zeropoints[cat]
+
             if self.coadded_unprojected[fil] is not None:
                 self.coadded_unprojected[fil].zeropoints = img.zeropoints
                 self.coadded_unprojected[fil].zeropoint_best = img.zeropoint_best
                 self.coadded_unprojected[fil].update_output_file()
+
+        p.save_params(zeropoint_yaml, zeropoints)
 
     @classmethod
     def pair_files(cls, images: list):
