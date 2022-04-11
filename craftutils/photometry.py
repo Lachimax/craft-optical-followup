@@ -66,9 +66,9 @@ def image_psf_diagnostics(
     print(f"Initial num stars:", len(stars))
 
     if near_radius is not None:
+        header = hdu[ext].header
+        wcs_this = wcs.WCS(header)
         if near_centre is None:
-            header = hdu[ext].header
-            wcs_this = wcs.WCS(header)
             near_centre = SkyCoord.from_pixel(header["CRPIX1"], header["CRPIX2"], wcs_this, origin=1)
 
         ra = stars[ra_col]
@@ -76,7 +76,10 @@ def image_psf_diagnostics(
         coords = SkyCoord(ra, dec)
 
         stars_near = []
-        while len(stars_near) < min_stars:
+        img_width = max(header["NAXIS1"], header["NAXIS2"]) * units.pix
+        _, scale = ff.get_pixel_scale(hdu, ext=ext, astropy_units=True)
+        img_width_ang = img_width.to(units.arcsec, scale)
+        while len(stars_near) < min_stars and near_radius < img_width_ang:
             stars_near = stars[near_centre.separation(coords) < near_radius]
             print(f"Num stars within {near_radius} of {near_centre}:", len(stars_near))
             near_radius += 0.5 * units.arcmin

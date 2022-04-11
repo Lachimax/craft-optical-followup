@@ -2187,8 +2187,13 @@ class ImagingEpoch(Epoch):
             self.frames_diagnosed[fil] = []
             for i, fwhm_median in enumerate(fwhms_median_gauss):
                 if fwhm_median < upper_limit:
+                    print(f"Median PSF FWHM {fwhm_median} < upper limit {upper_limit}")
                     for chip in frame_lists:
+                        print(f"\tAdding {frame_lists[chip][i]}")
                         self.add_frame_diagnosed(frame_lists[chip][i])
+                else:
+                    print(f"Median PSF FWHM {fwhm_median} > upper limit {upper_limit}")
+
 
     def proc_coadd(self, output_dir: str, **kwargs):
         kwargs["frames"] = self.frames_final
