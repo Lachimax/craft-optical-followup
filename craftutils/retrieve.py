@@ -66,6 +66,14 @@ def cat_columns(cat, f: str = None):
             'ra': 'ra',
             'dec': 'dec',
         }
+    if cat == 'ztf':
+        f = f.lower()
+        return {
+            'mag_psf': f"{f}_m",  # 2MASS doesn't have psf-fit magnitudes, so we make do with the regular magnitudes
+            'mag_psf_err': f"{f}_cmsig",
+            'ra': 'ra',
+            'dec': 'dec',
+        }
     if cat == 'delve':
         f = f.lower()
         return {
@@ -661,28 +669,65 @@ def update_frb_irsa_extinction(frb: str):
         print("IRSA Dust Tool data already retrieved.")
 
 
-def retrieve_2mass_photometry(ra: float, dec: float, radius: units.Quantity = 0.2 * units.deg):
-    print(f"Querying IRSA archive for 2MASS sources centred on RA={ra}, DEC={dec}.")
+def retrieve_irsa_photometry(
+        catalogue: str,
+        ra: float,
+        dec: float,
+        radius: units.Quantity = 0.2 * units.deg,
+):
+    print(f"Querying IRSA archive for {catalogue} sources centred on RA={ra}, DEC={dec}.")
     table = irsa.Irsa.query_region(
         SkyCoord(
             ra,
-            dec, unit=(units.deg, units.deg)
+            dec,
+            unit=(units.deg, units.deg)
         ),
-        catalog='fp_psc', radius=radius)
+        catalog=catalogue, radius=radius
+    )
 
     return table
 
 
-def save_2mass_photometry(ra: float, dec: float, output: str, radius: units.Quantity = 0.2 * units.deg):
-    table = retrieve_2mass_photometry(ra=ra, dec=dec, radius=radius)
+def save_irsa_photometry(
+        catalogue: str,
+        ra: float,
+        dec: float,
+        output: str,
+        radius: units.Quantity = 0.2 * units.deg):
+    table = retrieve_irsa_photometry(
+        catalogue=catalogue,
+        ra=ra,
+        dec=dec,
+        radius=radius
+    )
     if len(table) > 0:
         u.mkdir_check_nested(path=output)
-        print(f"Saving 2MASS catalogue to {output}")
+        print(f"Saving {catalogue} catalogue to {output}")
         table.write(output, format="ascii.csv")
         return str(table)
     else:
-        print("No data retrieved from Gaia DR2")
+        print(f"No data retrieved from {catalogue}")
         return None
+
+
+def save_2mass_photometry(ra: float, dec: float, output: str, radius: units.Quantity = 0.2 * units.deg):
+    return save_irsa_photometry(
+        catalogue="fp_psc",
+        ra=ra,
+        dec=dec,
+        output=output,
+        radius=radius
+    )
+
+
+def save_ztf_photometry(ra: float, dec: float, output: str, radius: units.Quantity = 0.2 * units.deg):
+    return save_irsa_photometry(
+        catalogue="ztf_objects_dr10",
+        ra=ra,
+        dec=dec,
+        output=output,
+        radius=radius
+    )
 
 
 sdss_filters = ["u", "g", "r", "i", "z"]
