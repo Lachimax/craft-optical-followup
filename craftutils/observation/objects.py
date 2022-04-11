@@ -10,6 +10,7 @@ import astropy.table as table
 import astropy.cosmology as cosmo
 from astropy.modeling import models, fitting
 from astropy.visualization import quantity_support
+import astropy.time as time
 
 ne2001_installed = True
 try:
@@ -353,6 +354,8 @@ class Object:
     ):
         if good_image_path is None:
             good_image_path = image_path
+        if isinstance(epoch_date, time.Time):
+            epoch_date = epoch_date.strftime('%Y-%m-%d')
         photometry = {
             "instrument": str(instrument),
             "filter": str(fil),
@@ -712,6 +715,12 @@ class Object:
         return self.photometry_tbl[idx]
 
     def push_to_table(self, select: bool = False, local_output: bool = True):
+
+        if select:
+            tbl = obs.load_master_objects_table()
+        else:
+            tbl = obs.load_master_all_objects_table()
+
         jname = self.jname()
 
         for instrument in self.photometry:
@@ -738,7 +747,6 @@ class Object:
         # best_position = self.select_best_position(local_output=local_output)
         best_psf = self.select_psf_photometry(local_output=local_output)
 
-
         row["jname"] = jname
         row["field_name"] = self.field.name
         row["object_name"] = self.name
@@ -753,6 +761,7 @@ class Object:
         row["b"] = deepest["b"]
         row["b_err"] = deepest["b_err"]
         row["theta"] = deepest["theta"]
+        row["kron_radius"] = deepest["kron_radius"]
         row["epoch_ellipse"] = deepest["epoch_name"]
         row["epoch_ellipse_date"] = deepest["epoch_date"]
         row["theta_err"] = deepest["theta_err"]
@@ -790,7 +799,12 @@ class Object:
                 row[f"mag_psf_mean_{band_str}"] = mean_photom[f"mag_psf"]
                 row[f"mag_psf_mean_{band_str}_err"] = mean_photom[f"mag_psf_err"]
 
-        # obs.w
+        for colname in tbl.colnames:
+            if colname not in row:
+                if "epoch" in colname:
+                    row[colname] = "N/A"
+                else:
+                    row[colname] = tbl[0][colname]
 
         u.debug_print(2, "Object.push_to_table(): select ==", select)
         print()
