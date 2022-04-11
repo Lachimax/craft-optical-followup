@@ -43,6 +43,7 @@ def image_psf_diagnostics(
         mag_max: float = 0.0 * units.mag,
         mag_min: float = -7.0 * units.mag,
         match_to: table.Table = None,
+        match_tolerance: units.Quantity = 1 * units.arcsec,
         frame: float = 15,
         ext: int = 0,
         near_centre: SkyCoord = None,
@@ -82,14 +83,14 @@ def image_psf_diagnostics(
         stars = stars_near
 
     if match_to is not None:
-        stars, stars_match = a.match_catalogs(
+        stars, stars_match, distance = a.match_catalogs(
             cat_1=stars,
             cat_2=match_to,
             ra_col_1=ra_col,
             dec_col_1=dec_col,
             ra_col_2=ra_col,
             dec_col_2=dec_col,
-            tolerance=2 * units.arcsec)
+            tolerance=match_tolerance)
 
         print(f"Num stars after match to other sextractor cat:", len(stars))
 
