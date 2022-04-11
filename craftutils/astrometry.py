@@ -490,7 +490,7 @@ def find_nearest(coord: SkyCoord, search_coords: SkyCoord):
 
 def match_catalogs(
         cat_1: table.Table, cat_2: table.Table,
-        ra_col_1: str = "ALPHAPSF_SKY", dec_col_1: str = "DELTAPSF_SKY",
+        ra_col_1: str = "RA", dec_col_1: str = "DEC",
         ra_col_2: str = "ra", dec_col_2: str = "dec",
         tolerance: units.Quantity = 1 * units.arcsec
 ):

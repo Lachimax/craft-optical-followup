@@ -75,10 +75,11 @@ def image_psf_diagnostics(
         dec = stars[dec_col]
         coords = SkyCoord(ra, dec)
 
-        stars_near = []
         img_width = max(header["NAXIS1"], header["NAXIS2"]) * units.pix
         _, scale = ff.get_pixel_scale(hdu, ext=ext, astropy_units=True)
         img_width_ang = img_width.to(units.arcsec, scale)
+        stars_near = stars[near_centre.separation(coords) < near_radius]
+        print("len(stars_near):", len(stars_near), "near_radius:", near_radius, "img_width_ang:", img_width_ang)
         while len(stars_near) < min_stars and near_radius < img_width_ang:
             stars_near = stars[near_centre.separation(coords) < near_radius]
             print(f"Num stars within {near_radius} of {near_centre}:", len(stars_near))
