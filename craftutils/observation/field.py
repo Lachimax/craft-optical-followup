@@ -1845,7 +1845,7 @@ class ImagingEpoch(Epoch):
             "frame_diagnostics": {
                 "method": cls.proc_frame_diagnostics,
                 "message": "Run diagnostics on individual frames?",
-                "default": True,
+                "default": False,
             },
             "coadd": {
                 "method": cls.proc_coadd,
@@ -4563,6 +4563,8 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
             # If told to register frames
             if "register_frames" in self.do_kwargs and self.do_kwargs["register_frames"]:
                 self.frames_final = "registered"
+            if "frame_diagnostics" in self.do_kwargs and self.do_kwargs["frame_diagnostics"]:
+                self.frames_final = "diagnosed"
 
         self.coadded_final = "coadded_trimmed"
 
