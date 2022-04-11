@@ -2194,7 +2194,6 @@ class ImagingEpoch(Epoch):
                 else:
                     print(f"Median PSF FWHM {fwhm_median} > upper limit {upper_limit}")
 
-
     def proc_coadd(self, output_dir: str, **kwargs):
         kwargs["frames"] = self.frames_final
         self.coadd(output_dir, **kwargs)
@@ -4337,8 +4336,10 @@ class ESOImagingEpoch(ImagingEpoch):
                 edged = True
 
             for i, frame in enumerate(self.frames_esoreflex_backgrounds[fil]):
-                new_path = os.path.join(fil_path_back,
-                                        frame.filename.replace(".fits", "_trim.fits"))
+                new_path = os.path.join(
+                    fil_path_back,
+                    frame.filename.replace(".fits", "_trim.fits")
+                )
 
                 print(f'{i} {frame}')
 

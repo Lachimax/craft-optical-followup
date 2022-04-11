@@ -2313,12 +2313,12 @@ class ImagingImage(Image):
 
         if output_path is None:
             output_path = self.path.replace(".fits", "_trimmed.fits")
+        image = self.copy_with_outputs(output_path)
         ff.trim_file(
             path=self.path,
             left=left, right=right, bottom=bottom, top=top,
             new_path=output_path
         )
-        image = self.copy_with_outputs(output_path)
         # image.log = self.log.copy()
 
         image.add_log(
