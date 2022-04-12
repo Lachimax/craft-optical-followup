@@ -2362,6 +2362,7 @@ class ImagingEpoch(Epoch):
             print("trim_coadded img.path:", img.path)
             print("trim_coadded img.area_file:", img.area_file)
             trimmed = img.trim_from_area(output_path=output_path)
+            trimmed.write_fits_file()
             self.add_coadded_unprojected_image(trimmed, key=fil)
             if reproject:
                 if template is None:
