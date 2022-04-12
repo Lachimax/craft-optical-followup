@@ -237,7 +237,7 @@ def list_fields(include_std: bool = False):
     fields = list(filter(lambda d: os.path.isdir(os.path.join(param_path, d)) and os.path.isfile(
         os.path.join(param_path, d, f"{d}.yaml")), os.listdir(param_path)))
     if not include_std:
-        fields = list(filter(lambda f: "STD" in f, fields))
+        fields = list(filter(lambda f: "STD" not in f, fields))
     fields.sort()
     return fields
 
