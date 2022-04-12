@@ -117,8 +117,12 @@ def inject_header(
     if important_keys["filter"] in table.colnames:
         insert_dict["FILTER"] = table[important_keys["filter"]][0]
 
-    if important_keys["gain"] in table.colnames:
-        old_gain = np.nanmean(np.float64(table[important_keys["gain"]]))
+    gain_key = important_keys["gain"]
+    if gain_key.startswith("HIERARCH"):
+        gain_key = gain_key[9:]
+
+    if gain_key in table.colnames:
+        old_gain = np.nanmean(np.float64(table[gain_key]))
         if coadd_type == "median":
             new_gain = gain_median_combine(old_gain=old_gain, n_frames=n_frames)
         elif coadd_type == "mean":
