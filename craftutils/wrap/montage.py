@@ -8,9 +8,8 @@ import numpy as np
 import astropy.io.fits as fits
 
 import craftutils.utils as u
-from craftutils.observation.image import fits_table_all
 from craftutils.photometry import gain_median_combine, gain_mean_combine
-import craftutils.observation.image as img
+import craftutils.observation.image as image
 
 
 def header_keys():
@@ -51,18 +50,26 @@ def make_header(table_path: str, output_path: str):
 
 def check_input_images(input_directory: str,
                        **kwargs):
-    table = fits_table_all(input_directory, science_only=True)
+    table = image.fits_table_all(input_directory, science_only=True)
     table.sort("FILENAME")
 
-    keys = header_keys()
-    exptime_key = keys["exptime"]
+    template = table[0]
+    template_path = os.path.join(input_directory, template["FILENAME"])
+    template_img = image.ImagingImage.select_child_class(
+        instrument=image.detect_instrument(path=template_path)
+    )(template_path)
+    keys = template_img.header_keys()
+    exptime_key = keys["exposure_time"]
     instrument_key = keys["instrument"]
     if "gain_key" in kwargs:
         gain_key = kwargs["gain_key"]
     else:
         gain_key = keys["gain"]
 
-    template = table[0]
+    if gain_key.startswith("HIERARCH"):
+        gain_key = gain_key[9:]
+
+
     exptime = np.round(float(template[exptime_key]))
     instrument = template[instrument_key]
     gain = np.round(template[gain_key])
@@ -82,7 +89,7 @@ def inject_header(
         extra_items: dict = None, keys: dict = None,
         coadd_type: str = 'median', ext: int = 0,
         instrument: str = "vlt-fors2"):
-    table = fits_table_all(input_directory, science_only=False)
+    table = image.fits_table_all(input_directory, science_only=False)
     table.sort("FILENAME")
 
     important_keys = header_keys()
@@ -90,7 +97,7 @@ def inject_header(
     if keys is not None:
         important_keys.update(keys)
 
-    template = img.ImagingImage.from_fits(table[0]["PATH"])
+    template = image.ImagingImage.from_fits(table[0]["PATH"])
     cls = type(template)
 
     airmasses = np.float64(table[important_keys['airmass']])
