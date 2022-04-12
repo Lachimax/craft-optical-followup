@@ -1906,7 +1906,7 @@ class ImagingImage(Image):
                 output_path=new_path,
                 ext=ext
             )
-            if cat_name == 'GAIA':
+            if cat_name.lower() == 'gaia':
                 new.set_header_item("GAIA", True)
             new.write_fits_file()
             return new
@@ -1976,6 +1976,9 @@ class ImagingImage(Image):
         offset_crpix1 = other_header["CRPIX1"] - other_header["_RPIX1"]
         offset_crpix2 = other_header["CRPIX2"] - other_header["_RPIX2"]
 
+        if "GAIA" in other_header:
+            insert["GAIA"] = other_header["GAIA"]
+
         with fits.open(output_path, "update") as file:
             # Apply the same offsets to this image, while keeping the old values as "_" keys
             insert["_RVAL1"] = file[0].header["CRVAL1"]
@@ -1998,6 +2001,7 @@ class ImagingImage(Image):
             f"Used WCS info from {other_image} to correct this image.",
             method=self.correct_astrometry_from_other
         )
+
         new_image.update_output_file()
 
         return new_image
