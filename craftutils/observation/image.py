@@ -2419,7 +2419,8 @@ class ImagingImage(Image):
             other_image: 'ImagingImage',
             ext: int = 0,
             output_path: str = None,
-            include_footprint: bool = False
+            include_footprint: bool = False,
+            write_footprint: bool = True
     ):
         import reproject as rp
         if output_path is None:
@@ -2439,7 +2440,12 @@ class ImagingImage(Image):
             new_hdu = fits.ImageHDU()
             reprojected_image.headers.append(new_hdu.header)
             reprojected_image.data.append(footprint)
-        reprojected_image.write_fits_file()
+
+        if write_footprint:
+            footprint_file = self.copy_with_outputs(output_path.replace(".fits", "_footprint.fits"))
+            footprint_file.load_data()
+            footprint_file.data[0] = footprint
+            footprint_file.write_fits_file()
 
         reprojected_image.add_log(
             action=f"Reprojected into pixel space of {other_image}.",
@@ -2447,8 +2453,9 @@ class ImagingImage(Image):
             output_path=output_path
         )
         reprojected_image.update_output_file()
-
         reprojected_image.transfer_wcs(other_image=other_image)
+        reprojected_image.write_fits_file()
+
         return reprojected_image
 
     def trim_to_wcs(self, bottom_left: SkyCoord, top_right: SkyCoord, output_path: str = None) -> 'ImagingImage':
