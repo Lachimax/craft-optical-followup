@@ -1855,7 +1855,7 @@ class ImagingEpoch(Epoch):
                 "default": True,
                 "keywords": {
                     "frames": "astrometry",  # normalised, trimmed
-                    "sigma_clip": 1.5
+                    "sigma_clip": 1.0
                 }
             },
             "correct_astrometry_coadded": {
