@@ -596,7 +596,7 @@ def std_err_slope(
         y_obs: np.ndarray,
         x_obs: np.ndarray,
         y_weights: np.ndarray = None,
-        x_weights: np.ndarray = None,
+        dof_correction: int = 2,
 ):
     """
     https://sites.chem.utoronto.ca/chemistry/coursenotes/analsci/stats/ErrRegr.html
@@ -611,7 +611,7 @@ def std_err_slope(
         model_values=y_model,
         obs_values=y_obs,
         weights=y_weights,
-        dof_correction = 2
+        dof_correction=dof_correction
     )
 
     # if x_weights is None:
@@ -631,6 +631,7 @@ def std_err_intercept(
         x_obs: np.ndarray,
         y_weights: np.ndarray = None,
         x_weights: np.ndarray = None,
+        dof_correction: int = 2,
 ):
     """
     https://sites.chem.utoronto.ca/chemistry/coursenotes/analsci/stats/ErrRegr.html
@@ -640,7 +641,7 @@ def std_err_intercept(
         model_values=y_model,
         obs_values=y_obs,
         weights=y_weights,
-        dof_correction=2
+        dof_correction=dof_correction
     )
     print("s_regression:", s_regression)
     n = len(x_obs)
