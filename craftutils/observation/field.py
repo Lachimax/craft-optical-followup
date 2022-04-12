@@ -231,11 +231,13 @@ def add_many_to_epoch_directory(
         write_epoch_directory(directory)
 
 
-def list_fields():
+def list_fields(include_std: bool = False):
     print("Searching for field param files...")
     param_path = os.path.join(config['param_dir'], 'fields')
     fields = list(filter(lambda d: os.path.isdir(os.path.join(param_path, d)) and os.path.isfile(
         os.path.join(param_path, d, f"{d}.yaml")), os.listdir(param_path)))
+    if not include_std:
+        fields = list(filter(lambda f: "STD" in f, fields))
     fields.sort()
     return fields
 
