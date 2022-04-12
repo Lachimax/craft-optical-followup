@@ -454,7 +454,7 @@ def determine_zeropoint_sextractor(
         cat_type: str = 'csv',
         cat_zeropoint: units.Quantity = 0.0 * units.mag,
         cat_zeropoint_err: units.Quantity = 0.0 * units.mag,
-        snr_cut: float = 100.,
+        snr_cut: float = 10.,
         snr_col: str = 'SNR_WIN',
         iterate_uncertainty: bool = False
 ):
@@ -793,7 +793,8 @@ def determine_zeropoint_sextractor(
                 y_obs=y_iter,
                 x_obs=x_iter,
                 y_weights=y_weights_iter,
-                x_weights=x_weights_iter
+                x_weights=x_weights_iter,
+                dof_correction=1
             )
 
             plt.scatter(x_iter, y_iter, c='blue')
@@ -910,7 +911,8 @@ def determine_zeropoint_sextractor(
         y_obs=y,
         y_weights=y_weights,
         x_obs=x,
-        x_weights=x_weights
+        x_weights=x_weights,
+        dof_correction=1
     )
 
     plt.plot(x, line_free, c='red', label='Line of best fit')
@@ -983,7 +985,8 @@ def determine_zeropoint_sextractor(
         y_obs=y_clipped,
         y_weights=y_weights_clipped,
         x_weights=x_weights_clipped,
-        x_obs=x_clipped
+        x_obs=x_clipped,
+        dof_correction=1
     )
     print("STD ERR:", std_err)
 
