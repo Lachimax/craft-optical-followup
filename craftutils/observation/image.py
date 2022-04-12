@@ -984,9 +984,15 @@ class ImagingImage(Image):
         if self.ra_err is not None:
             source_cat["RA_ERR"] = np.sqrt(
                 source_cat["ERRX2_WORLD"].to(units.arcsec ** 2) + self.ra_err ** 2)
+        else:
+            source_cat["RA_ERR"] = np.sqrt(
+                source_cat["ERRX2_WORLD"].to(units.arcsec ** 2))
         if self.dec_err is not None:
             source_cat["DEC_ERR"] = np.sqrt(
                 source_cat["ERRY2_WORLD"].to(units.arcsec ** 2) + self.dec_err ** 2)
+        else:
+            source_cat["DEC_ERR"] = np.sqrt(
+                source_cat["ERRY2_WORLD"].to(units.arcsec ** 2))
 
         return source_cat
 
