@@ -1571,9 +1571,7 @@ class Epoch:
 
     @classmethod
     def sort_by_chip(cls, images: list):
-        chips = {
-            1: [],
-            2: []}
+        chips = {}
 
         for img in images:
             chip_this = img.extract_chip_number()
@@ -1889,7 +1887,7 @@ class ImagingEpoch(Epoch):
                 "default": True,
                 "keywords": {
                     "distance_tolerance": None,
-                    "snr_min": 100,
+                    "snr_min": 10,
                     "class_star_tolerance": 0.95,
                     "image_type": "coadded_trimmed",
                     "preferred_zeropoint": {},
@@ -2419,7 +2417,7 @@ class ImagingEpoch(Epoch):
         if "distance_tolerance" in kwargs and kwargs["distance_tolerance"] is not None:
             kwargs["distance_tolerance"] = u.check_quantity(kwargs["distance_tolerance"], units.arcsec, convert=True)
         if "snr_min" not in kwargs or kwargs["snr_min"] is None:
-            kwargs["snr_min"] = 100
+            kwargs["snr_min"] = 10.
         if "class_star_tolerance" not in kwargs:
             kwargs["star_class_tolerance"] = 0.95
         if "suppress_select" not in kwargs:
@@ -2710,6 +2708,11 @@ class ImagingEpoch(Epoch):
                 local_coord=self.field.centre_coords,
                 offset_tolerance=offset_tolerance
             )
+
+        self.add_log(
+            "Ran astrometry diagnostics.",
+            method=self.astrometry_diagnostics,
+        )
 
         self.update_output_file()
         return self.astrometry_stats
@@ -3316,7 +3319,7 @@ class FORS2StandardEpoch(StandardEpoch, ImagingEpoch):
             image_dict: dict,
             output_path: str,
             distance_tolerance: units.Quantity = None,
-            snr_min: float = 100.,
+            snr_min: float = 10.,
             star_class_tolerance: float = 0.9,
             suppress_select: bool = False,
             **kwargs
@@ -3875,7 +3878,7 @@ class PanSTARRS1ImagingEpoch(ImagingEpoch):
     def zeropoint(self,
                   output_path: str,
                   distance_tolerance: units.Quantity = 0.2 * units.arcsec,
-                  snr_min: float = 200.,
+                  snr_min: float = 10.,
                   star_class_tolerance: float = 0.95
                   ):
         deepest = self.coadded[self.filters[0]]
