@@ -454,7 +454,6 @@ def determine_zeropoint_sextractor(
         cat_type: str = 'csv',
         cat_zeropoint: units.Quantity = 0.0 * units.mag,
         cat_zeropoint_err: units.Quantity = 0.0 * units.mag,
-        latex_plot: bool = False,
         snr_cut: float = 100.,
         snr_col: str = 'SNR_WIN',
         iterate_uncertainty: bool = False

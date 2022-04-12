@@ -2447,7 +2447,7 @@ class ImagingEpoch(Epoch):
             image_dict: dict,
             output_path: str,
             distance_tolerance: units.Quantity = None,
-            snr_min: float = 100.,
+            snr_min: float = 10.,
             star_class_tolerance: float = 0.95,
             suppress_select: bool = False,
             **kwargs
