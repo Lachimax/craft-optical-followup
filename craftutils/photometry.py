@@ -166,14 +166,16 @@ def image_psf_diagnostics(
             for colname in ["MOFFAT_FWHM_FITTED", "GAUSSIAN_FWHM_FITTED", "FWHM_WORLD"]:
                 plt.hist(
                     stars[colname].to(units.arcsec),
-                    label="Full sample"
+                    label="Full sample",
+                    bins=int(np.sqrt(len(stars)))
                 )
                 plt.hist(
                     stars_clip_moffat[colname].to(units.arcsec),
                     edgecolor='black',
                     linewidth=1.2,
                     label="Sigma-clipped",
-                    fc=(0, 0, 0, 0)
+                    fc=(0, 0, 0, 0),
+                    bins=int(np.sqrt(len(stars_clip_moffat)))
                 )
                 plt.legend()
                 plt.savefig(os.path.join(output, f"psf_histogram_{colname}.png"))

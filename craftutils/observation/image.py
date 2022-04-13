@@ -2130,7 +2130,7 @@ class ImagingImage(Image):
             plt.savefig(os.path.join(output_path, f"{self.name}_astrometry_offset_v_ref.pdf"))
             plt.close()
 
-            plt.hist(distance.to(units.arcsec).value)
+            plt.hist(distance.to(units.arcsec).value, bins=int(np.sqrt(len(distance))))
             plt.xlabel("Offset (\")")
             if show_plots:
                 plt.show()
