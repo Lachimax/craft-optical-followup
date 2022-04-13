@@ -2108,14 +2108,14 @@ class ImagingImage(Image):
             offset_ra = matches_source_cat["RA"] - matches_ext_cat[ra_col]
             offset_dec = matches_source_cat["DEC"] - matches_ext_cat[dec_col]
 
+            sigma_clip = SigmaClip(sigma=3.)
+            distance_clipped = sigma_clip(distance)
+
             mean_offset = np.mean(distance)
             median_offset = np.median(distance)
             rms_offset = np.sqrt(np.mean(distance ** 2))
             rms_offset_ra = np.sqrt(np.mean(offset_ra ** 2))
             rms_offset_dec = np.sqrt(np.mean(offset_dec ** 2))
-
-            sigma_clip = SigmaClip(sigma=3.)
-            distance_clipped = sigma_clip(distance)
 
             ref = self.extract_pointing()
             ref_distance = ref.separation(matches_coord)
@@ -2135,7 +2135,19 @@ class ImagingImage(Image):
             plt.savefig(os.path.join(output_path, f"{self.name}_astrometry_offset_v_ref.pdf"))
             plt.close()
 
-            plt.hist(distance.to(units.arcsec).value, bins=int(np.sqrt(len(distance))))
+            plt.hist(
+                distance.to(units.arcsec).value,
+                bins=int(np.sqrt(len(distance))),
+                label="Full sample"
+            )
+            plt.hist(
+                distance_clipped.to(units.arcsec).value,
+                edgecolor='black',
+                linewidth=1.2,
+                label="Sigma-clipped",
+                fc=(0, 0, 0, 0),
+                bins=int(np.sqrt(len(distance_clipped)))
+            )
             plt.xlabel("Offset (\")")
             if show_plots:
                 plt.show()
