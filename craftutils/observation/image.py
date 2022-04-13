@@ -387,6 +387,8 @@ class Image:
         u.mkdir_check_nested(destination)
         shutil.copy(self.path, destination)
         new_image = self.new_image(path=destination)
+        new_image.load_headers(force=True)
+        new_image.load_data(force=True)
         new_image.log = self.log.copy()
         u.debug_print(2, f"Image.copy(): {new_image}.log.log.keys() ==", new_image.log.log.keys())
         new_image.add_log(
@@ -2112,6 +2114,9 @@ class ImagingImage(Image):
             rms_offset_ra = np.sqrt(np.mean(offset_ra ** 2))
             rms_offset_dec = np.sqrt(np.mean(offset_dec ** 2))
 
+            sigma_clip = SigmaClip(sigma=3.)
+            distance_clipped = sigma_clip(distance)
+
             ref = self.extract_pointing()
             ref_distance = ref.separation(matches_coord)
 
@@ -2329,6 +2334,8 @@ class ImagingImage(Image):
             left=left, right=right, bottom=bottom, top=top,
             new_path=output_path
         )
+        # image.load_headers(force=True)
+        # image.load_data(force=True)
         # image.log = self.log.copy()
 
         image.add_log(
@@ -2435,7 +2442,7 @@ class ImagingImage(Image):
         import reproject as rp
         if output_path is None:
             output_path = self.path.replace(".fits", "_reprojected.fits")
-        other_image.load_headers()
+        other_image.load_headers(force=True)
         print(f"Reprojecting {self.filename} into the pixel space of {other_image.filename}")
         reprojected, footprint = rp.reproject_exact(self.path, other_image.headers[ext], parallel=True)
 
@@ -2443,7 +2450,7 @@ class ImagingImage(Image):
             reprojected_image = self
         else:
             reprojected_image = self.copy(output_path)
-        reprojected_image.load_data()
+        reprojected_image.load_data(force=True)
         reprojected_image.data[ext] = reprojected
 
         if include_footprint:
@@ -2453,7 +2460,6 @@ class ImagingImage(Image):
 
         if write_footprint:
             footprint_file = self.copy_with_outputs(output_path.replace(".fits", "_footprint.fits"))
-            footprint_file.load_data()
             footprint_file.data[0] = footprint
             footprint_file.write_fits_file()
 
@@ -3802,6 +3808,11 @@ class CoaddedImage(ImagingImage):
         trimmed.update_output_file()
         return trimmed
 
+    def trim_from_area(self, output_path: str = None):
+        left, right, bottom, top = ff.detect_edges_area(self.area_file)
+        trimmed = self.trim(left=left, right=right, bottom=bottom, top=top, output_path=output_path)
+        return trimmed
+
     def register(self, target: 'ImagingImage', output_path: str, ext: int = 0, trim: bool = True):
         new_img = super().register(
             target=target,
@@ -3819,11 +3830,6 @@ class CoaddedImage(ImagingImage):
 
         new_img.area_file = area.path
         return new_img
-
-    def trim_from_area(self, output_path: str = None):
-        left, right, bottom, top = ff.detect_edges_area(self.area_file)
-        trimmed = self.trim(left=left, right=right, bottom=bottom, top=top, output_path=output_path)
-        return trimmed
 
     def _output_dict(self):
         outputs = super()._output_dict()

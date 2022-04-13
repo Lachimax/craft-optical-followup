@@ -2360,7 +2360,7 @@ class ImagingEpoch(Epoch):
             print("trim_coadded img.path:", img.path)
             print("trim_coadded img.area_file:", img.area_file)
             trimmed = img.trim_from_area(output_path=output_path)
-            trimmed.write_fits_file()
+            # trimmed.write_fits_file()
             self.add_coadded_unprojected_image(trimmed, key=fil)
             if reproject:
                 if template is None:
@@ -3875,12 +3875,13 @@ class PanSTARRS1ImagingEpoch(ImagingEpoch):
             self.data_path = os.path.join(self.field.data_path, "imaging", "panstarrs1")
         return self.data_path
 
-    def zeropoint(self,
-                  output_path: str,
-                  distance_tolerance: units.Quantity = 0.2 * units.arcsec,
-                  snr_min: float = 10.,
-                  star_class_tolerance: float = 0.95
-                  ):
+    def zeropoint(
+            self,
+            output_path: str,
+            distance_tolerance: units.Quantity = 0.2 * units.arcsec,
+            snr_min: float = 10.,
+            star_class_tolerance: float = 0.95
+    ):
         deepest = self.coadded[self.filters[0]]
         for fil in self.filters:
             img = self.coadded[fil]
@@ -4284,7 +4285,11 @@ class ESOImagingEpoch(ImagingEpoch):
             **kwargs
         )
 
-    def trim_reduced(self, output_dir: str, **kwargs):
+    def trim_reduced(
+            self,
+            output_dir: str,
+            **kwargs
+    ):
 
         u.mkdir_check(os.path.join(output_dir, "backgrounds"))
         u.mkdir_check(os.path.join(output_dir, "science"))
