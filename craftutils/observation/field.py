@@ -999,6 +999,9 @@ class FRBField(Field):
             # e.set_edgecolor('white')
             # e.set_label("FRB localisation ellipse")
             # plot.add_artist(e)
+            print(a, b)
+            print(a.to(units.pix, img.pixel_scale_dec).value)
+            print(b.to(units.pix, img.pixel_scale_dec).value)
             localisation = photutils.aperture.EllipticalAperture(
                 positions=[x, y],
                 a=a.to(units.pix, img.pixel_scale_dec).value,
@@ -1445,6 +1448,10 @@ class Epoch:
 
     def _initial_setup(self, output_dir: str, **kwargs):
         pass
+
+    @classmethod
+    def _check_output_file_path(cls, key: str, dictionary: dict):
+        return key in dictionary and dictionary[key] is not None and os.path.isfile(dictionary[key])
 
     def load_output_file(self, **kwargs):
         outputs = p.load_output_file(self)
@@ -2495,13 +2502,19 @@ class ImagingEpoch(Epoch):
     def dual_mode_source_extraction(self, path: str, image_type: str = "coadded_trimmed"):
         image_dict = self._get_images(image_type=image_type)
         u.mkdir_check(path)
+        if self.deepest is None:
+            if self.deepest_filter is not None:
+                self.deepest = image_dict[self.deepest_filter]
+            else:
+                raise ValueError(f"deepest for {self.name} is None; make sure you have run photometric_calibration.")
         for fil in image_dict:
             img = image_dict[fil]
             configs = self.source_extractor_config
             img.source_extraction_psf(
                 output_dir=path,
                 phot_autoparams=f"{configs['kron_factor']},{configs['kron_radius_min']}",
-                template=self.deepest)
+                template=self.deepest
+            )
 
     def proc_get_photometry(self, output_dir: str, **kwargs):
         if "image_type" in kwargs and isinstance(kwargs["image_type"], str):
@@ -2821,6 +2834,8 @@ class ImagingEpoch(Epoch):
         })
         return output_dict
 
+
+
     def load_output_file(self, **kwargs):
         outputs = super().load_output_file(**kwargs)
         if type(outputs) is dict:
@@ -2830,7 +2845,7 @@ class ImagingEpoch(Epoch):
                     self.date = outputs["date"]
             if "filters" in outputs:
                 self.filters = outputs["filters"]
-            if "deepest" in outputs and outputs["deepest"] is not None:
+            if self._check_output_file_path("deepest", outputs):
                 self.deepest = cls(path=outputs["deepest"])
             if "deepest_filter" in outputs:
                 self.deepest_filter = outputs["deepest_filter"]
@@ -2850,32 +2865,38 @@ class ImagingEpoch(Epoch):
                 self.astrometry_successful = outputs["astrometry_successful"]
             if "frames_raw" in outputs:
                 for frame in set(outputs["frames_raw"]):
-                    self.add_frame_raw(raw_frame=frame)
+                    if os.path.isfile(frame):
+                        self.add_frame_raw(raw_frame=frame)
             if "frames_reduced" in outputs:
                 for fil in outputs["frames_reduced"]:
                     if outputs["frames_reduced"][fil] is not None:
                         for frame in set(outputs["frames_reduced"][fil]):
-                            self.add_frame_reduced(reduced_frame=frame)
+                            if os.path.isfile(frame):
+                                self.add_frame_reduced(reduced_frame=frame)
             if "frames_normalised" in outputs:
                 for fil in outputs["frames_normalised"]:
                     if outputs["frames_normalised"][fil] is not None:
                         for frame in set(outputs["frames_normalised"][fil]):
-                            self.add_frame_normalised(norm_frame=frame)
+                            if os.path.isfile(frame):
+                                self.add_frame_normalised(norm_frame=frame)
             if "frames_registered" in outputs:
                 for fil in outputs["frames_registered"]:
                     if outputs["frames_registered"][fil] is not None:
                         for frame in set(outputs["frames_registered"][fil]):
-                            self.add_frame_registered(registered_frame=frame)
+                            if os.path.isfile(frame):
+                                self.add_frame_registered(registered_frame=frame)
             if "frames_astrometry" in outputs:
                 for fil in outputs["frames_astrometry"]:
                     if outputs["frames_astrometry"][fil] is not None:
                         for frame in set(outputs["frames_astrometry"][fil]):
-                            self.add_frame_astrometry(astrometry_frame=frame)
+                            if os.path.isfile(frame):
+                                self.add_frame_astrometry(astrometry_frame=frame)
             if "frames_diagnosed" in outputs:
                 for fil in outputs["frames_diagnosed"]:
                     if outputs["frames_diagnosed"][fil] is not None:
                         for frame in set(outputs["frames_diagnosed"][fil]):
-                            self.add_frame_diagnosed(diagnosed_frame=frame)
+                            if os.path.isfile(frame):
+                                self.add_frame_diagnosed(diagnosed_frame=frame)
             if "coadded" in outputs:
                 for fil in outputs["coadded"]:
                     if outputs["coadded"][fil] is not None:
