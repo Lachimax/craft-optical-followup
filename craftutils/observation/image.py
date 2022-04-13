@@ -850,7 +850,7 @@ class ImagingImage(Image):
         :return: HDUList representing the PSF model FITS file.
         """
         psfex_output = None
-        if force or self.psfex_path is None:
+        if force or self.psfex_path is None or not os.path.isfile(self.psfex_path):
             config = p.path_to_config_sextractor_config_pre_psfex()
             output_params = p.path_to_config_sextractor_param_pre_psfex()
             catalog = self.source_extraction(
@@ -1040,7 +1040,7 @@ class ImagingImage(Image):
             if self.source_cat is None:
                 self.source_cat = self._load_source_cat_sextractor(path=self.source_cat_sextractor_path)
         else:
-            print("source_cat could not be loaded because source_cat_sextractor_path has not been set.")
+            print("source_cat could not be loaded from SE file because source_cat_sextractor_path has not been set.")
 
     def load_source_cat_sextractor_dual(self, force: bool = False):
         if self.source_cat_sextractor_dual_path is not None:
@@ -1049,7 +1049,7 @@ class ImagingImage(Image):
             if self.source_cat_dual is None:
                 self.source_cat_dual = self._load_source_cat_sextractor(path=self.source_cat_sextractor_dual_path)
         else:
-            print("source_cat_dual could not be loaded because source_cat_sextractor_dual_path has not been set.")
+            print("source_cat_dual could not be loaded from SE file because source_cat_sextractor_dual_path has not been set.")
 
     def load_source_cat(self, force: bool = False):
         u.debug_print(2, f"ImagingImage.load_source_cat(): {self}.name ==", self.name)
@@ -1750,7 +1750,7 @@ class ImagingImage(Image):
                     self.depth["point_secure"][snr_key][f"{sigma}-sigma"] = src_lim_point[f"MAG_AUTO_ZP_{zeropoint_name}"]
                 else:
                     self.depth["point_secure"][snr_key][f"{sigma}-sigma"] = None
-
+                self.update_output_file()
 
         source_cat.sort("NUMBER")
         self.add_log(
@@ -2105,15 +2105,19 @@ class ImagingImage(Image):
 
             matches_coord = SkyCoord(matches_source_cat["RA"], matches_source_cat["DEC"])
 
-            offset_ra = matches_source_cat["RA"] - matches_ext_cat[ra_col]
-            offset_dec = matches_source_cat["DEC"] - matches_ext_cat[dec_col]
-
             sigma_clip = SigmaClip(sigma=3.)
-            distance_clipped = sigma_clip(distance)
+            distance_clipped = sigma_clip(distance, masked=False)
+            distance_clipped_masked = sigma_clip(distance, masked=True)
+            mask = ~distance_clipped_masked.mask
+            # print(distance_clipped)
+            # print(distance_clipped ** 2)
 
-            mean_offset = np.mean(distance)
-            median_offset = np.median(distance)
-            rms_offset = np.sqrt(np.mean(distance ** 2))
+            offset_ra = matches_source_cat["RA"][mask] - matches_ext_cat[ra_col][mask]
+            offset_dec = matches_source_cat["DEC"][mask] - matches_ext_cat[dec_col][mask]
+
+            mean_offset = np.mean(distance_clipped)
+            median_offset = np.median(distance_clipped)
+            rms_offset = np.sqrt(np.mean(distance_clipped ** 2))
             rms_offset_ra = np.sqrt(np.mean(offset_ra ** 2))
             rms_offset_dec = np.sqrt(np.mean(offset_dec ** 2))
 
@@ -2149,6 +2153,7 @@ class ImagingImage(Image):
                 bins=int(np.sqrt(len(distance_clipped)))
             )
             plt.xlabel("Offset (\")")
+            plt.legend()
             if show_plots:
                 plt.show()
             plt.savefig(os.path.join(output_path, f"{self.name}_astrometry_offset_hist.pdf"))
