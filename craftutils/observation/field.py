@@ -2843,7 +2843,6 @@ class ImagingEpoch(Epoch):
 
     def load_output_file(self, **kwargs):
         outputs = super().load_output_file(**kwargs)
-        print(outputs["filters"])
         if isinstance(outputs, dict):
             cls = image.Image.select_child_class(instrument=self.instrument_name, mode='imaging')
             if self.date is None:
@@ -2851,7 +2850,6 @@ class ImagingEpoch(Epoch):
                     self.date = outputs["date"]
             if "filters" in outputs:
                 self.filters = outputs["filters"]
-            print(self.filters)
             if self._check_output_file_path("deepest", outputs):
                 self.deepest = cls(path=outputs["deepest"])
             if "deepest_filter" in outputs:
@@ -3937,7 +3935,6 @@ class PanSTARRS1ImagingEpoch(ImagingEpoch):
                 snr_cut=snr_min,
                 star_class_tol=star_class_tolerance,
                 image_name="PanSTARRS Cutout",
-                suppress_select=True
             )
             img.zeropoint_best = img.zeropoints["panstarrs1"]
             img.estimate_depth(zeropoint_name="panstarrs1")
