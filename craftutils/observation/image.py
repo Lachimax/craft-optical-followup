@@ -2357,14 +2357,30 @@ class ImagingImage(Image):
         if output_path is None:
             output_path = self.path.replace(".fits", "_trimmed.fits")
         image = self.copy_with_outputs(output_path)
-        ff.trim_file(
-            path=self.path,
-            left=left, right=right, bottom=bottom, top=top,
-            new_path=output_path
+
+        image.load_headers()
+        image.load_data()
+
+        header = image.headers[ext]
+
+        # Move reference pixel to account for trim; this should keep the same sky coordinate at the ref pix
+        image.set_header_item(
+            key='CRPIX1',
+            value=header['CRPIX1'] - left,
+            ext=ext,
+            write=False
         )
-        # image.load_headers(force=True)
-        # image.load_data(force=True)
-        # image.log = self.log.copy()
+        image.set_header_item(
+            key='CRPIX2',
+            value=header['CRPIX2'] - bottom,
+            ext=ext,
+            write=False
+        )
+
+        image.data[ext] = u.trim_image(
+            data=image.data[ext],
+            left=left, right=right, bottom=bottom, top=top
+        )
 
         image.add_log(
             action=f"Trimmed image to margins left={left}, right={right}, bottom={bottom}, top={top}",
@@ -2372,6 +2388,7 @@ class ImagingImage(Image):
             output_path=output_path
         )
         image.update_output_file()
+        image.write_fits_file()
 
         return image
 
