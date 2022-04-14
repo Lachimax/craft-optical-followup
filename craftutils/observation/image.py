@@ -1353,7 +1353,8 @@ class ImagingImage(Image):
                     else:
                         j = 1
                     zp = self.zeropoints[cat][img_name]
-                    zp["selection_index"] = 1 / ((i + 1) * j * zp['zeropoint_img_err'])
+                    zp["selection_index"] = 1 / zp['zeropoint_img_err']
+                    # ((i + 1) * j * zp['zeropoint_img_err'])
                     zps.append(zp)
 
         zp_tbl = table.QTable(zps)
@@ -2599,7 +2600,7 @@ class ImagingImage(Image):
         self._set_source_cat(source_cat, dual)
 
         self.update_output_file()
-        print("MEDIAN SNR:", np.median(source_cat["SNR_CCD"]))
+        print("MEDIAN SNR:", np.nanmedian(source_cat["SNR_CCD"]))
 
         self.add_log(
             action=f"Estimated SNR using CCD Equation.",
