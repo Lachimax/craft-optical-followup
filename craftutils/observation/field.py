@@ -670,10 +670,6 @@ class Field:
         else:
             print("Could not load catalogue; field is outside footprint.")
 
-    def get_photometry(self):
-        for obj in self.objects:
-            pass
-
     def generate_astrometry_indices(self, cat_name: str = "gaia"):
         self.retrieve_catalogue(cat_name=cat_name)
         if not self.check_cat(cat_name=cat_name):
@@ -947,12 +943,12 @@ class FRBField(Field):
             show_frb: bool = True,
             frame: units.Quantity = 30 * units.pix,
             n: int = 1, n_x: int = 1, n_y: int = 1,
-            show_cbar: bool = False,
-            show_grid: bool = False,
-            ticks: int = None, interval: str = 'minmax',
-            show_coords: bool = True,
-            font_size: int = 12,
-            reverse_y=False,
+            # show_cbar: bool = False,
+            # show_grid: bool = False,
+            # ticks: int = None, interval: str = 'minmax',
+            # show_coords: bool = True,
+            # font_size: int = 12,
+            # reverse_y=False,
             frb_kwargs: dict = {},
             imshow_kwargs: dict = {},
             normalize_kwargs: dict = {},
@@ -1830,6 +1826,14 @@ class ImagingEpoch(Epoch):
 
         stages = super().stages()
         stages.update({
+            "download": {
+                "method": cls.proc_download,
+                "message": "Pretend to download files? (download not actualy implemented for this class)",
+                "default": False,
+                "keywords": {
+                    "alternate_dir": None
+                }
+            },
             "register_frames": {
                 "method": cls.proc_register,
                 "message": "Register frames using astroalign?",
@@ -1922,6 +1926,9 @@ class ImagingEpoch(Epoch):
 
     def n_frames(self, fil: str):
         return len(self.frames_reduced[fil])
+
+    def proc_download(self):
+        pass
 
     def proc_register(self, output_dir: str, **kwargs):
         self.frames_registered = {}
@@ -2834,11 +2841,10 @@ class ImagingEpoch(Epoch):
         })
         return output_dict
 
-
-
     def load_output_file(self, **kwargs):
         outputs = super().load_output_file(**kwargs)
-        if type(outputs) is dict:
+        print(type(outputs))
+        if isinstance(outputs, dict) is dict:
             cls = image.Image.select_child_class(instrument=self.instrument_name, mode='imaging')
             if self.date is None:
                 if "date" in outputs:
@@ -2918,6 +2924,8 @@ class ImagingEpoch(Epoch):
                         self.add_coadded_astrometry_image(img=outputs["coadded_astrometry"][fil], key=fil, **kwargs)
             if "std_pointings" in outputs:
                 self.std_pointings = outputs["std_pointings"]
+
+        print(self.filters)
 
         return outputs
 
@@ -3815,13 +3823,15 @@ class PanSTARRS1ImagingEpoch(ImagingEpoch):
     instrument_name = "panstarrs1"
     mode = "imaging"
 
-    def __init__(self,
-                 name: str = None,
-                 field: Union[str, Field] = None,
-                 param_path: str = None,
-                 data_path: str = None,
-                 source_extractor_config: dict = None
-                 ):
+    def __init__(
+            self,
+            name: str = None,
+            field: Union[str, Field] = None,
+            param_path: str = None,
+            data_path: str = None,
+            source_extractor_config: dict = None,
+            **kwargs
+    ):
         super().__init__(name=name,
                          field=field,
                          param_path=param_path,
@@ -3850,6 +3860,11 @@ class PanSTARRS1ImagingEpoch(ImagingEpoch):
         }
         return stages
 
+    def _pipeline_init(self):
+        super()._pipeline_init()
+        self.coadded_final = "coadded"
+        self.paths["download"] = os.path.join(self.data_path, "0-download")
+
     def proc_download(self, output_dir: str, **kwargs):
         """
         Automatically download PanSTARRS1 cutout.
@@ -3866,18 +3881,20 @@ class PanSTARRS1ImagingEpoch(ImagingEpoch):
         self.source_extraction(output_dir=output_dir, do_diagnostics=do_diag, **kwargs)
 
     def proc_get_photometry(self, output_dir: str, **kwargs):
+        self.load_output_file()
         self.get_photometry(output_dir, image_type="coadded")
 
     def _initial_setup(self, output_dir: str, **kwargs):
-        for file in filter(lambda f: f.endswith(".fits"), os.listdir(self.data_path)):
-            shutil.move(os.path.join(self.data_path, file), output_dir)
-        self.set_path("imaging_dir", output_dir)
+        download_dir = self.paths["download"]
+        # for file in filter(lambda f: f.endswith(".fits"), os.listdir("download")):
+        #     shutil.move(os.path.join(self.data_path, file), output_dir)
+        self.set_path("imaging_dir", download_dir)
         # Write a table of fits files from the 0-imaging directory.
         table_path_all = os.path.join(self.data_path, f"{self.name}_fits_table_all.csv")
         self.set_path("fits_table", table_path_all)
-        image.fits_table_all(input_path=output_dir, output_path=table_path_all, science_only=False)
-        for file in filter(lambda f: f.endswith(".fits"), os.listdir(output_dir)):
-            path = os.path.join(output_dir, file)
+        image.fits_table_all(input_path=download_dir, output_path=table_path_all, science_only=False)
+        for file in filter(lambda f: f.endswith(".fits"), os.listdir(download_dir)):
+            path = os.path.join(download_dir, file)
             img = image.PanSTARRS1Cutout(path=path)
 
             # img.open(mode="update")
@@ -3887,8 +3904,9 @@ class PanSTARRS1ImagingEpoch(ImagingEpoch):
             #     img.hdu_list.pop(1)
             # img.close()
 
-            img.extract_filter()
-            self.coadded[img.filter] = img
+            fil = img.extract_filter()
+            print(fil)
+            self.add_coadded_image(img, key=fil)
             self.check_filter(img.filter)
 
     def guess_data_path(self):
@@ -3901,10 +3919,12 @@ class PanSTARRS1ImagingEpoch(ImagingEpoch):
             output_path: str,
             distance_tolerance: units.Quantity = 0.2 * units.arcsec,
             snr_min: float = 10.,
-            star_class_tolerance: float = 0.95
+            star_class_tolerance: float = 0.95,
+            **kwargs
     ):
+        print(self.filters)
         deepest = self.coadded[self.filters[0]]
-        for fil in self.filters:
+        for fil in self.coadded:
             img = self.coadded[fil]
             img.zeropoint(
                 cat_path=self.field.get_path("cat_csv_panstarrs1"),
@@ -3915,8 +3935,9 @@ class PanSTARRS1ImagingEpoch(ImagingEpoch):
                 snr_cut=snr_min,
                 star_class_tol=star_class_tolerance,
                 image_name="PanSTARRS Cutout",
+                suppress_select=True
             )
-            img.zeropoint_best = img.zeropoints["panstarrs1"]
+            # img.zeropoint_best = img.zeropoints["panstarrs1"]
             img.estimate_depth(zeropoint_name="panstarrs1")
 
             deepest = image.deepest(deepest, img)
@@ -3938,6 +3959,15 @@ class PanSTARRS1ImagingEpoch(ImagingEpoch):
 
         if field is None:
             field = param_dict.pop("field")
+
+        if "field" in param_dict:
+            param_dict.pop("field")
+        if "instrument" in param_dict:
+            param_dict.pop("instrument")
+        if "name" in param_dict:
+            param_dict.pop("name")
+        if "param_path" in param_dict:
+            param_dict.pop("param_path")
 
         epoch = cls(
             name=name,
@@ -4360,10 +4390,6 @@ class ESOImagingEpoch(ImagingEpoch):
                 dn_left = dn_left + 5
                 dn_right = dn_right - 5
                 dn_bottom = dn_bottom + 5
-                print('Upper chip:')
-                print(up_left, up_right, up_top, up_bottom)
-                print('Lower:')
-                print(dn_left, dn_right, dn_top, dn_bottom)
 
                 edged = True
 
@@ -4589,6 +4615,7 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
 
         u.debug_print(2, f"FORS2ImagingEpoch.stages(): stages ==", stages)
         return stages
+
 
     def _pipeline_init(self):
         super()._pipeline_init()
