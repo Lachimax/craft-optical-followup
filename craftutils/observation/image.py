@@ -453,7 +453,7 @@ class Image:
                         self.data.append(h.data * this_unit)
                     except TypeError or ValueError:
                         # If unit could not be parsed, assume counts
-                        self.data.append(h.data * units.ct, self.hdu_list)
+                        self.data.append(h.data * units.ct)
                 else:
                     self.data.append(None)
 
@@ -543,9 +543,12 @@ class Image:
         self.chip_number = chip
         return chip
 
-    def extract_unit(self):
+    def extract_unit(self, astropy: bool = False):
         key = self.header_keys()["unit"]
-        return self.extract_header_item(key)
+        unit = self.extract_header_item(key)
+        if astropy:
+            unit = units.Unit(unit)
+        return unit
 
     def extract_units(self):
         key = self.header_keys()["unit"]
@@ -629,10 +632,16 @@ class Image:
         for i in range(len(self.headers)):
             if i >= len(self.hdu_list):
                 self.hdu_list.append(fits.ImageHDU())
+            if self.data is not None:
+                unit = self.data[i].unit
+                self.hdu_list[i].data = u.dequantify(self.data[i])
+                self.set_header_item(
+                    key=self.header_keys()["unit"],
+                    value=str(unit),
+                    ext=i
+                )
             if self.headers is not None:
                 self.hdu_list[i].header = self.headers[i]
-            if self.data is not None:
-                self.hdu_list[i].data = u.dequantify(self.data[i])
 
         while len(self.hdu_list) > len(self.headers):
             self.hdu_list.pop(-1)
@@ -2328,6 +2337,7 @@ class ImagingImage(Image):
         )
         self.psf_stats = results
         self.update_output_file()
+        self.write_fits_file()
         return results, stars_moffat, stars_gauss, stars_sex
 
     def trim(
@@ -2388,10 +2398,13 @@ class ImagingImage(Image):
         read_noise = self.extract_noise_read()
 
         new.load_data()
+        print(new.data[ext].unit)
         new_data = new.data[ext]
         # new_data *= gain
         new_data /= exp_time
-        new.data[ext] = new_data.value
+        print(new_data.unit)
+        new.data[ext] = new_data
+
         u.debug_print(1, "Image.concert_to_cs() 2: new_data.unit ==", new_data.unit)
 
         header_keys = self.header_keys()
@@ -2462,6 +2475,8 @@ class ImagingImage(Image):
         other_image.load_headers(force=True)
         print(f"Reprojecting {self.filename} into the pixel space of {other_image.filename}")
         reprojected, footprint = rp.reproject_exact(self.path, other_image.headers[ext], parallel=True)
+        reprojected *= other_image.extract_unit(astropy=True)
+        footprint *= units.pix
 
         if output_path == self.path:
             reprojected_image = self
@@ -2487,7 +2502,7 @@ class ImagingImage(Image):
         )
         reprojected_image.update_output_file()
         reprojected_image.transfer_wcs(other_image=other_image)
-        reprojected_image.write_fits_file()
+        # reprojected_image.write_fits_file()
 
         return reprojected_image
 
@@ -3364,8 +3379,11 @@ class ImagingImage(Image):
         """
         data = self.load_data()[ext]
         segmap = self.generate_segmap(
-            ext=ext, threshold=threshold, method=method,
-            margins=margins)
+            ext=ext,
+            threshold=threshold,
+            method=method,
+            margins=margins
+        )
         self.load_wcs()
 
         unmasked = u.check_iterable(unmasked)

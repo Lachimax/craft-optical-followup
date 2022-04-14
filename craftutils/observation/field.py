@@ -1856,7 +1856,7 @@ class ImagingEpoch(Epoch):
             },
             "coadd": {
                 "method": cls.proc_coadd,
-                "message": "Coadd astrometry-corrected frames with Montage?",
+                "message": "Coadd frames with Montage?",
                 "default": True,
                 "keywords": {
                     "frames": "astrometry",  # normalised, trimmed
@@ -2275,7 +2275,7 @@ class ImagingEpoch(Epoch):
             combined_img.area_file = area_final
             coadded_median.load_headers()
             combined_img.load_data()
-            combined_img.data[0] = combined_ccd.data
+            combined_img.data[0] = combined_ccd.data * coadded_median.extract_unit(astropy=True)
             u.debug_print(3, f"ImagingEpoch.coadd(): {combined_img}.headers ==", combined_img.headers)
             combined_img.add_log(
                 "Co-added image using Montage for reprojection & ccdproc for coaddition; see ancestor_logs for input images.",
@@ -4401,6 +4401,9 @@ class ESOImagingEpoch(ImagingEpoch):
                     key='BUNIT',
                     value="ct"
                 )
+
+                frame.write_fits_file()
+
                 if frame.extract_chip_number() == 1:
                     print('Upper Chip:')
                     trimmed = frame.trim(
@@ -4489,7 +4492,7 @@ class ESOImagingEpoch(ImagingEpoch):
     def load_output_file(self, **kwargs):
         outputs = super().load_output_file(**kwargs)
         if type(outputs) is dict:
-            cls = image.Image.select_child_class(instrument=self.instrument_name, mode='imaging')
+            # cls = image.Image.select_child_class(instrument=self.instrument_name, mode='imaging')
             if "frames_trimmed" in outputs:
                 for fil in outputs["frames_trimmed"]:
                     if outputs["frames_trimmed"][fil] is not None:
