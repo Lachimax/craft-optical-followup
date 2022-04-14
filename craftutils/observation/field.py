@@ -2843,14 +2843,15 @@ class ImagingEpoch(Epoch):
 
     def load_output_file(self, **kwargs):
         outputs = super().load_output_file(**kwargs)
-        print(type(outputs))
-        if isinstance(outputs, dict) is dict:
+        print(outputs["filters"])
+        if isinstance(outputs, dict):
             cls = image.Image.select_child_class(instrument=self.instrument_name, mode='imaging')
             if self.date is None:
                 if "date" in outputs:
                     self.date = outputs["date"]
             if "filters" in outputs:
                 self.filters = outputs["filters"]
+            print(self.filters)
             if self._check_output_file_path("deepest", outputs):
                 self.deepest = cls(path=outputs["deepest"])
             if "deepest_filter" in outputs:
@@ -3040,6 +3041,7 @@ class ImagingEpoch(Epoch):
         :param fil:
         :return: False if None, True if not.
         """
+        print(fil)
         if fil not in (None, "", " "):
             if fil not in self.filters:
                 print(f"Adding {fil} to filter list")
@@ -3907,7 +3909,7 @@ class PanSTARRS1ImagingEpoch(ImagingEpoch):
             fil = img.extract_filter()
             print(fil)
             self.add_coadded_image(img, key=fil)
-            self.check_filter(img.filter)
+            self.check_filter(img.filter_name)
 
     def guess_data_path(self):
         if self.data_path is None and self.field is not None and self.field.data_path is not None:
@@ -3923,7 +3925,7 @@ class PanSTARRS1ImagingEpoch(ImagingEpoch):
             **kwargs
     ):
         print(self.filters)
-        deepest = self.coadded[self.filters[0]]
+        deepest = None
         for fil in self.coadded:
             img = self.coadded[fil]
             img.zeropoint(
@@ -3937,10 +3939,13 @@ class PanSTARRS1ImagingEpoch(ImagingEpoch):
                 image_name="PanSTARRS Cutout",
                 suppress_select=True
             )
-            # img.zeropoint_best = img.zeropoints["panstarrs1"]
+            img.zeropoint_best = img.zeropoints["panstarrs1"]
             img.estimate_depth(zeropoint_name="panstarrs1")
 
-            deepest = image.deepest(deepest, img)
+            if deepest is not None:
+                deepest = image.deepest(deepest, img)
+            else:
+                deepest = img
 
         return deepest
 

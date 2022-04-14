@@ -4136,7 +4136,7 @@ class FORS2CoaddedImage(CoaddedImage):
             mag_range_sex_lower: units.Quantity = -100. * units.mag,
             mag_range_sex_upper: units.Quantity = 100. * units.mag,
             dist_tol: units.Quantity = 2. * units.arcsec,
-            snr_cut=100
+            snr_cut=10.
     ):
         super().zeropoint(
             cat_path=cat_path,
