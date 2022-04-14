@@ -2346,7 +2346,8 @@ class ImagingImage(Image):
             right: Union[int, units.Quantity] = None,
             bottom: Union[int, units.Quantity] = None,
             top: Union[int, units.Quantity] = None,
-            output_path: str = None
+            output_path: str = None,
+            ext: int = 0
     ):
         left = u.dequantify(left, unit=units.pix)
         right = u.dequantify(right, unit=units.pix)
@@ -3343,8 +3344,10 @@ class ImagingImage(Image):
                 data_trim,
                 err=err,
                 thresh=threshold,
-                deblend_cont=True, clean=False,
-                segmentation_map=True, minarea=min_area
+                #deblend_cont=True,
+                clean=False,
+                segmentation_map=True,
+                minarea=min_area
             )
 
         else:
@@ -3829,6 +3832,7 @@ class CoaddedImage(ImagingImage):
         trimmed = super().trim(left=left, right=right, bottom=bottom, top=top, output_path=output_path)
         # Trim the area file in the same way.
         new_area_path = output_path.replace(".fits", "_area.fits")
+
         ff.trim_file(
             path=self.area_file,
             left=left, right=right, bottom=bottom, top=top,
