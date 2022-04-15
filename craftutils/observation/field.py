@@ -1,11 +1,9 @@
 # Code by Lachlan Marnoch, 2021
-import copy
 import datetime
 import os
 import warnings
 from typing import Union, List, Dict
 import shutil
-from collections import OrderedDict
 
 try:
     import ccdproc
@@ -13,7 +11,6 @@ except ImportError:
     print('There is a problem with ccdproc. Some functionality will not be available.')
 
 import matplotlib.pyplot as plt
-from matplotlib.patches import Ellipse
 import numpy as np
 
 from astropy.time import Time
@@ -22,7 +19,6 @@ import astropy.units as units
 import astropy.table as table
 import astropy.io.fits as fits
 from astropy.modeling import models, fitting
-from astropy.stats import sigma_clip
 
 import craftutils.astrometry as astm
 import craftutils.fits_files as ff
@@ -35,7 +31,7 @@ import craftutils.observation.survey as survey
 import craftutils.params as p
 import craftutils.plotting as pl
 import craftutils.retrieve as retrieve
-import craftutils.spectroscopy as spec
+import craftutils.wrap.pypeit as spec
 import craftutils.utils as u
 import craftutils.wrap.montage as montage
 import craftutils.wrap.dragons as dragons
