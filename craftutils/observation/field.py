@@ -1268,7 +1268,7 @@ class Epoch:
         self.date = date
         if isinstance(self.date, datetime.date):
             self.date = str(self.date)
-        print(self.date, type(self.date))
+        # print(self.date, type(self.date))
         if not isinstance(self.date, Time) and self.date is not None:
             self.date = Time(self.date, out_subfmt="date")
         self.program_id = program_id
@@ -1894,7 +1894,7 @@ class ImagingEpoch(Epoch):
                 "default": True,
                 "keywords": {
                     "distance_tolerance": None,
-                    "snr_min": 10,
+                    "snr_min": 3.,
                     "class_star_tolerance": 0.95,
                     "image_type": "coadded_trimmed",
                     "preferred_zeropoint": {},
@@ -2387,12 +2387,26 @@ class ImagingEpoch(Epoch):
         do_diag = True
         if "do_astrometry_diagnostics" in kwargs:
             do_diag = kwargs["do_astrometry_diagnostics"]
-        self.source_extraction(output_dir=output_dir, do_diagnostics=do_diag, **kwargs)
+        for image_type in "final", "coadded_unprojected":
+            self.source_extraction(
+                output_dir=output_dir,
+                do_diagnostics=do_diag,
+                image_type=image_type,
+                **kwargs
+            )
 
-    def source_extraction(self, output_dir: str, do_diagnostics: bool = True, **kwargs):
-        images = self._get_images("final")
+    def source_extraction(
+            self,
+            output_dir: str,
+            do_diagnostics: bool = True,
+            image_type: str = "final",
+            **kwargs
+    ):
+        images = self._get_images(image_type)
+        print("Extracting sources for", image_type)
         for fil in images:
             img = images[fil]
+            print(f"Extracting sources from {img}")
             configs = self.source_extractor_config
 
             img.psfex_path = None
@@ -2427,7 +2441,7 @@ class ImagingEpoch(Epoch):
         if "distance_tolerance" in kwargs and kwargs["distance_tolerance"] is not None:
             kwargs["distance_tolerance"] = u.check_quantity(kwargs["distance_tolerance"], units.arcsec, convert=True)
         if "snr_min" not in kwargs or kwargs["snr_min"] is None:
-            kwargs["snr_min"] = 10.
+            kwargs["snr_min"] = 3.
         if "class_star_tolerance" not in kwargs:
             kwargs["star_class_tolerance"] = 0.95
         if "suppress_select" not in kwargs:
@@ -2455,7 +2469,7 @@ class ImagingEpoch(Epoch):
             image_dict: dict,
             output_path: str,
             distance_tolerance: units.Quantity = None,
-            snr_min: float = 10.,
+            snr_min: float = 3.,
             star_class_tolerance: float = 0.95,
             suppress_select: bool = False,
             **kwargs
@@ -2533,6 +2547,7 @@ class ImagingEpoch(Epoch):
         :return:
         """
 
+        print(f"Getting finalised photometry for key objects, in {image_type}.")
         obs.load_master_objects_table()
 
         image_dict = self._get_images(image_type=image_type)
@@ -2565,6 +2580,10 @@ class ImagingEpoch(Epoch):
                 )
                 obj.cat_row = nearest
                 print()
+                if self.date is None:
+                    date = None
+                else:
+                    date = str(self.date.isot)
                 obj.add_photometry(
                     instrument=self.instrument_name,
                     fil=fil,
@@ -2584,7 +2603,7 @@ class ImagingEpoch(Epoch):
                     dec_err=np.sqrt(nearest["ERRY2_WORLD"]),
                     kron_radius=nearest["KRON_RADIUS"],
                     separation_from_given=separation,
-                    epoch_date=str(self.date.isot),
+                    epoch_date=date,
                     class_star=nearest["CLASS_STAR"],
                     mag_psf=nearest["MAG_PSF_ZP_best"],
                     mag_psf_err=nearest["MAGERR_PSF_ZP_best"],
@@ -2645,7 +2664,22 @@ class ImagingEpoch(Epoch):
             nice_name = f"{self.field.name}_{self.instrument.nice_name().replace('/', '-')}_{fil.replace('_', '-')}_{self.date.strftime('%Y-%m-%d')}.fits"
 
             if img != img_projected:
-                img.copy_headers(img_projected)
+                astm_rms = img_projected.extract_astrometry_err().value
+                psf_fwhm = img_projected.extract_header_item(key="PSF_FWHM")
+                psf_fwhm_err = img_projected.extract_header_item(key="PSF_FWHM_ERR")
+                img.set_header_items(
+                    items={
+                        # 'ASTM_RMS': astm_rms,
+                        # 'RA_RMS': img_projected.extract_header_item(key="RA_RMS"),
+                        # 'DEC_RMS': img_projected.extract_header_item(key="DEC_RMS"),
+                        # 'PSF_FWHM': psf_fwhm,
+                        # 'PSF_FWHM_ERR': psf_fwhm_err,
+                        'ZP': img_projected.extract_header_item(key="ZP"),
+                        'ZP_ERR': img_projected.extract_header_item(key="ZP_ERR"),
+                        'ZPCAT': img_projected.extract_header_item(key="ZP_CAT")
+                    },
+                    write=True,
+                )
 
             img.copy_with_outputs(os.path.join(
                 self.data_path,
@@ -2742,6 +2776,7 @@ class ImagingEpoch(Epoch):
 
         for fil in images:
             img = images[fil]
+            print(f"Performing PSF measurements on {img}...")
             self.psf_stats[fil], _, _, _ = img.psf_diagnostics()
 
         self.update_output_file()
@@ -2758,7 +2793,7 @@ class ImagingEpoch(Epoch):
             image_dict = self.coadded_trimmed
         elif image_type == "coadded":
             image_dict = self.coadded
-        elif image_type == "coadded_unprojected":
+        elif image_type in ["coadded_unprojected", "unprojected"]:
             image_dict = self.coadded_unprojected
         elif image_type == "coadded_astrometry":
             image_dict = self.coadded_astrometry
@@ -3343,7 +3378,7 @@ class FORS2StandardEpoch(StandardEpoch, ImagingEpoch):
             image_dict: dict,
             output_path: str,
             distance_tolerance: units.Quantity = None,
-            snr_min: float = 10.,
+            snr_min: float = 3.,
             star_class_tolerance: float = 0.9,
             suppress_select: bool = False,
             **kwargs
@@ -3873,7 +3908,11 @@ class PanSTARRS1ImagingEpoch(ImagingEpoch):
         do_diag = False
         if "do_astrometry_diagnostics" in kwargs:
             do_diag = kwargs["astrometry_diagnostics"]
-        self.source_extraction(output_dir=output_dir, do_diagnostics=do_diag, **kwargs)
+        self.source_extraction(
+            output_dir=output_dir,
+            do_diagnostics=do_diag,
+            **kwargs
+        )
 
     def proc_get_photometry(self, output_dir: str, **kwargs):
         self.load_output_file()
@@ -3906,7 +3945,7 @@ class PanSTARRS1ImagingEpoch(ImagingEpoch):
             self,
             output_path: str,
             distance_tolerance: units.Quantity = 0.2 * units.arcsec,
-            snr_min: float = 10.,
+            snr_min: float = 3.,
             star_class_tolerance: float = 0.95,
             **kwargs
     ):
@@ -3924,8 +3963,8 @@ class PanSTARRS1ImagingEpoch(ImagingEpoch):
                 star_class_tol=star_class_tolerance,
                 image_name="PanSTARRS Cutout",
             )
-            img.zeropoint_best = img.zeropoints["panstarrs1"]
-            img.estimate_depth(zeropoint_name="panstarrs1")
+            img.select_zeropoint(True)
+            img.estimate_depth(zeropoint_name="panstarrs1")#, do_magnitude_calibration=False)
 
             if deepest is not None:
                 deepest = image.deepest(deepest, img)
@@ -5061,7 +5100,7 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
                 img = images[fil]
                 if fil in std_epoch.frames_reduced:
                     for std in std_epoch.frames_reduced[fil]:
-                        print(std, type(std))
+                        # print(std, type(std))
                         img.add_zeropoint_from_other(std)
 
         zeropoints = p.load_params(zeropoint_yaml)

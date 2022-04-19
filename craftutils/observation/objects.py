@@ -391,6 +391,7 @@ class Object:
         if fil not in self.photometry[instrument]:
             self.photometry[instrument][fil] = {}
         self.photometry[instrument][fil][epoch_name] = kwargs
+        self.update_output_file()
         return kwargs
 
     def find_in_cat(self, cat_name: str):

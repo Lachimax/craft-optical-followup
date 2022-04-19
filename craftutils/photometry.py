@@ -51,7 +51,8 @@ def image_psf_diagnostics(
         ra_col: str = "RA",
         dec_col: str = "DEC",
         output: str = None,
-        min_stars: int = 30
+        min_stars: int = 30,
+        plot_file_prefix: str = ""
 ):
     hdu, path = ff.path_or_hdu(hdu=hdu)
     hdu = copy.deepcopy(hdu)
@@ -159,6 +160,7 @@ def image_psf_diagnostics(
     print(f"Num stars after sigma clipping w. Sextractor PSF:", len(stars_clip_sex))
 
     plt.close()
+    print(f"image_psf_diagnostics(): {output=}")
     if output is not None:
 
         with quantity_support():
@@ -178,7 +180,7 @@ def image_psf_diagnostics(
                     bins=int(np.sqrt(len(stars_clip_moffat)))
                 )
                 plt.legend()
-                plt.savefig(os.path.join(output, f"psf_histogram_{colname}.png"))
+                plt.savefig(os.path.join(output, f"{plot_file_prefix}_psf_histogram_{colname}.png"))
                 plt.close()
 
     return stars_clip_moffat, stars_clip_gauss, stars_clip_sex
@@ -291,12 +293,12 @@ def fit_background(data: np.ndarray, model_type='polynomial', deg: int = 2, foot
     else:
         raise ValueError("Unrecognised model; must be in", accepted_models)
     fitter = fitting.LevMarLSQFitter()
-    print(footprint)
+    # print(footprint)
     if weights is not None:
         weights = weights[footprint[0]:footprint[1], footprint[2]:footprint[3]]
-    print(data[footprint[0]:footprint[1], footprint[2]:footprint[3]].shape)
-    print(x.shape)
-    print(y.shape)
+    # print(data[footprint[0]:footprint[1], footprint[2]:footprint[3]].shape)
+    # print(x.shape)
+    # print(y.shape)
     model = fitter(init, x, y, data[footprint[0]:footprint[1], footprint[2]:footprint[3]],
                    weights=weights)
 
@@ -1156,7 +1158,7 @@ def zeropoint_science_field(
 
             exp_time = ff.get_exp_time(image_path)
 
-            print(cat_zeropoint)
+            # print(cat_zeropoint)
 
             if separate_chips:
                 # Split based on which CCD chip the object falls upon.

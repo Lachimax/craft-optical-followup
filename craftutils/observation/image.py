@@ -265,6 +265,9 @@ class Image:
             instrument_name: str = None,
             logg: log.Log = None,
     ):
+
+        if not os.path.isfile(path):
+            raise FileNotFoundError(f"The image file file {path} does not exist.")
         self.path = path
         self.output_file = path.replace(".fits", "_outputs.yaml")
         self.data_path, self.filename = os.path.split(self.path)
@@ -568,7 +571,7 @@ class Image:
             u.debug_print(2, f"Image.extract_gain(): type({self})", type(self), key)
             self.gain = self.extract_header_item(key) * units.electron / units.ct
         if self.gain is not None:
-            self.gain *= units.electron / units.ct
+            self.gain = u.check_quantity(self.gain, units.electron / units.ct)
         return self.gain
 
     def extract_date_obs(self):
@@ -1277,6 +1280,7 @@ class ImagingImage(Image):
             "source_cat_path": self.source_cat_path,
             "source_cat_dual_path": self.source_cat_dual_path,
             "synth_cat_path": self.synth_cat_path,
+            "psf_stats": self.psf_stats,
             "fwhm_pix_psfex": self.fwhm_pix_psfex,
             "fwhm_psfex": self.fwhm_psfex,
             "psfex_succesful": self.psfex_successful,
@@ -1429,7 +1433,7 @@ class ImagingImage(Image):
             mag_range_sex_lower: units.Quantity = -100. * units.mag,
             mag_range_sex_upper: units.Quantity = 100. * units.mag,
             dist_tol: units.Quantity = None,
-            snr_cut=100
+            snr_cut=3.
     ):
         self.signal_to_noise_measure()
         if image_name is None:
@@ -1603,6 +1607,8 @@ class ImagingImage(Image):
 
     def calibrate_magnitudes(self, zeropoint_name: str = "best", force: bool = False, dual: bool = False):
         cat = self.get_source_cat(dual=dual, force=True)
+        if cat is None:
+            raise ValueError(f"Catalogue ({dual=}) could not be loaded.")
 
         self.extract_exposure_time()
 
@@ -1645,7 +1651,7 @@ class ImagingImage(Image):
             flux: units.Quantity,
             flux_err: units.Quantity = 0 * units.ct,
             cat_name: str = 'best',
-            img_name: str = None
+            img_name: str = 'self'
     ):
 
         if cat_name == "best":
@@ -1693,7 +1699,8 @@ class ImagingImage(Image):
             self,
             zeropoint_name: str = "best",
             dual: bool = False,
-            star_tolerance: float = 0.9
+            star_tolerance: float = 0.9,
+            do_magnitude_calibration: bool = True
     ):
         """
         Use various measures of S/N to estimate image depth at a range of sigmas.
@@ -1704,7 +1711,8 @@ class ImagingImage(Image):
 
         self.signal_to_noise_ccd(dual=dual)
         self.signal_to_noise_measure(dual=dual)
-        self.calibrate_magnitudes(zeropoint_name=zeropoint_name, dual=dual)
+        if do_magnitude_calibration:
+            self.calibrate_magnitudes(zeropoint_name=zeropoint_name, dual=dual)
 
         source_cat = self.get_source_cat(dual=dual)
 
@@ -2274,6 +2282,7 @@ class ImagingImage(Image):
             near_centre=target,
             near_radius=near_radius,
             output=output_path,
+            plot_file_prefix=self.name,
             ext=ext,
         )
 
@@ -2767,8 +2776,14 @@ class ImagingImage(Image):
         _, scale = self.extract_pixel_scale()
         x, y = self.wcs.all_world2pix(centre.ra.value, centre.dec.value, 0)
         data = self.data[ext].value * 1.0
+        frame = u.check_quantity(
+            number=frame,
+            unit=units.pix,
+            allow_mismatch=True,
+            enforce_equivalency=False
+        )
         left, right, bottom, top = u.frame_from_centre(frame.to(units.pix, scale).value, x, y, data)
-        print(type(data), data[bottom:top, left:right])
+        # print(type(data), data[bottom:top, left:right])
         if mask is not None:
             data_masked = data * np.invert(mask.astype(bool)).astype(int)
             data_masked += mask * np.nanmedian(data[bottom:top, left:right])
@@ -4140,7 +4155,7 @@ class FORS2CoaddedImage(CoaddedImage):
             mag_range_sex_lower: units.Quantity = -100. * units.mag,
             mag_range_sex_upper: units.Quantity = 100. * units.mag,
             dist_tol: units.Quantity = 2. * units.arcsec,
-            snr_cut=10.
+            snr_cut=3.
     ):
         super().zeropoint(
             cat_path=cat_path,
