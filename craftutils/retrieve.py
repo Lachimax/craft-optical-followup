@@ -630,7 +630,19 @@ def retrieve_irsa_extinction(ra: float = None, dec: float = None, coord: SkyCoor
         if ra is None or dec is None:
             raise ValueError("Either ra & dec or coord must be provided.")
         coord = SkyCoord(ra * units.deg, dec * units.deg)
-    table = irsa_dust.IrsaDust.get_extinction_table(coord)
+
+    print(f"Retrieving IRSA extinction table for {coord}")
+    table = None
+    attempts = 0
+    while table is None and attempts < 100:
+        try:
+            table = irsa_dust.IrsaDust.get_extinction_table(coord)
+        except urllib.error.HTTPError:
+            attempts += 1
+            print(f"Could not retrieve table due to HTML error. Trying again ({attempts=}).")
+
+    if table is None:
+        raise ValueError("Could not retrieve table due to repeated HTML error")
 
     return table
 
