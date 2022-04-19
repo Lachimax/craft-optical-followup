@@ -254,8 +254,12 @@ def check_dict(key: str, dictionary: dict, na_values: Union[tuple, list] = (None
 
 
 def check_quantity(
-        number: Union[float, int, units.Quantity], unit: units.Unit, allow_mismatch: bool = True,
-        convert: bool = False):
+        number: Union[float, int, units.Quantity],
+        unit: units.Unit,
+        allow_mismatch: bool = True,
+        enforce_equivalency: bool = True,
+        convert: bool = False
+):
     """
     If the passed number is not a Quantity, turns it into one with the passed unit. If it is already a Quantity,
     checks the unit; if the unit is compatible with the passed unit, the quantity is returned unchanged (unless convert
@@ -275,7 +279,7 @@ def check_quantity(
         if not allow_mismatch:
             raise units.UnitsError(
                 f"This is already a Quantity, but with units {number.unit}; units {unit} were specified.")
-        elif not (number.unit.is_equivalent(unit)):
+        elif enforce_equivalency and not (number.unit.is_equivalent(unit)):
             raise units.UnitsError(
                 f"This number is already a Quantity, but with incompatible units ({number.unit}); units {unit} were specified.")
         elif convert:
