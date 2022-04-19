@@ -1058,7 +1058,8 @@ class ImagingImage(Image):
             if self.source_cat_dual is None:
                 self.source_cat_dual = self._load_source_cat_sextractor(path=self.source_cat_sextractor_dual_path)
         else:
-            print("source_cat_dual could not be loaded from SE file because source_cat_sextractor_dual_path has not been set.")
+            print(
+                "source_cat_dual could not be loaded from SE file because source_cat_sextractor_dual_path has not been set.")
 
     def load_source_cat(self, force: bool = False):
         u.debug_print(2, f"ImagingImage.load_source_cat(): {self}.name ==", self.name)
@@ -1733,8 +1734,8 @@ class ImagingImage(Image):
                 cat_more_xsigma_point = cat_more_xsigma[cat_more_xsigma["CLASS_STAR"] > star_tolerance]
                 print(f"Sources > {sigma}-sigma:", len(cat_more_xsigma))
                 self.depth["max"][snr_key][f"{sigma}-sigma"] = np.max(cat_more_xsigma[f"MAG_AUTO_ZP_{zeropoint_name}"])
-                self.depth["point_max"][snr_key][f"{sigma}-sigma"] = np.max(cat_more_xsigma_point[f"MAG_AUTO_ZP_{zeropoint_name}"])
-
+                self.depth["point_max"][snr_key][f"{sigma}-sigma"] = np.max(
+                    cat_more_xsigma_point[f"MAG_AUTO_ZP_{zeropoint_name}"])
 
                 # Brightest source less than x-sigma (kind of)
                 source_less_sigma = source_cat[source_cat[snr_key] < sigma]
@@ -1757,7 +1758,8 @@ class ImagingImage(Image):
 
                 self.depth["secure"][snr_key][f"{sigma}-sigma"] = src_lim[f"MAG_AUTO_ZP_{zeropoint_name}"]
                 if src_lim_point is not None:
-                    self.depth["point_secure"][snr_key][f"{sigma}-sigma"] = src_lim_point[f"MAG_AUTO_ZP_{zeropoint_name}"]
+                    self.depth["point_secure"][snr_key][f"{sigma}-sigma"] = src_lim_point[
+                        f"MAG_AUTO_ZP_{zeropoint_name}"]
                 else:
                     self.depth["point_secure"][snr_key][f"{sigma}-sigma"] = None
                 self.update_output_file()
@@ -2364,24 +2366,26 @@ class ImagingImage(Image):
 
         header = image.headers[ext]
 
-        # Move reference pixel to account for trim; this should keep the same sky coordinate at the ref pix
-        image.set_header_item(
-            key='CRPIX1',
-            value=header['CRPIX1'] - left,
-            ext=ext,
-            write=False
+        trimmed_data, margins = u.trim_image(
+            data=image.data[ext],
+            left=left, right=right, bottom=bottom, top=top,
+            return_margins=True
         )
-        image.set_header_item(
-            key='CRPIX2',
-            value=header['CRPIX2'] - bottom,
+
+        crpix1 = header['CRPIX1'] - left
+        crpix2 = header['CRPIX2'] - bottom
+
+        # Move reference pixel to account for trim; this should keep the same sky coordinate at the ref pix
+        image.set_header_items(
+            items={
+                'CRPIX1': crpix1,
+                'CRPIX2': crpix2
+            },
             ext=ext,
             write=False
         )
 
-        image.data[ext] = u.trim_image(
-            data=image.data[ext],
-            left=left, right=right, bottom=bottom, top=top
-        )
+        image.data[ext] = trimmed_data
 
         image.add_log(
             action=f"Trimmed image to margins left={left}, right={right}, bottom={bottom}, top={top}",
@@ -3362,7 +3366,7 @@ class ImagingImage(Image):
                 data_trim,
                 err=err,
                 thresh=threshold,
-                #deblend_cont=True,
+                # deblend_cont=True,
                 clean=False,
                 segmentation_map=True,
                 minarea=min_area

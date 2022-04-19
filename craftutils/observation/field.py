@@ -3035,7 +3035,6 @@ class ImagingEpoch(Epoch):
         :param fil:
         :return: False if None, True if not.
         """
-        print(fil)
         if fil not in (None, "", " "):
             if fil not in self.filters:
                 print(f"Adding {fil} to filter list")
@@ -3669,8 +3668,8 @@ class GSAOIImagingEpoch(ImagingEpoch):
         if "param_path" in param_dict:
             param_dict.pop("param_path")
 
-        print(field)
-        print(param_dict)
+        print(f"Loading field {field}...")
+        u.debug_print(2, f"GSAOIImagingEpoch.from_file(): {param_dict=}")
 
         return cls(
             name=name,
@@ -3893,15 +3892,8 @@ class PanSTARRS1ImagingEpoch(ImagingEpoch):
             path = os.path.join(download_dir, file)
             img = image.PanSTARRS1Cutout(path=path)
 
-            # img.open(mode="update")
-            # print(img.hdu_list.info())
-            # if len(img.hdu_list) == 2:
-            #     img.hdu_list[0] = img.hdu_list[1]
-            #     img.hdu_list.pop(1)
-            # img.close()
-
             fil = img.extract_filter()
-            print(fil)
+            u.debug_print(2, f"PanSTARRS1ImagingEpoch._initial_setup(): {fil=}")
             self.add_coadded_image(img, key=fil)
             self.check_filter(img.filter_name)
 
@@ -3918,7 +3910,7 @@ class PanSTARRS1ImagingEpoch(ImagingEpoch):
             star_class_tolerance: float = 0.95,
             **kwargs
     ):
-        print(self.filters)
+        u.debug_print(2, f"", self.filters)
         deepest = None
         for fil in self.coadded:
             img = self.coadded[fil]
@@ -4086,7 +4078,7 @@ class ESOImagingEpoch(ImagingEpoch):
         return r
 
     def _initial_setup(self, output_dir: str, **kwargs):
-        print(self.paths)
+        u.debug_print(2, f"ESOImagingEpoch._initial_setup(): {self.paths=}")
         raw_dir = self.get_path("download")
         data_dir = self.data_path
         data_title = self.name
@@ -4397,14 +4389,12 @@ class ESOImagingEpoch(ImagingEpoch):
                     frame.filename.replace(".fits", "_trim.fits")
                 )
 
-                print(f'{i} {frame}')
+                print(f'Trimming {i} {frame}')
 
                 # Split the files into upper CCD and lower CCD
                 if frame.extract_chip_number() == 1:
-                    print('Upper Chip:')
                     frame.trim(left=up_left, right=up_right, top=up_top, bottom=up_bottom, output_path=new_path)
                 elif frame.extract_chip_number() == 2:
-                    print('Lower Chip:')
                     frame.trim(left=dn_left, right=dn_right, top=dn_top, bottom=dn_bottom, output_path=new_path)
                 else:
                     raise ValueError('Invalid chip ID; could not trim based on upper or lower chip.')
