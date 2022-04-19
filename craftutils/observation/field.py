@@ -1322,10 +1322,18 @@ class Epoch:
         return self.name
 
     def date_str(self, include_time: bool = False):
-        if include_time:
+        if not isinstance(self.date, Time):
+            return str(self.date)
+        elif include_time:
             return str(self.date.isot)
         else:
             return self.date.strftime('%Y-%m-%d')
+
+    def mjd(self):
+        if not isinstance(self.date, Time):
+            return 0.
+        else:
+            return self.date.mjd
 
     def add_log(
             self,
@@ -2102,7 +2110,6 @@ class ImagingEpoch(Epoch):
         frame_dict = self._get_frames(frames)
 
         self.frame_psf_diagnostics(output_dir, frame_dict=frame_dict)
-
         self.frames_final = "diagnosed"
 
     def frame_psf_diagnostics(self, output_dir: str, frame_dict: dict, chip: int = 1, sigma: float = 1.):
@@ -2234,7 +2241,7 @@ class ImagingEpoch(Epoch):
             coadded_path = montage.standard_script(
                 input_directory=input_directory_fil,
                 output_directory=output_directory_fil,
-                output_file_name=f"{self.name}_{self.date.strftime('%Y-%m-%d')}_{fil}_coadded.fits",
+                output_file_name=f"{self.name}_{self.date_str()}_{fil}_coadded.fits",
                 coadd_types=["median"],
                 add_with_ccdproc=False,
                 sigma_clip=True,
@@ -2390,7 +2397,8 @@ class ImagingEpoch(Epoch):
         for image_type in "final", "coadded_unprojected":
             self.source_extraction(
                 output_dir=output_dir,
-                do_diagnostics=do_diag,
+                do_astrometry_diagnostics=do_diag,
+                do_psf_diagnostics=do_diag,
                 image_type=image_type,
                 **kwargs
             )
@@ -2398,7 +2406,8 @@ class ImagingEpoch(Epoch):
     def source_extraction(
             self,
             output_dir: str,
-            do_diagnostics: bool = True,
+            do_astrometry_diagnostics: bool = True,
+            do_psf_diagnostics: bool = True,
             image_type: str = "final",
             **kwargs
     ):
@@ -2414,11 +2423,12 @@ class ImagingEpoch(Epoch):
                 output_dir=output_dir,
                 phot_autoparams=f"{configs['kron_factor']},{configs['kron_radius_min']}"
             )
-        if do_diagnostics:
+        if do_astrometry_diagnostics:
             offset_tolerance = 0.5 * units.arcsec
             if "correct_astrometry_frames" in self.do_kwargs and not self.do_kwargs["correct_astrometry_frames"]:
                 offset_tolerance = 1.0 * units.arcsec
             self.astrometry_diagnostics(images=images, offset_tolerance=offset_tolerance)
+        if do_psf_diagnostics:
             self.psf_diagnostics(images=images)
 
     def proc_photometric_calibration(self, output_dir: str, **kwargs):
@@ -2580,10 +2590,7 @@ class ImagingEpoch(Epoch):
                 )
                 obj.cat_row = nearest
                 print()
-                if self.date is None:
-                    date = None
-                else:
-                    date = str(self.date.isot)
+
                 obj.add_photometry(
                     instrument=self.instrument_name,
                     fil=fil,
@@ -2603,7 +2610,7 @@ class ImagingEpoch(Epoch):
                     dec_err=np.sqrt(nearest["ERRY2_WORLD"]),
                     kron_radius=nearest["KRON_RADIUS"],
                     separation_from_given=separation,
-                    epoch_date=date,
+                    epoch_date=self.date_str(),
                     class_star=nearest["CLASS_STAR"],
                     mag_psf=nearest["MAG_PSF_ZP_best"],
                     mag_psf_err=nearest["MAGERR_PSF_ZP_best"],
@@ -2641,7 +2648,11 @@ class ImagingEpoch(Epoch):
                     name = obj.name
                     name = name.replace("HG", "HG\,")
                     img.extract_filter()
-                    plot.set_title(u.latex_sanitise(f"{name}, {img.filter.nice_name()}"))
+                    if img.filter is None:
+                        f_name = fil
+                    else:
+                        f_name = img.filter.nice_name()
+                    plot.set_title(u.latex_sanitise(f"{name}, {f_name}"))
                     fig.savefig(output_path)
                     fig.savefig(output_path.replace(".pdf", ".png"))
                     plt.close(fig)
@@ -2661,7 +2672,11 @@ class ImagingEpoch(Epoch):
             if img is None:
                 continue
 
-            nice_name = f"{self.field.name}_{self.instrument.nice_name().replace('/', '-')}_{fil.replace('_', '-')}_{self.date.strftime('%Y-%m-%d')}.fits"
+            if isinstance(self.instrument, inst.Instrument):
+                inst_name = self.instrument.nice_name().replace('/', '-')
+            else:
+                inst_name = self.instrument_name
+            nice_name = f"{self.field.name}_{inst_name}_{fil.replace('_', '-')}_{self.date_str()}.fits"
 
             if img != img_projected:
                 astm_rms = img_projected.extract_astrometry_err().value
@@ -3168,7 +3183,7 @@ class ImagingEpoch(Epoch):
 
         obs.load_master_imaging_table()
 
-        frames = self._get_frames("final")
+        # frames = self._get_frames("final")
         coadded = self._get_images("final")
 
         for fil in self.filters:
@@ -3181,13 +3196,13 @@ class ImagingEpoch(Epoch):
 
             row["field_name"] = self.field.name
             row["epoch_name"] = self.name
-            row["date_utc"] = self.date.isot
-            row["mjd"] = self.date.mjd * units.day
+            row["date_utc"] = self.date_str()
+            row["mjd"] = self.mjd() * units.day
             row["instrument"] = self.instrument_name
             row["filter_name"] = fil
             row["filter_lambda_eff"] = self.instrument.filters[fil].lambda_eff.to(units.Angstrom).round(3)
             row["n_frames"] = self.n_frames(fil)
-            row["n_frames_included"] = coadded[fil].extract_header_item("NCOMBINE")
+            row["n_frames_included"] = coadded[fil].extract_ncombine()
             row["frame_exp_time"] = self.exp_time_mean[fil].round()
             row["total_exp_time"] = row["n_frames"] * row["frame_exp_time"]
             inttime = coadded[fil].extract_header_item("INTTIME") * units.second
@@ -3874,6 +3889,10 @@ class PanSTARRS1ImagingEpoch(ImagingEpoch):
             self.field.retrieve_catalogue(cat_name="panstarrs1")
         u.debug_print(1, f"PanSTARRS1ImagingEpoch.__init__(): {self}.filters ==", self.filters)
 
+    def n_frames(self, fil: str):
+        img = self.coadded[fil]
+        return img.extract_ncombine()
+
     # TODO: Automatic cutout download; don't worry for now.
 
     @classmethod
@@ -3894,6 +3913,7 @@ class PanSTARRS1ImagingEpoch(ImagingEpoch):
         super()._pipeline_init()
         self.coadded_final = "coadded"
         self.paths["download"] = os.path.join(self.data_path, "0-download")
+        # self.frames_final = "coadded"
 
     def proc_download(self, output_dir: str, **kwargs):
         """
@@ -3905,12 +3925,13 @@ class PanSTARRS1ImagingEpoch(ImagingEpoch):
         pass
 
     def proc_source_extraction(self, output_dir: str, **kwargs):
-        do_diag = False
+        do_diag = True
         if "do_astrometry_diagnostics" in kwargs:
             do_diag = kwargs["astrometry_diagnostics"]
         self.source_extraction(
             output_dir=output_dir,
-            do_diagnostics=do_diag,
+            do_astrometry_diagnostics=False,
+            do_psf_diagnostics=True,
             **kwargs
         )
 
@@ -3933,8 +3954,11 @@ class PanSTARRS1ImagingEpoch(ImagingEpoch):
 
             fil = img.extract_filter()
             u.debug_print(2, f"PanSTARRS1ImagingEpoch._initial_setup(): {fil=}")
+            self.exp_time_mean[fil] = img.extract_exposure_time() / img.extract_ncombine()
+            img.set_header_item('INTTIME', img.extract_exposure_time())
             self.add_coadded_image(img, key=fil)
             self.check_filter(img.filter_name)
+            img.write_fits_file()
 
     def guess_data_path(self):
         if self.data_path is None and self.field is not None and self.field.data_path is not None:
@@ -3978,6 +4002,7 @@ class PanSTARRS1ImagingEpoch(ImagingEpoch):
             img = image.PanSTARRS1Cutout(path=img)
         img.epoch = self
         self.coadded[key] = img
+        self.coadded_unprojected[key] = img
         return img
 
     @classmethod
@@ -4006,7 +4031,7 @@ class PanSTARRS1ImagingEpoch(ImagingEpoch):
             source_extractor_config=param_dict.pop('sextractor'),
             **param_dict
         )
-        epoch.instrument = cls.instrument_name
+        # epoch.instrument = cls.instrument_name
         return epoch
 
 
@@ -4280,7 +4305,7 @@ class ESOImagingEpoch(ImagingEpoch):
 
             else:
                 # The ESOReflex output directory is structured in a very specific way, which we now traverse.
-                mjd = int(self.date.mjd)
+                mjd = int(self.mjd())
                 obj = self.target.lower()
 
                 print(f"Looking for data with object '{obj}' and MJD of observation {mjd} inside {eso_dir}")

@@ -308,6 +308,7 @@ class Object:
         for instrument in self.photometry:
             for band in self.photometry[instrument]:
                 for epoch in self.photometry[instrument][band]:
+                    print(f"Extracting photometry for {instrument}, epoch {epoch} in {band}")
                     phot_dict = self.photometry[instrument][band][epoch]
                     if phot_dict["good_image_path"] == deepest_path:
                         continue

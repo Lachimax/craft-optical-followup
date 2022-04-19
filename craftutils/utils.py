@@ -21,6 +21,11 @@ from astropy.time import Time
 
 debug_level = 0
 
+def pad_zeroes(n: int, length: int = 2):
+    n_str = str(n)
+    while len(n_str) < length:
+        n_str = "0" + n_str
+    return n_str
 
 def get_git_hash(directory: str, short: bool = False):
     """

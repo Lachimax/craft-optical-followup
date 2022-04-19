@@ -247,6 +247,10 @@ def detect_instrument(path: str, ext: int = 0, fail_quietly: bool = False):
                 return "vlt-fors2"
             elif "HAWKI" in inst_str:
                 return "vlt-hawki"
+        elif "FPA.TELESCOPE" in file[ext].header:
+            inst_str = file[ext].header["FPA.TELESCOPE"]
+            if "PS1" in inst_str:
+                return "panstarrs1"
         else:
             if not fail_quietly:
                 raise ValueError(f"Could not establish instrument from file header on {path}.")
@@ -1227,10 +1231,13 @@ class ImagingImage(Image):
         if self.filter_name is not None:
             self.filter_short = self.filter_name[0]
 
-        if self.filter_name is not None and self.instrument is not None and self.filter_name in self.instrument.filters:
-            self.filter = self.instrument.filters[self.filter_name]
+        self._filter_from_name()
 
         return self.filter_name
+
+    def _filter_from_name(self):
+        if self.filter_name is not None and self.instrument is not None and self.filter_name in self.instrument.filters:
+            self.filter = self.instrument.filters[self.filter_name]
 
     def extract_airmass(self):
         key = self.header_keys()["airmass"]
@@ -2255,7 +2262,7 @@ class ImagingImage(Image):
             self,
             star_class_tol: float = 0.95,
             mag_max: float = 0.0 * units.mag,
-            mag_min: float = -7.0 * units.mag,
+            mag_min: float = -50. * units.mag,
             match_to: table.Table = None,
             frame: float = None,
             ext: int = 0,
@@ -3939,6 +3946,18 @@ class CoaddedImage(ImagingImage):
         return new_image
 
     @classmethod
+    def header_keys(cls):
+        header_keys = super().header_keys()
+        header_keys.update({
+            "ncombine": "NCOMBINE"
+        })
+        return header_keys
+
+    def extract_ncombine(self):
+        key = self.header_keys()["ncombine"]
+        return self.extract_header_item(key)
+
+    @classmethod
     def select_child_class(cls, instrument: str, **kwargs):
         if not isinstance(instrument, str):
             instrument = str(instrument)
@@ -3946,18 +3965,20 @@ class CoaddedImage(ImagingImage):
             return CoaddedImage
         elif instrument == "vlt-fors2":
             return FORS2CoaddedImage
-        else:
-            return CoaddedImage
+        elif instrument == "vlt-hawki":
+            return HAWKICoaddedImage
+        elif instrument == "panstarrs1":
+            return PanSTARRS1Cutout
             # raise ValueError(f"Unrecognised instrument {instrument}")
 
 
-class PanSTARRS1Cutout(ImagingImage):
+class PanSTARRS1Cutout(CoaddedImage):
     instrument_name = "panstarrs1"
 
-    def __init__(self, path: str):
+    def __init__(self, path: str, **kwargs):
         super().__init__(path=path)
+        # self.instrument_name = "panstarrs1"
         self.extract_filter()
-        self.instrument_name = "panstarrs1"
         self.exposure_time = None
         self.extract_exposure_time()
 
@@ -3966,6 +3987,9 @@ class PanSTARRS1Cutout(ImagingImage):
         fil_string = self.extract_header_item(key)
         self.filter_name = fil_string[:fil_string.find(".")]
         self.filter_short = self.filter_name
+
+        self._filter_from_name()
+
         return self.filter_name
 
     def extract_exposure_time(self):
@@ -3983,9 +4007,12 @@ class PanSTARRS1Cutout(ImagingImage):
     @classmethod
     def header_keys(cls):
         header_keys = super().header_keys()
-        header_keys.update({"noise_read": "HIERARCH CELL.READNOISE",
-                            "filter": "HIERARCH FPA.FILTERID",
-                            "gain": "HIERARCH CELL.GAIN"})
+        header_keys.update({
+            "noise_read": "HIERARCH CELL.READNOISE",
+            "filter": "HIERARCH FPA.FILTERID",
+            "gain": "HIERARCH CELL.GAIN",
+            "ncombine": "NINPUTS"
+        })
         return header_keys
 
 

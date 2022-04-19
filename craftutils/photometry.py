@@ -41,7 +41,7 @@ def image_psf_diagnostics(
         cat: Union[str, table.Table],
         star_class_tol: float = 0.9,
         mag_max: float = 0.0 * units.mag,
-        mag_min: float = -7.0 * units.mag,
+        mag_min: float = -50. * units.mag,
         match_to: table.Table = None,
         match_tolerance: units.Quantity = 1 * units.arcsec,
         frame: float = 15,
@@ -60,17 +60,20 @@ def image_psf_diagnostics(
 
     if isinstance(cat, str):
         cat = table.QTable.read(cat, format="ascii.sextractor")
+    print(cat["CLASS_STAR"].max(), cat["CLASS_STAR"].mean(), star_class_tol)
     stars = cat[cat["CLASS_STAR"] > star_class_tol]
-    stars = stars[stars["MAG_PSF"] < mag_max]
-    stars = stars[stars["MAG_PSF"] > mag_min]
-
     print(f"Initial num stars:", len(stars))
+    stars = stars[stars["MAG_PSF"] < mag_max]
+    print(f"Num stars with MAG_PSF < {mag_max}:", len(stars))
+    print(stars["MAG_PSF"].max(), stars["MAG_PSF"].mean(), mag_max, mag_min)
+    stars = stars[stars["MAG_PSF"] > mag_min]
+    print(f"Num stars with MAG_PSF > {mag_min}:", len(stars))
 
     if near_radius is not None:
         header = hdu[ext].header
         wcs_this = wcs.WCS(header)
         if near_centre is None:
-            near_centre = SkyCoord.from_pixel(header["CRPIX1"], header["CRPIX2"], wcs_this, origin=1)
+            near_centre = SkyCoord.from_pixel(header["NAXIS1"] / 2, header["NAXIS2"] / 2, wcs_this, origin=1)
 
         ra = stars[ra_col]
         dec = stars[dec_col]
@@ -82,6 +85,7 @@ def image_psf_diagnostics(
         stars_near = stars[near_centre.separation(coords) < near_radius]
         print("len(stars_near):", len(stars_near), "near_radius:", near_radius, "img_width_ang:", img_width_ang)
         while len(stars_near) < min_stars and near_radius < img_width_ang:
+            print(near_centre.separation(coords).max(), near_centre.separation(coords).mean())
             stars_near = stars[near_centre.separation(coords) < near_radius]
             print(f"Num stars within {near_radius} of {near_centre}:", len(stars_near))
             near_radius += 0.5 * units.arcmin
