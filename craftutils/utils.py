@@ -617,6 +617,7 @@ def std_err_slope(
         y_obs: np.ndarray,
         x_obs: np.ndarray,
         y_weights: np.ndarray = None,
+        x_weights: np.ndarray = None,
         dof_correction: int = 2,
 ):
     """
@@ -635,11 +636,11 @@ def std_err_slope(
         dof_correction=dof_correction
     )
 
-    # if x_weights is None:
-    #     x_weights = 1
-    # else:
-    #     x_weights = x_weights / np.linalg.norm(x_weights, ord=1)
-    #     n = 1
+    if x_weights is None:
+        x_weights = 1
+    else:
+        x_weights = x_weights / np.linalg.norm(x_weights, ord=1)
+        n = 1
 
     x_mean = np.nanmean(x_obs)
     s = s_regression / np.sqrt(np.nansum(x_obs - x_mean))

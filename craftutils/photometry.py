@@ -69,6 +69,7 @@ def image_psf_diagnostics(
     stars = stars[stars["MAG_PSF"] > mag_min]
     print(f"Num stars with MAG_PSF > {mag_min}:", len(stars))
 
+
     if near_radius is not None:
         header = hdu[ext].header
         wcs_this = wcs.WCS(header)

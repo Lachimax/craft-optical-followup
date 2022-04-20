@@ -3258,6 +3258,8 @@ class ImagingEpoch(Epoch):
 
         name, param_file, param_dict = p.params_init(param_file)
 
+        pdict_backup = param_dict.copy()
+
         if param_dict is None:
             raise FileNotFoundError(f"There is no param file at {param_file}")
 
@@ -3287,7 +3289,7 @@ class ImagingEpoch(Epoch):
         elif sub_cls is FORS2ImagingEpoch:
             return sub_cls.from_file(param_dict, name=name, old_format=old_format, field=field)
         else:
-            return sub_cls.from_file(param_dict, name=name, field=field)
+            return sub_cls.from_file(pdict_backup, name=name, field=field)
 
     @classmethod
     def default_params(cls):
@@ -3790,7 +3792,9 @@ class HubbleImagingEpoch(ImagingEpoch):
             date: Union[str, Time] = None,
             target: str = None,
             standard_epochs: list = None,
-            source_extractor_config: dict = None):
+            source_extractor_config: dict = None,
+            **kwargs
+    ):
         super().__init__(
             name=name,
             field=field,
@@ -3808,33 +3812,100 @@ class HubbleImagingEpoch(ImagingEpoch):
     def stages(cls):
         super_stages = super().stages()
         stages = {
+            "download": super_stages["download"],
             "initial_setup": super_stages["initial_setup"],
-            "photometric_calibration": super_stages["photometric_calibration"],
             "source_extraction": super_stages["source_extraction"],
+            "photometric_calibration": super_stages["photometric_calibration"],
             "get_photometry": super_stages["get_photometry"]
         }
         return stages
 
+    def _pipeline_init(self):
+        super()._pipeline_init()
+        self.coadded_final = "coadded"
+        self.paths["download"] = os.path.join(self.data_path, "0-download")
+
     def _initial_setup(self, output_dir: str, **kwargs):
-        for file in filter(lambda f: f.endswith(".fits"), os.listdir(self.data_path)):
-            shutil.move(os.path.join(self.data_path, file), output_dir)
-        for file in filter(lambda f: f.endswith(".fits"), os.listdir(output_dir)):
-            img = image.HubbleImage(os.path.join(output_dir, file))
-            self.add_coadded_image(img, key=img.extract_filter())
+        download_dir = self.paths["download"]
+        # for file in filter(lambda f: f.endswith(".fits"), os.listdir(self.data_path)):
+        #     shutil.move(os.path.join(self.data_path, file), output_dir)
+
+        for file in filter(lambda f: f.endswith(".fits"), os.listdir(download_dir)):
+            path = os.path.join(download_dir, file)
+            img = image.HubbleImage(path)
+            fil = img.extract_filter()
+            self.exp_time_mean[fil] = img.extract_header_item('TEXPTIME') * units.second / img.extract_ncombine()
+            img.set_header_item('INTTIME', img.extract_header_item('TEXPTIME'))
+            self.add_coadded_image(img, key=fil)
+            self.add_coadded_unprojected_image(img, key=fil)
+            self.check_filter(img.filter_name)
 
     def photometric_calibration(self, output_path: str, **kwargs):
         for fil in self.coadded:
             self.coadded[fil].zeropoint()
+            self.coadded[fil].estimate_depth()
+            self.deepest = self.coadded[fil]
 
     def proc_get_photometry(self, output_dir: str, **kwargs):
         self.get_photometry(output_dir, image_type="coadded", dual=False)
 
+    def psf_diagnostics(
+            self,
+            images: dict = None
+    ):
+        if images is None:
+            images = self._get_images("final")
+
+        for fil in images:
+            if fil == "F300X":
+                self.psf_stats[fil] = {
+                    "n_stars": 0,
+                    "fwhm_psfex": -99 * units.arcsec,
+                    "gauss": {
+                        "fwhm_median": -99 * units.arcsec,
+                        "fwhm_mean": -99 * units.arcsec,
+                        "fwhm_max": -99 * units.arcsec,
+                        "fwhm_min": -99 * units.arcsec,
+                        "fwhm_sigma": -99 * units.arcsec,
+                        "fwhm_rms": -99 * units.arcsec
+                    },
+                    "moffat": {
+                        "fwhm_median": -99 * units.arcsec,
+                        "fwhm_mean": -99 * units.arcsec,
+                        "fwhm_max": -99 * units.arcsec,
+                        "fwhm_min": -99 * units.arcsec,
+                        "fwhm_sigma": -99 * units.arcsec,
+                        "fwhm_rms": -99 * units.arcsec
+                    },
+                    "sextractor": {
+                        "fwhm_median": -99 * units.arcsec,
+                        "fwhm_mean": -99 * units.arcsec,
+                        "fwhm_max": -99 * units.arcsec,
+                        "fwhm_min": -99 * units.arcsec,
+                        "fwhm_sigma": -99 * units.arcsec,
+                        "fwhm_rms": -99 * units.arcsec
+                    }
+                }
+            else:
+                img = images[fil]
+                print(f"Performing PSF measurements on {img}...")
+                self.psf_stats[fil], _, _, _ = img.psf_diagnostics()
+
+        self.update_output_file()
+        return self.psf_stats
+
     def add_coadded_image(self, img: Union[str, image.Image], key: str, **kwargs):
-        if isinstance(img, str):
-            img = image.HubbleImage(path=img)
-        img.epoch = self
-        self.coadded[key] = img
-        return img
+        try:
+            if isinstance(img, str):
+                img = image.HubbleImage(path=img)
+            img.epoch = self
+            self.coadded[key] = img
+            return img
+        except FileNotFoundError:
+            return None
+
+    def n_frames(self, fil: str):
+        return self.coadded[fil].extract_ncombine()
 
     @classmethod
     def from_file(cls, param_file: Union[str, dict], name: str = None, field: Field = None):
@@ -3851,6 +3922,13 @@ class HubbleImagingEpoch(ImagingEpoch):
             target = param_dict.pop('target')
         else:
             target = None
+
+        if "field" in param_dict:
+            param_dict.pop("field")
+        if "name" in param_dict:
+            param_dict.pop("name")
+        if "param_path" in param_dict:
+            param_dict.pop("param_path")
 
         return cls(
             name=name,
@@ -3927,9 +4005,6 @@ class PanSTARRS1ImagingEpoch(ImagingEpoch):
         pass
 
     def proc_source_extraction(self, output_dir: str, **kwargs):
-        do_diag = True
-        if "do_astrometry_diagnostics" in kwargs:
-            do_diag = kwargs["astrometry_diagnostics"]
         self.source_extraction(
             output_dir=output_dir,
             do_astrometry_diagnostics=False,
@@ -3953,7 +4028,6 @@ class PanSTARRS1ImagingEpoch(ImagingEpoch):
         for file in filter(lambda f: f.endswith(".fits"), os.listdir(download_dir)):
             path = os.path.join(download_dir, file)
             img = image.PanSTARRS1Cutout(path=path)
-
             fil = img.extract_filter()
             u.debug_print(2, f"PanSTARRS1ImagingEpoch._initial_setup(): {fil=}")
             self.exp_time_mean[fil] = img.extract_exposure_time() / img.extract_ncombine()
@@ -3990,7 +4064,7 @@ class PanSTARRS1ImagingEpoch(ImagingEpoch):
                 image_name="PanSTARRS Cutout",
             )
             img.select_zeropoint(True)
-            img.estimate_depth(zeropoint_name="panstarrs1")#, do_magnitude_calibration=False)
+            img.estimate_depth(zeropoint_name="panstarrs1")  # , do_magnitude_calibration=False)
 
             if deepest is not None:
                 deepest = image.deepest(deepest, img)
@@ -4669,7 +4743,6 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
 
         u.debug_print(2, f"FORS2ImagingEpoch.stages(): stages ==", stages)
         return stages
-
 
     def _pipeline_init(self):
         super()._pipeline_init()

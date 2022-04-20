@@ -931,16 +931,26 @@ class ImagingImage(Image):
         self.psfex(output_dir=output_dir, force=force)
         config = p.path_to_config_sextractor_config()
         output_params = p.path_to_config_sextractor_param()
-        cat_path = self.source_extraction(
-            configuration_file=config,
-            output_dir=output_dir,
-            parameters_file=output_params,
-            catalog_name=f"{self.name}_psf-fit.cat",
-            psf_name=self.psfex_path,
-            seeing_fwhm=self.fwhm_psfex.value,
-            template=template,
-            **configs
-        )
+        try:
+            cat_path = self.source_extraction(
+                configuration_file=config,
+                output_dir=output_dir,
+                parameters_file=output_params,
+                catalog_name=f"{self.name}_psf-fit.cat",
+                psf_name=self.psfex_path,
+                seeing_fwhm=self.fwhm_psfex.value,
+                template=template,
+                **configs
+            )
+        except SystemError:
+            cat_path = self.source_extraction(
+                configuration_file=p.path_to_config_sextractor_failed_psfex_config(),
+                parameters_file=p.path_to_config_sextractor_failed_psfex_param(),
+                output_dir=output_dir,
+                catalog_name=f"{self.name}_failed-psf-fit.cat",
+                template=template,
+                **configs
+            )
         dual = False
         if template is not None:
             dual = True
@@ -2129,6 +2139,16 @@ class ImagingImage(Image):
                 offset_tolerance=offset_tolerance,
                 star_tolerance=star_tolerance
             )
+            if len(matches_source_cat) < 1:
+                self.astrometry_err = -99 * units.arcsec
+                self.ra_err = -99 * units.arcsec
+                self.dec_err = -99 * units.arcsec
+                self.headers[0]["ASTM_RMS"] = self.astrometry_err.value
+                self.headers[0]["RA_RMS"] = self.ra_err.value
+                self.headers[0]["DEC_RMS"] = self.dec_err.value
+                self.write_fits_file()
+                self.update_output_file()
+                return -99.0
 
             matches_coord = SkyCoord(matches_source_cat["RA"], matches_source_cat["DEC"])
 
@@ -3535,7 +3555,7 @@ class ImagingImage(Image):
         kron_radius = u.check_iterable(kron_radius)
         rotation_angle = self.extract_rotation_angle(ext=ext)
         print(theta_world, rotation_angle)
-        theta_deg = -theta_world - rotation_angle  # + 90 * units.deg
+        theta_deg = -theta_world + rotation_angle  # + 90 * units.deg
         theta = u.theta_range(theta_deg.to(units.rad)).value
         print(theta_deg)
         print(theta, a, b, x, y, kron_radius)
@@ -3907,7 +3927,7 @@ class CoaddedImage(ImagingImage):
         area = new_img.copy(new_img.path.replace(".fits", "_area.fits"))
         area.load_data()
         reprojected, footprint = rp.reproject_exact(self.area_file, new_img.headers[ext], parallel=True)
-        area.data[ext] = reprojected
+        area.data[ext] = reprojected * area.data[ext].unit
         area.area_file = None
         area.write_fits_file()
 
@@ -3969,7 +3989,10 @@ class CoaddedImage(ImagingImage):
             return HAWKICoaddedImage
         elif instrument == "panstarrs1":
             return PanSTARRS1Cutout
-            # raise ValueError(f"Unrecognised instrument {instrument}")
+        elif "hst" in instrument:
+            return HubbleImage
+        else:
+            raise ValueError(f"Unrecognised instrument {instrument}")
 
 
 class PanSTARRS1Cutout(CoaddedImage):
@@ -4292,12 +4315,16 @@ class GSAOIImage(ImagingImage):
         return self.pointing
 
 
-class HubbleImage(ImagingImage):
+class HubbleImage(CoaddedImage):
     instrument_name = "hst-dummy"
 
     def extract_exposure_time(self):
         self.exposure_time = 1.0 * units.second
         return self.exposure_time
+
+    def extract_noise_read(self):
+        self.noise_read = 0.0 * units.electron / units.pixel
+        return self.noise_read
 
     def zeropoint(self, **kwargs):
         """
@@ -4310,11 +4337,17 @@ class HubbleImage(ImagingImage):
 
         zeropoint = (-2.5 * math.log10(photflam) - 5 * math.log10(photplam) - 2.408) * units.mag
 
-        self.zeropoint_best = {
-            "zeropoint": zeropoint,
-            "zeropoint_err": 0.0 * units.mag,
-            "airmass": 0.0,
-        }
+        self.add_zeropoint(
+            catalogue="calib_pipeline",
+            zeropoint=zeropoint,
+            zeropoint_err=0.0 * units.mag,
+            extinction=0.0 * units.mag,
+            extinction_err=0.0 * units.mag,
+            airmass=0.0,
+            airmass_err=0.0,
+            image_name="self"
+        )
+        self.select_zeropoint(True)
         self.update_output_file()
         self.add_log(
             action=f"Calculated zeropoint {zeropoint} from PHOTFLAM and PHOTPLAM header keys.",
