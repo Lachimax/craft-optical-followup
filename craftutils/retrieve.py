@@ -859,10 +859,10 @@ def update_frb_sdss_photometry(frb: str, force: bool = False):
 
 
 def retrieve_delve_photometry(ra: float, dec: float, radius: units.Quantity = 0.2 * units.deg):
-    print(f"\nQuerying DELVE DR1 archive for field centring on RA={ra}, DEC={dec}")
+    print(f"\nQuerying DELVE DR2 archive for field centring on RA={ra}, DEC={dec}")
     radius = u.dequantify(radius, unit=units.deg)
     url = f"http://datalab.noirlab.edu/tap/sync?REQUEST=doQuery&lang=ADQL&FORMAT=csv&QUERY=SELECT%20q3c_dist" \
-          f"%28ra%2Cdec%2C%20247.725%2C-0.972%29%2A3600%20AS%20dist%2C%20%2A%20FROM%20delve_dr1.objects%20WHERE%20%27t" \
+          f"%28ra%2Cdec%2C%20247.725%2C-0.972%29%2A3600%20AS%20dist%2C%20%2A%20FROM%20delve_dr2.objects%20WHERE%20%27t" \
           f"%27%20%3D%20Q3C_RADIAL_QUERY%28ra%2C%20dec%2C{ra}%2C{dec}%2C{radius}%29%20"
     try:
         response = requests.get(url).content
