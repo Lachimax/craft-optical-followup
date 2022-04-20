@@ -308,7 +308,7 @@ class Object:
         for instrument in self.photometry:
             for band in self.photometry[instrument]:
                 for epoch in self.photometry[instrument][band]:
-                    print(f"Extracting photometry for {instrument}, epoch {epoch} in {band}")
+                    print(f"Extracting photometry for {self.name} in {instrument} {band}, epoch {epoch}.")
                     phot_dict = self.photometry[instrument][band][epoch]
                     if phot_dict["good_image_path"] == deepest_path:
                         continue
@@ -735,6 +735,8 @@ class Object:
         else:
             row, index = obs.get_row(tbl=obs.master_objects_all_table, colname="object_name", colval=self.name)
 
+        print()
+
         if row is None:
             row = {}
 
@@ -809,7 +811,7 @@ class Object:
                     row[colname] = tbl[0][colname]
 
         u.debug_print(2, "Object.push_to_table(): select ==", select)
-        print()
+        print(f"INDEX: {index}")
         if select:
             if index is None:
                 obs.master_objects_table.add_row(row)

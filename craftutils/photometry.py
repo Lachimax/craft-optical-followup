@@ -411,6 +411,8 @@ def magnitude_complete(
     error_colour = u.uncertainty_product(colour_term * colour, (colour_term, colour_term_err), (colour, colour_err))
     error = u.uncertainty_sum(mag_error, zeropoint_err, error_extinction, error_colour)
 
+    u.debug_print(2, "\textinction", magnitude, "+/-", mag_error)
+
     return magnitude, error
 
 
@@ -464,7 +466,7 @@ def determine_zeropoint_sextractor(
         cat_zeropoint_err: units.Quantity = 0.0 * units.mag,
         snr_cut: float = 10.,
         snr_col: str = 'SNR_WIN',
-        iterate_uncertainty: bool = False
+        iterate_uncertainty: bool = True
 ):
     """
     This function expects your catalogue to be a .csv.

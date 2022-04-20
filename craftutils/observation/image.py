@@ -3630,7 +3630,7 @@ class ImagingImage(Image):
         )
 
         snr = flux / flux_err
-        if snr < 3:
+        if snr < 5:
             mag, _, _, _ = self.magnitude(
                 flux_err
             )
@@ -3992,17 +3992,40 @@ class PanSTARRS1Cutout(CoaddedImage):
 
         return self.filter_name
 
-    def extract_exposure_time(self):
-        self.load_headers()
-        exp_time_keys = filter(lambda k: k.startswith("EXP_"), self.headers[0])
-        exp_time = 0.
-        # exp_times = []
-        for key in exp_time_keys:
-            exp_time += self.headers[0][key]
-        #    exp_times.append(self.headers[0][key])
+    # def zeropoint(
+    #         self,
+    #         **kwargs
+    # ):
+    #     """
+    #     According to the reference below, the PS1 cutouts are scaled to zeropoint 25.
+    #     https://outerspace.stsci.edu/display/PANSTARRS/PS1+Stack+images
+    #     :return:
+    #     """
+    #     self.add_zeropoint(
+    #         catalogue="panstarrs1",
+    #         zeropoint=self.extract_header_item("FPA.ZP"),
+    #         zeropoint_err=0.0 * units.mag,
+    #         extinction=0.0 * units.mag,
+    #         extinction_err=0.0 * units.mag,
+    #         airmass=0.0,
+    #         airmass_err=0.0
+    #     )
+    #     # self.select_zeropoint(True)
+    #     return self.zeropoint_best
 
-        self.exposure_time = exp_time * units.second  # np.mean(exp_times)
-        return self.exposure_time
+    # I only wrote this function below because I couldn't find the EXPTIME key in the PS1 cutouts. It is, however, there.
+    # def extract_exposure_time(self):
+    #     # self.load_headers()
+    #     # exp_time_keys = filter(lambda k: k.startswith("EXP_"), self.headers[0])
+    #     # exp_time = 0.
+    #     # exp_times = []
+    #     # for key in exp_time_keys:
+    #     #     exp_time += self.headers[0][key]
+    #     # #    exp_times.append(self.headers[0][key])
+    #     #
+    #     # self.exposure_time = exp_time * units.second  # np.mean(exp_times)
+    #     self.exposure_time = 1.0 * units.second
+    #     return self.exposure_time
 
     @classmethod
     def header_keys(cls):
@@ -4064,15 +4087,17 @@ class HAWKICoaddedImage(ESOImagingImage):
     def zeropoint(
             self
     ):
-        self.zeropoint_best = {
-            "zeropoint": self.extract_header_item("PHOTZP"),
-            "zeropoint_err": self.extract_header_item("PHOTZPER"),
-            "extinction": 0.0 * units.mag,
-            "extinction_err": 0.0 * units.mag,
-            "airmass": 0.0,
-            "airmass_err": 0.0,
-            "catalogue": "2MASS"
-        }
+        self.add_zeropoint(
+            catalogue="2MASS",
+            zeropoint=self.extract_header_item("PHOTZP"),
+            zeropoint_err=self.extract_header_item("PHOTZPER"),
+            extinction=0.0 * units.mag,
+            extinction_err=0.0 * units.mag,
+            airmass=0.0,
+            airmass_err=0.0
+        )
+        # self.select_zeropoint(True)
+        return self.zeropoint_best
 
     @classmethod
     def header_keys(cls):

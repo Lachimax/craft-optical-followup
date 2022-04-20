@@ -2393,7 +2393,7 @@ class ImagingEpoch(Epoch):
     def proc_source_extraction(self, output_dir: str, **kwargs):
         do_diag = True
         if "do_astrometry_diagnostics" in kwargs:
-            do_diag = kwargs["do_astrometry_diagnostics"]
+            do_diag = kwargs.pop("do_astrometry_diagnostics")
         for image_type in "final", "coadded_unprojected":
             self.source_extraction(
                 output_dir=output_dir,
@@ -3842,6 +3842,8 @@ class HubbleImagingEpoch(ImagingEpoch):
         name, param_file, param_dict = p.params_init(param_file)
         if param_dict is None:
             raise FileNotFoundError(f"No parameter file found at {param_file}.")
+
+        print(param_dict)
 
         if field is None:
             field = param_dict.pop("field")
