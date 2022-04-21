@@ -70,22 +70,22 @@ def check_margins(data, left=None, right=None, bottom=None, top=None, margins: t
     if margins is not None:
         left, right, bottom, top = margins
 
-    if left is None:
+    if left is None or left < 0.:
         left = 0
     else:
         left = int(dequantify(left))
 
-    if right is None:
+    if right is None or right < 0.:
         right = shape[1]
     else:
         right = int(dequantify(right))
 
-    if bottom is None:
+    if bottom is None or bottom < 0.:
         bottom = 0
     else:
         bottom = int(dequantify(bottom))
 
-    if top is None:
+    if top is None or top < 0.:
         top = shape[0]
     else:
         top = int(dequantify(top))
