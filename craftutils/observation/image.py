@@ -243,6 +243,12 @@ def detect_instrument(path: str, ext: int = 0, fail_quietly: bool = False):
     with fits.open(path) as file:
         if "INSTRUME" in file[ext].header:
             inst_str = file[ext].header["INSTRUME"]
+            if "WFC3" in inst_str:
+                det_str = file[ext].header["DETECTOR"]
+                if "UVIS" in det_str:
+                    return "hst-wfc3_uvis2"
+                elif "IR" in det_str:
+                    return "hst-wfc3_ir"
             if "FORS2" in inst_str:
                 return "vlt-fors2"
             elif "HAWKI" in inst_str:
@@ -1169,7 +1175,8 @@ class ImagingImage(Image):
                 mag_psf_err=row["MAGERR_PSF_ZP_best"],
                 snr_psf=row["FLUX_PSF"] / row["FLUXERR_PSF"],
                 image_depth=self.depth["secure"]["SNR_SE"][f"5-sigma"],
-                image_path=self.path
+                image_path=self.path,
+                do_mask=self.mask_nearby(),
             )
             obj.push_to_table(select=False)
 
@@ -1641,16 +1648,17 @@ class ImagingImage(Image):
             cat[f"MAG_AUTO_ZP_{zeropoint_name}_no_ext"] = mags[2]
             cat[f"MAGERR_AUTO_ZP_{zeropoint_name}_no_ext"] = mags[3]
 
-            mags = self.magnitude(
-                flux=cat["FLUX_PSF"],
-                flux_err=cat["FLUXERR_PSF"],
-                cat_name=zeropoint_name
-            )
+            if "FLUX_PSF" in cat:
+                mags = self.magnitude(
+                    flux=cat["FLUX_PSF"],
+                    flux_err=cat["FLUXERR_PSF"],
+                    cat_name=zeropoint_name
+                )
 
-            cat[f"MAG_PSF_ZP_{zeropoint_name}"] = mags[0]
-            cat[f"MAGERR_PSF_ZP_{zeropoint_name}"] = mags[1]
-            cat[f"MAG_PSF_ZP_{zeropoint_name}_no_ext"] = mags[2]
-            cat[f"MAGERR_PSF_ZP_{zeropoint_name}_no_ext"] = mags[3]
+                cat[f"MAG_PSF_ZP_{zeropoint_name}"] = mags[0]
+                cat[f"MAGERR_PSF_ZP_{zeropoint_name}"] = mags[1]
+                cat[f"MAG_PSF_ZP_{zeropoint_name}_no_ext"] = mags[2]
+                cat[f"MAGERR_PSF_ZP_{zeropoint_name}_no_ext"] = mags[3]
 
             self._set_source_cat(source_cat=cat, dual=dual)
 
@@ -2899,14 +2907,14 @@ class ImagingImage(Image):
         this_frame = self.nice_frame(row=row, frame=frame)
         mid_x = row["X_IMAGE"]
         mid_y = row["Y_IMAGE"]
-        left = mid_x - this_frame
-        right = mid_x + this_frame
-        bottom = mid_y - this_frame
-        top = mid_y + this_frame
         self.open()
+        left, right, bottom, top = u.frame_from_centre(frame=this_frame, x=mid_x, y=mid_y, data=self.hdu_list[ext].data)
+        print(left, right, bottom, top)
+        print(mid_x, mid_y)
         image_cut = ff.trim(hdu=self.hdu_list, left=left, right=right, bottom=bottom, top=top)
+        print(image_cut[ext].data.shape)
         norm = pl.nice_norm(image=image_cut[ext].data)
-        ax.imshow(image_cut[0].data, origin='lower', norm=norm)
+        ax.imshow(image_cut[ext].data, origin='lower', norm=norm)
         # theta =
         pl.plot_gal_params(
             hdu=image_cut,
@@ -3518,6 +3526,12 @@ class ImagingImage(Image):
         mask_file.update_output_file()
         return mask_file
 
+    def mask_nearby(self):
+        return True
+
+    def detection_threshold(self):
+        return 5.
+
     def sep_aperture_photometry(
             self, x: float, y: float,
             aperture_radius: units.Quantity = 2.0 * units.arcsec,
@@ -3543,6 +3557,7 @@ class ImagingImage(Image):
             kron_radius: float = 1.,
             ext: int = 0,
             output: str = None,
+            mask_nearby: bool = True,
     ):
         self.calculate_background(ext=ext)
         self.load_wcs(ext=ext)
@@ -3560,11 +3575,14 @@ class ImagingImage(Image):
         print(theta_deg)
         print(theta, a, b, x, y, kron_radius)
 
-        mask = self.generate_mask(
-            unmasked=centre,
-            ext=ext,
-            method="sep"
-        )
+        if mask_nearby:
+            mask = self.generate_mask(
+                unmasked=centre,
+                ext=ext,
+                method="sep"
+            )
+        else:
+            mask = np.zeros_like(self.data[ext].data)
 
         flux, flux_err, flag = sep.sum_ellipse(
             data=self.data_sub_bkg[ext],
@@ -3574,7 +3592,7 @@ class ImagingImage(Image):
             theta=theta,
             err=self.sep_background[ext].rms(),
             gain=self.extract_gain().value,
-            mask=mask.astype(bool)
+            mask=mask.astype(bool),
         )
 
         if isinstance(output, str):
@@ -3637,8 +3655,14 @@ class ImagingImage(Image):
             theta_world: units.Quantity,
             kron_radius: float = 1.,
             ext: int = 0,
-            output: str = None
+            output: str = None,
+            mask_nearby: bool = True,
+            detection_threshold: float = None
     ):
+
+        if detection_threshold is None:
+            detection_threshold = self.detection_threshold()
+
         flux, flux_err, flags = self.sep_elliptical_photometry(
             centre=centre,
             a_world=a_world,
@@ -3646,13 +3670,14 @@ class ImagingImage(Image):
             theta_world=theta_world,
             kron_radius=kron_radius,
             ext=ext,
-            output=output
+            output=output,
+            mask_nearby=mask_nearby
         )
 
         snr = flux / flux_err
-        if snr < 5:
+        if snr < detection_threshold:
             mag, _, _, _ = self.magnitude(
-                flux_err
+                detection_threshold * flux_err
             )
             mag_err = [-999. * units.mag]
         else:
@@ -4005,6 +4030,12 @@ class PanSTARRS1Cutout(CoaddedImage):
         self.exposure_time = None
         self.extract_exposure_time()
 
+    def mask_nearby(self):
+        return False
+
+    def detection_threshold(self):
+        return 7.0
+
     def extract_filter(self):
         key = self.header_keys()["filter"]
         fil_string = self.extract_header_item(key)
@@ -4318,6 +4349,20 @@ class GSAOIImage(ImagingImage):
 class HubbleImage(CoaddedImage):
     instrument_name = "hst-dummy"
 
+    def __init__(
+            self,
+            path: str,
+            frame_type: str = None,
+            instrument_name: str = None
+    ):
+        if instrument_name is None:
+            instrument_name = detect_instrument(path)
+        super().__init__(
+            path=path,
+            frame_type=frame_type,
+            instrument_name=instrument_name,
+        )
+
     def extract_exposure_time(self):
         self.exposure_time = 1.0 * units.second
         return self.exposure_time
@@ -4355,6 +4400,21 @@ class HubbleImage(CoaddedImage):
         )
         self.update_output_file()
         return self.zeropoint_best
+
+    def mask_nearby(self):
+        if self.instrument_name == "hst-wfc3_uvis2":
+            mask = False
+        else:
+            mask = True
+        print("mask_nearby", self.instrument_name, mask, type(self))
+        return mask
+
+    def detection_threshold(self):
+        if self.instrument_name == "hst-wfc3_uvis2":
+            thresh = 1.
+        else:
+            thresh = 5.
+        return thresh
 
     @classmethod
     def header_keys(cls):

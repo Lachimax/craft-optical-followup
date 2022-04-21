@@ -57,6 +57,7 @@ uncertainty_dict = {
     "stat": 0.0
 }
 
+
 def skycoord_to_position_dict(skycoord: SkyCoord):
     ra_float = skycoord.ra
     dec_float = skycoord.dec
@@ -69,6 +70,7 @@ def skycoord_to_position_dict(skycoord: SkyCoord):
                 "ra": {"decimal": ra_float, "hms": ra}}
 
     return position
+
 
 class PositionUncertainty:
     def __init__(
@@ -299,7 +301,8 @@ class Object:
             b_world=self.b,
             theta_world=self.theta,
             kron_radius=self.kron,
-            output=os.path.join(self.data_path, f"{self.name_filesys}_{deepest['instrument']}_{deepest['band']}_{deepest['epoch_name']}")
+            output=os.path.join(self.data_path,
+                                f"{self.name_filesys}_{deepest['instrument']}_{deepest['band']}_{deepest['epoch_name']}"),
         )
         deepest_dict["mag_sep"] = mag[0]
         deepest_dict["mag_sep_err"] = mag_err[0]
@@ -316,13 +319,18 @@ class Object:
                     img = cls(path=phot_dict["good_image_path"])
                     fwhm = img.extract_header_item("PSF_FWHM") * units.arcsec
                     delta_fwhm = fwhm - deepest_fwhm
+                    if "do_mask" in phot_dict:
+                        do_mask = phot_dict["do_mask"]
+                    else:
+                        do_mask = True
                     mag, mag_err, snr = img.sep_elliptical_magnitude(
                         centre=self.position,
-                        a_world=self.a, #+ delta_fwhm,
-                        b_world=self.b, #+ delta_fwhm,
+                        a_world=self.a, # + delta_fwhm,
+                        b_world=self.b, # + delta_fwhm,
                         theta_world=self.theta,
                         kron_radius=self.kron,
-                        output=os.path.join(self.data_path, f"{self.name_filesys}_{instrument}_{band}_{epoch}")
+                        output=os.path.join(self.data_path, f"{self.name_filesys}_{instrument}_{band}_{epoch}"),
+                        mask_nearby=do_mask
                     )
                     phot_dict["mag_sep"] = mag[0]
                     phot_dict["mag_sep_err"] = mag_err[0]
@@ -351,6 +359,7 @@ class Object:
             mag_psf: units.Quantity = None, mag_psf_err: units.Quantity = None,
             snr_psf: float = None,
             image_depth: units.Quantity = None,
+            do_mask: bool = True,
             **kwargs
     ):
         if good_image_path is None:
@@ -380,10 +389,11 @@ class Object:
             "class_star": float(class_star),
             "mag_psf": u.check_quantity(mag_psf, unit=units.mag),
             "mag_psf_err": u.check_quantity(mag_psf_err, unit=units.mag),
-            "snr_psf": float(snr_psf),
+            "snr_psf": snr_psf,
             "image_depth": u.check_quantity(image_depth, unit=units.mag),
             "image_path": image_path,
-            "good_image_path": good_image_path
+            "good_image_path": good_image_path,
+            "do_mask": do_mask,
         }
 
         kwargs.update(photometry)
@@ -441,9 +451,11 @@ class Object:
         if output is None:
             output = os.path.join(self.data_path, f"{self.name_filesys}_photometry.pdf")
 
+        plt.close()
         ax = self.plot_photometry(**kwargs)
         ax.legend()
         plt.savefig(output)
+        plt.close()
         return ax
 
     def plot_photometry(self, ax=None, **kwargs):
@@ -463,21 +475,41 @@ class Object:
             kwargs["ecolor"] = "black"
 
         self.estimate_galactic_extinction()
-        self.photometry_to_table()
+        self.photometry_to_table(fmts=["ascii.ecsv", "ascii.csv"])
 
         with quantity_support():
+
+            plot_limit = (-999 * units.mag == self.photometry_tbl["mag_sep_err"])
+            plot_mag = np.invert(plot_limit)
+
+            print(plot_limit)
+            print(plot_mag)
+            print(self.photometry_tbl["mag_sep"][plot_mag])
+
             ax.errorbar(
-                self.photometry_tbl["lambda_eff"],
-                self.photometry_tbl["mag"],
-                yerr=self.photometry_tbl["mag_err"],
+                self.photometry_tbl["lambda_eff"][plot_mag],
+                self.photometry_tbl["mag_sep"][plot_mag],
+                yerr=self.photometry_tbl["mag_sep_err"][plot_mag],
                 label="Magnitude",
                 **kwargs,
             )
             ax.scatter(
-                self.photometry_tbl["lambda_eff"],
-                self.photometry_tbl["mag_ext_corrected"],
-                # color="violet",
+                self.photometry_tbl["lambda_eff"][plot_limit],
+                self.photometry_tbl["mag_sep"][plot_limit],
+                label="Magnitude upper limit",
+                marker="v",
+            )
+            ax.scatter(
+                self.photometry_tbl["lambda_eff"][plot_mag],
+                self.photometry_tbl["mag_sep_ext_corrected"][plot_mag],
+                color="orange",
                 label="Corrected for Galactic extinction"
+            )
+            ax.scatter(
+                self.photometry_tbl["lambda_eff"][plot_limit],
+                self.photometry_tbl["mag_sep_ext_corrected"][plot_limit],
+                label="Magnitude upper limit",
+                marker="v",
             )
             ax.set_ylabel("Apparent magnitude")
             ax.set_xlabel("$\lambda_\mathrm{eff}$ (\AA)")
@@ -506,7 +538,6 @@ class Object:
             for filter_name in self.photometry[instrument_name]:
                 fil = instrument.filters[filter_name]
                 for epoch in self.photometry[instrument_name][filter_name]:
-
                     phot_dict = self.photometry[instrument_name][filter_name][epoch].copy()
                     phot_dict["band"] = filter_name
                     phot_dict["instrument"] = instrument_name
@@ -514,7 +545,7 @@ class Object:
                         number=fil.lambda_eff,
                         unit=units.Angstrom
                     )
-                    #tbl = table.QTable([phot_dict])
+                    # tbl = table.QTable([phot_dict])
                     tbls.append(phot_dict)
 
         self.photometry_tbl = table.QTable(tbls)
@@ -611,6 +642,8 @@ class Object:
             self.photometry[instrument][band][epoch_name]["ext_gal_type"] = "s_and_f"
             self.photometry[instrument][band][epoch_name]["ext_gal"] = row[key]
             self.photometry[instrument][band][epoch_name]["mag_ext_corrected"] = row["mag"] - row[key]
+            if "mag_sep" in row.colnames:
+                self.photometry[instrument][band][epoch_name]["mag_sep_ext_corrected"] = row["mag_sep"] - row[key]
 
         # tbl_2 = self.photometry_to_table()
         # tbl_2.update(tbl)
