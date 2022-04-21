@@ -15,24 +15,21 @@ from astropy.coordinates import SkyCoord
 from astropy.table import Table, QTable
 from astropy.time import Time
 
+from astroquery import log
+log.setLevel("TRACE")
+
 try:
     import astroquery.gemini as gemini
 except ModuleNotFoundError:
     print("This version of astroquery does not support Gemini. Gemini functions will not be available.")
-
 try:
     import astroquery.ipac.irsa.irsa_dust as irsa_dust
 except ModuleNotFoundError:
     import astroquery.irsa_dust as irsa_dust
-    # print("This version of astroquery does not support IRSA dust. Related functions will not be available.")
-
 try:
     import astroquery.ipac.irsa as irsa
 except ModuleNotFoundError:
     import astroquery.irsa as irsa
-
-    # print("This version of astroquery does not support IRSA. Related functions will not be available.")
-
 try:
     from pyvo import dal
 except ModuleNotFoundError:
@@ -639,10 +636,12 @@ def retrieve_irsa_extinction(ra: float = None, dec: float = None, coord: SkyCoor
             table = irsa_dust.IrsaDust.get_extinction_table(coord)
         except urllib.error.HTTPError:
             attempts += 1
-            print(f"Could not retrieve table due to HTML error. Trying again ({attempts=}).")
+            print(f"Could not retrieve table due to HTML error. Trying again after clearing cache ({attempts=}/100).")
+            cache_path = os.path.join(p.home_path, ".astropy", "cache", "astroquery")
+            u.rmtree_check(cache_path)
 
     if table is None:
-        raise ValueError("Could not retrieve table due to repeated HTML error")
+        table = irsa_dust.IrsaDust.get_extinction_table(coord)
 
     return table
 
