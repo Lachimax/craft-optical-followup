@@ -930,6 +930,31 @@ class FRBField(Field):
                 self.add_object(self.frb.host_galaxy)
         self.epochs_imaging_old = {}
 
+    def plot_host_colour(
+            self,
+            r: image.ImagingImage,
+            b: image.ImagingImage,
+            g: image.ImagingImage = None,
+            fig: plt.Figure = None,
+            centre: SkyCoord = None,
+            show_frb: bool = True,
+            frame: units.Quantity = 30 * units.pix,
+            n: int = 1, n_x: int = 1, n_y: int = 1,
+            frb_kwargs: dict = {},
+            imshow_kwargs: dict = {},
+            normalize_kwargs: dict = {},
+            output_path: str = None,
+            **kwargs
+    ):
+        pl.latex_setup()
+
+        if not isinstance(self.frb, objects.FRB):
+            raise TypeError("self.frb has not been set properly for this FRBField.")
+        if centre is None:
+            centre = self.frb.host_galaxy.position
+
+        r_data = None
+
     def plot_host(
             self,
             img: image.ImagingImage,
@@ -1608,6 +1633,7 @@ class Epoch:
             if os.path.isfile(img):
                 cls = image.CoaddedImage.select_child_class(instrument=self.instrument_name)
                 u.debug_print(2, f"Epoch._add_coadded(): cls ==", cls)
+
                 img = cls(path=img, instrument_name=self.instrument_name)
             else:
                 return None
@@ -2591,6 +2617,15 @@ class ImagingEpoch(Epoch):
                 obj.cat_row = nearest
                 print()
 
+                if "MAG_PSF_ZP_best" in nearest:
+                    mag_psf = nearest["MAG_PSF_ZP_best"]
+                    mag_psf_err = nearest["MAGERR_PSF_ZP_best"]
+                    snr_psf = nearest["FLUX_PSF"] / nearest["FLUXERR_PSF"]
+                else:
+                    mag_psf = -999.0 * units.mag
+                    mag_psf_err = -999.0 * units.mag
+                    snr_psf = -999.0
+
                 obj.add_photometry(
                     instrument=self.instrument_name,
                     fil=fil,
@@ -2612,12 +2647,13 @@ class ImagingEpoch(Epoch):
                     separation_from_given=separation,
                     epoch_date=self.date_str(),
                     class_star=nearest["CLASS_STAR"],
-                    mag_psf=nearest["MAG_PSF_ZP_best"],
-                    mag_psf_err=nearest["MAGERR_PSF_ZP_best"],
-                    snr_psf=nearest["FLUX_PSF"] / nearest["FLUXERR_PSF"],
+                    mag_psf=mag_psf,
+                    mag_psf_err=mag_psf_err,
+                    snr_psf=snr_psf,
                     image_depth=img.depth["secure"]["SNR_SE"][f"5-sigma"],
                     image_path=img.path,
-                    good_image_path=self.coadded_unprojected[fil].path
+                    good_image_path=self.coadded_unprojected[fil].path,
+                    do_mask=img.mask_nearby()
                 )
 
                 if isinstance(self.field, FRBField):
@@ -2730,8 +2766,8 @@ class ImagingEpoch(Epoch):
 
         for obj in self.field.objects:
             obj.update_output_file()
-            obj.write_plot_photometry()
             obj.push_to_table(select=True)
+            obj.write_plot_photometry()
 
     def proc_get_photometry_all(self, output_dir: str, **kwargs):
         if "image_type" in kwargs and isinstance(kwargs["image_type"], str):
@@ -3829,10 +3865,11 @@ class HubbleImagingEpoch(ImagingEpoch):
         download_dir = self.paths["download"]
         # for file in filter(lambda f: f.endswith(".fits"), os.listdir(self.data_path)):
         #     shutil.move(os.path.join(self.data_path, file), output_dir)
-
         for file in filter(lambda f: f.endswith(".fits"), os.listdir(download_dir)):
             path = os.path.join(download_dir, file)
             img = image.HubbleImage(path)
+            if self.instrument_name in [None, "hst-dummy"]:
+                self.instrument_name = img.instrument_name
             fil = img.extract_filter()
             self.exp_time_mean[fil] = img.extract_header_item('TEXPTIME') * units.second / img.extract_ncombine()
             img.set_header_item('INTTIME', img.extract_header_item('TEXPTIME'))
@@ -3857,37 +3894,44 @@ class HubbleImagingEpoch(ImagingEpoch):
             images = self._get_images("final")
 
         for fil in images:
+            img = images[fil]
             if fil == "F300X":
                 self.psf_stats[fil] = {
                     "n_stars": 0,
-                    "fwhm_psfex": -99 * units.arcsec,
+                    "fwhm_psfex": -999 * units.arcsec,
                     "gauss": {
-                        "fwhm_median": -99 * units.arcsec,
-                        "fwhm_mean": -99 * units.arcsec,
-                        "fwhm_max": -99 * units.arcsec,
-                        "fwhm_min": -99 * units.arcsec,
-                        "fwhm_sigma": -99 * units.arcsec,
-                        "fwhm_rms": -99 * units.arcsec
+                        "fwhm_median": -999 * units.arcsec,
+                        "fwhm_mean": -999 * units.arcsec,
+                        "fwhm_max": -999 * units.arcsec,
+                        "fwhm_min": -999 * units.arcsec,
+                        "fwhm_sigma": -999 * units.arcsec,
+                        "fwhm_rms": -999 * units.arcsec
                     },
                     "moffat": {
-                        "fwhm_median": -99 * units.arcsec,
-                        "fwhm_mean": -99 * units.arcsec,
-                        "fwhm_max": -99 * units.arcsec,
-                        "fwhm_min": -99 * units.arcsec,
-                        "fwhm_sigma": -99 * units.arcsec,
-                        "fwhm_rms": -99 * units.arcsec
+                        "fwhm_median": -999 * units.arcsec,
+                        "fwhm_mean": -999 * units.arcsec,
+                        "fwhm_max": -999 * units.arcsec,
+                        "fwhm_min": -999 * units.arcsec,
+                        "fwhm_sigma": -999 * units.arcsec,
+                        "fwhm_rms": -999 * units.arcsec
                     },
                     "sextractor": {
-                        "fwhm_median": -99 * units.arcsec,
-                        "fwhm_mean": -99 * units.arcsec,
-                        "fwhm_max": -99 * units.arcsec,
-                        "fwhm_min": -99 * units.arcsec,
-                        "fwhm_sigma": -99 * units.arcsec,
-                        "fwhm_rms": -99 * units.arcsec
+                        "fwhm_median": -999 * units.arcsec,
+                        "fwhm_mean": -999 * units.arcsec,
+                        "fwhm_max": -999 * units.arcsec,
+                        "fwhm_min": -999 * units.arcsec,
+                        "fwhm_sigma": -999 * units.arcsec,
+                        "fwhm_rms": -999 * units.arcsec
                     }
                 }
+                img.set_header_items(
+                    {
+                        "PSF_FWHM": -999,
+                        "PSF_FWHM_ERR": -999,
+                    },
+                    write=True
+                )
             else:
-                img = images[fil]
                 print(f"Performing PSF measurements on {img}...")
                 self.psf_stats[fil], _, _, _ = img.psf_diagnostics()
 
