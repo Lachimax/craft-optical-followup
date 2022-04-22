@@ -1536,6 +1536,22 @@ class ImagingImage(Image):
         self.update_output_file()
         return self.zeropoints[cat_name.lower()]
 
+    def get_zeropoint(
+            self,
+            cat_name: str,
+            img_name: str = 'self'
+    ):
+        if cat_name == "best":
+            zp_dict = self.zeropoint_best
+        elif cat_name not in self.zeropoints:
+            raise KeyError(f"Zeropoint {cat_name} does not exist.")
+        elif img_name not in self.zeropoints[cat_name]:
+            raise KeyError(f"Zeropoint from {img_name} does not exist")
+        else:
+            zp_dict = self.zeropoints[cat_name][img_name]
+
+        return zp_dict
+
     def add_zeropoint(
             self,
             catalogue: str,
@@ -1636,12 +1652,22 @@ class ImagingImage(Image):
 
         self.extract_exposure_time()
 
+        zp_dict = self.get_zeropoint(cat_name=zeropoint_name)
+
         if force or f"MAG_AUTO_ZP_{zeropoint_name}" not in cat:
             mags = self.magnitude(
                 flux=cat["FLUX_AUTO"],
                 flux_err=cat["FLUXERR_AUTO"],
                 cat_name=zeropoint_name
             )
+            cat[f"ZP_{zeropoint_name}"] = zp_dict["zeropoint"]
+            cat[f"ZPERR_{zeropoint_name}"] = zp_dict["zeropoint_err"]
+            cat[f"AIRMASS_{zeropoint_name}"] = zp_dict["airmass"]
+            cat[f"AIRMASSERR_{zeropoint_name}"] = zp_dict["airmass_err"]
+            cat["EXT_ATM"] = zp_dict["extinction"]
+            cat["EXT_ATMERR"] = zp_dict["extinction_err"]
+            cat[f"ZP_{zeropoint_name}_ATM_CORR"] = zp_dict["zeropoint_img"]
+            cat[f"ZP_{zeropoint_name}_ATM_CORRERR"] = zp_dict["zeropoint_img_err"]
 
             cat[f"MAG_AUTO_ZP_{zeropoint_name}"] = mags[0]
             cat[f"MAGERR_AUTO_ZP_{zeropoint_name}"] = mags[1]
@@ -1671,6 +1697,8 @@ class ImagingImage(Image):
         else:
             print(f"Magnitudes already calibrated for {zeropoint_name}")
 
+
+
     def magnitude(
             self,
             flux: units.Quantity,
@@ -1678,23 +1706,15 @@ class ImagingImage(Image):
             cat_name: str = 'best',
             img_name: str = 'self'
     ):
-
-        if cat_name == "best":
-            zp_dict = self.zeropoint_best
-        elif cat_name not in self.zeropoints:
-            raise KeyError(f"Zeropoint {cat_name} does not exist.")
-        elif img_name not in self.zeropoints[cat_name]:
-            raise KeyError(f"Zeropoint from {img_name} does not exist")
-        else:
-            zp_dict = self.zeropoints[cat_name][img_name]
+        zp_dict = self.get_zeropoint(cat_name=cat_name, img_name=img_name)
 
         mag, mag_err = ph.magnitude_complete(
             flux=flux,
             flux_err=flux_err,
             exp_time=self.extract_exposure_time(),
             exp_time_err=0.0 * units.second,
-            zeropoint=zp_dict['zeropoint_img'],
-            zeropoint_err=zp_dict['zeropoint_img_err'],
+            zeropoint=zp_dict['zeropoint'],
+            zeropoint_err=zp_dict['zeropoint_err'],
             airmass=zp_dict['airmass'],
             airmass_err=zp_dict['airmass_err'],
             ext=zp_dict['extinction'],
@@ -1708,10 +1728,10 @@ class ImagingImage(Image):
             flux_err=flux_err,
             exp_time=self.extract_exposure_time(),
             exp_time_err=0.0 * units.second,
-            zeropoint=zp_dict['zeropoint_img'],
-            zeropoint_err=zp_dict['zeropoint_img_err'],
-            airmass=zp_dict['airmass'],
-            airmass_err=zp_dict['airmass_err'],
+            zeropoint=zp_dict['zeropoint'],
+            zeropoint_err=zp_dict['zeropoint_err'],
+            airmass=0.0,
+            airmass_err=0.0,
             ext=0.0 * units.mag,
             ext_err=0.0 * units.mag,
             colour_term=0.0,
@@ -4055,17 +4075,35 @@ class PanSTARRS1Cutout(CoaddedImage):
     #     https://outerspace.stsci.edu/display/PANSTARRS/PS1+Stack+images
     #     :return:
     #     """
-    #     self.add_zeropoint(
+    #
+    #     self.load_headers()
+    #     zp_keys = filter(lambda k: k.startswith("ZPT_"), self.headers[0])
+    #     zps = []
+    #     for key in zp_keys:
+    #         zps.append(self.headers[0][key])
+    #     zp = np.mean(zps) * units.mag
+    #     zp_err = np.std(zps) * units.mag
+    #
+    #     return self.add_zeropoint(
     #         catalogue="panstarrs1",
-    #         zeropoint=self.extract_header_item("FPA.ZP"),
-    #         zeropoint_err=0.0 * units.mag,
+    #         zeropoint=zp,
+    #         zeropoint_err=zp_err,
     #         extinction=0.0 * units.mag,
     #         extinction_err=0.0 * units.mag,
     #         airmass=0.0,
     #         airmass_err=0.0
     #     )
-    #     # self.select_zeropoint(True)
-    #     return self.zeropoint_best
+
+        # return self.add_zeropoint(
+        #     catalogue="panstarrs1",
+        #     zeropoint=self.extract_header_item("FPA.ZP"),
+        #     zeropoint_err=0.0 * units.mag,
+        #     extinction=0.0 * units.mag,
+        #     extinction_err=0.0 * units.mag,
+        #     airmass=0.0,
+        #     airmass_err=0.0
+        # )
+        # self.select_zeropoint(True)
 
     # I only wrote this function below because I couldn't find the EXPTIME key in the PS1 cutouts. It is, however, there.
     # def extract_exposure_time(self):

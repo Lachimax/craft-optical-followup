@@ -325,8 +325,8 @@ class Object:
                         do_mask = True
                     mag, mag_err, snr = img.sep_elliptical_magnitude(
                         centre=self.position,
-                        a_world=self.a, # + delta_fwhm,
-                        b_world=self.b, # + delta_fwhm,
+                        a_world=self.a,  # + delta_fwhm,
+                        b_world=self.b,  # + delta_fwhm,
                         theta_world=self.theta,
                         kron_radius=self.kron,
                         output=os.path.join(self.data_path, f"{self.name_filesys}_{instrument}_{band}_{epoch}"),
@@ -475,7 +475,10 @@ class Object:
             kwargs["ecolor"] = "black"
 
         self.estimate_galactic_extinction()
-        self.photometry_to_table(fmts=["ascii.ecsv", "ascii.csv"])
+        self.photometry_to_table(fmts=["ascii.ecsv", "ascii.csv"], best=False)
+        self.photometry_to_table(
+            output=self.build_photometry_table_path().replace(".ecsv", "_best.ecsv"),
+            fmts=["ascii.ecsv", "ascii.csv"], best=True)
 
         with quantity_support():
 
@@ -520,7 +523,12 @@ class Object:
         self.check_data_path()
         return os.path.join(self.data_path, f"{self.name_filesys}_photometry.ecsv")
 
-    def photometry_to_table(self, output: str = None, fmts: List[str] = ("ascii.ecsv", "ascii.csv")):
+    def photometry_to_table(
+            self,
+            output: str = None,
+            best: bool = False,
+            fmts: List[str] = ("ascii.ecsv", "ascii.csv")
+    ):
         """
         Converts the photometry information, which is stored internally as a dictionary, into an astropy QTable.
         :param output: Where to write table.
@@ -537,8 +545,9 @@ class Object:
             instrument = inst.Instrument.from_params(instrument_name)
             for filter_name in self.photometry[instrument_name]:
                 fil = instrument.filters[filter_name]
-                for epoch in self.photometry[instrument_name][filter_name]:
-                    phot_dict = self.photometry[instrument_name][filter_name][epoch].copy()
+
+                if best:
+                    phot_dict, _ = self.select_photometry_sep(fil=filter_name, instrument=instrument_name)
                     phot_dict["band"] = filter_name
                     phot_dict["instrument"] = instrument_name
                     phot_dict["lambda_eff"] = u.check_quantity(
@@ -547,8 +556,26 @@ class Object:
                     )
                     # tbl = table.QTable([phot_dict])
                     tbls.append(phot_dict)
+                    print("phot_dict:")
+                    print(phot_dict)
 
-        self.photometry_tbl = table.QTable(tbls)
+                else:
+                    for epoch in self.photometry[instrument_name][filter_name]:
+                        phot_dict = self.photometry[instrument_name][filter_name][epoch].copy()
+                        phot_dict["band"] = filter_name
+                        phot_dict["instrument"] = instrument_name
+                        phot_dict["lambda_eff"] = u.check_quantity(
+                            number=fil.lambda_eff,
+                            unit=units.Angstrom
+                        )
+                        # tbl = table.QTable([phot_dict])
+                        tbls.append(phot_dict)
+
+        print(tbls)
+        if best:
+            self.photometry_tbl = table.vstack(tbls)
+        else:
+            self.photometry_tbl = table.QTable(tbls)
 
         if output is not False:
             for fmt in fmts:
@@ -710,7 +737,12 @@ class Object:
         # TODO: Just meaning the whole table is probably not the best way to estimate uncertainties.
         return fil_photom[np.argmax(fil_photom["snr"])], mean
 
-    def select_photometry_sep(self, fil: str, instrument: str, local_output: bool = True):
+    def select_photometry_sep(
+            self,
+            fil: str,
+            instrument: str,
+            local_output: bool = True
+    ):
         fil_photom = self.photometry_tbl[self.photometry_tbl["band"] == fil]
         fil_photom = fil_photom[fil_photom["instrument"] == instrument]
         mean = {
@@ -719,6 +751,8 @@ class Object:
             "mag_psf": np.mean(fil_photom["mag_psf"]),
             "mag_psf_err": np.std(fil_photom["mag_psf"])
         }
+        u.debug_print(2, f"Object.select_photometry_sep(): {self.name=}, {fil=}, {instrument=}")
+        print(fil_photom)
         return fil_photom[np.argmax(fil_photom["snr_sep"])], mean
 
     def select_psf_photometry(self, local_output: bool = True):
