@@ -2536,7 +2536,6 @@ class ImagingEpoch(Epoch):
                 preferred = kwargs["preferred_zeropoint"][fil]
             else:
                 preferred = None
-                preferred = None
 
             zeropoint, cat = img.select_zeropoint(suppress_select, preferred=preferred)
 
@@ -3075,7 +3074,7 @@ class ImagingEpoch(Epoch):
         frame, fil = self._check_frame(frame=frame, frame_type=frame_type)
         if frame is None:
             return None
-        if self.check_filter(fil=fil) and frame not in self.frames_reduced[fil]:
+        if self.check_filter(fil=fil) and frame not in frames_dict[fil]:
             frames_dict[fil].append(frame)
         return frame
 
@@ -3464,6 +3463,7 @@ class FORS2StandardEpoch(StandardEpoch, ImagingEpoch):
                             show=False,
                             snr_cut=snr_min,
                             star_class_tol=star_class_tolerance,
+                            iterate_uncertainty=False
                         )
 
                         chip = img.extract_chip_number()
@@ -4524,6 +4524,10 @@ class ESOImagingEpoch(ImagingEpoch):
             2, f"ESOImagingEpoch.trim_reduced(): {self}.frames_esoreflex_backgrounds ==",
             self.frames_esoreflex_backgrounds)
 
+        self.frames_trimmed = {}
+        for fil in self.filters:
+            self.check_filter(fil)
+
         edged = False
 
         up_left = 0
@@ -5105,12 +5109,6 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
                 img.extinction_atmospheric = ext_row[f"ext_{fil}"]
                 img.extinction_atmospheric_err = ext_row[f"ext_err_{fil}"]
 
-        super().photometric_calibration(
-            output_path=output_path,
-            suppress_select=True,
-            **kwargs
-        )
-
         # Do esorex reduction of standard images, and attempt esorex zeropoints if there are enough different
         # observations
         images = self._get_images(image_type)
@@ -5251,6 +5249,12 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
         zeropoints = p.load_params(zeropoint_yaml)
         if zeropoints is None:
             zeropoints = {}
+
+        super().photometric_calibration(
+            output_path=output_path,
+            suppress_select=True,
+            **kwargs
+        )
 
         for fil in images:
             if "preferred_zeropoint" in kwargs and fil in kwargs["preferred_zeropoint"]:

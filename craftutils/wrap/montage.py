@@ -60,12 +60,12 @@ def check_input_images(input_directory: str,
     for file in table[1:]:
         if np.round(float(file[exptime_key])) != exptime:
             raise ValueError(
-                f"Input files have different EXPTIME ({file[exptime_key]} != {exptime}), file {file['filename']}")
+                f"Input files have different EXPTIME ({file[exptime_key]} != {exptime}), file {file['FILENAME']}")
         if file[instrument_key] != instrument:
             raise ValueError(
                 f"Input files were taken with different instruments ({file[instrument_key]} != {instrument}), file {file['filename']}.")
         if np.round(file[gain_key]) != gain:
-            raise ValueError(f"Files specify different gains ({gain} != {file[gain_key]}, file {file['filename']}")
+            raise ValueError(f"Files specify different gains ({gain} != {file[gain_key]}, file {file['FILENAME']}")
 
 
 def inject_header(

@@ -276,9 +276,9 @@ class Image:
             logg: log.Log = None,
     ):
 
-        if not os.path.isfile(path):
-            raise FileNotFoundError(f"The image file file {path} does not exist.")
         self.path = path
+        if not os.path.isfile(self.path):
+            raise FileNotFoundError(f"The image file file {path} does not exist.")
         self.output_file = path.replace(".fits", "_outputs.yaml")
         self.data_path, self.filename = os.path.split(self.path)
         self.name = self.get_id()
@@ -1457,8 +1457,10 @@ class ImagingImage(Image):
             mag_range_sex_lower: units.Quantity = -100. * units.mag,
             mag_range_sex_upper: units.Quantity = 100. * units.mag,
             dist_tol: units.Quantity = None,
-            snr_cut=3.
+            snr_cut=3.,
+            iterate_uncertainty: bool = True
     ):
+        print(f"\nEstimating photometric zeropoint for {self.name}, {type(self)}\n")
         self.signal_to_noise_measure()
         if image_name is None:
             image_name = self.name
@@ -1510,6 +1512,7 @@ class ImagingImage(Image):
             cat_zeropoint_err=cat_zeropoint_err,
             snr_col='SNR_SE',
             snr_cut=snr_cut,
+            iterate_uncertainty=iterate_uncertainty,
         )
 
         if zp_dict is None:
@@ -1566,6 +1569,10 @@ class ImagingImage(Image):
             **kwargs
     ):
         zp_dict = kwargs.copy()
+        if extinction is None:
+            extinction = extinction_err = 0. * units.mag
+        if airmass is None:
+            airmass = airmass_err = 0. * units.mag
         zp_dict.update({
             "zeropoint": u.check_quantity(zeropoint, units.mag),
             "zeropoint_err": u.check_quantity(zeropoint_err, units.mag),
@@ -1577,6 +1584,10 @@ class ImagingImage(Image):
             "n_matches": n_matches,
             "image_name": image_name
         })
+        print("Adding zeropoint to image:")
+        print(f"\t {zeropoint=} +/- {zeropoint_err}")
+        print(f"\t {airmass=} +/- {airmass_err}")
+        print(f"\t {extinction=} +/- {extinction_err}")
         zp_dict["zeropoint_img"] = zp_dict["zeropoint"] - zp_dict["extinction"] * zp_dict["airmass"]
         zp_dict['zeropoint_img_err'] = np.sqrt(
             zp_dict["zeropoint_err"] ** 2 + u.uncertainty_product(
@@ -4299,7 +4310,8 @@ class FORS2CoaddedImage(CoaddedImage):
             mag_range_sex_lower: units.Quantity = -100. * units.mag,
             mag_range_sex_upper: units.Quantity = 100. * units.mag,
             dist_tol: units.Quantity = 2. * units.arcsec,
-            snr_cut=3.
+            snr_cut=3.,
+            iterate_uncertainty=True,
     ):
         super().zeropoint(
             cat_path=cat_path,
@@ -4320,7 +4332,8 @@ class FORS2CoaddedImage(CoaddedImage):
             mag_range_sex_lower=mag_range_sex_lower,
             mag_range_sex_upper=mag_range_sex_upper,
             dist_tol=dist_tol,
-            snr_cut=snr_cut
+            snr_cut=snr_cut,
+            iterate_uncertainty=iterate_uncertainty
         )
         self.calibration_from_qc1()
 
