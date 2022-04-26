@@ -21,6 +21,22 @@ import craftutils.wrap.astrometry_net as astrometry_net
 from craftutils.retrieve import cat_columns, load_catalogue
 
 
+def jname(coord: SkyCoord, ra_precision: int = 2, dec_precision: int = 1):
+    s_ra, s_dec = coord_string(coord)
+    ra_second = np.round(float(s_ra[s_ra.find("m") + 1:s_ra.find("s")]), ra_precision)
+    if ra_precision <= 0:
+        ra_second = int(ra_second)
+    ra_second = str(ra_second)#.ljust(6, "0")
+    dec_second = np.round(float(s_dec[s_dec.find("m") + 1:s_dec.find("s")]), dec_precision)
+    if dec_precision == 0:
+        dec_second = int(dec_second)
+    dec_second = str(dec_second)#.ljust(5, "0")
+    s_ra = s_ra[:s_ra.find("m")].replace("h", "")
+    s_dec = s_dec[:s_dec.find("m")].replace("d", "")
+    name = f"J{s_ra}{ra_second}{s_dec}{dec_second}"
+    return name
+
+
 def correct_gaia_to_epoch(gaia_cat: Union[str, table.QTable], new_epoch: time.Time):
     gaia_cat = load_catalogue(cat_name="gaia", cat=gaia_cat)
     epochs = list(map(lambda y: f"J{y}", gaia_cat['ref_epoch']))
@@ -84,6 +100,13 @@ def attempt_skycoord(coord: Union[SkyCoord, str, tuple, list, np.ndarray]):
         return SkyCoord(coord[0], coord[1])
     else:
         raise TypeError(f"coord is {type(coord)}; must be of type SkyCoord, str, tuple, list, or numpy array")
+
+
+def coord_string(coord: SkyCoord):
+    s = coord.to_string("hmsdms")
+    ra = s[:s.find(" ")]
+    dec = s[s.find(" ") + 1:]
+    return ra, dec
 
 
 def calculate_error_ellipse(frb: Union[str, dict], error: str = 'quadrature'):
@@ -465,10 +488,12 @@ def find_nearest(coord: SkyCoord, search_coords: SkyCoord):
     return match_id, separations[match_id]
 
 
-def match_catalogs(cat_1: table.Table, cat_2: table.Table,
-                   ra_col_1: str = "ALPHAPSF_SKY", dec_col_1: str = "DELTAPSF_SKY",
-                   ra_col_2: str = "ra", dec_col_2: str = "dec",
-                   tolerance: units.Quantity = 1 * units.arcsec):
+def match_catalogs(
+        cat_1: table.Table, cat_2: table.Table,
+        ra_col_1: str = "RA", dec_col_1: str = "DEC",
+        ra_col_2: str = "ra", dec_col_2: str = "dec",
+        tolerance: units.Quantity = 1 * units.arcsec
+):
     # Clean out any invalid declinations
     u.debug_print(2, "match_catalogs(): type(cat_1) ==", type(cat_1), "type(cat_2) ==", type(cat_2))
     cat_1 = cat_1[cat_1[dec_col_1] <= 90 * units.deg]
@@ -480,22 +505,12 @@ def match_catalogs(cat_1: table.Table, cat_2: table.Table,
     coords_1 = SkyCoord(cat_1[ra_col_1], cat_1[dec_col_1])
     coords_2 = SkyCoord(cat_2[ra_col_2], cat_2[dec_col_2])
 
-    if len(coords_1) >= len(coords_2):
-        idx, distance, _ = coords_2.match_to_catalog_sky(coords_1)
-        keep = distance < tolerance
-        idx = idx[keep]
-        matches_2 = cat_2[keep]
-        distance = distance[keep]
+    idx, distance, _ = coords_2.match_to_catalog_sky(coords_1)
+    keep = distance < tolerance
+    idx = idx[keep]
+    matches_2 = cat_2[keep]
+    distance = distance[keep]
 
-        matches_1 = cat_1[idx]
-
-    else:
-        idx, distance, _ = coords_1.match_to_catalog_sky(coords_2)
-        keep = distance < tolerance
-        idx = idx[keep]
-        matches_1 = cat_1[keep]
-        distance = distance[keep]
-
-        matches_2 = cat_2[idx]
+    matches_1 = cat_1[idx]
 
     return matches_1, matches_2, distance

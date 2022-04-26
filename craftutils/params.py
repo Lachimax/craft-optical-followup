@@ -91,7 +91,7 @@ def check_for_config():
 def load_params(file: str):
     file = u.sanitise_file_ext(file, '.yaml')
 
-    u.debug_print(1, 'Loading parameter file from ' + str(file))
+    u.debug_print(2, 'Loading parameter file from ' + str(file))
 
     if os.path.isfile(file):
         with open(file) as f:
@@ -159,6 +159,9 @@ config = check_for_config()
 param_dir = u.check_trailing_slash(config['param_dir'])
 project_path = u.check_trailing_slash(config['proj_dir'])
 data_path = u.check_trailing_slash(config["top_data_dir"])
+furby_path = None
+if "furby_dir" in config and config["furby_dir"] is not None:
+    furby_path = u.check_trailing_slash(config["furby_dir"])
 
 
 def get_project_git_hash(short: bool = False):
@@ -462,42 +465,42 @@ def instrument_filters_single_param(param: str, instrument: str = 'FORS2', sort_
     return param_dict
 
 
-def object_params_instrument(obj: str, instrument: str, quiet: bool = False):
+def object_params_instrument(obj: str, instrument: str):
     instrument = instrument.lower()
-    return load_params(os.path.join(param_dir, f'epochs_{instrument}', obj), quiet=quiet)
+    return load_params(os.path.join(param_dir, f'epochs_{instrument}', obj))
 
 
-def object_params_fors2(obj: str, quiet: bool = False):
-    return load_params(param_dir + 'epochs_fors2/' + obj, quiet=quiet)
+def object_params_fors2(obj: str):
+    return load_params(param_dir + 'epochs_fors2/' + obj)
 
 
-def object_params_xshooter(obj: str, quiet: bool = False):
-    return load_params(param_dir + 'epochs_xshooter/' + obj, quiet=quiet)
+def object_params_xshooter(obj: str):
+    return load_params(param_dir + 'epochs_xshooter/' + obj)
 
 
-def object_params_imacs(obj: str, quiet: bool = False):
-    return load_params(param_dir + 'epochs_imacs/' + obj, quiet=quiet)
+def object_params_imacs(obj: str):
+    return load_params(param_dir + 'epochs_imacs/' + obj)
 
 
-def object_params_des(obj: str, quiet: bool = False):
-    return load_params(param_dir + 'epochs_des/' + obj, quiet=quiet)
+def object_params_des(obj: str):
+    return load_params(param_dir + 'epochs_des/' + obj)
 
 
-def object_params_sdss(obj: str, quiet: bool = False):
-    return load_params(param_dir + 'epochs_sdss/' + obj, quiet=quiet)
+def object_params_sdss(obj: str):
+    return load_params(param_dir + 'epochs_sdss/' + obj)
 
 
-def object_params_frb(obj: str, quiet: bool = False):
-    return load_params(param_dir + 'FRBs/' + obj, quiet=quiet)
+def object_params_frb(obj: str):
+    return load_params(param_dir + 'FRBs/' + obj)
 
 
-def object_params_all_epochs(obj: str, instrument: str = 'FORS2', quiet: bool = False):
+def object_params_all_epochs(obj: str, instrument: str = 'FORS2'):
     properties = {}
     directory = param_dir + 'epochs_' + instrument.lower() + '/'
     for file in os.listdir(directory):
         if file[-5:] == '.yaml':
             if obj + '_' in file:
-                properties[file[-6:-5]] = load_params(directory + file, quiet=quiet)
+                properties[file[-6:-5]] = load_params(directory + file)
 
     return properties
 
@@ -778,6 +781,8 @@ def path_to_config_sextractor_failed_psfex_param():
 def path_to_config_sextractor_config():
     return os.path.join(path_to_config_psfex(), "psf-fit.sex")
 
+def path_to_config_galfit():
+    return os.path.join(project_path, "param", "galfit", "galfit.feedme")
 
 def path_to_config_sextractor_param_pre_psfex():
     return os.path.join(path_to_config_psfex(), "pre-psfex.param")
@@ -801,7 +806,7 @@ def params_init(param_file: Union[str, dict]):
         param_file = u.sanitise_file_ext(filename=param_file, ext="yaml")
         param_dict = load_params(file=param_file)
         if param_dict is None:
-            return None, None, None  # raise FileNotFoundError(f"No parameter file found at {param_file}.")
+            return None, param_file, None  # raise FileNotFoundError(f"No parameter file found at {param_file}.")
         name = u.get_filename(path=param_file, include_ext=False)
         param_dict["param_path"] = param_file
     else:
@@ -830,8 +835,8 @@ def update_output_file(obj):
         if param_dict is None:
             param_dict = {}
         # For each of these, check if None first.
-        u.debug_print(1, "OBJ", obj, type(obj))
-        u.debug_print(1, "OBJ._OUTPUT_DICT", obj._output_dict())
+        u.debug_print(2, "params.update_output_file(): obj, type(obj) ==", obj, type(obj))
+        u.debug_print(2, "params.update_output_file(): obj._output_dict() ==", obj._output_dict())
         param_dict.update(obj._output_dict())
         save_params(dictionary=param_dict, file=obj.output_file)
     else:

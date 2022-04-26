@@ -4,6 +4,7 @@ import os
 from typing import Union
 
 import matplotlib.pyplot as plt
+import matplotlib
 import numpy as np
 import photutils
 
@@ -13,10 +14,14 @@ from astropy.table import Table
 from astropy.visualization import (ImageNormalize, LogStretch, SqrtStretch, ZScaleInterval, MinMaxInterval,
                                    PowerStretch, wcsaxes)
 
+from astropy.visualization import quantity_support
+
 import craftutils.fits_files as ff
 import craftutils.params as p
 import craftutils.astrometry as am
 import craftutils.utils as u
+
+quantity_support()
 
 
 def plot_kron(fig: plt.Figure, data_title: str, instrument: str, f: str, index: Union[int, list], catalogue: str,
@@ -163,18 +168,19 @@ def plot_difference(fig: plt.Figure, path: str, obj: str, instrument: str,
     return fig
 
 
-def plot_subimage(fig: plt.Figure, hdu: Union[str, fits.HDUList], ra: float, dec: float,
-                  frame: Union[int, float], world_frame: bool = False, title: str = None,
-                  n: int = 1, n_x: int = 1, n_y: int = 1,
-                  cmap: str = 'viridis', show_cbar: bool = False, stretch: str = 'sqrt',
-                  vmin: float = None,
-                  vmax: float = None,
-                  show_grid: bool = False,
-                  ticks: int = None, interval: str = 'minmax',
-                  show_coords: bool = True, ylabel: str = None,
-                  font_size: int = 12,
-                  reverse_y=False,
-                  **kwargs):
+def plot_subimage(
+        fig: plt.Figure, hdu: Union[str, fits.HDUList], ra: float, dec: float,
+        frame: Union[int, float], world_frame: bool = False, title: str = None,
+        n: int = 1, n_x: int = 1, n_y: int = 1,
+        cmap: str = 'viridis', show_cbar: bool = False, stretch: str = 'sqrt',
+        vmin: float = None,
+        vmax: float = None,
+        show_grid: bool = False,
+        ticks: int = None, interval: str = 'minmax',
+        show_coords: bool = True, ylabel: str = None,
+        font_size: int = 12,
+        reverse_y=False,
+        **kwargs):
     """
 
     :param fig:
@@ -372,22 +378,24 @@ def plot_galaxy(fig: plt.Figure, data_title: str, instrument: str, f: str, ra: f
     return plot, hdu_cut
 
 
-def plot_hg(data_title: str, instrument: str, f: str, frame: int,
-            fig: plt.Figure, n: int = 1, n_x: int = 1, n_y: int = 1,
-            show_frb: Union[bool, str] = False, ellipse_colour: str = 'white',
-            cmap: str = 'viridis', show_cbar: bool = False, stretch: str = 'sqrt', vmin: float = None,
-            vmax: float = None,
-            bar_colour: str = 'white',
-            show_filter: bool = True,
-            show_hg: bool = False, show_grid: bool = False, show_z: bool = True, z_colour: str = 'white',
-            image_name: str = 'astrometry_image',
-            show_instrument: bool = False,
-            ticks: int = None,
-            show_distance: bool = True, bar_position: str = 'left',
-            show_coords: bool = True,
-            show_name: bool = True,
-            reverse_y=False,
-            line_width=1.):
+def plot_hg(
+        data_title: str, instrument: str, f: str, frame: int,
+        fig: plt.Figure, n: int = 1, n_x: int = 1, n_y: int = 1,
+        show_frb: Union[bool, str] = False, ellipse_colour: str = 'white',
+        cmap: str = 'viridis', show_cbar: bool = False, stretch: str = 'sqrt', vmin: float = None,
+        vmax: float = None,
+        bar_colour: str = 'white',
+        show_filter: bool = True,
+        show_hg: bool = False, show_grid: bool = False, show_z: bool = True, z_colour: str = 'white',
+        image_name: str = 'astrometry_image',
+        show_instrument: bool = False,
+        ticks: int = None,
+        show_distance: bool = True, bar_position: str = 'left',
+        show_coords: bool = True,
+        show_name: bool = True,
+        reverse_y=False,
+        line_width=1.
+):
     instrument = instrument.lower()
     instruments = {'fors2': 'FORS2', 'imacs': 'IMACS', 'xshooter': 'X-shooter', 'gmos': 'GMOS'}
     if instrument not in instruments:
@@ -407,15 +415,16 @@ def plot_hg(data_title: str, instrument: str, f: str, frame: int,
     else:
         object_name = ''
 
-    plot, hdu_cut = plot_galaxy(data_title=data_title, instrument=instrument, f=f, ra=hg_ra, dec=hg_dec, frame=frame,
-                                fig=fig,
-                                n=n, n_x=n_x, n_y=n_y, cmap=cmap, show_cbar=show_cbar, stretch=stretch, vmin=vmin,
-                                vmax=vmax,
-                                show_grid=show_grid,
-                                show_filter=show_filter, image_name=image_name, show_instrument=show_instrument,
-                                object_name=object_name, ticks=ticks, show_coords=show_coords, reverse_y=reverse_y,
-                                show_frb=show_frb, ellipse_colour=ellipse_colour,
-                                line_width=line_width)
+    plot, hdu_cut = plot_galaxy(
+        data_title=data_title, instrument=instrument, f=f, ra=hg_ra, dec=hg_dec, frame=frame,
+        fig=fig,
+        n=n, n_x=n_x, n_y=n_y, cmap=cmap, show_cbar=show_cbar, stretch=stretch, vmin=vmin,
+        vmax=vmax,
+        show_grid=show_grid,
+        show_filter=show_filter, image_name=image_name, show_instrument=show_instrument,
+        object_name=object_name, ticks=ticks, show_coords=show_coords, reverse_y=reverse_y,
+        show_frb=show_frb, ellipse_colour=ellipse_colour,
+        line_width=line_width)
 
     if show_z:
         if reverse_y:
@@ -551,6 +560,11 @@ def latex_setup():
     plt.rcParams['axes.linewidth'] = 2.
 
 
+def latex_off():
+    plt.rcdefaults()
+    plt.rcParams.update(matplotlib.rcParamsDefault)
+
+
 def plot_file(path: str, label: str = None, colour: str = None, show: bool = False):
     """
     Plots a simple two-column ascii file, with the first column as x and the second column as y.
@@ -569,11 +583,12 @@ def plot_file(path: str, label: str = None, colour: str = None, show: bool = Fal
         plt.show()
 
 
-def plot_gal_params(hdu: fits.HDUList, ras: Union[list, np.ndarray, float], decs: Union[list, np.ndarray, float],
-                    a: Union[list, np.ndarray, float], b: Union[list, np.ndarray, float],
-                    theta: Union[list, np.ndarray, float], colour: str = 'white',
-                    show_centre: bool = False,
-                    label: str = None, world: bool = True, world_axes: bool = True, **kwargs):
+def plot_gal_params(
+        hdu: fits.HDUList, ras: Union[list, np.ndarray, float], decs: Union[list, np.ndarray, float],
+        a: Union[list, np.ndarray, float], b: Union[list, np.ndarray, float],
+        theta: Union[list, np.ndarray, float], colour: str = 'white',
+        show_centre: bool = False,
+        label: str = None, world: bool = True, world_axes: bool = True, **kwargs):
     """
 
     :param hdu:
@@ -639,6 +654,9 @@ def plot_all_params(image: Union[str, fits.hdu.HDUList], cat: Union[str, Table, 
         show = True
 
     image, path = ff.path_or_hdu(image)
+
+    if isinstance(cat, str):
+        cat = Table.read(cat, format="ascii.sextractor")
 
     data = image[0].data
 

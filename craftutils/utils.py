@@ -21,6 +21,11 @@ from astropy.time import Time
 
 debug_level = 0
 
+def pad_zeroes(n: int, length: int = 2):
+    n_str = str(n)
+    while len(n_str) < length:
+        n_str = "0" + n_str
+    return n_str
 
 def get_git_hash(directory: str, short: bool = False):
     """
@@ -35,7 +40,7 @@ def get_git_hash(directory: str, short: bool = False):
         args.insert(2, "--short")
     try:
         githash = subprocess.check_output(args).decode('ascii').strip()
-    except subprocess.CalledProcessError:
+    except (subprocess.CalledProcessError, FileNotFoundError):
         githash = None
     os.chdir(current_dir)
     return githash
@@ -65,22 +70,22 @@ def check_margins(data, left=None, right=None, bottom=None, top=None, margins: t
     if margins is not None:
         left, right, bottom, top = margins
 
-    if left is None:
+    if left is None or left < 0.:
         left = 0
     else:
         left = int(dequantify(left))
 
-    if right is None:
+    if right is None or right < 0.:
         right = shape[1]
     else:
         right = int(dequantify(right))
 
-    if bottom is None:
+    if bottom is None or bottom < 0.:
         bottom = 0
     else:
         bottom = int(dequantify(bottom))
 
-    if top is None:
+    if top is None or top < 0.:
         top = shape[0]
     else:
         top = int(dequantify(top))
@@ -93,7 +98,15 @@ def check_margins(data, left=None, right=None, bottom=None, top=None, margins: t
     return left, right, bottom, top
 
 
-def trim_image(data, left=None, right=None, bottom=None, top=None, margins: tuple = None):
+def trim_image(
+        data,
+        left=None,
+        right=None,
+        bottom=None,
+        top=None,
+        margins: tuple = None,
+        return_margins: bool = False
+):
     """
 
     :param data:
@@ -104,13 +117,17 @@ def trim_image(data, left=None, right=None, bottom=None, top=None, margins: tupl
     :param margins:
     :return:
     """
-    left, right, bottom, top = check_margins(
+    left, right, bottom, top = margins = check_margins(
         data=data,
         left=left, right=right, bottom=bottom, top=top,
         margins=margins
     )
     debug_print(2, "fits_files.trim(): left ==", left, "right ==", right, "bottom ==", bottom, "top ==", top)
-    return data[bottom:top + 1, left:right + 1]
+    trimmed = data[bottom:top + 1, left:right + 1]
+    if return_margins:
+        return trimmed, margins
+    else:
+        return trimmed
 
 
 def check_iterable(obj):
@@ -119,6 +136,16 @@ def check_iterable(obj):
     except TypeError:
         obj = [obj]
     return obj
+
+
+def theta_range(theta: units.Quantity):
+    theta = check_iterable(theta.copy())
+    theta = units.Quantity(theta)
+
+    theta[theta > 90 * units.deg] -= 180 * units.deg
+    theta[theta < -90 * units.deg] += 180 * units.deg
+
+    return theta
 
 
 def sanitise_endianness(array: np.ndarray):
@@ -152,9 +179,9 @@ def write_list_to_file(path: str, file: list):
     # Delete file, to be rewritten.
     rm_check(path)
     # Write file to disk.
-    print(f"Writing pypeit file to {path}")
-    with open(path, 'w') as pypeit_file:
-        pypeit_file.writelines(file)
+    print(f"Writing file to {path}")
+    with open(path, 'w') as file_stream:
+        file_stream.writelines(file)
 
 
 def relevant_timescale(time: units.Quantity):
@@ -231,8 +258,13 @@ def check_dict(key: str, dictionary: dict, na_values: Union[tuple, list] = (None
         return dictionary[key]
 
 
-def check_quantity(number: Union[float, int, units.Quantity], unit: units.Unit, allow_mismatch: bool = True,
-                   convert: bool = False):
+def check_quantity(
+        number: Union[float, int, units.Quantity],
+        unit: units.Unit,
+        allow_mismatch: bool = True,
+        enforce_equivalency: bool = True,
+        convert: bool = False
+):
     """
     If the passed number is not a Quantity, turns it into one with the passed unit. If it is already a Quantity,
     checks the unit; if the unit is compatible with the passed unit, the quantity is returned unchanged (unless convert
@@ -244,13 +276,15 @@ def check_quantity(number: Union[float, int, units.Quantity], unit: units.Unit, 
     :param convert: If True, convert compatible Quantity to units unit.
     :return:
     """
-    if type(number) is not units.Quantity:
+    if number is None:
+        return None
+    if not isinstance(number, units.Quantity):  # and number is not None:
         number *= unit
     elif number.unit != unit:
         if not allow_mismatch:
             raise units.UnitsError(
                 f"This is already a Quantity, but with units {number.unit}; units {unit} were specified.")
-        elif not (number.unit.is_equivalent(unit)):
+        elif enforce_equivalency and not (number.unit.is_equivalent(unit)):
             raise units.UnitsError(
                 f"This number is already a Quantity, but with incompatible units ({number.unit}); units {unit} were specified.")
         elif convert:
@@ -267,7 +301,7 @@ def dequantify(number: Union[float, int, units.Quantity], unit: units.Unit = Non
     :param unit:
     :return:
     """
-    if type(number) is units.Quantity:
+    if isinstance(number, units.Quantity):
         if unit is not None:
             number = check_quantity(number=number, unit=unit, convert=True)
         return number.value
@@ -281,6 +315,29 @@ def sort_dict_by_value(dictionary: dict):
     for f in sorted_keys:
         sorted_dict[f] = dictionary[f]
     return sorted_dict
+
+
+def is_path_absolute(path: str):
+    """
+    Returns True if path begins with / and False otherwise.
+    :param path:
+    :return:
+    """
+    return path[0] == "/"
+
+
+def make_absolute_path(higher_path: str, path: str):
+    """
+    If a path is not absolute, makes it into one within higher_path. Higher_path should be absolute.
+    :param path:
+    :param higher_path:
+    :return:
+    """
+    if not is_path_absolute(higher_path):
+        raise ValueError(f"higher_path {higher_path} is not absolute.")
+    if not is_path_absolute(path):
+        path = os.path.join(higher_path, path)
+    return path
 
 
 def check_trailing_slash(path: str):
@@ -319,7 +376,7 @@ def world_angle_se_to_pu(
     """
     theta = check_quantity(theta, units.deg)
     rot_angle = check_quantity(rot_angle, units.deg)
-    return -theta.to(units.radian).value + rot_angle.value
+    return theta.to(units.radian).value + rot_angle.to(units.radian).value
 
 
 def size_from_ang_size_distance(theta: float, ang_size_distance: float):
@@ -399,9 +456,15 @@ def mkdir_check_nested(path: str, remove_last: bool = True):
     levels.reverse()
     if remove_last:
         levels.pop()
-    debug_print(1, "utils.mkdir_check_nested(): levels ==", levels)
+    debug_print(2, "utils.mkdir_check_nested(): levels ==", levels)
     mkdir_check_args(*levels)
-    mkdir_check(path_orig)
+    # mkdir_check(path_orig)
+
+
+def move_check(origin: str, destination: str):
+    if os.path.exists(origin):
+        mkdir_check_nested(destination)
+        shutil.move(origin, destination)
 
 
 def mkdir_check_args(*args: str):
@@ -449,7 +512,7 @@ def uncertainty_product(value, *args: tuple):
         elif measurement == 0.0:
             measurement = sys.float_info.min
 
-        debug_print(1, uncertainty, measurement)
+        debug_print(2, "uncertainty_product(): uncertainty, measurement ==", uncertainty, measurement)
         variance_pre += (uncertainty / measurement) ** 2
     sigma_pre = np.sqrt(variance_pre)
     sigma = np.abs(value) * sigma_pre
@@ -549,39 +612,127 @@ def get_column_names_sextractor(path):
     return columns
 
 
-def mean_squared_error(model_values, obs_values, weights=None, quiet=True):
+def std_err_slope(
+        y_model: np.ndarray,
+        y_obs: np.ndarray,
+        x_obs: np.ndarray,
+        y_weights: np.ndarray = None,
+        x_weights: np.ndarray = None,
+        dof_correction: int = 2,
+):
+    """
+    https://sites.chem.utoronto.ca/chemistry/coursenotes/analsci/stats/ErrRegr.html
+    https://www.statology.org/standard-error-of-regression-slope/
+    :param y_model:
+    :param y_obs:
+    :param y_weights:
+    :return:
+    """
+
+    s_regression = root_mean_squared_error(
+        model_values=y_model,
+        obs_values=y_obs,
+        weights=y_weights,
+        dof_correction=dof_correction
+    )
+
+    if x_weights is None:
+        x_weights = 1
+    else:
+        x_weights = x_weights / np.linalg.norm(x_weights, ord=1)
+        n = 1
+
+    x_mean = np.nanmean(x_obs)
+    s = s_regression / np.sqrt(np.nansum(x_obs - x_mean))
+    return s
+
+
+def std_err_intercept(
+        y_model: np.ndarray,
+        y_obs: np.ndarray,
+        x_obs: np.ndarray,
+        y_weights: np.ndarray = None,
+        x_weights: np.ndarray = None,
+        dof_correction: int = 2,
+):
+    """
+    https://sites.chem.utoronto.ca/chemistry/coursenotes/analsci/stats/ErrRegr.html
+    :return:
+    """
+    s_regression = root_mean_squared_error(
+        model_values=y_model,
+        obs_values=y_obs,
+        weights=y_weights,
+        dof_correction=dof_correction
+    )
+    print("s_regression:", s_regression)
+    n = len(x_obs)
+    x_mean = np.nanmean(x_obs)
+    print("x_mean:", x_mean)
+
+    if x_weights is None:
+        x_weights = 1
+    else:
+        x_weights = x_weights / np.linalg.norm(x_weights, ord=1)
+        n = 1
+
+    s = s_regression * np.sqrt(np.nansum(x_weights * x_obs ** 2) / (n * np.nansum((x_obs - x_mean) ** 2)))
+    print("std_err_intercept:", s)
+    return s
+
+
+def mean_squared_error(model_values, obs_values, weights=None, dof_correction: int = 2):
     """
     Weighting from https://stats.stackexchange.com/questions/230517/weighted-root-mean-square-error
     :param model_values:
     :param obs_values:
     :param weights:
     :param quiet:
+    :param dof_correction: see https://sites.chem.utoronto.ca/chemistry/coursenotes/analsci/stats/ErrRegr.html
     :return:
     """
     if len(model_values) != len(obs_values):
         raise ValueError("Arrays must be the same length.")
     n = len(model_values)
-    if not quiet:
-        print("n:", n)
     if weights is None:
         weights = 1
     else:
         weights = weights / np.linalg.norm(weights, ord=1)
         n = 1
-        if not quiet:
-            print("Normalised weights:", np.sum(weights))
+        dof_correction = 0
 
-    return (1 / n) * np.sum(weights * (obs_values - model_values) ** 2)
+    return (1 / (n - dof_correction)) * np.nansum(weights * (obs_values - model_values) ** 2)
 
 
-def root_mean_squared_error(model_values, obs_values, weights=None, quiet=True):
-    mse = mean_squared_error(model_values=model_values, obs_values=obs_values, weights=weights, quiet=quiet)
-    if not quiet:
-        print("MSE:", mse)
+def root_mean_squared_error(
+        model_values: np.ndarray,
+        obs_values: np.ndarray,
+        weights: np.ndarray = None,
+        dof_correction: int = 2
+):
+    mse = mean_squared_error(
+        model_values=model_values,
+        obs_values=obs_values,
+        weights=weights,
+        dof_correction=dof_correction
+    )
+    print("mse:", mse)
+    print("rmse:", np.sqrt(mse))
     return np.sqrt(mse)
 
 
-def mode(lst: 'list'):
+def bucket_mode(data: np.ndarray, precision: int):
+    """
+    With help from https://www.statology.org/numpy-mode/
+    :param data:
+    :param precision:
+    :return:
+    """
+    vals, counts = np.unique(np.round(data, precision), return_counts=True)
+    return vals[counts == np.max(counts)]
+
+
+def mode(lst: list):
     return max(set(lst), key=list.count)
 
 
@@ -994,57 +1145,6 @@ def scan_nested_dict(dictionary: dict, keys: list):
     return value
 
 
-def get_scope(lines: list, levels: list):
-    this_dict = {}
-    this_level = levels[0]
-    for i, line in enumerate(lines):
-        if levels[i] == this_level:
-            scope_start = i + 1
-            scope_end = i + 1
-            while scope_end < len(levels) and levels[scope_end] > this_level:
-                scope_end += 1
-            if "=" in line:
-                key, value = line.split("=")
-                this_dict[key] = value
-            else:
-                this_dict[line] = get_scope(lines=lines[scope_start:scope_end], levels=levels[scope_start:scope_end])
-
-    return this_dict
-
-
-def get_pypeit_param_levels(lines: list):
-    levels = []
-    last_non_zero = 0
-    for i, line in enumerate(lines):
-        level = line.count("[")
-        if level == 0:
-            level = levels[last_non_zero] + 1
-        else:
-            last_non_zero = i
-        levels.append(level)
-        line = line.replace("\t", "").replace(" ", "").replace("[", "").replace("]", "").replace("\n", "")
-        if "#" in line:
-            line = line.split("#")[0]
-        lines[i] = line
-    return lines, levels
-
-
-def get_pypeit_user_params(file: Union[list, str]):
-    if isinstance(file, str):
-        with open(file) as f:
-            file = f.readlines()
-
-    p_start = file.index("# User-defined execution parameters\n") + 1
-    p_end = p_start + 1
-    while file[p_end] != "\n":
-        p_end += 1
-
-    lines, levels = get_pypeit_param_levels(lines=file[p_start:p_end])
-    param_dict = get_scope(lines=lines, levels=levels)
-
-    return param_dict
-
-
 def print_nested_dict(dictionary, level: int = 0):
     if not isinstance(dictionary, dict):
         raise TypeError("dictionary must be dict")
@@ -1056,10 +1156,14 @@ def print_nested_dict(dictionary, level: int = 0):
             print((level + 1) * "\t", dictionary[key])
 
 
-def system_command(command: str, arguments: Union[str, list] = None,
-                   suppress_print: bool = False,
-                   error_on_exit_code: bool = True,
-                   *flags, **params):
+def system_command(
+        command: str, arguments: Union[str, list] = None,
+        suppress_print: bool = False,
+        error_on_exit_code: bool = True,
+        force_single_dash: bool = False,
+        *flags,
+        **params
+):
     if command in [""]:
         raise ValueError("Empty command.")
     if " " in command:
@@ -1072,7 +1176,7 @@ def system_command(command: str, arguments: Union[str, list] = None,
             sys_str += f" {argument}"
     for param in params:
         debug_print(2, "utils.system_command(): flag ==", param, "len", len(param))
-        if len(param) == 1:
+        if len(param) == 1 or force_single_dash:
             sys_str += f" -{param} {params[param]}"
         elif len(param) > 1:
             sys_str += f" --{param} {params[param]}"
@@ -1083,18 +1187,37 @@ def system_command(command: str, arguments: Union[str, list] = None,
         elif len(flag) > 1:
             sys_str += f" --{flag}"
 
+    return system_command_verbose(command=sys_str, suppress_print=suppress_print, error_on_exit_code=error_on_exit_code)
+
+
+def system_command_verbose(
+        command: str,
+        suppress_print: bool = False,
+        error_on_exit_code: bool = True,
+        suppress_path: bool = False
+):
     if not suppress_print:
         print()
+        if not suppress_path:
+            print("In:", os.getcwd())
         print("Executing:")
-        print(sys_str)
+        print(command)
         print()
-    result = os.system(sys_str)
+    result = os.system(command)
     if result != 0 and error_on_exit_code:
         raise SystemError(f"System command failed with exit code {result}")
     if not suppress_print:
         print()
         print("Finished:")
-        print(sys_str)
+        print(command)
         print("With code", result)
         print()
     return result
+
+
+def system_package_version(package_name: str):
+    verstring = subprocess.getoutput(f"dpkg -s {package_name} | grep -i version")
+    if verstring.startswith("Version: "):
+        return verstring[9:]
+    else:
+        return None

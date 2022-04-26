@@ -34,7 +34,7 @@ def main(data_title: 'str', delete_output: bool = True):
             # List directories within 'reduction date' directories.
             # These should represent individual images reduced.
             print(f"Searching {eso_dir + directory}")
-            eso_subdirs = filter(lambda d: os.path.isdir(eso_dir + directory + d),
+            eso_subdirs = filter(lambda d: os.path.isdir(eso_dir + directory + d) and "FORS2" in d,
                                  os.listdir(eso_dir + directory))
             for subdirectory in eso_subdirs:
                 subdirectory += "/"

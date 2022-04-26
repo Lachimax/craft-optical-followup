@@ -7,14 +7,15 @@ import craftutils.utils as u
 from craftutils.photometry import gain_unit
 
 
-def source_extractor(image_path: str,
-                     output_dir: str = None,
-                     configuration_file: str = None,
-                     parameters_file: str = None,
-                     catalog_name: str = None,
-                     copy_params: bool = True,
-                     template_image_path: str = None,
-                     **configs):
+def source_extractor(
+        image_path: str,
+        output_dir: str = None,
+        configuration_file: str = None,
+        parameters_file: str = None,
+        catalog_name: str = None,
+        copy_params: bool = True,
+        template_image_path: str = None,
+        **configs):
     """
     :param configs: Any source-extractor (sextractor) parameter, normally read via the config file but that can be
     overridden by passing to the shell command, can be given here.
@@ -27,6 +28,7 @@ def source_extractor(image_path: str,
     if output_dir is None:
         output_dir = os.getcwd()
     else:
+        u.mkdir_check(output_dir)
         os.chdir(output_dir)
 
     if copy_params:
@@ -46,13 +48,7 @@ def source_extractor(image_path: str,
         sys_str += f" -PARAMETERS_NAME {parameters_file}"
     for param in configs:
         sys_str += f" -{param.upper()} {configs[param]}"
-    print()
-    print(sys_str)
-    print()
-    os.system(sys_str)
-    print()
-    print(sys_str)
-    print()
+    u.system_command_verbose(sys_str, error_on_exit_code=True)
     catalog_path = os.path.join(output_dir, catalog_name)
     os.chdir(old_dir)
     return catalog_path

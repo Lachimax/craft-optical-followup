@@ -17,12 +17,11 @@ def main(
         spectroscopy: bool,
         instrument: str,
         furby_path: str,
-        furby_test: bool,
         do: str,
         do_not_reuse_masters: bool,
         overwrite_download: bool,
         distance_tolerance: float,
-        snr_tolerance: float,
+        snr_min: float,
         class_star_tolerance: float,
         debug_level: int,
 ):
@@ -31,15 +30,19 @@ def main(
     new_field = False
 
     directory = fld.load_epoch_directory()
-    if epoch_name is not None and epoch_name in directory:
-        epoch_dict = directory[epoch_name]
-        field_name = epoch_dict["field_name"]
-        instrument = epoch_dict["instrument"]
-        mode = epoch_dict["mode"]
-        if mode == "imaging":
-            imaging = True
-        elif mode == "spectroscopy":
-            spectroscopy = True
+    if epoch_name is not None:
+        print(f"Looking for {epoch_name} in directory...")
+        if epoch_name in directory:
+            epoch_dict = directory[epoch_name]
+            field_name = epoch_dict["field_name"]
+            instrument = epoch_dict["instrument"]
+            mode = epoch_dict["mode"]
+            if mode == "imaging":
+                imaging = True
+            elif mode == "spectroscopy":
+                spectroscopy = True
+        else:
+            print(f"{epoch_name} not found.")
 
     # Do automated FURBY process.
     if furby_path is not None:
@@ -112,15 +115,7 @@ def main(
                 if not new_field:
                     print(f"{field_name} not found in the param directory.")
                 if u.select_yn(f"Create a new param file at '{field_param_path_yaml}'?"):
-                    _, field_class = u.select_option(
-                        message="Which type of field would you like to create?",
-                        options={"FRB field": fld.FRBField,
-                                 "Standard (calibration) field": fld.StandardField,
-                                 "Normal field": fld.Field
-                                 })
-                    field_class.new_yaml(name=field_name, path=field_param_path)
-                    print(f"Template parameter file created at '{field_param_path_yaml}'")
-                    input("Please edit this file before proceeding, then press Enter to continue.")
+                    fld.Field.new_params_from_input(field_name=field_name, field_param_path=field_param_path)
                 else:
                     print("Exiting.")
                     exit(0)
@@ -133,7 +128,6 @@ def main(
                     exit(0)
             field = fld.Field.from_params(name=field_name)
 
-    field.retrieve_catalogues()
     if spectroscopy:
         mode = "Spectroscopy"
     elif imaging:
@@ -172,7 +166,7 @@ def main(
         do_not_reuse_masters=do_not_reuse_masters,
         overwrite_download=overwrite_download,
         distance_tolerance=distance_tolerance,
-        snr_tolerance=snr_tolerance,
+        snr_min=snr_min,
         class_star_tolerance=class_star_tolerance
     )
 
@@ -213,7 +207,7 @@ if __name__ == '__main__':
         type=float
     )
     parser.add_argument(
-        "--snr_tolerance",
+        "--snr_min",
         help="Minimum SNR for photometric calibration",
         type=float)
     parser.add_argument(
@@ -226,21 +220,36 @@ if __name__ == '__main__':
         type=int,
         default=0)
     parser.add_argument(
-        "--furby",
+        "--furby_path",
         help="Path to FURBY json file. If specified, will create a new FRB param file & FORS2 epoch param file, and use"
-             "those for FORS2 data retrieval and reduction. Overrides --epoch, --field, -i and -s.",
+             "those for FORS2 data retrieval and reduction. Overrides --furby, --epoch, --field, -i and -s.",
         type=str
     )
     parser.add_argument(
-        "--furby_test",
-        help="Puts the automated FURBY pipeline in test mode, retrieving I-band data instead of R-band and using old "
-             "programme IDs.",
-        action="store_true",
+        "--furby",
+        help="FURBY (TNS) name; if this is specified, will look for the FURBY .json file in furby_dir."
+             "Will create a new FRB param file & FORS2 epoch param file, and use"
+             "those for FORS2 data retrieval and reduction. Overrides --epoch, --field, -i and -s.",
+        type=str
     )
+    # parser.add_argument(
+    #     "--furby_test",
+    #     help="Puts the automated FURBY pipeline in test mode, retrieving I-band data instead of R-band and using old "
+    #          "programme IDs.",
+    #     action="store_true",
+    # )
 
     # Load arguments
 
     args = parser.parse_args()
+
+    furby = args.furby
+    furby_path = args.furby_path
+    if furby is not None and furby_path is None:
+        furby_path = os.path.join(p.config["furby_dir"], "craco_fu", "data", furby, f"{furby}.json")
+
+    print(furby)
+    print(furby_path)
 
     main(
         field_name=args.field,
@@ -252,9 +261,8 @@ if __name__ == '__main__':
         do_not_reuse_masters=args.do_not_reuse_masters,
         overwrite_download=args.o,
         distance_tolerance=args.distance_tolerance,
-        snr_tolerance=args.snr_tolerance,
+        snr_min=args.snr_min,
         class_star_tolerance=args.class_star_tolerance,
         debug_level=args.d,
-        furby_path=args.furby,
-        furby_test=args.furby_test
+        furby_path=furby_path,
     )

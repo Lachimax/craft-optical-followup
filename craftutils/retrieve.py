@@ -15,16 +15,21 @@ from astropy.coordinates import SkyCoord
 from astropy.table import Table, QTable
 from astropy.time import Time
 
+from astroquery import log
+log.setLevel("TRACE")
+
 try:
     import astroquery.gemini as gemini
 except ModuleNotFoundError:
     print("This version of astroquery does not support Gemini. Gemini functions will not be available.")
-
 try:
     import astroquery.ipac.irsa.irsa_dust as irsa_dust
 except ModuleNotFoundError:
-    print("This version of astroquery does not support IRSA dust. Related functions will not be available.")
-
+    import astroquery.irsa_dust as irsa_dust
+try:
+    import astroquery.ipac.irsa as irsa
+except ModuleNotFoundError:
+    import astroquery.irsa as irsa
 try:
     from pyvo import dal
 except ModuleNotFoundError:
@@ -50,6 +55,22 @@ def cat_columns(cat, f: str = None):
     else:
         f = ""
 
+    if cat == '2mass':
+        f = f.lower()
+        return {
+            'mag_psf': f"{f}_m",  # 2MASS doesn't have psf-fit magnitudes, so we make do with the regular magnitudes
+            'mag_psf_err': f"{f}_cmsig",
+            'ra': 'ra',
+            'dec': 'dec',
+        }
+    if cat == 'ztf':
+        f = f.lower()
+        return {
+            'mag_psf': f"{f}_m",  # 2MASS doesn't have psf-fit magnitudes, so we make do with the regular magnitudes
+            'mag_psf_err': f"{f}_cmsig",
+            'ra': 'ra',
+            'dec': 'dec',
+        }
     if cat == 'delve':
         f = f.lower()
         return {
@@ -143,15 +164,24 @@ def retrieve_svo_filter(facility_name: str, instrument_name: str, filter_name: s
 
 
 def save_svo_filter(facility_name: str, instrument_name: str, filter_name: str, output: str):
+    """
+
+    :param facility_name:
+    :param instrument_name:
+    :param filter_name:
+    :param output:
+    :return:
+    """
     response = retrieve_svo_filter(
         facility_name=facility_name,
         instrument_name=instrument_name,
         filter_name=filter_name
     )
+    u.debug_print(1, "retrieve.save_svo_filter(): response ==", response)
     if response == "ERROR":
         return response
     elif response is not None:
-        u.mkdir_check_nested(path=output)
+        u.mkdir_check_nested(path=output, remove_last=True)
         print("Saving SVO filter data to" + output)
         with open(output, "wb") as file:
             file.write(response)
@@ -597,7 +627,21 @@ def retrieve_irsa_extinction(ra: float = None, dec: float = None, coord: SkyCoor
         if ra is None or dec is None:
             raise ValueError("Either ra & dec or coord must be provided.")
         coord = SkyCoord(ra * units.deg, dec * units.deg)
-    table = irsa_dust.IrsaDust.get_extinction_table(coord)
+
+    print(f"Retrieving IRSA extinction table for {coord}")
+    table = None
+    attempts = 0
+    while table is None and attempts < 100:
+        try:
+            table = irsa_dust.IrsaDust.get_extinction_table(coord)
+        except urllib.error.HTTPError:
+            attempts += 1
+            print(f"Could not retrieve table due to HTML error. Trying again after clearing cache ({attempts=}/100).")
+            cache_path = os.path.join(p.home_path, ".astropy", "cache", "astroquery")
+            u.rmtree_check(cache_path)
+
+    if table is None:
+        table = irsa_dust.IrsaDust.get_extinction_table(coord)
 
     return table
 
@@ -634,6 +678,67 @@ def update_frb_irsa_extinction(frb: str):
         return values, ext_str
     else:
         print("IRSA Dust Tool data already retrieved.")
+
+
+def retrieve_irsa_photometry(
+        catalogue: str,
+        ra: float,
+        dec: float,
+        radius: units.Quantity = 0.2 * units.deg,
+):
+    print(f"Querying IRSA archive for {catalogue} sources centred on RA={ra}, DEC={dec}.")
+    table = irsa.Irsa.query_region(
+        SkyCoord(
+            ra,
+            dec,
+            unit=(units.deg, units.deg)
+        ),
+        catalog=catalogue, radius=radius
+    )
+
+    return table
+
+
+def save_irsa_photometry(
+        catalogue: str,
+        ra: float,
+        dec: float,
+        output: str,
+        radius: units.Quantity = 0.2 * units.deg):
+    table = retrieve_irsa_photometry(
+        catalogue=catalogue,
+        ra=ra,
+        dec=dec,
+        radius=radius
+    )
+    if len(table) > 0:
+        u.mkdir_check_nested(path=output)
+        print(f"Saving {catalogue} catalogue to {output}")
+        table.write(output, format="ascii.csv")
+        return str(table)
+    else:
+        print(f"No data retrieved from {catalogue}")
+        return None
+
+
+def save_2mass_photometry(ra: float, dec: float, output: str, radius: units.Quantity = 0.2 * units.deg):
+    return save_irsa_photometry(
+        catalogue="fp_psc",
+        ra=ra,
+        dec=dec,
+        output=output,
+        radius=radius
+    )
+
+
+def save_ztf_photometry(ra: float, dec: float, output: str, radius: units.Quantity = 0.2 * units.deg):
+    return save_irsa_photometry(
+        catalogue="ztf_objects_dr10",
+        ra=ra,
+        dec=dec,
+        output=output,
+        radius=radius
+    )
 
 
 sdss_filters = ["u", "g", "r", "i", "z"]
@@ -753,10 +858,10 @@ def update_frb_sdss_photometry(frb: str, force: bool = False):
 
 
 def retrieve_delve_photometry(ra: float, dec: float, radius: units.Quantity = 0.2 * units.deg):
-    print(f"\nQuerying DELVE DR1 archive for field centring on RA={ra}, DEC={dec}")
+    print(f"\nQuerying DELVE DR2 archive for field centring on RA={ra}, DEC={dec}")
     radius = u.dequantify(radius, unit=units.deg)
     url = f"http://datalab.noirlab.edu/tap/sync?REQUEST=doQuery&lang=ADQL&FORMAT=csv&QUERY=SELECT%20q3c_dist" \
-          f"%28ra%2Cdec%2C%20247.725%2C-0.972%29%2A3600%20AS%20dist%2C%20%2A%20FROM%20delve_dr1.objects%20WHERE%20%27t" \
+          f"%28ra%2Cdec%2C%20247.725%2C-0.972%29%2A3600%20AS%20dist%2C%20%2A%20FROM%20delve_dr2.objects%20WHERE%20%27t" \
           f"%27%20%3D%20Q3C_RADIAL_QUERY%28ra%2C%20dec%2C{ra}%2C{dec}%2C{radius}%29%20"
     try:
         response = requests.get(url).content
@@ -1307,14 +1412,14 @@ def construct_columns(cat="panstarrs1"):
 
 
 def retrieve_mast_photometry(ra: float, dec: float, cat: str = "panstarrs1", release="dr2", table="stack",
-                             radius: units.Quantity = 0.2 * units.deg):
+                             radius: units.Quantity = 0.1 * units.deg):
     if cat.lower() == "panstarrs1":
         cat_str = "panstarrs"
     else:
         cat_str = cat.lower()
 
     radius = u.dequantify(radius, unit=units.deg)
-    print(f"\nQuerying {cat} {release} archive for field centring on RA={ra}, DEC={dec}")
+    print(f"\nQuerying {cat} {release} archive for field centring on RA={ra}, DEC={dec}, with radius {radius}")
     cat = cat.lower()
     url = f"{mast_url}{cat_str}/{release}/{table}.csv"
     print(url)
@@ -1328,7 +1433,7 @@ def retrieve_mast_photometry(ra: float, dec: float, cat: str = "panstarrs1", rel
 
 
 def save_mast_photometry(ra: float, dec: float, output: str, cat: str = "panstarrs1",
-                         radius: units.Quantity = 0.2 * units.deg):
+                         radius: units.Quantity = 0.1 * units.deg):
     response = retrieve_mast_photometry(ra=ra, dec=dec, cat=cat, radius=radius)
     if response == "ERROR":
         return response
@@ -1468,32 +1573,73 @@ def save_gemini_calibs(output: str, obs_date: Time, instrument: str = 'GSAOI', f
     date_late = obs_date.copy()
     while len(flats) == 0:
         program_id = f"GS-CAL{date_early.strftime('%Y%m%d')}"
-        print(f"Searching for domeflats in {program_id}...")
+        print(f"Searching for {fil} domeflats in {program_id}...")
         flats = gemini.Observations.query_criteria(
             instrument=instrument,
             observation_class='dayCal',
             program_id=program_id,
         )
+        print(f"Found {len(flats)} flats total.")
+        flats = flats[flats["filter_name"] == fil]
+        print(f"Found {len(flats)} flats for filter {fil}.")
         if len(flats) == 0:
             program_id = f"GS-CAL{date_late.strftime('%Y%m%d')}"
-            print(f"Searching for domeflats in {program_id}...")
+            print(f"Searching for {fil} domeflats in {program_id}...")
             flats = gemini.Observations.query_criteria(
                 instrument=instrument,
                 observation_class='dayCal',
                 program_id=f"GS-CAL{date_late.strftime('%y%m%d')}",
             )
+            flats = flats[flats["filter_name"] == fil]
+            print(f"Found {len(flats)} flats total.")
+            flats = flats[flats["filter_name"] == fil]
+            print(f"Found {len(flats)} flats for filter {fil}.")
         date_early -= 1
         date_late += 1
 
-    flats = flats[flats["filter_name"] == fil]
-
     save_gemini_files(flats, output=output, overwrite=overwrite)
+
+    print(f"Found flats for filter {fil}:")
+    print(flats)
+
+    standards = {}
+
+    date_early = obs_date.copy()
+    date_late = obs_date.copy()
+    while len(standards) == 0 and (obs_date - date_early) < 365:
+        program_id = f"GS-CAL{date_early.strftime('%Y%m%d')}"
+        print(f"Searching for {fil} standards in {program_id}...")
+        standards = gemini.Observations.query_criteria(
+            instrument=instrument,
+            observation_class="partnerCal",
+            program_id=f"GS-CAL{date_early.strftime('%y%m%d')}",
+        )
+        print(f"Found {len(standards)} standards total.")
+        standards = standards[standards["filter_name"] == fil]
+        print(f"Found {len(standards)} standards for filter {fil}.")
+        if len(standards) == 0:
+            program_id = f"GS-CAL{date_late.strftime('%Y%m%d')}"
+            print(f"Searching for {fil} standards in {program_id}...")
+            standards = gemini.Observations.query_criteria(
+                instrument=instrument,
+                observation_class="partnerCal",
+                program_id=f"GS-CAL{date_late.strftime('%y%m%d')}",
+            )
+            standards = standards[standards["filter_name"] == fil]
+            print(f"Found {len(standards)} standards total.")
+            standards = standards[standards["filter_name"] == fil]
+            print(f"Found {len(standards)} standards for filter {fil}.")
+        date_early -= 1
+        date_late += 1
 
     standards = gemini.Observations.query_criteria(
         instrument=instrument,
         observation_class="partnerCal",
         program_id=f"GS-CAL{date_early.strftime('%y%m%d')}",
     )
+
+    print("Found standards:")
+    print(standards)
 
     standards = standards[standards["filter_name"] == fil]
 
@@ -1582,6 +1728,7 @@ keys = p.keys()
 fors2_filters_retrievable = ["I_BESS", "R_SPEC", "b_HIGH", "v_HIGH"]
 mast_catalogues = ['panstarrs1']
 photometry_catalogues = {
+    '2mass': save_2mass_photometry,
     'delve': save_delve_photometry,
     'des': save_des_photometry,
     'sdss': save_sdss_photometry,

@@ -5,7 +5,7 @@ from astropy.coordinates import SkyCoord
 
 from typing import Union
 
-from craftutils.utils import system_command, debug_print
+from craftutils.utils import system_command, debug_print, check_quantity
 
 
 def build_astrometry_index(input_fits_catalog: str, unique_id: int, output_index: str = None,
@@ -37,6 +37,9 @@ def solve_field(
         centre: SkyCoord = None,
         guess_scale: bool = True,
         time_limit: units.Quantity = None,
+        verify: bool = True,
+        odds_to_tune_up: float = 1e6,
+        odds_to_solve: float = 1e9,
         *flags,
         **params):
     """
@@ -50,13 +53,15 @@ def solve_field(
     """
 
     params["o"] = base_filename
+    params["odds-to-tune-up"] = odds_to_tune_up
+    params["odds-to-solve"] = odds_to_solve
     if time_limit is not None:
-        params["l"] = time_limit.to(units.second).value
+        params["l"] = check_quantity(time_limit, units.second).value
     if search_radius is not None:
         params["radius"] = search_radius.to(units.deg).value
     if centre is not None:
         params["ra"] = centre.ra.to(units.deg).value
-        params["dec"] = centre.ra.to(units.deg).value
+        params["dec"] = centre.dec.to(units.deg).value
     debug_print(1, "solve_field(): tweak ==", tweak)
 
     flags = list(flags)
@@ -66,8 +71,11 @@ def solve_field(
         flags.append("g")
     if not tweak:
         flags.append("T")
+    if not verify:
+        flags.append("y")
 
-    system_command("solve-field", image_files, False, True, *flags, **params)
+
+    system_command("solve-field", image_files, False, True, False, *flags, **params)
     if isinstance(image_files, list):
         image_path = image_files[0]
     else:

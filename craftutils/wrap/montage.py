@@ -1,30 +1,15 @@
 # Code by Lachlan Marnoch 2021
 
 import os
+from typing import List, Union
 
 import numpy as np
 
 import astropy.io.fits as fits
 
 import craftutils.utils as u
-from craftutils.observation.image import fits_table_all
 from craftutils.photometry import gain_median_combine, gain_mean_combine
-import craftutils.observation.image as img
-
-
-def header_keys():
-    return {
-        "airmass": "AIRMASS",
-        "saturate": "SATURATE",
-        "object": "OBJECT",
-        "filter": "FILTER",
-        "mjd-obs": "MJD-OBS",
-        "date-obs": "DATE-OBS",
-        "gain": "GAIN",
-        "exptime": "EXPTIME",
-        "instrument": "INSTRUME"
-    }
-
+import craftutils.observation.image as image
 
 def image_table(input_directory: str, output_path: str = "images.tbl"):
     """
@@ -50,56 +35,72 @@ def make_header(table_path: str, output_path: str):
 
 def check_input_images(input_directory: str,
                        **kwargs):
-    table = fits_table_all(input_directory, science_only=False)
-    table.sort("ARCFILE")
+    table = image.fits_table_all(input_directory, science_only=True)
+    table.sort("FILENAME")
 
-    keys = header_keys()
-    exptime_key = keys["exptime"]
+    template = table[0]
+    template_path = os.path.join(input_directory, template["FILENAME"])
+    template_img = image.ImagingImage.select_child_class(
+        instrument=image.detect_instrument(path=template_path)
+    )(template_path)
+    keys = template_img.header_keys()
+    exptime_key = keys["exposure_time"]
     instrument_key = keys["instrument"]
     if "gain_key" in kwargs:
         gain_key = kwargs["gain_key"]
     else:
         gain_key = keys["gain"]
 
-    template = table[0]
+    if gain_key.startswith("HIERARCH"):
+        gain_key = gain_key[9:]
+
     exptime = np.round(float(template[exptime_key]))
     instrument = template[instrument_key]
     gain = np.round(template[gain_key])
     for file in table[1:]:
         if np.round(float(file[exptime_key])) != exptime:
-            raise ValueError("Input files have different EXPTIME")
+            raise ValueError(
+                f"Input files have different EXPTIME ({file[exptime_key]} != {exptime}), file {file['FILENAME']}")
         if file[instrument_key] != instrument:
-            raise ValueError("Input files were taken with different instruments.")
+            raise ValueError(
+                f"Input files were taken with different instruments ({file[instrument_key]} != {instrument}), file {file['filename']}.")
         if np.round(file[gain_key]) != gain:
-            raise ValueError(f"Files specify different gains {gain, file[gain_key]}")
+            raise ValueError(f"Files specify different gains ({gain} != {file[gain_key]}, file {file['FILENAME']}")
 
 
-def inject_header(file_path: str, input_directory: str,
-                  extra_items: dict = None, keys: dict = None,
-                  coadd_type: str = 'median', ext: int = 0,
-                  instrument: str = "vlt-fors2"):
-    table = fits_table_all(input_directory, science_only=False)
-    table.sort("ARCFILE")
+def inject_header(
+        file_path: str, input_directory: str,
+        extra_items: dict = None, keys: dict = None,
+        coadd_type: str = 'median', ext: int = 0
+):
+    table = image.fits_table_all(input_directory, science_only=False)
+    table.sort("FILENAME")
 
-    important_keys = header_keys()
+    template = image.ImagingImage.from_fits(table[0]["PATH"])
+    cls = type(template)
+
+    important_keys = template.header_keys()
 
     if keys is not None:
         important_keys.update(keys)
 
-    template = img.ImagingImage.from_fits(table[0]["PATH"])
-    cls = type(template)
+    airmasses = np.float64(table[important_keys['airmass']])
+    airmass_mean = np.nanmean(airmasses)
 
     insert_dict = {
-        f"AIRMASS": np.nanmean(np.float64(table[important_keys['airmass']])),
+        f"AIRMASS": airmass_mean,
+        f"AIRMASS_ERR": max(np.nanmax(airmasses) - airmass_mean,
+                            airmass_mean - np.nanmin(airmasses)),
         f"SATURATE": np.nanmean(np.float64(table[important_keys['saturate']])),
         f"OBJECT": template.extract_object(),
         f"MJD-OBS": float(np.nanmin(np.float64(table[important_keys["mjd-obs"]]))),
         f"DATE-OBS": template.extract_date_obs(),
-        f"EXPTIME": np.nanmean(table[important_keys["exptime"]]),
+        f"EXPTIME": np.nanmean(table[important_keys["exposure_time"]]),
         f"FILTER": template.extract_filter(),
         f"INSTRUME": template.instrument_name,
         f"RON": template.extract_noise_read().value,
-        f"BUNIT": template.extract_
+        f"BUNIT": template.extract_unit(),
+        f"GAIA": template.extract_header_item("GAIA")
     }
 
     frame_paths = list(map(lambda f: os.path.join(input_directory, f), table["PATH"]))
@@ -107,11 +108,21 @@ def inject_header(file_path: str, input_directory: str,
 
     insert_dict["NCOMBINE"] = n_frames
 
+    if "OLD_EXPTIME" in table.colnames:
+        insert_dict["OLD_EXPTIME"] = np.nanmean(table["OLD_EXPTIME"])
+        insert_dict["INTTIME"] = insert_dict["OLD_EXPTIME"] * n_frames
+    if "OLD_GAIN" in table.colnames:
+        insert_dict["OLD_GAIN"] = np.nanmean(table["OLD_GAIN"])
+
     if important_keys["filter"] in table.colnames:
         insert_dict["FILTER"] = table[important_keys["filter"]][0]
 
-    if important_keys["gain"] in table.colnames:
-        old_gain = np.nanmean(np.float64(table[important_keys["gain"]]))
+    gain_key = important_keys["gain"]
+    if gain_key.startswith("HIERARCH"):
+        gain_key = gain_key[9:]
+
+    if gain_key in table.colnames:
+        old_gain = np.nanmean(np.float64(table[gain_key]))
         if coadd_type == "median":
             new_gain = gain_median_combine(old_gain=old_gain, n_frames=n_frames)
         elif coadd_type == "mean":
@@ -262,7 +273,11 @@ def standard_script(
         input_directory: str,
         output_directory: str,
         output_file_name: str = None,
-        ignore_differences: bool = False, **kwargs
+        ignore_differences: bool = False,
+        coadd_types: Union[List[str], str] = 'median',
+        # unit="electron / second",
+        do_inject_header: bool = True,
+        **kwargs
 ):
     """
     Does a standard median coaddition of fits files in input_directory.
@@ -320,22 +335,43 @@ def standard_script(
 
     print("Performing background modeling and compute corrections for each image.")
     corrections_table_path = "corrections.tbl"
-    background_model(table_path=reprojected_table_path, fit_table_path=fit_table_path,
-                     correction_table_path=corrections_table_path)
+    background_model(
+        table_path=reprojected_table_path, fit_table_path=fit_table_path,
+        correction_table_path=corrections_table_path)
 
     print("Applying corrections to each image")
-    background_execute(input_directory=proj_dir, table_path=reprojected_table_path,
-                       correction_table_path=corrections_table_path,
-                       corr_dir=corr_dir)
+    background_execute(
+        input_directory=proj_dir, table_path=reprojected_table_path,
+        correction_table_path=corrections_table_path,
+        corr_dir=corr_dir)
 
-    print("Coadding the images to create mosaics with background corrections.")
-    if output_file_name is None:
-        output_file_name = "coadded.fits"
-    add(input_directory=corr_dir, coadd_type='median', table_path=reprojected_table_path,
-        header_path=header_path, output_path=output_file_name)
+    if isinstance(coadd_types, str):
+        coadd_types = [coadd_types]
 
-    inject_header(file_path=output_file_name, input_directory=input_directory, instrument="vlt-fors2")
+    file_paths = []
+
+    for i, coadd_type in enumerate(coadd_types):
+        print(f"Coadding the images with {coadd_type}.")
+        if output_file_name is None:
+            output_file_name = "coadded.fits"
+        output_file_name_coadd = output_file_name.replace(".fits", f"_{coadd_type}.fits")
+
+        add(input_directory=corr_dir,
+            coadd_type=coadd_type,
+            table_path=reprojected_table_path,
+            header_path=header_path,
+            output_path=output_file_name_coadd)
+
+        if do_inject_header:
+            inject_header(
+                file_path=output_file_name_coadd,
+                input_directory=input_directory,
+                coadd_type=coadd_type)
+
+        file_paths.append(os.path.join(output_directory, output_file_name_coadd))
 
     os.chdir(old_dir)
 
-    return os.path.join(output_directory, output_file_name)
+    u.debug_print(1, "montage.standard_script():", file_paths)
+
+    return file_paths

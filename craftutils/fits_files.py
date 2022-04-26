@@ -21,7 +21,6 @@ import craftutils.utils as u
 
 
 # TODO: Fill in docstrings.
-# TODO: Sanitise pipeline inputs (ie check if object name is valid)
 
 def get_rotation_angle(header: fits.header, astropy_units=False):
     """
@@ -29,12 +28,12 @@ def get_rotation_angle(header: fits.header, astropy_units=False):
     :param header:
     :return theta: rotation angle, in degrees.
     """
-    if 'CROTA2' in header:
-        theta = header['CROTA2']
-    else:
-        wcs_ob = wcs.WCS(header)
-        matrix = wcs_ob.pixel_scale_matrix
-        theta = np.arctan2(matrix[1, 1], matrix[1, 0]) * 180 / np.pi - 90
+    # if 'CROTA2' in header:
+    #     theta = header['CROTA2']
+    # else:
+    wcs_ob = wcs.WCS(header)
+    matrix = wcs_ob.pixel_scale_matrix
+    theta = np.arctan2(matrix[1, 1], matrix[1, 0]) * 180 / np.pi - 90
 
     if astropy_units:
         theta *= units.deg
@@ -323,7 +322,7 @@ def align(comparison: Union[fits.hdu.hdulist.HDUList, str], template: Union[fits
         comparison.close()
 
 
-def divide_by_exp_time(file: Union['fits.hdu_list.hdulist.HDUList', 'str'], output: 'str' = None):
+def divide_by_exp_time(file: Union['fits.hdu_list.hdulist.HDUList', str], output: 'str' = None, ext: int = 0):
     """
     Convert a fits file from total counts to counts/second.
     :param file: Path or HDU object of the file.
@@ -335,7 +334,7 @@ def divide_by_exp_time(file: Union['fits.hdu_list.hdulist.HDUList', 'str'], outp
 
     old_exp_time = get_exp_time(file)
 
-    file[0].data = file[0].data / old_exp_time
+    file[ext].data = file[ext].data / old_exp_time
 
     # Set header entries to match.
     change_header(file=file, key='EXPTIME', value=1.)
@@ -454,8 +453,18 @@ def detect_edges(file: Union['fits.HDUList', 'str'], value: float = 0.0, ext: in
 
     height = data.shape[0]
     mid_y = int(height / 2)
+
     slice_hor = data[mid_y]
+    print(slice_hor, value)
     slice_hor_nonzero = np.nonzero(slice_hor - value)[0]
+
+    while len(slice_hor_nonzero) == 0:
+        mid_y = int(mid_y / 2)
+        if mid_y == 0:
+            raise ValueError("mid_y got stuck.")
+        slice_hor = data[mid_y]
+        slice_hor_nonzero = np.nonzero(slice_hor - value)[0]
+
     left = slice_hor_nonzero[0]
     right = slice_hor_nonzero[-1]
 
@@ -469,20 +478,18 @@ def detect_edges(file: Union['fits.HDUList', 'str'], value: float = 0.0, ext: in
     if path:
         file.close()
 
-    print(left, right, bottom, top)
-
     return left, right, bottom, top
 
 
 def detect_edges_area(file: Union['fits.HDUList', 'str']):
     if type(file) is str:
+        print("Area file:", file)
         file = fits.open(file)
 
     data = file[0].data
 
     # We round to the 13th decimal place
-    keep_val = np.round(np.max(data), 13)
-    print(keep_val)
+    keep_val = u.bucket_mode(data, 13)
 
     height = data.shape[0]
     mid_y = int(height / 2)
@@ -641,7 +648,7 @@ def sort_by_filter(path: 'str'):
             sh.move(path + file, filter_path)
 
 
-def get_pixel_scale(file: Union['fits.hdu_list.hdulist.HDUList', 'str'], layer: int = 0, astropy_units: bool = False):
+def get_pixel_scale(file: Union['fits.hdu_list.hdulist.HDUList', 'str'], ext: int = 0, astropy_units: bool = False):
     """
     Using the FITS file header, obtains the pixel scale of the file (in degrees).
     Declination scale is the true angular size of the pixel.
@@ -654,8 +661,8 @@ def get_pixel_scale(file: Union['fits.hdu_list.hdulist.HDUList', 'str'], layer: 
 
     file, path = path_or_hdu(file)
 
-    header = file[layer].header
-    image = file[layer].data
+    header = file[ext].header
+    image = file[ext].data
 
     # To take (very roughly) into account the spherical distortion to the RA, we obtain an RA pixel scale by dividing
     # the difference in RA across the image by the number of pixels. It's good enough to give an average value, and the
@@ -741,8 +748,8 @@ def trim(hdu: fits.hdu.hdulist.HDUList,
         new_hdu = deepcopy(hdu)
 
     if update_wcs:
-        new_hdu[ext].header['CRPIX1'] = hdu[ext].header['CRPIX1'] - left
-        new_hdu[ext].header['CRPIX2'] = hdu[ext].header['CRPIX2'] - bottom
+        new_hdu[ext].header['CRPIX1'] = hdu[ext].header['CRPIX1'] - u.dequantify(left, units.pix)
+        new_hdu[ext].header['CRPIX2'] = hdu[ext].header['CRPIX2'] - u.dequantify(bottom, units.pix)
     new_hdu[ext].data = u.trim_image(
         data=hdu[ext].data,
         left=left, right=right, bottom=bottom, top=top
@@ -758,7 +765,7 @@ def subimage_edges(data: np.ndarray, x, y, frame):
     right = x + frame
     bottom, top, left, right = check_subimage_edges(
         data=data, bottom=bottom, top=top, left=left, right=right,
-                                                    )
+    )
     return bottom, top, left, right
 
 
@@ -799,9 +806,10 @@ def trim_frame_point(hdu: fits.hdu.hdulist.HDUList, ra: float, dec: float,
     return hdu_cut
 
 
-def trim_ccddata(ccddata: CCDData,
-                 left: 'int' = None, right: 'int' = None, bottom: 'int' = None, top: 'int' = None,
-                 update_wcs=True):
+def trim_ccddata(
+        ccddata: CCDData,
+        left: 'int' = None, right: 'int' = None, bottom: 'int' = None, top: 'int' = None,
+        update_wcs=True):
     """
 
     :param ccddata:
@@ -836,8 +844,14 @@ def trim_ccddata(ccddata: CCDData,
     return ccddata
 
 
-def trim_file(path: Union[str, fits.HDUList], left: int = None, right: int = None, bottom: int = None, top: int = None,
-              new_path: str = None):
+def trim_file(
+        path: Union[str, fits.HDUList],
+        left: int = None,
+        right: int = None,
+        bottom: int = None,
+        top: int = None,
+        new_path: str = None
+):
     """
     Trims the edges of a .fits file while retaining its WCS information.
     :param path:
@@ -860,9 +874,9 @@ def trim_file(path: Union[str, fits.HDUList], left: int = None, right: int = Non
     print('Trimming: \n' + str(path))
     print('left', left, 'right', right, 'bottom', bottom, 'top', top)
     print('Moving to: \n' + str(new_path))
-    add_log(file=file,
-            action='Trimmed using craftutils.fits_files.trim() with borders at x = ' + str(left) + ', ' + str(
-                right) + '; y=' + str(bottom) + ', ' + str(top) + '; moved from ' + str(path) + ' to ' + str(new_path))
+    # add_log(file=file,
+    #         action='Trimmed using craftutils.fits_files.trim() with borders at x = ' + str(left) + ', ' + str(
+    #             right) + '; y=' + str(bottom) + ', ' + str(top) + '; moved from ' + str(path) + ' to ' + str(new_path))
     print()
 
     print(new_path)
@@ -983,76 +997,6 @@ def write_sextractor_script_shift(file: 'str', shift_param: 'str', shift_param_v
                 par) + ' -CATALOG_NAME ' + cat_name + '_' + str(i + 1) + '.cat\n')
         output.writelines('mkdir ' + cats_dir + '\n')
         output.writelines('mv *.cat ' + cats_dir)
-
-
-def write_sof(table_path: str, output_path: str = 'bias.sof', sof_type: str = 'fors_bias', chip: int = 1,
-              cat_path: str = ""):
-    """
-    Requires that fits_table has already been run on the directory.
-    For fors_zeropoint, if there are multiple STD-type files, it will use the first one listed in the table.
-    :param table_path:
-    :param output_path:
-    :param sof_type:
-    :param chip:
-    :return:
-    """
-    sof_types = ['fors_bias', 'fors_img_sky_flat', 'fors_zeropoint']
-
-    chip = ['CHIP1', 'CHIP2'][chip - 1]
-
-    if cat_path != "" and cat_path[-1] != "/":
-        cat_path = cat_path + "/"
-
-    if sof_type not in sof_types:
-        raise ValueError(sof_type + ' is not a recognised sof_type. Recognised types are:' + str(sof_types))
-
-    if output_path[-4:] != ".sof":
-        output_path = output_path + ".sof"
-
-    if os.path.isfile(output_path):
-        os.remove(output_path)
-
-    files = Table.read(table_path, format="ascii.csv")
-    files = files[files['chip'] == chip]
-
-    # Bias
-    if sof_type == 'fors_bias':
-        bias_files = files[files['object'] == 'BIAS']['identifier']
-
-        with open(output_path, 'a') as output:
-            for file in bias_files:
-                output.writelines(file + " BIAS\n")
-
-    # Flats
-    if sof_type == 'fors_img_sky_flat':
-        flat_files = files[files['object'] == 'FLAT,SKY']['identifier']
-
-        with open(output_path, 'a') as output:
-            for file in flat_files:
-                output.writelines(file + " SKY_FLAT_IMG\n")
-            if chip == 'CHIP1':
-                suffix = "up"
-            else:
-                suffix = "down"
-            output.writelines("master_bias_" + suffix + ".fits MASTER_BIAS")
-
-    # Zeropoint
-    if sof_type == 'fors_zeropoint':
-        if chip == 'CHIP1':
-            suffix = "up"
-            chip_id = "1453"
-        else:
-            suffix = "down"
-            chip_id = "1456"
-
-        std_image = files[files['object'] == 'STD']['identifier'][0]
-
-        with open(output_path, 'a') as output:
-            output.writelines(std_image + " STANDARD_IMG\n")
-            output.writelines("master_bias_" + suffix + ".fits MASTER_BIAS\n")
-            output.writelines("master_sky_flat_img_" + suffix + ".fits MASTER_SKY_FLAT_IMG\n")
-            output.writelines(cat_path + "fors2_landolt_std_UBVRI.fits FLX_STD_IMG\n")
-            output.writelines(cat_path + "fors2_" + chip_id + "_phot.fits PHOT_TABLE\n")
 
 
 def stack(files: list, output: str = None, directory: str = '', stack_type: str = 'median', inherit: bool = True,

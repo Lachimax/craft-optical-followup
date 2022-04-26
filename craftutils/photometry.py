@@ -10,7 +10,6 @@ import photutils as ph
 from photutils.datasets import make_model_sources_image
 import matplotlib.pyplot as plt
 from scipy.ndimage import shift
-import psfex
 
 import astropy.stats as stats
 import astropy.wcs as wcs
@@ -22,6 +21,7 @@ from astropy.coordinates import SkyCoord
 from astropy.modeling import models, fitting
 from astropy.modeling.functional_models import Sersic1D
 from astropy.stats import sigma_clip
+from astropy.visualization import quantity_support
 
 import craftutils.fits_files as ff
 import craftutils.params as p
@@ -30,55 +30,97 @@ import craftutils.plotting as plotting
 import craftutils.retrieve as r
 import craftutils.astrometry as a
 
-from craftutils.wrap.psfex import load_psfex
-
 # TODO: End-to-end pipeline script?
 # TODO: Change expected types to Union
 
 gain_unit = units.electron / units.ct
 
 
-def image_psf_diagnostics(hdu: Union[str, fits.HDUList], cat: Union[str, table.Table], star_class_tol: float = 0.9,
-                          mag_max: float = 0.0 * units.mag, mag_min: float = -7.0 * units.mag,
-                          match_to: table.Table = None, frame: float = 15, use_sextractor: bool = True):
+def image_psf_diagnostics(
+        hdu: Union[str, fits.HDUList],
+        cat: Union[str, table.Table],
+        star_class_tol: float = 0.9,
+        mag_max: float = 0.0 * units.mag,
+        mag_min: float = -50. * units.mag,
+        match_to: table.Table = None,
+        match_tolerance: units.Quantity = 1 * units.arcsec,
+        frame: float = 15,
+        ext: int = 0,
+        near_centre: SkyCoord = None,
+        near_radius: units.Quantity = None,
+        ra_col: str = "RA",
+        dec_col: str = "DEC",
+        output: str = None,
+        min_stars: int = 30,
+        plot_file_prefix: str = ""
+):
     hdu, path = ff.path_or_hdu(hdu=hdu)
     hdu = copy.deepcopy(hdu)
     cat = u.path_or_table(cat)
 
     if isinstance(cat, str):
         cat = table.QTable.read(cat, format="ascii.sextractor")
+    print(cat["CLASS_STAR"].max(), cat["CLASS_STAR"].mean(), star_class_tol)
     stars = cat[cat["CLASS_STAR"] > star_class_tol]
-    stars = stars[stars["MAG_PSF"] < mag_max]
-    stars = stars[stars["MAG_PSF"] > mag_min]
-
     print(f"Initial num stars:", len(stars))
+    stars = stars[stars["MAG_PSF"] < mag_max]
+    print(f"Num stars with MAG_PSF < {mag_max}:", len(stars))
+    print(stars["MAG_PSF"].max(), stars["MAG_PSF"].mean(), mag_max, mag_min)
+    stars = stars[stars["MAG_PSF"] > mag_min]
+    print(f"Num stars with MAG_PSF > {mag_min}:", len(stars))
+
+
+    if near_radius is not None:
+        header = hdu[ext].header
+        wcs_this = wcs.WCS(header)
+        if near_centre is None:
+            near_centre = SkyCoord.from_pixel(header["NAXIS1"] / 2, header["NAXIS2"] / 2, wcs_this, origin=1)
+
+        ra = stars[ra_col]
+        dec = stars[dec_col]
+        coords = SkyCoord(ra, dec)
+
+        img_width = max(header["NAXIS1"], header["NAXIS2"]) * units.pix
+        _, scale = ff.get_pixel_scale(hdu, ext=ext, astropy_units=True)
+        img_width_ang = img_width.to(units.arcsec, scale)
+        stars_near = stars[near_centre.separation(coords) < near_radius]
+        print("len(stars_near):", len(stars_near), "near_radius:", near_radius, "img_width_ang:", img_width_ang)
+        while len(stars_near) < min_stars and near_radius < img_width_ang:
+            print(near_centre.separation(coords).max(), near_centre.separation(coords).mean())
+            stars_near = stars[near_centre.separation(coords) < near_radius]
+            print(f"Num stars within {near_radius} of {near_centre}:", len(stars_near))
+            near_radius += 0.5 * units.arcmin
+        stars = stars_near
 
     if match_to is not None:
-        stars, stars_match = a.match_catalogs(cat_1=stars,
-                                              cat_2=match_to,
-                                              ra_col_1="ALPHA_SKY",
-                                              dec_col_1="DELTA_SKY",
-                                              ra_col_2="ALPHA_SKY",
-                                              dec_col_2="DELTA_SKY",
-                                              tolerance=2 * units.arcsec)
+        stars, stars_match, distance = a.match_catalogs(
+            cat_1=stars,
+            cat_2=match_to,
+            ra_col_1=ra_col,
+            dec_col_1=dec_col,
+            ra_col_2=ra_col,
+            dec_col_2=dec_col,
+            tolerance=match_tolerance)
 
         print(f"Num stars after match to other sextractor cat:", len(stars))
 
-    stars.add_column(np.zeros(len(stars)), name="GAUSSIAN_FWHM_FITTED")
-    stars.add_column(np.zeros(len(stars)), name="MOFFAT_FWHM_FITTED")
-    stars.add_column(np.zeros(len(stars)), name="MOFFAT_ALPHA_FITTED")
-    stars.add_column(np.zeros(len(stars)), name="MOFFAT_GAMMA_FITTED")
+    for colname in ["GAUSSIAN_FWHM_FITTED", "MOFFAT_FWHM_FITTED", "MOFFAT_ALPHA_FITTED", "MOFFAT_GAMMA_FITTED"]:
+        if colname not in stars.colnames:
+            stars.add_column(np.zeros(len(stars)), name=colname)
+
     if type(stars) is table.QTable:
-        stars["GAUSSIAN_FWHM_FITTED"] *= units.deg
-        stars["MOFFAT_FWHM_FITTED"] *= units.deg
+        if not isinstance(stars["GAUSSIAN_FWHM_FITTED"], units.Quantity):
+            stars["GAUSSIAN_FWHM_FITTED"] *= units.deg
+        if not isinstance(stars["MOFFAT_FWHM_FITTED"], units.Quantity):
+            stars["MOFFAT_FWHM_FITTED"] *= units.deg
 
     for j, star in enumerate(stars):
-        ra = star["ALPHA_SKY"]
-        dec = star["DELTA_SKY"]
+        ra = star[ra_col]
+        dec = star[dec_col]
 
-        window = ff.trim_frame_point(hdu=hdu, ra=ra, dec=dec, frame=frame, quiet=True)
-        data = window[0].data
-        _, scale = ff.get_pixel_scale(hdu, astropy_units=True)
+        window = ff.trim_frame_point(hdu=hdu, ra=ra, dec=dec, frame=frame, ext=ext)
+        data = window[ext].data
+        _, scale = ff.get_pixel_scale(hdu, astropy_units=True, ext=ext)
 
         mean, median, stddev = stats.sigma_clipped_stats(data)
         data -= median
@@ -105,22 +147,46 @@ def image_psf_diagnostics(hdu: Union[str, fits.HDUList], cat: Union[str, table.T
         model_init.y_stddev.tied = tie_stddev
 
         model = fitter(model_init, x, y, data)
-        fwhm = (model.x_fwhm * units.pixel).to(units.degree, scale)
+        fwhm = (model.x_fwhm * units.pixel).to(units.arcsec, scale)
         star["GAUSSIAN_FWHM_FITTED"] = fwhm
 
         stars[j] = star
 
-    clipped = sigma_clip(stars["MOFFAT_FWHM_FITTED"], masked=True)
+    clipped = sigma_clip(stars["MOFFAT_FWHM_FITTED"], masked=True, sigma=2)
     stars_clip_moffat = stars[~clipped.mask]
-    print(f"Num stars after sigma clipping w. astropy Moffat PSF:", len(stars))
+    print(f"Num stars after sigma clipping w. astropy Moffat PSF:", len(stars_clip_moffat))
 
-    clipped = sigma_clip(stars["GAUSSIAN_FWHM_FITTED"], masked=True)
+    clipped = sigma_clip(stars["GAUSSIAN_FWHM_FITTED"], masked=True, sigma=2)
     stars_clip_gauss = stars[~clipped.mask]
-    print(f"Num stars after sigma clipping w. astropy Gaussian PSF:", len(stars))
+    print(f"Num stars after sigma clipping w. astropy Gaussian PSF:", len(stars_clip_gauss))
 
-    clipped = sigma_clip(stars["FWHM_WORLD"], masked=True)
+    clipped = sigma_clip(stars["FWHM_WORLD"], masked=True, sigma=2)
     stars_clip_sex = stars[~clipped.mask]
-    print(f"Num stars after sigma clipping w. Sextractor PSF:", len(stars))
+    print(f"Num stars after sigma clipping w. Sextractor PSF:", len(stars_clip_sex))
+
+    plt.close()
+    print(f"image_psf_diagnostics(): {output=}")
+    if output is not None:
+
+        with quantity_support():
+
+            for colname in ["MOFFAT_FWHM_FITTED", "GAUSSIAN_FWHM_FITTED", "FWHM_WORLD"]:
+                plt.hist(
+                    stars[colname].to(units.arcsec),
+                    label="Full sample",
+                    bins=int(np.sqrt(len(stars)))
+                )
+                plt.hist(
+                    stars_clip_moffat[colname].to(units.arcsec),
+                    edgecolor='black',
+                    linewidth=1.2,
+                    label="Sigma-clipped",
+                    fc=(0, 0, 0, 0),
+                    bins=int(np.sqrt(len(stars_clip_moffat)))
+                )
+                plt.legend()
+                plt.savefig(os.path.join(output, f"{plot_file_prefix}_psf_histogram_{colname}.png"))
+                plt.close()
 
     return stars_clip_moffat, stars_clip_gauss, stars_clip_sex
 
@@ -232,16 +298,16 @@ def fit_background(data: np.ndarray, model_type='polynomial', deg: int = 2, foot
     else:
         raise ValueError("Unrecognised model; must be in", accepted_models)
     fitter = fitting.LevMarLSQFitter()
-    print(footprint)
+    # print(footprint)
     if weights is not None:
         weights = weights[footprint[0]:footprint[1], footprint[2]:footprint[3]]
-    print(data[footprint[0]:footprint[1], footprint[2]:footprint[3]].shape)
-    print(x.shape)
-    print(y.shape)
+    # print(data[footprint[0]:footprint[1], footprint[2]:footprint[3]].shape)
+    # print(x.shape)
+    # print(y.shape)
     model = fitter(init, x, y, data[footprint[0]:footprint[1], footprint[2]:footprint[3]],
                    weights=weights)
 
-    # rmse = u.root_mean_squared_error(model_values=model(x,y).flatten(), obs_values=data[footprint[0]:footprint[1], footprint[2]:footprint[3]].flatten())
+    # std_err = u.root_mean_squared_error(model_values=model(x,y).flatten(), obs_values=data[footprint[0]:footprint[1], footprint[2]:footprint[3]].flatten())
     return model(x, y), model(x_large, y_large), model
 
 
@@ -289,20 +355,21 @@ def gain_mean_combine(old_gain: float = 0.8, n_frames: int = 1):
     return n_frames * old_gain
 
 
-def magnitude_complete(flux: units.Quantity,
-                       flux_err: units.Quantity = 0.0 * units.ct,
-                       exp_time: units.Quantity = 1. * units.second,
-                       exp_time_err: units.Quantity = 0.0 * units.second,
-                       zeropoint: units.Quantity = 0.0 * units.mag,
-                       zeropoint_err: units.Quantity = 0.0 * units.mag,
-                       airmass: float = 0.0,
-                       airmass_err: float = 0.0,
-                       ext: units.Quantity = 0.0 * units.mag,
-                       ext_err: units.Quantity = 0.0 * units.mag,
-                       colour_term: float = 0.0,
-                       colour_term_err: float = 0.0,
-                       colour: units.Quantity = 0.0 * units.mag,
-                       colour_err: units.Quantity = 0.0 * units.mag):
+def magnitude_complete(
+        flux: units.Quantity,
+        flux_err: units.Quantity = 0.0 * units.ct,
+        exp_time: units.Quantity = 1. * units.second,
+        exp_time_err: units.Quantity = 0.0 * units.second,
+        zeropoint: units.Quantity = 0.0 * units.mag,
+        zeropoint_err: units.Quantity = 0.0 * units.mag,
+        airmass: float = 0.0,
+        airmass_err: float = 0.0,
+        ext: units.Quantity = 0.0 * units.mag,
+        ext_err: units.Quantity = 0.0 * units.mag,
+        colour_term: float = 0.0,
+        colour_term_err: float = 0.0,
+        colour: units.Quantity = 0.0 * units.mag,
+        colour_err: units.Quantity = 0.0 * units.mag):
     """
     Returns a photometric magnitude and the calculated error.
     :param flux: Total flux of the object over the exposure time, in counts.
@@ -323,26 +390,39 @@ def magnitude_complete(flux: units.Quantity,
     if airmass is None:
         airmass = 0.0
 
-    u.debug_print(1, "INSIDE magnitude_complete()")
-    u.debug_print(1, "EXP_TIME", exp_time, "+/-", exp_time_err)
-    u.debug_print(1, "ZEROPOINT", zeropoint, "+/-", zeropoint_err)
-    u.debug_print(1, "AIRMASS", airmass, "+/-", airmass_err)
-    u.debug_print(1, "EXTINCTION", ext, "+/-", ext_err)
+    flux = u.check_quantity(flux, units.ct)
+    flux_err = u.check_quantity(flux_err, units.ct)
+    zeropoint = u.check_quantity(zeropoint, units.mag)
+    zeropoint_err = u.check_quantity(zeropoint_err, units.mag)
+    exp_time = u.check_quantity(exp_time, units.s)
+    exp_time_err = u.check_quantity(exp_time_err, units.s)
 
-    mag_inst, mag_error = magnitude_uncertainty(flux=flux, flux_err=flux_err,
-                                                exp_time=exp_time, exp_time_err=exp_time_err)
+    u.debug_print(2, "photometry.magnitude_complete():")
+    u.debug_print(2, "\texp_time ==", exp_time, "+/-", exp_time_err)
+    u.debug_print(2, "\tzeropoint ==", zeropoint, "+/-", zeropoint_err)
+    u.debug_print(2, "\tairmass", airmass, "+/-", airmass_err)
+    u.debug_print(2, "\textinction", ext, "+/-", ext_err)
+
+    mag_inst, mag_error = magnitude_uncertainty(
+        flux=flux, flux_err=flux_err,
+        exp_time=exp_time, exp_time_err=exp_time_err
+    )
     magnitude = mag_inst + zeropoint - ext * airmass - colour_term * colour
     error_extinction = u.uncertainty_product(ext * airmass, (ext, ext_err), (airmass, airmass_err))
     error_colour = u.uncertainty_product(colour_term * colour, (colour_term, colour_term_err), (colour, colour_err))
     error = u.uncertainty_sum(mag_error, zeropoint_err, error_extinction, error_colour)
 
+    u.debug_print(2, "\textinction", magnitude, "+/-", mag_error)
+
     return magnitude, error
 
 
-def magnitude_uncertainty(flux: units.Quantity,
-                          flux_err: units.Quantity = 0.0 * units.ct,
-                          exp_time: units.Quantity = 1. * units.second,
-                          exp_time_err: units.Quantity = 0.0 * units.second):
+def magnitude_uncertainty(
+        flux: units.Quantity,
+        flux_err: units.Quantity = 0.0 * units.ct,
+        exp_time: units.Quantity = 1. * units.second,
+        exp_time_err: units.Quantity = 0.0 * units.second
+):
     flux = u.check_quantity(flux, unit=units.ct)
     flux_err = u.check_quantity(flux_err, unit=units.ct)
     exp_time = u.check_quantity(exp_time, unit=units.second)
@@ -355,37 +435,40 @@ def magnitude_uncertainty(flux: units.Quantity,
     return mag, error
 
 
-def determine_zeropoint_sextractor(sextractor_cat: Union[str, table.QTable],
-                                   cat_path: str,
-                                   image: Union[str, fits.HDUList],
-                                   output_path: str,
-                                   cat_name: str = 'Catalogue',
-                                   image_name: str = 'FORS2',
-                                   show: bool = False,
-                                   cat_ra_col: str = 'RA',
-                                   cat_dec_col: str = 'DEC',
-                                   cat_mag_col: str = 'WAVG_MAG_PSF_',
-                                   sex_ra_col='ALPHA_SKY',
-                                   sex_dec_col='DELTA_SKY',
-                                   sex_x_col: str = 'XPSF_IMAGE',
-                                   sex_y_col: str = 'YPSF_IMAGE',
-                                   dist_tol: units.Quantity = 2 * units.arcsec,
-                                   flux_column: str = 'FLUX_PSF',
-                                   flux_err_column: str = 'FLUXERR_PSF',
-                                   mag_range_sex_upper: units.Quantity = 100 * units.mag,
-                                   mag_range_sex_lower: units.Quantity = -100 * units.mag,
-                                   stars_only: bool = True,
-                                   star_class_tol: float = 0.95,
-                                   star_class_col: str = 'CLASS_STAR',
-                                   exp_time: float = None,
-                                   y_lower: units.Quantity = 0 * units.pix,
-                                   y_upper: units.Quantity = 100000 * units.pix,
-                                   cat_type: str = 'csv',
-                                   cat_zeropoint: units.Quantity = 0.0 * units.mag,
-                                   cat_zeropoint_err: units.Quantity = 0.0 * units.mag,
-                                   latex_plot: bool = False,
-                                   snr_cut: float = 300.,
-                                   snr_col: str = 'SNR_WIN'):
+def determine_zeropoint_sextractor(
+        sextractor_cat: Union[str, table.QTable],
+        cat_path: str,
+        image: Union[str, fits.HDUList],
+        output_path: str,
+        cat_name: str = 'Catalogue',
+        image_name: str = 'FORS2',
+        show: bool = False,
+        cat_ra_col: str = 'RA',
+        cat_dec_col: str = 'DEC',
+        cat_mag_col: str = 'WAVG_MAG_PSF_',
+        cat_mag_col_err: str = 'WAVGERR_MAG_PSF_',
+        sex_ra_col='ALPHA_SKY',
+        sex_dec_col='DELTA_SKY',
+        sex_x_col: str = 'XPSF_IMAGE',
+        sex_y_col: str = 'YPSF_IMAGE',
+        dist_tol: units.Quantity = 2 * units.arcsec,
+        flux_column: str = 'FLUX_PSF',
+        flux_err_column: str = 'FLUXERR_PSF',
+        mag_range_sex_upper: units.Quantity = 100 * units.mag,
+        mag_range_sex_lower: units.Quantity = -100 * units.mag,
+        stars_only: bool = True,
+        star_class_tol: float = 0.95,
+        star_class_col: str = 'CLASS_STAR',
+        exp_time: float = None,
+        y_lower: units.Quantity = 0 * units.pix,
+        y_upper: units.Quantity = 100000 * units.pix,
+        cat_type: str = 'csv',
+        cat_zeropoint: units.Quantity = 0.0 * units.mag,
+        cat_zeropoint_err: units.Quantity = 0.0 * units.mag,
+        snr_cut: float = 10.,
+        snr_col: str = 'SNR_WIN',
+        iterate_uncertainty: bool = True
+):
     """
     This function expects your catalogue to be a .csv.
     :param sextractor_cat:
@@ -416,6 +499,8 @@ def determine_zeropoint_sextractor(sextractor_cat: Union[str, table.QTable],
     :param cat_type:
     :return:
     """
+
+    plt.rc('text', usetex=False)
 
     output_path = u.check_trailing_slash(output_path)
 
@@ -449,6 +534,9 @@ def determine_zeropoint_sextractor(sextractor_cat: Union[str, table.QTable],
     # Import the catalogue of the sky region.
     if cat_type != 'sextractor':
         cat = table.QTable.read(cat_path, format='ascii.csv')
+        if cat_mag_col not in cat.colnames:
+            print(f"{cat_mag_col} not found in {cat_name}; is this band included?")
+            return None
         cat = cat.filled(fill_value=-999.)
         cat[cat_ra_col] *= units.deg
         cat[cat_dec_col] *= units.deg
@@ -462,7 +550,7 @@ def determine_zeropoint_sextractor(sextractor_cat: Union[str, table.QTable],
 
     params['time'] = str(time.Time.now())
     params['catalogue'] = str(cat_name)
-    params['airmass'] = float(ff.get_airmass(image))
+    params['airmass'] = 0.0
     print('Airmass:', params['airmass'])
     params['exp_time'] = exp_time = u.check_quantity(exp_time, units.second)
     params['pix_tol'] = dist_tol
@@ -473,7 +561,7 @@ def determine_zeropoint_sextractor(sextractor_cat: Union[str, table.QTable],
     params['cat_ra_col'] = str(cat_ra_col)
     params['cat_dec_col'] = str(cat_dec_col)
     params['cat_flux_col'] = str(cat_mag_col)
-    params['sextractor_path'] = str(sextractor_cat)
+    # params['sextractor_path'] = str(sextractor_cat)
     params['sex_ra_col'] = str(sex_ra_col)
     params['sex_dec_col'] = str(sex_dec_col)
     params['sex_flux_col'] = str(flux_column)
@@ -495,9 +583,10 @@ def determine_zeropoint_sextractor(sextractor_cat: Union[str, table.QTable],
                                                                   exp_time=exp_time)
 
     # Plot all stars found by SExtractor.
+    plt.close()
     source_tbl = source_tbl[source_tbl[sex_ra_col] != 0.0]
     source_tbl = source_tbl[source_tbl[sex_dec_col] != 0.0]
-    plt.scatter(source_tbl[sex_ra_col], source_tbl[sex_dec_col], label='SExtractor')
+    plt.scatter(u.dequantify(source_tbl[sex_ra_col]), u.dequantify(source_tbl[sex_dec_col]), label='SExtractor')
     plt.xlim()
     plt.title('Objects found by SExtractor')
     plt.savefig(output_path + '1-sextracted-positions.png')
@@ -506,14 +595,14 @@ def determine_zeropoint_sextractor(sextractor_cat: Union[str, table.QTable],
     plt.close()
 
     # Plot all catalogue stars.
-    plt.scatter(cat[cat_ra_col], cat[cat_dec_col])
+    plt.scatter(u.dequantify(cat[cat_ra_col]), u.dequantify(cat[cat_dec_col]))
     plt.title('Objects in catalogue')
     plt.savefig(output_path + '2-catalogue-positions.png')
     if show:
         plt.show()
     plt.close()
 
-    plt.scatter(source_tbl[sex_ra_col], source_tbl[sex_dec_col], label='SExtractor')
+    plt.scatter(u.dequantify(source_tbl[sex_ra_col]), u.dequantify(source_tbl[sex_dec_col]), label='SExtractor')
     plt.scatter(cat[cat_ra_col], cat[cat_dec_col], label=cat_name)
     plt.legend()
     plt.title('Matches with ' + cat_name + ' Catalogue')
@@ -522,10 +611,11 @@ def determine_zeropoint_sextractor(sextractor_cat: Union[str, table.QTable],
     plt.close()
 
     # Match stars to catalogue.
-    matches, matches_cat, _ = a.match_catalogs(cat_1=source_tbl, cat_2=cat,
-                                               ra_col_1=sex_ra_col, ra_col_2=cat_ra_col,
-                                               dec_col_1=sex_dec_col, dec_col_2=cat_dec_col,
-                                               tolerance=tolerance)
+    matches, matches_cat, _ = a.match_catalogs(
+        cat_1=source_tbl, cat_2=cat,
+        ra_col_1=sex_ra_col, ra_col_2=cat_ra_col,
+        dec_col_1=sex_dec_col, dec_col_2=cat_dec_col,
+        tolerance=tolerance)
 
     # Plot all matches with catalogue.
     plt.scatter(matches[sex_ra_col], matches[sex_dec_col], label='SExtractor MAG\\_AUTO')
@@ -539,7 +629,7 @@ def determine_zeropoint_sextractor(sextractor_cat: Union[str, table.QTable],
 
     # Consolidate tables for cleanliness
 
-    matches = table.hstack([matches_cat, matches], table_names=[cat_name, 'fors'])
+    matches = table.hstack([matches_cat, matches], table_names=[cat_name, 'img'])
 
     # Plot positions on image, referring back to g image
     wcst = wcs.WCS(header=image[0].header)
@@ -555,7 +645,7 @@ def determine_zeropoint_sextractor(sextractor_cat: Union[str, table.QTable],
                 cmap="plasma")
     plt.colorbar()
     plt.legend()
-    plt.title('Matches with ' + cat_name + ' Catalogue against ' + image_name + ' Image (Using SExtractor)')
+    plt.title(f'Matches with {cat_name} Catalogue against {image_name} Image (Using SExtractor)')
     plt.savefig(output_path + "4-matches_back.png")
     if show:
         plt.show()
@@ -647,6 +737,7 @@ def determine_zeropoint_sextractor(sextractor_cat: Union[str, table.QTable],
     # Linear fit of catalogue magnitudes vs sextractor magnitudes
 
     x = matches_clean[cat_mag_col]
+    x_uncertainty = matches_clean[cat_mag_col_err]
     y = matches_clean['mag']
     y_uncertainty = matches_clean['mag_err']
 
@@ -654,148 +745,186 @@ def determine_zeropoint_sextractor(sextractor_cat: Union[str, table.QTable],
     # weights = 1./np.sqrt(x_uncertainty**2 + y_uncertainty**2)
     # Might not be sensible.
 
-    weights = 1. / y_uncertainty
+    y_weights = 1. / y_uncertainty
+    x_weights = 1. / x_uncertainty
 
     linear_model_free = models.Linear1D(slope=1.0)
     linear_model_fixed = models.Linear1D(slope=1.0, fixed={"slope": True})
 
     fitter = fitting.LinearLSQFitter()
 
-    delta = -np.inf
-    rmse_prior = np.inf
-    mag_min = np.min(x)
-    x_iter = x[:]
-    y_iter = y[:]
-    y_uncertainty_iter = y_uncertainty[:]
-    weights_iter = weights[:]
-    matches_iter = matches_clean[:]
+    mag_max = None
+    mag_min = None
 
-    x_prior = x_iter
-    y_prior = y_iter
-    y_uncertainty_prior = y_iter
-    weights_prior = weights_iter
-    matches_prior = matches_iter
+    matches = matches_clean
 
-    keep = np.ones(x_iter.shape, dtype=bool)
-    n = 0
-    u.mkdir_check(output_path + "min_mag_iterations/")
-    while (rmse_prior > 1.0 * units.mag or delta <= 0) and sum(keep) > 3:
+    if iterate_uncertainty:
+
+        delta = -np.inf
+        std_err_prior = np.inf
+        mag_min = np.min(x)
+        x_iter = x[:]
+        y_iter = y[:]
+        y_uncertainty_iter = y_uncertainty[:]
+        y_weights_iter = y_weights[:]
+        x_weights_iter = x_weights[:]
+        matches_iter = matches_clean[:]
+
         x_prior = x_iter
         y_prior = y_iter
-        y_uncertainty_prior = y_uncertainty_iter
-        weights_prior = weights_iter
+        y_uncertainty_prior = y_iter
+        y_weights_prior = y_weights_iter * 1.
+        x_weights_prior = x_weights_iter * 1.
         matches_prior = matches_iter
 
-        keep = x_iter >= mag_min
-        x_iter = x_iter[keep]
-        y_iter = y_iter[keep]
-        y_uncertainty_iter = y_uncertainty_iter[keep]
-        weights_iter = weights_iter[keep]
-        matches_iter = matches_iter[keep]
+        keep = np.ones(x_iter.shape, dtype=bool)
+        n = 0
+        u.mkdir_check(output_path + "min_mag_iterations/")
+        while (std_err_prior > 1.0 * units.mag or delta <= 0) and sum(keep) > 3:
+            x_prior = x_iter
+            y_prior = y_iter
+            y_uncertainty_prior = y_uncertainty_iter
+            y_weights_prior = y_weights_iter
+            x_weights_prior = x_weights_iter
+            matches_prior = matches_iter
 
-        fitted_iter = fitter(linear_model_fixed, x_iter, y_iter, weights=weights_iter)
-        line_iter = fitted_iter(x_iter)
-        rmse_this = u.root_mean_squared_error(model_values=line_iter, obs_values=y_iter, weights=weights_iter)
+            keep = x_iter >= mag_min
+            x_iter = x_iter[keep]
+            y_iter = y_iter[keep]
+            y_uncertainty_iter = y_uncertainty_iter[keep]
+            y_weights_iter = y_weights_iter[keep]
+            x_weights_iter = x_weights_iter[keep]
+            matches_iter = matches_iter[keep]
 
-        plt.scatter(x_iter, y_iter, c='blue')
-        plt.plot(x_iter, line_iter, c='green')
-        plt.suptitle("")
-        plt.xlabel(f"Magnitude in {cat_name}")
-        plt.ylabel("SExtractor Magnitude in " + image_name)
-        plt.savefig(
-            f"{output_path}min_mag_iterations/{n}_{cat_name}vsex_rmse_{rmse_this}_delta{delta}_magmin_{mag_min}.png")
-        plt.close()
+            fitted_iter = fitter(linear_model_fixed, x_iter, y_iter, weights=y_weights_iter)
+            line_iter = fitted_iter(x_iter)
 
-        delta = rmse_this - rmse_prior
+            err_this = u.std_err_intercept(
+                y_model=line_iter,
+                y_obs=y_iter,
+                x_obs=x_iter,
+                y_weights=y_weights_iter,
+                x_weights=x_weights_iter,
+                dof_correction=1
+            )
 
-        mag_min += 0.1 * units.mag
+            plt.scatter(x_iter, y_iter, c='blue')
+            plt.plot(x_iter, line_iter, c='green')
+            plt.suptitle("")
+            plt.xlabel(f"Magnitude in {cat_name}")
+            plt.ylabel("SExtractor Magnitude in " + image_name)
+            plt.savefig(
+                f"{output_path}min_mag_iterations/{n}_{cat_name}vsex_std_err_{err_this}_delta{delta}_magmin_{mag_min}.png")
+            plt.close()
 
-        print("Iterating min cat mag:", mag_min, rmse_prior, delta, sum(keep))
+            delta = err_this - std_err_prior
 
-        rmse_prior = rmse_this
-        n += 1
+            mag_min += 0.1 * units.mag
 
-    mag_min -= 0.1 * units.mag
+            print("Iterating min cat mag:", mag_min, std_err_prior, delta, sum(keep))
 
-    x = x_prior
-    y = y_prior
-    y_uncertainty = y_uncertainty_prior[:]
-    weights = weights_prior
-    matches = matches_prior
+            std_err_prior = err_this
+            n += 1
+
+        mag_min -= 0.1 * units.mag
+
+        x = x_prior
+        y = y_prior
+        y_uncertainty = y_uncertainty_prior[:]
+        y_weights = y_weights_prior
+        x_weights = x_weights_prior
+        matches = matches_prior
+
+        print(len(x), f'matches after iterating minimum mag ({mag_min})')
+        params[f'matches_{n_match}_min_cut'] = int(len(x))
+        n_match += 1
+
+        delta = -np.inf
+        std_err_prior = np.inf
+        mag_max = np.max(x)
+        x_iter = x[:]
+        y_iter = y[:]
+        y_uncertainty_iter = y_uncertainty[:]
+        y_weights_iter = y_weights[:]
+        x_weights_iter = x_weights[:]
+        matches_iter = matches[:]
+
+        keep = np.ones(x_iter.shape, dtype=bool)
+        n = 0
+        u.mkdir_check(output_path + "max_mag_iterations/")
+        while delta <= 0 and sum(keep) > 3:
+            x_prior = x_iter
+            y_prior = y_iter
+            y_uncertainty_prior = y_uncertainty_iter
+            y_weights_prior = y_weights_iter
+            x_weights_prior = x_weights_iter
+            matches_prior = matches_iter
+
+            keep = x_iter <= mag_max
+            x_iter = x_iter[keep]
+            y_iter = y_iter[keep]
+            y_uncertainty_iter = y_uncertainty_iter[keep]
+            y_weights_iter = y_weights_iter[keep]
+            x_weights_iter = x_weights_iter[keep]
+            matches_iter = matches_iter[keep]
+
+            fitted_iter = fitter(linear_model_fixed, x_iter, y_iter, weights=y_weights_iter)
+            line_iter = fitted_iter(x_iter)
+
+            err_this = u.std_err_intercept(
+                y_model=line_iter,
+                y_obs=y_iter,
+                x_obs=x_iter,
+                y_weights=y_weights_iter,
+                x_weights=x_weights_iter
+            )
+
+            plt.scatter(x_iter, y_iter, c='blue')
+            plt.plot(x_iter, line_iter, c='green')
+            plt.suptitle("")
+            plt.xlabel(f"Magnitude in {cat_name}")
+            plt.ylabel("SExtractor Magnitude in " + image_name)
+            plt.savefig(f"{output_path}max_mag_iterations/{n}_{cat_name}vsex_std_err_{err_this}_magmax_{mag_max}.png")
+            plt.close()
+
+            delta = err_this - std_err_prior
+
+            mag_max -= 0.1 * units.mag
+            std_err_prior = err_this
+
+            print("Iterating max cat mag:", mag_max, std_err_prior, delta)
+
+            n += 1
+
+        mag_max += 0.1 * units.mag
+
+        x = x_prior
+        y = y_prior
+        y_uncertainty = y_uncertainty_prior[:]
+        y_weights = y_weights_prior
+        x_weights = x_weights_prior
+        matches = matches_prior
 
     params["mag_cut_min"] = mag_min
-    print(len(x), f'matches after iterating minimum mag ({mag_min})')
-    params[f'matches_{n_match}_min_cut'] = int(len(x))
-    n_match += 1
-
-    delta = -np.inf
-    rmse_prior = np.inf
-    mag_max = np.max(x)
-    x_iter = x[:]
-    y_iter = y[:]
-    y_uncertainty_iter = y_uncertainty[:]
-    weights_iter = weights[:]
-    matches_iter = matches[:]
-
-    keep = np.ones(x_iter.shape, dtype=bool)
-    n = 0
-    u.mkdir_check(output_path + "max_mag_iterations/")
-    while delta <= 0 and sum(keep) > 3:
-        x_prior = x_iter
-        y_prior = y_iter
-        y_uncertainty_prior = y_uncertainty_iter
-        weights_prior = weights_iter
-        matches_prior = matches_iter
-
-        keep = x_iter <= mag_max
-        x_iter = x_iter[keep]
-        y_iter = y_iter[keep]
-        y_uncertainty_iter = y_uncertainty_iter[keep]
-        weights_iter = weights_iter[keep]
-        matches_iter = matches_iter[keep]
-
-        fitted_iter = fitter(linear_model_fixed, x_iter, y_iter, weights=weights_iter)
-        line_iter = fitted_iter(x_iter)
-
-        rmse_this = u.root_mean_squared_error(model_values=line_iter, obs_values=y_iter, weights=weights_iter)
-
-        plt.scatter(x_iter, y_iter, c='blue')
-        plt.plot(x_iter, line_iter, c='green')
-        plt.suptitle("")
-        plt.xlabel(f"Magnitude in {cat_name}")
-        plt.ylabel("SExtractor Magnitude in " + image_name)
-        plt.savefig(f"{output_path}max_mag_iterations/{n}_{cat_name}vsex_rmse_{rmse_this}_magmax_{mag_max}.png")
-        plt.close()
-
-        delta = rmse_this - rmse_prior
-
-        mag_max -= 0.1 * units.mag
-        rmse_prior = rmse_this
-
-        print("Iterating max cat mag:", mag_max, rmse_prior, delta)
-
-        n += 1
-
-    mag_max += 0.1 * units.mag
-
-    x = x_prior
-    y = y_prior
-    y_uncertainty = y_uncertainty_prior[:]
-    weights = weights_prior
-    matches = matches_prior
-
     params["mag_cut_max"] = mag_max
     print(len(x), f'matches after iterating maximum mag ({mag_max})')
     params[f'matches_{n_match}_mag_cut'] = int(len(x))
     n_match += 1
 
-    fitted_free = fitter(linear_model_free, x, y, weights=weights)
-    fitted_fixed = fitter(linear_model_fixed, x, y, weights=weights)
+    fitted_free = fitter(linear_model_free, x, y, weights=y_weights)
+    fitted_fixed = fitter(linear_model_fixed, x, y, weights=y_weights)
 
     line_free = fitted_free(x)
     line_fixed = fitted_fixed(x)
 
-    rmse = u.root_mean_squared_error(model_values=line_fixed, obs_values=y, weights=weights)
+    std_err = u.std_err_intercept(
+        y_model=line_fixed,
+        y_obs=y,
+        y_weights=y_weights,
+        x_obs=x,
+        x_weights=x_weights,
+        dof_correction=1
+    )
 
     plt.plot(x, line_free, c='red', label='Line of best fit')
     plt.scatter(x, y, c='blue')
@@ -812,17 +941,17 @@ def determine_zeropoint_sextractor(sextractor_cat: Union[str, table.QTable],
 
     print("FREE:", fitted_free)
     print("FIXED:", fitted_fixed)
-    print("RMSE:", rmse)
+    print("STD ERR:", std_err)
 
     params["zeropoint_raw"] = -fitted_fixed.intercept
-    params["rmse_raw"] = rmse
+    params["std_err_raw"] = std_err
     params["free_fit"] = [float(fitted_free.intercept.value), float(fitted_free.slope.value)]
 
     or_fitter = fitting.FittingWithOutlierRemoval(fitter, sigma_clip, niter=1, sigma=2.0)
 
     # print(type(linear_model_fixed), type(x), type(y), type(weights))
-    fitted_clipped, mask = or_fitter(linear_model_fixed, x.value, y.value, weights=weights.value)
-    fitted_free_clipped, free_mask = or_fitter(linear_model_free, x.value, y.value, weights=weights.value)
+    fitted_clipped, mask = or_fitter(linear_model_fixed, x.value, y.value, weights=y_weights.value)
+    fitted_free_clipped, free_mask = or_fitter(linear_model_free, x.value, y.value, weights=y_weights.value)
 
     line_clipped = fitted_clipped(x.value)
     line_clipped = line_clipped[~mask]
@@ -833,11 +962,13 @@ def determine_zeropoint_sextractor(sextractor_cat: Union[str, table.QTable],
     y_clipped = y[~mask]
     x_clipped = x[~mask]
     y_uncertainty_clipped = y_uncertainty[~mask]
-    weights_clipped = weights[~mask]
+    y_weights_clipped = y_weights[~mask]
+    x_weights_clipped = x_weights[~mask]
 
     y_free_clipped = y[~free_mask]
     x_free_clipped = x[~free_mask]
-    weights_free_clipped = weights[~free_mask]
+    y_weights_free_clipped = y_weights[~free_mask]
+    x_weights_free_clipped = x_weights[~free_mask]
 
     plt.plot(x_free_clipped, line_free_clipped, c='red', label='Line of best fit')
     plt.scatter(x_clipped, y_clipped, c='blue')
@@ -845,7 +976,7 @@ def determine_zeropoint_sextractor(sextractor_cat: Union[str, table.QTable],
     plt.plot(x_clipped, line_clipped, c='green', label='Fixed slope = 1')
     plt.legend()
     plt.suptitle("Magnitude Comparisons")
-    plt.xlabel("Magnitude in " + cat_name + " g-band")
+    plt.xlabel("Magnitude in " + cat_name)
     plt.ylabel("SExtractor Magnitude in " + image_name)
     plt.savefig(output_path + "7-" + cat_name + "catvsex_clipped.png")
     if show:
@@ -860,16 +991,22 @@ def determine_zeropoint_sextractor(sextractor_cat: Union[str, table.QTable],
         return None
 
     print("CLIPPED:", fitted_clipped)
-    rmse = u.root_mean_squared_error(model_values=line_clipped * units.mag,
-                                     obs_values=y_clipped, weights=weights_clipped)
-    print("RMSE:", rmse)
+    std_err = u.std_err_intercept(
+        y_model=line_clipped * units.mag,
+        y_obs=y_clipped,
+        y_weights=y_weights_clipped,
+        x_weights=x_weights_clipped,
+        x_obs=x_clipped,
+        dof_correction=1
+    )
+    print("STD ERR:", std_err)
 
     matches_final = matches[~mask]
 
     params["free_fit_clipped"] = [float(fitted_free_clipped.intercept.value), float(fitted_free_clipped.slope.value)]
-    params['rmse_clipped'] = rmse
+    params['std_err_clipped'] = std_err
     params['zeropoint'] = float(-fitted_clipped.intercept) * units.mag
-    params['zeropoint_err'] = cat_zeropoint_err + params['rmse_clipped']
+    params['zeropoint_err'] = cat_zeropoint_err + params['std_err_clipped']
 
     #     if latex_plot:
     #         plot_params = p.plotting_params()
@@ -927,23 +1064,25 @@ def determine_zeropoint_sextractor(sextractor_cat: Union[str, table.QTable],
     return params
 
 
-def zeropoint_science_field(epoch: str,
-                            instrument: str,
-                            test_name: str = None,
-                            sex_x_col: str = 'XPSF_IMAGE',
-                            sex_y_col: str = 'YPSF_IMAGE',
-                            sex_ra_col: str = 'ALPHAPSF_SKY',
-                            sex_dec_col: str = 'DELTAPSF_SKY',
-                            sex_flux_col: str = 'FLUX_PSF',
-                            stars_only: bool = True,
-                            star_class_col: str = 'CLASS_STAR',
-                            star_class_tol: float = 0.95,
-                            show_plots: bool = False,
-                            mag_range_sex_lower: float = -100.,
-                            mag_range_sex_upper: float = 100.,
-                            pix_tol: float = 5.,
-                            separate_chips=False,
-                            cat_name: str = "DES"):
+def zeropoint_science_field(
+        epoch: str,
+        instrument: str,
+        test_name: str = None,
+        sex_x_col: str = 'XPSF_IMAGE',
+        sex_y_col: str = 'YPSF_IMAGE',
+        sex_ra_col: str = 'ALPHAPSF_SKY',
+        sex_dec_col: str = 'DELTAPSF_SKY',
+        sex_flux_col: str = 'FLUX_PSF',
+        stars_only: bool = True,
+        star_class_col: str = 'CLASS_STAR',
+        star_class_tol: float = 0.95,
+        show_plots: bool = False,
+        mag_range_sex_lower: float = -100.,
+        mag_range_sex_upper: float = 100.,
+        pix_tol: float = 5.,
+        separate_chips=False,
+        cat_name: str = "DES"
+):
     properties = p.object_params_instrument(obj=epoch, instrument=instrument)
     frb_properties = p.object_params_frb(obj=epoch[:-2])
     outputs = p.object_output_params(obj=epoch, instrument=instrument)
@@ -1026,7 +1165,7 @@ def zeropoint_science_field(epoch: str,
 
             exp_time = ff.get_exp_time(image_path)
 
-            print(cat_zeropoint)
+            # print(cat_zeropoint)
 
             if separate_chips:
                 # Split based on which CCD chip the object falls upon.
@@ -1641,9 +1780,11 @@ def match_coordinates_filters_multi(prime, match_tables, ra_tolerance, dec_toler
     return data
 
 
-def match_coordinates_multi(prime, match_tables, ra_tolerance: 'float', dec_tolerance: 'float', ra_name: 'str' = 'ra',
-                            dec_name: 'str' = 'dec', mag_name: 'str' = 'mag', extra_cols: 'list' = None,
-                            x_name: 'str' = 'xcentroid', y_name: 'str' = 'ycentroid'):
+def match_coordinates_multi(
+        prime, match_tables, ra_tolerance: 'float', dec_tolerance: 'float', ra_name: 'str' = 'ra',
+        dec_name: 'str' = 'dec', mag_name: 'str' = 'mag', extra_cols: 'list' = None,
+        x_name: 'str' = 'xcentroid', y_name: 'str' = 'ycentroid'
+):
     """
 
     :param prime:
@@ -1748,7 +1889,7 @@ def insert_synthetic_point_sources_gauss(
 
     mag = units.Quantity(u.check_iterable(mag))
     x = units.Quantity(u.check_iterable(x))
-    y = units.Quantity(u.check_iterable(x))
+    y = units.Quantity(u.check_iterable(y))
 
     fwhm = u.dequantify(fwhm, unit=units.pix)
 
@@ -1767,7 +1908,7 @@ def insert_synthetic_point_sources_gauss(
     u.debug_print(2, "flux:", flux)
     u.debug_print(1, "len(sources):", len(sources))
 
-    sources['flux'] = flux.value
+    sources['flux'] = u.dequantify(flux)
     print('Generating additive image...')
 
     add = make_model_sources_image(shape=image.shape, model=gaussian_model, source_table=sources)
@@ -1810,6 +1951,8 @@ def insert_synthetic_point_sources_psfex(
     :param saturate:
     :return:
     """
+
+    import psfex
 
     if not isinstance(mag, Iterable):
         mag = np.array([mag])
@@ -2357,6 +2500,3 @@ def signal_to_noise_ccd_equ(
     snr = rate_target * np.sqrt(exp_time * gain) / np.sqrt(
         rate_target + n_pix * (rate_sky + rate_dark / gain + rate_read / (exp_time * gain)))
     return snr
-
-
-
