@@ -19,6 +19,7 @@ import astropy.units as units
 import astropy.table as table
 import astropy.io.fits as fits
 from astropy.modeling import models, fitting
+from astropy.visualization import make_lupton_rgb, ImageNormalize
 
 import craftutils.astrometry as astm
 import craftutils.fits_files as ff
@@ -932,9 +933,9 @@ class FRBField(Field):
 
     def plot_host_colour(
             self,
-            r: image.ImagingImage,
-            b: image.ImagingImage,
-            g: image.ImagingImage = None,
+            red: image.ImagingImage,
+            blue: image.ImagingImage,
+            green: image.ImagingImage = None,
             fig: plt.Figure = None,
             centre: SkyCoord = None,
             show_frb: bool = True,
@@ -942,8 +943,10 @@ class FRBField(Field):
             n: int = 1, n_x: int = 1, n_y: int = 1,
             frb_kwargs: dict = {},
             imshow_kwargs: dict = {},
-            normalize_kwargs: dict = {},
             output_path: str = None,
+            ext: int = 0,
+            vmaxes: tuple = (None, None, None),
+            vmins: tuple = (None, None, None),
             **kwargs
     ):
         pl.latex_setup()
@@ -952,8 +955,97 @@ class FRBField(Field):
             raise TypeError("self.frb has not been set properly for this FRBField.")
         if centre is None:
             centre = self.frb.host_galaxy.position
+        if fig is None:
+            fig = plt.figure()
 
-        r_data = None
+        path_split = os.path.split(output_path)[-1]
+
+        frame = u.check_quantity(frame, unit=units.pix)
+
+        red.extract_pixel_scale(ext)
+        frame = frame.to(units.pix, red.pixel_scale_dec).value
+
+        red.load_data()
+        x, y = red.world_to_pixel(centre, 0)
+        left, right, bottom, top = u.frame_from_centre(frame=frame, x=x, y=y, data=red.data[ext])
+        red_trimmed = red.trim(
+            left=left,
+            right=right,
+            bottom=bottom,
+            top=top,
+            output_path=output_path.replace(path_split, f"{red.name}_trimmed.fits")
+        )
+        red_trimmed.load_wcs(ext)
+        red_data = red_trimmed.data[ext].value
+        if vmaxes[0] is not None:
+            red_data[red_data > vmaxes[0]] = vmaxes[0]
+        if vmins[0] is not None:
+            red_data[red_data < vmins[0]] = vmins[0]
+        red_subbed = red_data - np.median(red_data)
+
+        blue.load_data()
+        x, y = blue.world_to_pixel(centre, 0)
+        left, right, bottom, top = u.frame_from_centre(frame=frame, x=x, y=y, data=blue.data[ext])
+        blue_trimmed = blue.trim(
+            left=left,
+            right=right,
+            bottom=bottom,
+            top=top,
+            output_path=output_path.replace(path_split, f"{blue.name}_trimmed.fits")
+        )
+        blue_data = blue_trimmed.data[ext].value
+        if vmaxes[0] is not None:
+            blue_data[blue_data > vmaxes[0]] = vmaxes[0]
+        if vmins[0] is not None:
+            blue_data[blue_data < vmins[0]] = vmins[0]
+        blue_subbed = blue_data - np.median(blue_data)
+
+        if green is None:
+            green_subbed = (red_subbed + blue_subbed) / 2
+        else:
+            green.load_data()
+            x, y = green.world_to_pixel(centre, 0)
+            left, right, bottom, top = u.frame_from_centre(frame=frame, x=x, y=y, data=green.data[ext])
+            green_trimmed = green.trim(
+                left=left,
+                right=right,
+                bottom=bottom,
+                top=top,
+                output_path=output_path.replace(path_split, f"{green.name}_trimmed.fits")
+
+            )
+            green_data = green_trimmed.data[ext].value
+            if vmaxes[0] is not None:
+                green_data[green_data > vmaxes[0]] = vmaxes[0]
+            if vmins[0] is not None:
+                green_data[green_data < vmins[0]] = vmins[0]
+            green_subbed = green_data - np.median(green_data)
+
+        colour = make_lupton_rgb(
+            red_subbed,
+            green_subbed,
+            blue_subbed,
+            Q=7,
+            stretch=30
+        )
+
+        if "origin" not in imshow_kwargs:
+            imshow_kwargs["origin"] = "lower"
+
+        ax = fig.add_subplot(n_x, n_y, n, projection=red_trimmed.wcs)
+        ax.imshow(
+            colour,
+            **imshow_kwargs,
+        )
+        ax.set_xlabel(" ")
+        ax.set_ylabel(" ")
+        # ax.set_xlabel("Right Ascension (J2000)", size=16)
+        # ax.set_ylabel("Declination (J2000)", size=16, rotation=0, labelpad=-20)
+        ax.tick_params(labelsize=10)
+        # ax.yaxis.set_label_position("right")
+        # plt.tight_layout()
+        fig.savefig(output_path)
+        return ax, fig, colour
 
     def plot_host(
             self,
@@ -974,6 +1066,7 @@ class FRBField(Field):
             imshow_kwargs: dict = {},
             normalize_kwargs: dict = {},
             output_path: str = None,
+            show_legend: bool = True,
             **kwargs
     ):
         pl.latex_setup()
@@ -996,7 +1089,7 @@ class FRBField(Field):
             import photutils
             img.load_headers()
             frb = self.frb.position
-            x, y = img.wcs.all_world2pix(frb.ra.value, frb.dec.value, 0)
+            x, y = img.world_to_pixel(frb, 0)
             uncertainty = self.frb.position_err
             a, b = uncertainty.uncertainty_quadrature()
             theta = uncertainty.theta.to(units.deg)
@@ -1026,7 +1119,8 @@ class FRBField(Field):
                 theta=theta.to(units.rad).value,
             )
             localisation.plot(label="FRB localisation ellipse", color="white", **frb_kwargs)
-            plot.legend()
+            if show_legend:
+                plot.legend()
 
         if output_path is not None:
             fig.savefig(output_path)

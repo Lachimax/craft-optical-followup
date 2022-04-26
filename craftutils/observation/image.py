@@ -2888,8 +2888,14 @@ class ImagingImage(Image):
         )
         ax.set_xlim(left, right)
         ax.set_ylim(bottom, top)
-        ax.set_xlabel("Right Ascension (J2000)")
-        ax.set_ylabel("Declination (J2000)")
+        ax.set_xlabel(" ")
+        ax.set_ylabel(" ")
+        # ax.set_xlabel("Right Ascension (J2000)", size=16)
+        # ax.set_ylabel("Declination (J2000)", size=16, rotation=-90)
+        ax.tick_params(labelsize=14)
+        ax.yaxis.set_label_position("right")
+
+        # plt.tight_layout()
 
         if output_path is not None:
             fig.savefig(output_path)
@@ -3951,6 +3957,8 @@ class CoaddedImage(ImagingImage):
         # Let the super method take care of this image
         trimmed = super().trim(left=left, right=right, bottom=bottom, top=top, output_path=output_path)
         # Trim the area file in the same way.
+        if output_path is None:
+            output_path = trimmed.path
         new_area_path = output_path.replace(".fits", "_area.fits")
 
         ff.trim_file(
