@@ -751,7 +751,7 @@ class Object:
             "mag_psf": np.mean(fil_photom["mag_psf"]),
             "mag_psf_err": np.std(fil_photom["mag_psf"])
         }
-        u.debug_print(2, f"Object.select_photometry_sep(): {self.name=}, {fil=}, {instrument=}")
+        u.debug_print(2, f"Object.select_photometry_sep(): self.name={self.name}, fil={fil}, instrument={instrument}")
         print(fil_photom)
         return fil_photom[np.argmax(fil_photom["snr_sep"])], mean
 
