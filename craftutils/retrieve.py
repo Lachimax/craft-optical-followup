@@ -15,8 +15,6 @@ from astropy.coordinates import SkyCoord
 from astropy.table import Table, QTable
 from astropy.time import Time
 
-from astroquery import log
-log.setLevel("TRACE")
 
 try:
     import astroquery.gemini as gemini
