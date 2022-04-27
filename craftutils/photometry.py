@@ -165,7 +165,7 @@ def image_psf_diagnostics(
     print(f"Num stars after sigma clipping w. Sextractor PSF:", len(stars_clip_sex))
 
     plt.close()
-    print(f"image_psf_diagnostics(): {output=}")
+    print(f"image_psf_diagnostics(): output={output}")
     if output is not None:
 
         with quantity_support():
