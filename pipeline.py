@@ -1,8 +1,6 @@
-# Code by Lachlan Marnoch, 2021
-import json
+# Code by Lachlan Marnoch, 2021 - 2022
 import os
 
-import craftutils.observation.objects as obj
 import craftutils.observation.field as fld
 import craftutils.params as p
 import craftutils.utils as u
