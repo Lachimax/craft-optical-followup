@@ -489,7 +489,7 @@ def detect_edges_area(file: Union['fits.HDUList', 'str']):
     data = file[0].data
 
     # We round to the 13th decimal place
-    keep_val = np.round(np.nanmax(data), 13)
+    keep_val = u.bucket_mode(data, 13)
 
     height = data.shape[0]
     mid_y = int(height / 2)
@@ -806,9 +806,10 @@ def trim_frame_point(hdu: fits.hdu.hdulist.HDUList, ra: float, dec: float,
     return hdu_cut
 
 
-def trim_ccddata(ccddata: CCDData,
-                 left: 'int' = None, right: 'int' = None, bottom: 'int' = None, top: 'int' = None,
-                 update_wcs=True):
+def trim_ccddata(
+        ccddata: CCDData,
+        left: 'int' = None, right: 'int' = None, bottom: 'int' = None, top: 'int' = None,
+        update_wcs=True):
     """
 
     :param ccddata:
@@ -843,8 +844,14 @@ def trim_ccddata(ccddata: CCDData,
     return ccddata
 
 
-def trim_file(path: Union[str, fits.HDUList], left: int = None, right: int = None, bottom: int = None, top: int = None,
-              new_path: str = None):
+def trim_file(
+        path: Union[str, fits.HDUList],
+        left: int = None,
+        right: int = None,
+        bottom: int = None,
+        top: int = None,
+        new_path: str = None
+):
     """
     Trims the edges of a .fits file while retaining its WCS information.
     :param path:
@@ -867,9 +874,9 @@ def trim_file(path: Union[str, fits.HDUList], left: int = None, right: int = Non
     print('Trimming: \n' + str(path))
     print('left', left, 'right', right, 'bottom', bottom, 'top', top)
     print('Moving to: \n' + str(new_path))
-    add_log(file=file,
-            action='Trimmed using craftutils.fits_files.trim() with borders at x = ' + str(left) + ', ' + str(
-                right) + '; y=' + str(bottom) + ', ' + str(top) + '; moved from ' + str(path) + ' to ' + str(new_path))
+    # add_log(file=file,
+    #         action='Trimmed using craftutils.fits_files.trim() with borders at x = ' + str(left) + ', ' + str(
+    #             right) + '; y=' + str(bottom) + ', ' + str(top) + '; moved from ' + str(path) + ' to ' + str(new_path))
     print()
 
     print(new_path)

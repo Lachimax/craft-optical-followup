@@ -128,7 +128,6 @@ def main(
                     exit(0)
             field = fld.Field.from_params(name=field_name)
 
-    field.retrieve_catalogues()
     if spectroscopy:
         mode = "Spectroscopy"
     elif imaging:

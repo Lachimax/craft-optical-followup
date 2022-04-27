@@ -30,8 +30,6 @@ import craftutils.plotting as plotting
 import craftutils.retrieve as r
 import craftutils.astrometry as a
 
-quantity_support()
-
 # TODO: End-to-end pipeline script?
 # TODO: Change expected types to Union
 
@@ -43,11 +41,18 @@ def image_psf_diagnostics(
         cat: Union[str, table.Table],
         star_class_tol: float = 0.9,
         mag_max: float = 0.0 * units.mag,
-        mag_min: float = -7.0 * units.mag,
+        mag_min: float = -50. * units.mag,
         match_to: table.Table = None,
+        match_tolerance: units.Quantity = 1 * units.arcsec,
         frame: float = 15,
-        use_sextractor: bool = True,
-        ext: int = 0
+        ext: int = 0,
+        near_centre: SkyCoord = None,
+        near_radius: units.Quantity = None,
+        ra_col: str = "RA",
+        dec_col: str = "DEC",
+        output: str = None,
+        min_stars: int = 30,
+        plot_file_prefix: str = ""
 ):
     hdu, path = ff.path_or_hdu(hdu=hdu)
     hdu = copy.deepcopy(hdu)
@@ -55,21 +60,47 @@ def image_psf_diagnostics(
 
     if isinstance(cat, str):
         cat = table.QTable.read(cat, format="ascii.sextractor")
+    print(cat["CLASS_STAR"].max(), cat["CLASS_STAR"].mean(), star_class_tol)
     stars = cat[cat["CLASS_STAR"] > star_class_tol]
-    stars = stars[stars["MAG_PSF"] < mag_max]
-    stars = stars[stars["MAG_PSF"] > mag_min]
-
     print(f"Initial num stars:", len(stars))
+    stars = stars[stars["MAG_PSF"] < mag_max]
+    print(f"Num stars with MAG_PSF < {mag_max}:", len(stars))
+    print(stars["MAG_PSF"].max(), stars["MAG_PSF"].mean(), mag_max, mag_min)
+    stars = stars[stars["MAG_PSF"] > mag_min]
+    print(f"Num stars with MAG_PSF > {mag_min}:", len(stars))
+
+
+    if near_radius is not None:
+        header = hdu[ext].header
+        wcs_this = wcs.WCS(header)
+        if near_centre is None:
+            near_centre = SkyCoord.from_pixel(header["NAXIS1"] / 2, header["NAXIS2"] / 2, wcs_this, origin=1)
+
+        ra = stars[ra_col]
+        dec = stars[dec_col]
+        coords = SkyCoord(ra, dec)
+
+        img_width = max(header["NAXIS1"], header["NAXIS2"]) * units.pix
+        _, scale = ff.get_pixel_scale(hdu, ext=ext, astropy_units=True)
+        img_width_ang = img_width.to(units.arcsec, scale)
+        stars_near = stars[near_centre.separation(coords) < near_radius]
+        print("len(stars_near):", len(stars_near), "near_radius:", near_radius, "img_width_ang:", img_width_ang)
+        while len(stars_near) < min_stars and near_radius < img_width_ang:
+            print(near_centre.separation(coords).max(), near_centre.separation(coords).mean())
+            stars_near = stars[near_centre.separation(coords) < near_radius]
+            print(f"Num stars within {near_radius} of {near_centre}:", len(stars_near))
+            near_radius += 0.5 * units.arcmin
+        stars = stars_near
 
     if match_to is not None:
-        stars, stars_match = a.match_catalogs(
+        stars, stars_match, distance = a.match_catalogs(
             cat_1=stars,
             cat_2=match_to,
-            ra_col_1="RA",
-            dec_col_1="DEC",
-            ra_col_2="RA",
-            dec_col_2="DEC",
-            tolerance=2 * units.arcsec)
+            ra_col_1=ra_col,
+            dec_col_1=dec_col,
+            ra_col_2=ra_col,
+            dec_col_2=dec_col,
+            tolerance=match_tolerance)
 
         print(f"Num stars after match to other sextractor cat:", len(stars))
 
@@ -84,12 +115,12 @@ def image_psf_diagnostics(
             stars["MOFFAT_FWHM_FITTED"] *= units.deg
 
     for j, star in enumerate(stars):
-        ra = star["ALPHA_SKY"]
-        dec = star["DELTA_SKY"]
+        ra = star[ra_col]
+        dec = star[dec_col]
 
-        window = ff.trim_frame_point(hdu=hdu, ra=ra, dec=dec, frame=frame)
+        window = ff.trim_frame_point(hdu=hdu, ra=ra, dec=dec, frame=frame, ext=ext)
         data = window[ext].data
-        _, scale = ff.get_pixel_scale(hdu, astropy_units=True)
+        _, scale = ff.get_pixel_scale(hdu, astropy_units=True, ext=ext)
 
         mean, median, stddev = stats.sigma_clipped_stats(data)
         data -= median
@@ -121,17 +152,41 @@ def image_psf_diagnostics(
 
         stars[j] = star
 
-    clipped = sigma_clip(stars["MOFFAT_FWHM_FITTED"], masked=True)
+    clipped = sigma_clip(stars["MOFFAT_FWHM_FITTED"], masked=True, sigma=2)
     stars_clip_moffat = stars[~clipped.mask]
-    print(f"Num stars after sigma clipping w. astropy Moffat PSF:", len(stars))
+    print(f"Num stars after sigma clipping w. astropy Moffat PSF:", len(stars_clip_moffat))
 
-    clipped = sigma_clip(stars["GAUSSIAN_FWHM_FITTED"], masked=True)
+    clipped = sigma_clip(stars["GAUSSIAN_FWHM_FITTED"], masked=True, sigma=2)
     stars_clip_gauss = stars[~clipped.mask]
-    print(f"Num stars after sigma clipping w. astropy Gaussian PSF:", len(stars))
+    print(f"Num stars after sigma clipping w. astropy Gaussian PSF:", len(stars_clip_gauss))
 
-    clipped = sigma_clip(stars["FWHM_WORLD"], masked=True)
+    clipped = sigma_clip(stars["FWHM_WORLD"], masked=True, sigma=2)
     stars_clip_sex = stars[~clipped.mask]
-    print(f"Num stars after sigma clipping w. Sextractor PSF:", len(stars))
+    print(f"Num stars after sigma clipping w. Sextractor PSF:", len(stars_clip_sex))
+
+    plt.close()
+    print(f"image_psf_diagnostics(): {output=}")
+    if output is not None:
+
+        with quantity_support():
+
+            for colname in ["MOFFAT_FWHM_FITTED", "GAUSSIAN_FWHM_FITTED", "FWHM_WORLD"]:
+                plt.hist(
+                    stars[colname].to(units.arcsec),
+                    label="Full sample",
+                    bins=int(np.sqrt(len(stars)))
+                )
+                plt.hist(
+                    stars_clip_moffat[colname].to(units.arcsec),
+                    edgecolor='black',
+                    linewidth=1.2,
+                    label="Sigma-clipped",
+                    fc=(0, 0, 0, 0),
+                    bins=int(np.sqrt(len(stars_clip_moffat)))
+                )
+                plt.legend()
+                plt.savefig(os.path.join(output, f"{plot_file_prefix}_psf_histogram_{colname}.png"))
+                plt.close()
 
     return stars_clip_moffat, stars_clip_gauss, stars_clip_sex
 
@@ -243,16 +298,16 @@ def fit_background(data: np.ndarray, model_type='polynomial', deg: int = 2, foot
     else:
         raise ValueError("Unrecognised model; must be in", accepted_models)
     fitter = fitting.LevMarLSQFitter()
-    print(footprint)
+    # print(footprint)
     if weights is not None:
         weights = weights[footprint[0]:footprint[1], footprint[2]:footprint[3]]
-    print(data[footprint[0]:footprint[1], footprint[2]:footprint[3]].shape)
-    print(x.shape)
-    print(y.shape)
+    # print(data[footprint[0]:footprint[1], footprint[2]:footprint[3]].shape)
+    # print(x.shape)
+    # print(y.shape)
     model = fitter(init, x, y, data[footprint[0]:footprint[1], footprint[2]:footprint[3]],
                    weights=weights)
 
-    # rmse = u.root_mean_squared_error(model_values=model(x,y).flatten(), obs_values=data[footprint[0]:footprint[1], footprint[2]:footprint[3]].flatten())
+    # std_err = u.root_mean_squared_error(model_values=model(x,y).flatten(), obs_values=data[footprint[0]:footprint[1], footprint[2]:footprint[3]].flatten())
     return model(x, y), model(x_large, y_large), model
 
 
@@ -357,6 +412,8 @@ def magnitude_complete(
     error_colour = u.uncertainty_product(colour_term * colour, (colour_term, colour_term_err), (colour, colour_err))
     error = u.uncertainty_sum(mag_error, zeropoint_err, error_extinction, error_colour)
 
+    u.debug_print(2, "\textinction", magnitude, "+/-", mag_error)
+
     return magnitude, error
 
 
@@ -389,6 +446,7 @@ def determine_zeropoint_sextractor(
         cat_ra_col: str = 'RA',
         cat_dec_col: str = 'DEC',
         cat_mag_col: str = 'WAVG_MAG_PSF_',
+        cat_mag_col_err: str = 'WAVGERR_MAG_PSF_',
         sex_ra_col='ALPHA_SKY',
         sex_dec_col='DELTA_SKY',
         sex_x_col: str = 'XPSF_IMAGE',
@@ -407,9 +465,9 @@ def determine_zeropoint_sextractor(
         cat_type: str = 'csv',
         cat_zeropoint: units.Quantity = 0.0 * units.mag,
         cat_zeropoint_err: units.Quantity = 0.0 * units.mag,
-        latex_plot: bool = False,
-        snr_cut: float = 100.,
-        snr_col: str = 'SNR_WIN'
+        snr_cut: float = 10.,
+        snr_col: str = 'SNR_WIN',
+        iterate_uncertainty: bool = True
 ):
     """
     This function expects your catalogue to be a .csv.
@@ -571,7 +629,7 @@ def determine_zeropoint_sextractor(
 
     # Consolidate tables for cleanliness
 
-    matches = table.hstack([matches_cat, matches], table_names=[cat_name, 'fors'])
+    matches = table.hstack([matches_cat, matches], table_names=[cat_name, 'img'])
 
     # Plot positions on image, referring back to g image
     wcst = wcs.WCS(header=image[0].header)
@@ -679,6 +737,7 @@ def determine_zeropoint_sextractor(
     # Linear fit of catalogue magnitudes vs sextractor magnitudes
 
     x = matches_clean[cat_mag_col]
+    x_uncertainty = matches_clean[cat_mag_col_err]
     y = matches_clean['mag']
     y_uncertainty = matches_clean['mag_err']
 
@@ -686,148 +745,186 @@ def determine_zeropoint_sextractor(
     # weights = 1./np.sqrt(x_uncertainty**2 + y_uncertainty**2)
     # Might not be sensible.
 
-    weights = 1. / y_uncertainty
+    y_weights = 1. / y_uncertainty
+    x_weights = 1. / x_uncertainty
 
     linear_model_free = models.Linear1D(slope=1.0)
     linear_model_fixed = models.Linear1D(slope=1.0, fixed={"slope": True})
 
     fitter = fitting.LinearLSQFitter()
 
-    delta = -np.inf
-    rmse_prior = np.inf
-    mag_min = np.min(x)
-    x_iter = x[:]
-    y_iter = y[:]
-    y_uncertainty_iter = y_uncertainty[:]
-    weights_iter = weights[:]
-    matches_iter = matches_clean[:]
+    mag_max = None
+    mag_min = None
 
-    x_prior = x_iter
-    y_prior = y_iter
-    y_uncertainty_prior = y_iter
-    weights_prior = weights_iter
-    matches_prior = matches_iter
+    matches = matches_clean
 
-    keep = np.ones(x_iter.shape, dtype=bool)
-    n = 0
-    u.mkdir_check(output_path + "min_mag_iterations/")
-    while (rmse_prior > 1.0 * units.mag or delta <= 0) and sum(keep) > 3:
+    if iterate_uncertainty:
+
+        delta = -np.inf
+        std_err_prior = np.inf
+        mag_min = np.min(x)
+        x_iter = x[:]
+        y_iter = y[:]
+        y_uncertainty_iter = y_uncertainty[:]
+        y_weights_iter = y_weights[:]
+        x_weights_iter = x_weights[:]
+        matches_iter = matches_clean[:]
+
         x_prior = x_iter
         y_prior = y_iter
-        y_uncertainty_prior = y_uncertainty_iter
-        weights_prior = weights_iter
+        y_uncertainty_prior = y_iter
+        y_weights_prior = y_weights_iter * 1.
+        x_weights_prior = x_weights_iter * 1.
         matches_prior = matches_iter
 
-        keep = x_iter >= mag_min
-        x_iter = x_iter[keep]
-        y_iter = y_iter[keep]
-        y_uncertainty_iter = y_uncertainty_iter[keep]
-        weights_iter = weights_iter[keep]
-        matches_iter = matches_iter[keep]
+        keep = np.ones(x_iter.shape, dtype=bool)
+        n = 0
+        u.mkdir_check(output_path + "min_mag_iterations/")
+        while (std_err_prior > 1.0 * units.mag or delta <= 0) and sum(keep) > 3:
+            x_prior = x_iter
+            y_prior = y_iter
+            y_uncertainty_prior = y_uncertainty_iter
+            y_weights_prior = y_weights_iter
+            x_weights_prior = x_weights_iter
+            matches_prior = matches_iter
 
-        fitted_iter = fitter(linear_model_fixed, x_iter, y_iter, weights=weights_iter)
-        line_iter = fitted_iter(x_iter)
-        rmse_this = u.root_mean_squared_error(model_values=line_iter, obs_values=y_iter, weights=weights_iter)
+            keep = x_iter >= mag_min
+            x_iter = x_iter[keep]
+            y_iter = y_iter[keep]
+            y_uncertainty_iter = y_uncertainty_iter[keep]
+            y_weights_iter = y_weights_iter[keep]
+            x_weights_iter = x_weights_iter[keep]
+            matches_iter = matches_iter[keep]
 
-        plt.scatter(x_iter, y_iter, c='blue')
-        plt.plot(x_iter, line_iter, c='green')
-        plt.suptitle("")
-        plt.xlabel(f"Magnitude in {cat_name}")
-        plt.ylabel("SExtractor Magnitude in " + image_name)
-        plt.savefig(
-            f"{output_path}min_mag_iterations/{n}_{cat_name}vsex_rmse_{rmse_this}_delta{delta}_magmin_{mag_min}.png")
-        plt.close()
+            fitted_iter = fitter(linear_model_fixed, x_iter, y_iter, weights=y_weights_iter)
+            line_iter = fitted_iter(x_iter)
 
-        delta = rmse_this - rmse_prior
+            err_this = u.std_err_intercept(
+                y_model=line_iter,
+                y_obs=y_iter,
+                x_obs=x_iter,
+                y_weights=y_weights_iter,
+                x_weights=x_weights_iter,
+                dof_correction=1
+            )
 
-        mag_min += 0.1 * units.mag
+            plt.scatter(x_iter, y_iter, c='blue')
+            plt.plot(x_iter, line_iter, c='green')
+            plt.suptitle("")
+            plt.xlabel(f"Magnitude in {cat_name}")
+            plt.ylabel("SExtractor Magnitude in " + image_name)
+            plt.savefig(
+                f"{output_path}min_mag_iterations/{n}_{cat_name}vsex_std_err_{err_this}_delta{delta}_magmin_{mag_min}.png")
+            plt.close()
 
-        print("Iterating min cat mag:", mag_min, rmse_prior, delta, sum(keep))
+            delta = err_this - std_err_prior
 
-        rmse_prior = rmse_this
-        n += 1
+            mag_min += 0.1 * units.mag
 
-    mag_min -= 0.1 * units.mag
+            print("Iterating min cat mag:", mag_min, std_err_prior, delta, sum(keep))
 
-    x = x_prior
-    y = y_prior
-    y_uncertainty = y_uncertainty_prior[:]
-    weights = weights_prior
-    matches = matches_prior
+            std_err_prior = err_this
+            n += 1
+
+        mag_min -= 0.1 * units.mag
+
+        x = x_prior
+        y = y_prior
+        y_uncertainty = y_uncertainty_prior[:]
+        y_weights = y_weights_prior
+        x_weights = x_weights_prior
+        matches = matches_prior
+
+        print(len(x), f'matches after iterating minimum mag ({mag_min})')
+        params[f'matches_{n_match}_min_cut'] = int(len(x))
+        n_match += 1
+
+        delta = -np.inf
+        std_err_prior = np.inf
+        mag_max = np.max(x)
+        x_iter = x[:]
+        y_iter = y[:]
+        y_uncertainty_iter = y_uncertainty[:]
+        y_weights_iter = y_weights[:]
+        x_weights_iter = x_weights[:]
+        matches_iter = matches[:]
+
+        keep = np.ones(x_iter.shape, dtype=bool)
+        n = 0
+        u.mkdir_check(output_path + "max_mag_iterations/")
+        while delta <= 0 and sum(keep) > 3:
+            x_prior = x_iter
+            y_prior = y_iter
+            y_uncertainty_prior = y_uncertainty_iter
+            y_weights_prior = y_weights_iter
+            x_weights_prior = x_weights_iter
+            matches_prior = matches_iter
+
+            keep = x_iter <= mag_max
+            x_iter = x_iter[keep]
+            y_iter = y_iter[keep]
+            y_uncertainty_iter = y_uncertainty_iter[keep]
+            y_weights_iter = y_weights_iter[keep]
+            x_weights_iter = x_weights_iter[keep]
+            matches_iter = matches_iter[keep]
+
+            fitted_iter = fitter(linear_model_fixed, x_iter, y_iter, weights=y_weights_iter)
+            line_iter = fitted_iter(x_iter)
+
+            err_this = u.std_err_intercept(
+                y_model=line_iter,
+                y_obs=y_iter,
+                x_obs=x_iter,
+                y_weights=y_weights_iter,
+                x_weights=x_weights_iter
+            )
+
+            plt.scatter(x_iter, y_iter, c='blue')
+            plt.plot(x_iter, line_iter, c='green')
+            plt.suptitle("")
+            plt.xlabel(f"Magnitude in {cat_name}")
+            plt.ylabel("SExtractor Magnitude in " + image_name)
+            plt.savefig(f"{output_path}max_mag_iterations/{n}_{cat_name}vsex_std_err_{err_this}_magmax_{mag_max}.png")
+            plt.close()
+
+            delta = err_this - std_err_prior
+
+            mag_max -= 0.1 * units.mag
+            std_err_prior = err_this
+
+            print("Iterating max cat mag:", mag_max, std_err_prior, delta)
+
+            n += 1
+
+        mag_max += 0.1 * units.mag
+
+        x = x_prior
+        y = y_prior
+        y_uncertainty = y_uncertainty_prior[:]
+        y_weights = y_weights_prior
+        x_weights = x_weights_prior
+        matches = matches_prior
 
     params["mag_cut_min"] = mag_min
-    print(len(x), f'matches after iterating minimum mag ({mag_min})')
-    params[f'matches_{n_match}_min_cut'] = int(len(x))
-    n_match += 1
-
-    delta = -np.inf
-    rmse_prior = np.inf
-    mag_max = np.max(x)
-    x_iter = x[:]
-    y_iter = y[:]
-    y_uncertainty_iter = y_uncertainty[:]
-    weights_iter = weights[:]
-    matches_iter = matches[:]
-
-    keep = np.ones(x_iter.shape, dtype=bool)
-    n = 0
-    u.mkdir_check(output_path + "max_mag_iterations/")
-    while delta <= 0 and sum(keep) > 3:
-        x_prior = x_iter
-        y_prior = y_iter
-        y_uncertainty_prior = y_uncertainty_iter
-        weights_prior = weights_iter
-        matches_prior = matches_iter
-
-        keep = x_iter <= mag_max
-        x_iter = x_iter[keep]
-        y_iter = y_iter[keep]
-        y_uncertainty_iter = y_uncertainty_iter[keep]
-        weights_iter = weights_iter[keep]
-        matches_iter = matches_iter[keep]
-
-        fitted_iter = fitter(linear_model_fixed, x_iter, y_iter, weights=weights_iter)
-        line_iter = fitted_iter(x_iter)
-
-        rmse_this = u.root_mean_squared_error(model_values=line_iter, obs_values=y_iter, weights=weights_iter)
-
-        plt.scatter(x_iter, y_iter, c='blue')
-        plt.plot(x_iter, line_iter, c='green')
-        plt.suptitle("")
-        plt.xlabel(f"Magnitude in {cat_name}")
-        plt.ylabel("SExtractor Magnitude in " + image_name)
-        plt.savefig(f"{output_path}max_mag_iterations/{n}_{cat_name}vsex_rmse_{rmse_this}_magmax_{mag_max}.png")
-        plt.close()
-
-        delta = rmse_this - rmse_prior
-
-        mag_max -= 0.1 * units.mag
-        rmse_prior = rmse_this
-
-        print("Iterating max cat mag:", mag_max, rmse_prior, delta)
-
-        n += 1
-
-    mag_max += 0.1 * units.mag
-
-    x = x_prior
-    y = y_prior
-    y_uncertainty = y_uncertainty_prior[:]
-    weights = weights_prior
-    matches = matches_prior
-
     params["mag_cut_max"] = mag_max
     print(len(x), f'matches after iterating maximum mag ({mag_max})')
     params[f'matches_{n_match}_mag_cut'] = int(len(x))
     n_match += 1
 
-    fitted_free = fitter(linear_model_free, x, y, weights=weights)
-    fitted_fixed = fitter(linear_model_fixed, x, y, weights=weights)
+    fitted_free = fitter(linear_model_free, x, y, weights=y_weights)
+    fitted_fixed = fitter(linear_model_fixed, x, y, weights=y_weights)
 
     line_free = fitted_free(x)
     line_fixed = fitted_fixed(x)
 
-    rmse = u.root_mean_squared_error(model_values=line_fixed, obs_values=y, weights=weights)
+    std_err = u.std_err_intercept(
+        y_model=line_fixed,
+        y_obs=y,
+        y_weights=y_weights,
+        x_obs=x,
+        x_weights=x_weights,
+        dof_correction=1
+    )
 
     plt.plot(x, line_free, c='red', label='Line of best fit')
     plt.scatter(x, y, c='blue')
@@ -844,17 +941,17 @@ def determine_zeropoint_sextractor(
 
     print("FREE:", fitted_free)
     print("FIXED:", fitted_fixed)
-    print("RMSE:", rmse)
+    print("STD ERR:", std_err)
 
     params["zeropoint_raw"] = -fitted_fixed.intercept
-    params["rmse_raw"] = rmse
+    params["std_err_raw"] = std_err
     params["free_fit"] = [float(fitted_free.intercept.value), float(fitted_free.slope.value)]
 
     or_fitter = fitting.FittingWithOutlierRemoval(fitter, sigma_clip, niter=1, sigma=2.0)
 
     # print(type(linear_model_fixed), type(x), type(y), type(weights))
-    fitted_clipped, mask = or_fitter(linear_model_fixed, x.value, y.value, weights=weights.value)
-    fitted_free_clipped, free_mask = or_fitter(linear_model_free, x.value, y.value, weights=weights.value)
+    fitted_clipped, mask = or_fitter(linear_model_fixed, x.value, y.value, weights=y_weights.value)
+    fitted_free_clipped, free_mask = or_fitter(linear_model_free, x.value, y.value, weights=y_weights.value)
 
     line_clipped = fitted_clipped(x.value)
     line_clipped = line_clipped[~mask]
@@ -865,11 +962,13 @@ def determine_zeropoint_sextractor(
     y_clipped = y[~mask]
     x_clipped = x[~mask]
     y_uncertainty_clipped = y_uncertainty[~mask]
-    weights_clipped = weights[~mask]
+    y_weights_clipped = y_weights[~mask]
+    x_weights_clipped = x_weights[~mask]
 
     y_free_clipped = y[~free_mask]
     x_free_clipped = x[~free_mask]
-    weights_free_clipped = weights[~free_mask]
+    y_weights_free_clipped = y_weights[~free_mask]
+    x_weights_free_clipped = x_weights[~free_mask]
 
     plt.plot(x_free_clipped, line_free_clipped, c='red', label='Line of best fit')
     plt.scatter(x_clipped, y_clipped, c='blue')
@@ -892,16 +991,22 @@ def determine_zeropoint_sextractor(
         return None
 
     print("CLIPPED:", fitted_clipped)
-    rmse = u.root_mean_squared_error(model_values=line_clipped * units.mag,
-                                     obs_values=y_clipped, weights=weights_clipped)
-    print("RMSE:", rmse)
+    std_err = u.std_err_intercept(
+        y_model=line_clipped * units.mag,
+        y_obs=y_clipped,
+        y_weights=y_weights_clipped,
+        x_weights=x_weights_clipped,
+        x_obs=x_clipped,
+        dof_correction=1
+    )
+    print("STD ERR:", std_err)
 
     matches_final = matches[~mask]
 
     params["free_fit_clipped"] = [float(fitted_free_clipped.intercept.value), float(fitted_free_clipped.slope.value)]
-    params['rmse_clipped'] = rmse
+    params['std_err_clipped'] = std_err
     params['zeropoint'] = float(-fitted_clipped.intercept) * units.mag
-    params['zeropoint_err'] = cat_zeropoint_err + params['rmse_clipped']
+    params['zeropoint_err'] = cat_zeropoint_err + params['std_err_clipped']
 
     #     if latex_plot:
     #         plot_params = p.plotting_params()
@@ -1060,7 +1165,7 @@ def zeropoint_science_field(
 
             exp_time = ff.get_exp_time(image_path)
 
-            print(cat_zeropoint)
+            # print(cat_zeropoint)
 
             if separate_chips:
                 # Split based on which CCD chip the object falls upon.

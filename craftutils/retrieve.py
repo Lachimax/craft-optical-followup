@@ -15,24 +15,21 @@ from astropy.coordinates import SkyCoord
 from astropy.table import Table, QTable
 from astropy.time import Time
 
+from astroquery import log
+log.setLevel("TRACE")
+
 try:
     import astroquery.gemini as gemini
 except ModuleNotFoundError:
     print("This version of astroquery does not support Gemini. Gemini functions will not be available.")
-
 try:
     import astroquery.ipac.irsa.irsa_dust as irsa_dust
 except ModuleNotFoundError:
     import astroquery.irsa_dust as irsa_dust
-    # print("This version of astroquery does not support IRSA dust. Related functions will not be available.")
-
 try:
     import astroquery.ipac.irsa as irsa
 except ModuleNotFoundError:
     import astroquery.irsa as irsa
-
-    # print("This version of astroquery does not support IRSA. Related functions will not be available.")
-
 try:
     from pyvo import dal
 except ModuleNotFoundError:
@@ -59,6 +56,14 @@ def cat_columns(cat, f: str = None):
         f = ""
 
     if cat == '2mass':
+        f = f.lower()
+        return {
+            'mag_psf': f"{f}_m",  # 2MASS doesn't have psf-fit magnitudes, so we make do with the regular magnitudes
+            'mag_psf_err': f"{f}_cmsig",
+            'ra': 'ra',
+            'dec': 'dec',
+        }
+    if cat == 'ztf':
         f = f.lower()
         return {
             'mag_psf': f"{f}_m",  # 2MASS doesn't have psf-fit magnitudes, so we make do with the regular magnitudes
@@ -622,7 +627,21 @@ def retrieve_irsa_extinction(ra: float = None, dec: float = None, coord: SkyCoor
         if ra is None or dec is None:
             raise ValueError("Either ra & dec or coord must be provided.")
         coord = SkyCoord(ra * units.deg, dec * units.deg)
-    table = irsa_dust.IrsaDust.get_extinction_table(coord)
+
+    print(f"Retrieving IRSA extinction table for {coord}")
+    table = None
+    attempts = 0
+    while table is None and attempts < 100:
+        try:
+            table = irsa_dust.IrsaDust.get_extinction_table(coord)
+        except urllib.error.HTTPError:
+            attempts += 1
+            print(f"Could not retrieve table due to HTML error. Trying again after clearing cache ({attempts=}/100).")
+            cache_path = os.path.join(p.home_path, ".astropy", "cache", "astroquery")
+            u.rmtree_check(cache_path)
+
+    if table is None:
+        table = irsa_dust.IrsaDust.get_extinction_table(coord)
 
     return table
 
@@ -661,28 +680,65 @@ def update_frb_irsa_extinction(frb: str):
         print("IRSA Dust Tool data already retrieved.")
 
 
-def retrieve_2mass_photometry(ra: float, dec: float, radius: units.Quantity = 0.2 * units.deg):
-    print(f"Querying IRSA archive for 2MASS sources centred on RA={ra}, DEC={dec}.")
+def retrieve_irsa_photometry(
+        catalogue: str,
+        ra: float,
+        dec: float,
+        radius: units.Quantity = 0.2 * units.deg,
+):
+    print(f"Querying IRSA archive for {catalogue} sources centred on RA={ra}, DEC={dec}.")
     table = irsa.Irsa.query_region(
         SkyCoord(
             ra,
-            dec, unit=(units.deg, units.deg)
+            dec,
+            unit=(units.deg, units.deg)
         ),
-        catalog='fp_psc', radius=radius)
+        catalog=catalogue, radius=radius
+    )
 
     return table
 
 
-def save_2mass_photometry(ra: float, dec: float, output: str, radius: units.Quantity = 0.2 * units.deg):
-    table = retrieve_2mass_photometry(ra=ra, dec=dec, radius=radius)
+def save_irsa_photometry(
+        catalogue: str,
+        ra: float,
+        dec: float,
+        output: str,
+        radius: units.Quantity = 0.2 * units.deg):
+    table = retrieve_irsa_photometry(
+        catalogue=catalogue,
+        ra=ra,
+        dec=dec,
+        radius=radius
+    )
     if len(table) > 0:
         u.mkdir_check_nested(path=output)
-        print(f"Saving 2MASS catalogue to {output}")
+        print(f"Saving {catalogue} catalogue to {output}")
         table.write(output, format="ascii.csv")
         return str(table)
     else:
-        print("No data retrieved from Gaia DR2")
+        print(f"No data retrieved from {catalogue}")
         return None
+
+
+def save_2mass_photometry(ra: float, dec: float, output: str, radius: units.Quantity = 0.2 * units.deg):
+    return save_irsa_photometry(
+        catalogue="fp_psc",
+        ra=ra,
+        dec=dec,
+        output=output,
+        radius=radius
+    )
+
+
+def save_ztf_photometry(ra: float, dec: float, output: str, radius: units.Quantity = 0.2 * units.deg):
+    return save_irsa_photometry(
+        catalogue="ztf_objects_dr10",
+        ra=ra,
+        dec=dec,
+        output=output,
+        radius=radius
+    )
 
 
 sdss_filters = ["u", "g", "r", "i", "z"]
@@ -802,10 +858,10 @@ def update_frb_sdss_photometry(frb: str, force: bool = False):
 
 
 def retrieve_delve_photometry(ra: float, dec: float, radius: units.Quantity = 0.2 * units.deg):
-    print(f"\nQuerying DELVE DR1 archive for field centring on RA={ra}, DEC={dec}")
+    print(f"\nQuerying DELVE DR2 archive for field centring on RA={ra}, DEC={dec}")
     radius = u.dequantify(radius, unit=units.deg)
     url = f"http://datalab.noirlab.edu/tap/sync?REQUEST=doQuery&lang=ADQL&FORMAT=csv&QUERY=SELECT%20q3c_dist" \
-          f"%28ra%2Cdec%2C%20247.725%2C-0.972%29%2A3600%20AS%20dist%2C%20%2A%20FROM%20delve_dr1.objects%20WHERE%20%27t" \
+          f"%28ra%2Cdec%2C%20247.725%2C-0.972%29%2A3600%20AS%20dist%2C%20%2A%20FROM%20delve_dr2.objects%20WHERE%20%27t" \
           f"%27%20%3D%20Q3C_RADIAL_QUERY%28ra%2C%20dec%2C{ra}%2C{dec}%2C{radius}%29%20"
     try:
         response = requests.get(url).content

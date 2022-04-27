@@ -1,11 +1,9 @@
 # Code by Lachlan Marnoch, 2021
-import copy
 import datetime
 import os
 import warnings
 from typing import Union, List, Dict
 import shutil
-from collections import OrderedDict
 
 try:
     import ccdproc
@@ -13,7 +11,6 @@ except ImportError:
     print('There is a problem with ccdproc. Some functionality will not be available.')
 
 import matplotlib.pyplot as plt
-from matplotlib.patches import Ellipse
 import numpy as np
 
 from astropy.time import Time
@@ -21,6 +18,8 @@ from astropy.coordinates import SkyCoord
 import astropy.units as units
 import astropy.table as table
 import astropy.io.fits as fits
+from astropy.modeling import models, fitting
+from astropy.visualization import make_lupton_rgb, ImageNormalize
 
 import craftutils.astrometry as astm
 import craftutils.fits_files as ff
@@ -33,7 +32,7 @@ import craftutils.observation.survey as survey
 import craftutils.params as p
 import craftutils.plotting as pl
 import craftutils.retrieve as retrieve
-import craftutils.spectroscopy as spec
+import craftutils.wrap.pypeit as spec
 import craftutils.utils as u
 import craftutils.wrap.montage as montage
 import craftutils.wrap.dragons as dragons
@@ -48,6 +47,8 @@ surveys = p.surveys
 
 active_fields = {}
 active_epochs = {}
+
+zeropoint_yaml = os.path.join(p.data_path, f"zeropoints.yaml")
 
 
 def _output_img_list(lst: list):
@@ -91,7 +92,7 @@ def _output_img_dict_list(dictionary: dict):
             out_dict[fil] = None
         elif len(dictionary[fil]) > 0:
             if isinstance(dictionary[fil][0], image.Image):
-                out_dict[fil] = list(map(lambda f: f.path, dictionary[fil]))
+                out_dict[fil] = list(set(map(lambda f: f.path, dictionary[fil])))
                 out_dict[fil].sort()
             elif isinstance(dictionary[fil][0], str):
                 out_dict[fil] = dictionary[fil]
@@ -227,11 +228,13 @@ def add_many_to_epoch_directory(
         write_epoch_directory(directory)
 
 
-def list_fields():
+def list_fields(include_std: bool = False):
     print("Searching for field param files...")
     param_path = os.path.join(config['param_dir'], 'fields')
     fields = list(filter(lambda d: os.path.isdir(os.path.join(param_path, d)) and os.path.isfile(
         os.path.join(param_path, d, f"{d}.yaml")), os.listdir(param_path)))
+    if not include_std:
+        fields = list(filter(lambda f: "STD" not in f, fields))
     fields.sort()
     return fields
 
@@ -437,7 +440,9 @@ class Field:
             for instrument in filter(lambda d: os.path.isdir(os.path.join(mode_path, d)), os.listdir(mode_path)):
                 instrument_path = os.path.join(mode_path, instrument)
                 print(f"Looking in {instrument_path}")
-                for epoch_param in filter(lambda f: f.endswith(".yaml"), os.listdir(instrument_path)):
+                epoch_params = list(filter(lambda f: f.endswith(".yaml"), os.listdir(instrument_path)))
+                epoch_params.sort()
+                for epoch_param in epoch_params:
                     epoch_name = epoch_param[:epoch_param.find(".yaml")]
                     param_path = os.path.join(instrument_path, epoch_param)
                     epoch = p.load_params(file=param_path)
@@ -662,10 +667,6 @@ class Field:
         else:
             print("Could not load catalogue; field is outside footprint.")
 
-    def get_photometry(self):
-        for obj in self.objects:
-            pass
-
     def generate_astrometry_indices(self, cat_name: str = "gaia"):
         self.retrieve_catalogue(cat_name=cat_name)
         if not self.check_cat(cat_name=cat_name):
@@ -743,6 +744,8 @@ class Field:
             return None
         # Check data_dir path for relevant .yamls (output_values, etc.)
 
+        if param_dict is None:
+            raise FileNotFoundError(f"There is no param file for {name}")
         field_type = param_dict["type"]
         centre_ra, centre_dec = p.select_coords(param_dict["centre"])
         coord_str = f"{centre_ra} {centre_dec}"
@@ -928,6 +931,122 @@ class FRBField(Field):
                 self.add_object(self.frb.host_galaxy)
         self.epochs_imaging_old = {}
 
+    def plot_host_colour(
+            self,
+            red: image.ImagingImage,
+            blue: image.ImagingImage,
+            green: image.ImagingImage = None,
+            fig: plt.Figure = None,
+            centre: SkyCoord = None,
+            show_frb: bool = True,
+            frame: units.Quantity = 30 * units.pix,
+            n: int = 1, n_x: int = 1, n_y: int = 1,
+            frb_kwargs: dict = {},
+            imshow_kwargs: dict = {},
+            output_path: str = None,
+            ext: int = 0,
+            vmaxes: tuple = (None, None, None),
+            vmins: tuple = (None, None, None),
+            **kwargs
+    ):
+        pl.latex_setup()
+
+        if not isinstance(self.frb, objects.FRB):
+            raise TypeError("self.frb has not been set properly for this FRBField.")
+        if centre is None:
+            centre = self.frb.host_galaxy.position
+        if fig is None:
+            fig = plt.figure()
+
+        path_split = os.path.split(output_path)[-1]
+
+        frame = u.check_quantity(frame, unit=units.pix)
+
+        red.extract_pixel_scale(ext)
+        frame = frame.to(units.pix, red.pixel_scale_dec).value
+
+        red.load_data()
+        x, y = red.world_to_pixel(centre, 0)
+        left, right, bottom, top = u.frame_from_centre(frame=frame, x=x, y=y, data=red.data[ext])
+        red_trimmed = red.trim(
+            left=left,
+            right=right,
+            bottom=bottom,
+            top=top,
+            output_path=output_path.replace(path_split, f"{red.name}_trimmed.fits")
+        )
+        red_trimmed.load_wcs(ext)
+        red_data = red_trimmed.data[ext].value
+        if vmaxes[0] is not None:
+            red_data[red_data > vmaxes[0]] = vmaxes[0]
+        if vmins[0] is not None:
+            red_data[red_data < vmins[0]] = vmins[0]
+        red_subbed = red_data - np.median(red_data)
+
+        blue.load_data()
+        x, y = blue.world_to_pixel(centre, 0)
+        left, right, bottom, top = u.frame_from_centre(frame=frame, x=x, y=y, data=blue.data[ext])
+        blue_trimmed = blue.trim(
+            left=left,
+            right=right,
+            bottom=bottom,
+            top=top,
+            output_path=output_path.replace(path_split, f"{blue.name}_trimmed.fits")
+        )
+        blue_data = blue_trimmed.data[ext].value
+        if vmaxes[0] is not None:
+            blue_data[blue_data > vmaxes[0]] = vmaxes[0]
+        if vmins[0] is not None:
+            blue_data[blue_data < vmins[0]] = vmins[0]
+        blue_subbed = blue_data - np.median(blue_data)
+
+        if green is None:
+            green_subbed = (red_subbed + blue_subbed) / 2
+        else:
+            green.load_data()
+            x, y = green.world_to_pixel(centre, 0)
+            left, right, bottom, top = u.frame_from_centre(frame=frame, x=x, y=y, data=green.data[ext])
+            green_trimmed = green.trim(
+                left=left,
+                right=right,
+                bottom=bottom,
+                top=top,
+                output_path=output_path.replace(path_split, f"{green.name}_trimmed.fits")
+
+            )
+            green_data = green_trimmed.data[ext].value
+            if vmaxes[0] is not None:
+                green_data[green_data > vmaxes[0]] = vmaxes[0]
+            if vmins[0] is not None:
+                green_data[green_data < vmins[0]] = vmins[0]
+            green_subbed = green_data - np.median(green_data)
+
+        colour = make_lupton_rgb(
+            red_subbed,
+            green_subbed,
+            blue_subbed,
+            Q=7,
+            stretch=30
+        )
+
+        if "origin" not in imshow_kwargs:
+            imshow_kwargs["origin"] = "lower"
+
+        ax = fig.add_subplot(n_x, n_y, n, projection=red_trimmed.wcs)
+        ax.imshow(
+            colour,
+            **imshow_kwargs,
+        )
+        ax.set_xlabel(" ")
+        ax.set_ylabel(" ")
+        # ax.set_xlabel("Right Ascension (J2000)", size=16)
+        # ax.set_ylabel("Declination (J2000)", size=16, rotation=0, labelpad=-20)
+        ax.tick_params(labelsize=10)
+        # ax.yaxis.set_label_position("right")
+        # plt.tight_layout()
+        fig.savefig(output_path)
+        return ax, fig, colour
+
     def plot_host(
             self,
             img: image.ImagingImage,
@@ -937,16 +1056,17 @@ class FRBField(Field):
             show_frb: bool = True,
             frame: units.Quantity = 30 * units.pix,
             n: int = 1, n_x: int = 1, n_y: int = 1,
-            show_cbar: bool = False,
-            show_grid: bool = False,
-            ticks: int = None, interval: str = 'minmax',
-            show_coords: bool = True,
-            font_size: int = 12,
-            reverse_y=False,
+            # show_cbar: bool = False,
+            # show_grid: bool = False,
+            # ticks: int = None, interval: str = 'minmax',
+            # show_coords: bool = True,
+            # font_size: int = 12,
+            # reverse_y=False,
             frb_kwargs: dict = {},
             imshow_kwargs: dict = {},
             normalize_kwargs: dict = {},
             output_path: str = None,
+            show_legend: bool = True,
             **kwargs
     ):
         pl.latex_setup()
@@ -969,7 +1089,7 @@ class FRBField(Field):
             import photutils
             img.load_headers()
             frb = self.frb.position
-            x, y = img.wcs.all_world2pix(frb.ra.value, frb.dec.value, 0)
+            x, y = img.world_to_pixel(frb, 0)
             uncertainty = self.frb.position_err
             a, b = uncertainty.uncertainty_quadrature()
             theta = uncertainty.theta.to(units.deg)
@@ -989,6 +1109,9 @@ class FRBField(Field):
             # e.set_edgecolor('white')
             # e.set_label("FRB localisation ellipse")
             # plot.add_artist(e)
+            print(a, b)
+            print(a.to(units.pix, img.pixel_scale_dec).value)
+            print(b.to(units.pix, img.pixel_scale_dec).value)
             localisation = photutils.aperture.EllipticalAperture(
                 positions=[x, y],
                 a=a.to(units.pix, img.pixel_scale_dec).value,
@@ -996,7 +1119,8 @@ class FRBField(Field):
                 theta=theta.to(units.rad).value,
             )
             localisation.plot(label="FRB localisation ellipse", color="white", **frb_kwargs)
-            plot.legend()
+            if show_legend:
+                plot.legend()
 
         if output_path is not None:
             fig.savefig(output_path)
@@ -1263,7 +1387,8 @@ class Epoch:
         self.date = date
         if isinstance(self.date, datetime.date):
             self.date = str(self.date)
-        if isinstance(self.date, str):
+        # print(self.date, type(self.date))
+        if not isinstance(self.date, Time) and self.date is not None:
             self.date = Time(self.date, out_subfmt="date")
         self.program_id = program_id
         self.target = target
@@ -1314,6 +1439,20 @@ class Epoch:
 
     def __str__(self):
         return self.name
+
+    def date_str(self, include_time: bool = False):
+        if not isinstance(self.date, Time):
+            return str(self.date)
+        elif include_time:
+            return str(self.date.isot)
+        else:
+            return self.date.strftime('%Y-%m-%d')
+
+    def mjd(self):
+        if not isinstance(self.date, Time):
+            return 0.
+        else:
+            return self.date.mjd
 
     def add_log(
             self,
@@ -1393,7 +1532,7 @@ class Epoch:
                 u.rmtree_check(output_dir_backup)
                 u.move_check(output_dir, output_dir_backup)
                 u.mkdir_check_nested(output_dir, remove_last=False)
-                self.paths[name] = output_dir
+                self.set_path(name, output_dir)
 
                 if name in self.param_file:
                     stage_kwargs = self.param_file[name]
@@ -1413,13 +1552,15 @@ class Epoch:
 
                 self.update_output_file()
 
-    def _pipeline_init(self, ):
+    def _pipeline_init(self):
         if self.data_path is not None:
             u.debug_print(2, f"{self}._pipeline_init(): self.data_path ==", self.data_path)
             u.mkdir_check_nested(self.data_path)
         else:
             raise ValueError(f"data_path has not been set for {self}")
+        self.field.retrieve_catalogues()
         self.do = _check_do_list(self.do)
+        self.paths["download"] = os.path.join(self.data_path, "0-download")
 
     def proc_initial_setup(self, output_dir: str, **kwargs):
         self._initial_setup(output_dir=output_dir, **kwargs)
@@ -1428,10 +1569,15 @@ class Epoch:
     def _initial_setup(self, output_dir: str, **kwargs):
         pass
 
+    @classmethod
+    def _check_output_file_path(cls, key: str, dictionary: dict):
+        return key in dictionary and dictionary[key] is not None and os.path.isfile(dictionary[key])
+
     def load_output_file(self, **kwargs):
         outputs = p.load_output_file(self)
         if type(outputs) is dict:
-            self.stages_complete.update(outputs["stages"])
+            if "stages" in outputs:
+                self.stages_complete.update(outputs["stages"])
             if "coadded" in outputs:
                 for fil in outputs["coadded"]:
                     if outputs["coadded"][fil] is not None:
@@ -1582,6 +1728,7 @@ class Epoch:
             if os.path.isfile(img):
                 cls = image.CoaddedImage.select_child_class(instrument=self.instrument_name)
                 u.debug_print(2, f"Epoch._add_coadded(): cls ==", cls)
+
                 img = cls(path=img, instrument_name=self.instrument_name)
             else:
                 return None
@@ -1779,6 +1926,7 @@ class ImagingEpoch(Epoch):
         self.frames_registered = {}
         self.frames_astrometry = {}
         self.astrometry_successful = {}
+        self.frames_diagnosed = {}
         self.frames_final = None
 
         self.std_pointings = []
@@ -1792,6 +1940,7 @@ class ImagingEpoch(Epoch):
 
         self.gaia_catalogue = None
 
+        self.frame_stats = {}
         self.astrometry_stats = {}
         self.psf_stats = {}
 
@@ -1802,6 +1951,14 @@ class ImagingEpoch(Epoch):
 
         stages = super().stages()
         stages.update({
+            "download": {
+                "method": cls.proc_download,
+                "message": "Pretend to download files? (download not actualy implemented for this class)",
+                "default": False,
+                "keywords": {
+                    "alternate_dir": None
+                }
+            },
             "register_frames": {
                 "method": cls.proc_register,
                 "message": "Register frames using astroalign?",
@@ -1821,16 +1978,18 @@ class ImagingEpoch(Epoch):
                     "method": "individual"
                 }
             },
-            # "frame_diagnostics": {
-            #     "method": self.proc
-            # }
+            "frame_diagnostics": {
+                "method": cls.proc_frame_diagnostics,
+                "message": "Run diagnostics on individual frames?",
+                "default": False,
+            },
             "coadd": {
                 "method": cls.proc_coadd,
-                "message": "Coadd astrometry-corrected frames with Montage?",
+                "message": "Coadd frames with Montage?",
                 "default": True,
                 "keywords": {
                     "frames": "astrometry",  # normalised, trimmed
-                    "sigma_clip": 1.5
+                    "sigma_clip": 1.0
                 }
             },
             "correct_astrometry_coadded": {
@@ -1864,7 +2023,7 @@ class ImagingEpoch(Epoch):
                 "default": True,
                 "keywords": {
                     "distance_tolerance": None,
-                    "snr_min": 100,
+                    "snr_min": 3.,
                     "class_star_tolerance": 0.95,
                     "image_type": "coadded_trimmed",
                     "preferred_zeropoint": {},
@@ -1889,6 +2048,12 @@ class ImagingEpoch(Epoch):
         }
         )
         return stages
+
+    def n_frames(self, fil: str):
+        return len(self.frames_reduced[fil])
+
+    def proc_download(self):
+        pass
 
     def proc_register(self, output_dir: str, **kwargs):
         self.frames_registered = {}
@@ -1976,6 +2141,9 @@ class ImagingEpoch(Epoch):
 
         self.frames_astrometry = {}
 
+        if "upper_only" in kwargs:
+            print(f"upper_only={kwargs['upper_only']}")
+
         if "register_frames" in self.do_kwargs and self.do_kwargs["register_frames"]:
             self.correct_astrometry_frames(
                 output_dir=output_dir,
@@ -2054,6 +2222,116 @@ class ImagingEpoch(Epoch):
                         self.astrometry_successful[fil][frame.name] = "astroalign"
                     self.update_output_file()
 
+    def proc_frame_diagnostics(self, output_dir: str, **kwargs):
+        if "frames" in kwargs:
+            frames = kwargs["frames"]
+        else:
+            frames = self.frames_final
+
+        frame_dict = self._get_frames(frames)
+
+        self.frame_psf_diagnostics(output_dir, frame_dict=frame_dict)
+        self.frames_final = "diagnosed"
+
+    def frame_psf_diagnostics(self, output_dir: str, frame_dict: dict, chip: int = 1, sigma: float = 1.):
+        for fil in frame_dict:
+            frame_list = frame_dict[fil]
+            # Grab one chip only, to save time
+            frame_lists = self.sort_by_chip(images=frame_list)
+            frame_list_chip = frame_lists[chip]
+            match_cat = None
+
+            names = []
+
+            fwhms_mean_psfex = []
+            fwhms_mean_gauss = []
+            fwhms_mean_moffat = []
+            fwhms_mean_se = []
+
+            fwhms_median_psfex = []
+            fwhms_median_gauss = []
+            fwhms_median_moffat = []
+            fwhms_median_se = []
+
+            sigma_gauss = []
+            sigma_moffat = []
+            sigma_se = []
+
+            for frame in frame_list_chip:
+                configs = self.source_extractor_config
+                frame.psfex_path = None
+                frame.source_extraction_psf(
+                    output_dir=output_dir,
+                    phot_autoparams=f"{configs['kron_factor']},{configs['kron_radius_min']}"
+                )
+                if match_cat is None:
+                    match_cat = frame.source_cat
+                offset_tolerance = 0.5 * units.arcsec
+                # If the frames haven't been astrometrically corrected, give some extra leeway
+                if "correct_astrometry_frames" in self.do_kwargs and not self.do_kwargs["correct_astrometry_frames"]:
+                    offset_tolerance = 1.0 * units.arcsec
+                frame_stats, stars_moffat, stars_gauss, stars_sex = frame.psf_diagnostics(
+                    match_to=match_cat
+                )
+
+                names.append(frame.name)
+
+                fwhms_mean_psfex.append(frame_stats["fwhm_psfex"].value)
+                fwhms_mean_gauss.append(frame_stats["gauss"]["fwhm_mean"].value)
+                fwhms_mean_moffat.append(frame_stats["moffat"]["fwhm_mean"].value)
+                fwhms_mean_se.append(frame_stats["sextractor"]["fwhm_mean"].value)
+
+                fwhms_median_psfex.append(frame_stats["fwhm_psfex"].value)
+                fwhms_median_gauss.append(frame_stats["gauss"]["fwhm_median"].value)
+                fwhms_median_moffat.append(frame_stats["moffat"]["fwhm_median"].value)
+                fwhms_median_se.append(frame_stats["sextractor"]["fwhm_median"].value)
+
+                sigma_gauss.append(frame_stats["gauss"]["fwhm_sigma"].value)
+                sigma_moffat.append(frame_stats["moffat"]["fwhm_sigma"].value)
+                sigma_se.append(frame_stats["sextractor"]["fwhm_sigma"].value)
+
+                self.frame_stats[fil][frame.name] = frame_stats
+
+            median_all = np.median(fwhms_mean_gauss)
+            sigma_all = np.std(fwhms_median_gauss)
+            upper_limit = median_all + (sigma * sigma_all)
+
+            plt.close()
+
+            plt.title(f"PSF FWHM Mean")
+            plt.ylabel("FWHM (\")")
+            plt.errorbar(names, fwhms_mean_gauss, yerr=sigma_gauss, fmt="o", label="Gaussian")
+            plt.errorbar(names, fwhms_mean_moffat, yerr=sigma_gauss, fmt="o", label="Moffat")
+            plt.errorbar(names, fwhms_mean_se, yerr=sigma_gauss, fmt="o", label="Source Extractor")
+            plt.plot([0, len(names)], [upper_limit, upper_limit], c="black", label="Clip threshold")
+            plt.legend()
+            plt.xticks(rotation=-90)
+            plt.tight_layout()
+            plt.savefig(os.path.join(output_dir, f"{fil}_psf_diagnostics_mean.png"))
+            plt.close()
+
+            plt.title(f"PSF FWHM Median")
+            plt.ylabel("FWHM (\")")
+            plt.errorbar(names, fwhms_median_gauss, yerr=sigma_gauss, fmt="o", label="Gaussian")
+            plt.errorbar(names, fwhms_median_moffat, yerr=sigma_gauss, fmt="o", label="Moffat")
+            plt.errorbar(names, fwhms_median_se, yerr=sigma_gauss, fmt="o", label="Source Extractor")
+            plt.plot([0, len(names)], [upper_limit, upper_limit], c="black", label="Clip threshold")
+            plt.legend()
+            plt.xticks(rotation=-90)
+            plt.tight_layout()
+            plt.savefig(os.path.join(output_dir, f"{fil}_psf_diagnostics_median.png"))
+            plt.close()
+
+            self.frames_diagnosed[fil] = []
+            for i, fwhm_median in enumerate(fwhms_median_gauss):
+                if fwhm_median < upper_limit:
+                    print(f"Median PSF FWHM {fwhm_median} < upper limit {upper_limit}")
+                    for chip in frame_lists:
+                        print(f"\tAdding {frame_lists[chip][i]}")
+                        self.add_frame_diagnosed(frame_lists[chip][i])
+                else:
+                    print(f"Median PSF FWHM {fwhm_median} > upper limit {upper_limit}")
+
     def proc_coadd(self, output_dir: str, **kwargs):
         kwargs["frames"] = self.frames_final
         self.coadd(output_dir, **kwargs)
@@ -2084,7 +2362,7 @@ class ImagingEpoch(Epoch):
             coadded_path = montage.standard_script(
                 input_directory=input_directory_fil,
                 output_directory=output_directory_fil,
-                output_file_name=f"{self.name}_{self.date.strftime('%Y-%m-%d')}_{fil}_coadded.fits",
+                output_file_name=f"{self.name}_{self.date_str()}_{fil}_coadded.fits",
                 coadd_types=["median"],
                 add_with_ccdproc=False,
                 sigma_clip=True,
@@ -2117,7 +2395,6 @@ class ImagingEpoch(Epoch):
 
             combined_ccd = ccdproc.combine(
                 img_list=ccds,
-                output_file=sigclip_path,
                 method="average",
                 sigma_clip=True,
                 sigma_clip_func=np.nanmean,
@@ -2125,12 +2402,11 @@ class ImagingEpoch(Epoch):
                 sigma_clip_high_thresh=sigma_clip,
                 sigma_clip_low_thresh=sigma_clip
             )
-            # TODO: Inject header
-
-            combined_img = image.FORS2CoaddedImage(sigclip_path)
+            combined_img = coadded_median.copy(sigclip_path)
             combined_img.area_file = area_final
             coadded_median.load_headers()
-            combined_img.headers = coadded_median.headers
+            combined_img.load_data()
+            combined_img.data[0] = combined_ccd.data * coadded_median.extract_unit(astropy=True)
             u.debug_print(3, f"ImagingEpoch.coadd(): {combined_img}.headers ==", combined_img.headers)
             combined_img.add_log(
                 "Co-added image using Montage for reprojection & ccdproc for coaddition; see ancestor_logs for input images.",
@@ -2222,6 +2498,7 @@ class ImagingEpoch(Epoch):
             print("trim_coadded img.path:", img.path)
             print("trim_coadded img.area_file:", img.area_file)
             trimmed = img.trim_from_area(output_path=output_path)
+            # trimmed.write_fits_file()
             self.add_coadded_unprojected_image(trimmed, key=fil)
             if reproject:
                 if template is None:
@@ -2237,13 +2514,29 @@ class ImagingEpoch(Epoch):
     def proc_source_extraction(self, output_dir: str, **kwargs):
         do_diag = True
         if "do_astrometry_diagnostics" in kwargs:
-            do_diag = kwargs["do_astrometry_diagnostics"]
-        self.source_extraction(output_dir=output_dir, do_diagnostics=do_diag, **kwargs)
+            do_diag = kwargs.pop("do_astrometry_diagnostics")
+        for image_type in "final", "coadded_unprojected":
+            self.source_extraction(
+                output_dir=output_dir,
+                do_astrometry_diagnostics=do_diag,
+                do_psf_diagnostics=do_diag,
+                image_type=image_type,
+                **kwargs
+            )
 
-    def source_extraction(self, output_dir: str, do_diagnostics: bool = True, **kwargs):
-        images = self._get_images("final")
+    def source_extraction(
+            self,
+            output_dir: str,
+            do_astrometry_diagnostics: bool = True,
+            do_psf_diagnostics: bool = True,
+            image_type: str = "final",
+            **kwargs
+    ):
+        images = self._get_images(image_type)
+        print("Extracting sources for", image_type)
         for fil in images:
             img = images[fil]
+            print(f"Extracting sources from {img}")
             configs = self.source_extractor_config
 
             img.psfex_path = None
@@ -2251,11 +2544,12 @@ class ImagingEpoch(Epoch):
                 output_dir=output_dir,
                 phot_autoparams=f"{configs['kron_factor']},{configs['kron_radius_min']}"
             )
-        if do_diagnostics:
+        if do_astrometry_diagnostics:
             offset_tolerance = 0.5 * units.arcsec
             if "correct_astrometry_frames" in self.do_kwargs and not self.do_kwargs["correct_astrometry_frames"]:
                 offset_tolerance = 1.0 * units.arcsec
             self.astrometry_diagnostics(images=images, offset_tolerance=offset_tolerance)
+        if do_psf_diagnostics:
             self.psf_diagnostics(images=images)
 
     def proc_photometric_calibration(self, output_dir: str, **kwargs):
@@ -2278,7 +2572,7 @@ class ImagingEpoch(Epoch):
         if "distance_tolerance" in kwargs and kwargs["distance_tolerance"] is not None:
             kwargs["distance_tolerance"] = u.check_quantity(kwargs["distance_tolerance"], units.arcsec, convert=True)
         if "snr_min" not in kwargs or kwargs["snr_min"] is None:
-            kwargs["snr_min"] = 100
+            kwargs["snr_min"] = 3.
         if "class_star_tolerance" not in kwargs:
             kwargs["star_class_tolerance"] = 0.95
         if "suppress_select" not in kwargs:
@@ -2306,11 +2600,12 @@ class ImagingEpoch(Epoch):
             image_dict: dict,
             output_path: str,
             distance_tolerance: units.Quantity = None,
-            snr_min: float = 100.,
+            snr_min: float = 3.,
             star_class_tolerance: float = 0.95,
             suppress_select: bool = False,
             **kwargs
     ):
+
         deepest = image_dict[self.filters[0]]
         for fil in self.filters:
             img = image_dict[fil]
@@ -2354,13 +2649,19 @@ class ImagingEpoch(Epoch):
     def dual_mode_source_extraction(self, path: str, image_type: str = "coadded_trimmed"):
         image_dict = self._get_images(image_type=image_type)
         u.mkdir_check(path)
+        if self.deepest is None:
+            if self.deepest_filter is not None:
+                self.deepest = image_dict[self.deepest_filter]
+            else:
+                raise ValueError(f"deepest for {self.name} is None; make sure you have run photometric_calibration.")
         for fil in image_dict:
             img = image_dict[fil]
             configs = self.source_extractor_config
             img.source_extraction_psf(
                 output_dir=path,
                 phot_autoparams=f"{configs['kron_factor']},{configs['kron_radius_min']}",
-                template=self.deepest)
+                template=self.deepest
+            )
 
     def proc_get_photometry(self, output_dir: str, **kwargs):
         if "image_type" in kwargs and isinstance(kwargs["image_type"], str):
@@ -2376,6 +2677,7 @@ class ImagingEpoch(Epoch):
         :return:
         """
 
+        print(f"Getting finalised photometry for key objects, in {image_type}.")
         obs.load_master_objects_table()
 
         image_dict = self._get_images(image_type=image_type)
@@ -2385,6 +2687,7 @@ class ImagingEpoch(Epoch):
             fil_output_path = os.path.join(path, fil)
             u.mkdir_check(fil_output_path)
             img = image_dict[fil]
+            print("Getting photometry for", img)
 
             img.calibrate_magnitudes(zeropoint_name="best", dual=dual)
             rows = []
@@ -2407,6 +2710,16 @@ class ImagingEpoch(Epoch):
                 )
                 obj.cat_row = nearest
                 print()
+
+                if "MAG_PSF_ZP_best" in nearest:
+                    mag_psf = nearest["MAG_PSF_ZP_best"]
+                    mag_psf_err = nearest["MAGERR_PSF_ZP_best"]
+                    snr_psf = nearest["FLUX_PSF"] / nearest["FLUXERR_PSF"]
+                else:
+                    mag_psf = -999.0 * units.mag
+                    mag_psf_err = -999.0 * units.mag
+                    snr_psf = -999.0
+
                 obj.add_photometry(
                     instrument=self.instrument_name,
                     fil=fil,
@@ -2426,14 +2739,15 @@ class ImagingEpoch(Epoch):
                     dec_err=np.sqrt(nearest["ERRY2_WORLD"]),
                     kron_radius=nearest["KRON_RADIUS"],
                     separation_from_given=separation,
-                    epoch_date=str(self.date.isot),
+                    epoch_date=self.date_str(),
                     class_star=nearest["CLASS_STAR"],
-                    mag_psf=nearest["MAG_PSF_ZP_best"],
-                    mag_psf_err=nearest["MAGERR_PSF_ZP_best"],
-                    snr_psf=nearest["FLUX_PSF"] / nearest["FLUXERR_PSF"],
+                    mag_psf=mag_psf,
+                    mag_psf_err=mag_psf_err,
+                    snr_psf=snr_psf,
                     image_depth=img.depth["secure"]["SNR_SE"][f"5-sigma"],
                     image_path=img.path,
-                    good_image_path=self.coadded_unprojected[fil].path
+                    good_image_path=self.coadded_unprojected[fil].path,
+                    do_mask=img.mask_nearby()
                 )
 
                 if isinstance(self.field, FRBField):
@@ -2464,7 +2778,11 @@ class ImagingEpoch(Epoch):
                     name = obj.name
                     name = name.replace("HG", "HG\,")
                     img.extract_filter()
-                    plot.set_title(u.latex_sanitise(f"{name}, {img.filter.nice_name()}"))
+                    if img.filter is None:
+                        f_name = fil
+                    else:
+                        f_name = img.filter.nice_name()
+                    plot.set_title(u.latex_sanitise(f"{name}, {f_name}"))
                     fig.savefig(output_path)
                     fig.savefig(output_path.replace(".pdf", ".png"))
                     plt.close(fig)
@@ -2479,14 +2797,34 @@ class ImagingEpoch(Epoch):
         for fil in self.coadded_unprojected:
 
             img = self.coadded_unprojected[fil]
-            #img_projected = image_dict[fil]
+            img_projected = image_dict[fil]
 
             if img is None:
                 continue
 
-            nice_name = f"{self.field.name}_{self.instrument.nice_name().replace('/', '-')}_{fil.replace('_', '-')}_{self.date.strftime('%Y-%m-%d')}.fits"
+            if isinstance(self.instrument, inst.Instrument):
+                inst_name = self.instrument.nice_name().replace('/', '-')
+            else:
+                inst_name = self.instrument_name
+            nice_name = f"{self.field.name}_{inst_name}_{fil.replace('_', '-')}_{self.date_str()}.fits"
 
-            #img.
+            if img != img_projected:
+                astm_rms = img_projected.extract_astrometry_err().value
+                psf_fwhm = img_projected.extract_header_item(key="PSF_FWHM")
+                psf_fwhm_err = img_projected.extract_header_item(key="PSF_FWHM_ERR")
+                img.set_header_items(
+                    items={
+                        # 'ASTM_RMS': astm_rms,
+                        # 'RA_RMS': img_projected.extract_header_item(key="RA_RMS"),
+                        # 'DEC_RMS': img_projected.extract_header_item(key="DEC_RMS"),
+                        # 'PSF_FWHM': psf_fwhm,
+                        # 'PSF_FWHM_ERR': psf_fwhm_err,
+                        'ZP': img_projected.extract_header_item(key="ZP"),
+                        'ZP_ERR': img_projected.extract_header_item(key="ZP_ERR"),
+                        'ZPCAT': img_projected.extract_header_item(key="ZP_CAT")
+                    },
+                    write=True,
+                )
 
             img.copy_with_outputs(os.path.join(
                 self.data_path,
@@ -2522,8 +2860,8 @@ class ImagingEpoch(Epoch):
 
         for obj in self.field.objects:
             obj.update_output_file()
-            obj.write_plot_photometry()
             obj.push_to_table(select=True)
+            obj.write_plot_photometry()
 
     def proc_get_photometry_all(self, output_dir: str, **kwargs):
         if "image_type" in kwargs and isinstance(kwargs["image_type"], str):
@@ -2566,6 +2904,11 @@ class ImagingEpoch(Epoch):
                 offset_tolerance=offset_tolerance
             )
 
+        self.add_log(
+            "Ran astrometry diagnostics.",
+            method=self.astrometry_diagnostics,
+        )
+
         self.update_output_file()
         return self.astrometry_stats
 
@@ -2578,7 +2921,8 @@ class ImagingEpoch(Epoch):
 
         for fil in images:
             img = images[fil]
-            self.psf_stats[fil] = img.psf_diagnostics()
+            print(f"Performing PSF measurements on {img}...")
+            self.psf_stats[fil], _, _, _ = img.psf_diagnostics()
 
         self.update_output_file()
         return self.psf_stats
@@ -2594,7 +2938,7 @@ class ImagingEpoch(Epoch):
             image_dict = self.coadded_trimmed
         elif image_type == "coadded":
             image_dict = self.coadded
-        elif image_type == "coadded_unprojected":
+        elif image_type in ["coadded_unprojected", "unprojected"]:
             image_dict = self.coadded_unprojected
         elif image_type == "coadded_astrometry":
             image_dict = self.coadded_astrometry
@@ -2621,6 +2965,8 @@ class ImagingEpoch(Epoch):
             image_dict = self.frames_registered
         elif frame_type == "astrometry":
             image_dict = self.frames_astrometry
+        elif frame_type == "diagnosed":
+            image_dict = self.frames_diagnosed
         else:
             raise ValueError(f"Frame type '{frame_type}' not recognised.")
 
@@ -2660,6 +3006,7 @@ class ImagingEpoch(Epoch):
             "frames_normalised": _output_img_dict_list(self.frames_normalised),
             "frames_registered": _output_img_dict_list(self.frames_registered),
             "frames_astrometry": _output_img_dict_list(self.frames_astrometry),
+            "frames_diagnosed": _output_img_dict_list(self.frames_diagnosed),
             "exp_time_mean": self.exp_time_mean,
             "exp_time_err": self.exp_time_err,
             "airmass_mean": self.airmass_mean,
@@ -2672,14 +3019,14 @@ class ImagingEpoch(Epoch):
 
     def load_output_file(self, **kwargs):
         outputs = super().load_output_file(**kwargs)
-        if type(outputs) is dict:
+        if isinstance(outputs, dict):
             cls = image.Image.select_child_class(instrument=self.instrument_name, mode='imaging')
             if self.date is None:
                 if "date" in outputs:
                     self.date = outputs["date"]
             if "filters" in outputs:
                 self.filters = outputs["filters"]
-            if "deepest" in outputs and outputs["deepest"] is not None:
+            if self._check_output_file_path("deepest", outputs):
                 self.deepest = cls(path=outputs["deepest"])
             if "deepest_filter" in outputs:
                 self.deepest_filter = outputs["deepest_filter"]
@@ -2698,28 +3045,39 @@ class ImagingEpoch(Epoch):
             if "astrometry_successful" in outputs:
                 self.astrometry_successful = outputs["astrometry_successful"]
             if "frames_raw" in outputs:
-                for frame in outputs["frames_raw"]:
-                    self.add_frame_raw(raw_frame=frame)
+                for frame in set(outputs["frames_raw"]):
+                    if os.path.isfile(frame):
+                        self.add_frame_raw(raw_frame=frame)
             if "frames_reduced" in outputs:
                 for fil in outputs["frames_reduced"]:
                     if outputs["frames_reduced"][fil] is not None:
-                        for frame in outputs["frames_reduced"][fil]:
-                            self.add_frame_reduced(reduced_frame=frame)
+                        for frame in set(outputs["frames_reduced"][fil]):
+                            if os.path.isfile(frame):
+                                self.add_frame_reduced(reduced_frame=frame)
             if "frames_normalised" in outputs:
                 for fil in outputs["frames_normalised"]:
                     if outputs["frames_normalised"][fil] is not None:
-                        for frame in outputs["frames_normalised"][fil]:
-                            self.add_frame_normalised(norm_frame=frame)
+                        for frame in set(outputs["frames_normalised"][fil]):
+                            if os.path.isfile(frame):
+                                self.add_frame_normalised(norm_frame=frame)
             if "frames_registered" in outputs:
                 for fil in outputs["frames_registered"]:
                     if outputs["frames_registered"][fil] is not None:
-                        for frame in outputs["frames_registered"][fil]:
-                            self.add_frame_registered(registered_frame=frame)
+                        for frame in set(outputs["frames_registered"][fil]):
+                            if os.path.isfile(frame):
+                                self.add_frame_registered(registered_frame=frame)
             if "frames_astrometry" in outputs:
                 for fil in outputs["frames_astrometry"]:
                     if outputs["frames_astrometry"][fil] is not None:
-                        for frame in outputs["frames_astrometry"][fil]:
-                            self.add_frame_astrometry(astrometry_frame=frame)
+                        for frame in set(outputs["frames_astrometry"][fil]):
+                            if os.path.isfile(frame):
+                                self.add_frame_astrometry(astrometry_frame=frame)
+            if "frames_diagnosed" in outputs:
+                for fil in outputs["frames_diagnosed"]:
+                    if outputs["frames_diagnosed"][fil] is not None:
+                        for frame in set(outputs["frames_diagnosed"][fil]):
+                            if os.path.isfile(frame):
+                                self.add_frame_diagnosed(diagnosed_frame=frame)
             if "coadded" in outputs:
                 for fil in outputs["coadded"]:
                     if outputs["coadded"][fil] is not None:
@@ -2741,6 +3099,8 @@ class ImagingEpoch(Epoch):
                         self.add_coadded_astrometry_image(img=outputs["coadded_astrometry"][fil], key=fil, **kwargs)
             if "std_pointings" in outputs:
                 self.std_pointings = outputs["std_pointings"]
+
+        print(self.filters)
 
         return outputs
 
@@ -2801,13 +3161,14 @@ class ImagingEpoch(Epoch):
                 return None, None
         fil = frame.extract_filter()
         frame.epoch = self
+
         return frame, fil
 
     def _add_frame(self, frame: Union[image.ImagingImage, str], frames_dict: dict, frame_type: str):
         frame, fil = self._check_frame(frame=frame, frame_type=frame_type)
         if frame is None:
             return None
-        if self.check_filter(fil=fil) and frame not in self.frames_reduced[fil]:
+        if self.check_filter(fil=fil) and frame not in frames_dict[fil]:
             frames_dict[fil].append(frame)
         return frame
 
@@ -2832,6 +3193,9 @@ class ImagingEpoch(Epoch):
 
     def add_frame_astrometry(self, astrometry_frame: Union[str, image.ImagingImage]):
         return self._add_frame(frame=astrometry_frame, frames_dict=self.frames_astrometry, frame_type="astrometry")
+
+    def add_frame_diagnosed(self, diagnosed_frame: Union[str, image.ImagingImage]):
+        return self._add_frame(frame=diagnosed_frame, frames_dict=self.frames_diagnosed, frame_type="diagnosed")
 
     def add_frame_normalised(self, norm_frame: Union[str, image.ImagingImage]):
         return self._add_frame(frame=norm_frame, frames_dict=self.frames_normalised, frame_type="reduced")
@@ -2875,6 +3239,9 @@ class ImagingEpoch(Epoch):
             if fil not in self.frames_registered:
                 if isinstance(self.frames_registered, dict):
                     self.frames_registered[fil] = []
+            if fil not in self.frames_diagnosed:
+                if isinstance(self.frames_diagnosed, dict):
+                    self.frames_diagnosed[fil] = []
             if fil not in self.frames_astrometry:
                 self.frames_astrometry[fil] = []
             if fil not in self.coadded:
@@ -2895,6 +3262,8 @@ class ImagingEpoch(Epoch):
                 self.airmass_err[fil] = None
             if fil not in self.astrometry_stats:
                 self.astrometry_stats[fil] = {}
+            if fil not in self.frame_stats:
+                self.frame_stats[fil] = {}
             return True
         else:
             return False
@@ -2944,7 +3313,7 @@ class ImagingEpoch(Epoch):
 
         obs.load_master_imaging_table()
 
-        frames = self._get_frames("final")
+        # frames = self._get_frames("final")
         coadded = self._get_images("final")
 
         for fil in self.filters:
@@ -2957,16 +3326,17 @@ class ImagingEpoch(Epoch):
 
             row["field_name"] = self.field.name
             row["epoch_name"] = self.name
-            row["date_utc"] = self.date.isot
-            row["mjd"] = self.date.mjd * units.day
+            row["date_utc"] = self.date_str()
+            row["mjd"] = self.mjd() * units.day
             row["instrument"] = self.instrument_name
             row["filter_name"] = fil
             row["filter_lambda_eff"] = self.instrument.filters[fil].lambda_eff.to(units.Angstrom).round(3)
-            row["n_frames"] = len(self.frames_reduced[fil])
-            row["n_frames_included"] = len(frames[fil])
+            row["n_frames"] = self.n_frames(fil)
+            row["n_frames_included"] = coadded[fil].extract_ncombine()
             row["frame_exp_time"] = self.exp_time_mean[fil].round()
             row["total_exp_time"] = row["n_frames"] * row["frame_exp_time"]
-            row["total_exp_time_included"] = row["n_frames_included"] * row["frame_exp_time"]
+            inttime = coadded[fil].extract_header_item("INTTIME") * units.second
+            row["total_exp_time_included"] = inttime
             row["psf_fwhm"] = self.psf_stats[fil]["gauss"]["fwhm_median"]
             row["program_id"] = str(self.program_id)
             row["zeropoint"] = coadded[fil].extract_header_item("ZP") * units.mag
@@ -3018,6 +3388,8 @@ class ImagingEpoch(Epoch):
 
         name, param_file, param_dict = p.params_init(param_file)
 
+        pdict_backup = param_dict.copy()
+
         if param_dict is None:
             raise FileNotFoundError(f"There is no param file at {param_file}")
 
@@ -3047,7 +3419,7 @@ class ImagingEpoch(Epoch):
         elif sub_cls is FORS2ImagingEpoch:
             return sub_cls.from_file(param_dict, name=name, old_format=old_format, field=field)
         else:
-            return sub_cls.from_file(param_dict, name=name, field=field)
+            return sub_cls.from_file(pdict_backup, name=name, field=field)
 
     @classmethod
     def default_params(cls):
@@ -3112,6 +3484,7 @@ class FORS2StandardEpoch(StandardEpoch, ImagingEpoch):
     def source_extraction(self, output_dir: str, do_diagnostics: bool = True, **kwargs):
         for fil in self.frames_reduced:
             for img in self.frames_reduced[fil]:
+                img.remove_extra_extensions()
                 configs = self.source_extractor_config
 
                 img.psfex_path = None
@@ -3152,8 +3525,8 @@ class FORS2StandardEpoch(StandardEpoch, ImagingEpoch):
             image_dict: dict,
             output_path: str,
             distance_tolerance: units.Quantity = None,
-            snr_min: float = 100.,
-            star_class_tolerance: float = 0.95,
+            snr_min: float = 3.,
+            star_class_tolerance: float = 0.9,
             suppress_select: bool = False,
             **kwargs
     ):
@@ -3168,6 +3541,8 @@ class FORS2StandardEpoch(StandardEpoch, ImagingEpoch):
         for fil in self.filters:
             for img in image_dict[fil]:
                 img.zeropoints = {}
+                cats = retrieve.photometry_catalogues
+                # cats.append("eso_calib_cats")
                 for cat_name in retrieve.photometry_catalogues:
                     if cat_name == "gaia":
                         continue
@@ -3182,6 +3557,7 @@ class FORS2StandardEpoch(StandardEpoch, ImagingEpoch):
                             show=False,
                             snr_cut=snr_min,
                             star_class_tol=star_class_tolerance,
+                            iterate_uncertainty=False
                         )
 
                         chip = img.extract_chip_number()
@@ -3411,11 +3787,11 @@ class GSAOIImagingEpoch(ImagingEpoch):
                 expression=f"filter_name==\"{fil}\" and observation_class==\"science\"",
                 output=f"{self.name}_{fil}_stacked.fits",
                 file_glob="*_sky*ed.fits",
-                #refcat=self.field.paths["cat_csv_gaia"],
-                #refcat_format="ascii.csv",
-                #refcat_ra="ra",
-                #refcat_dec="dec",
-                #ignore_objcat=False
+                # refcat=self.field.paths["cat_csv_gaia"],
+                # refcat_format="ascii.csv",
+                # refcat_ra="ra",
+                # refcat_dec="dec",
+                # ignore_objcat=False
             )
 
     def check_filter(self, fil: str):
@@ -3475,8 +3851,8 @@ class GSAOIImagingEpoch(ImagingEpoch):
         if "param_path" in param_dict:
             param_dict.pop("param_path")
 
-        print(field)
-        print(param_dict)
+        print(f"Loading field {field}...")
+        u.debug_print(2, f"GSAOIImagingEpoch.from_file(): {param_dict=}")
 
         return cls(
             name=name,
@@ -3547,7 +3923,9 @@ class HubbleImagingEpoch(ImagingEpoch):
             date: Union[str, Time] = None,
             target: str = None,
             standard_epochs: list = None,
-            source_extractor_config: dict = None):
+            source_extractor_config: dict = None,
+            **kwargs
+    ):
         super().__init__(
             name=name,
             field=field,
@@ -3565,33 +3943,108 @@ class HubbleImagingEpoch(ImagingEpoch):
     def stages(cls):
         super_stages = super().stages()
         stages = {
+            "download": super_stages["download"],
             "initial_setup": super_stages["initial_setup"],
-            "photometric_calibration": super_stages["photometric_calibration"],
             "source_extraction": super_stages["source_extraction"],
+            "photometric_calibration": super_stages["photometric_calibration"],
             "get_photometry": super_stages["get_photometry"]
         }
         return stages
 
+    def _pipeline_init(self):
+        super()._pipeline_init()
+        self.coadded_final = "coadded"
+        self.paths["download"] = os.path.join(self.data_path, "0-download")
+
     def _initial_setup(self, output_dir: str, **kwargs):
-        for file in filter(lambda f: f.endswith(".fits"), os.listdir(self.data_path)):
-            shutil.move(os.path.join(self.data_path, file), output_dir)
-        for file in filter(lambda f: f.endswith(".fits"), os.listdir(output_dir)):
-            img = image.HubbleImage(os.path.join(output_dir, file))
-            self.add_coadded_image(img, key=img.extract_filter())
+        download_dir = self.paths["download"]
+        # for file in filter(lambda f: f.endswith(".fits"), os.listdir(self.data_path)):
+        #     shutil.move(os.path.join(self.data_path, file), output_dir)
+        for file in filter(lambda f: f.endswith(".fits"), os.listdir(download_dir)):
+            path = os.path.join(download_dir, file)
+            img = image.HubbleImage(path)
+            if self.instrument_name in [None, "hst-dummy"]:
+                self.instrument_name = img.instrument_name
+            fil = img.extract_filter()
+            self.exp_time_mean[fil] = img.extract_header_item('TEXPTIME') * units.second / img.extract_ncombine()
+            img.set_header_item('INTTIME', img.extract_header_item('TEXPTIME'))
+            self.add_coadded_image(img, key=fil)
+            self.add_coadded_unprojected_image(img, key=fil)
+            self.check_filter(img.filter_name)
 
     def photometric_calibration(self, output_path: str, **kwargs):
         for fil in self.coadded:
             self.coadded[fil].zeropoint()
+            self.coadded[fil].estimate_depth()
+            self.deepest = self.coadded[fil]
 
     def proc_get_photometry(self, output_dir: str, **kwargs):
         self.get_photometry(output_dir, image_type="coadded", dual=False)
 
+    def psf_diagnostics(
+            self,
+            images: dict = None
+    ):
+        if images is None:
+            images = self._get_images("final")
+
+        for fil in images:
+            img = images[fil]
+            if fil == "F300X":
+                self.psf_stats[fil] = {
+                    "n_stars": 0,
+                    "fwhm_psfex": -999 * units.arcsec,
+                    "gauss": {
+                        "fwhm_median": -999 * units.arcsec,
+                        "fwhm_mean": -999 * units.arcsec,
+                        "fwhm_max": -999 * units.arcsec,
+                        "fwhm_min": -999 * units.arcsec,
+                        "fwhm_sigma": -999 * units.arcsec,
+                        "fwhm_rms": -999 * units.arcsec
+                    },
+                    "moffat": {
+                        "fwhm_median": -999 * units.arcsec,
+                        "fwhm_mean": -999 * units.arcsec,
+                        "fwhm_max": -999 * units.arcsec,
+                        "fwhm_min": -999 * units.arcsec,
+                        "fwhm_sigma": -999 * units.arcsec,
+                        "fwhm_rms": -999 * units.arcsec
+                    },
+                    "sextractor": {
+                        "fwhm_median": -999 * units.arcsec,
+                        "fwhm_mean": -999 * units.arcsec,
+                        "fwhm_max": -999 * units.arcsec,
+                        "fwhm_min": -999 * units.arcsec,
+                        "fwhm_sigma": -999 * units.arcsec,
+                        "fwhm_rms": -999 * units.arcsec
+                    }
+                }
+                img.set_header_items(
+                    {
+                        "PSF_FWHM": -999,
+                        "PSF_FWHM_ERR": -999,
+                    },
+                    write=True
+                )
+            else:
+                print(f"Performing PSF measurements on {img}...")
+                self.psf_stats[fil], _, _, _ = img.psf_diagnostics()
+
+        self.update_output_file()
+        return self.psf_stats
+
     def add_coadded_image(self, img: Union[str, image.Image], key: str, **kwargs):
-        if isinstance(img, str):
-            img = image.HubbleImage(path=img)
-        img.epoch = self
-        self.coadded[key] = img
-        return img
+        try:
+            if isinstance(img, str):
+                img = image.HubbleImage(path=img)
+            img.epoch = self
+            self.coadded[key] = img
+            return img
+        except FileNotFoundError:
+            return None
+
+    def n_frames(self, fil: str):
+        return self.coadded[fil].extract_ncombine()
 
     @classmethod
     def from_file(cls, param_file: Union[str, dict], name: str = None, field: Field = None):
@@ -3600,12 +4053,21 @@ class HubbleImagingEpoch(ImagingEpoch):
         if param_dict is None:
             raise FileNotFoundError(f"No parameter file found at {param_file}.")
 
+        print(param_dict)
+
         if field is None:
             field = param_dict.pop("field")
         if 'target' in param_dict:
             target = param_dict.pop('target')
         else:
             target = None
+
+        if "field" in param_dict:
+            param_dict.pop("field")
+        if "name" in param_dict:
+            param_dict.pop("name")
+        if "param_path" in param_dict:
+            param_dict.pop("param_path")
 
         return cls(
             name=name,
@@ -3625,13 +4087,15 @@ class PanSTARRS1ImagingEpoch(ImagingEpoch):
     instrument_name = "panstarrs1"
     mode = "imaging"
 
-    def __init__(self,
-                 name: str = None,
-                 field: Union[str, Field] = None,
-                 param_path: str = None,
-                 data_path: str = None,
-                 source_extractor_config: dict = None
-                 ):
+    def __init__(
+            self,
+            name: str = None,
+            field: Union[str, Field] = None,
+            param_path: str = None,
+            data_path: str = None,
+            source_extractor_config: dict = None,
+            **kwargs
+    ):
         super().__init__(name=name,
                          field=field,
                          param_path=param_path,
@@ -3643,6 +4107,10 @@ class PanSTARRS1ImagingEpoch(ImagingEpoch):
         if isinstance(field, Field):
             self.field.retrieve_catalogue(cat_name="panstarrs1")
         u.debug_print(1, f"PanSTARRS1ImagingEpoch.__init__(): {self}.filters ==", self.filters)
+
+    def n_frames(self, fil: str):
+        img = self.coadded[fil]
+        return img.extract_ncombine()
 
     # TODO: Automatic cutout download; don't worry for now.
 
@@ -3660,6 +4128,12 @@ class PanSTARRS1ImagingEpoch(ImagingEpoch):
         }
         return stages
 
+    def _pipeline_init(self):
+        super()._pipeline_init()
+        self.coadded_final = "coadded"
+        self.paths["download"] = os.path.join(self.data_path, "0-download")
+        # self.frames_final = "coadded"
+
     def proc_download(self, output_dir: str, **kwargs):
         """
         Automatically download PanSTARRS1 cutout.
@@ -3670,50 +4144,53 @@ class PanSTARRS1ImagingEpoch(ImagingEpoch):
         pass
 
     def proc_source_extraction(self, output_dir: str, **kwargs):
-        do_diag = False
-        if "do_astrometry_diagnostics" in kwargs:
-            do_diag = kwargs["astrometry_diagnostics"]
-        self.source_extraction(output_dir=output_dir, do_diagnostics=do_diag, **kwargs)
+        self.source_extraction(
+            output_dir=output_dir,
+            do_astrometry_diagnostics=False,
+            do_psf_diagnostics=True,
+            **kwargs
+        )
 
     def proc_get_photometry(self, output_dir: str, **kwargs):
+        self.load_output_file()
         self.get_photometry(output_dir, image_type="coadded")
 
     def _initial_setup(self, output_dir: str, **kwargs):
-        for file in filter(lambda f: f.endswith(".fits"), os.listdir(self.data_path)):
-            shutil.move(os.path.join(self.data_path, file), output_dir)
-        self.set_path("imaging_dir", output_dir)
+        download_dir = self.paths["download"]
+        # for file in filter(lambda f: f.endswith(".fits"), os.listdir("download")):
+        #     shutil.move(os.path.join(self.data_path, file), output_dir)
+        self.set_path("imaging_dir", download_dir)
         # Write a table of fits files from the 0-imaging directory.
         table_path_all = os.path.join(self.data_path, f"{self.name}_fits_table_all.csv")
         self.set_path("fits_table", table_path_all)
-        image.fits_table_all(input_path=output_dir, output_path=table_path_all, science_only=False)
-        for file in filter(lambda f: f.endswith(".fits"), os.listdir(output_dir)):
-            path = os.path.join(output_dir, file)
+        image.fits_table_all(input_path=download_dir, output_path=table_path_all, science_only=False)
+        for file in filter(lambda f: f.endswith(".fits"), os.listdir(download_dir)):
+            path = os.path.join(download_dir, file)
             img = image.PanSTARRS1Cutout(path=path)
-
-            # img.open(mode="update")
-            # print(img.hdu_list.info())
-            # if len(img.hdu_list) == 2:
-            #     img.hdu_list[0] = img.hdu_list[1]
-            #     img.hdu_list.pop(1)
-            # img.close()
-
-            img.extract_filter()
-            self.coadded[img.filter] = img
-            self.check_filter(img.filter)
+            fil = img.extract_filter()
+            u.debug_print(2, f"PanSTARRS1ImagingEpoch._initial_setup(): {fil=}")
+            self.exp_time_mean[fil] = img.extract_exposure_time() / img.extract_ncombine()
+            img.set_header_item('INTTIME', img.extract_exposure_time())
+            self.add_coadded_image(img, key=fil)
+            self.check_filter(img.filter_name)
+            img.write_fits_file()
 
     def guess_data_path(self):
         if self.data_path is None and self.field is not None and self.field.data_path is not None:
             self.data_path = os.path.join(self.field.data_path, "imaging", "panstarrs1")
         return self.data_path
 
-    def zeropoint(self,
-                  output_path: str,
-                  distance_tolerance: units.Quantity = 0.2 * units.arcsec,
-                  snr_min: float = 200.,
-                  star_class_tolerance: float = 0.95
-                  ):
-        deepest = self.coadded[self.filters[0]]
-        for fil in self.filters:
+    def zeropoint(
+            self,
+            output_path: str,
+            distance_tolerance: units.Quantity = 0.2 * units.arcsec,
+            snr_min: float = 3.,
+            star_class_tolerance: float = 0.95,
+            **kwargs
+    ):
+        u.debug_print(2, f"", self.filters)
+        deepest = None
+        for fil in self.coadded:
             img = self.coadded[fil]
             img.zeropoint(
                 cat_path=self.field.get_path("cat_csv_panstarrs1"),
@@ -3725,10 +4202,13 @@ class PanSTARRS1ImagingEpoch(ImagingEpoch):
                 star_class_tol=star_class_tolerance,
                 image_name="PanSTARRS Cutout",
             )
-            img.zeropoint_best = img.zeropoints["panstarrs1"]
-            img.estimate_depth(zeropoint_name="panstarrs1")
+            img.select_zeropoint(True)
+            img.estimate_depth(zeropoint_name="panstarrs1")  # , do_magnitude_calibration=False)
 
-            deepest = image.deepest(deepest, img)
+            if deepest is not None:
+                deepest = image.deepest(deepest, img)
+            else:
+                deepest = img
 
         return deepest
 
@@ -3737,6 +4217,7 @@ class PanSTARRS1ImagingEpoch(ImagingEpoch):
             img = image.PanSTARRS1Cutout(path=img)
         img.epoch = self
         self.coadded[key] = img
+        self.coadded_unprojected[key] = img
         return img
 
     @classmethod
@@ -3748,6 +4229,15 @@ class PanSTARRS1ImagingEpoch(ImagingEpoch):
         if field is None:
             field = param_dict.pop("field")
 
+        if "field" in param_dict:
+            param_dict.pop("field")
+        if "instrument" in param_dict:
+            param_dict.pop("instrument")
+        if "name" in param_dict:
+            param_dict.pop("name")
+        if "param_path" in param_dict:
+            param_dict.pop("param_path")
+
         epoch = cls(
             name=name,
             field=field,
@@ -3756,7 +4246,7 @@ class PanSTARRS1ImagingEpoch(ImagingEpoch):
             source_extractor_config=param_dict.pop('sextractor'),
             **param_dict
         )
-        epoch.instrument = cls.instrument_name
+        # epoch.instrument = cls.instrument_name
         return epoch
 
 
@@ -3867,7 +4357,8 @@ class ESOImagingEpoch(ImagingEpoch):
         return r
 
     def _initial_setup(self, output_dir: str, **kwargs):
-        raw_dir = self.paths["download"]
+        u.debug_print(2, f"ESOImagingEpoch._initial_setup(): {self.paths=}")
+        raw_dir = self.get_path("download")
         data_dir = self.data_path
         data_title = self.name
 
@@ -3964,7 +4455,9 @@ class ESOImagingEpoch(ImagingEpoch):
         self.update_output_file()
 
         if str(self.field.survey) == "FURBY":
-            u.system_command_verbose(f"furby_vlt_ob {self.field.name} {tmp.filter.band_name} --observed {self.date}")
+            u.system_command_verbose(
+                f"furby_vlt_ob {self.field.name} {tmp.filter.band_name} --observed {self.date_str()}"
+            )
             # u.system_command_verbose(f"furby_vlt_ob {self.field.name} {tmp.filter.band_name} --completed")
 
         try:
@@ -4027,7 +4520,7 @@ class ESOImagingEpoch(ImagingEpoch):
 
             else:
                 # The ESOReflex output directory is structured in a very specific way, which we now traverse.
-                mjd = int(self.date.mjd)
+                mjd = int(self.mjd())
                 obj = self.target.lower()
 
                 print(f"Looking for data with object '{obj}' and MJD of observation {mjd} inside {eso_dir}")
@@ -4112,7 +4605,11 @@ class ESOImagingEpoch(ImagingEpoch):
             **kwargs
         )
 
-    def trim_reduced(self, output_dir: str, **kwargs):
+    def trim_reduced(
+            self,
+            output_dir: str,
+            **kwargs
+    ):
 
         u.mkdir_check(os.path.join(output_dir, "backgrounds"))
         u.mkdir_check(os.path.join(output_dir, "science"))
@@ -4120,6 +4617,10 @@ class ESOImagingEpoch(ImagingEpoch):
         u.debug_print(
             2, f"ESOImagingEpoch.trim_reduced(): {self}.frames_esoreflex_backgrounds ==",
             self.frames_esoreflex_backgrounds)
+
+        self.frames_trimmed = {}
+        for fil in self.filters:
+            self.check_filter(fil)
 
         edged = False
 
@@ -4162,25 +4663,21 @@ class ESOImagingEpoch(ImagingEpoch):
                 dn_left = dn_left + 5
                 dn_right = dn_right - 5
                 dn_bottom = dn_bottom + 5
-                print('Upper chip:')
-                print(up_left, up_right, up_top, up_bottom)
-                print('Lower:')
-                print(dn_left, dn_right, dn_top, dn_bottom)
 
                 edged = True
 
             for i, frame in enumerate(self.frames_esoreflex_backgrounds[fil]):
-                new_path = os.path.join(fil_path_back,
-                                        frame.filename.replace(".fits", "_trim.fits"))
+                new_path = os.path.join(
+                    fil_path_back,
+                    frame.filename.replace(".fits", "_trim.fits")
+                )
 
-                print(f'{i} {frame}')
+                print(f'Trimming {i} {frame}')
 
                 # Split the files into upper CCD and lower CCD
                 if frame.extract_chip_number() == 1:
-                    print('Upper Chip:')
                     frame.trim(left=up_left, right=up_right, top=up_top, bottom=up_bottom, output_path=new_path)
                 elif frame.extract_chip_number() == 2:
-                    print('Lower Chip:')
                     frame.trim(left=dn_left, right=dn_right, top=dn_top, bottom=dn_bottom, output_path=new_path)
                 else:
                     raise ValueError('Invalid chip ID; could not trim based on upper or lower chip.')
@@ -4201,6 +4698,9 @@ class ESOImagingEpoch(ImagingEpoch):
                     key='BUNIT',
                     value="ct"
                 )
+
+                frame.write_fits_file()
+
                 if frame.extract_chip_number() == 1:
                     print('Upper Chip:')
                     trimmed = frame.trim(
@@ -4289,7 +4789,7 @@ class ESOImagingEpoch(ImagingEpoch):
     def load_output_file(self, **kwargs):
         outputs = super().load_output_file(**kwargs)
         if type(outputs) is dict:
-            cls = image.Image.select_child_class(instrument=self.instrument_name, mode='imaging')
+            # cls = image.Image.select_child_class(instrument=self.instrument_name, mode='imaging')
             if "frames_trimmed" in outputs:
                 for fil in outputs["frames_trimmed"]:
                     if outputs["frames_trimmed"][fil] is not None:
@@ -4355,6 +4855,10 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
     instrument_name = "vlt-fors2"
     frame_class = image.FORS2Image
 
+    def n_frames(self, fil: str):
+        frame_pairs = self.pair_files(self.frames_reduced[fil])
+        return len(frame_pairs)
+
     @classmethod
     def stages(cls):
 
@@ -4369,7 +4873,7 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
             "convert_to_cs": eso_stages["convert_to_cs"],
             "register_frames": ie_stages["register_frames"],
             "correct_astrometry_frames": ie_stages["correct_astrometry_frames"],
-            #            "frame_diagnostics": ie_stages["frame_diagnostics"],
+            "frame_diagnostics": ie_stages["frame_diagnostics"],
             "coadd": ie_stages["coadd"],
             "correct_astrometry_coadded": ie_stages["correct_astrometry_coadded"],
             "trim_coadded": ie_stages["trim_coadded"],
@@ -4392,6 +4896,8 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
             # If told to register frames
             if "register_frames" in self.do_kwargs and self.do_kwargs["register_frames"]:
                 self.frames_final = "registered"
+            if "frame_diagnostics" in self.do_kwargs and self.do_kwargs["frame_diagnostics"]:
+                self.frames_final = "diagnosed"
 
         self.coadded_final = "coadded_trimmed"
 
@@ -4578,18 +5084,100 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
                     raise ValueError(
                         f"Astrometry method {method} not recognised. Must be individual, pairwise or propagate_from_single")
 
-    def estimate_atmospheric_extinction(self, mjd: int):
-        fils = []
-        lambdas = []
-        extinctions = []
+    def estimate_atmospheric_extinction(self, n: int = 10, output: str = None):
+        mjd = self.date.mjd
+        fils_known = []
+        tbls_known = {}
+
+        fils_find = []
+
         for fil_name in inst.FORS2Filter.qc1_retrievable:
             fil = inst.Filter.from_params(fil_name, instrument_name="vlt-fors2")
             fil.retrieve_calibration_table()
-            fils.append(fil)
+            fils_known.append(fil)
+            tbls_known[fil_name] = fil.get_nearest_calib_rows(mjd=mjd, n=n)
 
-            lambdas.append(fil.lambda_eff)
-            # extinctions.append(fil.)
+        fils_known.sort(key=lambda f: f.lambda_eff)
 
+        lambdas_known = list(map(lambda f: f.lambda_eff.value, fils_known))
+
+        results_tbl = {
+            "mjd": [],
+            "curve_err": [],
+        }
+
+        for fil_name in self.filters:
+            if fil_name not in inst.FORS2Filter.qc1_retrievable:
+                fil = inst.Filter.from_params(fil_name, instrument_name="vlt-fors2")
+                fils_find.append(fil)
+                results_tbl[f"ext_{fil_name}"] = []
+                # results_tbl[f"ext_err_{fil_name}"] = []
+                results_tbl[f"stat_err_{fil_name}"] = []
+
+        fils_find.sort(key=lambda f: f.lambda_eff)
+        lambdas_find = list(map(lambda f: f.lambda_eff.value, fils_find))
+
+        if output is None:
+            output = self.data_path
+
+        for i in range(n):
+            extinctions_known = []
+            extinctions_known_err = []
+            mjd = None
+            mjds = []
+            for fil in fils_known:
+                tbl = tbls_known[fil.name]
+                if mjd is None:
+                    mjd = tbl[i]["mjd_obs"]
+                mjds.append(tbl[i]["mjd_obs"])
+                extinctions_known.append(tbl[i]["extinction"].value)
+                extinctions_known_err.append(tbl[i]["extinction_err"].value)
+            results_tbl["mjd"].append(mjd)
+            extinctions_known_err = np.array(extinctions_known_err)
+            model_init = models.PowerLaw1D()
+            fitter = fitting.LevMarLSQFitter()
+            model = fitter(model_init, lambdas_known, extinctions_known, weights=1 / extinctions_known_err)
+
+            curve_err = u.root_mean_squared_error(model_values=model(lambdas_known), obs_values=extinctions_known)
+
+            results_tbl["curve_err"].append(curve_err)
+
+            extinctions_find = model(lambdas_find)
+
+            lambda_eff_fit = np.linspace(3000, 10000)
+            plt.close()
+            plt.plot(lambda_eff_fit, model(lambda_eff_fit))
+            plt.scatter(lambdas_known, extinctions_known, label="Known")
+            for j, m in enumerate(mjds):
+                plt.text(lambdas_known[j], extinctions_known[j], m)
+            plt.scatter(lambdas_find, extinctions_find, label="fitted")
+            plt.xlabel("$\lambda_{eff}$ (Ang)")
+            plt.ylabel("Extinction (mag)")
+            try:
+                plt.savefig(os.path.join(output, f"extinction_fit_mjd_{mjd}.png"))
+            except TypeError:
+                pass
+            plt.close()
+
+            for fil in fils_find:
+                results_tbl[f"ext_{fil.name}"].append(model(fil.lambda_eff.value))
+
+        for fil in fils_find:
+            results_tbl[f"stat_err_{fil.name}"] = [np.std(results_tbl[f"ext_{fil.name}"])] * n
+
+        results_tbl = table.QTable(results_tbl)
+        for fil in fils_find:
+            results_tbl[f"ext_err_{fil.name}"] = np.sqrt(
+                results_tbl[f"stat_err_{fil.name}"] ** 2 + results_tbl[f"curve_err"] ** 2) * units.mag
+            results_tbl[f"stat_err_{fil.name}"] *= units.mag
+            results_tbl[f"ext_{fil.name}"] *= units.mag
+        results_tbl[f"curve_err"] *= units.mag
+
+        i, nrst = u.find_nearest(results_tbl["mjd"], self.date.mjd)
+
+        results_tbl.write(os.path.join(output, "fitted_extinction.csv"), format="ascii.csv")
+
+        return results_tbl[i], results_tbl
 
     def photometric_calibration(
             self,
@@ -4601,23 +5189,26 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
         if "image_type" in kwargs and kwargs["image_type"] is not None:
             image_type = kwargs["image_type"]
         else:
-            image_type = "coadded_trimmed"
+            image_type = "final"
 
         suppress_select = False
         if "suppress_select" in kwargs and kwargs["suppress_select"] is not None:
             suppress_select = kwargs.pop("suppress_select")
 
-        super().photometric_calibration(
-            output_path=output_path,
-            suppress_select=True,
-            **kwargs
-        )
+        ext_row, ext_tbl = self.estimate_atmospheric_extinction(output=output_path)
+        image_dict = self._get_images(image_type=image_type)
+        for fil in image_dict:
+            img = image_dict[fil]
+            if f"ext_{fil}" in ext_row.colnames:
+                img.extinction_atmospheric = ext_row[f"ext_{fil}"]
+                img.extinction_atmospheric_err = ext_row[f"ext_err_{fil}"]
 
         # Do esorex reduction of standard images, and attempt esorex zeropoints if there are enough different
         # observations
         images = self._get_images(image_type)
         # Split up bias images by chip
         bias_sets = self.sort_by_chip(self.frames_bias)
+
         bias_sets = (bias_sets[1], bias_sets[2])
         flat_sets = {}
         std_sets = {}
@@ -4634,12 +5225,15 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
         for i, chip in enumerate(chips):
             bias_set = bias_sets[i]
             # For each chip, generate a master bias image
-            master_bias = esorex.fors_bias(
-                bias_frames=list(map(lambda b: b.path, bias_set)),
-                output_dir=output_path,
-                output_filename=f"master_bias_{chip}.fits",
-                sof_name=f"bias_{chip}.sof"
-            )
+            try:
+                master_bias = esorex.fors_bias(
+                    bias_frames=list(map(lambda b: b.path, bias_set)),
+                    output_dir=output_path,
+                    output_filename=f"master_bias_{chip}.fits",
+                    sof_name=f"bias_{chip}.sof"
+                )
+            except SystemError:
+                continue
 
             for fil in images:
                 # Generate master flat per-filter, per-chip
@@ -4651,81 +5245,85 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
                 flat_set = list(map(lambda b: b.path, flat_sets[fil][i]))
                 fil_dir = os.path.join(output_path, fil)
                 u.mkdir_check(fil_dir)
-                master_sky_flat_img = esorex.fors_img_sky_flat(
-                    flat_frames=flat_set,
-                    master_bias=master_bias,
-                    output_dir=fil_dir,
-                    output_filename=f"master_sky_flat_img_{chip}.fits",
-                    sof_name=f"flat_{chip}"
-                )
+                try:
+                    master_sky_flat_img = esorex.fors_img_sky_flat(
+                        flat_frames=flat_set,
+                        master_bias=master_bias,
+                        output_dir=fil_dir,
+                        output_filename=f"master_sky_flat_img_{chip}.fits",
+                        sof_name=f"flat_{chip}"
+                    )
+                except SystemError:
+                    continue
 
                 aligned_phots = []
-                for std in std_sets[fil][i]:
-                    # generate or load an appropriate StandardEpoch
-                    # (and StandardField in the background)
-                    pointing = std.extract_pointing()
-                    jname = astm.jname(pointing, 0, 0)
-                    if pointing not in self.std_pointings:
-                        self.std_pointings.append(pointing)
-                    if jname not in self.std_epochs:
-                        std_epoch = FORS2StandardEpoch(
-                            centre_coords=pointing,
-                            instrument=self.instrument,
-                            frames_flat=self.frames_flat,
-                            frames_bias=self.frames_bias,
-                            date=self.date
-                        )
-                        self.std_epochs[jname] = std_epoch
-                    else:
-                        std_epoch = self.std_epochs[jname]
-                    std_epoch.add_frame_raw(std)
-                    # For each raw standard, reduce
-                    std_dir = os.path.join(fil_dir, std.name)
-                    u.mkdir_check(std_dir)
-                    aligned_phot, std_reduced = esorex.fors_zeropoint(
-                        standard_img=std.path,
-                        master_bias=master_bias,
-                        master_sky_flat_img=master_sky_flat_img,
-                        output_dir=std_dir,
-                        chip_num=i + 1
-                    )
-                    aligned_phots.append(aligned_phot)
-                    std_epoch.add_frame_reduced(std_reduced)
-
-                if len(aligned_phots) > 1:
-                    try:
-                        phot_coeff_table = esorex.fors_photometry(
-                            aligned_phot=aligned_phots,
+                if fil in std_sets:
+                    for std in std_sets[fil][i]:
+                        # generate or load an appropriate StandardEpoch
+                        # (and StandardField in the background)
+                        pointing = std.extract_pointing()
+                        jname = astm.jname(pointing, 0, 0)
+                        if pointing not in self.std_pointings:
+                            self.std_pointings.append(pointing)
+                        if jname not in self.std_epochs:
+                            std_epoch = FORS2StandardEpoch(
+                                centre_coords=pointing,
+                                instrument=self.instrument,
+                                frames_flat=self.frames_flat,
+                                frames_bias=self.frames_bias,
+                                date=self.date
+                            )
+                            self.std_epochs[jname] = std_epoch
+                        else:
+                            std_epoch = self.std_epochs[jname]
+                        std_epoch.add_frame_raw(std)
+                        # For each raw standard, reduce
+                        std_dir = os.path.join(fil_dir, std.name)
+                        u.mkdir_check(std_dir)
+                        aligned_phot, std_reduced = esorex.fors_zeropoint(
+                            standard_img=std.path,
+                            master_bias=master_bias,
                             master_sky_flat_img=master_sky_flat_img,
-                            output_dir=fil_dir,
-                            chip_num=i + 1,
+                            output_dir=std_dir,
+                            chip_num=i + 1
                         )
+                        aligned_phots.append(aligned_phot)
+                        std_epoch.add_frame_reduced(std_reduced)
 
-                        phot_coeff_table = fits.open(phot_coeff_table)[1].data
-
-                        print(f"Chip {chip}, zeropoint {phot_coeff_table['ZPOINT'][0] * units.mag}")
-
-                        # The intention here is that a chip 1 zeropoint override a chip 2 zeropoint, but
-                        # if chip 1 doesn't work a chip 2 one will do.
-                        if chip == 1 or "calib_pipeline" not in img.zeropoints:
-                            img.add_zeropoint(
-                                zeropoint=phot_coeff_table["ZPOINT"][0] * units.mag,
-                                zeropoint_err=phot_coeff_table["DZPOINT"][0] * units.mag,
-                                airmass=img.extract_airmass(),
-                                airmass_err=self.airmass_err[fil],
-                                extinction=phot_coeff_table["EXT"][0] * units.mag,
-                                extinction_err=phot_coeff_table["DEXT"][0] * units.mag,
-                                catalogue="calib_pipeline",
-                                n_matches=None,
+                    if len(aligned_phots) > 1:
+                        try:
+                            phot_coeff_table = esorex.fors_photometry(
+                                aligned_phot=aligned_phots,
+                                master_sky_flat_img=master_sky_flat_img,
+                                output_dir=fil_dir,
+                                chip_num=i + 1,
                             )
 
-                        # img.update_output_file()
-                    except SystemError:
-                        print(
-                            "System error encountered while doing esorex processing; possibly impossible value encountered. Skipping.")
+                            phot_coeff_table = fits.open(phot_coeff_table)[1].data
 
-                else:
-                    print(f"Insufficient standard observations to calculate esorex zeropoint for {img}")
+                            print(f"Chip {chip}, zeropoint {phot_coeff_table['ZPOINT'][0] * units.mag}")
+
+                            # The intention here is that a chip 1 zeropoint override a chip 2 zeropoint, but
+                            # if chip 1 doesn't work a chip 2 one will do.
+                            if chip == 1 or "calib_pipeline" not in img.zeropoints:
+                                img.add_zeropoint(
+                                    zeropoint=phot_coeff_table["ZPOINT"][0] * units.mag,
+                                    zeropoint_err=phot_coeff_table["DZPOINT"][0] * units.mag,
+                                    airmass=img.extract_airmass(),
+                                    airmass_err=self.airmass_err[fil],
+                                    extinction=phot_coeff_table["EXT"][0] * units.mag,
+                                    extinction_err=phot_coeff_table["DEXT"][0] * units.mag,
+                                    catalogue="calib_pipeline",
+                                    n_matches=None,
+                                )
+
+                            # img.update_output_file()
+                        except SystemError:
+                            print(
+                                "System error encountered while doing esorex processing; possibly impossible value encountered. Skipping.")
+
+                    else:
+                        print(f"Insufficient standard observations to calculate esorex zeropoint for {img}")
 
         print("Estimating zeropoints from standard observations...")
         print(self.frames_standard)
@@ -4739,8 +5337,18 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
                 img = images[fil]
                 if fil in std_epoch.frames_reduced:
                     for std in std_epoch.frames_reduced[fil]:
-                        print(std, type(std))
+                        # print(std, type(std))
                         img.add_zeropoint_from_other(std)
+
+        zeropoints = p.load_params(zeropoint_yaml)
+        if zeropoints is None:
+            zeropoints = {}
+
+        super().photometric_calibration(
+            output_path=output_path,
+            suppress_select=True,
+            **kwargs
+        )
 
         for fil in images:
             if "preferred_zeropoint" in kwargs and fil in kwargs["preferred_zeropoint"]:
@@ -4751,10 +5359,19 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
 
             img.select_zeropoint(suppress_select, preferred=preferred)
 
+            if fil not in zeropoints:
+                zeropoints[fil] = {}
+            for cat in img.zeropoints:
+                if cat not in zeropoints[fil]:
+                    zeropoints[fil][cat] = {}
+                zeropoints[fil][cat][self.date_str()] = img.zeropoints[cat]
+
             if self.coadded_unprojected[fil] is not None:
                 self.coadded_unprojected[fil].zeropoints = img.zeropoints
                 self.coadded_unprojected[fil].zeropoint_best = img.zeropoint_best
                 self.coadded_unprojected[fil].update_output_file()
+
+        p.save_params(zeropoint_yaml, zeropoints)
 
     @classmethod
     def pair_files(cls, images: list):

@@ -10,6 +10,7 @@ import astropy.table as table
 import astropy.cosmology as cosmo
 from astropy.modeling import models, fitting
 from astropy.visualization import quantity_support
+import astropy.time as time
 
 ne2001_installed = True
 try:
@@ -56,6 +57,7 @@ uncertainty_dict = {
     "stat": 0.0
 }
 
+
 def skycoord_to_position_dict(skycoord: SkyCoord):
     ra_float = skycoord.ra
     dec_float = skycoord.dec
@@ -68,6 +70,7 @@ def skycoord_to_position_dict(skycoord: SkyCoord):
                 "ra": {"decimal": ra_float, "hms": ra}}
 
     return position
+
 
 class PositionUncertainty:
     def __init__(
@@ -298,7 +301,8 @@ class Object:
             b_world=self.b,
             theta_world=self.theta,
             kron_radius=self.kron,
-            plot=os.path.join(self.data_path, f"{self.name_filesys}_{deepest['instrument']}_{deepest['band']}_{deepest['epoch_name']}.png")
+            output=os.path.join(self.data_path,
+                                f"{self.name_filesys}_{deepest['instrument']}_{deepest['band']}_{deepest['epoch_name']}"),
         )
         deepest_dict["mag_sep"] = mag[0]
         deepest_dict["mag_sep_err"] = mag_err[0]
@@ -307,20 +311,26 @@ class Object:
         for instrument in self.photometry:
             for band in self.photometry[instrument]:
                 for epoch in self.photometry[instrument][band]:
+                    print(f"Extracting photometry for {self.name} in {instrument} {band}, epoch {epoch}.")
                     phot_dict = self.photometry[instrument][band][epoch]
-                    if phot_dict["image_path"] == deepest_path:
+                    if phot_dict["good_image_path"] == deepest_path:
                         continue
                     cls = image.CoaddedImage.select_child_class(instrument=instrument)
-                    img = cls(path=phot_dict["image_path"])
+                    img = cls(path=phot_dict["good_image_path"])
                     fwhm = img.extract_header_item("PSF_FWHM") * units.arcsec
                     delta_fwhm = fwhm - deepest_fwhm
+                    if "do_mask" in phot_dict:
+                        do_mask = phot_dict["do_mask"]
+                    else:
+                        do_mask = True
                     mag, mag_err, snr = img.sep_elliptical_magnitude(
                         centre=self.position,
-                        a_world=self.a, #+ delta_fwhm,
-                        b_world=self.b, #+ delta_fwhm,
+                        a_world=self.a,  # + delta_fwhm,
+                        b_world=self.b,  # + delta_fwhm,
                         theta_world=self.theta,
                         kron_radius=self.kron,
-                        plot=os.path.join(self.data_path, f"{self.name_filesys}_{instrument}_{band}_{epoch}.png")
+                        output=os.path.join(self.data_path, f"{self.name_filesys}_{instrument}_{band}_{epoch}"),
+                        mask_nearby=do_mask
                     )
                     phot_dict["mag_sep"] = mag[0]
                     phot_dict["mag_sep_err"] = mag_err[0]
@@ -349,10 +359,13 @@ class Object:
             mag_psf: units.Quantity = None, mag_psf_err: units.Quantity = None,
             snr_psf: float = None,
             image_depth: units.Quantity = None,
+            do_mask: bool = True,
             **kwargs
     ):
         if good_image_path is None:
             good_image_path = image_path
+        if isinstance(epoch_date, time.Time):
+            epoch_date = epoch_date.strftime('%Y-%m-%d')
         photometry = {
             "instrument": str(instrument),
             "filter": str(fil),
@@ -376,10 +389,11 @@ class Object:
             "class_star": float(class_star),
             "mag_psf": u.check_quantity(mag_psf, unit=units.mag),
             "mag_psf_err": u.check_quantity(mag_psf_err, unit=units.mag),
-            "snr_psf": float(snr_psf),
+            "snr_psf": snr_psf,
             "image_depth": u.check_quantity(image_depth, unit=units.mag),
             "image_path": image_path,
-            "good_image_path": good_image_path
+            "good_image_path": good_image_path,
+            "do_mask": do_mask,
         }
 
         kwargs.update(photometry)
@@ -388,6 +402,7 @@ class Object:
         if fil not in self.photometry[instrument]:
             self.photometry[instrument][fil] = {}
         self.photometry[instrument][fil][epoch_name] = kwargs
+        self.update_output_file()
         return kwargs
 
     def find_in_cat(self, cat_name: str):
@@ -436,9 +451,11 @@ class Object:
         if output is None:
             output = os.path.join(self.data_path, f"{self.name_filesys}_photometry.pdf")
 
+        plt.close()
         ax = self.plot_photometry(**kwargs)
         ax.legend()
         plt.savefig(output)
+        plt.close()
         return ax
 
     def plot_photometry(self, ax=None, **kwargs):
@@ -458,21 +475,44 @@ class Object:
             kwargs["ecolor"] = "black"
 
         self.estimate_galactic_extinction()
-        self.photometry_to_table()
+        self.photometry_to_table(fmts=["ascii.ecsv", "ascii.csv"], best=False)
+        self.photometry_to_table(
+            output=self.build_photometry_table_path().replace(".ecsv", "_best.ecsv"),
+            fmts=["ascii.ecsv", "ascii.csv"], best=True)
 
         with quantity_support():
+
+            plot_limit = (-999 * units.mag == self.photometry_tbl["mag_sep_err"])
+            plot_mag = np.invert(plot_limit)
+
+            print(plot_limit)
+            print(plot_mag)
+            print(self.photometry_tbl["mag_sep"][plot_mag])
+
             ax.errorbar(
-                self.photometry_tbl["lambda_eff"],
-                self.photometry_tbl["mag"],
-                yerr=self.photometry_tbl["mag_err"],
+                self.photometry_tbl["lambda_eff"][plot_mag],
+                self.photometry_tbl["mag_sep"][plot_mag],
+                yerr=self.photometry_tbl["mag_sep_err"][plot_mag],
                 label="Magnitude",
                 **kwargs,
             )
             ax.scatter(
-                self.photometry_tbl["lambda_eff"],
-                self.photometry_tbl["mag_ext_corrected"],
-                # color="violet",
+                self.photometry_tbl["lambda_eff"][plot_limit],
+                self.photometry_tbl["mag_sep"][plot_limit],
+                label="Magnitude upper limit",
+                marker="v",
+            )
+            ax.scatter(
+                self.photometry_tbl["lambda_eff"][plot_mag],
+                self.photometry_tbl["mag_sep_ext_corrected"][plot_mag],
+                color="orange",
                 label="Corrected for Galactic extinction"
+            )
+            ax.scatter(
+                self.photometry_tbl["lambda_eff"][plot_limit],
+                self.photometry_tbl["mag_sep_ext_corrected"][plot_limit],
+                label="Magnitude upper limit",
+                marker="v",
             )
             ax.set_ylabel("Apparent magnitude")
             ax.set_xlabel("$\lambda_\mathrm{eff}$ (\AA)")
@@ -483,7 +523,12 @@ class Object:
         self.check_data_path()
         return os.path.join(self.data_path, f"{self.name_filesys}_photometry.ecsv")
 
-    def photometry_to_table(self, output: str = None, fmts: List[str] = ("ascii.ecsv", "ascii.csv")):
+    def photometry_to_table(
+            self,
+            output: str = None,
+            best: bool = False,
+            fmts: List[str] = ("ascii.ecsv", "ascii.csv")
+    ):
         """
         Converts the photometry information, which is stored internally as a dictionary, into an astropy QTable.
         :param output: Where to write table.
@@ -500,19 +545,37 @@ class Object:
             instrument = inst.Instrument.from_params(instrument_name)
             for filter_name in self.photometry[instrument_name]:
                 fil = instrument.filters[filter_name]
-                for epoch in self.photometry[instrument_name][filter_name]:
 
-                    phot_dict = self.photometry[instrument_name][filter_name][epoch].copy()
+                if best:
+                    phot_dict, _ = self.select_photometry_sep(fil=filter_name, instrument=instrument_name)
                     phot_dict["band"] = filter_name
                     phot_dict["instrument"] = instrument_name
                     phot_dict["lambda_eff"] = u.check_quantity(
                         number=fil.lambda_eff,
                         unit=units.Angstrom
                     )
-                    #tbl = table.QTable([phot_dict])
+                    # tbl = table.QTable([phot_dict])
                     tbls.append(phot_dict)
+                    print("phot_dict:")
+                    print(phot_dict)
 
-        self.photometry_tbl = table.QTable(tbls)
+                else:
+                    for epoch in self.photometry[instrument_name][filter_name]:
+                        phot_dict = self.photometry[instrument_name][filter_name][epoch].copy()
+                        phot_dict["band"] = filter_name
+                        phot_dict["instrument"] = instrument_name
+                        phot_dict["lambda_eff"] = u.check_quantity(
+                            number=fil.lambda_eff,
+                            unit=units.Angstrom
+                        )
+                        # tbl = table.QTable([phot_dict])
+                        tbls.append(phot_dict)
+
+        print(tbls)
+        if best:
+            self.photometry_tbl = table.vstack(tbls)
+        else:
+            self.photometry_tbl = table.QTable(tbls)
 
         if output is not False:
             for fmt in fmts:
@@ -606,6 +669,8 @@ class Object:
             self.photometry[instrument][band][epoch_name]["ext_gal_type"] = "s_and_f"
             self.photometry[instrument][band][epoch_name]["ext_gal"] = row[key]
             self.photometry[instrument][band][epoch_name]["mag_ext_corrected"] = row["mag"] - row[key]
+            if "mag_sep" in row.colnames:
+                self.photometry[instrument][band][epoch_name]["mag_sep_ext_corrected"] = row["mag_sep"] - row[key]
 
         # tbl_2 = self.photometry_to_table()
         # tbl_2.update(tbl)
@@ -672,15 +737,22 @@ class Object:
         # TODO: Just meaning the whole table is probably not the best way to estimate uncertainties.
         return fil_photom[np.argmax(fil_photom["snr"])], mean
 
-    def select_photometry_sep(self, fil: str, instrument: str, local_output: bool = True):
+    def select_photometry_sep(
+            self,
+            fil: str,
+            instrument: str,
+            local_output: bool = True
+    ):
         fil_photom = self.photometry_tbl[self.photometry_tbl["band"] == fil]
         fil_photom = fil_photom[fil_photom["instrument"] == instrument]
         mean = {
             "mag": np.mean(fil_photom["mag_sep"]),
-            "mag_err": np.mean(fil_photom["mag_sep_err"]),
+            "mag_err": np.std(fil_photom["mag_sep"]),
             "mag_psf": np.mean(fil_photom["mag_psf"]),
-            "mag_psf_err": np.mean(fil_photom["mag_psf_err"])
+            "mag_psf_err": np.std(fil_photom["mag_psf"])
         }
+        u.debug_print(2, f"Object.select_photometry_sep(): {self.name=}, {fil=}, {instrument=}")
+        print(fil_photom)
         return fil_photom[np.argmax(fil_photom["snr_sep"])], mean
 
     def select_psf_photometry(self, local_output: bool = True):
@@ -712,6 +784,12 @@ class Object:
         return self.photometry_tbl[idx]
 
     def push_to_table(self, select: bool = False, local_output: bool = True):
+
+        if select:
+            tbl = obs.load_master_objects_table()
+        else:
+            tbl = obs.load_master_all_objects_table()
+
         jname = self.jname()
 
         for instrument in self.photometry:
@@ -723,6 +801,8 @@ class Object:
             row, index = obs.get_row(tbl=obs.master_objects_table, colname="object_name", colval=self.name)
         else:
             row, index = obs.get_row(tbl=obs.master_objects_all_table, colname="object_name", colval=self.name)
+
+        print()
 
         if row is None:
             row = {}
@@ -738,7 +818,6 @@ class Object:
         # best_position = self.select_best_position(local_output=local_output)
         best_psf = self.select_psf_photometry(local_output=local_output)
 
-
         row["jname"] = jname
         row["field_name"] = self.field.name
         row["object_name"] = self.name
@@ -753,6 +832,7 @@ class Object:
         row["b"] = deepest["b"]
         row["b_err"] = deepest["b_err"]
         row["theta"] = deepest["theta"]
+        row["kron_radius"] = deepest["kron_radius"]
         row["epoch_ellipse"] = deepest["epoch_name"]
         row["epoch_ellipse_date"] = deepest["epoch_date"]
         row["theta_err"] = deepest["theta_err"]
@@ -790,10 +870,15 @@ class Object:
                 row[f"mag_psf_mean_{band_str}"] = mean_photom[f"mag_psf"]
                 row[f"mag_psf_mean_{band_str}_err"] = mean_photom[f"mag_psf_err"]
 
-        # obs.w
+        for colname in tbl.colnames:
+            if colname not in row:
+                if "epoch" in colname:
+                    row[colname] = "N/A"
+                else:
+                    row[colname] = tbl[0][colname]
 
         u.debug_print(2, "Object.push_to_table(): select ==", select)
-        print()
+        print(f"INDEX: {index}")
         if select:
             if index is None:
                 obs.master_objects_table.add_row(row)
