@@ -3654,6 +3654,10 @@ class GSAOIImagingEpoch(ImagingEpoch):
             coord=self.field.centre_coords,
             overwrite=overwrite)
 
+        if self.date is None:
+            tmp = science_files[0]
+            self.date = Time(tmp['ut_datetime'])
+
         # Set up filters from retrieved science files.
         for img in science_files:
             fil = str(img["filter_name"])
@@ -3669,7 +3673,8 @@ class GSAOIImagingEpoch(ImagingEpoch):
                 output=output_dir,
                 obs_date=self.date,
                 fil=fil,
-                overwrite=overwrite)
+                overwrite=overwrite
+            )
 
     def _initial_setup(self, output_dir: str, **kwargs):
         data_dir = self.data_path
