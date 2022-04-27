@@ -1863,7 +1863,7 @@ class ImagingImage(Image):
         data_source = u.sanitise_endianness(data_source)
         data_target = target.data[ext]
         data_target = u.sanitise_endianness(data_target)
-        u.debug_print(0, f"Attempting registration of {self.name} against {target.name}")
+        u.debug_print(0, f"Attempting registration of {self.name} (Chip {self.extract_chip_number()}) against {target.name} (Chip {target.extract_chip_number()})")
         registered, footprint = register(data_source, data_target)
 
         self.copy(output_path)
