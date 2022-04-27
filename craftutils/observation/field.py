@@ -3857,7 +3857,7 @@ class GSAOIImagingEpoch(ImagingEpoch):
             param_dict.pop("param_path")
 
         print(f"Loading field {field}...")
-        u.debug_print(2, f"GSAOIImagingEpoch.from_file(): {param_dict=}")
+        u.debug_print(2, f"GSAOIImagingEpoch.from_file(): param_dict={param_dict}")
 
         return cls(
             name=name,
@@ -4173,7 +4173,7 @@ class PanSTARRS1ImagingEpoch(ImagingEpoch):
             path = os.path.join(download_dir, file)
             img = image.PanSTARRS1Cutout(path=path)
             fil = img.extract_filter()
-            u.debug_print(2, f"PanSTARRS1ImagingEpoch._initial_setup(): {fil=}")
+            u.debug_print(2, f"PanSTARRS1ImagingEpoch._initial_setup(): fil={fil}")
             self.exp_time_mean[fil] = img.extract_exposure_time() / img.extract_ncombine()
             img.set_header_item('INTTIME', img.extract_exposure_time())
             self.add_coadded_image(img, key=fil)
@@ -4362,7 +4362,7 @@ class ESOImagingEpoch(ImagingEpoch):
         return r
 
     def _initial_setup(self, output_dir: str, **kwargs):
-        u.debug_print(2, f"ESOImagingEpoch._initial_setup(): {self.paths=}")
+        u.debug_print(2, f"ESOImagingEpoch._initial_setup(): self.paths={self.paths}")
         raw_dir = self.get_path("download")
         data_dir = self.data_path
         data_title = self.name
