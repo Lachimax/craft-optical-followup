@@ -1585,9 +1585,9 @@ class ImagingImage(Image):
             "image_name": image_name
         })
         print("Adding zeropoint to image:")
-        print(f"\t {zeropoint=} +/- {zeropoint_err}")
-        print(f"\t {airmass=} +/- {airmass_err}")
-        print(f"\t {extinction=} +/- {extinction_err}")
+        print(f"\t zeropoint = {zeropoint} +/- {zeropoint_err}")
+        print(f"\t airmass = {airmass} +/- {airmass_err}")
+        print(f"\t extinction = {extinction} +/- {extinction_err}")
         zp_dict["zeropoint_img"] = zp_dict["zeropoint"] - zp_dict["extinction"] * zp_dict["airmass"]
         zp_dict['zeropoint_img_err'] = np.sqrt(
             zp_dict["zeropoint_err"] ** 2 + u.uncertainty_product(
@@ -1659,7 +1659,7 @@ class ImagingImage(Image):
     def calibrate_magnitudes(self, zeropoint_name: str = "best", force: bool = False, dual: bool = False):
         cat = self.get_source_cat(dual=dual, force=True)
         if cat is None:
-            raise ValueError(f"Catalogue ({dual=}) could not be loaded.")
+            raise ValueError(f"Catalogue (dual={dual}) could not be loaded.")
 
         self.extract_exposure_time()
 
