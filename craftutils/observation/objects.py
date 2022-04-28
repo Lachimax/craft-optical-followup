@@ -330,11 +330,23 @@ class Object:
                         theta_world=self.theta,
                         kron_radius=self.kron,
                         output=os.path.join(self.data_path, f"{self.name_filesys}_{instrument}_{band}_{epoch}"),
-                        mask_nearby=do_mask
+                        mask_nearby=True
                     )
                     phot_dict["mag_sep"] = mag[0]
                     phot_dict["mag_sep_err"] = mag_err[0]
                     phot_dict["snr_sep"] = snr[0]
+                    mag, mag_err, snr = img.sep_elliptical_magnitude(
+                        centre=self.position,
+                        a_world=self.a,  # + delta_fwhm,
+                        b_world=self.b,  # + delta_fwhm,
+                        theta_world=self.theta,
+                        kron_radius=self.kron,
+                        output=os.path.join(self.data_path, f"{self.name_filesys}_{instrument}_{band}_{epoch}"),
+                        mask_nearby=False
+                    )
+                    phot_dict["mag_sep_unmasked"] = mag[0]
+                    phot_dict["mag_sep_unmasked_err"] = mag_err[0]
+                    phot_dict["snr_sep_unmasked"] = snr[0]
 
         self.update_output_file()
 

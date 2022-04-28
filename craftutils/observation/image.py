@@ -4392,8 +4392,11 @@ class FORS2CoaddedImage(CoaddedImage):
             return None
 
 
-class GSAOIImage(ImagingImage):
+class GSAOIImage(CoaddedImage):
     instrument_name = "gs-aoi"
+
+    def extract_pixel_scale(self, ext: int = 1, force: bool = False):
+        return super().extract_pixel_scale(ext=ext, force=force)
 
     def extract_pointing(self):
         # GSAOI images keep the WCS information in the second HDU header.
