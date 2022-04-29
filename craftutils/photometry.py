@@ -759,43 +759,51 @@ def determine_zeropoint_sextractor(
 
     if iterate_uncertainty:
 
-    #
-    #     delta = -np.inf
-    #     std_err_prior = np.inf
-    #     mag_min = np.min(x)
-    #     x_iter = x[:]
-    #     y_iter = y[:]
-    #     y_uncertainty_iter = y_uncertainty[:]
-    #     y_weights_iter = y_weights[:]
-    #     x_weights_iter = x_weights[:]
-    #     matches_iter = matches_clean[:]
-    #
-    #     x_prior = x_iter
-    #     y_prior = y_iter
-    #     y_uncertainty_prior = y_iter
-    #     y_weights_prior = y_weights_iter * 1.
-    #     x_weights_prior = x_weights_iter * 1.
-    #     matches_prior = matches_iter
-    #
-    #     keep = np.ones(x_iter.shape, dtype=bool)
-    #     n = 0
-    #     u.mkdir_check(output_path + "min_mag_iterations/")
-    #     while (std_err_prior > 1.0 * units.mag or delta <= 0) and sum(keep) > 3:
-    #         x_prior = x_iter
-    #         y_prior = y_iter
-    #         y_uncertainty_prior = y_uncertainty_iter
-    #         y_weights_prior = y_weights_iter
-    #         x_weights_prior = x_weights_iter
-    #         matches_prior = matches_iter
-    #
-    #         keep = x_iter >= mag_min
-    #         x_iter = x_iter[keep]
-    #         y_iter = y_iter[keep]
-    #         y_uncertainty_iter = y_uncertainty_iter[keep]
-    #         y_weights_iter = y_weights_iter[keep]
-    #         x_weights_iter = x_weights_iter[keep]
-    #         matches_iter = matches_iter[keep]
-    #
+        delta = -np.inf
+        std_err_prior = np.inf
+        mag_min = np.min(x)
+        x_iter = x[:]
+        y_iter = y[:]
+        y_uncertainty_iter = y_uncertainty[:]
+        y_weights_iter = y_weights[:]
+        x_weights_iter = x_weights[:]
+        matches_iter = matches_clean[:]
+
+        x_prior = x_iter
+        y_prior = y_iter
+        y_uncertainty_prior = y_iter
+        y_weights_prior = y_weights_iter * 1.
+        x_weights_prior = x_weights_iter * 1.
+        matches_prior = matches_iter
+
+        keep = np.ones(x_iter.shape, dtype=bool)
+        n = 0
+        u.mkdir_check(output_path + "min_mag_iterations/")
+        while (std_err_prior > 1.0 * units.mag or delta <= 0) and sum(keep) > 3:
+            x_prior = x_iter
+            y_prior = y_iter
+            y_uncertainty_prior = y_uncertainty_iter
+            y_weights_prior = y_weights_iter
+            x_weights_prior = x_weights_iter
+            matches_prior = matches_iter
+
+            keep = x_iter >= mag_min
+            x_iter = x_iter[keep]
+            y_iter = y_iter[keep]
+            y_uncertainty_iter = y_uncertainty_iter[keep]
+            y_weights_iter = y_weights_iter[keep]
+            x_weights_iter = x_weights_iter[keep]
+            matches_iter = matches_iter[keep]
+
+            zps_iter = x_iter - y_iter
+            zp_mean_iter = np.average(zps_iter, weights=y_weights_iter)
+            err_this = u.root_mean_squared_error(
+                model_values=zp_mean_iter * np.ones_like(zps_iter).value,
+                obs_values=zps_iter,
+                weights=y_weights_iter,
+                dof_correction=1
+            ) / np.sqrt(len(zps_iter))
+
     #         fitted_iter = fitter(linear_model_fixed, x_iter, y_iter, weights=y_weights_iter)
     #         line_iter = fitted_iter(x_iter)
     #
@@ -817,57 +825,66 @@ def determine_zeropoint_sextractor(
     #             f"{output_path}min_mag_iterations/{n}_{cat_name}vsex_std_err_{err_this}_delta{delta}_magmin_{mag_min}.png")
     #         plt.close()
     #
-    #         delta = err_this - std_err_prior
-    #
-    #         mag_min += 0.1 * units.mag
-    #
-    #         print("Iterating min cat mag:", mag_min, std_err_prior, delta, sum(keep))
-    #
-    #         std_err_prior = err_this
-    #         n += 1
-    #
-    #     mag_min -= 0.1 * units.mag
-    #
-    #     x = x_prior
-    #     y = y_prior
-    #     y_uncertainty = y_uncertainty_prior[:]
-    #     y_weights = y_weights_prior
-    #     x_weights = x_weights_prior
-    #     matches = matches_prior
-    #
-    #     print(len(x), f'matches after iterating minimum mag ({mag_min})')
-    #     params[f'matches_{n_match}_min_cut'] = int(len(x))
-    #     n_match += 1
-    #
-    #     delta = -np.inf
-    #     std_err_prior = np.inf
-    #     mag_max = np.max(x)
-    #     x_iter = x[:]
-    #     y_iter = y[:]
-    #     y_uncertainty_iter = y_uncertainty[:]
-    #     y_weights_iter = y_weights[:]
-    #     x_weights_iter = x_weights[:]
-    #     matches_iter = matches[:]
-    #
-    #     keep = np.ones(x_iter.shape, dtype=bool)
-    #     n = 0
-    #     u.mkdir_check(output_path + "max_mag_iterations/")
-    #     while delta <= 0 and sum(keep) > 3:
-    #         x_prior = x_iter
-    #         y_prior = y_iter
-    #         y_uncertainty_prior = y_uncertainty_iter
-    #         y_weights_prior = y_weights_iter
-    #         x_weights_prior = x_weights_iter
-    #         matches_prior = matches_iter
-    #
-    #         keep = x_iter <= mag_max
-    #         x_iter = x_iter[keep]
-    #         y_iter = y_iter[keep]
-    #         y_uncertainty_iter = y_uncertainty_iter[keep]
-    #         y_weights_iter = y_weights_iter[keep]
-    #         x_weights_iter = x_weights_iter[keep]
-    #         matches_iter = matches_iter[keep]
-    #
+            delta = err_this - std_err_prior
+
+            mag_min += 0.1 * units.mag
+
+            print("Iterating min cat mag:", mag_min, std_err_prior, delta, sum(keep))
+
+            std_err_prior = err_this
+            n += 1
+
+        mag_min -= 0.1 * units.mag
+
+        x = x_prior
+        y = y_prior
+        y_uncertainty = y_uncertainty_prior[:]
+        y_weights = y_weights_prior
+        x_weights = x_weights_prior
+        matches = matches_prior
+
+        print(len(x), f'matches after iterating minimum mag ({mag_min})')
+        params[f'matches_{n_match}_min_cut'] = int(len(x))
+        n_match += 1
+
+        delta = -np.inf
+        std_err_prior = np.inf
+        mag_max = np.max(x)
+        x_iter = x[:]
+        y_iter = y[:]
+        y_uncertainty_iter = y_uncertainty[:]
+        y_weights_iter = y_weights[:]
+        x_weights_iter = x_weights[:]
+        matches_iter = matches[:]
+
+        keep = np.ones(x_iter.shape, dtype=bool)
+        n = 0
+        u.mkdir_check(output_path + "max_mag_iterations/")
+        while delta <= 0 and sum(keep) > 3:
+            x_prior = x_iter
+            y_prior = y_iter
+            y_uncertainty_prior = y_uncertainty_iter
+            y_weights_prior = y_weights_iter
+            x_weights_prior = x_weights_iter
+            matches_prior = matches_iter
+
+            keep = x_iter <= mag_max
+            x_iter = x_iter[keep]
+            y_iter = y_iter[keep]
+            y_uncertainty_iter = y_uncertainty_iter[keep]
+            y_weights_iter = y_weights_iter[keep]
+            x_weights_iter = x_weights_iter[keep]
+            matches_iter = matches_iter[keep]
+
+            zps_iter = x_iter - y_iter
+            zp_mean_iter = np.average(zps_iter, weights=y_weights_iter)
+            err_this = u.root_mean_squared_error(
+                model_values=zp_mean_iter * np.ones_like(zps_iter).value,
+                obs_values=zps_iter,
+                weights=y_weights_iter,
+                dof_correction=1
+            ) / np.sqrt(len(zps_iter))
+
     #         fitted_iter = fitter(linear_model_fixed, x_iter, y_iter, weights=y_weights_iter)
     #         line_iter = fitted_iter(x_iter)
     #
@@ -887,25 +904,23 @@ def determine_zeropoint_sextractor(
     #         plt.savefig(f"{output_path}max_mag_iterations/{n}_{cat_name}vsex_std_err_{err_this}_magmax_{mag_max}.png")
     #         plt.close()
     #
-    #         delta = err_this - std_err_prior
-    #
-    #         mag_max -= 0.1 * units.mag
-    #         std_err_prior = err_this
-    #
-    #         print("Iterating max cat mag:", mag_max, std_err_prior, delta)
-    #
-    #         n += 1
-    #
-    #     mag_max += 0.1 * units.mag
-    #
-    #     x = x_prior
-    #     y = y_prior
-    #     y_uncertainty = y_uncertainty_prior[:]
-    #     y_weights = y_weights_prior
-    #     x_weights = x_weights_prior
-    #     matches = matches_prior
+            delta = err_this - std_err_prior
 
-        pass
+            mag_max -= 0.1 * units.mag
+            std_err_prior = err_this
+
+            print("Iterating max cat mag:", mag_max, std_err_prior, delta)
+
+            n += 1
+
+        mag_max += 0.1 * units.mag
+
+        x = x_prior
+        y = y_prior
+        y_uncertainty = y_uncertainty_prior[:]
+        y_weights = y_weights_prior
+        x_weights = x_weights_prior
+        matches = matches_prior
 
     params["mag_cut_min"] = mag_min
     params["mag_cut_max"] = mag_max
@@ -919,7 +934,7 @@ def determine_zeropoint_sextractor(
     zps = x - y
     zp_mean = np.average(zps, weights=y_weights)
     zp_mean_err = u.root_mean_squared_error(
-        model_values=zp_mean * np.ones_like(zps),
+        model_values=zp_mean * np.ones_like(zps).value,
         obs_values=zps,
         weights=y_weights,
         dof_correction=1
@@ -946,18 +961,18 @@ def determine_zeropoint_sextractor(
         dof_correction=2
     )
 
-    # plt.plot(x, line_free, c='red', label='Line of best fit')
-    # plt.scatter(x, y, c='blue')
-    # #    plt.errorbar(x, y, yerr=y_uncertainty, linestyle="None")
+    plt.plot(x, line_free, c='red', label='Line of best fit')
+    plt.scatter(x, y, c='blue')
+    #    plt.errorbar(x, y, yerr=y_uncertainty, linestyle="None")
     # plt.plot(x, line_fixed, c='green', label='Fixed slope = 1')
-    # plt.legend()
-    # plt.suptitle("Magnitude Comparisons")
-    # plt.xlabel("Magnitude in " + cat_name)
-    # plt.ylabel("SExtractor Magnitude in " + image_name)
-    # plt.savefig(output_path + "6-" + cat_name + "catvsex.png")
-    # if show:
-    #     plt.show()
-    # plt.close()
+    plt.legend()
+    plt.suptitle("Magnitude Comparisons")
+    plt.xlabel("Magnitude in " + cat_name)
+    plt.ylabel("SExtractor Magnitude in " + image_name)
+    plt.savefig(output_path + "6-" + cat_name + "catvsex.png")
+    if show:
+        plt.show()
+    plt.close()
 
     print("UNCLIPPED")
     print("Linear fit:")
@@ -967,25 +982,16 @@ def determine_zeropoint_sextractor(
 
     params["zeropoint_raw"] = zp_mean
     params["zeropoint_err_raw"] = zp_mean_err
-    params["free_zeropoint"] = fitted_free.intercept
+    params["free_zeropoint"] = fitted_free.intercept.value * units.mag
     params["free_zeropoint_err"] = std_err_free
-    params["free_slope"] = fitted_free.slope
+    params["free_slope"] = fitted_free.slope.value
     params["free_slope_err"] = std_err_free_slope
 
     or_fitter = fitting.FittingWithOutlierRemoval(fitter, sigma_clip, niter=1, sigma=2.0)
 
-    # print(type(linear_model_fixed), type(x), type(y), type(weights))
-    # fitted_clipped, mask = or_fitter(linear_model_fixed, x.value, y.value, weights=y_weights.value)
-    fitted_free_clipped, free_mask = or_fitter(linear_model_free, x.value, y.value, weights=y_weights.value)
-
-    # line_clipped = fitted_clipped(x.value)
-    # line_clipped = line_clipped[~mask]
     zps_masked = sigma_clip(zps, sigma=2.0, masked=True, copy=True)
     mask = zps_masked.mask
     zps_clipped = zps[~mask]
-
-    line_free_clipped = fitted_free_clipped(x.value)
-    line_free_clipped = line_free_clipped[~free_mask]
 
     y_clipped = y[~mask]
     x_clipped = x[~mask]
@@ -993,18 +999,29 @@ def determine_zeropoint_sextractor(
     y_weights_clipped = y_weights[~mask]
     x_weights_clipped = x_weights[~mask]
 
+    # print(type(linear_model_fixed), type(x), type(y), type(weights))
+    # fitted_clipped, mask = or_fitter(linear_model_fixed, x.value, y.value, weights=y_weights.value)
+    fitted_free_clipped, free_mask = or_fitter(linear_model_free, x_clipped.value, y_clipped.value, weights=y_weights_clipped.value)
+
+    # line_clipped = fitted_clipped(x.value)
+    # line_clipped = line_clipped[~mask]
+
+    y_free_clipped = y_clipped[~free_mask]
+    x_free_clipped = x_clipped[~free_mask]
+
+    line_free_clipped = fitted_free_clipped(x_free_clipped.value)
+    line_free_clipped = line_free_clipped * units.mag
+
     zp_mean_clipped = np.average(zps, weights=y_weights)
     zp_mean_clipped_err = u.root_mean_squared_error(
-        model_values=zp_mean_clipped* np.ones_like(zps_clipped),
+        model_values=zp_mean_clipped* np.ones_like(zps_clipped).value,
         obs_values=zps_clipped,
         weights=y_weights_clipped,
         dof_correction=1
     ) / np.sqrt(len(zps_clipped))
 
-    y_free_clipped = y[~free_mask]
-    x_free_clipped = x[~free_mask]
-    y_weights_free_clipped = y_weights[~free_mask]
-    x_weights_free_clipped = x_weights[~free_mask]
+    y_weights_free_clipped = y_weights_clipped[~free_mask]
+    x_weights_free_clipped = x_weights_clipped[~free_mask]
 
     std_err_free_clipped = u.std_err_intercept(
         y_model=line_free_clipped,
@@ -1054,10 +1071,10 @@ def determine_zeropoint_sextractor(
 
     params["zeropoint"] = zp_mean_clipped
     params["zeropoint_err"] = zp_mean_clipped_err + cat_zeropoint_err
-    params["free_zeropoint_clipped"] = fitted_free.intercept
-    params["free_zeropoint_clipped_err"] = std_err_free
-    params["free_slope_clipped"] = fitted_free.slope
-    params["free_slope_clipped_err"] = std_err_free_slope
+    params["free_zeropoint_clipped"] = fitted_free_clipped.intercept * units.mag
+    params["free_zeropoint_clipped_err"] = std_err_free_clipped
+    params["free_slope_clipped"] = fitted_free_clipped.slope.value * units.mag
+    params["free_slope_clipped_err"] = std_err_free_slope_clipped
 
     #     if latex_plot:
     #         plot_params = p.plotting_params()

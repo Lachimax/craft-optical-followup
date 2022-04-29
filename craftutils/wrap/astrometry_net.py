@@ -8,6 +8,13 @@ from typing import Union
 from craftutils.utils import system_command, debug_print, check_quantity
 
 
+# def add_index_directory(path: str):
+#     cfg_path = "/etc/astrometry.cfg"
+#     line = f"{}"
+#     with open(cfg_path, 'r') as cfg:
+#         cfg_file = cfg.readlines()
+#     cfg_file.index()
+
 def build_astrometry_index(input_fits_catalog: str, unique_id: int, output_index: str = None,
                            scale_number: int = 0, sort_column: str = 'mag',
                            scan_through_catalog: bool = True, *flags, **params):

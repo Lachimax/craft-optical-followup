@@ -1584,7 +1584,7 @@ class ImagingImage(Image):
             "n_matches": n_matches,
             "image_name": image_name
         })
-        print("Adding zeropoint to image:")
+        print(f"Adding zeropoint to image, from {catalogue} on {image_name}:")
         print(f"\t {zeropoint=} +/- {zeropoint_err}")
         print(f"\t {airmass=} +/- {airmass_err}")
         print(f"\t {extinction=} +/- {extinction_err}")
