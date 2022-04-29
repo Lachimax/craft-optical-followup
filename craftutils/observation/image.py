@@ -1518,7 +1518,7 @@ class ImagingImage(Image):
         if zp_dict is None:
             return None
 
-        zp_dict.update(self.add_zeropoint(
+        zp_dict = self.add_zeropoint(
             # catalogue=cat_name,
             # zeropoint=zp_dict["zeropoint"],
             # zeropoint_err=zp_dict["zeropoint_err"],
@@ -1529,7 +1529,7 @@ class ImagingImage(Image):
             # n_matches=zp_dict["n_matches"],
             image_name="self",
             **zp_dict
-        ))
+        )
         self.zeropoint_output_paths[cat_name.lower()] = output_path
         self.add_log(
             action=f"Calculated zeropoint as {zp_dict['zeropoint_img']} +/- {zp_dict['zeropoint_img_err']}, from {zp_dict['catalogue']}.",
@@ -1537,7 +1537,7 @@ class ImagingImage(Image):
             output_path=output_path
         )
         self.update_output_file()
-        return self.zeropoints[cat_name.lower()]
+        return zp_dict
 
     def get_zeropoint(
             self,
@@ -1584,7 +1584,9 @@ class ImagingImage(Image):
             "n_matches": n_matches,
             "image_name": image_name
         })
-        print(f"Adding zeropoint to image, from {catalogue} on {image_name}:")
+        print(f"Adding zeropoint to image {self.path}"
+              f"\nfrom {catalogue} "
+              f"\non {image_name}:")
         print(f"\t {zeropoint=} +/- {zeropoint_err}")
         print(f"\t {airmass=} +/- {airmass_err}")
         print(f"\t {extinction=} +/- {extinction_err}")
@@ -1603,6 +1605,7 @@ class ImagingImage(Image):
         if cat_key not in self.zeropoints:
             self.zeropoints[cat_key] = {}
         self.zeropoints[cat_key][img_key] = zp_dict
+        self.update_output_file()
         return zp_dict
 
     def add_zeropoint_from_other(self, other: 'ImagingImage'):
@@ -1635,6 +1638,7 @@ class ImagingImage(Image):
                 self.add_zeropoint(
                     **zeropoint
                 )
+        self.update_output_file()
 
     def aperture_areas(self):
         self.load_source_cat()
@@ -4198,7 +4202,7 @@ class HAWKICoaddedImage(ESOImagingImage):
     def zeropoint(
             self
     ):
-        self.add_zeropoint(
+        return self.add_zeropoint(
             catalogue="2MASS",
             zeropoint=self.extract_header_item("PHOTZP"),
             zeropoint_err=self.extract_header_item("PHOTZPER"),
@@ -4208,7 +4212,7 @@ class HAWKICoaddedImage(ESOImagingImage):
             airmass_err=0.0
         )
         # self.select_zeropoint(True)
-        return self.zeropoint_best
+        # return self.zeropoint_best
 
     @classmethod
     def header_keys(cls):

@@ -2553,21 +2553,28 @@ class ImagingEpoch(Epoch):
             self.psf_diagnostics(images=images)
 
     def proc_photometric_calibration(self, output_dir: str, **kwargs):
-        self.photometric_calibration(output_path=output_dir, **kwargs)
+        if "image_type" in kwargs and kwargs["image_type"] is not None:
+            image_type = kwargs["image_type"]
+        else:
+            image_type = "final"
+
+        image_dict = self._get_images(image_type=image_type)
+        for fil in image_dict:
+            img = image_dict[fil]
+            img.zeropoints = {}
+            img.zeropoint_best = None
+        self.photometric_calibration(
+            output_path=output_dir,
+            image_dict=image_dict,
+            **kwargs)
 
     def photometric_calibration(
             self,
             output_path: str,
+            image_dict: dict,
             **kwargs
     ):
         u.mkdir_check(output_path)
-
-        if "image_type" in kwargs and kwargs["image_type"] is not None:
-            image_type = kwargs["image_type"]
-        else:
-            image_type = "coadded_trimmed"
-
-        image_dict = self._get_images(image_type=image_type)
 
         if "distance_tolerance" in kwargs and kwargs["distance_tolerance"] is not None:
             kwargs["distance_tolerance"] = u.check_quantity(kwargs["distance_tolerance"], units.arcsec, convert=True)
@@ -2609,7 +2616,6 @@ class ImagingEpoch(Epoch):
         deepest = image_dict[self.filters[0]]
         for fil in self.filters:
             img = image_dict[fil]
-            img.zeropoints = {}
             for cat_name in retrieve.photometry_catalogues:
                 if cat_name == "gaia":
                     continue
@@ -3540,10 +3546,9 @@ class FORS2StandardEpoch(StandardEpoch, ImagingEpoch):
         zp_dict[2] = {}
         for fil in self.filters:
             for img in image_dict[fil]:
-                img.zeropoints = {}
                 cats = retrieve.photometry_catalogues
                 # cats.append("eso_calib_cats")
-                for cat_name in retrieve.photometry_catalogues:
+                for cat_name in cats:
                     if cat_name == "gaia":
                         continue
                     fil_path = os.path.join(output_path, fil)
@@ -3972,11 +3977,16 @@ class HubbleImagingEpoch(ImagingEpoch):
             self.add_coadded_unprojected_image(img, key=fil)
             self.check_filter(img.filter_name)
 
-    def photometric_calibration(self, output_path: str, **kwargs):
-        for fil in self.coadded:
-            self.coadded[fil].zeropoint()
-            self.coadded[fil].estimate_depth()
-            self.deepest = self.coadded[fil]
+    def photometric_calibration(
+            self,
+            image_dict: dict,
+            output_path: str,
+            **kwargs):
+
+        for fil in image_dict:
+            image_dict[fil].zeropoint()
+            image_dict[fil].estimate_depth()
+            self.deepest = image_dict[fil]
 
     def proc_get_photometry(self, output_dir: str, **kwargs):
         self.get_photometry(output_dir, image_type="coadded", dual=False)
@@ -5182,21 +5192,22 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
     def photometric_calibration(
             self,
             output_path: str,
+            image_dict: dict,
             **kwargs
     ):
         import craftutils.wrap.esorex as esorex
 
-        if "image_type" in kwargs and kwargs["image_type"] is not None:
-            image_type = kwargs["image_type"]
-        else:
-            image_type = "final"
+        # if "image_type" in kwargs and kwargs["image_type"] is not None:
+        #     image_type = kwargs["image_type"]
+        # else:
+        #     image_type = "final"
 
         suppress_select = False
         if "suppress_select" in kwargs and kwargs["suppress_select"] is not None:
             suppress_select = kwargs.pop("suppress_select")
 
         ext_row, ext_tbl = self.estimate_atmospheric_extinction(output=output_path)
-        image_dict = self._get_images(image_type=image_type)
+        # image_dict = self._get_images(image_type=image_type)
         for fil in image_dict:
             img = image_dict[fil]
             if f"ext_{fil}" in ext_row.colnames:
@@ -5205,7 +5216,7 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
 
         # Do esorex reduction of standard images, and attempt esorex zeropoints if there are enough different
         # observations
-        images = self._get_images(image_type)
+        # image_dict = self._get_images(image_type)
         # Split up bias images by chip
         bias_sets = self.sort_by_chip(self.frames_bias)
 
@@ -5235,11 +5246,11 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
             except SystemError:
                 continue
 
-            for fil in images:
+            for fil in image_dict:
                 # Generate master flat per-filter, per-chip
                 if fil not in flat_sets:
                     continue
-                img = images[fil]
+                img = image_dict[fil]
                 if "calib_pipeline" in img.zeropoints:
                     img.zeropoints.pop("calib_pipeline")
                 flat_set = list(map(lambda b: b.path, flat_sets[fil][i]))
@@ -5333,8 +5344,8 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
         for jname in self.std_epochs:
             std_epoch = self.std_epochs[jname]
             std_epoch.photometric_calibration()
-            for fil in images:
-                img = images[fil]
+            for fil in image_dict:
+                img = image_dict[fil]
                 if fil in std_epoch.frames_reduced:
                     for std in std_epoch.frames_reduced[fil]:
                         # print(std, type(std))
@@ -5347,15 +5358,16 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
         super().photometric_calibration(
             output_path=output_path,
             suppress_select=True,
+            image_dict=image_dict,
             **kwargs
         )
 
-        for fil in images:
+        for fil in image_dict:
             if "preferred_zeropoint" in kwargs and fil in kwargs["preferred_zeropoint"]:
                 preferred = kwargs["preferred_zeropoint"][fil]
             else:
                 preferred = None
-            img = images[fil]
+            img = image_dict[fil]
 
             img.select_zeropoint(suppress_select, preferred=preferred)
 
