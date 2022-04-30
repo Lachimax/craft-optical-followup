@@ -423,7 +423,7 @@ class Filter:
         return param_dict
 
     @classmethod
-    def new_param(cls, filter_name: str, instrument_name: str = None **kwargs):
+    def new_param(cls, filter_name: str, instrument_name: str = None, **kwargs):
         path = cls._build_param_path(filter_name=filter_name, instrument_name=instrument_name)
         cls.new_yaml(filter_name=filter_name, path=path, instrument_name=instrument_name, **kwargs)
 
