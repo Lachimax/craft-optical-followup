@@ -65,6 +65,7 @@ class Instrument:
     def default_params(cls):
         default_params = {
             "name": None,
+            "formatted_name": None,
             "svo_service": {
                 "facility": None,
                 "instrument": None
@@ -409,7 +410,7 @@ class Filter:
             return Filter
 
     @classmethod
-    def new_yaml(cls, filter_name: str, instrument_name: str = None, path: str = None, quiet: bool = False,
+    def new_yaml(cls, filter_name: str, instrument_name: str = None, path: str = None,
                  **kwargs):
         param_dict = cls.default_params()
         param_dict["name"] = filter_name
@@ -418,13 +419,13 @@ class Filter:
         if instrument_name is not None:
             param_dict["data_path"] = cls._build_data_path(instrument_name=instrument_name, filter_name=filter_name)
         if path is not None:
-            p.save_params(file=path, dictionary=param_dict, quiet=quiet)
+            p.save_params(file=path, dictionary=param_dict)
         return param_dict
 
     @classmethod
-    def new_param(cls, filter_name: str, instrument_name: str = None, quiet: bool = False, **kwargs):
+    def new_param(cls, filter_name: str, instrument_name: str = None **kwargs):
         path = cls._build_param_path(filter_name=filter_name, instrument_name=instrument_name)
-        cls.new_yaml(filter_name=filter_name, path=path, instrument_name=instrument_name, quiet=quiet, **kwargs)
+        cls.new_yaml(filter_name=filter_name, path=path, instrument_name=instrument_name, **kwargs)
 
     @classmethod
     def _build_data_path(cls, instrument_name: str, filter_name: str):
