@@ -181,7 +181,7 @@ class Filter:
 
         self.data_path = None
         if "data_path" in kwargs:
-            self.data_path = kwargs["data_path"]
+            self.data_path = os.path.join(p.data_path, kwargs["data_path"])
         u.mkdir_check_nested(self.data_path)
         self.votable = None
         self.votable_path = None
@@ -417,7 +417,10 @@ class Filter:
         param_dict["instrument"] = instrument_name
         param_dict.update(kwargs)
         if instrument_name is not None:
-            param_dict["data_path"] = cls._build_data_path(instrument_name=instrument_name, filter_name=filter_name)
+            param_dict["data_path"] = cls._build_data_path(
+                instrument_name=instrument_name,
+                filter_name=filter_name
+            )
         if path is not None:
             p.save_params(file=path, dictionary=param_dict)
         return param_dict
