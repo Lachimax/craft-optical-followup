@@ -1458,7 +1458,8 @@ class ImagingImage(Image):
             mag_range_sex_upper: units.Quantity = 100. * units.mag,
             dist_tol: units.Quantity = None,
             snr_cut=3.,
-            iterate_uncertainty: bool = True
+            iterate_uncertainty: bool = True,
+            do_x_shift: bool = True
     ):
         print(f"\nEstimating photometric zeropoint for {self.name}, {type(self)}\n")
         self.signal_to_noise_measure()
@@ -1513,6 +1514,7 @@ class ImagingImage(Image):
             snr_col='SNR_SE',
             snr_cut=snr_cut,
             iterate_uncertainty=iterate_uncertainty,
+            do_x_shift=do_x_shift
         )
 
         if zp_dict is None:
@@ -4322,10 +4324,11 @@ class FORS2CoaddedImage(CoaddedImage):
             mag_range_sex_lower: units.Quantity = -100. * units.mag,
             mag_range_sex_upper: units.Quantity = 100. * units.mag,
             dist_tol: units.Quantity = 2. * units.arcsec,
-            snr_cut=3.,
-            iterate_uncertainty=True,
+            snr_cut: float =3.,
+            iterate_uncertainty: bool =True,
+            do_x_shift: bool = True
     ):
-        super().zeropoint(
+        zp = super().zeropoint(
             cat_path=cat_path,
             output_path=output_path,
             cat_name=cat_name,
@@ -4345,9 +4348,11 @@ class FORS2CoaddedImage(CoaddedImage):
             mag_range_sex_upper=mag_range_sex_upper,
             dist_tol=dist_tol,
             snr_cut=snr_cut,
-            iterate_uncertainty=iterate_uncertainty
+            iterate_uncertainty=iterate_uncertainty,
+            do_x_shift=do_x_shift
         )
         self.calibration_from_qc1()
+        return zp
 
     def calibration_from_qc1(self):
         """
