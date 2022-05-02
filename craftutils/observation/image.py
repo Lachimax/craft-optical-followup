@@ -1723,7 +1723,11 @@ class ImagingImage(Image):
             cat_name: str = 'best',
             img_name: str = 'self'
     ):
+
         zp_dict = self.get_zeropoint(cat_name=cat_name, img_name=img_name)
+
+        if zp_dict is None:
+            raise ValueError(f"The {cat_name} zeropoint on {img_name}, for {self.name}, does not appear to exist.")
 
         mag, mag_err = ph.magnitude_complete(
             flux=flux,
