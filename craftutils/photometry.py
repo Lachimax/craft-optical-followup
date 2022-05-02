@@ -759,8 +759,8 @@ def determine_zeropoint_sextractor(
 
     fitter = fitting.LinearLSQFitter()
 
-    mag_max = None
-    mag_min = None
+    mag_max = np.inf
+    mag_min = -np.inf
 
     matches = matches_clean
 
