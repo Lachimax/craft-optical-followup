@@ -3562,7 +3562,7 @@ class FORS2StandardEpoch(StandardEpoch, ImagingEpoch):
                             show=False,
                             snr_cut=snr_min,
                             star_class_tol=star_class_tolerance,
-                            iterate_uncertainty=False
+                            iterate_uncertainty=True
                         )
 
                         chip = img.extract_chip_number()
