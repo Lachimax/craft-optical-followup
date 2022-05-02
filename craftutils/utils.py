@@ -21,11 +21,13 @@ from astropy.time import Time
 
 debug_level = 0
 
+
 def pad_zeroes(n: int, length: int = 2):
     n_str = str(n)
     while len(n_str) < length:
         n_str = "0" + n_str
     return n_str
+
 
 def get_git_hash(directory: str, short: bool = False):
     """
@@ -643,7 +645,7 @@ def std_err_slope(
         n = 1
 
     x_mean = np.nanmean(x_obs)
-    s = s_regression / np.sqrt(np.nansum(x_obs - x_mean))
+    s = s_regression / np.sqrt(np.nansum(x_weights * (x_obs - x_mean)) ** 2)
     return s
 
 
@@ -665,10 +667,9 @@ def std_err_intercept(
         weights=y_weights,
         dof_correction=dof_correction
     )
-    print("s_regression:", s_regression)
+
     n = len(x_obs)
     x_mean = np.nanmean(x_obs)
-    print("x_mean:", x_mean)
 
     if x_weights is None:
         x_weights = 1
@@ -677,7 +678,6 @@ def std_err_intercept(
         n = 1
 
     s = s_regression * np.sqrt(np.nansum(x_weights * x_obs ** 2) / (n * np.nansum((x_obs - x_mean) ** 2)))
-    print("std_err_intercept:", s)
     return s
 
 
