@@ -1,5 +1,6 @@
 from typing import Union, Tuple, List
 import os
+import copy
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -198,10 +199,10 @@ class PositionUncertainty:
     @classmethod
     def default_params(cls):
         return {
-            "ra": uncertainty_dict.copy(),
-            "dec": uncertainty_dict.copy(),
-            "a": uncertainty_dict.copy(),
-            "b": uncertainty_dict.copy(),
+            "ra": copy.deepcopy(uncertainty_dict),
+            "dec": copy.deepcopy(uncertainty_dict),
+            "a": copy.deepcopy(uncertainty_dict),
+            "b": copy.deepcopy(uncertainty_dict),
             "theta": 0.0,
             "sigma": None,
             "healpix_path": None
@@ -908,8 +909,8 @@ class Object:
     def default_params(cls):
         default_params = {
             "name": None,
-            "position": position_dictionary.copy(),
-            "position_err": PositionUncertainty.default_params(),
+            "position": copy.deepcopy(position_dictionary),
+            "position_err": copy.deepcopy(PositionUncertainty.default_params()),
             "type": None,
             "photometry_args_manual":
                 {
@@ -967,6 +968,8 @@ class Object:
             return Galaxy
         elif obj_type == "frb":
             return FRB
+        elif obj_type == "star":
+            return Object
         else:
             raise ValueError(f"Didn't recognise obj_type '{obj_type}'")
 
@@ -993,6 +996,8 @@ class Object:
         obj.cat_row = row
         return obj
 
+class Star(Object):
+    pass
 
 class Galaxy(Object):
     def __init__(
@@ -1071,6 +1076,7 @@ class Galaxy(Object):
         })
         return default_params
 
+    # TODO: There do not need to be separate methods per class for this. Just pass dictionary as a **kwargs and be done with it
     @classmethod
     def from_dict(cls, dictionary: dict, field=None):
         ra, dec = p.select_coords(dictionary.pop("position"))
