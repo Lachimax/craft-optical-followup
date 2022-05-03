@@ -2697,11 +2697,13 @@ class ImagingEpoch(Epoch):
 
             img.calibrate_magnitudes(zeropoint_name="best", dual=dual)
             rows = []
+            names = []
             for obj in self.field.objects:
                 obj.load_output_file()
                 plt.close()
                 # Get nearest Source-Extractor object:
                 nearest, separation = img.find_object(obj.position, dual=dual)
+                names.append(obj.name)
                 rows.append(nearest)
                 u.debug_print(2, "ImagingImage.get_photometry(): nearest.colnames ==", nearest.colnames)
                 err = nearest[f'MAGERR_AUTO_ZP_best']
@@ -2795,10 +2797,14 @@ class ImagingEpoch(Epoch):
                     pl.latex_off()
 
             tbl = table.vstack(rows)
-            tbl.write(os.path.join(fil_output_path, f"{self.field.name}_{self.name}_{fil}.ecsv"),
-                      format="ascii.ecsv")
-            tbl.write(os.path.join(fil_output_path, f"{self.field.name}_{self.name}_{fil}.csv"),
-                      format="ascii.csv")
+            tbl.add_column(names, name="NAME")
+
+            tbl.write(
+                os.path.join(fil_output_path, f"{self.field.name}_{self.name}_{fil}.ecsv"),
+                format="ascii.ecsv")
+            tbl.write(
+                os.path.join(fil_output_path, f"{self.field.name}_{self.name}_{fil}.csv"),
+                format="ascii.csv")
 
         for fil in self.coadded_unprojected:
 
