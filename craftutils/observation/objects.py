@@ -333,9 +333,17 @@ class Object:
                         output=os.path.join(self.data_path, f"{self.name_filesys}_{instrument}_{band}_{epoch}"),
                         mask_nearby=True
                     )
-                    phot_dict["mag_sep"] = mag[0]
-                    phot_dict["mag_sep_err"] = mag_err[0]
-                    phot_dict["snr_sep"] = snr[0]
+                    if mag is None:
+                        mag = -999. * units.mag
+                        mag_err = -999. * units.mag
+                        snr = -999.
+                    else:
+                        mag = mag[0]
+                        mag_err = mag_err[0]
+                        snr = snr[0]
+                    phot_dict["mag_sep"] = mag
+                    phot_dict["mag_sep_err"] = mag_err
+                    phot_dict["snr_sep"] = snr
                     mag, mag_err, snr = img.sep_elliptical_magnitude(
                         centre=self.position,
                         a_world=self.a,  # + delta_fwhm,
@@ -345,9 +353,17 @@ class Object:
                         output=os.path.join(self.data_path, f"{self.name_filesys}_{instrument}_{band}_{epoch}"),
                         mask_nearby=False
                     )
-                    phot_dict["mag_sep_unmasked"] = mag[0]
-                    phot_dict["mag_sep_unmasked_err"] = mag_err[0]
-                    phot_dict["snr_sep_unmasked"] = snr[0]
+                    if mag is None:
+                        mag = -999. * units.mag
+                        mag_err = -999. * units.mag
+                        snr = -999.
+                    else:
+                        mag = mag[0]
+                        mag_err = mag_err[0]
+                        snr = snr[0]
+                    phot_dict["mag_sep_unmasked"] = mag
+                    phot_dict["mag_sep_unmasked_err"] = mag_err
+                    phot_dict["snr_sep_unmasked"] = snr
 
         self.update_output_file()
 
@@ -592,6 +608,7 @@ class Object:
 
         if output is not False:
             for fmt in fmts:
+                u.detect_problem_table(self.photometry_tbl)
                 self.photometry_tbl.write(output.replace(".ecsv", fmt[fmt.find("."):]), format=fmt, overwrite=True)
         return self.photometry_tbl
 
