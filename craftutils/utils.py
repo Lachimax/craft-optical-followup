@@ -648,6 +648,14 @@ def std_err_slope(
     s = s_regression / np.sqrt(np.nansum(x_weights * (x_obs - x_mean)) ** 2)
     return s
 
+def detect_problem_table(tbl: table.Table):
+    for i, row in enumerate(tbl):
+        tbl_this = tbl[:i+1]
+        try:
+            tbl_this.write(os.path.join(os.path.expanduser("~"), "test.ecsv"))
+        except NotImplementedError:
+            print("Problem row:")
+            return i, row
 
 def std_err_intercept(
         y_model: np.ndarray,
