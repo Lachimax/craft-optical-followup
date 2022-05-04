@@ -1662,7 +1662,7 @@ class ImagingImage(Image):
         )
         self.update_output_file()
 
-    def calibrate_magnitudes(self, zeropoint_name: str = "best", force: bool = False, dual: bool = False):
+    def calibrate_magnitudes(self, zeropoint_name: str = "best", force: bool = True, dual: bool = False):
         cat = self.get_source_cat(dual=dual, force=True)
         if cat is None:
             raise ValueError(f"Catalogue ({dual=}) could not be loaded.")
@@ -1671,7 +1671,7 @@ class ImagingImage(Image):
 
         zp_dict = self.get_zeropoint(cat_name=zeropoint_name)
 
-        if force or f"MAG_AUTO_ZP_{zeropoint_name}" not in cat:
+        if force or f"MAG_AUTO_ZP_{zeropoint_name}" not in cat.colnames:
             mags = self.magnitude(
                 flux=cat["FLUX_AUTO"],
                 flux_err=cat["FLUXERR_AUTO"],
@@ -1691,7 +1691,7 @@ class ImagingImage(Image):
             cat[f"MAG_AUTO_ZP_{zeropoint_name}_no_ext"] = mags[2]
             cat[f"MAGERR_AUTO_ZP_{zeropoint_name}_no_ext"] = mags[3]
 
-            if "FLUX_PSF" in cat:
+            if "FLUX_PSF" in cat.colnames:
                 mags = self.magnitude(
                     flux=cat["FLUX_PSF"],
                     flux_err=cat["FLUXERR_PSF"],
@@ -3378,6 +3378,7 @@ class ImagingImage(Image):
             box_size: int = 64,
             filter_size: int = 3,
             method: str = "sep",
+            write: str = None,
             **back_kwargs
     ):
         self.load_data()
@@ -3407,10 +3408,19 @@ class ImagingImage(Image):
                 bkg_estimator=bkg_estimator,
                 **back_kwargs
             )
-            self.data_sub_bkg[ext] = (data - bkg.background)
+            back = bkg.background
+            self.data_sub_bkg[ext] = (data - back)
 
         else:
             raise ValueError(f"Unrecognised method {method}.")
+
+        if isinstance(write, str):
+            back_file = self.copy(write)
+            back_file.load_data()
+            back_file.load_headers()
+            back_file.data[ext] = back
+            back_file.write_fits_file()
+
         return bkg
 
     def generate_segmap(
@@ -3606,9 +3616,17 @@ class ImagingImage(Image):
             output: str = None,
             mask_nearby: bool = True,
     ):
-        self.calculate_background(ext=ext)
+
+        if isinstance(output, str):
+            back_output = output + "_back.fits"
+        else:
+            back_output = None
+
+        self.calculate_background(ext=ext, write=back_output)
         self.load_wcs(ext=ext)
         self.extract_pixel_scale()
+        if not self.wcs.footprint_contains(centre):
+            return None, None, None
         x, y = self.wcs.all_world2pix(centre.ra.value, centre.dec.value, 0)
         x = u.check_iterable(x)
         y = u.check_iterable(y)
@@ -3630,6 +3648,8 @@ class ImagingImage(Image):
             )
         else:
             mask = np.zeros_like(self.data[ext].data)
+
+
 
         flux, flux_err, flag = sep.sum_ellipse(
             data=self.data_sub_bkg[ext],
@@ -3720,6 +3740,9 @@ class ImagingImage(Image):
             output=output,
             mask_nearby=mask_nearby
         )
+
+        if flux is None:
+            return None, None, None
 
         snr = flux / flux_err
         if snr < detection_threshold:
@@ -4083,7 +4106,7 @@ class PanSTARRS1Cutout(CoaddedImage):
         return False
 
     def detection_threshold(self):
-        return 7.0
+        return 10.0
 
     def extract_filter(self):
         key = self.header_keys()["filter"]
