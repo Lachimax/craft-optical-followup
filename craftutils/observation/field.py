@@ -2695,7 +2695,7 @@ class ImagingEpoch(Epoch):
             img = image_dict[fil]
             print("Getting photometry for", img)
 
-            img.calibrate_magnitudes(zeropoint_name="best", dual=dual)
+            img.calibrate_magnitudes(zeropoint_name="best", dual=dual, force=True)
             rows = []
             names = []
             for obj in self.field.objects:
