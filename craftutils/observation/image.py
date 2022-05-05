@@ -3589,6 +3589,9 @@ class ImagingImage(Image):
     def detection_threshold(self):
         return 5.
 
+    def do_subtract_background(self):
+        return True
+
     def sep_aperture_photometry(
             self, x: float, y: float,
             aperture_radius: units.Quantity = 2.0 * units.arcsec,
@@ -3615,6 +3618,7 @@ class ImagingImage(Image):
             ext: int = 0,
             output: str = None,
             mask_nearby: bool = True,
+            subtract_background: bool = True,
     ):
 
         if isinstance(output, str):
@@ -3626,7 +3630,7 @@ class ImagingImage(Image):
         self.load_wcs(ext=ext)
         self.extract_pixel_scale()
         if not self.wcs.footprint_contains(centre):
-            return None, None, None
+            return None, None, None, None
         x, y = self.wcs.all_world2pix(centre.ra.value, centre.dec.value, 0)
         x = u.check_iterable(x)
         y = u.check_iterable(y)
@@ -3649,10 +3653,21 @@ class ImagingImage(Image):
         else:
             mask = np.zeros_like(self.data[ext].data)
 
-
+        if subtract_background:
+            data = self.data_sub_bkg[ext]
+            back, _, _ = sep.sum_ellipse(
+                data=self.sep_background[ext].back(),
+                x=x, y=y,
+                a=a, b=b,
+                r=kron_radius,
+                theta=theta,
+            )
+        else:
+            data = u.sanitise_endianness(self.data[ext])
+            back = [0.]
 
         flux, flux_err, flag = sep.sum_ellipse(
-            data=self.data_sub_bkg[ext],
+            data=data,
             x=x, y=y,
             a=a, b=b,
             r=kron_radius,
@@ -3712,7 +3727,7 @@ class ImagingImage(Image):
 
             fig.savefig(output + ".png")
 
-        return flux, flux_err, flag
+        return flux, flux_err, flag, back
 
     def sep_elliptical_magnitude(
             self,
@@ -3730,7 +3745,7 @@ class ImagingImage(Image):
         if detection_threshold is None:
             detection_threshold = self.detection_threshold()
 
-        flux, flux_err, flags = self.sep_elliptical_photometry(
+        flux, flux_err, flags, back = self.sep_elliptical_photometry(
             centre=centre,
             a_world=a_world,
             b_world=b_world,
@@ -3738,11 +3753,12 @@ class ImagingImage(Image):
             kron_radius=kron_radius,
             ext=ext,
             output=output,
-            mask_nearby=mask_nearby
+            mask_nearby=mask_nearby,
+            subtract_background=self.do_subtract_background()
         )
 
         if flux is None:
-            return None, None, None
+            return None, None, None, None
 
         snr = flux / flux_err
         if snr < detection_threshold:
@@ -3755,7 +3771,7 @@ class ImagingImage(Image):
                 flux, flux_err
             )
 
-        return mag, mag_err, snr
+        return mag, mag_err, snr, back
 
     def make_galfit_version(self, output_path: str = None, ext: int = 0):
         """
@@ -4107,6 +4123,9 @@ class PanSTARRS1Cutout(CoaddedImage):
 
     def detection_threshold(self):
         return 10.0
+
+    def do_subtract_background(self):
+        return False
 
     def extract_filter(self):
         key = self.header_keys()["filter"]

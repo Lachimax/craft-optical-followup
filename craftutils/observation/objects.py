@@ -296,7 +296,7 @@ class Object:
         cls = image.CoaddedImage.select_child_class(instrument=deepest["instrument"])
         deepest_img = cls(path=deepest_path)
         deepest_fwhm = deepest_img.extract_header_item("PSF_FWHM") * units.arcsec
-        mag, mag_err, snr = deepest_img.sep_elliptical_magnitude(
+        mag, mag_err, snr, back = deepest_img.sep_elliptical_magnitude(
             centre=self.position,
             a_world=self.a,
             b_world=self.b,
@@ -307,6 +307,7 @@ class Object:
         )
         deepest_dict["mag_sep"] = mag[0]
         deepest_dict["mag_sep_err"] = mag_err[0]
+        deepest_dict["back_sep"] = back[0]
         deepest_dict["snr_sep"] = snr[0]
 
         for instrument in self.photometry:
@@ -324,7 +325,7 @@ class Object:
                         do_mask = phot_dict["do_mask"]
                     else:
                         do_mask = True
-                    mag, mag_err, snr = img.sep_elliptical_magnitude(
+                    mag, mag_err, snr, back = img.sep_elliptical_magnitude(
                         centre=self.position,
                         a_world=self.a,  # + delta_fwhm,
                         b_world=self.b,  # + delta_fwhm,
@@ -337,14 +338,17 @@ class Object:
                         mag = -999. * units.mag
                         mag_err = -999. * units.mag
                         snr = -999.
+                        back = -999.
                     else:
                         mag = mag[0]
                         mag_err = mag_err[0]
                         snr = snr[0]
+                        back = back[0]
                     phot_dict["mag_sep"] = mag
                     phot_dict["mag_sep_err"] = mag_err
                     phot_dict["snr_sep"] = snr
-                    mag, mag_err, snr = img.sep_elliptical_magnitude(
+                    phot_dict["back"] = back
+                    mag, mag_err, snr, back = img.sep_elliptical_magnitude(
                         centre=self.position,
                         a_world=self.a,  # + delta_fwhm,
                         b_world=self.b,  # + delta_fwhm,
@@ -511,11 +515,12 @@ class Object:
 
         with quantity_support():
 
+            no_plot = (-999 * units.mag == self.photometry_tbl["mag_sep"])
             plot_limit = (-999 * units.mag == self.photometry_tbl["mag_sep_err"])
-            plot_mag = np.invert(plot_limit)
+            plot_mag = np.invert(plot_limit) ^ no_plot
 
-            print(plot_limit)
-            print(plot_mag)
+            # print(plot_limit)
+            # print(plot_mag)
             print(self.photometry_tbl["mag_sep"][plot_mag])
 
             ax.errorbar(
