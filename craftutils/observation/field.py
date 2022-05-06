@@ -4208,7 +4208,7 @@ class PanSTARRS1ImagingEpoch(ImagingEpoch):
         deepest = None
         for fil in self.coadded:
             img = self.coadded[fil]
-            img.zeropoint(
+            zp = img.zeropoint(
                 cat_path=self.field.get_path("cat_csv_panstarrs1"),
                 output_path=os.path.join(output_path, img.name),
                 cat_name="PanSTARRS1",
@@ -4218,7 +4218,7 @@ class PanSTARRS1ImagingEpoch(ImagingEpoch):
                 star_class_tol=star_class_tolerance,
                 image_name="PanSTARRS Cutout",
             )
-            img.select_zeropoint(True)
+            img.zeropoint_best = zp
             img.estimate_depth(zeropoint_name="panstarrs1")  # , do_magnitude_calibration=False)
 
             if deepest is not None:

@@ -825,17 +825,21 @@ class ImagingImage(Image):
             self.load_output_file()
 
     def source_extraction(
-            self, configuration_file: str,
+            self,
+            configuration_file: str,
             output_dir: str,
             parameters_file: str = None,
             catalog_name: str = None,
             template: 'ImagingImage' = None,
-            **configs) -> str:
+            **configs
+    ) -> str:
         if template is not None:
             template = template.path
             self.dual_mode_template = template
         self.extract_gain()
         u.debug_print(2, f"ImagingImage.source_extraction(): template ==", template)
+        if not self.do_subtract_background():
+            configs["BACK_TYPE"] = "MANUAL"
         output_path = se.source_extractor(
             image_path=self.path,
             output_dir=output_dir,
@@ -1863,16 +1867,24 @@ class ImagingImage(Image):
             # i = self.find_object_index(index, dual=False)
             self.source_cat[index - 1][colname] = star[colname]
 
-    def register(self, target: 'ImagingImage', output_path: str, ext: int = 0, trim: bool = True):
+    def register(
+            self,
+            target: 'ImagingImage',
+            output_path: str,
+            ext: int = 0,
+            ext_target: int = 0,
+            trim: bool = True,
+            **kwargs
+    ):
         self.load_data()
         target.load_data()
 
         data_source = self.data[ext]
         data_source = u.sanitise_endianness(data_source)
-        data_target = target.data[ext]
+        data_target = target.data[ext_target]
         data_target = u.sanitise_endianness(data_target)
         u.debug_print(0, f"Attempting registration of {self.name} (Chip {self.extract_chip_number()}) against {target.name} (Chip {target.extract_chip_number()})")
-        registered, footprint = register(data_source, data_target)
+        registered, footprint = register(data_source, data_target, **kwargs)
 
         self.copy(output_path)
         with fits.open(output_path, mode="update") as new_file:
@@ -1910,7 +1922,13 @@ class ImagingImage(Image):
         self.close()
         return left, right, bottom, top
 
-    def correct_astrometry(self, output_dir: str = None, tweak: bool = True, time_limit: int = None, **kwargs):
+    def correct_astrometry(
+            self,
+            output_dir: str = None,
+            tweak: bool = True,
+            time_limit: int = None,
+            *flags,
+            **params):
         """
         Uses astrometry.net to solve the astrometry of the image. Solved image is output as a separate file.
         :param output_dir: Directory in which to output
@@ -1921,15 +1939,18 @@ class ImagingImage(Image):
         if output_dir is not None:
             u.mkdir_check(output_dir)
         base_filename = f"{self.name}_astrometry"
+        if "search_radius" not in params:
+            params["search_radius"] = 4.0 * units.arcmin
         success = solve_field(
             image_files=self.path,
             base_filename=base_filename,
             overwrite=True,
             tweak=tweak,
             guess_scale=True,
-            search_radius=4.0 * units.arcmin,
             centre=self.pointing,
-            time_limit=time_limit
+            time_limit=time_limit,
+            *flags,
+            **params
         )
         if not success:
             return None
@@ -2998,11 +3019,11 @@ class ImagingImage(Image):
             fig = plt.figure(figsize=(12, 12), dpi=1000)
         ax, fig = self.wcs_axes(fig=fig)
         self.load_data()
-        data = self.data[ext]
+        data = u.dequantify(self.data[ext])
         ax.imshow(
-            u.dequantify(data), **kwargs,
+            data, **kwargs,
             norm=ImageNormalize(
-                u.dequantify(data),
+                data,
                 interval=MinMaxInterval(),
                 stretch=SqrtStretch(),
                 vmin=np.median(data),
@@ -4039,12 +4060,20 @@ class CoaddedImage(ImagingImage):
         trimmed = self.trim(left=left, right=right, bottom=bottom, top=top, output_path=output_path)
         return trimmed
 
-    def register(self, target: 'ImagingImage', output_path: str, ext: int = 0, trim: bool = True):
+    def register(
+            self,
+            target: 'ImagingImage',
+            output_path: str,
+            ext: int = 0,
+            trim: bool = True,
+            **kwargs
+    ):
         new_img = super().register(
             target=target,
             output_path=output_path,
             ext=ext,
-            trim=trim
+            trim=trim,
+            **kwargs
         )
         import reproject as rp
         area = new_img.copy(new_img.path.replace(".fits", "_area.fits"))
@@ -4132,7 +4161,7 @@ class PanSTARRS1Cutout(CoaddedImage):
         return False
 
     def detection_threshold(self):
-        return 10.0
+        return 5.0
 
     def do_subtract_background(self):
         return False
