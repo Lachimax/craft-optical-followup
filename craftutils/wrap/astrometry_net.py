@@ -15,9 +15,16 @@ from craftutils.utils import system_command, debug_print, check_quantity
 #         cfg_file = cfg.readlines()
 #     cfg_file.index()
 
-def build_astrometry_index(input_fits_catalog: str, unique_id: int, output_index: str = None,
-                           scale_number: int = 0, sort_column: str = 'mag',
-                           scan_through_catalog: bool = True, *flags, **params):
+def build_astrometry_index(
+        input_fits_catalog: str,
+        unique_id: int,
+        output_index: str = None,
+        scale_number: int = 0,
+        sort_column: str = 'mag',
+        scan_through_catalog: bool = True,
+        *flags,
+        **params
+):
     print(input_fits_catalog)
     params["i"] = input_fits_catalog
     params["I"] = unique_id
@@ -80,7 +87,6 @@ def solve_field(
         flags.append("T")
     if not verify:
         flags.append("y")
-
 
     system_command("solve-field", image_files, False, True, False, *flags, **params)
     if isinstance(image_files, list):
