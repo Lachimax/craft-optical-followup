@@ -48,7 +48,7 @@ import craftutils.observation.instrument as inst
 import craftutils.wrap.source_extractor as se
 import craftutils.wrap.psfex as psfex
 from craftutils.wrap.astrometry_net import solve_field
-from craftutils.retrieve import cat_columns
+from craftutils.retrieve import cat_columns, cat_instruments
 
 quantity_support()
 
@@ -1370,25 +1370,23 @@ class ImagingImage(Image):
         if not self.zeropoints:
             return None, None
 
-        ranking = self.rank_photometric_cat()
+        ranking = self.rank_photometric_cat(cats=self.zeropoints)
         if preferred is not None:
             ranking.insert(0, preferred)
+
         zps = []
         for i, cat in enumerate(ranking):
             if cat in self.zeropoints:
+                zps_cat = []
                 for img_name in self.zeropoints[cat]:
-                    if img_name == "self":
-                        j = 2
-                    else:
-                        j = 1
                     zp = self.zeropoints[cat][img_name]
-                    zp["selection_index"] = 1 / zp['zeropoint_img_err']
-                    # ((i + 1) * j * zp['zeropoint_img_err'])
-                    zps.append(zp)
+                    zps_cat.append(zp)
+                zps_cat.sort(key=lambda z: z["zeropoint_img_err"])
+                zps.extend(zps_cat)
 
         zp_tbl = table.QTable(zps)
-        if len(zp_tbl) > 0 and "selection_index" in zp_tbl.colnames:
-            zp_tbl.sort(["selection_index"], reverse=True)
+        if len(zp_tbl) > 0:
+            # zp_tbl.sort("zeropoint_img_err")
             zp_tbl.write(os.path.join(self.data_path, f"{self.name}_zeropoints.ecsv"), format="ascii.ecsv")
             #        zp_tbl.write(os.path.join(self.data_path, f"{self.name}_zeropoints.csv"), format="ascii.csv")
             best_row = zp_tbl[0]
@@ -1410,7 +1408,7 @@ class ImagingImage(Image):
                     for i, row in enumerate(zp_tbl):
                         pick_str = f"{row['catalogue']} {row['zeropoint_img']} +/- {row['zeropoint_img_err']}, " \
                                    f"{row['n_matches']} stars, " \
-                                   f"from {row['image_name']} (selection index {row['selection_index']})"
+                                   f"from {row['image_name']}"
                         zps[pick_str] = self.zeropoints[row['catalogue']][row['image_name']]
                     _, zeropoint_best = u.select_option(message="Select best zeropoint:", options=zps)
                     best_cat = zeropoint_best["catalogue"]
@@ -3956,22 +3954,34 @@ class ImagingImage(Image):
     def count_exposures(cls, image_paths: list):
         return len(image_paths)
 
-    @classmethod
-    def rank_photometric_cat(cls):
+    def rank_photometric_cat(self, cats: list):
         """
         Gives the ranking of photometric catalogues available for calibration, ranked by similarity to filter set.
         :return:
         """
 
-        return [
-            "instrument_archive",
-            "calib_pipeline",
-            "des",
-            "delve",
-            "sdss",
-            "panstarrs1",
-            "skymapper"
-        ]
+        self.instrument.gather_filters()
+        self._filter_from_name()
+
+        differences = {}
+
+        for cat in cats:
+            if cat in cat_instruments:
+                other_instrument_name = cat_instruments[cat]
+                other_instrument = inst.Instrument.from_params(other_instrument_name)
+                other_instrument.gather_filters()
+                if self.filter.band_name in other_instrument.bands:
+                    other_filter = other_instrument.bands[self.filter.band_name]
+                    differences[cat] = self.filter.compare_wavelength_range(
+                            other=other_filter
+                        )
+            elif cat == "instrument_archive":
+                differences[cat] = 0 * units.angstrom
+            elif cat == "calib_pipeline":
+                differences[cat] = 0.1 * units.angstrom
+
+        differences = dict(sorted(differences.items(), key=lambda x: x[1]))
+        return list(differences.keys())
 
 
 class CoaddedImage(ImagingImage):
@@ -4308,19 +4318,6 @@ class FORS2Image(ESOImagingImage):
                 self.other_chip = outputs["other_chip"]
         return outputs
 
-    @classmethod
-    def rank_photometric_cat(cls):
-        """
-        Gives the ranking of photometric catalogues available for calibration, ranked by similarity to filter set.
-        :return:
-        """
-
-        return [
-            "instrument_archive",
-            "des",
-            "panstarrs1",
-            "sdss",
-            "skymapper"]
 
     @classmethod
     def header_keys(cls) -> dict:
@@ -4532,6 +4529,9 @@ class HubbleImage(CoaddedImage):
         else:
             thresh = 5.
         return thresh
+
+    def do_subtract_background(self):
+        return False
 
     @classmethod
     def header_keys(cls):
