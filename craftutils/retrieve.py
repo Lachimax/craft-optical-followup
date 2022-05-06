@@ -48,6 +48,7 @@ def cat_columns(cat, f: str = None):
             "sdss": "r",
             "skymapper": "r",
             "panstarrs1": "r",
+            "source-extractor": "r",
             "gaia": "g"
         }[cat]
     if f is not None:
@@ -107,6 +108,16 @@ def cat_columns(cat, f: str = None):
             'ra': f"raStack",
             'dec': f"decStack",
             'class_star': f"psfLikelihood"}
+    elif cat == 'source-extractor':
+        return {
+            'mag_auto': "MAG_AUTO",
+            'mag_auto_err': "MAGERR_AUTO",
+            'mag_psf': "MAG_PSF",
+            'mag_psf_err': "MAGERR_PSF",
+            'ra': "RA",
+            'dec': "DEC",
+            'class_star': "CLASS_STAR"
+        }
     elif cat == 'sdss':
         f = f.lower()
         return {
