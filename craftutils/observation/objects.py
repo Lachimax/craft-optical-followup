@@ -347,7 +347,7 @@ class Object:
                     phot_dict["mag_sep"] = mag
                     phot_dict["mag_sep_err"] = mag_err
                     phot_dict["snr_sep"] = snr
-                    phot_dict["back"] = back
+                    phot_dict["back_sep"] = back
                     mag, mag_err, snr, back = img.sep_elliptical_magnitude(
                         centre=self.position,
                         a_world=self.a,  # + delta_fwhm,
@@ -517,7 +517,7 @@ class Object:
 
             no_plot = (-999 * units.mag == self.photometry_tbl["mag_sep"])
             plot_limit = (-999 * units.mag == self.photometry_tbl["mag_sep_err"])
-            plot_mag = np.invert(plot_limit) ^ no_plot
+            plot_mag = np.invert(plot_limit + no_plot)
 
             # print(plot_limit)
             # print(plot_mag)
