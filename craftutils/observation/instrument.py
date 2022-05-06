@@ -14,6 +14,7 @@ from craftutils.retrieve import save_svo_filter, save_fors2_calib
 active_instruments = {}
 active_filters = {}
 
+
 class Instrument:
     def __init__(self, **kwargs):
         self.name = None
@@ -32,6 +33,7 @@ class Instrument:
                 self.svo_instrument = svo_dict["instrument"]
 
         self.filters = {}
+        self.bands = {}
         self.gather_filters()
 
         active_instruments[self.name] = self
@@ -46,6 +48,8 @@ class Instrument:
             fil = Filter.from_params(filter_name=file[:-5], instrument_name=self.name)
             fil.instrument = self
             self.filters[fil.name] = fil
+            if fil.band_name is not None:
+                self.bands[fil.band_name] = fil
             if fil.votable_path is None or not os.path.isfile(fil.votable_path):
                 fil.retrieve_from_svo()
 
@@ -167,7 +171,7 @@ class Filter:
         if "formatted_name" in kwargs:
             self.formatted_name = kwargs["formatted_name"]
         self.band_name = None
-        if "band_name" in kwargs:
+        if "band_name" in kwargs and kwargs["band_name"] is not None:
             self.band_name = kwargs["band_name"]
         elif self.name is not None:
             self.band_name = self.name[0]
@@ -243,7 +247,23 @@ class Filter:
             x=self_wavelength,
             xp=other_wavelength,
             fp=other_transmission
-        )
+        ) * max(self_transmission) / max(other_transmission)
+
+        difference = np.sum(np.abs(other_transmission - self_transmission))
+        return difference
+
+    def compare_wavelength_range(self, other: 'Filter'):
+        tbl_self, tbl_other = self.find_comparable_table(other)
+        self_wavelength = tbl_self["Wavelength"]
+        other_wavelength = tbl_other["Wavelength"]
+        self_transmission = tbl_self["Transmission"]
+        other_transmission = tbl_other["Transmission"]
+
+        difference = np.abs(
+            min(self_wavelength[self_transmission > 0]) - min(other_wavelength[other_transmission > 0])) + np.abs(
+            max(self_wavelength[self_transmission > 0]) - max(other_wavelength[other_transmission > 0]))
+
+        return difference
 
     def find_comparable_table(self, other: 'Filter'):
         self.load_transmission_tables()
@@ -272,10 +292,9 @@ class Filter:
             if tbl_self is not None:
                 for j, tbl_other in enumerate(tbls_other):
                     if tbl_other is not None:
-                        return tbls_self, tbl_other
+                        return tbl_self, tbl_other
 
         return None, None
-
 
     def nice_name(self):
         if self.formatted_name is not None:
