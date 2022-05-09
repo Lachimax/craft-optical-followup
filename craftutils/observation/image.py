@@ -2594,14 +2594,22 @@ class ImagingImage(Image):
             ext: int = 0,
             output_path: str = None,
             include_footprint: bool = False,
-            write_footprint: bool = True
+            write_footprint: bool = True,
+            method: str = 'exact'
     ):
         import reproject as rp
         if output_path is None:
             output_path = self.path.replace(".fits", "_reprojected.fits")
         other_image.load_headers(force=True)
         print(f"Reprojecting {self.filename} into the pixel space of {other_image.filename}")
-        reprojected, footprint = rp.reproject_exact(self.path, other_image.headers[ext], parallel=True)
+        if method == 'exact':
+            reprojected, footprint = rp.reproject_exact(self.path, other_image.headers[ext], parallel=True)
+        elif method == 'adaptive':
+            reprojected, footprint = rp.reproject_adaptive(self.path, other_image.headers[ext])
+        elif method in ['interp', 'interpolate', 'interpolation']:
+            reprojected, footprint = rp.reproject_interp(self.path, other_image.headers[ext])
+        else:
+            raise ValueError(f"Reprojection method {method} not recognised.")
         reprojected *= other_image.extract_unit(astropy=True)
         footprint *= units.pix
 
@@ -3724,11 +3732,14 @@ class ImagingImage(Image):
             #     ax.add_artist(e)
             #     ax.text(objects["x"][i], objects["y"][i], objects["theta"][i] * 180. / np.pi)
 
+            theta_plot = (theta[0] * units.rad).to(units.deg)
+
             e = Ellipse(
                 xy=(x[0], y[0]),
                 width=2 * kron_radius[0] * a[0],
                 height=2 * kron_radius[0] * b[0],
-                angle=theta[0] * 180. / np.pi)
+                angle=theta_plot
+            )
             e.set_facecolor('none')
             e.set_edgecolor('white')
             ax.add_artist(e)
@@ -3737,7 +3748,8 @@ class ImagingImage(Image):
                 xy=(x[0], y[0]),
                 width=2 * a[0],
                 height=2 * b[0],
-                angle=theta[0] * 180. / np.pi)
+                angle=theta_plot
+            )
             e.set_facecolor('none')
             e.set_edgecolor('white')
             ax.add_artist(e)
@@ -4041,18 +4053,19 @@ class CoaddedImage(ImagingImage):
             output_path = trimmed.path
         new_area_path = output_path.replace(".fits", "_area.fits")
 
-        ff.trim_file(
-            path=self.area_file,
-            left=left, right=right, bottom=bottom, top=top,
-            new_path=new_area_path
-        )
-        trimmed.area_file = new_area_path
-        trimmed.add_log(
-            action=f"Trimmed area file to margins left={left}, right={right}, bottom={bottom}, top={top}",
-            method=self.trim,
-            output_path=new_area_path
-        )
-        trimmed.update_output_file()
+        if os.path.isfile(self.area_file):
+            ff.trim_file(
+                path=self.area_file,
+                left=left, right=right, bottom=bottom, top=top,
+                new_path=new_area_path
+            )
+            trimmed.area_file = new_area_path
+            trimmed.add_log(
+                action=f"Trimmed area file to margins left={left}, right={right}, bottom={bottom}, top={top}",
+                method=self.trim,
+                output_path=new_area_path
+            )
+            trimmed.update_output_file()
         return trimmed
 
     def trim_from_area(self, output_path: str = None):
