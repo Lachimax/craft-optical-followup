@@ -1971,7 +1971,8 @@ class ImagingEpoch(Epoch):
                 "keywords": {
                     "tweak": True,
                     "upper_only": False,
-                    "method": "individual"
+                    "method": "individual",
+                    "skip_indices": False
                 }
             },
             "frame_diagnostics": {
@@ -2133,7 +2134,15 @@ class ImagingEpoch(Epoch):
 
     def proc_correct_astrometry_frames(self, output_dir: str, **kwargs):
 
-        self.generate_astrometry_indices()
+        skip = False
+        if "skip_indices" in kwargs:
+            skip = kwargs.pop("skip_indices")
+
+        print(kwargs)
+        print("skip ==", skip)
+
+        if not skip:
+            self.generate_astrometry_indices()
 
         self.frames_astrometry = {}
 
@@ -4963,7 +4972,7 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
         self.frames_astrometry = {}
         method = "individual"
         if "method" in kwargs:
-            method = kwargs["method"]
+            method = kwargs.pop("method")
         upper_only = False
         if "upper_only" in kwargs:
             upper_only = kwargs.pop("upper_only")
