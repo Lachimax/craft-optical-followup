@@ -1927,8 +1927,10 @@ class ImagingImage(Image):
             output_dir: str = None,
             tweak: bool = True,
             time_limit: int = None,
-            *flags,
-            **params):
+            am_flags: list = (),
+            am_params: dict = None,
+            **kwargs
+    ):
         """
         Uses astrometry.net to solve the astrometry of the image. Solved image is output as a separate file.
         :param output_dir: Directory in which to output
@@ -1939,8 +1941,8 @@ class ImagingImage(Image):
         if output_dir is not None:
             u.mkdir_check(output_dir)
         base_filename = f"{self.name}_astrometry"
-        if "search_radius" not in params:
-            params["search_radius"] = 4.0 * units.arcmin
+        if "search_radius" not in kwargs:
+            kwargs["search_radius"] = 4.0 * units.arcmin
         success = solve_field(
             image_files=self.path,
             base_filename=base_filename,
@@ -1949,8 +1951,9 @@ class ImagingImage(Image):
             guess_scale=True,
             centre=self.pointing,
             time_limit=time_limit,
-            *flags,
-            **params
+            am_flags=am_flags,
+            am_params=am_params,
+            **kwargs
         )
         if not success:
             return None

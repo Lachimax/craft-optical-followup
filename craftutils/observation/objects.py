@@ -519,8 +519,9 @@ class Object:
             plot_limit = (-999 * units.mag == self.photometry_tbl["mag_sep_err"])
             plot_mag = np.invert(plot_limit + no_plot)
 
-            # print(plot_limit)
-            # print(plot_mag)
+            print(no_plot)
+            print(plot_limit)
+            print(plot_mag)
             print(self.photometry_tbl["mag_sep"][plot_mag])
 
             ax.errorbar(

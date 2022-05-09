@@ -2151,7 +2151,7 @@ class ImagingEpoch(Epoch):
                 frames=self.frames_normalised,
                 **kwargs)
 
-    def correct_astrometry_frames(self, output_dir: str, frames: dict = None, **kwargs):
+    def correct_astrometry_frames(self, output_dir: str, frames: dict = None, am_params: dict = {}, **kwargs):
         self.frames_astrometry = {}
 
         if frames is None:
@@ -2168,6 +2168,7 @@ class ImagingEpoch(Epoch):
                 for frame in frames_by_chip[chip]:
                     new_frame = frame.correct_astrometry(
                         output_dir=astrometry_fil_path,
+                        am_params=am_params,
                         **kwargs
                     )
 
