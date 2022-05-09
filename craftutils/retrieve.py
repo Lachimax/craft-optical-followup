@@ -14,9 +14,8 @@ import astropy.units as units
 from astropy.coordinates import SkyCoord
 from astropy.table import Table, QTable
 from astropy.time import Time
-
 from astroquery import log
-log.setLevel("TRACE")
+# log.setLevel("TRACE")
 
 try:
     import astroquery.gemini as gemini
@@ -35,8 +34,9 @@ try:
 except ModuleNotFoundError:
     print("Pyvo not installed. Functions using pyvo will not be available.")
 
-from craftutils import params as p
-from craftutils import utils as u
+import craftutils.params as p
+import craftutils.utils as u
+# import craftutils.observation.instrument as inst
 
 
 def cat_columns(cat, f: str = None):
@@ -48,6 +48,7 @@ def cat_columns(cat, f: str = None):
             "sdss": "r",
             "skymapper": "r",
             "panstarrs1": "r",
+            "source-extractor": "r",
             "gaia": "g"
         }[cat]
     if f is not None:
@@ -107,6 +108,16 @@ def cat_columns(cat, f: str = None):
             'ra': f"raStack",
             'dec': f"decStack",
             'class_star': f"psfLikelihood"}
+    elif cat == 'source-extractor':
+        return {
+            'mag_auto': "MAG_AUTO",
+            'mag_auto_err': "MAGERR_AUTO",
+            'mag_psf': "MAG_PSF",
+            'mag_psf_err': "MAGERR_PSF",
+            'ra': "RA",
+            'dec': "DEC",
+            'class_star': "CLASS_STAR"
+        }
     elif cat == 'sdss':
         f = f.lower()
         return {
@@ -126,17 +137,13 @@ def cat_columns(cat, f: str = None):
     else:
         raise ValueError(f"Catalogue {cat} not recognised.")
 
-
-svo_facility_names = {
-    "vlt-fors2": "Paranal",
-    "wise": "WISE",
+cat_instruments = {
+    "des": "decam",
+    "delve": "decam",
+    "panstarrss1": "panstarrs1",
+    "sdss": "sdss",
+    "skymapper": "skymapper"
 }
-
-svo_instrument_names = {
-    "wise": "WISE",
-    "vlt-fors2": "FORS1"
-}
-
 
 def svo_filter_id(facility_name: str, instrument_name: str, filter_name: str) -> str:
     return f"{facility_name}/{instrument_name}.{filter_name}"
@@ -730,8 +737,15 @@ def save_2mass_photometry(ra: float, dec: float, output: str, radius: units.Quan
         radius=radius
     )
 
-
 def save_ztf_photometry(ra: float, dec: float, output: str, radius: units.Quantity = 0.2 * units.deg):
+    """
+    NOTE: This does not currently work, due to a problem on the astroquery end.
+    :param ra:
+    :param dec:
+    :param output:
+    :param radius:
+    :return:
+    """
     return save_irsa_photometry(
         catalogue="ztf_objects_dr10",
         ra=ra,

@@ -139,6 +139,8 @@ def wcs_transfer(header_template: Union[dict, fits.Header], header_update: dict)
     """
     update = {}
     for key in wcs_keys:
+        if key in header_update and key not in header_template:
+            header_update.pop(key)
         if key in header_template:
             update[key] = header_template[key]
 

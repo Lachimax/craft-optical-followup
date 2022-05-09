@@ -48,7 +48,7 @@ import craftutils.observation.instrument as inst
 import craftutils.wrap.source_extractor as se
 import craftutils.wrap.psfex as psfex
 from craftutils.wrap.astrometry_net import solve_field
-from craftutils.retrieve import cat_columns
+from craftutils.retrieve import cat_columns, cat_instruments
 
 quantity_support()
 
@@ -825,17 +825,21 @@ class ImagingImage(Image):
             self.load_output_file()
 
     def source_extraction(
-            self, configuration_file: str,
+            self,
+            configuration_file: str,
             output_dir: str,
             parameters_file: str = None,
             catalog_name: str = None,
             template: 'ImagingImage' = None,
-            **configs) -> str:
+            **configs
+    ) -> str:
         if template is not None:
             template = template.path
             self.dual_mode_template = template
         self.extract_gain()
         u.debug_print(2, f"ImagingImage.source_extraction(): template ==", template)
+        if not self.do_subtract_background():
+            configs["BACK_TYPE"] = "MANUAL"
         output_path = se.source_extractor(
             image_path=self.path,
             output_dir=output_dir,
@@ -1370,25 +1374,23 @@ class ImagingImage(Image):
         if not self.zeropoints:
             return None, None
 
-        ranking = self.rank_photometric_cat()
+        ranking = self.rank_photometric_cat(cats=self.zeropoints)
         if preferred is not None:
             ranking.insert(0, preferred)
+
         zps = []
         for i, cat in enumerate(ranking):
             if cat in self.zeropoints:
+                zps_cat = []
                 for img_name in self.zeropoints[cat]:
-                    if img_name == "self":
-                        j = 2
-                    else:
-                        j = 1
                     zp = self.zeropoints[cat][img_name]
-                    zp["selection_index"] = 1 / zp['zeropoint_img_err']
-                    # ((i + 1) * j * zp['zeropoint_img_err'])
-                    zps.append(zp)
+                    zps_cat.append(zp)
+                zps_cat.sort(key=lambda z: z["zeropoint_img_err"])
+                zps.extend(zps_cat)
 
         zp_tbl = table.QTable(zps)
-        if len(zp_tbl) > 0 and "selection_index" in zp_tbl.colnames:
-            zp_tbl.sort(["selection_index"], reverse=True)
+        if len(zp_tbl) > 0:
+            # zp_tbl.sort("zeropoint_img_err")
             zp_tbl.write(os.path.join(self.data_path, f"{self.name}_zeropoints.ecsv"), format="ascii.ecsv")
             #        zp_tbl.write(os.path.join(self.data_path, f"{self.name}_zeropoints.csv"), format="ascii.csv")
             best_row = zp_tbl[0]
@@ -1410,7 +1412,7 @@ class ImagingImage(Image):
                     for i, row in enumerate(zp_tbl):
                         pick_str = f"{row['catalogue']} {row['zeropoint_img']} +/- {row['zeropoint_img_err']}, " \
                                    f"{row['n_matches']} stars, " \
-                                   f"from {row['image_name']} (selection index {row['selection_index']})"
+                                   f"from {row['image_name']}"
                         zps[pick_str] = self.zeropoints[row['catalogue']][row['image_name']]
                     _, zeropoint_best = u.select_option(message="Select best zeropoint:", options=zps)
                     best_cat = zeropoint_best["catalogue"]
@@ -1458,7 +1460,8 @@ class ImagingImage(Image):
             mag_range_sex_upper: units.Quantity = 100. * units.mag,
             dist_tol: units.Quantity = None,
             snr_cut=3.,
-            iterate_uncertainty: bool = True
+            iterate_uncertainty: bool = True,
+            do_x_shift: bool = True
     ):
         print(f"\nEstimating photometric zeropoint for {self.name}, {type(self)}\n")
         self.signal_to_noise_measure()
@@ -1513,12 +1516,13 @@ class ImagingImage(Image):
             snr_col='SNR_SE',
             snr_cut=snr_cut,
             iterate_uncertainty=iterate_uncertainty,
+            do_x_shift=do_x_shift
         )
 
         if zp_dict is None:
             return None
 
-        zp_dict.update(self.add_zeropoint(
+        zp_dict = self.add_zeropoint(
             # catalogue=cat_name,
             # zeropoint=zp_dict["zeropoint"],
             # zeropoint_err=zp_dict["zeropoint_err"],
@@ -1529,7 +1533,7 @@ class ImagingImage(Image):
             # n_matches=zp_dict["n_matches"],
             image_name="self",
             **zp_dict
-        ))
+        )
         self.zeropoint_output_paths[cat_name.lower()] = output_path
         self.add_log(
             action=f"Calculated zeropoint as {zp_dict['zeropoint_img']} +/- {zp_dict['zeropoint_img_err']}, from {zp_dict['catalogue']}.",
@@ -1537,7 +1541,7 @@ class ImagingImage(Image):
             output_path=output_path
         )
         self.update_output_file()
-        return self.zeropoints[cat_name.lower()]
+        return zp_dict
 
     def get_zeropoint(
             self,
@@ -1584,7 +1588,9 @@ class ImagingImage(Image):
             "n_matches": n_matches,
             "image_name": image_name
         })
-        print("Adding zeropoint to image:")
+        print(f"Adding zeropoint to image {self.path}"
+              f"\nfrom {catalogue} "
+              f"\non {image_name}:")
         print(f"\t {zeropoint=} +/- {zeropoint_err}")
         print(f"\t {airmass=} +/- {airmass_err}")
         print(f"\t {extinction=} +/- {extinction_err}")
@@ -1603,6 +1609,7 @@ class ImagingImage(Image):
         if cat_key not in self.zeropoints:
             self.zeropoints[cat_key] = {}
         self.zeropoints[cat_key][img_key] = zp_dict
+        self.update_output_file()
         return zp_dict
 
     def add_zeropoint_from_other(self, other: 'ImagingImage'):
@@ -1635,6 +1642,7 @@ class ImagingImage(Image):
                 self.add_zeropoint(
                     **zeropoint
                 )
+        self.update_output_file()
 
     def aperture_areas(self):
         self.load_source_cat()
@@ -1656,7 +1664,7 @@ class ImagingImage(Image):
         )
         self.update_output_file()
 
-    def calibrate_magnitudes(self, zeropoint_name: str = "best", force: bool = False, dual: bool = False):
+    def calibrate_magnitudes(self, zeropoint_name: str = "best", force: bool = True, dual: bool = False):
         cat = self.get_source_cat(dual=dual, force=True)
         if cat is None:
             raise ValueError(f"Catalogue ({dual=}) could not be loaded.")
@@ -1665,7 +1673,7 @@ class ImagingImage(Image):
 
         zp_dict = self.get_zeropoint(cat_name=zeropoint_name)
 
-        if force or f"MAG_AUTO_ZP_{zeropoint_name}" not in cat:
+        if force or f"MAG_AUTO_ZP_{zeropoint_name}" not in cat.colnames:
             mags = self.magnitude(
                 flux=cat["FLUX_AUTO"],
                 flux_err=cat["FLUXERR_AUTO"],
@@ -1685,7 +1693,7 @@ class ImagingImage(Image):
             cat[f"MAG_AUTO_ZP_{zeropoint_name}_no_ext"] = mags[2]
             cat[f"MAGERR_AUTO_ZP_{zeropoint_name}_no_ext"] = mags[3]
 
-            if "FLUX_PSF" in cat:
+            if "FLUX_PSF" in cat.colnames:
                 mags = self.magnitude(
                     flux=cat["FLUX_PSF"],
                     flux_err=cat["FLUXERR_PSF"],
@@ -1717,7 +1725,11 @@ class ImagingImage(Image):
             cat_name: str = 'best',
             img_name: str = 'self'
     ):
+
         zp_dict = self.get_zeropoint(cat_name=cat_name, img_name=img_name)
+
+        if zp_dict is None:
+            raise ValueError(f"The {cat_name} zeropoint on {img_name}, for {self.name}, does not appear to exist.")
 
         mag, mag_err = ph.magnitude_complete(
             flux=flux,
@@ -1855,16 +1867,24 @@ class ImagingImage(Image):
             # i = self.find_object_index(index, dual=False)
             self.source_cat[index - 1][colname] = star[colname]
 
-    def register(self, target: 'ImagingImage', output_path: str, ext: int = 0, trim: bool = True):
+    def register(
+            self,
+            target: 'ImagingImage',
+            output_path: str,
+            ext: int = 0,
+            ext_target: int = 0,
+            trim: bool = True,
+            **kwargs
+    ):
         self.load_data()
         target.load_data()
 
         data_source = self.data[ext]
         data_source = u.sanitise_endianness(data_source)
-        data_target = target.data[ext]
+        data_target = target.data[ext_target]
         data_target = u.sanitise_endianness(data_target)
-        u.debug_print(0, f"Attempting registration of {self.name} against {target.name}")
-        registered, footprint = register(data_source, data_target)
+        u.debug_print(0, f"Attempting registration of {self.name} (Chip {self.extract_chip_number()}) against {target.name} (Chip {target.extract_chip_number()})")
+        registered, footprint = register(data_source, data_target, **kwargs)
 
         self.copy(output_path)
         with fits.open(output_path, mode="update") as new_file:
@@ -1902,7 +1922,13 @@ class ImagingImage(Image):
         self.close()
         return left, right, bottom, top
 
-    def correct_astrometry(self, output_dir: str = None, tweak: bool = True, time_limit: int = None, **kwargs):
+    def correct_astrometry(
+            self,
+            output_dir: str = None,
+            tweak: bool = True,
+            time_limit: int = None,
+            *flags,
+            **params):
         """
         Uses astrometry.net to solve the astrometry of the image. Solved image is output as a separate file.
         :param output_dir: Directory in which to output
@@ -1913,15 +1939,18 @@ class ImagingImage(Image):
         if output_dir is not None:
             u.mkdir_check(output_dir)
         base_filename = f"{self.name}_astrometry"
+        if "search_radius" not in params:
+            params["search_radius"] = 4.0 * units.arcmin
         success = solve_field(
             image_files=self.path,
             base_filename=base_filename,
             overwrite=True,
             tweak=tweak,
             guess_scale=True,
-            search_radius=4.0 * units.arcmin,
             centre=self.pointing,
-            time_limit=time_limit
+            time_limit=time_limit,
+            *flags,
+            **params
         )
         if not success:
             return None
@@ -2565,14 +2594,22 @@ class ImagingImage(Image):
             ext: int = 0,
             output_path: str = None,
             include_footprint: bool = False,
-            write_footprint: bool = True
+            write_footprint: bool = True,
+            method: str = 'exact'
     ):
         import reproject as rp
         if output_path is None:
             output_path = self.path.replace(".fits", "_reprojected.fits")
         other_image.load_headers(force=True)
         print(f"Reprojecting {self.filename} into the pixel space of {other_image.filename}")
-        reprojected, footprint = rp.reproject_exact(self.path, other_image.headers[ext], parallel=True)
+        if method == 'exact':
+            reprojected, footprint = rp.reproject_exact(self.path, other_image.headers[ext], parallel=True)
+        elif method == 'adaptive':
+            reprojected, footprint = rp.reproject_adaptive(self.path, other_image.headers[ext])
+        elif method in ['interp', 'interpolate', 'interpolation']:
+            reprojected, footprint = rp.reproject_interp(self.path, other_image.headers[ext])
+        else:
+            raise ValueError(f"Reprojection method {method} not recognised.")
         reprojected *= other_image.extract_unit(astropy=True)
         footprint *= units.pix
 
@@ -2990,11 +3027,11 @@ class ImagingImage(Image):
             fig = plt.figure(figsize=(12, 12), dpi=1000)
         ax, fig = self.wcs_axes(fig=fig)
         self.load_data()
-        data = self.data[ext]
+        data = u.dequantify(self.data[ext])
         ax.imshow(
-            u.dequantify(data), **kwargs,
+            data, **kwargs,
             norm=ImageNormalize(
-                u.dequantify(data),
+                data,
                 interval=MinMaxInterval(),
                 stretch=SqrtStretch(),
                 vmin=np.median(data),
@@ -3368,6 +3405,7 @@ class ImagingImage(Image):
             box_size: int = 64,
             filter_size: int = 3,
             method: str = "sep",
+            write: str = None,
             **back_kwargs
     ):
         self.load_data()
@@ -3397,10 +3435,19 @@ class ImagingImage(Image):
                 bkg_estimator=bkg_estimator,
                 **back_kwargs
             )
-            self.data_sub_bkg[ext] = (data - bkg.background)
+            back = bkg.background
+            self.data_sub_bkg[ext] = (data - back)
 
         else:
             raise ValueError(f"Unrecognised method {method}.")
+
+        if isinstance(write, str):
+            back_file = self.copy(write)
+            back_file.load_data()
+            back_file.load_headers()
+            back_file.data[ext] = back
+            back_file.write_fits_file()
+
         return bkg
 
     def generate_segmap(
@@ -3569,6 +3616,9 @@ class ImagingImage(Image):
     def detection_threshold(self):
         return 5.
 
+    def do_subtract_background(self):
+        return True
+
     def sep_aperture_photometry(
             self, x: float, y: float,
             aperture_radius: units.Quantity = 2.0 * units.arcsec,
@@ -3595,10 +3645,19 @@ class ImagingImage(Image):
             ext: int = 0,
             output: str = None,
             mask_nearby: bool = True,
+            subtract_background: bool = True,
     ):
-        self.calculate_background(ext=ext)
+
+        if isinstance(output, str):
+            back_output = output + "_back.fits"
+        else:
+            back_output = None
+
+        self.calculate_background(ext=ext, write=back_output)
         self.load_wcs(ext=ext)
         self.extract_pixel_scale()
+        if not self.wcs.footprint_contains(centre):
+            return None, None, None, None
         x, y = self.wcs.all_world2pix(centre.ra.value, centre.dec.value, 0)
         x = u.check_iterable(x)
         y = u.check_iterable(y)
@@ -3621,8 +3680,21 @@ class ImagingImage(Image):
         else:
             mask = np.zeros_like(self.data[ext].data)
 
+        if subtract_background:
+            data = self.data_sub_bkg[ext]
+            back, _, _ = sep.sum_ellipse(
+                data=self.sep_background[ext].back(),
+                x=x, y=y,
+                a=a, b=b,
+                r=kron_radius,
+                theta=theta,
+            )
+        else:
+            data = u.sanitise_endianness(self.data[ext])
+            back = [0.]
+
         flux, flux_err, flag = sep.sum_ellipse(
-            data=self.data_sub_bkg[ext],
+            data=data,
             x=x, y=y,
             a=a, b=b,
             r=kron_radius,
@@ -3660,11 +3732,14 @@ class ImagingImage(Image):
             #     ax.add_artist(e)
             #     ax.text(objects["x"][i], objects["y"][i], objects["theta"][i] * 180. / np.pi)
 
+            theta_plot = (theta[0] * units.rad).to(units.deg)
+
             e = Ellipse(
                 xy=(x[0], y[0]),
                 width=2 * kron_radius[0] * a[0],
                 height=2 * kron_radius[0] * b[0],
-                angle=theta[0] * 180. / np.pi)
+                angle=theta_plot
+            )
             e.set_facecolor('none')
             e.set_edgecolor('white')
             ax.add_artist(e)
@@ -3673,7 +3748,8 @@ class ImagingImage(Image):
                 xy=(x[0], y[0]),
                 width=2 * a[0],
                 height=2 * b[0],
-                angle=theta[0] * 180. / np.pi)
+                angle=theta_plot
+            )
             e.set_facecolor('none')
             e.set_edgecolor('white')
             ax.add_artist(e)
@@ -3682,7 +3758,7 @@ class ImagingImage(Image):
 
             fig.savefig(output + ".png")
 
-        return flux, flux_err, flag
+        return flux, flux_err, flag, back
 
     def sep_elliptical_magnitude(
             self,
@@ -3700,7 +3776,7 @@ class ImagingImage(Image):
         if detection_threshold is None:
             detection_threshold = self.detection_threshold()
 
-        flux, flux_err, flags = self.sep_elliptical_photometry(
+        flux, flux_err, flags, back = self.sep_elliptical_photometry(
             centre=centre,
             a_world=a_world,
             b_world=b_world,
@@ -3708,8 +3784,12 @@ class ImagingImage(Image):
             kron_radius=kron_radius,
             ext=ext,
             output=output,
-            mask_nearby=mask_nearby
+            mask_nearby=mask_nearby,
+            subtract_background=self.do_subtract_background()
         )
+
+        if flux is None:
+            return None, None, None, None
 
         snr = flux / flux_err
         if snr < detection_threshold:
@@ -3722,7 +3802,7 @@ class ImagingImage(Image):
                 flux, flux_err
             )
 
-        return mag, mag_err, snr
+        return mag, mag_err, snr, back
 
     def make_galfit_version(self, output_path: str = None, ext: int = 0):
         """
@@ -3907,22 +3987,34 @@ class ImagingImage(Image):
     def count_exposures(cls, image_paths: list):
         return len(image_paths)
 
-    @classmethod
-    def rank_photometric_cat(cls):
+    def rank_photometric_cat(self, cats: list):
         """
         Gives the ranking of photometric catalogues available for calibration, ranked by similarity to filter set.
         :return:
         """
 
-        return [
-            "instrument_archive",
-            "calib_pipeline",
-            "des",
-            "delve",
-            "sdss",
-            "panstarrs1",
-            "skymapper"
-        ]
+        self.instrument.gather_filters()
+        self._filter_from_name()
+
+        differences = {}
+
+        for cat in cats:
+            if cat in cat_instruments:
+                other_instrument_name = cat_instruments[cat]
+                other_instrument = inst.Instrument.from_params(other_instrument_name)
+                other_instrument.gather_filters()
+                if self.filter.band_name in other_instrument.bands:
+                    other_filter = other_instrument.bands[self.filter.band_name]
+                    differences[cat] = self.filter.compare_wavelength_range(
+                            other=other_filter
+                        )
+            elif cat == "instrument_archive":
+                differences[cat] = 0 * units.angstrom
+            elif cat == "calib_pipeline":
+                differences[cat] = 0.1 * units.angstrom
+
+        differences = dict(sorted(differences.items(), key=lambda x: x[1]))
+        return list(differences.keys())
 
 
 class CoaddedImage(ImagingImage):
@@ -3961,18 +4053,19 @@ class CoaddedImage(ImagingImage):
             output_path = trimmed.path
         new_area_path = output_path.replace(".fits", "_area.fits")
 
-        ff.trim_file(
-            path=self.area_file,
-            left=left, right=right, bottom=bottom, top=top,
-            new_path=new_area_path
-        )
-        trimmed.area_file = new_area_path
-        trimmed.add_log(
-            action=f"Trimmed area file to margins left={left}, right={right}, bottom={bottom}, top={top}",
-            method=self.trim,
-            output_path=new_area_path
-        )
-        trimmed.update_output_file()
+        if os.path.isfile(self.area_file):
+            ff.trim_file(
+                path=self.area_file,
+                left=left, right=right, bottom=bottom, top=top,
+                new_path=new_area_path
+            )
+            trimmed.area_file = new_area_path
+            trimmed.add_log(
+                action=f"Trimmed area file to margins left={left}, right={right}, bottom={bottom}, top={top}",
+                method=self.trim,
+                output_path=new_area_path
+            )
+            trimmed.update_output_file()
         return trimmed
 
     def trim_from_area(self, output_path: str = None):
@@ -3980,12 +4073,20 @@ class CoaddedImage(ImagingImage):
         trimmed = self.trim(left=left, right=right, bottom=bottom, top=top, output_path=output_path)
         return trimmed
 
-    def register(self, target: 'ImagingImage', output_path: str, ext: int = 0, trim: bool = True):
+    def register(
+            self,
+            target: 'ImagingImage',
+            output_path: str,
+            ext: int = 0,
+            trim: bool = True,
+            **kwargs
+    ):
         new_img = super().register(
             target=target,
             output_path=output_path,
             ext=ext,
-            trim=trim
+            trim=trim,
+            **kwargs
         )
         import reproject as rp
         area = new_img.copy(new_img.path.replace(".fits", "_area.fits"))
@@ -4073,7 +4174,10 @@ class PanSTARRS1Cutout(CoaddedImage):
         return False
 
     def detection_threshold(self):
-        return 7.0
+        return 5.0
+
+    def do_subtract_background(self):
+        return False
 
     def extract_filter(self):
         key = self.header_keys()["filter"]
@@ -4198,7 +4302,7 @@ class HAWKICoaddedImage(ESOImagingImage):
     def zeropoint(
             self
     ):
-        self.add_zeropoint(
+        return self.add_zeropoint(
             catalogue="2MASS",
             zeropoint=self.extract_header_item("PHOTZP"),
             zeropoint_err=self.extract_header_item("PHOTZPER"),
@@ -4208,7 +4312,7 @@ class HAWKICoaddedImage(ESOImagingImage):
             airmass_err=0.0
         )
         # self.select_zeropoint(True)
-        return self.zeropoint_best
+        # return self.zeropoint_best
 
     @classmethod
     def header_keys(cls):
@@ -4256,19 +4360,6 @@ class FORS2Image(ESOImagingImage):
                 self.other_chip = outputs["other_chip"]
         return outputs
 
-    @classmethod
-    def rank_photometric_cat(cls):
-        """
-        Gives the ranking of photometric catalogues available for calibration, ranked by similarity to filter set.
-        :return:
-        """
-
-        return [
-            "instrument_archive",
-            "des",
-            "panstarrs1",
-            "sdss",
-            "skymapper"]
 
     @classmethod
     def header_keys(cls) -> dict:
@@ -4318,10 +4409,11 @@ class FORS2CoaddedImage(CoaddedImage):
             mag_range_sex_lower: units.Quantity = -100. * units.mag,
             mag_range_sex_upper: units.Quantity = 100. * units.mag,
             dist_tol: units.Quantity = 2. * units.arcsec,
-            snr_cut=3.,
-            iterate_uncertainty=True,
+            snr_cut: float =3.,
+            iterate_uncertainty: bool =True,
+            do_x_shift: bool = True
     ):
-        super().zeropoint(
+        zp = super().zeropoint(
             cat_path=cat_path,
             output_path=output_path,
             cat_name=cat_name,
@@ -4341,9 +4433,11 @@ class FORS2CoaddedImage(CoaddedImage):
             mag_range_sex_upper=mag_range_sex_upper,
             dist_tol=dist_tol,
             snr_cut=snr_cut,
-            iterate_uncertainty=iterate_uncertainty
+            iterate_uncertainty=iterate_uncertainty,
+            do_x_shift=do_x_shift
         )
         self.calibration_from_qc1()
+        return zp
 
     def calibration_from_qc1(self):
         """
@@ -4392,8 +4486,11 @@ class FORS2CoaddedImage(CoaddedImage):
             return None
 
 
-class GSAOIImage(ImagingImage):
+class GSAOIImage(CoaddedImage):
     instrument_name = "gs-aoi"
+
+    def extract_pixel_scale(self, ext: int = 1, force: bool = False):
+        return super().extract_pixel_scale(ext=ext, force=force)
 
     def extract_pointing(self):
         # GSAOI images keep the WCS information in the second HDU header.
@@ -4474,6 +4571,9 @@ class HubbleImage(CoaddedImage):
         else:
             thresh = 5.
         return thresh
+
+    def do_subtract_background(self):
+        return False
 
     @classmethod
     def header_keys(cls):

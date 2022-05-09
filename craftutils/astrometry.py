@@ -60,7 +60,7 @@ def generate_astrometry_indices(
         unique_id_prefix: int,
         index_output_dir: str,
         fits_cat_output: str = None,
-        p_lower: int = 0, p_upper: int = 2):
+        p_lower: int = -1, p_upper: int = 2):
     u.mkdir_check(index_output_dir)
     cat_name = cat_name.lower()
     if fits_cat_output is None and isinstance(cat, str):
