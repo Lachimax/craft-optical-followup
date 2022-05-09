@@ -23,7 +23,9 @@ instruments_imaging = [
     "hst-wfc3_ir",
     "hst-wfc3_uvis2",
     "mgb-imacs",
-    "panstarrs1"]
+    "panstarrs1",
+    "decam"
+]
 instruments_spectroscopy = ["vlt-fors2", "vlt-xshooter"]
 surveys = ["panstarrs1"]
 

@@ -1716,8 +1716,6 @@ class ImagingImage(Image):
         else:
             print(f"Magnitudes already calibrated for {zeropoint_name}")
 
-
-
     def magnitude(
             self,
             flux: units.Quantity,
@@ -1883,7 +1881,8 @@ class ImagingImage(Image):
         data_source = u.sanitise_endianness(data_source)
         data_target = target.data[ext_target]
         data_target = u.sanitise_endianness(data_target)
-        u.debug_print(0, f"Attempting registration of {self.name} (Chip {self.extract_chip_number()}) against {target.name} (Chip {target.extract_chip_number()})")
+        u.debug_print(0,
+                      f"Attempting registration of {self.name} (Chip {self.extract_chip_number()}) against {target.name} (Chip {target.extract_chip_number()})")
         registered, footprint = register(data_source, data_target, **kwargs)
 
         self.copy(output_path)
@@ -3961,6 +3960,8 @@ class ImagingImage(Image):
             return GSAOIImage
         elif "hst" in instrument:
             return HubbleImage
+        elif instrument == "decam":
+            return DESCutout
         else:
             raise ValueError(f"Unrecognised instrument {instrument}")
 
@@ -4006,8 +4007,8 @@ class ImagingImage(Image):
                 if self.filter.band_name in other_instrument.bands:
                     other_filter = other_instrument.bands[self.filter.band_name]
                     differences[cat] = self.filter.compare_wavelength_range(
-                            other=other_filter
-                        )
+                        other=other_filter
+                    )
             elif cat == "instrument_archive":
                 differences[cat] = 0 * units.angstrom
             elif cat == "calib_pipeline":
@@ -4156,11 +4157,43 @@ class CoaddedImage(ImagingImage):
             return PanSTARRS1Cutout
         elif "hst" in instrument:
             return HubbleImage
+        elif instrument == "decam":
+            return DESCutout
         else:
             raise ValueError(f"Unrecognised instrument {instrument}")
 
+
 class SurveyCutout(ImagingImage):
     pass
+
+
+class DESCutout(ImagingImage):
+    instrument_name = "decam"
+
+    def zeropoint(
+            self,
+            **kwargs
+    ):
+        return self.extract_header_item("MAGZERO") * units.mag
+
+    def extract_exposure_time(self):
+        return 1. * units.second
+
+    def extract_integration_time(self):
+        return self.extract_header_item("EXPTIME") * units.second
+
+    def extract_filter(self):
+        key = self.header_keys()["filter"]
+        fil_string = self.extract_header_item(key)
+        self.filter_name = fil_string[:fil_string.find(" ")]
+        self.filter_short = self.filter_name
+
+        self._filter_from_name()
+
+        return self.filter_name
+
+    def extract_ncombine(self):
+        return 1
 
 class PanSTARRS1Cutout(SurveyCutout):
     instrument_name = "panstarrs1"
@@ -4191,6 +4224,9 @@ class PanSTARRS1Cutout(SurveyCutout):
 
         return self.filter_name
 
+    def extract_integration_time(self):
+        return self.extract_exposure_time()
+
     # def zeropoint(
     #         self,
     #         **kwargs
@@ -4219,16 +4255,16 @@ class PanSTARRS1Cutout(SurveyCutout):
     #         airmass_err=0.0
     #     )
 
-        # return self.add_zeropoint(
-        #     catalogue="panstarrs1",
-        #     zeropoint=self.extract_header_item("FPA.ZP"),
-        #     zeropoint_err=0.0 * units.mag,
-        #     extinction=0.0 * units.mag,
-        #     extinction_err=0.0 * units.mag,
-        #     airmass=0.0,
-        #     airmass_err=0.0
-        # )
-        # self.select_zeropoint(True)
+    # return self.add_zeropoint(
+    #     catalogue="panstarrs1",
+    #     zeropoint=self.extract_header_item("FPA.ZP"),
+    #     zeropoint_err=0.0 * units.mag,
+    #     extinction=0.0 * units.mag,
+    #     extinction_err=0.0 * units.mag,
+    #     airmass=0.0,
+    #     airmass_err=0.0
+    # )
+    # self.select_zeropoint(True)
 
     # I only wrote this function below because I couldn't find the EXPTIME key in the PS1 cutouts. It is, however, there.
     # def extract_exposure_time(self):
@@ -4362,7 +4398,6 @@ class FORS2Image(ESOImagingImage):
                 self.other_chip = outputs["other_chip"]
         return outputs
 
-
     @classmethod
     def header_keys(cls) -> dict:
         header_keys = super().header_keys()
@@ -4411,8 +4446,8 @@ class FORS2CoaddedImage(CoaddedImage):
             mag_range_sex_lower: units.Quantity = -100. * units.mag,
             mag_range_sex_upper: units.Quantity = 100. * units.mag,
             dist_tol: units.Quantity = 2. * units.arcsec,
-            snr_cut: float =3.,
-            iterate_uncertainty: bool =True,
+            snr_cut: float = 3.,
+            iterate_uncertainty: bool = True,
             do_x_shift: bool = True
     ):
         zp = super().zeropoint(
