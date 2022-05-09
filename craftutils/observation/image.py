@@ -4159,8 +4159,10 @@ class CoaddedImage(ImagingImage):
         else:
             raise ValueError(f"Unrecognised instrument {instrument}")
 
+class SurveyCutout(ImagingImage):
+    pass
 
-class PanSTARRS1Cutout(CoaddedImage):
+class PanSTARRS1Cutout(SurveyCutout):
     instrument_name = "panstarrs1"
 
     def __init__(self, path: str, **kwargs):

@@ -4094,8 +4094,10 @@ class HubbleImagingEpoch(ImagingEpoch):
             **param_dict
         )
 
+class SurveyEpoch(ImagingEpoch):
+    pass
 
-class PanSTARRS1ImagingEpoch(ImagingEpoch):
+class PanSTARRS1ImagingEpoch(SurveyEpoch):
     instrument_name = "panstarrs1"
     mode = "imaging"
 
