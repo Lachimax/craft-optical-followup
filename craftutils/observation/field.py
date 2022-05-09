@@ -1086,39 +1086,30 @@ class FRBField(Field):
         )
 
         if show_frb:
-            import photutils
+            from matplotlib.patches import Ellipse
             img.load_headers()
             frb = self.frb.position
             x, y = img.world_to_pixel(frb, 0)
             uncertainty = self.frb.position_err
             a, b = uncertainty.uncertainty_quadrature()
             theta = uncertainty.theta.to(units.deg)
+            rotation_angle = img.extract_rotation_angle(ext=ext)
+            theta = theta - rotation_angle
             img_err = img.extract_astrometry_err()
             if img_err is not None:
                 a = np.sqrt(a ** 2 + img_err ** 2)
                 b = np.sqrt(b ** 2 + img_err ** 2)
 
-            # e = Ellipse(
-            #     xy=(x, y),
-            #     width=a,
-            #     height=b,
-            #     angle=theta.value,
-            #     **frb_kwargs
-            # )
-            # e.set_facecolor('none')
-            # e.set_edgecolor('white')
-            # e.set_label("FRB localisation ellipse")
-            # plot.add_artist(e)
-            print(a, b)
-            print(a.to(units.pix, img.pixel_scale_dec).value)
-            print(b.to(units.pix, img.pixel_scale_dec).value)
-            localisation = photutils.aperture.EllipticalAperture(
-                positions=[x, y],
-                a=a.to(units.pix, img.pixel_scale_dec).value,
-                b=b.to(units.pix, img.pixel_scale_dec).value,
-                theta=theta.to(units.rad).value,
+            e = Ellipse(
+                xy=(x, y),
+                width=2 * a.to(units.pix, img.pixel_scale_dec).value,
+                height=2 * b.to(units.pix, img.pixel_scale_dec).value,
+                angle=theta.value
             )
-            localisation.plot(label="FRB localisation ellipse", color="white", **frb_kwargs)
+            e.set_facecolor('none')
+            e.set_edgecolor('white')
+            plot.add_artist(e)
+            plot.scatter(x, y, c="white", marker="x")
             if show_legend:
                 plot.legend()
 
@@ -1501,6 +1492,7 @@ class Epoch:
         stages = self.stages()
         u.debug_print(1, f"Epoch.pipeline(): type(self) ==", type(self))
         u.debug_print(2, f"Epoch.pipeline(): stages ==", stages)
+        last_complete = None
         for n, name in enumerate(stages):
             stage = stages[name]
             message = stage["message"]
@@ -1551,6 +1543,10 @@ class Epoch:
                     u.rmtree_check(output_dir_backup)
 
                 self.update_output_file()
+
+                last_complete = dir_name
+
+        return last_complete
 
     def _pipeline_init(self):
         if self.data_path is not None:
@@ -4522,7 +4518,7 @@ class ESOImagingEpoch(ImagingEpoch):
                     print(f"Adding reduced science images from {output_subdir}")
                     for file in filter(lambda f: f.endswith(".fits"), os.listdir(output_subdir)):
                         path = os.path.join(output_subdir, file)
-                        # TODO: This (and other FORS2Image instances in this method WILL NOT WORK WITH HAWKI. Must make more flexible.
+                        # TODO: This (and other FORS2Image instances in this method) WILL NOT WORK WITH HAWKI. Must make more flexible.
                         img = image.FORS2Image(path)
                         self.add_frame_reduced(img)
                 backgrounds = os.path.join(output_dir, "backgrounds")
