@@ -3360,9 +3360,9 @@ class ImagingEpoch(Epoch):
             row["total_exp_time_included"] = inttime
             row["psf_fwhm"] = self.psf_stats[fil]["gauss"]["fwhm_median"]
             row["program_id"] = str(self.program_id)
-            row["zeropoint"] = coadded[fil].extract_header_item("ZP") * units.mag
-            row["zeropoint_err"] = coadded[fil].extract_header_item("ZP_ERR") * units.mag
-            row["zeropoint_source"] = coadded[fil].extract_header_item("ZPCAT")
+            row["zeropoint"] = coadded[fil].zeropoint_best["zeropoint_img"]
+            row["zeropoint_err"] = coadded[fil].zeropoint_best["zeropoint_img_err"]
+            row["zeropoint_source"] = coadded[fil].zeropoint_best["catalogue"]
             row["last_processed"] = Time.now().strftime("%Y-%m-%dT%H:%M:%S")
             row["depth"] = img.depth["secure"]["SNR_SE"]["5-sigma"]
 

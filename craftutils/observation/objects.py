@@ -540,7 +540,7 @@ class Object:
                 label="Corrected for Galactic extinction"
             )
             ax.scatter(
-                limits["lambda_eff"][plot_limit],
+                limits["lambda_eff"],
                 limits["mag_sep_ext_corrected"],
                 label="Magnitude upper limit",
                 marker="v",

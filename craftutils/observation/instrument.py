@@ -181,10 +181,15 @@ class Filter:
         if "svo_service" in kwargs:
             svo = kwargs["svo_service"]
             if "filter_id" in svo:
-                if isinstance(svo["filter_id"], list):
-                    self.svo_id += svo["filter_id"]
-                else:
-                    self.svo_id.append(svo["filter_id"])
+                ids = svo["filter_id"]
+            elif "id" in svo:
+                ids = svo["id"]
+            else:
+                ids = []
+            if isinstance(ids, list):
+                self.svo_id += ids
+            else:
+                self.svo_id.append(ids)
             if "instrument" in svo:
                 self.svo_instrument = svo["instrument"]
 
