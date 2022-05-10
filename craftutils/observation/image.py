@@ -730,6 +730,23 @@ class Image:
         else:
             raise KeyError(f"mode must be provided for {cls}.select_child_class()")
 
+    def split_fits(self, output_dir: str = None):
+        if output_dir is None:
+            output_dir = self.data_path
+        self.open()
+        new_files = {}
+        for hdu in self.hdu_list:
+            new_hdu_list = fits.HDUList(fits.PrimaryHDU(hdu.data, hdu.header))
+            new_path = os.path.join(output_dir, self.filename.replace(".fits", f"_{hdu.name}.fits"))
+            new_hdu_list.writeto(
+                new_path,
+                overwrite=True
+            )
+            new_img = self.__class__(new_path)
+            new_files[hdu.name] = new_img
+        self.close()
+        return new_files
+
 
 class ESOImage(Image):
     """
@@ -3727,7 +3744,6 @@ class ImagingImage(Image):
 
             plt.close()
             with quantity_support():
-
                 ax, fig, _ = self.plot_subimage(
                     centre=centre,
                     frame=this_frame,
@@ -4189,10 +4205,24 @@ class DESCutout(SurveyCutout):
             self,
             **kwargs
     ):
-        return self.extract_header_item("MAGZERO") * units.mag
+
+        return self.add_zeropoint(
+            catalogue="des",
+            zeropoint=self.extract_header_item("MAGZERO") * units.mag,
+            zeropoint_err=0.0 * units.mag,
+            extinction=0.0 * units.mag,
+            extinction_err=0.0 * units.mag,
+            airmass=0.0,
+            airmass_err=0.0
+        )
 
     def extract_exposure_time(self):
-        return 1. * units.second
+        self.exposure_time = 1. * units.second
+        return self.exposure_time
+
+    def extract_noise_read(self):
+        self.noise_read = 0. * units.electron / units.pixel
+        return self.noise_read
 
     def extract_integration_time(self):
         return self.extract_header_item("EXPTIME") * units.second
@@ -4209,6 +4239,7 @@ class DESCutout(SurveyCutout):
 
     def extract_ncombine(self):
         return 1
+
 
 class PanSTARRS1Cutout(SurveyCutout):
     instrument_name = "panstarrs1"
@@ -4241,6 +4272,7 @@ class PanSTARRS1Cutout(SurveyCutout):
 
     def extract_integration_time(self):
         return self.extract_exposure_time()
+
     def zeropoint(
             self,
             **kwargs
