@@ -634,7 +634,7 @@ class Field:
         if isinstance(self.extent, units.Quantity):
             radius = self.extent
         else:
-            radius = 0.1 * units.deg
+            radius = 0.2 * units.deg
         output = self._cat_data_path(cat=cat_name)
         ra = self.centre_coords.ra.value
         dec = self.centre_coords.dec.value
