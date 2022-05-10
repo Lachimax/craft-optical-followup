@@ -54,8 +54,9 @@ def solve_field(
         verify: bool = True,
         odds_to_tune_up: float = 1e6,
         odds_to_solve: float = 1e9,
-        *flags,
-        **params):
+        am_flags: list = None,
+        am_params: dict = None,
+):
     """
     Returns True if successful (by checking whether the corrected file is generated); False if not.
     :param image_files:
@@ -66,19 +67,19 @@ def solve_field(
     :return:
     """
 
-    params["o"] = base_filename
-    params["odds-to-tune-up"] = odds_to_tune_up
-    params["odds-to-solve"] = odds_to_solve
+    am_params["o"] = base_filename
+    am_params["odds-to-tune-up"] = odds_to_tune_up
+    am_params["odds-to-solve"] = odds_to_solve
     if time_limit is not None:
-        params["l"] = check_quantity(time_limit, units.second).value
+        am_params["l"] = check_quantity(time_limit, units.second).value
     if search_radius is not None:
-        params["radius"] = search_radius.to(units.deg).value
+        am_params["radius"] = search_radius.to(units.deg).value
     if centre is not None:
-        params["ra"] = centre.ra.to(units.deg).value
-        params["dec"] = centre.dec.to(units.deg).value
+        am_params["ra"] = centre.ra.to(units.deg).value
+        am_params["dec"] = centre.dec.to(units.deg).value
     debug_print(1, "solve_field(): tweak ==", tweak)
 
-    flags = list(flags)
+    flags = list(am_flags)
     if overwrite:
         flags.append("O")
     if guess_scale:
@@ -88,7 +89,7 @@ def solve_field(
     if not verify:
         flags.append("y")
 
-    system_command("solve-field", image_files, False, True, False, *flags, **params)
+    system_command("solve-field", image_files, False, True, False, *flags, **am_params)
     if isinstance(image_files, list):
         image_path = image_files[0]
     else:

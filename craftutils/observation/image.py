@@ -1926,8 +1926,10 @@ class ImagingImage(Image):
             output_dir: str = None,
             tweak: bool = True,
             time_limit: int = None,
-            *flags,
-            **params):
+            am_flags: list = (),
+            am_params: dict = None,
+            **kwargs
+    ):
         """
         Uses astrometry.net to solve the astrometry of the image. Solved image is output as a separate file.
         :param output_dir: Directory in which to output
@@ -1938,8 +1940,8 @@ class ImagingImage(Image):
         if output_dir is not None:
             u.mkdir_check(output_dir)
         base_filename = f"{self.name}_astrometry"
-        if "search_radius" not in params:
-            params["search_radius"] = 4.0 * units.arcmin
+        if "search_radius" not in kwargs:
+            kwargs["search_radius"] = 4.0 * units.arcmin
         success = solve_field(
             image_files=self.path,
             base_filename=base_filename,
@@ -1948,8 +1950,9 @@ class ImagingImage(Image):
             guess_scale=True,
             centre=self.pointing,
             time_limit=time_limit,
-            *flags,
-            **params
+            am_flags=am_flags,
+            am_params=am_params,
+            **kwargs
         )
         if not success:
             return None
@@ -2857,8 +2860,8 @@ class ImagingImage(Image):
 
     def plot_subimage(
             self,
-            centre: SkyCoord,
-            frame: units.Quantity,
+            centre: SkyCoord = None,
+            frame: units.Quantity = None,
             ext: int = 0,
             fig: plt.Figure = None,
             n: int = 1, n_x: int = 1, n_y: int = 1,
@@ -2876,15 +2879,25 @@ class ImagingImage(Image):
         self.load_data()
         self.load_wcs()
         _, scale = self.extract_pixel_scale()
-        x, y = self.wcs.all_world2pix(centre.ra.value, centre.dec.value, 0)
         data = self.data[ext].value * 1.0
-        frame = u.check_quantity(
-            number=frame,
-            unit=units.pix,
-            allow_mismatch=True,
-            enforce_equivalency=False
-        )
-        left, right, bottom, top = u.frame_from_centre(frame.to(units.pix, scale).value, x, y, data)
+        other_args = {}
+        if centre is not None and frame is not None:
+            x, y = self.wcs.all_world2pix(centre.ra.value, centre.dec.value, 0)
+            frame = u.check_quantity(
+                number=frame,
+                unit=units.pix,
+                allow_mismatch=True,
+                enforce_equivalency=False
+            )
+            other_args["x"] = x
+            other_args["y"] = y
+            left, right, bottom, top = u.frame_from_centre(frame.to(units.pix, scale).value, x, y, data)
+        else:
+            left = 0
+            right = data.shape[1]
+            bottom = 0
+            top = data.shape[0]
+
         # print(type(data), data[bottom:top, left:right])
         if mask is not None:
             data_masked = data * np.invert(mask.astype(bool)).astype(int)
@@ -2935,10 +2948,6 @@ class ImagingImage(Image):
 
         if output_path is not None:
             fig.savefig(output_path)
-
-        other_args = {}
-        other_args["x"] = x
-        other_args["y"] = y
 
         return ax, fig, other_args
 
@@ -3621,13 +3630,18 @@ class ImagingImage(Image):
     def sep_aperture_photometry(
             self, x: float, y: float,
             aperture_radius: units.Quantity = 2.0 * units.arcsec,
-            ext: int = 0
+            ext: int = 0,
+            sub_background: bool = True
     ):
-        self.calculate_background(ext=ext)
         self.extract_pixel_scale()
         pixel_radius = aperture_radius.to(units.pix, self.pixel_scale_dec)
+        self.calculate_background(ext=ext)
+        if sub_background:
+            data = self.data_sub_bkg[ext]
+        else:
+            data = u.sanitise_endianness(self.data[ext])
         flux, fluxerr, flag = sep.sum_circle(
-            self.data_sub_bkg[ext],
+            data,
             x, y,
             pixel_radius.value,
             err=self.sep_background[ext].rms(),
@@ -3712,50 +3726,51 @@ class ImagingImage(Image):
             })
 
             plt.close()
+            with quantity_support():
 
-            ax, fig, _ = self.plot_subimage(
-                centre=centre,
-                frame=this_frame,
-                ext=ext,
-                mask=mask
-            )
+                ax, fig, _ = self.plot_subimage(
+                    centre=centre,
+                    frame=this_frame,
+                    ext=ext,
+                    mask=mask
+                )
 
-            # for i in range(len(objects)):
-            #     e = Ellipse(
-            #         xy=(objects["x"][i], objects["y"][i]),
-            #         width=4*objects["a"][i],
-            #         height=4*objects["b"][i],
-            #         angle=objects["theta"][i] * 180. / np.pi)
-            #     e.set_facecolor('none')
-            #     e.set_edgecolor('red')
-            #     ax.add_artist(e)
-            #     ax.text(objects["x"][i], objects["y"][i], objects["theta"][i] * 180. / np.pi)
+                # for i in range(len(objects)):
+                #     e = Ellipse(
+                #         xy=(objects["x"][i], objects["y"][i]),
+                #         width=4*objects["a"][i],
+                #         height=4*objects["b"][i],
+                #         angle=objects["theta"][i] * 180. / np.pi)
+                #     e.set_facecolor('none')
+                #     e.set_edgecolor('red')
+                #     ax.add_artist(e)
+                #     ax.text(objects["x"][i], objects["y"][i], objects["theta"][i] * 180. / np.pi)
 
-            theta_plot = (theta[0] * units.rad).to(units.deg)
+                theta_plot = (theta[0] * units.rad).to(units.deg)
 
-            e = Ellipse(
-                xy=(x[0], y[0]),
-                width=2 * kron_radius[0] * a[0],
-                height=2 * kron_radius[0] * b[0],
-                angle=theta_plot
-            )
-            e.set_facecolor('none')
-            e.set_edgecolor('white')
-            ax.add_artist(e)
+                e = Ellipse(
+                    xy=(x[0], y[0]),
+                    width=2 * kron_radius[0] * a[0],
+                    height=2 * kron_radius[0] * b[0],
+                    angle=theta_plot
+                )
+                e.set_facecolor('none')
+                e.set_edgecolor('white')
+                ax.add_artist(e)
 
-            e = Ellipse(
-                xy=(x[0], y[0]),
-                width=2 * a[0],
-                height=2 * b[0],
-                angle=theta_plot
-            )
-            e.set_facecolor('none')
-            e.set_edgecolor('white')
-            ax.add_artist(e)
+                e = Ellipse(
+                    xy=(x[0], y[0]),
+                    width=2 * a[0],
+                    height=2 * b[0],
+                    angle=theta_plot
+                )
+                e.set_facecolor('none')
+                e.set_edgecolor('white')
+                ax.add_artist(e)
 
-            ax.set_title(f"{a[0], b[0], kron_radius[0], theta[0] * 180. / np.pi}")
+                ax.set_title(f"{a[0], b[0], kron_radius[0], theta_plot}")
 
-            fig.savefig(output + ".png")
+                fig.savefig(output + ".png")
 
         return flux, flux_err, flag, back
 
@@ -4226,44 +4241,44 @@ class PanSTARRS1Cutout(SurveyCutout):
 
     def extract_integration_time(self):
         return self.extract_exposure_time()
+    def zeropoint(
+            self,
+            **kwargs
+    ):
+        """
+        According to the reference below, the PS1 cutouts are scaled to zeropoint 25.
+        https://outerspace.stsci.edu/display/PANSTARRS/PS1+Stack+images
+        :return:
+        """
 
-    # def zeropoint(
-    #         self,
-    #         **kwargs
-    # ):
-    #     """
-    #     According to the reference below, the PS1 cutouts are scaled to zeropoint 25.
-    #     https://outerspace.stsci.edu/display/PANSTARRS/PS1+Stack+images
-    #     :return:
-    #     """
-    #
-    #     self.load_headers()
-    #     zp_keys = filter(lambda k: k.startswith("ZPT_"), self.headers[0])
-    #     zps = []
-    #     for key in zp_keys:
-    #         zps.append(self.headers[0][key])
-    #     zp = np.mean(zps) * units.mag
-    #     zp_err = np.std(zps) * units.mag
-    #
-    #     return self.add_zeropoint(
-    #         catalogue="panstarrs1",
-    #         zeropoint=zp,
-    #         zeropoint_err=zp_err,
-    #         extinction=0.0 * units.mag,
-    #         extinction_err=0.0 * units.mag,
-    #         airmass=0.0,
-    #         airmass_err=0.0
-    #     )
+        #     self.load_headers()
+        #     zp_keys = filter(lambda k: k.startswith("ZPT_"), self.headers[0])
+        #     zps = []
+        #     for key in zp_keys:
+        #         zps.append(self.headers[0][key])
+        #     zp = np.mean(zps) * units.mag
+        #     zp_err = np.std(zps) * units.mag
+        #
+        #     return self.add_zeropoint(
+        #         catalogue="panstarrs1",
+        #         zeropoint=zp,
+        #         zeropoint_err=zp_err,
+        #         extinction=0.0 * units.mag,
+        #         extinction_err=0.0 * units.mag,
+        #         airmass=0.0,
+        #         airmass_err=0.0
+        #     )
 
-    # return self.add_zeropoint(
-    #     catalogue="panstarrs1",
-    #     zeropoint=self.extract_header_item("FPA.ZP"),
-    #     zeropoint_err=0.0 * units.mag,
-    #     extinction=0.0 * units.mag,
-    #     extinction_err=0.0 * units.mag,
-    #     airmass=0.0,
-    #     airmass_err=0.0
-    # )
+        return self.add_zeropoint(
+            catalogue="panstarrs1",
+            zeropoint=self.extract_header_item("FPA.ZP"),
+            zeropoint_err=0.0 * units.mag,
+            extinction=0.0 * units.mag,
+            extinction_err=0.0 * units.mag,
+            airmass=0.0,
+            airmass_err=0.0
+        )
+
     # self.select_zeropoint(True)
 
     # I only wrote this function below because I couldn't find the EXPTIME key in the PS1 cutouts. It is, however, there.

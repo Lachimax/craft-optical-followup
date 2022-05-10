@@ -15,6 +15,7 @@ from astropy.coordinates import SkyCoord
 from astropy.table import Table, QTable
 from astropy.time import Time
 from astroquery import log
+
 # log.setLevel("TRACE")
 
 try:
@@ -36,6 +37,8 @@ except ModuleNotFoundError:
 
 import craftutils.params as p
 import craftutils.utils as u
+
+
 # import craftutils.observation.instrument as inst
 
 
@@ -137,6 +140,7 @@ def cat_columns(cat, f: str = None):
     else:
         raise ValueError(f"Catalogue {cat} not recognised.")
 
+
 cat_instruments = {
     "des": "decam",
     "delve": "decam",
@@ -144,6 +148,7 @@ cat_instruments = {
     "sdss": "sdss",
     "skymapper": "skymapper"
 }
+
 
 def svo_filter_id(facility_name: str, instrument_name: str, filter_name: str) -> str:
     return f"{facility_name}/{instrument_name}.{filter_name}"
@@ -736,6 +741,7 @@ def save_2mass_photometry(ra: float, dec: float, output: str, radius: units.Quan
         output=output,
         radius=radius
     )
+
 
 def save_ztf_photometry(ra: float, dec: float, output: str, radius: units.Quantity = 0.2 * units.deg):
     """
@@ -1393,21 +1399,31 @@ def retrieve_skymapper_cutout(ra: float, dec: float):
 
 
 mast_url = "https://catalogs.mast.stsci.edu/api/v0.1/"
-catalogue_filters = {"panstarrs1": ["g", "r", "i", "z", "y"],
-                     "gaia": []}
-catalogue_columns = {"panstarrs1": ["objID", "qualityFlag", "raStack", "decStack", "raStackErr", "decStackErr",
-                                    "{:s}PSFMag", "{:s}PSFMagErr", "{:s}ApMag", "{:s}ApMagErr",
-                                    "{:s}KronMag", "{:s}KronMagErr", "{:s}psfLikelihood"],
-                     "gaia": ["astrometric_primary_flag",
-                              "ra", "ra_error", "dec", "dec_error",
-                              "b",
-                              "duplicated_source", "hip", "l", "matched_observations",
-                              "parallax", "parallax_error",
-                              "pmdec", "pmdec_error", "pmra", "pmra_error",
-                              "phot_g_mean_flux", "phot_g_mean_flux_error", "phot_g_mean_mag", "phot_g_n_obs",
-                              "phot_variable_flag",
-                              "random_index", "ref_epoch", "solution_id", "source_id", "tycho2_id"
-                              ]}
+catalogue_filters = {
+    "panstarrs1": ["g", "r", "i", "z", "y"],
+    "gaia": []}
+catalogue_columns = {
+    "panstarrs1": [
+        "objID",
+        "qualityFlag",
+        "raStack", "decStack",
+        "raStackErr", "decStackErr",
+        "{:s}PSFMag", "{:s}PSFMagErr",
+        "{:s}ApMag", "{:s}ApMagErr",
+        "{:s}ApRadius",
+        "{:s}KronMag", "{:s}KronMagErr",
+        "{:s}psfLikelihood"],
+    "gaia": [
+        "astrometric_primary_flag",
+        "ra", "ra_error", "dec", "dec_error",
+        "b",
+        "duplicated_source", "hip", "l", "matched_observations",
+        "parallax", "parallax_error",
+        "pmdec", "pmdec_error", "pmra", "pmra_error",
+        "phot_g_mean_flux", "phot_g_mean_flux_error", "phot_g_mean_mag", "phot_g_n_obs",
+        "phot_variable_flag",
+        "random_index", "ref_epoch", "solution_id", "source_id", "tycho2_id"
+    ]}
 
 
 def construct_columns(cat="panstarrs1"):
@@ -1687,56 +1703,55 @@ def save_gemini_files(file_list: Table, output: str, overwrite: bool = False):
 filters = {
     "gaia": ["g", "bp", "rp"]}
 
-column_units = \
-    {
-        "gaia":  # See https://gea.esac.esa.int/archive/documentation/GDR2/Gaia_archive/chap_datamodel/sec_dm_main_tables/ssec_dm_gaia_source.html
-            {
-                "ra": units.deg,
-                "ra_error": units.milliarcsecond,
-                "dec": units.deg,
-                "dec_error": units.milliarcsecond,
-                "parallax": units.milliarcsecond,
-                "parallax_error": units.milliarcsecond,
-                "pmra": units.milliarcsecond / units.year,
-                "pmra_error": units.milliarcsecond / units.year,
-                "pmdec": units.milliarcsecond / units.year,
-                "pmdec_error": units.milliarcsecond / units.year,
-                "astrometric_excess_noise": units.milliarcsecond,
-                "astrometric_weight_al": units.milliarcsecond ** 2,
-                "astrometric_pseudo_colour": units.micrometer ** -1,
-                "astrometric_sigma5d_max": units.milliarcsecond,
-                "phot_{:s}_mean_flux": units.electron / units.second,
-                "phot_{:s}_mean_flux_error": units.electron / units.second,
-                "phot_{:s}_mean_mag": units.mag,
-                "bp_rp": units.mag,
-                "bp_g": units.mag,
-                "g_rp": units.mag,
-                "radial_velocity": units.kilometer / units.second,
-                "radial_velocity_error": units.kilometer / units.second,
-                "rv_template_teff": units.Kelvin,
-                "rv_template_fe_h": units.dex,
-                "l": units.deg,
-                "b": units.deg,
-                "ecl_lon": units.deg,
-                "ecl_lat": units.deg,
-                "teff_val": units.Kelvin,
-                "teff_percentile_lower": units.Kelvin,
-                "teff_percentile_upper": units.Kelvin,
-                "a_g_val": units.mag,
-                "a_g_percentile_lower": units.mag,
-                "a_g_percentile_upper": units.mag,
-                "e_bp_min_rp_val": units.mag,
-                "e_bp_min_rp_percentile_lower": units.mag,
-                "e_bp_min_rp_percentile_upper": units.mag,
-                "radius_val": units.solRad,
-                "radius_percentile_lower": units.solRad,
-                "radius_percentile_upper": units.solRad,
-                "lum_val": units.solLum,
-                "lum_percentile_lower": units.solLum,
-                "lum_percentile_upper": units.solLum,
-            }
+column_units = {
+    "gaia":  # See https://gea.esac.esa.int/archive/documentation/GDR2/Gaia_archive/chap_datamodel/sec_dm_main_tables/ssec_dm_gaia_source.html
+        {
+            "ra": units.deg,
+            "ra_error": units.milliarcsecond,
+            "dec": units.deg,
+            "dec_error": units.milliarcsecond,
+            "parallax": units.milliarcsecond,
+            "parallax_error": units.milliarcsecond,
+            "pmra": units.milliarcsecond / units.year,
+            "pmra_error": units.milliarcsecond / units.year,
+            "pmdec": units.milliarcsecond / units.year,
+            "pmdec_error": units.milliarcsecond / units.year,
+            "astrometric_excess_noise": units.milliarcsecond,
+            "astrometric_weight_al": units.milliarcsecond ** 2,
+            "astrometric_pseudo_colour": units.micrometer ** -1,
+            "astrometric_sigma5d_max": units.milliarcsecond,
+            "phot_{:s}_mean_flux": units.electron / units.second,
+            "phot_{:s}_mean_flux_error": units.electron / units.second,
+            "phot_{:s}_mean_mag": units.mag,
+            "bp_rp": units.mag,
+            "bp_g": units.mag,
+            "g_rp": units.mag,
+            "radial_velocity": units.kilometer / units.second,
+            "radial_velocity_error": units.kilometer / units.second,
+            "rv_template_teff": units.Kelvin,
+            "rv_template_fe_h": units.dex,
+            "l": units.deg,
+            "b": units.deg,
+            "ecl_lon": units.deg,
+            "ecl_lat": units.deg,
+            "teff_val": units.Kelvin,
+            "teff_percentile_lower": units.Kelvin,
+            "teff_percentile_upper": units.Kelvin,
+            "a_g_val": units.mag,
+            "a_g_percentile_lower": units.mag,
+            "a_g_percentile_upper": units.mag,
+            "e_bp_min_rp_val": units.mag,
+            "e_bp_min_rp_percentile_lower": units.mag,
+            "e_bp_min_rp_percentile_upper": units.mag,
+            "radius_val": units.solRad,
+            "radius_percentile_lower": units.solRad,
+            "radius_percentile_upper": units.solRad,
+            "lum_val": units.solLum,
+            "lum_percentile_lower": units.solLum,
+            "lum_percentile_upper": units.solLum,
+        }
 
-    }
+}
 
 keys = p.keys()
 fors2_filters_retrievable = ["I_BESS", "R_SPEC", "b_HIGH", "v_HIGH"]

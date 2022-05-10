@@ -636,7 +636,7 @@ class Field:
         if isinstance(self.extent, units.Quantity):
             radius = self.extent
         else:
-            radius = 0.1 * units.deg
+            radius = 0.2 * units.deg
         output = self._cat_data_path(cat=cat_name)
         ra = self.centre_coords.ra.value
         dec = self.centre_coords.dec.value
@@ -1974,7 +1974,8 @@ class ImagingEpoch(Epoch):
                 "keywords": {
                     "tweak": True,
                     "upper_only": False,
-                    "method": "individual"
+                    "method": "individual",
+                    "skip_indices": False
                 }
             },
             "frame_diagnostics": {
@@ -2136,7 +2137,15 @@ class ImagingEpoch(Epoch):
 
     def proc_correct_astrometry_frames(self, output_dir: str, **kwargs):
 
-        self.generate_astrometry_indices()
+        skip = False
+        if "skip_indices" in kwargs:
+            skip = kwargs.pop("skip_indices")
+
+        print(kwargs)
+        print("skip ==", skip)
+
+        if not skip:
+            self.generate_astrometry_indices()
 
         self.frames_astrometry = {}
 
@@ -2154,7 +2163,7 @@ class ImagingEpoch(Epoch):
                 frames=self.frames_normalised,
                 **kwargs)
 
-    def correct_astrometry_frames(self, output_dir: str, frames: dict = None, **kwargs):
+    def correct_astrometry_frames(self, output_dir: str, frames: dict = None, am_params: dict = {}, **kwargs):
         self.frames_astrometry = {}
 
         if frames is None:
@@ -2171,6 +2180,7 @@ class ImagingEpoch(Epoch):
                 for frame in frames_by_chip[chip]:
                     new_frame = frame.correct_astrometry(
                         output_dir=astrometry_fil_path,
+                        am_params=am_params,
                         **kwargs
                     )
 
@@ -5002,7 +5012,7 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
         self.frames_astrometry = {}
         method = "individual"
         if "method" in kwargs:
-            method = kwargs["method"]
+            method = kwargs.pop("method")
         upper_only = False
         if "upper_only" in kwargs:
             upper_only = kwargs.pop("upper_only")
