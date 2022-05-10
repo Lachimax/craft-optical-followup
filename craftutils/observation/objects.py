@@ -515,37 +515,33 @@ class Object:
 
         with quantity_support():
 
-            no_plot = (-999 * units.mag == self.photometry_tbl["mag_sep"])
-            plot_limit = (-999 * units.mag == self.photometry_tbl["mag_sep_err"])
-            plot_mag = np.invert(plot_limit + no_plot)
-
-            print(no_plot)
-            print(plot_limit)
-            print(plot_mag)
-            print(self.photometry_tbl["mag_sep"][plot_mag])
+            valid = self.photometry_tbl[self.photometry_tbl["mag_sep"] < -990 * units.mag]
+            plot_limit = (-999 * units.mag == valid["mag_sep_err"])
+            limits = valid[plot_limit]
+            mags = valid[np.invert(plot_limit)]
 
             ax.errorbar(
-                self.photometry_tbl["lambda_eff"][plot_mag],
-                self.photometry_tbl["mag_sep"][plot_mag],
-                yerr=self.photometry_tbl["mag_sep_err"][plot_mag],
+                mags["lambda_eff"],
+                mags["mag_sep"],
+                yerr=mags["mag_sep_err"],
                 label="Magnitude",
                 **kwargs,
             )
             ax.scatter(
-                self.photometry_tbl["lambda_eff"][plot_limit],
-                self.photometry_tbl["mag_sep"][plot_limit],
+                limits["lambda_eff"],
+                limits["mag_sep"],
                 label="Magnitude upper limit",
                 marker="v",
             )
             ax.scatter(
-                self.photometry_tbl["lambda_eff"][plot_mag],
-                self.photometry_tbl["mag_sep_ext_corrected"][plot_mag],
+                mags["lambda_eff"],
+                mags["mag_sep_ext_corrected"],
                 color="orange",
                 label="Corrected for Galactic extinction"
             )
             ax.scatter(
-                self.photometry_tbl["lambda_eff"][plot_limit],
-                self.photometry_tbl["mag_sep_ext_corrected"][plot_limit],
+                limits["lambda_eff"][plot_limit],
+                limits["mag_sep_ext_corrected"],
                 label="Magnitude upper limit",
                 marker="v",
             )

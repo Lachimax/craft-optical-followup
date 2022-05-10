@@ -3763,6 +3763,10 @@ class ImagingImage(Image):
                 #     ax.text(objects["x"][i], objects["y"][i], objects["theta"][i] * 180. / np.pi)
 
                 theta_plot = (theta[0] * units.rad).to(units.deg).value
+                print(a[0])
+                print(b[0])
+                print(kron_radius[0])
+                print(theta_plot)
 
                 e = Ellipse(
                     xy=(x[0], y[0]),
@@ -4255,7 +4259,7 @@ class PanSTARRS1Cutout(SurveyCutout):
         return False
 
     def detection_threshold(self):
-        return 5.0
+        return 10.
 
     def do_subtract_background(self):
         return False
