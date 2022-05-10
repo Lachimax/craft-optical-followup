@@ -4178,11 +4178,11 @@ class CoaddedImage(ImagingImage):
             raise ValueError(f"Unrecognised instrument {instrument}")
 
 
-class SurveyCutout(ImagingImage):
+class SurveyCutout(CoaddedImage):
     pass
 
 
-class DESCutout(ImagingImage):
+class DESCutout(SurveyCutout):
     instrument_name = "decam"
 
     def zeropoint(
