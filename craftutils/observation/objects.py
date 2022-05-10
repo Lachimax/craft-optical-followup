@@ -515,7 +515,7 @@ class Object:
 
         with quantity_support():
 
-            valid = self.photometry_tbl[self.photometry_tbl["mag_sep"] < -990 * units.mag]
+            valid = self.photometry_tbl[self.photometry_tbl["mag_sep"] > -990 * units.mag]
             plot_limit = (-999 * units.mag == valid["mag_sep_err"])
             limits = valid[plot_limit]
             mags = valid[np.invert(plot_limit)]
