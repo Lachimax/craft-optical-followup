@@ -42,7 +42,9 @@ import craftutils.wrap.dragons as dragons
 config = p.config
 
 instruments_imaging = p.instruments_imaging
+instruments_imaging.sort()
 instruments_spectroscopy = p.instruments_spectroscopy
+instruments_spectroscopy.sort()
 surveys = p.surveys
 
 active_fields = {}
@@ -1875,6 +1877,7 @@ class ImagingEpoch(Epoch):
     instrument_name = "dummy-instrument"
     mode = "imaging"
     frame_class = image.ImagingImage
+    coadded_class = image.CoaddedImage
 
     def __init__(
             self,
@@ -2049,7 +2052,7 @@ class ImagingEpoch(Epoch):
     def n_frames(self, fil: str):
         return len(self.frames_reduced[fil])
 
-    def proc_download(self):
+    def proc_download(self, output_dir: str, **kwargs):
         pass
 
     def proc_register(self, output_dir: str, **kwargs):
@@ -3406,10 +3409,10 @@ class ImagingEpoch(Epoch):
 
         name, param_file, param_dict = p.params_init(param_file)
 
-        pdict_backup = param_dict.copy()
-
         if param_dict is None:
             raise FileNotFoundError(f"There is no param file at {param_file}")
+
+        pdict_backup = param_dict.copy()
 
         if old_format:
             instrument = "vlt-fors2"
@@ -3418,6 +3421,8 @@ class ImagingEpoch(Epoch):
 
         if field is None:
             field = param_dict.pop("field")
+        # else:
+        #     param_dict.pop("field")
 
         sub_cls = cls.select_child_class(instrument=instrument)
         u.debug_print(1, sub_cls)
@@ -3487,6 +3492,8 @@ class ImagingEpoch(Epoch):
             child_class = GSAOIImagingEpoch
         elif instrument in ["hst-wfc3_ir", "hst-wfc3_uvis2"]:
             child_class = HubbleImagingEpoch
+        elif instrument == "decam":
+            child_class = DESEpoch
         elif instrument in instruments_imaging:
             child_class = ImagingEpoch
         else:
@@ -3497,6 +3504,7 @@ class ImagingEpoch(Epoch):
 
 class FORS2StandardEpoch(StandardEpoch, ImagingEpoch):
     frame_class = image.FORS2Image
+    coadded_class = image.FORS2CoaddedImage
     instrument_name = "vlt-fors2"
 
     def source_extraction(self, output_dir: str, do_diagnostics: bool = True, **kwargs):
@@ -3595,6 +3603,7 @@ class GSAOIImagingEpoch(ImagingEpoch):
     """
     instrument_name = "gs-aoi"
     frame_class = image.GSAOIImage
+    coadded_class = image.GSAOIImage
 
     def __init__(
             self,
@@ -3928,6 +3937,7 @@ class GSAOIImagingEpoch(ImagingEpoch):
 
 class HubbleImagingEpoch(ImagingEpoch):
     instrument_name = "hst-dummy"
+    coadded_class = image.HubbleImage
 
     def __init__(
             self,
@@ -4105,9 +4115,10 @@ class HubbleImagingEpoch(ImagingEpoch):
         )
 
 
-class PanSTARRS1ImagingEpoch(ImagingEpoch):
-    instrument_name = "panstarrs1"
+class SurveyImagingEpoch(ImagingEpoch):
     mode = "imaging"
+    catalogue = None
+    coadded_class = image.SurveyCutout
 
     def __init__(
             self,
@@ -4118,23 +4129,19 @@ class PanSTARRS1ImagingEpoch(ImagingEpoch):
             source_extractor_config: dict = None,
             **kwargs
     ):
-        super().__init__(name=name,
-                         field=field,
-                         param_path=param_path,
-                         data_path=data_path,
-                         source_extractor_config=source_extractor_config,
-                         instrument="panstarrs1"
-                         )
+        super().__init__(
+            name=name,
+            field=field,
+            param_path=param_path,
+            data_path=data_path,
+            source_extractor_config=source_extractor_config,
+            instrument=self.instrument_name
+        )
         self.load_output_file(mode="imaging")
-        if isinstance(field, Field):
-            self.field.retrieve_catalogue(cat_name="panstarrs1")
-        u.debug_print(1, f"PanSTARRS1ImagingEpoch.__init__(): {self}.filters ==", self.filters)
+        # if isinstance(field, Field):
+            # self.field.retrieve_catalogue(cat_name=self.catalogue)
 
-    def n_frames(self, fil: str):
-        img = self.coadded[fil]
-        return img.extract_ncombine()
-
-    # TODO: Automatic cutout download; don't worry for now.
+        u.debug_print(1, f"SurveyImagingEpoch.__init__(): {self}.filters ==", self.filters)
 
     @classmethod
     def stages(cls):
@@ -4156,9 +4163,11 @@ class PanSTARRS1ImagingEpoch(ImagingEpoch):
         self.paths["download"] = os.path.join(self.data_path, "0-download")
         # self.frames_final = "coadded"
 
+        # TODO: Automatic cutout download; don't worry for now.
+
     def proc_download(self, output_dir: str, **kwargs):
         """
-        Automatically download PanSTARRS1 cutout.
+        Automatically download survey cutout.
         :param output_dir:
         :param kwargs:
         :return:
@@ -4188,18 +4197,18 @@ class PanSTARRS1ImagingEpoch(ImagingEpoch):
         image.fits_table_all(input_path=download_dir, output_path=table_path_all, science_only=False)
         for file in filter(lambda f: f.endswith(".fits"), os.listdir(download_dir)):
             path = os.path.join(download_dir, file)
-            img = image.PanSTARRS1Cutout(path=path)
+            img = self.coadded_class(path=path)
             fil = img.extract_filter()
             u.debug_print(2, f"PanSTARRS1ImagingEpoch._initial_setup(): {fil=}")
             self.exp_time_mean[fil] = img.extract_exposure_time() / img.extract_ncombine()
-            img.set_header_item('INTTIME', img.extract_exposure_time())
+            img.set_header_item('INTTIME', img.extract_integration_time())
             self.add_coadded_image(img, key=fil)
             self.check_filter(img.filter_name)
             img.write_fits_file()
 
     def guess_data_path(self):
         if self.data_path is None and self.field is not None and self.field.data_path is not None:
-            self.data_path = os.path.join(self.field.data_path, "imaging", "panstarrs1")
+            self.data_path = os.path.join(self.field.data_path, "imaging", self.catalogue)
         return self.data_path
 
     def zeropoint(
@@ -4215,17 +4224,17 @@ class PanSTARRS1ImagingEpoch(ImagingEpoch):
         for fil in self.coadded:
             img = self.coadded[fil]
             zp = img.zeropoint(
-                cat_path=self.field.get_path("cat_csv_panstarrs1"),
+                cat_path=self.field.get_path(f"cat_csv_{self.catalogue}"),
                 output_path=os.path.join(output_path, img.name),
-                cat_name="PanSTARRS1",
+                cat_name=self.catalogue,
                 dist_tol=distance_tolerance,
                 show=False,
                 snr_cut=snr_min,
                 star_class_tol=star_class_tolerance,
-                image_name="PanSTARRS Cutout",
+                image_name=f"{self.catalogue}",
             )
             img.zeropoint_best = zp
-            img.estimate_depth(zeropoint_name="panstarrs1")  # , do_magnitude_calibration=False)
+            img.estimate_depth(zeropoint_name=self.catalogue)  # , do_magnitude_calibration=False)
 
             if deepest is not None:
                 deepest = image.deepest(deepest, img)
@@ -4234,9 +4243,14 @@ class PanSTARRS1ImagingEpoch(ImagingEpoch):
 
         return deepest
 
+    def n_frames(self, fil: str):
+        img = self.coadded[fil]
+        return img.extract_ncombine()
+
     def add_coadded_image(self, img: Union[str, image.Image], key: str, **kwargs):
         if isinstance(img, str):
-            img = image.PanSTARRS1Cutout(path=img)
+            cls = self.coadded_class
+            img = cls(path=img)
         img.epoch = self
         self.coadded[key] = img
         self.coadded_unprojected[key] = img
@@ -4270,6 +4284,31 @@ class PanSTARRS1ImagingEpoch(ImagingEpoch):
         )
         # epoch.instrument = cls.instrument_name
         return epoch
+
+
+class DESEpoch(SurveyImagingEpoch):
+    instrument_name = "decam"
+    catalogue = "des"
+    coadded_class = image.DESCutout
+
+    def n_frames(self, fil: str):
+        return 1
+
+
+class PanSTARRS1ImagingEpoch(SurveyImagingEpoch):
+    instrument_name = "panstarrs1"
+    catalogue = "panstarrs1"
+    coadded_class = image.PanSTARRS1Cutout
+
+    # TODO: Automatic cutout download; don't worry for now.
+    def proc_download(self, output_dir: str, **kwargs):
+        """
+        Automatically download PanSTARRS1 cutout.
+        :param output_dir:
+        :param kwargs:
+        :return:
+        """
+        pass
 
 
 class ESOImagingEpoch(ImagingEpoch):
@@ -4876,6 +4915,7 @@ class HAWKIImagingEpoch(ESOImagingEpoch):
 class FORS2ImagingEpoch(ESOImagingEpoch):
     instrument_name = "vlt-fors2"
     frame_class = image.FORS2Image
+    coadded_class = image.FORS2CoaddedImage
 
     def n_frames(self, fil: str):
         frame_pairs = self.pair_files(self.frames_reduced[fil])
@@ -5514,6 +5554,7 @@ class SpectroscopyEpoch(Epoch):
     mode = "spectrocopy"
     grisms = {}
     frame_class = image.Spectrum
+    coadded_class = image.Spec1DCoadded
 
     def __init__(self,
                  param_path: str = None,
@@ -6417,7 +6458,3 @@ class XShooterSpectroscopyEpoch(ESOSpectroscopyEpoch):
         else:
             raise ValueError("pypeit_file_std has not yet been read.")
         return pypeit_file_path
-
-# def test_frbfield_from_params():
-#     frb_field = FRBField.from_file("FRB181112")
-#     assert frb_field.frb.position_err.a_stat ==

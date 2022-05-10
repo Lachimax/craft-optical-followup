@@ -3975,6 +3975,8 @@ class ImagingImage(Image):
             return GSAOIImage
         elif "hst" in instrument:
             return HubbleImage
+        elif instrument == "decam":
+            return DESCutout
         else:
             raise ValueError(f"Unrecognised instrument {instrument}")
 
@@ -4170,11 +4172,45 @@ class CoaddedImage(ImagingImage):
             return PanSTARRS1Cutout
         elif "hst" in instrument:
             return HubbleImage
+        elif instrument == "decam":
+            return DESCutout
         else:
             raise ValueError(f"Unrecognised instrument {instrument}")
 
 
-class PanSTARRS1Cutout(CoaddedImage):
+class SurveyCutout(ImagingImage):
+    pass
+
+
+class DESCutout(ImagingImage):
+    instrument_name = "decam"
+
+    def zeropoint(
+            self,
+            **kwargs
+    ):
+        return self.extract_header_item("MAGZERO") * units.mag
+
+    def extract_exposure_time(self):
+        return 1. * units.second
+
+    def extract_integration_time(self):
+        return self.extract_header_item("EXPTIME") * units.second
+
+    def extract_filter(self):
+        key = self.header_keys()["filter"]
+        fil_string = self.extract_header_item(key)
+        self.filter_name = fil_string[:fil_string.find(" ")]
+        self.filter_short = self.filter_name
+
+        self._filter_from_name()
+
+        return self.filter_name
+
+    def extract_ncombine(self):
+        return 1
+
+class PanSTARRS1Cutout(SurveyCutout):
     instrument_name = "panstarrs1"
 
     def __init__(self, path: str, **kwargs):
@@ -4203,6 +4239,8 @@ class PanSTARRS1Cutout(CoaddedImage):
 
         return self.filter_name
 
+    def extract_integration_time(self):
+        return self.extract_exposure_time()
     def zeropoint(
             self,
             **kwargs
