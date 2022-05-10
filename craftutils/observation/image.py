@@ -3746,7 +3746,7 @@ class ImagingImage(Image):
                 #     ax.add_artist(e)
                 #     ax.text(objects["x"][i], objects["y"][i], objects["theta"][i] * 180. / np.pi)
 
-                theta_plot = (theta[0] * units.rad).to(units.deg)
+                theta_plot = (theta[0] * units.rad).to(units.deg).value
 
                 e = Ellipse(
                     xy=(x[0], y[0]),
