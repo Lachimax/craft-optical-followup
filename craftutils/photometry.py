@@ -795,14 +795,16 @@ def determine_zeropoint_sextractor(
             matches_prior = matches_iter
 
             keep = x_iter >= mag_min
+            if sum(keep) < 3:
+                break
             x_iter = x_iter[keep]
             y_iter = y_iter[keep]
             y_uncertainty_iter = y_uncertainty_iter[keep]
             y_weights_iter = y_weights_iter[keep]
             x_weights_iter = x_weights_iter[keep]
             matches_iter = matches_iter[keep]
-
             zps_iter = x_iter - y_iter
+            # print(y_weights_iter)
             zp_mean_iter = np.average(zps_iter, weights=y_weights_iter)
             err_this = u.root_mean_squared_error(
                 model_values=zp_mean_iter * np.ones_like(zps_iter).value,
@@ -876,6 +878,8 @@ def determine_zeropoint_sextractor(
             matches_prior = matches_iter
 
             keep = x_iter <= mag_max
+            if sum(keep) < 3:
+                break
             x_iter = x_iter[keep]
             y_iter = y_iter[keep]
             y_uncertainty_iter = y_uncertainty_iter[keep]
