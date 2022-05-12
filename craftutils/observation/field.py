@@ -4214,7 +4214,7 @@ class SurveyImagingEpoch(ImagingEpoch):
     def zeropoint(
             self,
             output_path: str,
-            distance_tolerance: units.Quantity = 0.2 * units.arcsec,
+            distance_tolerance: units.Quantity = 1 * units.arcsec,
             snr_min: float = 3.,
             star_class_tolerance: float = 0.95,
             **kwargs
@@ -4233,7 +4233,7 @@ class SurveyImagingEpoch(ImagingEpoch):
                 star_class_tol=star_class_tolerance,
                 image_name=f"{self.catalogue}",
             )
-            img.zeropoint_best = zp
+            img.select_zeropoint(True)
             img.estimate_depth(zeropoint_name=self.catalogue)  # , do_magnitude_calibration=False)
 
             if deepest is not None:
@@ -5429,7 +5429,8 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
             std_epoch.photometric_calibration()
             for fil in image_dict:
                 img = image_dict[fil]
-                if fil in std_epoch.frames_reduced:
+                # We save time by only bothering with non-qc1-obtainable zeropoints.
+                if fil in std_epoch.frames_reduced and fil not in inst.FORS2Filter.qc1_retrievable:
                     for std in std_epoch.frames_reduced[fil]:
                         # print(std, type(std))
                         img.add_zeropoint_from_other(std)

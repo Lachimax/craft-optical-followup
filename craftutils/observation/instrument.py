@@ -572,9 +572,12 @@ class FORS2Filter(Filter):
             u.debug_print(1, "Writing calibration table to", self.calibration_table_path)
             self.calibration_table.write(self.calibration_table_path, format="ascii.ecsv", overwrite=True)
 
+    def calib_retrievable(self):
+        return self.name in self.qc1_retrievable
+
     def retrieve_calibration_table(self, force=False):
 
-        if self.name in self.qc1_retrievable:
+        if self.calib_retrievable():
             if self.calibration_table_last_updated != date.today() or force:
                 down_path = os.path.join(self.data_path, "fors2_qc.tbl")
                 fil = self.name

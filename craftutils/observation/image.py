@@ -2622,7 +2622,7 @@ class ImagingImage(Image):
         other_image.load_headers(force=True)
         print(f"Reprojecting {self.filename} into the pixel space of {other_image.filename}")
         if method == 'exact':
-            reprojected, footprint = rp.reproject_exact(self.path, other_image.headers[ext], parallel=True)
+            reprojected, footprint = rp.reproject_exact(self.path, other_image.headers[ext])#, parallel=True)
         elif method == 'adaptive':
             reprojected, footprint = rp.reproject_adaptive(self.path, other_image.headers[ext])
         elif method in ['interp', 'interpolate', 'interpolation']:
@@ -4209,9 +4209,8 @@ class DESCutout(SurveyCutout):
             self,
             **kwargs
     ):
-
-        return self.add_zeropoint(
-            catalogue="des",
+        self.add_zeropoint(
+            catalogue="calib_pipeline",
             zeropoint=self.extract_header_item("MAGZERO") * units.mag,
             zeropoint_err=0.0 * units.mag,
             extinction=0.0 * units.mag,
@@ -4219,6 +4218,17 @@ class DESCutout(SurveyCutout):
             airmass=0.0,
             airmass_err=0.0
         )
+        zp = super().zeropoint(
+            **kwargs
+        )
+
+        return zp
+
+    def extract_unit(self, astropy: bool = False):
+        unit = "ct / s"
+        if astropy:
+            unit = units.ct / units.s
+        return unit
 
     def extract_exposure_time(self):
         self.exposure_time = 1. * units.second
@@ -4287,26 +4297,10 @@ class PanSTARRS1Cutout(SurveyCutout):
         :return:
         """
 
-        #     self.load_headers()
-        #     zp_keys = filter(lambda k: k.startswith("ZPT_"), self.headers[0])
-        #     zps = []
-        #     for key in zp_keys:
-        #         zps.append(self.headers[0][key])
-        #     zp = np.mean(zps) * units.mag
-        #     zp_err = np.std(zps) * units.mag
-        #
-        #     return self.add_zeropoint(
-        #         catalogue="panstarrs1",
-        #         zeropoint=zp,
-        #         zeropoint_err=zp_err,
-        #         extinction=0.0 * units.mag,
-        #         extinction_err=0.0 * units.mag,
-        #         airmass=0.0,
-        #         airmass_err=0.0
-        #     )
+        self.load_headers()
 
-        return self.add_zeropoint(
-            catalogue="panstarrs1",
+        self.add_zeropoint(
+            catalogue="calib_pipeline",
             zeropoint=self.extract_header_item("FPA.ZP"),
             zeropoint_err=0.0 * units.mag,
             extinction=0.0 * units.mag,
@@ -4314,6 +4308,11 @@ class PanSTARRS1Cutout(SurveyCutout):
             airmass=0.0,
             airmass_err=0.0
         )
+
+        zp = super().zeropoint(
+            **kwargs
+        )
+        return zp
 
     # self.select_zeropoint(True)
 
@@ -4389,7 +4388,8 @@ class HAWKICoaddedImage(ESOImagingImage):
     instrument_name = "vlt-hawki"
 
     def zeropoint(
-            self
+            self,
+            **kwargs
     ):
         return self.add_zeropoint(
             catalogue="2MASS",
@@ -4479,52 +4479,14 @@ class FORS2CoaddedImage(CoaddedImage):
 
     def zeropoint(
             self,
-            cat_path: str,
-            output_path: str,
-            cat_name: str = 'Catalogue',
-            cat_zeropoint: units.Quantity = 0.0 * units.mag,
-            cat_zeropoint_err: units.Quantity = 0.0 * units.mag,
-            image_name: str = None,
-            show: bool = False,
-            sex_x_col: str = 'XPSF_IMAGE',
-            sex_y_col: str = 'YPSF_IMAGE',
-            sex_ra_col: str = 'RA',
-            sex_dec_col: str = 'DEC',
-            sex_flux_col: str = 'FLUX_PSF',
-            stars_only: bool = True,
-            star_class_col: str = 'CLASS_STAR',
-            star_class_tol: float = 0.95,
-            mag_range_sex_lower: units.Quantity = -100. * units.mag,
-            mag_range_sex_upper: units.Quantity = 100. * units.mag,
-            dist_tol: units.Quantity = 2. * units.arcsec,
-            snr_cut: float = 3.,
-            iterate_uncertainty: bool = True,
-            do_x_shift: bool = True
+            **kwargs
     ):
-        zp = super().zeropoint(
-            cat_path=cat_path,
-            output_path=output_path,
-            cat_name=cat_name,
-            cat_zeropoint=cat_zeropoint,
-            cat_zeropoint_err=cat_zeropoint_err,
-            image_name=image_name,
-            show=show,
-            sex_x_col=sex_x_col,
-            sex_y_col=sex_y_col,
-            sex_ra_col=sex_ra_col,
-            sex_dec_col=sex_dec_col,
-            sex_flux_col=sex_flux_col,
-            stars_only=stars_only,
-            star_class_col=star_class_col,
-            star_class_tol=star_class_tol,
-            mag_range_sex_lower=mag_range_sex_lower,
-            mag_range_sex_upper=mag_range_sex_upper,
-            dist_tol=dist_tol,
-            snr_cut=snr_cut,
-            iterate_uncertainty=iterate_uncertainty,
-            do_x_shift=do_x_shift
-        )
-        self.calibration_from_qc1()
+        if self.filter.calib_retrievable():
+            zp = self.calibration_from_qc1()
+        else:
+            zp = super().zeropoint(
+                **kwargs
+            )
         return zp
 
     def calibration_from_qc1(self):
@@ -4547,7 +4509,7 @@ class FORS2CoaddedImage(CoaddedImage):
             else:
                 airmass_err = 0.0
 
-            self.add_zeropoint(
+            zp = self.add_zeropoint(
                 zeropoint=row["zeropoint"],
                 zeropoint_err=row["zeropoint_err"],
                 airmass=self.extract_airmass(),
@@ -4569,7 +4531,7 @@ class FORS2CoaddedImage(CoaddedImage):
             )
             self.update_output_file()
 
-            return self.zeropoints["instrument_archive"]["self"]
+            return zp
         else:
             return None
 
