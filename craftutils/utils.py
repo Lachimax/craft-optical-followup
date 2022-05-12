@@ -724,8 +724,6 @@ def root_mean_squared_error(
         weights=weights,
         dof_correction=dof_correction
     )
-    print("mse:", mse)
-    print("rmse:", np.sqrt(mse))
     return np.sqrt(mse)
 
 
