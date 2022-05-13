@@ -1198,6 +1198,7 @@ class ImagingImage(Image):
                 image_depth=self.depth["secure"]["SNR_SE"][f"5-sigma"],
                 image_path=self.path,
                 do_mask=self.mask_nearby(),
+                zeropoint=row["ZP_best_ATM_CORR"]
             )
             obj.push_to_table(select=False)
 
@@ -1408,7 +1409,7 @@ class ImagingImage(Image):
         zp_tbl = table.QTable(zps)
         if len(zp_tbl) > 0:
             # zp_tbl.sort("zeropoint_img_err")
-            zp_tbl.write(os.path.join(self.data_path, f"{self.name}_zeropoints.ecsv"), format="ascii.ecsv")
+            zp_tbl.write(os.path.join(self.data_path, f"{self.name}_zeropoints.ecsv"), format="ascii.ecsv", overwrite=True)
             #        zp_tbl.write(os.path.join(self.data_path, f"{self.name}_zeropoints.csv"), format="ascii.csv")
             best_row = zp_tbl[0]
             best_cat = best_row["catalogue"]
@@ -1526,7 +1527,7 @@ class ImagingImage(Image):
             stars_only=stars_only,
             star_class_tol=star_class_tol,
             star_class_col=star_class_col,
-            exp_time=self.exposure_time,
+            exp_time=self.extract_exposure_time(),
             cat_type=cat_type,
             cat_zeropoint=cat_zeropoint,
             cat_zeropoint_err=cat_zeropoint_err,
@@ -2622,7 +2623,7 @@ class ImagingImage(Image):
         other_image.load_headers(force=True)
         print(f"Reprojecting {self.filename} into the pixel space of {other_image.filename}")
         if method == 'exact':
-            reprojected, footprint = rp.reproject_exact(self.path, other_image.headers[ext])#, parallel=True)
+            reprojected, footprint = rp.reproject_exact(self.path, other_image.headers[ext])  # , parallel=True)
         elif method == 'adaptive':
             reprojected, footprint = rp.reproject_adaptive(self.path, other_image.headers[ext])
         elif method in ['interp', 'interpolate', 'interpolation']:
@@ -4050,6 +4051,7 @@ class ImagingImage(Image):
                 differences[cat] = 0.1 * units.angstrom
 
         differences = dict(sorted(differences.items(), key=lambda x: x[1]))
+        print(differences)
         return list(differences.keys())
 
 
@@ -4199,7 +4201,8 @@ class CoaddedImage(ImagingImage):
 
 
 class SurveyCutout(CoaddedImage):
-    pass
+    def do_subtract_background(self):
+        return False
 
 
 class DESCutout(SurveyCutout):
@@ -4209,9 +4212,10 @@ class DESCutout(SurveyCutout):
             self,
             **kwargs
     ):
+        exptime = self.extract_header_item("EXPTIME", ext=0)
         self.add_zeropoint(
             catalogue="calib_pipeline",
-            zeropoint=self.extract_header_item("MAGZERO") * units.mag,
+            zeropoint=self.extract_header_item("MAGZERO"), # - 2.5 * np.log10(exptime)) * units.mag,
             zeropoint_err=0.0 * units.mag,
             extinction=0.0 * units.mag,
             extinction_err=0.0 * units.mag,
@@ -4270,9 +4274,6 @@ class PanSTARRS1Cutout(SurveyCutout):
 
     def detection_threshold(self):
         return 10.
-
-    def do_subtract_background(self):
-        return False
 
     def extract_filter(self):
         key = self.header_keys()["filter"]

@@ -4233,7 +4233,7 @@ class SurveyImagingEpoch(ImagingEpoch):
                 star_class_tol=star_class_tolerance,
                 image_name=f"{self.catalogue}",
             )
-            img.select_zeropoint(True)
+            img.select_zeropoint(True, preferred="calib_pipeline")
             img.estimate_depth(zeropoint_name=self.catalogue)  # , do_magnitude_calibration=False)
 
             if deepest is not None:
@@ -5331,7 +5331,7 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
 
             for fil in image_dict:
                 # Generate master flat per-filter, per-chip
-                if fil not in flat_sets:
+                if fil not in flat_sets or fil in inst.FORS2Filter.qc1_retrievable: #Time-saver
                     continue
                 img = image_dict[fil]
                 if "calib_pipeline" in img.zeropoints:

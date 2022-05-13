@@ -1146,7 +1146,7 @@ def determine_zeropoint_sextractor(
 
     matches_final["mag_cat"] = matches_final[cat_mag_col]
 
-    matches_final.write(output_path + "matches.csv", format='ascii.csv')
+    matches_final.write(output_path + "matches.csv", format='ascii.csv', overwrite=True)
     u.rm_check(output_path + 'parameters.yaml')
     p.add_params(file=output_path + 'parameters.yaml', params=params, skip_json=True)
 

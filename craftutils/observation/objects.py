@@ -309,6 +309,7 @@ class Object:
         deepest_dict["mag_sep_err"] = mag_err[0]
         deepest_dict["back_sep"] = back[0]
         deepest_dict["snr_sep"] = snr[0]
+        deepest_dict["zeropoint_sep"] = deepest_img.zeropoint_best["zeropoint_img"]
 
         for instrument in self.photometry:
             for band in self.photometry[instrument]:
@@ -610,7 +611,7 @@ class Object:
 
         if output is not False:
             for fmt in fmts:
-                u.detect_problem_table(self.photometry_tbl)
+                # u.detect_problem_table(self.photometry_tbl)
                 self.photometry_tbl.write(output.replace(".ecsv", fmt[fmt.find("."):]), format=fmt, overwrite=True)
         return self.photometry_tbl
 
