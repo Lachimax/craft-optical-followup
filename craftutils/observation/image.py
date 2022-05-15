@@ -4212,7 +4212,6 @@ class DESCutout(SurveyCutout):
             self,
             **kwargs
     ):
-        exptime = self.extract_header_item("EXPTIME", ext=0)
         self.add_zeropoint(
             catalogue="calib_pipeline",
             zeropoint=self.extract_header_item("MAGZERO"), # - 2.5 * np.log10(exptime)) * units.mag,

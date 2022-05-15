@@ -1103,7 +1103,7 @@ def retrieve_des_photometry(ra: float, dec: float, radius: units.Quantity = 0.2 
 
     radius = u.dequantify(radius, unit=units.deg)
     query = f"SELECT * " \
-            f"FROM DR2_MAIN " \
+            f"FROM DR2_MAGNITUDE " \
             f"WHERE " \
             f"RA BETWEEN {ra - radius} and {ra + radius} and " \
             f"DEC BETWEEN {dec - radius} and {dec + radius} and " \
