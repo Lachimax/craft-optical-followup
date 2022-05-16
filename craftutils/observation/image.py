@@ -896,11 +896,14 @@ class ImagingImage(Image):
         if force or self.psfex_path is None or not os.path.isfile(self.psfex_path):
             config = p.path_to_config_sextractor_config_pre_psfex()
             output_params = p.path_to_config_sextractor_param_pre_psfex()
+            _, scale = self.extract_pixel_scale()
+            photflux_aper = (4.87 * units.arcsec).to(units.pix, scale).value
             catalog = self.source_extraction(
                 configuration_file=config,
                 output_dir=output_dir,
                 parameters_file=output_params,
                 catalog_name=f"{self.name}_psfex.fits",
+                PHOT_APERTURES=str(photflux_aper)
             )
             psfex_path = psfex.psfex(
                 catalog=catalog,

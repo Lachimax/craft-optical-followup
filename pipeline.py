@@ -133,7 +133,7 @@ def main(
     elif imaging:
         mode = "Imaging"
     else:
-        _, mode = u.select_option(message="Please select a mode.", options=["Imaging", "Spectroscopy"])
+        _, mode = u.select_option(message="Please select a mode.", options=["Imaging", "Spectroscopy", "Objects"])
 
     if mode == "Spectroscopy":
         if epoch_name is None:

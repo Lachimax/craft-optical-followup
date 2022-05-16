@@ -2881,8 +2881,14 @@ class ImagingEpoch(Epoch):
 
         for obj in self.field.objects:
             obj.update_output_file()
-            obj.push_to_table(select=True)
-            obj.write_plot_photometry()
+            # obj.push_to_table(select=True)
+            # obj.write_plot_photometry()
+
+    def object_properties(self):
+        for obj in self.field.objects:
+            obj.update_output_file()
+            # obj.push_to_table(select=True)
+            # obj.write_plot_photometry()
 
     def proc_get_photometry_all(self, output_dir: str, **kwargs):
         if "image_type" in kwargs and isinstance(kwargs["image_type"], str):
@@ -4119,6 +4125,7 @@ class SurveyImagingEpoch(ImagingEpoch):
     mode = "imaging"
     catalogue = None
     coadded_class = image.SurveyCutout
+    preferred_zeropoint = "calib_pipeline"
 
     def __init__(
             self,
@@ -4233,7 +4240,7 @@ class SurveyImagingEpoch(ImagingEpoch):
                 star_class_tol=star_class_tolerance,
                 image_name=f"{self.catalogue}",
             )
-            img.select_zeropoint(True, preferred="calib_pipeline")
+            img.select_zeropoint(True, preferred=self.preferred_zeropoint)
             img.estimate_depth(zeropoint_name=self.catalogue)  # , do_magnitude_calibration=False)
 
             if deepest is not None:
@@ -4330,6 +4337,7 @@ class PanSTARRS1ImagingEpoch(SurveyImagingEpoch):
     instrument_name = "panstarrs1"
     catalogue = "panstarrs1"
     coadded_class = image.PanSTARRS1Cutout
+    preferred_zeropoint = "panstarrs1"
 
     # TODO: Automatic cutout download; don't worry for now.
     def proc_download(self, output_dir: str, **kwargs):

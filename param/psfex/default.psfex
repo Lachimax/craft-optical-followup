@@ -13,8 +13,8 @@ PSF_SIZE        45,45           # Image size of the PSF model
 #------------------------- Point source measurements -------------------------
  
 CENTER_KEYS     X_IMAGE,Y_IMAGE # Catalogue parameters for source pre-centering
-PHOTFLUX_KEY    FLUX_AUTO    # Catalogue parameter for photometric norm.
-PHOTFLUXERR_KEY FLUXERR_AUTO # Catalogue parameter for photometric error
+PHOTFLUX_KEY    FLUX_APER    # Catalogue parameter for photometric norm.
+PHOTFLUXERR_KEY FLUXERR_APER # Catalogue parameter for photometric error
  
 #----------------------------- PSF variability -------------------------------
  
