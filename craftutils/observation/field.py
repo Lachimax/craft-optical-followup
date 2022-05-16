@@ -727,6 +727,14 @@ class Field:
         obj = objects.Object.from_dict(obj_dict, field=self)
         self.add_object(obj=obj)
 
+    def object_properties(self):
+        for obj in self.objects:
+            obj.load_output_file()
+            obj.update_output_file()
+            obj.push_to_table(select=True)
+            obj.write_plot_photometry()
+            obj.update_output_file()
+
     @classmethod
     def default_params(cls):
         default_params = {
@@ -2879,12 +2887,6 @@ class ImagingEpoch(Epoch):
 
         self.push_to_table()
 
-        for obj in self.field.objects:
-            obj.update_output_file()
-            # obj.push_to_table(select=True)
-            # obj.write_plot_photometry()
-
-    def object_properties(self):
         for obj in self.field.objects:
             obj.update_output_file()
             # obj.push_to_table(select=True)
