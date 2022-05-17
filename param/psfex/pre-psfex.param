@@ -4,16 +4,14 @@ FLUX_BEST                #Best of FLUX_AUTO and FLUX_ISOCOR                     
 FLUXERR_BEST             #RMS error for BEST flux                                   [count]
 FLUX_AUTO
 FLUXERR_AUTO
-FLUX_APER
-FLUX_APER(1)
-FLUXERR_APER
-FLUXERR_APER(1)
+FLUX_APER(3)
+FLUXERR_APER(3)
 MAG_BEST                 #Best of MAG_AUTO and MAG_ISOCOR                           [mag]
 MAGERR_BEST              #RMS error for MAG_BEST                                    [mag]
 MAG_AUTO
 MAGERR_AUTO
-MAG_APER
-MAGERR_APER
+MAG_APER(3)
+MAGERR_APER(3)
 FLUX_WIN                 #Gaussian-weighted flux                                    [count]
 FLUXERR_WIN              #RMS error for WIN flux                                    [count]
 MAG_WIN                  #Gaussian-weighted magnitude                               [mag]

@@ -735,6 +735,13 @@ class Field:
             obj.write_plot_photometry()
             obj.update_output_file()
 
+    def generate_cigale(self):
+        for obj in self.objects:
+            obj.load_output_file()
+            tbl_this = obj.self.photometry_to_table(best=True)
+            # for row in tbl_this:
+            #     inst_name =
+
     @classmethod
     def default_params(cls):
         default_params = {
@@ -5341,7 +5348,7 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
 
             for fil in image_dict:
                 # Generate master flat per-filter, per-chip
-                if fil not in flat_sets or fil in inst.FORS2Filter.qc1_retrievable: #Time-saver
+                if fil not in flat_sets or fil in inst.FORS2Filter.qc1_retrievable:  # Time-saver
                     continue
                 img = image_dict[fil]
                 if "calib_pipeline" in img.zeropoints:

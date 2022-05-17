@@ -161,6 +161,7 @@ def main(
             epoch.field = field
 
     else:
+
         field.object_properties()
 
     u.debug_print(2, "pipeline.py: type(epoch) ==", type(epoch))

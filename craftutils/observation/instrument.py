@@ -14,7 +14,6 @@ from craftutils.retrieve import save_svo_filter, save_fors2_calib
 active_instruments = {}
 active_filters = {}
 
-
 class Instrument:
     def __init__(self, **kwargs):
         self.name = None
@@ -263,6 +262,11 @@ class Filter:
         other_wavelength = tbl_other["Wavelength"]
         self_transmission = tbl_self["Transmission"]
         other_transmission = tbl_other["Transmission"]
+
+        print(min(self_wavelength[self_transmission > 0]))
+        print(min(other_wavelength[other_transmission > 0]))
+        print(max(self_wavelength[self_transmission > 0]))
+        print(max(other_wavelength[other_transmission > 0]))
 
         difference = np.abs(
             min(self_wavelength[self_transmission > 0]) - min(other_wavelength[other_transmission > 0])) + np.abs(

@@ -881,36 +881,88 @@ class ImagingImage(Image):
             output_dir: str,
             force: bool = False,
             set_attributes: bool = True,
+            se_kwargs: dict = {},
             **kwargs
     ):
         """
         Run PSFEx on this image to obtain a PSF model.
         :param output_dir: path to directory to write PSFEx outputs to.
         :param force: If False, and this object already has a PSF model, we just return the one that already exists.
-        :param kwargs:
+        :param se_kwargs: arguments to pass to Source Extractor.
+        :param kwargs: arguments to pass to PSFEx.
         :param set_attributes: If True, this Image's psfex_path, psfex_output, fwhm_pix_psfex and fwhm_psfex will be set
             according to the PSFEx output.
         :return: HDUList representing the PSF model FITS file.
         """
         psfex_output = None
+
         if force or self.psfex_path is None or not os.path.isfile(self.psfex_path):
+            # Set up a list of photometric apertures to pass to SE as a string.
+            _, scale = self.extract_pixel_scale()
+            aper_arcsec = [
+                              4.87,
+                              3.9,
+                              2.92
+                          ] * units.arcsec
+            phot_aper = aper_arcsec.to(units.pix, scale).value
+            phot_aper_str = ""
+            for a in phot_aper:
+                phot_aper_str += f"{a},"
+            phot_aper_str = phot_aper_str[:-1]
+            se_kwargs["PHOT_APERTURES"] = phot_aper_str
+            kwargs["PHOTFLUX_KEY"] = '"FLUX_APER(1)"'
+            kwargs["PHOTFLUXERR_KEY"] = '"FLUXERR_APER(1)"'
+
             config = p.path_to_config_sextractor_config_pre_psfex()
             output_params = p.path_to_config_sextractor_param_pre_psfex()
-            _, scale = self.extract_pixel_scale()
-            photflux_aper = (4.87 * units.arcsec).to(units.pix, scale).value
             catalog = self.source_extraction(
                 configuration_file=config,
                 output_dir=output_dir,
                 parameters_file=output_params,
                 catalog_name=f"{self.name}_psfex.fits",
-                PHOT_APERTURES=str(photflux_aper)
+                **se_kwargs
             )
+
             psfex_path = psfex.psfex(
                 catalog=catalog,
                 output_dir=output_dir,
                 **kwargs
             )
             psfex_output = fits.open(psfex_path)
+
+            if not psfex.check_successful(psfex_output):
+                print(f"PSFEx did not converge. Retrying with PHOTFLUX_KEY==FLUX_AUTO")
+
+                kwargs["PHOTFLUX_KEY"] = "FLUX_AUTO"
+                kwargs["PHOTFLUXERR_KEY"] = "FLUXERR_AUTO"
+
+                psfex_path = psfex.psfex(
+                    catalog=catalog,
+                    output_dir=output_dir,
+                    **kwargs
+                )
+                psfex_output = fits.open(psfex_path)
+
+            i = 1
+            while not psfex.check_successful(psfex_output) and i < len(aper_arcsec):
+                print(f"PSFEx did not converge. Retrying with smaller PHOTFLUX apertures.")
+                kwargs["PHOTFLUX_KEY"] = f"FLUX_APER({i + 1})"
+                kwargs["PHOTFLUXERR_KEY"] = f"FLUXERR_APER({i + 1})"
+
+                catalog = self.source_extraction(
+                    configuration_file=config,
+                    output_dir=output_dir,
+                    parameters_file=output_params,
+                    catalog_name=f"{self.name}_psfex.fits",
+                    **se_kwargs
+                )
+
+                psfex_path = psfex.psfex(
+                    catalog=catalog,
+                    output_dir=output_dir,
+                    **kwargs
+                )
+
             if set_attributes:
                 self.psfex_path = psfex_path
                 self.extract_pixel_scale()
@@ -931,9 +983,12 @@ class ImagingImage(Image):
         else:
             return psfex_output
 
+    # def _psfex(self):
+
     def load_psfex_output(self, force: bool = False):
         if force or self.psfex_output is None:
             self.psfex_output = fits.open(self.psfex_path)
+        return self.psfex_output
 
     def psf_image(self, x: float, y: float, match_pixel_scale: bool = True):
         if match_pixel_scale:
@@ -946,7 +1001,8 @@ class ImagingImage(Image):
             output_dir: str,
             template: 'ImagingImage' = None,
             force: bool = False,
-            **configs):
+            **configs
+    ):
         """
         Uses a PSFEx-generated PSF model in conjunction with Source Extractor to generate a source catalog. The key
         difference with source_extraction is that source_extraction uses only Source Extractor, and does not therefore
@@ -958,21 +1014,24 @@ class ImagingImage(Image):
         :param configs: A dictionary of Source Extractor arguments to pass to command line.
         :return:
         """
-        self.psfex(output_dir=output_dir, force=force)
-        config = p.path_to_config_sextractor_config()
-        output_params = p.path_to_config_sextractor_param()
-        try:
+
+        psf = self.psfex(
+            output_dir=output_dir,
+            force=force,
+        )
+
+        if psfex.check_successful(psf):
             cat_path = self.source_extraction(
-                configuration_file=config,
+                configuration_file=p.path_to_config_sextractor_config(),
                 output_dir=output_dir,
-                parameters_file=output_params,
+                parameters_file=p.path_to_config_sextractor_param(),
                 catalog_name=f"{self.name}_psf-fit.cat",
                 psf_name=self.psfex_path,
                 seeing_fwhm=self.fwhm_psfex.value,
                 template=template,
                 **configs
             )
-        except SystemError:
+        else:
             cat_path = self.source_extraction(
                 configuration_file=p.path_to_config_sextractor_failed_psfex_config(),
                 parameters_file=p.path_to_config_sextractor_failed_psfex_param(),
@@ -1412,7 +1471,8 @@ class ImagingImage(Image):
         zp_tbl = table.QTable(zps)
         if len(zp_tbl) > 0:
             # zp_tbl.sort("zeropoint_img_err")
-            zp_tbl.write(os.path.join(self.data_path, f"{self.name}_zeropoints.ecsv"), format="ascii.ecsv", overwrite=True)
+            zp_tbl.write(os.path.join(self.data_path, f"{self.name}_zeropoints.ecsv"), format="ascii.ecsv",
+                         overwrite=True)
             #        zp_tbl.write(os.path.join(self.data_path, f"{self.name}_zeropoints.csv"), format="ascii.csv")
             best_row = zp_tbl[0]
             best_cat = best_row["catalogue"]
@@ -4217,7 +4277,7 @@ class DESCutout(SurveyCutout):
     ):
         self.add_zeropoint(
             catalogue="calib_pipeline",
-            zeropoint=self.extract_header_item("MAGZERO"), # - 2.5 * np.log10(exptime)) * units.mag,
+            zeropoint=self.extract_header_item("MAGZERO"),  # - 2.5 * np.log10(exptime)) * units.mag,
             zeropoint_err=0.0 * units.mag,
             extinction=0.0 * units.mag,
             extinction_err=0.0 * units.mag,

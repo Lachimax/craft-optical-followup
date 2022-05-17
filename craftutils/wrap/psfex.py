@@ -47,6 +47,15 @@ class PSFExModel(Fittable2DModel):
         return mock[int(x), int(y)]
 
 
+def check_successful(hdu: Union[str, 'astropy.io.fits.HDUList']):
+    print(hdu)
+    model, path = ff.path_or_hdu(hdu)
+    if model[1].header["POLNAXIS"] == 0 or model[1].data[0][0].max() == 0.:
+        return False
+    else:
+        return True
+
+
 def psfex(catalog: str, output_name: str = None, output_dir: str = None, **kwargs):
     old_dir = os.getcwd()
     if output_dir is None:
