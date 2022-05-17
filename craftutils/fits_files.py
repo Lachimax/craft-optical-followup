@@ -40,26 +40,6 @@ def get_rotation_angle(header: fits.header, astropy_units=False):
 
     return theta
 
-
-def projected_pix_scale(hdu: Union[fits.HDUList, str], ang_size_distance: float):
-    """
-    Calculate the per-pixel projected distance of a given angular size distance in an image.
-    :param hdu:
-    :param ang_size_distance:
-    :return: Pixel distance scale, in parsecs (per pixel)
-    """
-    hdu, path = path_or_hdu(hdu=hdu)
-
-    _, angular_scale = get_pixel_scale(file=hdu)
-
-    distance_scale = u.size_from_ang_size_distance(theta=angular_scale, ang_size_distance=ang_size_distance)
-
-    if path:
-        hdu.close()
-
-    return distance_scale
-
-
 def path_or_hdu(hdu: Union[fits.HDUList, str], update=False):
     # TODO: Propagate this method to where it's needed.
     path = None
@@ -147,181 +127,6 @@ def wcs_transfer(header_template: Union[dict, fits.Header], header_update: dict)
     header_update.update(update)
 
     return header_update
-
-
-def reproject(image_1: Union[fits.HDUList, str], image_2: Union[fits.HDUList, str], image_1_output: str = None,
-              image_2_output: str = None, show: bool = False, force: int = None):
-    """
-    Determines which image has the best pixel scale, and reprojects it onto the other; in the process, its spatial
-    resolution will be downgraded to match the worse.
-    :param image_1:
-    :param image_2:
-    :param image_1_output:
-    :param image_2_output:
-    :param show:
-    :return:
-    """
-    import reproject as rp
-    image_1, path_1 = path_or_hdu(image_1)
-    image_2, path_2 = path_or_hdu(image_2)
-    pix_scale_1 = get_pixel_scale(image_1)
-    pix_scale_2 = get_pixel_scale(image_2)
-
-    # Take the image with the better spatial resolution and down-sample it to match the worse-resolution one
-    # (unfortunately)
-    # TODO: The header transfer is coarse and won't convey necessary information about the downgraded image. Take the
-    #  time to go through and select which header elements to keep and which to take from the other image.
-    print('Reprojecting...')
-    if force is None:
-        if pix_scale_1 <= pix_scale_2:
-            reprojected, footprint = rp.reproject_exact(image_1, image_2[0].header)
-            image_1[0].data = reprojected
-            image_1, image_2 = trim_nan(image_1, image_2)
-            n_reprojected = 1
-            image_1[0].header = wcs_transfer(image_2[0].header, image_1[0].header)
-        else:
-            reprojected, footprint = rp.reproject_exact(image_2, image_1[0].header)
-            n_reprojected = 2
-            image_2[0].data = reprojected
-            image_2, image_1 = trim_nan(image_2, image_1)
-            image_2[0].header = wcs_transfer(image_1[0].header, image_2[0].header)
-    elif force == 1:
-        reprojected, footprint = rp.reproject_exact(image_1, image_2[0].header)
-        image_1[0].data = reprojected
-        image_1, image_2 = trim_nan(image_1, image_2)
-        n_reprojected = 1
-        image_1[0].header = wcs_transfer(image_2[0].header, image_1[0].header)
-    elif force == 2:
-        reprojected, footprint = rp.reproject_exact(image_2, image_1[0].header)
-        n_reprojected = 2
-        image_2[0].data = reprojected
-        image_2, image_1 = trim_nan(image_2, image_1)
-        image_2[0].header = wcs_transfer(image_1[0].header, image_2[0].header)
-    else:
-        raise ValueError('force must be 1, 2 or None')
-
-    print(image_1_output)
-    print(image_2_output)
-    if image_1_output is not None:
-        image_1.writeto(image_1_output, overwrite=True)
-    if image_2_output is not None:
-        image_2.writeto(image_2_output, overwrite=True)
-
-    if path_1:
-        image_1.close()
-    if path_2:
-        image_2.close()
-
-    return n_reprojected
-
-
-def align(comparison: Union[fits.hdu.hdulist.HDUList, str], template: Union[fits.hdu.hdulist.HDUList, str],
-          comparison_output: str = 'comparison_shifted.fits', template_output: str = 'template_shifted.fits',
-          axis: Union[tuple, str] = 'midpoint', wcs_coords=False):
-    axis_list = ['midpoint', 'zero']
-    if type(axis) is str and axis not in axis_list:
-        raise ValueError('Axis type must be in', axis_list)
-
-    comparison, comparison_path = path_or_hdu(comparison)
-    template, template_path = path_or_hdu(template)
-
-    template_data = template[0].data
-    template_shape = template_data.shape
-
-    # Get wcs solutions for each image.
-    wcs_template = wcs.WCS(template[0].header)
-    wcs_comparison = wcs.WCS(comparison[0].header)
-
-    # Find centre pixel of the template.
-    width_template = template_shape[1]
-    mid_x_template = int(width_template / 2)
-    height_template = template_shape[0]
-    mid_y_template = int(height_template / 2)
-    print('Midpoint in template:', mid_x_template, mid_y_template)
-    if type(axis) is str:
-        if axis == 'midpoint':
-            # We take the midpoint of the template.
-            axis = (mid_x_template, mid_y_template)
-        elif axis == 'zero':
-            axis = (0, 0)
-    # If we have been passed world coordinates instead of pixel, transform to pixel coordinates.
-    elif wcs_coords:
-        axis = wcs_template.all_world2pix(axis[0], axis[1], 0)
-
-    # Retrieve the RA and DEC of the axis pixel for each image.
-    axis_ra_template, axis_dec_template = wcs_template.all_pix2world(axis[0], axis[1], 0)
-    axis_ra_comparison, axis_dec_comparison = wcs_comparison.all_pix2world(axis[0], axis[1], 0)
-
-    # Get the difference, in degrees.
-    delta_ra_axis = axis_ra_comparison - axis_ra_template
-    delta_dec_axis = axis_dec_comparison - axis_dec_template
-
-    pix_scale_ra_template, pix_scale_dec_template = get_pixel_scale(template)
-    pix_scale_ra_comparison, pix_scale_dec_comparison = get_pixel_scale(comparison)
-
-    print('Template pixel scales:', pix_scale_ra_template, pix_scale_dec_template)
-    print('Comparison pixel scales:', pix_scale_ra_comparison, pix_scale_dec_comparison)
-
-    # Convert offset back to pixels
-    pixel_offset_x = delta_ra_axis / pix_scale_ra_template
-    pixel_offset_y = delta_dec_axis / pix_scale_dec_template
-    print('Pixel offset:', pixel_offset_x, pixel_offset_y)
-    pixel_offset_x = int(np.round(pixel_offset_x))
-    pixel_offset_y = int(np.round(pixel_offset_y))
-
-    comparison_cut = comparison.copy()
-    template_cut = template.copy()
-    print(template_cut[0].data.shape, comparison_cut[0].data.shape)
-    # Trim left and bottom of either image to align their pixels.
-    if pixel_offset_y > 0:
-        template_cut = trim(hdu=template_cut, bottom=pixel_offset_y)
-        template_cut[0].header['DELTA_Y'] = pixel_offset_y
-        comparison_cut[0].header['DELTA_Y'] = 0
-    else:
-        comparison_cut = trim(hdu=comparison_cut, bottom=-pixel_offset_y)
-        template_cut[0].header['DELTA_Y'] = 0
-        comparison_cut[0].header['DELTA_Y'] = -pixel_offset_y
-    print('Template shape:', template_cut[0].data.shape, '; Comparison shape:', comparison_cut[0].data.shape)
-
-    if pixel_offset_x > 0:
-        comparison_cut = trim(hdu=comparison_cut, left=pixel_offset_x)
-        template_cut[0].header['DELTA_X'] = 0
-        comparison_cut[0].header['DELTA_X'] = pixel_offset_x
-    else:
-        template_cut = trim(hdu=template_cut, left=-pixel_offset_x)
-        template_cut[0].header['DELTA_X'] = -pixel_offset_x
-        comparison_cut[0].header['DELTA_X'] = 0
-    print('Template shape:', template_cut[0].data.shape, '; Comparison shape:', comparison_cut[0].data.shape)
-
-    comparison_cut_shape = comparison_cut[0].data.shape
-    template_cut_shape = template_cut[0].data.shape
-
-    # Now that they are aligned, trim right and top of either image so that they come out the same size.
-    if comparison_cut_shape[1] > template_cut_shape[1]:
-        comparison_cut = trim(hdu=comparison_cut, right=template_cut_shape[1])
-
-    elif comparison_cut_shape[1] < template_cut_shape[1]:
-        template_cut = trim(hdu=template_cut, right=comparison_cut_shape[1])
-    print('Template shape:', template_cut[0].data.shape, '; Comparison shape:', comparison_cut[0].data.shape)
-
-    if comparison_cut_shape[0] > template_cut_shape[0]:
-        comparison_cut = trim(hdu=comparison_cut, top=template_cut_shape[0])
-    elif comparison_cut_shape[0] < template_cut_shape[0]:
-        template_cut = trim(hdu=template_cut, top=comparison_cut_shape[0])
-    print('Template shape:', template_cut[0].data.shape, '; Comparison shape:', comparison_cut[0].data.shape)
-
-    add_log(comparison_cut, f'Aligned astrometrically to {template}.')
-    add_log(template_cut, f'Aligned astrometrically to {comparison}.')
-
-    print('Writing new comparison file to:\n', comparison_output)
-    comparison_cut.writeto(comparison_output, overwrite=True)
-    print('Writing new template file to:\n', template_output)
-    template_cut.writeto(template_output, overwrite=True)
-
-    if template_path:
-        template.close()
-    if comparison_path:
-        comparison.close()
 
 
 def divide_by_exp_time(file: Union['fits.hdu_list.hdulist.HDUList', str], output: 'str' = None, ext: int = 0):
@@ -659,8 +464,6 @@ def get_pixel_scale(file: Union['fits.hdu_list.hdulist.HDUList', 'str'], ext: in
     :return: Tuple containing the pixel scale of the FITS file: (ra scale, dec scale)
         If astropy_units is True, returns it as an astropy pixel_scale equivalency.
     """
-    # TODO: Rewrite photometry functions to use this
-
     file, path = path_or_hdu(file)
 
     header = file[ext].header
@@ -671,24 +474,17 @@ def get_pixel_scale(file: Union['fits.hdu_list.hdulist.HDUList', 'str'], ext: in
     # difference SHOULD be pretty tiny across the image.
 
     w = wcs.WCS(header)
-    end = image.shape[0] - 1
-    ra_pixel_scale = (w.pixel_to_world(0, 0).ra.deg - w.pixel_to_world(end, 0).ra.deg) / end
 
-    # By comparison the pixel scale in declination is easy to obtain - as DEC is undistorted, it is simply the true
-    # pixel scale of the image, which the header stores.
-    dec_pixel_scale = w.pixel_scale_matrix[1, 1]
-    if dec_pixel_scale == 0:
-        dec_pixel_scale = w.pixel_scale_matrix[1, 0]
+    dec = (header["CRVAL2"] * units.deg).to(units.rad)
+    ra_pixel_scale, dec_pixel_scale = wcs.utils.proj_plane_pixel_scales(w) * units.deg
+    ra_pixel_scale /= np.cos(dec.value)
 
     if path:
         file.close()
 
-    ra_pixel_scale = abs(ra_pixel_scale)
-    dec_pixel_scale = abs(dec_pixel_scale)
-
     if astropy_units:
-        ra_pixel_scale = units.pixel_scale(ra_pixel_scale * units.deg / units.pixel)
-        dec_pixel_scale = units.pixel_scale(dec_pixel_scale * units.deg / units.pixel)
+        ra_pixel_scale = units.pixel_scale(x / units.pixel)
+        dec_pixel_scale = units.pixel_scale(y / units.pixel)
 
     return ra_pixel_scale, dec_pixel_scale
 

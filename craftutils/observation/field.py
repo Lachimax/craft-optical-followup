@@ -980,7 +980,7 @@ class FRBField(Field):
         frame = u.check_quantity(frame, unit=units.pix)
 
         red.extract_pixel_scale(ext)
-        frame = frame.to(units.pix, red.pixel_scale_dec).value
+        frame = frame.to(units.pix, red.pixel_scale_y).value
 
         red.load_data()
         x, y = red.world_to_pixel(centre, 0)
@@ -1119,8 +1119,8 @@ class FRBField(Field):
 
             e = Ellipse(
                 xy=(x, y),
-                width=2 * a.to(units.pix, img.pixel_scale_dec).value,
-                height=2 * b.to(units.pix, img.pixel_scale_dec).value,
+                width=2 * a.to(units.pix, img.pixel_scale_y).value,
+                height=2 * b.to(units.pix, img.pixel_scale_y).value,
                 angle=theta.value
             )
             e.set_facecolor('none')

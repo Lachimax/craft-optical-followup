@@ -775,8 +775,8 @@ class ImagingImage(Image):
         self.filter_name = None
         self.filter_short = None
         self.filter = None
-        self.pixel_scale_ra = None
-        self.pixel_scale_dec = None
+        self.pixel_scale_x = None
+        self.pixel_scale_y = None
 
         self.psfex_path = None
         self.psfex_output = None
@@ -946,8 +946,8 @@ class ImagingImage(Image):
             i = 1
             while not psfex.check_successful(psfex_output) and i < len(aper_arcsec):
                 print(f"PSFEx did not converge. Retrying with smaller PHOTFLUX apertures.")
-                kwargs["PHOTFLUX_KEY"] = f"FLUX_APER({i + 1})"
-                kwargs["PHOTFLUXERR_KEY"] = f"FLUXERR_APER({i + 1})"
+                kwargs["PHOTFLUX_KEY"] = f'"FLUX_APER({i + 1})"'
+                kwargs["PHOTFLUXERR_KEY"] = f'"FLUXERR_APER({i + 1})"'
 
                 catalog = self.source_extraction(
                     configuration_file=config,
@@ -963,10 +963,12 @@ class ImagingImage(Image):
                     **kwargs
                 )
 
+                i += 1
+
             if set_attributes:
                 self.psfex_path = psfex_path
                 self.extract_pixel_scale()
-                pix_scale = self.pixel_scale_dec
+                pix_scale = self.pixel_scale_y
                 self.fwhm_pix_psfex = psfex_output[1].header['PSF_FWHM'] * units.pixel
                 self.fwhm_psfex = self.fwhm_pix_psfex.to(units.arcsec, pix_scale)
 
@@ -1315,16 +1317,28 @@ class ImagingImage(Image):
         self.load_wcs()
         return self.wcs.calc_footprint()
 
+    def _pixel_scale(self, ext: int = 0):
+        self.load_wcs(ext=ext)
+        return wcs.utils.proj_plane_pixel_scales(
+            self.wcs
+        ) * units.deg
+
     def extract_pixel_scale(self, ext: int = 0, force: bool = False):
-        if force or self.pixel_scale_ra is None or self.pixel_scale_dec is None:
-            self.open()
-            self.pixel_scale_ra, self.pixel_scale_dec = ff.get_pixel_scale(self.hdu_list, ext=ext,
-                                                                           astropy_units=True)
-            self.close()
+        if force or self.pixel_scale_x is None or self.pixel_scale_y is None:
+            x, y = self._pixel_scale(ext=ext)
+            self.pixel_scale_x = units.pixel_scale(x / units.pix)
+            self.pixel_scale_y = units.pixel_scale(y / units.pix)
         else:
             u.debug_print(2, "Pixel scale already set.")
 
-        return self.pixel_scale_ra, self.pixel_scale_dec
+        return self.pixel_scale_x, self.pixel_scale_y
+
+    def extract_world_scale(self, ext: int = 0, force: bool = False):
+        x, y = self._pixel_scale(ext=ext)
+        dec = self.extract_pointing().dec.to(units.rad)
+        ra_scale = units.pixel_scale((x / np.cos(dec)) / units.pix)
+        dec_scale = units.pixel_scale(y / units.pix)
+        return ra_scale, dec_scale
 
     def extract_filter(self):
         key = self.header_keys()["filter"]
@@ -1729,13 +1743,13 @@ class ImagingImage(Image):
         self.load_source_cat()
         self.extract_pixel_scale()
 
-        self.source_cat["A_IMAGE"] = self.source_cat["A_WORLD"].to(units.pix, self.pixel_scale_dec)
-        self.source_cat["B_IMAGE"] = self.source_cat["A_WORLD"].to(units.pix, self.pixel_scale_dec)
+        self.source_cat["A_IMAGE"] = self.source_cat["A_WORLD"].to(units.pix, self.pixel_scale_y)
+        self.source_cat["B_IMAGE"] = self.source_cat["A_WORLD"].to(units.pix, self.pixel_scale_y)
         self.source_cat["KRON_AREA_IMAGE"] = self.source_cat["A_IMAGE"] * self.source_cat["B_IMAGE"] * np.pi
 
         if self.source_cat_dual is not None:
-            self.source_cat_dual["A_IMAGE"] = self.source_cat_dual["A_WORLD"].to(units.pix, self.pixel_scale_dec)
-            self.source_cat_dual["B_IMAGE"] = self.source_cat_dual["A_WORLD"].to(units.pix, self.pixel_scale_dec)
+            self.source_cat_dual["A_IMAGE"] = self.source_cat_dual["A_WORLD"].to(units.pix, self.pixel_scale_y)
+            self.source_cat_dual["B_IMAGE"] = self.source_cat_dual["A_WORLD"].to(units.pix, self.pixel_scale_y)
             self.source_cat_dual["KRON_AREA_IMAGE"] = self.source_cat_dual["A_IMAGE"] * self.source_cat_dual[
                 "B_IMAGE"] * np.pi
 
@@ -2085,14 +2099,14 @@ class ImagingImage(Image):
         new_path = os.path.join(output_dir, self.filename.replace(".fits", "_astrometry.fits"))
         new = self.copy(new_path)
 
-        ra_scale, dec_scale = self.extract_pixel_scale(ext=ext)
+        x_scale, y_scale = self.extract_pixel_scale(ext=ext)
 
         new.load_headers()
         if not np.isnan(diagnostics["median_offset_x"].value) and not np.isnan(diagnostics["median_offset_y"].value):
 
             new.shift_wcs(
-                delta_ra=diagnostics["median_offset_x"].to(units.deg, ra_scale).value,
-                delta_dec=diagnostics["median_offset_y"].to(units.deg, dec_scale).value
+                delta_ra=diagnostics["median_offset_x"].to(units.deg, x_scale).value,
+                delta_dec=diagnostics["median_offset_y"].to(units.deg, y_scale).value
             )
 
             new.add_log(
@@ -2877,10 +2891,10 @@ class ImagingImage(Image):
     def object_axes(self):
         self.load_source_cat()
         self.extract_pixel_scale()
-        self.source_cat["A_IMAGE"] = self.source_cat["A_WORLD"].to(units.pix, self.pixel_scale_dec)
-        self.source_cat["B_IMAGE"] = self.source_cat["B_WORLD"].to(units.pix, self.pixel_scale_dec)
-        self.source_cat_dual["A_IMAGE"] = self.source_cat_dual["A_WORLD"].to(units.pix, self.pixel_scale_dec)
-        self.source_cat_dual["B_IMAGE"] = self.source_cat_dual["B_WORLD"].to(units.pix, self.pixel_scale_dec)
+        self.source_cat["A_IMAGE"] = self.source_cat["A_WORLD"].to(units.pix, self.pixel_scale_y)
+        self.source_cat["B_IMAGE"] = self.source_cat["B_WORLD"].to(units.pix, self.pixel_scale_y)
+        self.source_cat_dual["A_IMAGE"] = self.source_cat_dual["A_WORLD"].to(units.pix, self.pixel_scale_y)
+        self.source_cat_dual["B_IMAGE"] = self.source_cat_dual["B_WORLD"].to(units.pix, self.pixel_scale_y)
 
         self.add_log(
             action=f"Created axis columns A_IMAGE, B_IMAGE in pixel units from A_WORLD, B_WORLD.",
@@ -3042,8 +3056,8 @@ class ImagingImage(Image):
                       row['A_WORLD'].to(units.arcsec))
         kron_a = row['KRON_RADIUS'] * row['A_WORLD']
         u.debug_print(1, "ImagingImage.nice_frame(): kron_a ==", kron_a)
-        pix_scale = self.pixel_scale_dec
-        u.debug_print(1, "ImagingImage.nice_frame(): self.pixel_scale_dec ==", self.pixel_scale_dec)
+        pix_scale = self.pixel_scale_y
+        u.debug_print(1, "ImagingImage.nice_frame(): self.pixel_scale_dec ==", self.pixel_scale_y)
         this_frame = max(
             kron_a.to(units.pixel, pix_scale), frame)  # + 5 * units.pix,
         u.debug_print(1, "ImagingImage.nice_frame(): this_frame ==", this_frame)
@@ -3197,7 +3211,7 @@ class ImagingImage(Image):
                 output=output,
                 output_cat=output_cat,
                 overwrite=overwrite,
-                fwhm=self.fwhm_psfex.to(units.pix, self.pixel_scale_dec)
+                fwhm=self.fwhm_psfex.to(units.pix, self.pixel_scale_y)
             )
         elif model == "psfex":
             file, sources = ph.insert_point_sources_to_file(
@@ -3261,7 +3275,7 @@ class ImagingImage(Image):
                 y_synth = y
             elif positioning == 'gaussian':
                 self.extract_pixel_scale()
-                scale.to(units.pix, self.pixel_scale_dec)
+                scale.to(units.pix, self.pixel_scale_y)
                 x_synth = -1
                 y_synth = -1
                 self.extract_n_pix()
@@ -3715,7 +3729,7 @@ class ImagingImage(Image):
             sub_background: bool = True
     ):
         self.extract_pixel_scale()
-        pixel_radius = aperture_radius.to(units.pix, self.pixel_scale_dec)
+        pixel_radius = aperture_radius.to(units.pix, self.pixel_scale_y)
         self.calculate_background(ext=ext)
         if sub_background:
             data = self.data_sub_bkg[ext]
@@ -3755,8 +3769,8 @@ class ImagingImage(Image):
         x, y = self.wcs.all_world2pix(centre.ra.value, centre.dec.value, 0)
         x = u.check_iterable(x)
         y = u.check_iterable(y)
-        a = u.check_iterable((a_world.to(units.pix, self.pixel_scale_dec)).value)
-        b = u.check_iterable((b_world.to(units.pix, self.pixel_scale_dec)).value)
+        a = u.check_iterable((a_world.to(units.pix, self.pixel_scale_y)).value)
+        b = u.check_iterable((b_world.to(units.pix, self.pixel_scale_y)).value)
         kron_radius = u.check_iterable(kron_radius)
         rotation_angle = self.extract_rotation_angle(ext=ext)
         print(theta_world, rotation_angle)
