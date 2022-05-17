@@ -472,15 +472,15 @@ def get_pixel_scale(file: Union['fits.hdu_list.hdulist.HDUList', 'str'], ext: in
     w = wcs.WCS(header)
 
     dec = (header["CRVAL2"] * units.deg).to(units.rad)
-    ra_pixel_scale, dec_pixel_scale = wcs.utils.proj_plane_pixel_scales(w) * units.deg
+    ra_pixel_scale, dec_pixel_scale = wcs.utils.proj_plane_pixel_scales(w)
     ra_pixel_scale /= np.cos(dec.value)
 
     if path:
         file.close()
 
     if astropy_units:
-        ra_pixel_scale = units.pixel_scale(ra_pixel_scale / units.pixel)
-        dec_pixel_scale = units.pixel_scale(dec_pixel_scale / units.pixel)
+        ra_pixel_scale = units.pixel_scale(ra_pixel_scale * units.deg / units.pixel)
+        dec_pixel_scale = units.pixel_scale(dec_pixel_scale * units.deg / units.pixel)
 
     return ra_pixel_scale, dec_pixel_scale
 
