@@ -469,10 +469,6 @@ def get_pixel_scale(file: Union['fits.hdu_list.hdulist.HDUList', 'str'], ext: in
     header = file[ext].header
     image = file[ext].data
 
-    # To take (very roughly) into account the spherical distortion to the RA, we obtain an RA pixel scale by dividing
-    # the difference in RA across the image by the number of pixels. It's good enough to give an average value, and the
-    # difference SHOULD be pretty tiny across the image.
-
     w = wcs.WCS(header)
 
     dec = (header["CRVAL2"] * units.deg).to(units.rad)
@@ -483,8 +479,8 @@ def get_pixel_scale(file: Union['fits.hdu_list.hdulist.HDUList', 'str'], ext: in
         file.close()
 
     if astropy_units:
-        ra_pixel_scale = units.pixel_scale(x / units.pixel)
-        dec_pixel_scale = units.pixel_scale(y / units.pixel)
+        ra_pixel_scale = units.pixel_scale(ra_pixel_scale / units.pixel)
+        dec_pixel_scale = units.pixel_scale(dec_pixel_scale / units.pixel)
 
     return ra_pixel_scale, dec_pixel_scale
 

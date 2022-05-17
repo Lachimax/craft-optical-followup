@@ -2099,14 +2099,14 @@ class ImagingImage(Image):
         new_path = os.path.join(output_dir, self.filename.replace(".fits", "_astrometry.fits"))
         new = self.copy(new_path)
 
-        x_scale, y_scale = self.extract_pixel_scale(ext=ext)
+        ra_scale, dec_scale = self.extract_world_scale(ext=ext)
 
         new.load_headers()
         if not np.isnan(diagnostics["median_offset_x"].value) and not np.isnan(diagnostics["median_offset_y"].value):
 
             new.shift_wcs(
-                delta_ra=diagnostics["median_offset_x"].to(units.deg, x_scale).value,
-                delta_dec=diagnostics["median_offset_y"].to(units.deg, y_scale).value
+                delta_ra=diagnostics["median_offset_x"].to(units.deg, ra_scale).value,
+                delta_dec=diagnostics["median_offset_y"].to(units.deg, dec_scale).value
             )
 
             new.add_log(
@@ -2759,7 +2759,7 @@ class ImagingImage(Image):
 
         source_cat = self.get_source_cat(dual=dual)
 
-        ra_scale, dec_scale = self.extract_pixel_scale()
+        _, scale = self.extract_pixel_scale()
 
         if star_tolerance is not None:
             source_cat = source_cat[source_cat["CLASS_STAR"] > star_tolerance]
@@ -2782,7 +2782,7 @@ class ImagingImage(Image):
         matches_source_cat["RA_OFFSET_FROM_REF"] = matches_source_cat["RA"] - matches_ext_cat[ra_col]
         matches_source_cat["DEC_OFFSET_FROM_REF"] = matches_source_cat["DEC"] - matches_ext_cat[dec_col]
 
-        matches_source_cat["PIX_OFFSET_FROM_REF"] = distance.to(units.pix, dec_scale)
+        matches_source_cat["PIX_OFFSET_FROM_REF"] = distance.to(units.pix, scale)
 
         matches_source_cat["X_OFFSET_FROM_REF"] = matches_source_cat["X_IMAGE"] - x_cat * units.pix
         matches_source_cat["Y_OFFSET_FROM_REF"] = matches_source_cat["Y_IMAGE"] - y_cat * units.pix
