@@ -510,7 +510,8 @@ def determine_zeropoint_sextractor(
     params['image_path'] = str(path)
 
     print("Running zeropoint determination, with:")
-    print('SExtractor catalogue path:', sextractor_cat)
+    if isinstance(sextractor_cat, str):
+        print('SExtractor catalogue path:', sextractor_cat)
     print('Image path:', path)
     print('Catalogue path:', cat_path)
     print('Output:', output_path)
@@ -573,10 +574,14 @@ def determine_zeropoint_sextractor(
     if stars_only:
         params['star_class_tol'] = float(star_class_tol)
 
-    if type(sextractor_cat) is str:
+    if isinstance(sextractor_cat, str):
         source_tbl = table.QTable.read(sextractor_cat, format="ascii.sextractor")
     else:
         source_tbl = sextractor_cat
+
+    if flux_column not in sextractor_cat.colnames:
+        print(f"Flux column {flux_column} not in provided SE catalogue.")
+        return None
 
     source_tbl['mag'], source_tbl['mag_err'] = magnitude_complete(flux=source_tbl[flux_column],
                                                                   flux_err=source_tbl[flux_err_column],
@@ -1179,6 +1184,7 @@ def zeropoint_science_field(
         separate_chips=False,
         cat_name: str = "DES"
 ):
+
     properties = p.object_params_instrument(obj=epoch, instrument=instrument)
     frb_properties = p.object_params_frb(obj=epoch[:-2])
     outputs = p.object_output_params(obj=epoch, instrument=instrument)
