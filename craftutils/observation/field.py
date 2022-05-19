@@ -868,6 +868,10 @@ class Field:
             survey=survey_name
         )
         if field_class is FRBField:
+            if ra_err is None:
+                ra_err = 0.
+            if dec_err is None:
+                dec_err = 0.
             yaml_dict["frb"]["position"] = position
             yaml_dict["frb"]["position_err"]["a"]["stat"] = float(ra_err)
             yaml_dict["frb"]["position_err"]["b"]["stat"] = float(dec_err)
@@ -2105,6 +2109,7 @@ class ImagingEpoch(Epoch):
             frames = self.frames_normalised
 
         for fil in frames:
+            print(f"Registering frames for {fil}")
             if isinstance(template, int):
                 tmp = frames[fil][template]
                 n_template = template

@@ -97,6 +97,11 @@ def attempt_skycoord(coord: Union[SkyCoord, str, tuple, list, np.ndarray]):
     elif type(coord) is str:
         return SkyCoord(coord)
     elif type(coord) in [tuple, list, np.ndarray]:
+        if isinstance(coord[0], float):
+            coord = (coord[0] * units.deg, coord[1] * units.deg)
+        elif isinstance(coord[0], str):
+            if coord[0].isnumeric():
+                coord = (coord[0] + "d", coord[1] + "d")
         return SkyCoord(coord[0], coord[1])
     else:
         raise TypeError(f"coord is {type(coord)}; must be of type SkyCoord, str, tuple, list, or numpy array")
