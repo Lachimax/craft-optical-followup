@@ -1,5 +1,6 @@
 from typing import Union, Tuple, List
 import os
+import copy
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -198,10 +199,10 @@ class PositionUncertainty:
     @classmethod
     def default_params(cls):
         return {
-            "ra": uncertainty_dict.copy(),
-            "dec": uncertainty_dict.copy(),
-            "a": uncertainty_dict.copy(),
-            "b": uncertainty_dict.copy(),
+            "ra": copy.deepcopy(uncertainty_dict),
+            "dec": copy.deepcopy(uncertainty_dict),
+            "a": copy.deepcopy(uncertainty_dict),
+            "b": copy.deepcopy(uncertainty_dict),
             "theta": 0.0,
             "sigma": None,
             "healpix_path": None
@@ -295,7 +296,7 @@ class Object:
         cls = image.CoaddedImage.select_child_class(instrument=deepest["instrument"])
         deepest_img = cls(path=deepest_path)
         deepest_fwhm = deepest_img.extract_header_item("PSF_FWHM") * units.arcsec
-        mag, mag_err, snr = deepest_img.sep_elliptical_magnitude(
+        mag, mag_err, snr, back = deepest_img.sep_elliptical_magnitude(
             centre=self.position,
             a_world=self.a,
             b_world=self.b,
@@ -306,7 +307,9 @@ class Object:
         )
         deepest_dict["mag_sep"] = mag[0]
         deepest_dict["mag_sep_err"] = mag_err[0]
+        deepest_dict["back_sep"] = back[0]
         deepest_dict["snr_sep"] = snr[0]
+        deepest_dict["zeropoint_sep"] = deepest_img.zeropoint_best["zeropoint_img"]
 
         for instrument in self.photometry:
             for band in self.photometry[instrument]:
@@ -323,18 +326,49 @@ class Object:
                         do_mask = phot_dict["do_mask"]
                     else:
                         do_mask = True
-                    mag, mag_err, snr = img.sep_elliptical_magnitude(
+                    mag, mag_err, snr, back = img.sep_elliptical_magnitude(
                         centre=self.position,
                         a_world=self.a,  # + delta_fwhm,
                         b_world=self.b,  # + delta_fwhm,
                         theta_world=self.theta,
                         kron_radius=self.kron,
                         output=os.path.join(self.data_path, f"{self.name_filesys}_{instrument}_{band}_{epoch}"),
-                        mask_nearby=do_mask
+                        mask_nearby=True
                     )
-                    phot_dict["mag_sep"] = mag[0]
-                    phot_dict["mag_sep_err"] = mag_err[0]
-                    phot_dict["snr_sep"] = snr[0]
+                    if mag is None:
+                        mag = -999. * units.mag
+                        mag_err = -999. * units.mag
+                        snr = -999.
+                        back = -999.
+                    else:
+                        mag = mag[0]
+                        mag_err = mag_err[0]
+                        snr = snr[0]
+                        back = back[0]
+                    phot_dict["mag_sep"] = mag
+                    phot_dict["mag_sep_err"] = mag_err
+                    phot_dict["snr_sep"] = snr
+                    phot_dict["back_sep"] = back
+                    mag, mag_err, snr, back = img.sep_elliptical_magnitude(
+                        centre=self.position,
+                        a_world=self.a,  # + delta_fwhm,
+                        b_world=self.b,  # + delta_fwhm,
+                        theta_world=self.theta,
+                        kron_radius=self.kron,
+                        output=os.path.join(self.data_path, f"{self.name_filesys}_{instrument}_{band}_{epoch}"),
+                        mask_nearby=False
+                    )
+                    if mag is None:
+                        mag = -999. * units.mag
+                        mag_err = -999. * units.mag
+                        snr = -999.
+                    else:
+                        mag = mag[0]
+                        mag_err = mag_err[0]
+                        snr = snr[0]
+                    phot_dict["mag_sep_unmasked"] = mag
+                    phot_dict["mag_sep_unmasked_err"] = mag_err
+                    phot_dict["snr_sep_unmasked"] = snr
 
         self.update_output_file()
 
@@ -482,35 +516,33 @@ class Object:
 
         with quantity_support():
 
-            plot_limit = (-999 * units.mag == self.photometry_tbl["mag_sep_err"])
-            plot_mag = np.invert(plot_limit)
-
-            print(plot_limit)
-            print(plot_mag)
-            print(self.photometry_tbl["mag_sep"][plot_mag])
+            valid = self.photometry_tbl[self.photometry_tbl["mag_sep"] > -990 * units.mag]
+            plot_limit = (-999 * units.mag == valid["mag_sep_err"])
+            limits = valid[plot_limit]
+            mags = valid[np.invert(plot_limit)]
 
             ax.errorbar(
-                self.photometry_tbl["lambda_eff"][plot_mag],
-                self.photometry_tbl["mag_sep"][plot_mag],
-                yerr=self.photometry_tbl["mag_sep_err"][plot_mag],
+                mags["lambda_eff"],
+                mags["mag_sep"],
+                yerr=mags["mag_sep_err"],
                 label="Magnitude",
                 **kwargs,
             )
             ax.scatter(
-                self.photometry_tbl["lambda_eff"][plot_limit],
-                self.photometry_tbl["mag_sep"][plot_limit],
+                limits["lambda_eff"],
+                limits["mag_sep"],
                 label="Magnitude upper limit",
                 marker="v",
             )
             ax.scatter(
-                self.photometry_tbl["lambda_eff"][plot_mag],
-                self.photometry_tbl["mag_sep_ext_corrected"][plot_mag],
+                mags["lambda_eff"],
+                mags["mag_sep_ext_corrected"],
                 color="orange",
                 label="Corrected for Galactic extinction"
             )
             ax.scatter(
-                self.photometry_tbl["lambda_eff"][plot_limit],
-                self.photometry_tbl["mag_sep_ext_corrected"][plot_limit],
+                limits["lambda_eff"],
+                limits["mag_sep_ext_corrected"],
                 label="Magnitude upper limit",
                 marker="v",
             )
@@ -579,6 +611,7 @@ class Object:
 
         if output is not False:
             for fmt in fmts:
+                # u.detect_problem_table(self.photometry_tbl)
                 self.photometry_tbl.write(output.replace(".ecsv", fmt[fmt.find("."):]), format=fmt, overwrite=True)
         return self.photometry_tbl
 
@@ -896,8 +929,8 @@ class Object:
     def default_params(cls):
         default_params = {
             "name": None,
-            "position": position_dictionary.copy(),
-            "position_err": PositionUncertainty.default_params(),
+            "position": copy.deepcopy(position_dictionary),
+            "position_err": copy.deepcopy(PositionUncertainty.default_params()),
             "type": None,
             "photometry_args_manual":
                 {
@@ -955,6 +988,8 @@ class Object:
             return Galaxy
         elif obj_type == "frb":
             return FRB
+        elif obj_type == "star":
+            return Object
         else:
             raise ValueError(f"Didn't recognise obj_type '{obj_type}'")
 
@@ -981,6 +1016,8 @@ class Object:
         obj.cat_row = row
         return obj
 
+class Star(Object):
+    pass
 
 class Galaxy(Object):
     def __init__(
@@ -1059,6 +1096,7 @@ class Galaxy(Object):
         })
         return default_params
 
+    # TODO: There do not need to be separate methods per class for this. Just pass dictionary as a **kwargs and be done with it
     @classmethod
     def from_dict(cls, dictionary: dict, field=None):
         ra, dec = p.select_coords(dictionary.pop("position"))
