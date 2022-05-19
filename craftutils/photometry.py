@@ -510,7 +510,8 @@ def determine_zeropoint_sextractor(
     params['image_path'] = str(path)
 
     print("Running zeropoint determination, with:")
-    print('SExtractor catalogue path:', sextractor_cat)
+    if isinstance(sextractor_cat, str):
+        print('SExtractor catalogue path:', sextractor_cat)
     print('Image path:', path)
     print('Catalogue path:', cat_path)
     print('Output:', output_path)
@@ -573,10 +574,14 @@ def determine_zeropoint_sextractor(
     if stars_only:
         params['star_class_tol'] = float(star_class_tol)
 
-    if type(sextractor_cat) is str:
+    if isinstance(sextractor_cat, str):
         source_tbl = table.QTable.read(sextractor_cat, format="ascii.sextractor")
     else:
         source_tbl = sextractor_cat
+
+    if flux_column not in sextractor_cat.colnames:
+        print(f"Flux column {flux_column} not in provided SE catalogue.")
+        return None
 
     source_tbl['mag'], source_tbl['mag_err'] = magnitude_complete(flux=source_tbl[flux_column],
                                                                   flux_err=source_tbl[flux_err_column],
@@ -795,14 +800,16 @@ def determine_zeropoint_sextractor(
             matches_prior = matches_iter
 
             keep = x_iter >= mag_min
+            if sum(keep) < 3:
+                break
             x_iter = x_iter[keep]
             y_iter = y_iter[keep]
             y_uncertainty_iter = y_uncertainty_iter[keep]
             y_weights_iter = y_weights_iter[keep]
             x_weights_iter = x_weights_iter[keep]
             matches_iter = matches_iter[keep]
-
             zps_iter = x_iter - y_iter
+            # print(y_weights_iter)
             zp_mean_iter = np.average(zps_iter, weights=y_weights_iter)
             err_this = u.root_mean_squared_error(
                 model_values=zp_mean_iter * np.ones_like(zps_iter).value,
@@ -876,6 +883,8 @@ def determine_zeropoint_sextractor(
             matches_prior = matches_iter
 
             keep = x_iter <= mag_max
+            if sum(keep) < 3:
+                break
             x_iter = x_iter[keep]
             y_iter = y_iter[keep]
             y_uncertainty_iter = y_uncertainty_iter[keep]
@@ -1142,7 +1151,7 @@ def determine_zeropoint_sextractor(
 
     matches_final["mag_cat"] = matches_final[cat_mag_col]
 
-    matches_final.write(output_path + "matches.csv", format='ascii.csv')
+    matches_final.write(output_path + "matches.csv", format='ascii.csv', overwrite=True)
     u.rm_check(output_path + 'parameters.yaml')
     p.add_params(file=output_path + 'parameters.yaml', params=params, skip_json=True)
 
@@ -1175,6 +1184,7 @@ def zeropoint_science_field(
         separate_chips=False,
         cat_name: str = "DES"
 ):
+
     properties = p.object_params_instrument(obj=epoch, instrument=instrument)
     frb_properties = p.object_params_frb(obj=epoch[:-2])
     outputs = p.object_output_params(obj=epoch, instrument=instrument)

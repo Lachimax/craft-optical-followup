@@ -133,7 +133,7 @@ def main(
     elif imaging:
         mode = "Imaging"
     else:
-        _, mode = u.select_option(message="Please select a mode.", options=["Imaging", "Spectroscopy"])
+        _, mode = u.select_option(message="Please select a mode.", options=["Imaging", "Spectroscopy", "Objects"])
 
     if mode == "Spectroscopy":
         if epoch_name is None:
@@ -146,7 +146,7 @@ def main(
                 instrument = fld.select_instrument(mode="spectroscopy")
             epoch = fld.SpectroscopyEpoch.from_params(epoch_name, instrument=instrument, field=field)
 
-    else:  # if mode == "Imaging"
+    elif mode == "Imaging":
         if epoch_name is None:
             # Build a list of imaging epochs from that field.
             if type(field) is fld.FRBField:
@@ -159,6 +159,10 @@ def main(
                 instrument = fld.select_instrument(mode="imaging")
             epoch = fld.ImagingEpoch.from_params(epoch_name, instrument=instrument, field=field)
             epoch.field = field
+
+    else:
+
+        field.object_properties()
 
     u.debug_print(2, "pipeline.py: type(epoch) ==", type(epoch))
     epoch.do = do

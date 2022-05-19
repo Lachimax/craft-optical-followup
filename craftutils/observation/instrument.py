@@ -14,7 +14,6 @@ from craftutils.retrieve import save_svo_filter, save_fors2_calib
 active_instruments = {}
 active_filters = {}
 
-
 class Instrument:
     def __init__(self, **kwargs):
         self.name = None
@@ -181,10 +180,15 @@ class Filter:
         if "svo_service" in kwargs:
             svo = kwargs["svo_service"]
             if "filter_id" in svo:
-                if isinstance(svo["filter_id"], list):
-                    self.svo_id += svo["filter_id"]
-                else:
-                    self.svo_id.append(svo["filter_id"])
+                ids = svo["filter_id"]
+            elif "id" in svo:
+                ids = svo["id"]
+            else:
+                ids = []
+            if isinstance(ids, list):
+                self.svo_id += ids
+            else:
+                self.svo_id.append(ids)
             if "instrument" in svo:
                 self.svo_instrument = svo["instrument"]
 
@@ -258,6 +262,11 @@ class Filter:
         other_wavelength = tbl_other["Wavelength"]
         self_transmission = tbl_self["Transmission"]
         other_transmission = tbl_other["Transmission"]
+
+        print(min(self_wavelength[self_transmission > 0]))
+        print(min(other_wavelength[other_transmission > 0]))
+        print(max(self_wavelength[self_transmission > 0]))
+        print(max(other_wavelength[other_transmission > 0]))
 
         difference = np.abs(
             min(self_wavelength[self_transmission > 0]) - min(other_wavelength[other_transmission > 0])) + np.abs(
@@ -567,9 +576,12 @@ class FORS2Filter(Filter):
             u.debug_print(1, "Writing calibration table to", self.calibration_table_path)
             self.calibration_table.write(self.calibration_table_path, format="ascii.ecsv", overwrite=True)
 
+    def calib_retrievable(self):
+        return self.name in self.qc1_retrievable
+
     def retrieve_calibration_table(self, force=False):
 
-        if self.name in self.qc1_retrievable:
+        if self.calib_retrievable():
             if self.calibration_table_last_updated != date.today() or force:
                 down_path = os.path.join(self.data_path, "fors2_qc.tbl")
                 fil = self.name

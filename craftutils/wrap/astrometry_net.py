@@ -66,7 +66,10 @@ def solve_field(
     :param params:
     :return:
     """
-
+    if am_params is None:
+        am_params = {}
+    if am_flags is None:
+        am_flags = []
     am_params["o"] = base_filename
     am_params["odds-to-tune-up"] = odds_to_tune_up
     am_params["odds-to-solve"] = odds_to_solve

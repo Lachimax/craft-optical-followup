@@ -727,6 +727,21 @@ class Field:
         obj = objects.Object.from_dict(obj_dict, field=self)
         self.add_object(obj=obj)
 
+    def object_properties(self):
+        for obj in self.objects:
+            obj.load_output_file()
+            obj.update_output_file()
+            obj.push_to_table(select=True)
+            obj.write_plot_photometry()
+            obj.update_output_file()
+
+    def generate_cigale(self):
+        for obj in self.objects:
+            obj.load_output_file()
+            tbl_this = obj.self.photometry_to_table(best=True)
+            # for row in tbl_this:
+            #     inst_name =
+
     @classmethod
     def default_params(cls):
         default_params = {
@@ -965,7 +980,7 @@ class FRBField(Field):
         frame = u.check_quantity(frame, unit=units.pix)
 
         red.extract_pixel_scale(ext)
-        frame = frame.to(units.pix, red.pixel_scale_dec).value
+        frame = frame.to(units.pix, red.pixel_scale_y).value
 
         red.load_data()
         x, y = red.world_to_pixel(centre, 0)
@@ -1104,8 +1119,8 @@ class FRBField(Field):
 
             e = Ellipse(
                 xy=(x, y),
-                width=2 * a.to(units.pix, img.pixel_scale_dec).value,
-                height=2 * b.to(units.pix, img.pixel_scale_dec).value,
+                width=2 * a.to(units.pix, img.pixel_scale_y).value,
+                height=2 * b.to(units.pix, img.pixel_scale_y).value,
                 angle=theta.value
             )
             e.set_facecolor('none')
@@ -2881,8 +2896,8 @@ class ImagingEpoch(Epoch):
 
         for obj in self.field.objects:
             obj.update_output_file()
-            obj.push_to_table(select=True)
-            obj.write_plot_photometry()
+            # obj.push_to_table(select=True)
+            # obj.write_plot_photometry()
 
     def proc_get_photometry_all(self, output_dir: str, **kwargs):
         if "image_type" in kwargs and isinstance(kwargs["image_type"], str):
@@ -3360,9 +3375,9 @@ class ImagingEpoch(Epoch):
             row["total_exp_time_included"] = inttime
             row["psf_fwhm"] = self.psf_stats[fil]["gauss"]["fwhm_median"]
             row["program_id"] = str(self.program_id)
-            row["zeropoint"] = coadded[fil].extract_header_item("ZP") * units.mag
-            row["zeropoint_err"] = coadded[fil].extract_header_item("ZP_ERR") * units.mag
-            row["zeropoint_source"] = coadded[fil].extract_header_item("ZPCAT")
+            row["zeropoint"] = coadded[fil].zeropoint_best["zeropoint_img"]
+            row["zeropoint_err"] = coadded[fil].zeropoint_best["zeropoint_img_err"]
+            row["zeropoint_source"] = coadded[fil].zeropoint_best["catalogue"]
             row["last_processed"] = Time.now().strftime("%Y-%m-%dT%H:%M:%S")
             row["depth"] = img.depth["secure"]["SNR_SE"]["5-sigma"]
 
@@ -4119,6 +4134,7 @@ class SurveyImagingEpoch(ImagingEpoch):
     mode = "imaging"
     catalogue = None
     coadded_class = image.SurveyCutout
+    preferred_zeropoint = "calib_pipeline"
 
     def __init__(
             self,
@@ -4139,7 +4155,7 @@ class SurveyImagingEpoch(ImagingEpoch):
         )
         self.load_output_file(mode="imaging")
         # if isinstance(field, Field):
-            # self.field.retrieve_catalogue(cat_name=self.catalogue)
+        # self.field.retrieve_catalogue(cat_name=self.catalogue)
 
         u.debug_print(1, f"SurveyImagingEpoch.__init__(): {self}.filters ==", self.filters)
 
@@ -4214,7 +4230,7 @@ class SurveyImagingEpoch(ImagingEpoch):
     def zeropoint(
             self,
             output_path: str,
-            distance_tolerance: units.Quantity = 0.2 * units.arcsec,
+            distance_tolerance: units.Quantity = 1 * units.arcsec,
             snr_min: float = 3.,
             star_class_tolerance: float = 0.95,
             **kwargs
@@ -4233,7 +4249,7 @@ class SurveyImagingEpoch(ImagingEpoch):
                 star_class_tol=star_class_tolerance,
                 image_name=f"{self.catalogue}",
             )
-            img.zeropoint_best = zp
+            img.select_zeropoint(True, preferred=self.preferred_zeropoint)
             img.estimate_depth(zeropoint_name=self.catalogue)  # , do_magnitude_calibration=False)
 
             if deepest is not None:
@@ -4294,11 +4310,43 @@ class DESEpoch(SurveyImagingEpoch):
     def n_frames(self, fil: str):
         return 1
 
+    def proc_split(self, output_dir: str, **kwargs):
+        if "image_type" not in kwargs:
+            kwargs["image_type"] = "coadded"
+        self.split(output_dir=output_dir, **kwargs)
+
+    def split(self, output_dir: str, image_type):
+        image_dict = self._get_images(image_type=image_type)
+        for fil in image_dict:
+            img = image_dict[fil]
+            split_imgs = img.split_fits(output_dir=output_dir)
+            self.add_coadded_image(split_imgs["SCI"], key=fil)
+
+    @classmethod
+    def stages(cls):
+        super_stages = super().stages()
+        stages = {
+            "download": super_stages["download"],
+            "initial_setup": super_stages["initial_setup"],
+            "split": {
+                "method": cls.proc_split,
+                "message": "Split fits files into components?",
+                "default": True,
+                "keywords": {}
+            },
+            "source_extraction": super_stages["source_extraction"],
+            "photometric_calibration": super_stages["photometric_calibration"],
+            "dual_mode_source_extraction": super_stages["dual_mode_source_extraction"],
+            "get_photometry": super_stages["get_photometry"]
+        }
+        return stages
+
 
 class PanSTARRS1ImagingEpoch(SurveyImagingEpoch):
     instrument_name = "panstarrs1"
     catalogue = "panstarrs1"
     coadded_class = image.PanSTARRS1Cutout
+    preferred_zeropoint = "panstarrs1"
 
     # TODO: Automatic cutout download; don't worry for now.
     def proc_download(self, output_dir: str, **kwargs):
@@ -5300,7 +5348,7 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
 
             for fil in image_dict:
                 # Generate master flat per-filter, per-chip
-                if fil not in flat_sets:
+                if fil not in flat_sets or fil in inst.FORS2Filter.qc1_retrievable:  # Time-saver
                     continue
                 img = image_dict[fil]
                 if "calib_pipeline" in img.zeropoints:
@@ -5398,7 +5446,8 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
             std_epoch.photometric_calibration()
             for fil in image_dict:
                 img = image_dict[fil]
-                if fil in std_epoch.frames_reduced:
+                # We save time by only bothering with non-qc1-obtainable zeropoints.
+                if fil in std_epoch.frames_reduced and fil not in inst.FORS2Filter.qc1_retrievable:
                     for std in std_epoch.frames_reduced[fil]:
                         # print(std, type(std))
                         img.add_zeropoint_from_other(std)

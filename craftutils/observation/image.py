@@ -730,6 +730,23 @@ class Image:
         else:
             raise KeyError(f"mode must be provided for {cls}.select_child_class()")
 
+    def split_fits(self, output_dir: str = None):
+        if output_dir is None:
+            output_dir = self.data_path
+        self.open()
+        new_files = {}
+        for hdu in self.hdu_list:
+            new_hdu_list = fits.HDUList(fits.PrimaryHDU(hdu.data, hdu.header))
+            new_path = os.path.join(output_dir, self.filename.replace(".fits", f"_{hdu.name}.fits"))
+            new_hdu_list.writeto(
+                new_path,
+                overwrite=True
+            )
+            new_img = self.__class__(new_path)
+            new_files[hdu.name] = new_img
+        self.close()
+        return new_files
+
 
 class ESOImage(Image):
     """
@@ -758,8 +775,8 @@ class ImagingImage(Image):
         self.filter_name = None
         self.filter_short = None
         self.filter = None
-        self.pixel_scale_ra = None
-        self.pixel_scale_dec = None
+        self.pixel_scale_x = None
+        self.pixel_scale_y = None
 
         self.psfex_path = None
         self.psfex_output = None
@@ -864,19 +881,38 @@ class ImagingImage(Image):
             output_dir: str,
             force: bool = False,
             set_attributes: bool = True,
+            se_kwargs: dict = {},
             **kwargs
     ):
         """
         Run PSFEx on this image to obtain a PSF model.
         :param output_dir: path to directory to write PSFEx outputs to.
         :param force: If False, and this object already has a PSF model, we just return the one that already exists.
-        :param kwargs:
+        :param se_kwargs: arguments to pass to Source Extractor.
+        :param kwargs: arguments to pass to PSFEx.
         :param set_attributes: If True, this Image's psfex_path, psfex_output, fwhm_pix_psfex and fwhm_psfex will be set
             according to the PSFEx output.
         :return: HDUList representing the PSF model FITS file.
         """
         psfex_output = None
+
         if force or self.psfex_path is None or not os.path.isfile(self.psfex_path):
+            # Set up a list of photometric apertures to pass to SE as a string.
+            _, scale = self.extract_pixel_scale()
+            aper_arcsec = [
+                              4.87,
+                              3.9,
+                              2.92
+                          ] * units.arcsec
+            phot_aper = aper_arcsec.to(units.pix, scale).value
+            phot_aper_str = ""
+            for a in phot_aper:
+                phot_aper_str += f"{a},"
+            phot_aper_str = phot_aper_str[:-1]
+            se_kwargs["PHOT_APERTURES"] = phot_aper_str
+            kwargs["PHOTFLUX_KEY"] = '"FLUX_APER(1)"'
+            kwargs["PHOTFLUXERR_KEY"] = '"FLUXERR_APER(1)"'
+
             config = p.path_to_config_sextractor_config_pre_psfex()
             output_params = p.path_to_config_sextractor_param_pre_psfex()
             catalog = self.source_extraction(
@@ -884,17 +920,55 @@ class ImagingImage(Image):
                 output_dir=output_dir,
                 parameters_file=output_params,
                 catalog_name=f"{self.name}_psfex.fits",
+                **se_kwargs
             )
+
             psfex_path = psfex.psfex(
                 catalog=catalog,
                 output_dir=output_dir,
                 **kwargs
             )
             psfex_output = fits.open(psfex_path)
+
+            if not psfex.check_successful(psfex_output):
+                print(f"PSFEx did not converge. Retrying with PHOTFLUX_KEY==FLUX_AUTO")
+
+                kwargs["PHOTFLUX_KEY"] = "FLUX_AUTO"
+                kwargs["PHOTFLUXERR_KEY"] = "FLUXERR_AUTO"
+
+                psfex_path = psfex.psfex(
+                    catalog=catalog,
+                    output_dir=output_dir,
+                    **kwargs
+                )
+                psfex_output = fits.open(psfex_path)
+
+            i = 1
+            while not psfex.check_successful(psfex_output) and i < len(aper_arcsec):
+                print(f"PSFEx did not converge. Retrying with smaller PHOTFLUX apertures.")
+                kwargs["PHOTFLUX_KEY"] = f'"FLUX_APER({i + 1})"'
+                kwargs["PHOTFLUXERR_KEY"] = f'"FLUXERR_APER({i + 1})"'
+
+                catalog = self.source_extraction(
+                    configuration_file=config,
+                    output_dir=output_dir,
+                    parameters_file=output_params,
+                    catalog_name=f"{self.name}_psfex.fits",
+                    **se_kwargs
+                )
+
+                psfex_path = psfex.psfex(
+                    catalog=catalog,
+                    output_dir=output_dir,
+                    **kwargs
+                )
+
+                i += 1
+
             if set_attributes:
                 self.psfex_path = psfex_path
                 self.extract_pixel_scale()
-                pix_scale = self.pixel_scale_dec
+                pix_scale = self.pixel_scale_y
                 self.fwhm_pix_psfex = psfex_output[1].header['PSF_FWHM'] * units.pixel
                 self.fwhm_psfex = self.fwhm_pix_psfex.to(units.arcsec, pix_scale)
 
@@ -911,9 +985,12 @@ class ImagingImage(Image):
         else:
             return psfex_output
 
+    # def _psfex(self):
+
     def load_psfex_output(self, force: bool = False):
         if force or self.psfex_output is None:
             self.psfex_output = fits.open(self.psfex_path)
+        return self.psfex_output
 
     def psf_image(self, x: float, y: float, match_pixel_scale: bool = True):
         if match_pixel_scale:
@@ -926,7 +1003,8 @@ class ImagingImage(Image):
             output_dir: str,
             template: 'ImagingImage' = None,
             force: bool = False,
-            **configs):
+            **configs
+    ):
         """
         Uses a PSFEx-generated PSF model in conjunction with Source Extractor to generate a source catalog. The key
         difference with source_extraction is that source_extraction uses only Source Extractor, and does not therefore
@@ -938,21 +1016,24 @@ class ImagingImage(Image):
         :param configs: A dictionary of Source Extractor arguments to pass to command line.
         :return:
         """
-        self.psfex(output_dir=output_dir, force=force)
-        config = p.path_to_config_sextractor_config()
-        output_params = p.path_to_config_sextractor_param()
-        try:
+
+        psf = self.psfex(
+            output_dir=output_dir,
+            force=force,
+        )
+
+        if psfex.check_successful(psf):
             cat_path = self.source_extraction(
-                configuration_file=config,
+                configuration_file=p.path_to_config_sextractor_config(),
                 output_dir=output_dir,
-                parameters_file=output_params,
+                parameters_file=p.path_to_config_sextractor_param(),
                 catalog_name=f"{self.name}_psf-fit.cat",
                 psf_name=self.psfex_path,
                 seeing_fwhm=self.fwhm_psfex.value,
                 template=template,
                 **configs
             )
-        except SystemError:
+        else:
             cat_path = self.source_extraction(
                 configuration_file=p.path_to_config_sextractor_failed_psfex_config(),
                 parameters_file=p.path_to_config_sextractor_failed_psfex_param(),
@@ -1181,6 +1262,7 @@ class ImagingImage(Image):
                 image_depth=self.depth["secure"]["SNR_SE"][f"5-sigma"],
                 image_path=self.path,
                 do_mask=self.mask_nearby(),
+                zeropoint=row["ZP_best_ATM_CORR"]
             )
             obj.push_to_table(select=False)
 
@@ -1235,16 +1317,28 @@ class ImagingImage(Image):
         self.load_wcs()
         return self.wcs.calc_footprint()
 
+    def _pixel_scale(self, ext: int = 0):
+        self.load_wcs(ext=ext)
+        return wcs.utils.proj_plane_pixel_scales(
+            self.wcs
+        ) * units.deg
+
     def extract_pixel_scale(self, ext: int = 0, force: bool = False):
-        if force or self.pixel_scale_ra is None or self.pixel_scale_dec is None:
-            self.open()
-            self.pixel_scale_ra, self.pixel_scale_dec = ff.get_pixel_scale(self.hdu_list, ext=ext,
-                                                                           astropy_units=True)
-            self.close()
+        if force or self.pixel_scale_x is None or self.pixel_scale_y is None:
+            x, y = self._pixel_scale(ext=ext)
+            self.pixel_scale_x = units.pixel_scale(x / units.pix)
+            self.pixel_scale_y = units.pixel_scale(y / units.pix)
         else:
             u.debug_print(2, "Pixel scale already set.")
 
-        return self.pixel_scale_ra, self.pixel_scale_dec
+        return self.pixel_scale_x, self.pixel_scale_y
+
+    def extract_world_scale(self, ext: int = 0, force: bool = False):
+        x, y = self._pixel_scale(ext=ext)
+        dec = self.extract_pointing().dec.to(units.rad)
+        ra_scale = units.pixel_scale((x / np.cos(dec)) / units.pix)
+        dec_scale = units.pixel_scale(y / units.pix)
+        return ra_scale, dec_scale
 
     def extract_filter(self):
         key = self.header_keys()["filter"]
@@ -1391,7 +1485,8 @@ class ImagingImage(Image):
         zp_tbl = table.QTable(zps)
         if len(zp_tbl) > 0:
             # zp_tbl.sort("zeropoint_img_err")
-            zp_tbl.write(os.path.join(self.data_path, f"{self.name}_zeropoints.ecsv"), format="ascii.ecsv")
+            zp_tbl.write(os.path.join(self.data_path, f"{self.name}_zeropoints.ecsv"), format="ascii.ecsv",
+                         overwrite=True)
             #        zp_tbl.write(os.path.join(self.data_path, f"{self.name}_zeropoints.csv"), format="ascii.csv")
             best_row = zp_tbl[0]
             best_cat = best_row["catalogue"]
@@ -1422,7 +1517,7 @@ class ImagingImage(Image):
                 items={
                     "ZP": zeropoint_best["zeropoint_img"],
                     "ZP_ERR": zeropoint_best["zeropoint_img_err"],
-                    "ZPCAT": zeropoint_best["catalogue"],
+                    "ZPCAT": str(zeropoint_best["catalogue"]),
                 },
                 ext=0,
                 write=False
@@ -1509,7 +1604,7 @@ class ImagingImage(Image):
             stars_only=stars_only,
             star_class_tol=star_class_tol,
             star_class_col=star_class_col,
-            exp_time=self.exposure_time,
+            exp_time=self.extract_exposure_time(),
             cat_type=cat_type,
             cat_zeropoint=cat_zeropoint,
             cat_zeropoint_err=cat_zeropoint_err,
@@ -1648,13 +1743,13 @@ class ImagingImage(Image):
         self.load_source_cat()
         self.extract_pixel_scale()
 
-        self.source_cat["A_IMAGE"] = self.source_cat["A_WORLD"].to(units.pix, self.pixel_scale_dec)
-        self.source_cat["B_IMAGE"] = self.source_cat["A_WORLD"].to(units.pix, self.pixel_scale_dec)
+        self.source_cat["A_IMAGE"] = self.source_cat["A_WORLD"].to(units.pix, self.pixel_scale_y)
+        self.source_cat["B_IMAGE"] = self.source_cat["A_WORLD"].to(units.pix, self.pixel_scale_y)
         self.source_cat["KRON_AREA_IMAGE"] = self.source_cat["A_IMAGE"] * self.source_cat["B_IMAGE"] * np.pi
 
         if self.source_cat_dual is not None:
-            self.source_cat_dual["A_IMAGE"] = self.source_cat_dual["A_WORLD"].to(units.pix, self.pixel_scale_dec)
-            self.source_cat_dual["B_IMAGE"] = self.source_cat_dual["A_WORLD"].to(units.pix, self.pixel_scale_dec)
+            self.source_cat_dual["A_IMAGE"] = self.source_cat_dual["A_WORLD"].to(units.pix, self.pixel_scale_y)
+            self.source_cat_dual["B_IMAGE"] = self.source_cat_dual["A_WORLD"].to(units.pix, self.pixel_scale_y)
             self.source_cat_dual["KRON_AREA_IMAGE"] = self.source_cat_dual["A_IMAGE"] * self.source_cat_dual[
                 "B_IMAGE"] * np.pi
 
@@ -2004,7 +2099,7 @@ class ImagingImage(Image):
         new_path = os.path.join(output_dir, self.filename.replace(".fits", "_astrometry.fits"))
         new = self.copy(new_path)
 
-        ra_scale, dec_scale = self.extract_pixel_scale(ext=ext)
+        ra_scale, dec_scale = self.extract_world_scale(ext=ext)
 
         new.load_headers()
         if not np.isnan(diagnostics["median_offset_x"].value) and not np.isnan(diagnostics["median_offset_y"].value):
@@ -2605,7 +2700,7 @@ class ImagingImage(Image):
         other_image.load_headers(force=True)
         print(f"Reprojecting {self.filename} into the pixel space of {other_image.filename}")
         if method == 'exact':
-            reprojected, footprint = rp.reproject_exact(self.path, other_image.headers[ext], parallel=True)
+            reprojected, footprint = rp.reproject_exact(self.path, other_image.headers[ext])  # , parallel=True)
         elif method == 'adaptive':
             reprojected, footprint = rp.reproject_adaptive(self.path, other_image.headers[ext])
         elif method in ['interp', 'interpolate', 'interpolation']:
@@ -2664,7 +2759,7 @@ class ImagingImage(Image):
 
         source_cat = self.get_source_cat(dual=dual)
 
-        ra_scale, dec_scale = self.extract_pixel_scale()
+        _, scale = self.extract_pixel_scale()
 
         if star_tolerance is not None:
             source_cat = source_cat[source_cat["CLASS_STAR"] > star_tolerance]
@@ -2687,7 +2782,7 @@ class ImagingImage(Image):
         matches_source_cat["RA_OFFSET_FROM_REF"] = matches_source_cat["RA"] - matches_ext_cat[ra_col]
         matches_source_cat["DEC_OFFSET_FROM_REF"] = matches_source_cat["DEC"] - matches_ext_cat[dec_col]
 
-        matches_source_cat["PIX_OFFSET_FROM_REF"] = distance.to(units.pix, dec_scale)
+        matches_source_cat["PIX_OFFSET_FROM_REF"] = distance.to(units.pix, scale)
 
         matches_source_cat["X_OFFSET_FROM_REF"] = matches_source_cat["X_IMAGE"] - x_cat * units.pix
         matches_source_cat["Y_OFFSET_FROM_REF"] = matches_source_cat["Y_IMAGE"] - y_cat * units.pix
@@ -2796,10 +2891,10 @@ class ImagingImage(Image):
     def object_axes(self):
         self.load_source_cat()
         self.extract_pixel_scale()
-        self.source_cat["A_IMAGE"] = self.source_cat["A_WORLD"].to(units.pix, self.pixel_scale_dec)
-        self.source_cat["B_IMAGE"] = self.source_cat["B_WORLD"].to(units.pix, self.pixel_scale_dec)
-        self.source_cat_dual["A_IMAGE"] = self.source_cat_dual["A_WORLD"].to(units.pix, self.pixel_scale_dec)
-        self.source_cat_dual["B_IMAGE"] = self.source_cat_dual["B_WORLD"].to(units.pix, self.pixel_scale_dec)
+        self.source_cat["A_IMAGE"] = self.source_cat["A_WORLD"].to(units.pix, self.pixel_scale_y)
+        self.source_cat["B_IMAGE"] = self.source_cat["B_WORLD"].to(units.pix, self.pixel_scale_y)
+        self.source_cat_dual["A_IMAGE"] = self.source_cat_dual["A_WORLD"].to(units.pix, self.pixel_scale_y)
+        self.source_cat_dual["B_IMAGE"] = self.source_cat_dual["B_WORLD"].to(units.pix, self.pixel_scale_y)
 
         self.add_log(
             action=f"Created axis columns A_IMAGE, B_IMAGE in pixel units from A_WORLD, B_WORLD.",
@@ -2961,8 +3056,8 @@ class ImagingImage(Image):
                       row['A_WORLD'].to(units.arcsec))
         kron_a = row['KRON_RADIUS'] * row['A_WORLD']
         u.debug_print(1, "ImagingImage.nice_frame(): kron_a ==", kron_a)
-        pix_scale = self.pixel_scale_dec
-        u.debug_print(1, "ImagingImage.nice_frame(): self.pixel_scale_dec ==", self.pixel_scale_dec)
+        pix_scale = self.pixel_scale_y
+        u.debug_print(1, "ImagingImage.nice_frame(): self.pixel_scale_dec ==", self.pixel_scale_y)
         this_frame = max(
             kron_a.to(units.pixel, pix_scale), frame)  # + 5 * units.pix,
         u.debug_print(1, "ImagingImage.nice_frame(): this_frame ==", this_frame)
@@ -3116,7 +3211,7 @@ class ImagingImage(Image):
                 output=output,
                 output_cat=output_cat,
                 overwrite=overwrite,
-                fwhm=self.fwhm_psfex.to(units.pix, self.pixel_scale_dec)
+                fwhm=self.fwhm_psfex.to(units.pix, self.pixel_scale_y)
             )
         elif model == "psfex":
             file, sources = ph.insert_point_sources_to_file(
@@ -3180,7 +3275,7 @@ class ImagingImage(Image):
                 y_synth = y
             elif positioning == 'gaussian':
                 self.extract_pixel_scale()
-                scale.to(units.pix, self.pixel_scale_dec)
+                scale.to(units.pix, self.pixel_scale_y)
                 x_synth = -1
                 y_synth = -1
                 self.extract_n_pix()
@@ -3634,7 +3729,7 @@ class ImagingImage(Image):
             sub_background: bool = True
     ):
         self.extract_pixel_scale()
-        pixel_radius = aperture_radius.to(units.pix, self.pixel_scale_dec)
+        pixel_radius = aperture_radius.to(units.pix, self.pixel_scale_y)
         self.calculate_background(ext=ext)
         if sub_background:
             data = self.data_sub_bkg[ext]
@@ -3674,8 +3769,8 @@ class ImagingImage(Image):
         x, y = self.wcs.all_world2pix(centre.ra.value, centre.dec.value, 0)
         x = u.check_iterable(x)
         y = u.check_iterable(y)
-        a = u.check_iterable((a_world.to(units.pix, self.pixel_scale_dec)).value)
-        b = u.check_iterable((b_world.to(units.pix, self.pixel_scale_dec)).value)
+        a = u.check_iterable((a_world.to(units.pix, self.pixel_scale_y)).value)
+        b = u.check_iterable((b_world.to(units.pix, self.pixel_scale_y)).value)
         kron_radius = u.check_iterable(kron_radius)
         rotation_angle = self.extract_rotation_angle(ext=ext)
         print(theta_world, rotation_angle)
@@ -3727,7 +3822,6 @@ class ImagingImage(Image):
 
             plt.close()
             with quantity_support():
-
                 ax, fig, _ = self.plot_subimage(
                     centre=centre,
                     frame=this_frame,
@@ -3746,7 +3840,11 @@ class ImagingImage(Image):
                 #     ax.add_artist(e)
                 #     ax.text(objects["x"][i], objects["y"][i], objects["theta"][i] * 180. / np.pi)
 
-                theta_plot = (theta[0] * units.rad).to(units.deg)
+                theta_plot = (theta[0] * units.rad).to(units.deg).value
+                print(a[0])
+                print(b[0])
+                print(kron_radius[0])
+                print(theta_plot)
 
                 e = Ellipse(
                     xy=(x[0], y[0]),
@@ -4030,6 +4128,7 @@ class ImagingImage(Image):
                 differences[cat] = 0.1 * units.angstrom
 
         differences = dict(sorted(differences.items(), key=lambda x: x[1]))
+        print(differences)
         return list(differences.keys())
 
 
@@ -4178,21 +4277,46 @@ class CoaddedImage(ImagingImage):
             raise ValueError(f"Unrecognised instrument {instrument}")
 
 
-class SurveyCutout(ImagingImage):
-    pass
+class SurveyCutout(CoaddedImage):
+    def do_subtract_background(self):
+        return False
 
 
-class DESCutout(ImagingImage):
+class DESCutout(SurveyCutout):
     instrument_name = "decam"
 
     def zeropoint(
             self,
             **kwargs
     ):
-        return self.extract_header_item("MAGZERO") * units.mag
+        self.add_zeropoint(
+            catalogue="calib_pipeline",
+            zeropoint=self.extract_header_item("MAGZERO"),  # - 2.5 * np.log10(exptime)) * units.mag,
+            zeropoint_err=0.0 * units.mag,
+            extinction=0.0 * units.mag,
+            extinction_err=0.0 * units.mag,
+            airmass=0.0,
+            airmass_err=0.0
+        )
+        zp = super().zeropoint(
+            **kwargs
+        )
+
+        return zp
+
+    def extract_unit(self, astropy: bool = False):
+        unit = "ct / s"
+        if astropy:
+            unit = units.ct / units.s
+        return unit
 
     def extract_exposure_time(self):
-        return 1. * units.second
+        self.exposure_time = 1. * units.second
+        return self.exposure_time
+
+    def extract_noise_read(self):
+        self.noise_read = 0. * units.electron / units.pixel
+        return self.noise_read
 
     def extract_integration_time(self):
         return self.extract_header_item("EXPTIME") * units.second
@@ -4210,6 +4334,7 @@ class DESCutout(ImagingImage):
     def extract_ncombine(self):
         return 1
 
+
 class PanSTARRS1Cutout(SurveyCutout):
     instrument_name = "panstarrs1"
 
@@ -4224,10 +4349,7 @@ class PanSTARRS1Cutout(SurveyCutout):
         return False
 
     def detection_threshold(self):
-        return 5.0
-
-    def do_subtract_background(self):
-        return False
+        return 10.
 
     def extract_filter(self):
         key = self.header_keys()["filter"]
@@ -4241,6 +4363,7 @@ class PanSTARRS1Cutout(SurveyCutout):
 
     def extract_integration_time(self):
         return self.extract_exposure_time()
+
     def zeropoint(
             self,
             **kwargs
@@ -4251,26 +4374,10 @@ class PanSTARRS1Cutout(SurveyCutout):
         :return:
         """
 
-        #     self.load_headers()
-        #     zp_keys = filter(lambda k: k.startswith("ZPT_"), self.headers[0])
-        #     zps = []
-        #     for key in zp_keys:
-        #         zps.append(self.headers[0][key])
-        #     zp = np.mean(zps) * units.mag
-        #     zp_err = np.std(zps) * units.mag
-        #
-        #     return self.add_zeropoint(
-        #         catalogue="panstarrs1",
-        #         zeropoint=zp,
-        #         zeropoint_err=zp_err,
-        #         extinction=0.0 * units.mag,
-        #         extinction_err=0.0 * units.mag,
-        #         airmass=0.0,
-        #         airmass_err=0.0
-        #     )
+        self.load_headers()
 
-        return self.add_zeropoint(
-            catalogue="panstarrs1",
+        self.add_zeropoint(
+            catalogue="calib_pipeline",
             zeropoint=self.extract_header_item("FPA.ZP"),
             zeropoint_err=0.0 * units.mag,
             extinction=0.0 * units.mag,
@@ -4278,6 +4385,11 @@ class PanSTARRS1Cutout(SurveyCutout):
             airmass=0.0,
             airmass_err=0.0
         )
+
+        zp = super().zeropoint(
+            **kwargs
+        )
+        return zp
 
     # self.select_zeropoint(True)
 
@@ -4353,7 +4465,8 @@ class HAWKICoaddedImage(ESOImagingImage):
     instrument_name = "vlt-hawki"
 
     def zeropoint(
-            self
+            self,
+            **kwargs
     ):
         return self.add_zeropoint(
             catalogue="2MASS",
@@ -4443,52 +4556,14 @@ class FORS2CoaddedImage(CoaddedImage):
 
     def zeropoint(
             self,
-            cat_path: str,
-            output_path: str,
-            cat_name: str = 'Catalogue',
-            cat_zeropoint: units.Quantity = 0.0 * units.mag,
-            cat_zeropoint_err: units.Quantity = 0.0 * units.mag,
-            image_name: str = None,
-            show: bool = False,
-            sex_x_col: str = 'XPSF_IMAGE',
-            sex_y_col: str = 'YPSF_IMAGE',
-            sex_ra_col: str = 'RA',
-            sex_dec_col: str = 'DEC',
-            sex_flux_col: str = 'FLUX_PSF',
-            stars_only: bool = True,
-            star_class_col: str = 'CLASS_STAR',
-            star_class_tol: float = 0.95,
-            mag_range_sex_lower: units.Quantity = -100. * units.mag,
-            mag_range_sex_upper: units.Quantity = 100. * units.mag,
-            dist_tol: units.Quantity = 2. * units.arcsec,
-            snr_cut: float = 3.,
-            iterate_uncertainty: bool = True,
-            do_x_shift: bool = True
+            **kwargs
     ):
-        zp = super().zeropoint(
-            cat_path=cat_path,
-            output_path=output_path,
-            cat_name=cat_name,
-            cat_zeropoint=cat_zeropoint,
-            cat_zeropoint_err=cat_zeropoint_err,
-            image_name=image_name,
-            show=show,
-            sex_x_col=sex_x_col,
-            sex_y_col=sex_y_col,
-            sex_ra_col=sex_ra_col,
-            sex_dec_col=sex_dec_col,
-            sex_flux_col=sex_flux_col,
-            stars_only=stars_only,
-            star_class_col=star_class_col,
-            star_class_tol=star_class_tol,
-            mag_range_sex_lower=mag_range_sex_lower,
-            mag_range_sex_upper=mag_range_sex_upper,
-            dist_tol=dist_tol,
-            snr_cut=snr_cut,
-            iterate_uncertainty=iterate_uncertainty,
-            do_x_shift=do_x_shift
-        )
-        self.calibration_from_qc1()
+        if self.filter.calib_retrievable():
+            zp = self.calibration_from_qc1()
+        else:
+            zp = super().zeropoint(
+                **kwargs
+            )
         return zp
 
     def calibration_from_qc1(self):
@@ -4511,7 +4586,7 @@ class FORS2CoaddedImage(CoaddedImage):
             else:
                 airmass_err = 0.0
 
-            self.add_zeropoint(
+            zp = self.add_zeropoint(
                 zeropoint=row["zeropoint"],
                 zeropoint_err=row["zeropoint_err"],
                 airmass=self.extract_airmass(),
@@ -4533,7 +4608,7 @@ class FORS2CoaddedImage(CoaddedImage):
             )
             self.update_output_file()
 
-            return self.zeropoints["instrument_archive"]["self"]
+            return zp
         else:
             return None
 

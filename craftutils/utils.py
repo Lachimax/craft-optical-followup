@@ -652,7 +652,9 @@ def detect_problem_table(tbl: table.Table):
     for i, row in enumerate(tbl):
         tbl_this = tbl[:i+1]
         try:
-            tbl_this.write(os.path.join(os.path.expanduser("~"), "test.ecsv"))
+            writepath = os.path.join(os.path.expanduser("~"), "test.ecsv")
+            tbl_this.write(writepath, overwrite=True)
+            os.remove(writepath)
         except NotImplementedError:
             print("Problem row:")
             return i, row
@@ -724,8 +726,6 @@ def root_mean_squared_error(
         weights=weights,
         dof_correction=dof_correction
     )
-    print("mse:", mse)
-    print("rmse:", np.sqrt(mse))
     return np.sqrt(mse)
 
 
