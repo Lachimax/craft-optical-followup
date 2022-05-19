@@ -1517,7 +1517,7 @@ class ImagingImage(Image):
                 items={
                     "ZP": zeropoint_best["zeropoint_img"],
                     "ZP_ERR": zeropoint_best["zeropoint_img_err"],
-                    "ZPCAT": zeropoint_best["catalogue"],
+                    "ZPCAT": str(zeropoint_best["catalogue"]),
                 },
                 ext=0,
                 write=False
