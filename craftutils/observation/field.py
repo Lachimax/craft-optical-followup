@@ -756,12 +756,16 @@ class Field:
 
                 band_str = f"{inst_cig}_{fil_cig}"
                 if band_str not in photometries:
-                    pass
+                    photometries[band_str] = []
+                    photometries[band_str + "_err"] = []
+                if np.isnan(row["mag_ext_corrected"]):
+                    photometries[band_str].append(-999. * units.mag)
+                    photometries[band_str + "_err"].append(-999. * units.mag)
+                else:
+                    photometries[band_str].append(row["mag_ext_corrected"])
+                    photometries[band_str + "_err"].append(row["mag_err"])
 
-
-
-
-
+        tbl_cigale = table.QTable(photometries)
 
     @classmethod
     def default_params(cls):
