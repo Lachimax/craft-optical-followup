@@ -728,6 +728,7 @@ class Field:
         self.add_object(obj=obj)
 
     def object_properties(self):
+        self.objects.sort(key=lambda o: o.name, reverse=True)
         for obj in self.objects:
             obj.load_output_file()
             obj.update_output_file()
@@ -736,11 +737,31 @@ class Field:
             obj.update_output_file()
 
     def generate_cigale(self):
+        photometries = {}
         for obj in self.objects:
             obj.load_output_file()
             tbl_this = obj.self.photometry_to_table(best=True)
-            # for row in tbl_this:
-            #     inst_name =
+            for row in tbl_this:
+                instrument_name = row["instrument"]
+                instrument = inst.Instrument.from_params(instrument_name)
+                if instrument.cigale_name is not None:
+                    inst_cig = instrument.cigale_name
+                else:
+                    inst_cig = instrument_name
+
+                if instrument_name == "vlt-fors2":
+                    fil_cig = row["band"][0].lower()
+                else:
+                    fil_cig = row["band"]
+
+                band_str = f"{inst_cig}_{fil_cig}"
+                if band_str not in photometries:
+                    pass
+
+
+
+
+
 
     @classmethod
     def default_params(cls):
