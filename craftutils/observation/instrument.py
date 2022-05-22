@@ -31,6 +31,10 @@ class Instrument:
             if "instrument" in svo_dict:
                 self.svo_instrument = svo_dict["instrument"]
 
+        self.cigale_name = None
+        if "cigale_name" in kwargs:
+            self.cigale_name = kwargs["cigale_name"]
+
         self.filters = {}
         self.bands = {}
         self.gather_filters()
@@ -73,7 +77,8 @@ class Instrument:
             "svo_service": {
                 "facility": None,
                 "instrument": None
-            }
+            },
+            "cigale_name": None
         }
         return default_params
 

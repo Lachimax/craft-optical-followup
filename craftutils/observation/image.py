@@ -1234,7 +1234,6 @@ class ImagingImage(Image):
         for i, row in enumerate(source_cat):
             print(f"Row {i} of {len(source_cat)}")
             obj = objects.Object(row=row, field=self.epoch.field)
-            print(obj.jname())
             obj.add_photometry(
                 instrument=self.instrument_name,
                 fil=self.filter_name,
@@ -1901,7 +1900,6 @@ class ImagingImage(Image):
                     source_cat[snr_key].unit)
                 cat_more_xsigma = source_cat[source_cat[snr_key] > sigma]
                 cat_more_xsigma_point = cat_more_xsigma[cat_more_xsigma["CLASS_STAR"] > star_tolerance]
-                print(f"Sources > {sigma}-sigma:", len(cat_more_xsigma))
                 self.depth["max"][snr_key][f"{sigma}-sigma"] = np.max(cat_more_xsigma[f"MAG_AUTO_ZP_{zeropoint_name}"])
                 self.depth["point_max"][snr_key][f"{sigma}-sigma"] = np.max(
                     cat_more_xsigma_point[f"MAG_AUTO_ZP_{zeropoint_name}"])
@@ -1985,7 +1983,6 @@ class ImagingImage(Image):
             new_file[0].data = registered
             u.debug_print(1, "Writing registered image to", output_path)
             new_file.writeto(output_path, overwrite=True)
-            print(output_path)
 
         new_image = self.new_image(path=output_path)
         new_image.transfer_wcs(target)
@@ -2427,8 +2424,6 @@ class ImagingImage(Image):
         self.ra_err = self.astrometry_stats["rms_offset_ra"]
         self.dec_err = self.astrometry_stats["rms_offset_dec"]
 
-        print(self.astrometry_err, self.ra_err, self.dec_err)
-
         self.source_cat["RA_ERR"] = np.sqrt(
             self.source_cat["ERRX2_WORLD"].to(units.arcsec ** 2) + self.ra_err ** 2)
         self.source_cat["DEC_ERR"] = np.sqrt(
@@ -2622,11 +2617,9 @@ class ImagingImage(Image):
         read_noise = self.extract_noise_read()
 
         new.load_data()
-        print(new.data[ext].unit)
         new_data = new.data[ext]
         # new_data *= gain
         new_data /= exp_time
-        print(new_data.unit)
         new.data[ext] = new_data
 
         u.debug_print(1, "Image.concert_to_cs() 2: new_data.unit ==", new_data.unit)
@@ -3086,10 +3079,7 @@ class ImagingImage(Image):
         mid_y = row["Y_IMAGE"]
         self.open()
         left, right, bottom, top = u.frame_from_centre(frame=this_frame, x=mid_x, y=mid_y, data=self.hdu_list[ext].data)
-        print(left, right, bottom, top)
-        print(mid_x, mid_y)
         image_cut = ff.trim(hdu=self.hdu_list, left=left, right=right, bottom=bottom, top=top)
-        print(image_cut[ext].data.shape)
         norm = pl.nice_norm(image=image_cut[ext].data)
         ax.imshow(image_cut[ext].data, origin='lower', norm=norm)
         # theta =
@@ -3773,11 +3763,8 @@ class ImagingImage(Image):
         b = u.check_iterable((b_world.to(units.pix, self.pixel_scale_y)).value)
         kron_radius = u.check_iterable(kron_radius)
         rotation_angle = self.extract_rotation_angle(ext=ext)
-        print(theta_world, rotation_angle)
         theta_deg = -theta_world + rotation_angle  # + 90 * units.deg
         theta = u.theta_range(theta_deg.to(units.rad)).value
-        print(theta_deg)
-        print(theta, a, b, x, y, kron_radius)
 
         if mask_nearby:
             mask = self.generate_mask(
@@ -3841,10 +3828,6 @@ class ImagingImage(Image):
                 #     ax.text(objects["x"][i], objects["y"][i], objects["theta"][i] * 180. / np.pi)
 
                 theta_plot = (theta[0] * units.rad).to(units.deg).value
-                print(a[0])
-                print(b[0])
-                print(kron_radius[0])
-                print(theta_plot)
 
                 e = Ellipse(
                     xy=(x[0], y[0]),
@@ -3904,15 +3887,15 @@ class ImagingImage(Image):
             return None, None, None, None
 
         snr = flux / flux_err
+        mag, mag_err, _, _ = self.magnitude(
+            flux, flux_err
+        )
         if snr < detection_threshold:
-            mag, _, _, _ = self.magnitude(
+            mag_lim, _, _, _ = self.magnitude(
                 detection_threshold * flux_err
             )
+            mag = min(mag, mag_lim)
             mag_err = [-999. * units.mag]
-        else:
-            mag, mag_err, _, _ = self.magnitude(
-                flux, flux_err
-            )
 
         return mag, mag_err, snr, back
 
@@ -4128,7 +4111,6 @@ class ImagingImage(Image):
                 differences[cat] = 0.1 * units.angstrom
 
         differences = dict(sorted(differences.items(), key=lambda x: x[1]))
-        print(differences)
         return list(differences.keys())
 
 
@@ -4689,7 +4671,7 @@ class HubbleImage(CoaddedImage):
             mask = False
         else:
             mask = True
-        print("mask_nearby", self.instrument_name, mask, type(self))
+        u.debug_print(2, "mask_nearby", self.instrument_name, mask, type(self))
         return mask
 
     def detection_threshold(self):

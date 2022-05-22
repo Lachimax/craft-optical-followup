@@ -728,19 +728,53 @@ class Field:
         self.add_object(obj=obj)
 
     def object_properties(self):
+        self.objects.sort(key=lambda o: o.name, reverse=True)
         for obj in self.objects:
             obj.load_output_file()
             obj.update_output_file()
             obj.push_to_table(select=True)
             obj.write_plot_photometry()
             obj.update_output_file()
+        self.generate_cigale()
 
     def generate_cigale(self):
+        photometries = {
+            "Galaxy ID": [],
+            "z": []
+        }
         for obj in self.objects:
             obj.load_output_file()
-            tbl_this = obj.self.photometry_to_table(best=True)
-            # for row in tbl_this:
-            #     inst_name =
+            obj.photometry_to_table()
+            tbl_this = obj.photometry_to_table(best=True)
+            photometries["Galaxy ID"].append(obj.name)
+            photometries["z"].append(obj.z)
+            for row in tbl_this:
+                instrument_name = row["instrument"]
+                instrument = inst.Instrument.from_params(instrument_name)
+                if instrument.cigale_name is not None:
+                    inst_cig = instrument.cigale_name
+                else:
+                    inst_cig = instrument_name
+
+                if instrument_name == "vlt-fors2":
+                    fil_cig = row["band"][0].lower()
+                else:
+                    fil_cig = row["band"]
+                band_str = f"{inst_cig}_{fil_cig}"
+
+                if band_str not in photometries:
+                    photometries[band_str] = []
+                    photometries[band_str + "_err"] = []
+                if np.isnan(row["mag_ext_corrected"]):
+                    photometries[band_str].append(-999. * units.mag)
+                    photometries[band_str + "_err"].append(-999. * units.mag)
+                else:
+                    photometries[band_str].append(row["mag_ext_corrected"])
+                    photometries[band_str + "_err"].append(row["mag_err"])
+
+        tbl_cigale = table.QTable(photometries)
+        print(tbl_cigale)
+        tbl_cigale.write(os.path.join(self.data_path, f"{self.name}_cigale.csv"))
 
     @classmethod
     def default_params(cls):
@@ -868,6 +902,10 @@ class Field:
             survey=survey_name
         )
         if field_class is FRBField:
+            if ra_err is None:
+                ra_err = 0.
+            if dec_err is None:
+                dec_err = 0.
             yaml_dict["frb"]["position"] = position
             yaml_dict["frb"]["position_err"]["a"]["stat"] = float(ra_err)
             yaml_dict["frb"]["position_err"]["b"]["stat"] = float(dec_err)
@@ -2105,6 +2143,7 @@ class ImagingEpoch(Epoch):
             frames = self.frames_normalised
 
         for fil in frames:
+            print(f"Registering frames for {fil}")
             if isinstance(template, int):
                 tmp = frames[fil][template]
                 n_template = template
@@ -3354,37 +3393,39 @@ class ImagingEpoch(Epoch):
 
         for fil in self.filters:
 
-            row, index = obs.get_row_epoch(tbl=obs.master_imaging_table, epoch_name=self.name, fil=fil)
-            if row is None:
-                row = {}  # copy.deepcopy(observation.master_imaging_table[0])
-
             img = coadded[fil]
 
-            row["field_name"] = self.field.name
-            row["epoch_name"] = self.name
-            row["date_utc"] = self.date_str()
-            row["mjd"] = self.mjd() * units.day
-            row["instrument"] = self.instrument_name
-            row["filter_name"] = fil
-            row["filter_lambda_eff"] = self.instrument.filters[fil].lambda_eff.to(units.Angstrom).round(3)
-            row["n_frames"] = self.n_frames(fil)
-            row["n_frames_included"] = coadded[fil].extract_ncombine()
-            row["frame_exp_time"] = self.exp_time_mean[fil].round()
-            row["total_exp_time"] = row["n_frames"] * row["frame_exp_time"]
             inttime = coadded[fil].extract_header_item("INTTIME") * units.second
-            row["total_exp_time_included"] = inttime
-            row["psf_fwhm"] = self.psf_stats[fil]["gauss"]["fwhm_median"]
-            row["program_id"] = str(self.program_id)
-            row["zeropoint"] = coadded[fil].zeropoint_best["zeropoint_img"]
-            row["zeropoint_err"] = coadded[fil].zeropoint_best["zeropoint_img_err"]
-            row["zeropoint_source"] = coadded[fil].zeropoint_best["catalogue"]
-            row["last_processed"] = Time.now().strftime("%Y-%m-%dT%H:%M:%S")
-            row["depth"] = img.depth["secure"]["SNR_SE"]["5-sigma"]
+            n_frames = self.n_frames(fil)
+            frame_exp_time = self.exp_time_mean[fil].round()
 
-            if index is None:
-                obs.master_imaging_table.add_row(row)
-            else:
-                obs.master_imaging_table[index] = row
+            entry = {
+                "field_name": self.field.name,
+                "epoch_name": self.name,
+                "date_utc": self.date_str(),
+                "mjd": self.mjd() * units.day,
+                "instrument": self.instrument_name,
+                "filter_name": fil,
+                "filter_lambda_eff": self.instrument.filters[fil].lambda_eff.to(units.Angstrom).round(3),
+                "n_frames": n_frames,
+                "n_frames_included": coadded[fil].extract_ncombine(),
+                "frame_exp_time": frame_exp_time,
+                "total_exp_time": n_frames * frame_exp_time,
+                "total_exp_time_included": inttime,
+                "psf_fwhm": self.psf_stats[fil]["gauss"]["fwhm_median"],
+                "program_id": str(self.program_id),
+                "zeropoint": coadded[fil].zeropoint_best["zeropoint_img"],
+                "zeropoint_err": coadded[fil].zeropoint_best["zeropoint_img_err"],
+                "zeropoint_source": coadded[fil].zeropoint_best["catalogue"],
+                "last_processed": Time.now().strftime("%Y-%m-%dT%H:%M:%S"),
+                "depth": img.depth["secure"]["SNR_SE"]["5-sigma"]
+            }
+
+            obs.add_epoch(
+                epoch_name=self.name,
+                fil=fil,
+                entry=entry
+            )
 
         obs.write_master_imaging_table()
 
