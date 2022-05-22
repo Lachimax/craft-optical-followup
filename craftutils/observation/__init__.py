@@ -304,6 +304,13 @@ def write_master_table(
     p.save_params(tbl_path, tbl)
     tbl_list = list(map(lambda e: tbl[e], tbl))
     tbl_astropy = table.QTable(tbl_list)
+    tbl_names = tbl_astropy.colnames
+    names = sort_by.copy()
+    names.reverse()
+    for name in names:
+        tbl_names.remove(name)
+        tbl_names.insert(0, name)
+    tbl_astropy = tbl_astropy[tbl_names]
     tbl_astropy.sort(sort_by)
     tbl_astropy.write(
         tbl_path.replace(".yaml", ".ecsv"),
@@ -322,7 +329,7 @@ def write_master_imaging_table():
     write_master_table(
         tbl_path=master_imaging_path,
         tbl=master_imaging,
-        sort_by=["field_name", "epoch_name", "filter_name"]
+        sort_by=list(master_imaging_columns.keys())
     )
 
 
@@ -330,7 +337,7 @@ def write_master_all_objects_table():
     write_master_table(
         tbl_path=master_objects_all_path,
         tbl=master_objects_all,
-        sort_by=["field_name", "jname"]
+        sort_by=list(master_objects_columns.keys())
     )
 
 
@@ -338,7 +345,7 @@ def write_master_objects_table():
     write_master_table(
         tbl_path=master_objects_path,
         tbl=master_objects,
-        sort_by=["field_name", "jname"]
+        sort_by=list(master_objects_columns.keys())
     )
 
 
