@@ -3904,15 +3904,15 @@ class ImagingImage(Image):
             return None, None, None, None
 
         snr = flux / flux_err
+        mag, mag_err, _, _ = self.magnitude(
+            flux, flux_err
+        )
         if snr < detection_threshold:
-            mag, _, _, _ = self.magnitude(
+            mag_lim, _, _, _ = self.magnitude(
                 detection_threshold * flux_err
             )
+            mag = min(mag, mag_lim)
             mag_err = [-999. * units.mag]
-        else:
-            mag, mag_err, _, _ = self.magnitude(
-                flux, flux_err
-            )
 
         return mag, mag_err, snr, back
 

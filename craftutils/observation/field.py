@@ -735,12 +735,20 @@ class Field:
             obj.push_to_table(select=True)
             obj.write_plot_photometry()
             obj.update_output_file()
+        self.generate_cigale()
+
 
     def generate_cigale(self):
-        photometries = {}
+        photometries = {
+            "Galaxy ID": [],
+            "z": []
+        }
         for obj in self.objects:
             obj.load_output_file()
-            tbl_this = obj.self.photometry_to_table(best=True)
+            obj.photometry_to_table()
+            tbl_this = obj.photometry_to_table(best=True)
+            photometries["Galaxy ID"].append(obj.name)
+            photometries["z"].append(obj.z)
             for row in tbl_this:
                 instrument_name = row["instrument"]
                 instrument = inst.Instrument.from_params(instrument_name)
@@ -753,8 +761,8 @@ class Field:
                     fil_cig = row["band"][0].lower()
                 else:
                     fil_cig = row["band"]
-
                 band_str = f"{inst_cig}_{fil_cig}"
+
                 if band_str not in photometries:
                     photometries[band_str] = []
                     photometries[band_str + "_err"] = []
@@ -766,6 +774,8 @@ class Field:
                     photometries[band_str + "_err"].append(row["mag_err"])
 
         tbl_cigale = table.QTable(photometries)
+        print(tbl_cigale)
+        tbl_cigale.write(os.path.join(self.data_path, f"{self.name}_cigale.csv"))
 
     @classmethod
     def default_params(cls):
