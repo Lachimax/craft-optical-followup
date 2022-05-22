@@ -290,7 +290,7 @@ class Object:
 
         self.estimate_galactic_extinction()
         deepest = self.select_deepest()
-        deepest_dict = self.photometry[deepest["instrument"]][deepest["band"]][deepest["epoch_name"]]
+        deepest_dict = self.photometry[deepest["instrument"]][deepest["filter"]][deepest["epoch_name"]]
         deepest_path = deepest_dict["good_image_path"]
 
         cls = image.CoaddedImage.select_child_class(instrument=deepest["instrument"])
@@ -303,7 +303,7 @@ class Object:
             theta_world=self.theta,
             kron_radius=self.kron,
             output=os.path.join(self.data_path,
-                                f"{self.name_filesys}_{deepest['instrument']}_{deepest['band']}_{deepest['epoch_name']}"),
+                                f"{self.name_filesys}_{deepest['instrument']}_{deepest['filter']}_{deepest['epoch_name']}"),
         )
         deepest_dict["mag_sep"] = mag[0]
         deepest_dict["mag_sep_err"] = mag_err[0]
@@ -588,8 +588,6 @@ class Object:
                     )
                     # tbl = table.QTable([phot_dict])
                     tbls.append(phot_dict)
-                    print("phot_dict:")
-                    print(phot_dict)
 
                 else:
                     for epoch in self.photometry[instrument_name][filter_name]:
@@ -603,7 +601,6 @@ class Object:
                         # tbl = table.QTable([phot_dict])
                         tbls.append(phot_dict)
 
-        print(tbls)
         if best:
             self.photometry_tbl = table.vstack(tbls)
         else:
@@ -733,7 +730,7 @@ class Object:
         if force or self.ebv_sandf is None:
             # Get E(B-V) at this coordinate.
             tbl = r.retrieve_irsa_details(coord=self.position)
-            self.ebv_sandf = tbl["ext SandF ref"] * units.mag
+            self.ebv_sandf = tbl["ext SandF ref"][0] * units.mag
 
     def load_extinction_table(self, force: bool = False):
         if force or self.irsa_extinction is None:
@@ -761,6 +758,8 @@ class Object:
         self.get_photometry_table(output=local_output)
         fil_photom = self.photometry_tbl[self.photometry_tbl["band"] == fil]
         fil_photom = fil_photom[fil_photom["instrument"] == instrument]
+        row = fil_photom[np.argmax(fil_photom["snr"])]
+        photom_dict = self.photometry[instrument][fil][row["epoch_name"]]
         mean = {
             "mag": np.mean(fil_photom["mag"]),
             "mag_err": np.mean(fil_photom["mag_err"]),
@@ -768,7 +767,7 @@ class Object:
             "mag_psf_err": np.mean(fil_photom["mag_psf_err"])
         }
         # TODO: Just meaning the whole table is probably not the best way to estimate uncertainties.
-        return fil_photom[np.argmax(fil_photom["snr"])], mean
+        return photom_dict, mean
 
     def select_photometry_sep(
             self,
@@ -778,6 +777,8 @@ class Object:
     ):
         fil_photom = self.photometry_tbl[self.photometry_tbl["band"] == fil]
         fil_photom = fil_photom[fil_photom["instrument"] == instrument]
+        row = fil_photom[np.argmax(fil_photom["snr_sep"])]
+        photom_dict = self.photometry[instrument][fil][row["epoch_name"]]
         mean = {
             "mag": np.mean(fil_photom["mag_sep"]),
             "mag_err": np.std(fil_photom["mag_sep"]),
@@ -785,23 +786,25 @@ class Object:
             "mag_psf_err": np.std(fil_photom["mag_psf"])
         }
         u.debug_print(2, f"Object.select_photometry_sep(): {self.name=}, {fil=}, {instrument=}")
-        print(fil_photom)
-        return fil_photom[np.argmax(fil_photom["snr_sep"])], mean
+        return photom_dict, mean
 
     def select_psf_photometry(self, local_output: bool = True):
         self.get_photometry_table(output=local_output)
         idx = np.argmax(self.photometry_tbl["snr_psf"])
-        return self.photometry_tbl[idx]
+        row = self.photometry_tbl[idx]
+        return self.photometry[row["instrument"]][row["band"]][row["epoch_name"]]
 
     def select_best_position(self, local_output: bool = True):
         self.get_photometry_table(output=local_output)
         idx = np.argmin(self.photometry_tbl["ra_err"] * self.photometry_tbl["dec_err"])
-        return self.photometry_tbl[idx]
+        row = self.photometry_tbl[idx]
+        return self.photometry[row["instrument"]][row["band"]][row["epoch_name"]]
 
     def select_deepest(self, local_output: bool = True):
         self.get_photometry_table(output=local_output)
         idx = np.argmax(self.photometry_tbl["snr"])
-        deepest = self.photometry_tbl[idx]
+        row = self.photometry_tbl[idx]
+        deepest = self.photometry[row["instrument"]][row["band"]][row["epoch_name"]]
         self.a = deepest["a"]
         self.b = deepest["b"]
         self.theta = deepest["theta"]
@@ -814,31 +817,16 @@ class Object:
     def select_deepest_sep(self, local_output: bool = True):
         self.get_photometry_table(output=local_output)
         idx = np.argmax(self.photometry_tbl["snr_sep"])
-        return self.photometry_tbl[idx]
+        row = self.photometry_tbl[idx]
+        return self.photometry[row["instrument"]][row["band"]][row["epoch_name"]]
 
     def push_to_table(self, select: bool = False, local_output: bool = True):
-
-        if select:
-            tbl = obs.load_master_objects_table()
-        else:
-            tbl = obs.load_master_all_objects_table()
 
         jname = self.jname()
 
         for instrument in self.photometry:
             for fil in self.photometry[instrument]:
                 band_str = f"{instrument}_{fil.replace('_', '-')}"
-                obs.add_columns_to_master_objects(band_str)
-
-        if select:
-            row, index = obs.get_row(tbl=obs.master_objects, colname="object_name", colval=self.name)
-        else:
-            row, index = obs.get_row(tbl=obs.master_objects_all, colname="object_name", colval=self.name)
-
-        print()
-
-        if row is None:
-            row = {}
 
         self.estimate_galactic_extinction()
         if select:
@@ -851,32 +839,31 @@ class Object:
         # best_position = self.select_best_position(local_output=local_output)
         best_psf = self.select_psf_photometry(local_output=local_output)
 
-        row["jname"] = jname
-        row["field_name"] = self.field.name
-        row["object_name"] = self.name
-        row["ra"] = deepest["ra"]
-        row["ra_err"] = deepest["ra_err"]
-        row["dec"] = deepest["dec"]
-        row["dec_err"] = deepest["dec_err"]
-        row["epoch_position"] = deepest["epoch_name"]
-        row["epoch_position_date"] = deepest["epoch_date"]
-        row["a"] = deepest["a"]
-        row["a_err"] = deepest["a_err"]
-        row["b"] = deepest["b"]
-        row["b_err"] = deepest["b_err"]
-        row["theta"] = deepest["theta"]
-        row["kron_radius"] = deepest["kron_radius"]
-        row["epoch_ellipse"] = deepest["epoch_name"]
-        row["epoch_ellipse_date"] = deepest["epoch_date"]
-        row["theta_err"] = deepest["theta_err"]
-        row[f"e_b-v"] = self.ebv_sandf
-        row[f"class_star"] = best_psf["class_star"]
+        row = {
+            "jname": jname,
+            "field_name": self.field.name,
+            "object_name": self.name,
+            "ra": deepest["ra"],
+            "ra_err": deepest["ra_err"],
+            "dec": deepest["dec"],
+            "dec_err": deepest["dec_err"],
+            "epoch_position": deepest["epoch_name"],
+            "epoch_position_date": deepest["epoch_date"], "a": deepest["a"],
+            "a_err": deepest["a_err"],
+            "b": deepest["b"],
+            "b_err": deepest["b_err"],
+            "theta": deepest["theta"],
+            "kron_radius": deepest["kron_radius"],
+            "epoch_ellipse": deepest["epoch_name"],
+            "epoch_ellipse_date": deepest["epoch_date"],
+            "theta_err": deepest["theta_err"],
+            f"e_b-v": self.ebv_sandf,
+            f"class_star": best_psf["class_star"]}
 
         for instrument in self.photometry:
             for fil in self.photometry[instrument]:
 
                 band_str = f"{instrument}_{fil.replace('_', '-')}"
-                obs.add_columns_to_master_objects(band_str)
 
                 if select:
                     best_photom, mean_photom = self.select_photometry_sep(fil, instrument, local_output=local_output)
@@ -896,34 +883,33 @@ class Object:
                 # else:
                 #     row[f"ext_gal_{band_str}"] = best_photom["ext_gal_sandf"]
                 row[f"epoch_best_{band_str}"] = best_photom[f"epoch_name"]
-                row[f"epoch_best_date_{band_str}"] = best_photom[f"epoch_date"]
+                row[f"epoch_best_date_{band_str}"] = str(best_photom[f"epoch_date"])
                 row[f"mag_psf_best_{band_str}"] = best_photom[f"mag_psf"]
                 row[f"mag_psf_best_{band_str}_err"] = best_photom[f"mag_psf_err"]
                 row[f"snr_psf_best_{band_str}"] = best_photom["snr_psf"]
                 row[f"mag_psf_mean_{band_str}"] = mean_photom[f"mag_psf"]
                 row[f"mag_psf_mean_{band_str}_err"] = mean_photom[f"mag_psf_err"]
 
-        for colname in tbl.colnames:
-            if colname not in row:
-                if "epoch" in colname:
-                    row[colname] = "N/A"
-                else:
-                    row[colname] = tbl[0][colname]
+        # colnames = obs.master_objects_columns
+        # for colname in colnames:
+        #     if colname not in row:
+        #         if "epoch" in colname:
+        #             row[colname] = "N/A"
+        #         else:
+        #             row[colname] = tbl[0][colname]
 
         u.debug_print(2, "Object.push_to_table(): select ==", select)
-        print(f"INDEX: {index}")
         if select:
-            if index is None:
-                obs.master_objects.add_row(row)
-            else:
-                obs.master_objects[index] = row
-            obs.write_master_objects_table()
+            tbl = obs.load_master_objects_table()
         else:
-            if index is None:
-                obs.master_objects_all.add_row(row)
-            else:
-                obs.master_objects_all[index] = row
-            obs.write_master_all_objects_table()
+            tbl = obs.load_master_all_objects_table()
+
+        obs.add_photometry(
+            tbl=tbl,
+            object_name=self.name,
+            entry=row,
+        )
+        obs.write_master_objects_table()
 
     @classmethod
     def default_params(cls):
@@ -1016,8 +1002,10 @@ class Object:
         obj.cat_row = row
         return obj
 
+
 class Star(Object):
     pass
+
 
 class Galaxy(Object):
     def __init__(

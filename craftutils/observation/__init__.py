@@ -205,6 +205,8 @@ def load_master_table(
             p.save_params(tbl_path, tbl)
         else:
             tbl = p.load_params(tbl_path)
+    if tbl is None:
+        tbl = {}
     return tbl
 
 
@@ -296,6 +298,9 @@ def write_master_table(
     if tbl is None:
         tbl_name = os.path.split(tbl_path)[-1][:-5]
         raise ValueError(f"{tbl_name} not loaded.")
+    for key in tbl:
+        for key_2 in tbl[key]:
+            print(key_2, tbl[key][key_2], type(tbl[key][key_2]))
     p.save_params(tbl_path, tbl)
     tbl_list = list(map(lambda e: tbl[e], tbl))
     tbl_astropy = table.QTable(tbl_list)
@@ -305,6 +310,7 @@ def write_master_table(
         format="ascii.ecsv",
         overwrite=True
     )
+    # u.detect_problem_table(tbl_astropy)
     tbl_astropy.write(
         tbl_path.replace(".yaml", ".csv"),
         format="ascii.csv",
