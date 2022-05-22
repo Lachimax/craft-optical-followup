@@ -1,5 +1,5 @@
 import os
-from typing import Union
+from typing import Union, Iterable
 
 import astropy.table as table
 import astropy.units as units
@@ -52,92 +52,28 @@ def split_dtype(val):
     return dtype, unit
 
 
-def add_columns_by_fil(tbl: table.QTable, coldict: dict, fil: str):
-    for col in coldict:
-        if "{:s}" in col:
-            dtype, unit = split_dtype(coldict[col])
-            col = col.format(fil)
-            add_column(tbl=tbl, colname=col, dtype=dtype, unit=unit)
+#
+#
+# def add_columns_by_fil(tbl: table.QTable, coldict: dict, fil: str):
+#     for col in coldict:
+#         if "{:s}" in col:
+#             dtype, unit = split_dtype(coldict[col])
+#             col = col.format(fil)
+#             add_column(tbl=tbl, colname=col, dtype=dtype, unit=unit)
+#
+#
+# def add_columns_to_master_objects(fil: str):
+#     print(f"Adding columns for {fil} to master objects table")
+#     load_master_objects_table()
+#     global master_objects_table
+#     add_columns_by_fil(tbl=master_objects_table, coldict=master_objects_columns, fil=fil)
+#     write_master_objects_table()
+#
+#     load_master_all_objects_table()
+#     global master_objects_all_table
+#     add_columns_by_fil(tbl=master_objects_all_table, coldict=master_objects_columns, fil=fil)
+#     write_master_all_objects_table()
 
-
-def add_columns_to_master_objects(fil: str):
-    print(f"Adding columns for {fil} to master objects table")
-    load_master_objects_table()
-    global master_objects_table
-    add_columns_by_fil(tbl=master_objects_table, coldict=master_objects_columns, fil=fil)
-    write_master_objects_table()
-
-    load_master_all_objects_table()
-    global master_objects_all_table
-    add_columns_by_fil(tbl=master_objects_all_table, coldict=master_objects_columns, fil=fil)
-    write_master_all_objects_table()
-
-
-master_imaging_table = None
-master_imaging_table_path = os.path.join(config["table_dir"], "master_imaging_table.ecsv")
-master_imaging_table_columns = {
-    "field_name": str,
-    "epoch_name": str,
-    "filter_name": str,
-    "instrument": str,
-    "date_utc": str,
-    "mjd": units.day,
-    "filter_lambda_eff": units.Angstrom,
-    "n_frames": int,
-    "n_frames_included": int,
-    "frame_exp_time": units.second,
-    "total_exp_time": units.second,
-    "total_exp_time_included": units.second,
-    "psf_fwhm": units.arcsec,
-    "program_id": str,
-    "zeropoint": units.mag,
-    "zeropoint_err": units.mag,
-    "zeropoint_source": str,
-    "last_processed": str,
-    "depth": units.mag
-    # "extinction_atm": units.mag,
-    # "extinction_atm_err": units.mag,
-}
-
-master_objects_table = None
-master_objects_path = os.path.join(config["table_dir"], "master_select_objects_table.ecsv")
-master_objects_all_table = None
-master_objects_all_path = os.path.join(config["table_dir"], "master_all_objects_table.ecsv")
-master_objects_columns = {
-    "jname": str,
-    "field_name": str,
-    "object_name": str,
-    "ra": units.deg,
-    "ra_err": units.deg,
-    "dec": units.deg,
-    "dec_err": units.deg,
-    "epoch_position": str,
-    "epoch_position_date": str,
-    "a": units.arcsec,
-    "a_err": units.arcsec,
-    "b": units.arcsec,
-    "b_err": units.arcsec,
-    "theta": units.deg,
-    "epoch_ellipse": str,
-    "epoch_ellipse_date": str,
-    "theta_err": units.deg,
-    "kron_radius": float,
-    "mag_best_{:s}": units.mag,  # The magnitude from the deepest image in that band
-    "mag_best_{:s}_err": units.mag,
-    "snr_best_{:s}": float,
-    "mag_mean_{:s}": units.mag,
-    "mag_mean_{:s}_err": units.mag,
-    "epoch_best_{:s}": str,
-    "epoch_best_date_{:s}": str,
-    "ext_gal_{:s}": units.mag,
-    "e_b-v": units.mag,
-    "class_star": float,
-    "mag_psf_best_{:s}": units.mag,
-    "snr_psf_best_{:s}": float,
-    "mag_psf_best_{:s}_err": units.mag,
-    "mag_psf_mean_{:s}": units.mag,
-    "mag_psf_mean_{:s}_err": units.mag,
-}
 
 furby_table = None
 furby_table_columns = {
@@ -169,126 +105,72 @@ furby_table_columns = {
     "DEC_Host": float
 }
 
+master_imaging = None
+master_imaging_path = os.path.join(config["table_dir"], "master_imaging_table.yaml")
+master_imaging_columns = {
+    "field_name": str,
+    "epoch_name": str,
+    "filter_name": str,
+    "instrument": str,
+    "date_utc": str,
+    "mjd": units.day,
+    "filter_lambda_eff": units.Angstrom,
+    "n_frames": int,
+    "n_frames_included": int,
+    "frame_exp_time": units.second,
+    "total_exp_time": units.second,
+    "total_exp_time_included": units.second,
+    "psf_fwhm": units.arcsec,
+    "program_id": str,
+    "zeropoint": units.mag,
+    "zeropoint_err": units.mag,
+    "zeropoint_source": str,
+    "last_processed": str,
+    "depth": units.mag
+    # "extinction_atm": units.mag,
+    # "extinction_atm_err": units.mag,
+}
 
-# master_photometry_table = None
-# master_photometry_path = os.path.join(config["table_dir"], "photometry")
-# u.mkdir_check(master_photometry_path)
-# master_photometry_columns = [
-#     "field_name",
-#     "object_name",
-#     ""
-# ]
+master_objects = None
+master_objects_path = os.path.join(config["table_dir"], "master_select_objects_table.yaml")
 
-def load_master_table(
-        tbl: Union[None, table.Table],
-        tbl_columns: dict,
-        tbl_path: str,
-        force: bool = False,
-):
-    if force or tbl is None:
-        colnames, dtypes, un = _construct_column_lists(columns=tbl_columns)
-
-        if not os.path.isfile(tbl_path):
-            tbl = table.QTable(data=[[-999]] * len(colnames), names=colnames, units=un, dtype=dtypes)
-            for i, colname in enumerate(colnames):
-                print(i, colname)
-                if isinstance(dtypes[i], str):
-                    tbl[colname][0] = "0" * 32
-            tbl.write(tbl_path, format="ascii.ecsv")
-        tbl = table.QTable.read(tbl_path, format="ascii.ecsv")
-        for i, colname in enumerate(colnames):
-            add_column(tbl=tbl, colname=colname, dtype=dtypes[i], unit=un[i])
-
-    return tbl
-
-
-def add_column(tbl: table.QTable, colname: str, dtype, unit):
-    if colname not in tbl.colnames:
-        if isinstance(dtype, str):
-            dtype = str
-            val = dtype("0" * 32)
-        else:
-            val = dtype(-999)
-        tbl.add_column([val] * len(tbl), name=colname)
-        if unit is not None:
-            tbl[colname] *= unit
-
-
-def load_master_imaging_table(force: bool = False):
-    global master_imaging_table
-
-    master_imaging_table = load_master_table(
-        tbl=master_imaging_table,
-        tbl_columns=master_imaging_table_columns,
-        tbl_path=master_imaging_table_path,
-        force=force
-    )
-
-    return master_imaging_table
-
-
-def load_master_objects_table(force: bool = False):
-    global master_objects_table
-
-    master_objects_table = load_master_table(
-        tbl=master_objects_table,
-        tbl_columns=master_objects_columns,
-        tbl_path=master_objects_path,
-        # filters=filters,
-        force=force
-    )
-
-    return master_objects_table
-
-
-def load_master_all_objects_table(force: bool = False):
-    global master_objects_all_table
-
-    master_objects_all_table = load_master_table(
-        tbl=master_objects_all_table,
-        tbl_columns=master_objects_columns,
-        tbl_path=master_objects_all_path,
-        # filters=filters,
-        force=force
-    )
-
-    return master_objects_all_table
-
-
-def write_master_imaging_table():
-    if master_imaging_table is None:
-        raise ValueError("master_imaging_table not loaded.")
-    else:
-        master_imaging_table.sort(["field_name", "epoch_name", "filter_name"])
-        master_imaging_table.write(master_imaging_table_path, format="ascii.ecsv", overwrite=True)
-        master_imaging_table.write(
-            master_imaging_table_path.replace(".ecsv", ".csv"),
-            format="ascii.csv",
-            overwrite=True)
-
-
-def write_master_all_objects_table():
-    if master_objects_all_table is None:
-        raise ValueError("master_imaging_table not loaded")
-    else:
-        master_objects_all_table.sort("jname")
-        master_objects_all_table.write(master_objects_all_path, format="ascii.ecsv", overwrite=True)
-        master_objects_all_table.write(
-            master_objects_all_path.replace(".ecsv", ".csv"),
-            format="ascii.csv",
-            overwrite=True)
-
-
-def write_master_objects_table():
-    if master_objects_table is None:
-        raise ValueError("master_imaging_table not loaded")
-    else:
-        master_objects_table.sort(["field_name", "jname"])
-        master_objects_table.write(master_objects_path, format="ascii.ecsv", overwrite=True)
-        master_objects_table.write(
-            master_objects_path.replace(".ecsv", ".csv"),
-            format="ascii.csv",
-            overwrite=True)
+master_objects_all = None
+master_objects_all_path = os.path.join(config["table_dir"], "master_all_objects_table.yaml")
+master_objects_columns = {
+    "jname": str,
+    "field_name": str,
+    "object_name": str,
+    "ra": units.deg,
+    "ra_err": units.deg,
+    "dec": units.deg,
+    "dec_err": units.deg,
+    "epoch_position": str,
+    "epoch_position_date": str,
+    "a": units.arcsec,
+    "a_err": units.arcsec,
+    "b": units.arcsec,
+    "b_err": units.arcsec,
+    "theta": units.deg,
+    "epoch_ellipse": str,
+    "epoch_ellipse_date": str,
+    "theta_err": units.deg,
+    "kron_radius": float,
+    # "mag_best_{:s}": units.mag,  # The magnitude from the deepest image in that band
+    # "mag_best_{:s}_err": units.mag,
+    # "snr_best_{:s}": float,
+    # "mag_mean_{:s}": units.mag,
+    # "mag_mean_{:s}_err": units.mag,
+    # "epoch_best_{:s}": str,
+    # "epoch_best_date_{:s}": str,
+    # "ext_gal_{:s}": units.mag,
+    # "e_b-v": units.mag,
+    # "class_star": float,
+    # "mag_psf_best_{:s}": units.mag,
+    # "snr_psf_best_{:s}": float,
+    # "mag_psf_best_{:s}_err": units.mag,
+    # "mag_psf_mean_{:s}": units.mag,
+    # "mag_psf_mean_{:s}_err": units.mag,
+}
 
 
 def _build_furby_table_path():
@@ -304,7 +186,7 @@ def load_furby_table(force: bool = False):
     if force or furby_table is None:
         path = _build_furby_table_path()
         if path is not None:
-            _, dtypes, _ = _construct_column_lists(columns=master_imaging_table_columns)
+            _, dtypes, _ = _construct_column_lists(columns=furby_table_columns)
             furby_table = table.Table.read(path, format="ascii.csv", dtype=dtypes)
         else:
             furby_table = None
@@ -312,12 +194,146 @@ def load_furby_table(force: bool = False):
     return furby_table
 
 
-def write_furby_table():
-    global furby_table
+def load_master_table(
+        tbl: Union[None, table.Table],
+        tbl_path: str,
+        force: bool = False,
+):
+    if force or tbl is None:
+        if not os.path.isfile(tbl_path):
+            tbl = {}
+            p.save_params(tbl_path, tbl)
+        else:
+            tbl = p.load_params(tbl_path)
+    return tbl
 
-    path = _build_furby_table_path()
-    if path is not None:
-        furby_table.write(path, format="ascii.csv", overwrite=True)
+
+def load_master_imaging_table(force: bool = False):
+    global master_imaging
+
+    master_imaging = load_master_table(
+        tbl=master_imaging,
+        tbl_path=master_imaging_path,
+        force=force
+    )
+
+    return master_imaging
+
+
+def load_master_objects_table(force: bool = False):
+    global master_objects
+
+    master_objects = load_master_table(
+        tbl=master_objects,
+        tbl_path=master_objects_path,
+        force=force
+    )
+
+    return master_objects
+
+
+def load_master_all_objects_table(force: bool = False):
+    global master_objects_all
+
+    master_objects_all = load_master_table(
+        tbl=master_objects_all,
+        tbl_path=master_objects_all_path,
+        force=force
+    )
+
+    return master_objects_all
+
+
+def add_entry(
+        tbl: dict,
+        key: str,
+        entry: dict,
+        required: Iterable = ()
+):
+    for item in required:
+        if item not in entry:
+            raise ValueError(f"Required key {required} not found in entry.")
+
+    tbl[key] = entry
+
+
+def add_epoch(
+        epoch_name: str,
+        fil: str,
+        entry: dict
+):
+    load_master_imaging_table()
+    key = f"{epoch_name}_{fil}"
+    add_entry(
+        tbl=master_imaging,
+        key=key,
+        entry=entry,
+        required=master_imaging_columns
+    )
+
+
+def add_photometry(
+        tbl: dict,
+        object_name: str,
+        entry: dict
+):
+    if object_name in tbl:
+        tbl[object_name].update(entry)
+    else:
+        add_entry(
+            tbl=tbl,
+            key=object_name,
+            entry=entry,
+            required=master_objects_columns
+        )
+
+
+def write_master_table(
+        tbl_path: str,
+        tbl: dict,
+        sort_by: Union[str, list] = None,
+):
+    if tbl is None:
+        tbl_name = os.path.split(tbl_path)[-1][:-5]
+        raise ValueError(f"{tbl_name} not loaded.")
+    p.save_params(tbl_path, tbl)
+    tbl_list = list(map(lambda e: tbl[e], tbl))
+    tbl_astropy = table.QTable(tbl_list)
+    tbl_astropy.sort(sort_by)
+    tbl_astropy.write(
+        tbl_path.replace(".yaml", ".ecsv"),
+        format="ascii.ecsv",
+        overwrite=True
+    )
+    tbl_astropy.write(
+        tbl_path.replace(".yaml", ".csv"),
+        format="ascii.csv",
+        overwrite=True
+    )
+
+
+def write_master_imaging_table():
+    write_master_table(
+        tbl_path=master_imaging_path,
+        tbl=master_imaging,
+        sort_by=["field_name", "epoch_name", "filter_name"]
+    )
+
+
+def write_master_all_objects_table():
+    write_master_table(
+        tbl_path=master_objects_all_path,
+        tbl=master_objects_all,
+        sort_by=["field_name", "jname"]
+    )
+
+
+def write_master_objects_table():
+    write_master_table(
+        tbl_path=master_objects_path,
+        tbl=master_objects,
+        sort_by=["field_name", "jname"]
+    )
 
 
 def get_row(tbl: table.Table, colname: str, colval: str):
@@ -328,16 +344,8 @@ def get_row(tbl: table.Table, colname: str, colval: str):
         return tbl[is_name][0], is_name.argmax()
 
 
-def _get_row_two_conditions(
-        tbl: table.Table,
-        colname_1: str, colval_1: str,
-        colname_2: str, colval_2: str
-):
-    good = (tbl[colname_1] == colval_1) * (tbl[colname_2] == colval_2)
-    if sum(good) == 0:
-        return None, None
-    else:
-        return tbl[good][0], good.argmax()
+def get_entry(tbl: dict, key: str):
+    return tbl[key]
 
 
 def get_row_furby(field_name: str):
@@ -347,12 +355,10 @@ def get_row_furby(field_name: str):
         return None
 
 
-def get_row_epoch(tbl: table.Table, epoch_name: str, fil: str = None):
-    if master_imaging_table is not None:
-        row, index = _get_row_two_conditions(
-            tbl=tbl,
-            colname_1="epoch_name", colval_1=epoch_name,
-            colname_2="filter_name", colval_2=fil)
-        return row, index
+def get_epoch(epoch_name: str, fil: str):
+    load_master_imaging_table()
+    key = f"{epoch_name}_{fil}"
+    if key in master_imaging:
+        return master_imaging[key]
     else:
-        return None, None
+        return None

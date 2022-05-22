@@ -831,9 +831,9 @@ class Object:
                 obs.add_columns_to_master_objects(band_str)
 
         if select:
-            row, index = obs.get_row(tbl=obs.master_objects_table, colname="object_name", colval=self.name)
+            row, index = obs.get_row(tbl=obs.master_objects, colname="object_name", colval=self.name)
         else:
-            row, index = obs.get_row(tbl=obs.master_objects_all_table, colname="object_name", colval=self.name)
+            row, index = obs.get_row(tbl=obs.master_objects_all, colname="object_name", colval=self.name)
 
         print()
 
@@ -914,15 +914,15 @@ class Object:
         print(f"INDEX: {index}")
         if select:
             if index is None:
-                obs.master_objects_table.add_row(row)
+                obs.master_objects.add_row(row)
             else:
-                obs.master_objects_table[index] = row
+                obs.master_objects[index] = row
             obs.write_master_objects_table()
         else:
             if index is None:
-                obs.master_objects_all_table.add_row(row)
+                obs.master_objects_all.add_row(row)
             else:
-                obs.master_objects_all_table[index] = row
+                obs.master_objects_all[index] = row
             obs.write_master_all_objects_table()
 
     @classmethod
