@@ -137,9 +137,9 @@ master_objects_path = os.path.join(config["table_dir"], "master_select_objects_t
 master_objects_all = None
 master_objects_all_path = os.path.join(config["table_dir"], "master_all_objects_table.yaml")
 master_objects_columns = {
-    "jname": str,
     "field_name": str,
     "object_name": str,
+    "jname": str,
     "ra": units.deg,
     "ra_err": units.deg,
     "dec": units.deg,

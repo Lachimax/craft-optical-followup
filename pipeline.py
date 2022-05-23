@@ -13,8 +13,7 @@ config = p.config
 def main(
         field_name: str,
         epoch_name: str,
-        imaging: bool,
-        spectroscopy: bool,
+        mode: str,
         instrument: str,
         furby_path: str,
         do: str,
@@ -46,9 +45,6 @@ def main(
 
     # Do automated FURBY process.
     if furby_path is not None:
-
-        new_field = True
-        furby = True
 
         imaging = True
 
@@ -128,14 +124,12 @@ def main(
                     exit(0)
             field = fld.Field.from_params(name=field_name)
 
-    if spectroscopy:
-        mode = "Spectroscopy"
-    elif imaging:
-        mode = "Imaging"
-    else:
+    if mode is None:
         _, mode = u.select_option(message="Please select a mode.", options=["Imaging", "Spectroscopy", "Objects"])
 
-    if mode == "Spectroscopy":
+    mode = mode.lower()
+
+    if mode == "spectroscopy":
         if epoch_name is None:
             # Build a list of imaging epochs from that field.
             field.gather_epochs_spectroscopy()
@@ -146,7 +140,7 @@ def main(
                 instrument = fld.select_instrument(mode="spectroscopy")
             epoch = fld.SpectroscopyEpoch.from_params(epoch_name, instrument=instrument, field=field)
 
-    elif mode == "Imaging":
+    elif mode == "imaging":
         if epoch_name is None:
             # Build a list of imaging epochs from that field.
             if type(field) is fld.FRBField:
@@ -160,7 +154,7 @@ def main(
             epoch = fld.ImagingEpoch.from_params(epoch_name, instrument=instrument, field=field)
             epoch.field = field
 
-    else:
+    elif mode == "objects":
 
         field.object_properties()
 
@@ -187,9 +181,10 @@ if __name__ == '__main__':
         "--instrument", help="Name of instrument on which epoch was observed, eg 'vlt-fors2'", type=str,
         default=None)
     parser.add_argument(
-        "-i", help="Imaging pipeline", action="store_true")
-    parser.add_argument(
-        "-s", help="Spectroscopy pipeline. Overrides -i.", action="store_true")
+        "--mode",
+        help="imaging, spectroscopy or objects",
+        default=None,
+    )
     parser.add_argument(
         "--do", help="Epoch processing stages to perform (overrides manual selection if provided). "
                      "Numbers separated by space or comma.",
@@ -258,8 +253,7 @@ if __name__ == '__main__':
     main(
         field_name=args.field,
         epoch_name=args.epoch,
-        imaging=args.i,
-        spectroscopy=args.s,
+        mode=args.mode,
         instrument=args.instrument,
         do=args.do,
         do_not_reuse_masters=args.do_not_reuse_masters,

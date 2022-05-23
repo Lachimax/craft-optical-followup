@@ -764,7 +764,8 @@ class Object:
             "mag": np.mean(fil_photom["mag"]),
             "mag_err": np.mean(fil_photom["mag_err"]),
             "mag_psf": np.mean(fil_photom["mag_psf"]),
-            "mag_psf_err": np.mean(fil_photom["mag_psf_err"])
+            "mag_psf_err": np.std(fil_photom["mag_psf_err"]) / len(fil_photom),
+            "n": len(fil_photom)
         }
         # TODO: Just meaning the whole table is probably not the best way to estimate uncertainties.
         return photom_dict, mean
@@ -783,7 +784,8 @@ class Object:
             "mag": np.mean(fil_photom["mag_sep"]),
             "mag_err": np.std(fil_photom["mag_sep"]),
             "mag_psf": np.mean(fil_photom["mag_psf"]),
-            "mag_psf_err": np.std(fil_photom["mag_psf"])
+            "mag_psf_err": np.std(fil_photom["mag_psf"]) / len(fil_photom),
+            "n": len(fil_photom)
         }
         u.debug_print(2, f"Object.select_photometry_sep(): {self.name=}, {fil=}, {instrument=}")
         return photom_dict, mean
@@ -823,10 +825,6 @@ class Object:
     def push_to_table(self, select: bool = False, local_output: bool = True):
 
         jname = self.jname()
-
-        for instrument in self.photometry:
-            for fil in self.photometry[instrument]:
-                band_str = f"{instrument}_{fil.replace('_', '-')}"
 
         self.estimate_galactic_extinction()
         if select:
@@ -879,6 +877,7 @@ class Object:
 
                 row[f"mag_mean_{band_str}"] = mean_photom["mag"]
                 row[f"mag_mean_{band_str}_err"] = mean_photom["mag_err"]
+                row[f"n_mean_{band_str}"] = mean_photom["n"]
                 row[f"ext_gal_{band_str}"] = best_photom["ext_gal"]
                 # else:
                 #     row[f"ext_gal_{band_str}"] = best_photom["ext_gal_sandf"]

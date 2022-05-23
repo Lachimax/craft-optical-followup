@@ -774,7 +774,10 @@ class Field:
 
         tbl_cigale = table.QTable(photometries)
         print(tbl_cigale)
-        tbl_cigale.write(os.path.join(self.data_path, f"{self.name}_cigale.csv"))
+        tbl_cigale.write(
+            os.path.join(self.data_path, f"{self.name}_cigale.csv"),
+            overwrite=True
+        )
 
     @classmethod
     def default_params(cls):
