@@ -735,9 +735,9 @@ class Field:
             obj.push_to_table(select=True)
             obj.write_plot_photometry()
             obj.update_output_file()
-        self.generate_cigale()
+        self.generate_cigale_photometry()
 
-    def generate_cigale(self):
+    def generate_cigale_photometry(self):
         photometries = {
             "Galaxy ID": [],
             "z": []
@@ -765,11 +765,11 @@ class Field:
                 if band_str not in photometries:
                     photometries[band_str] = []
                     photometries[band_str + "_err"] = []
-                if np.isnan(row["mag_ext_corrected"]):
+                if np.isnan(row["mag_sep_ext_corrected"]):
                     photometries[band_str].append(-999. * units.mag)
                     photometries[band_str + "_err"].append(-999. * units.mag)
                 else:
-                    photometries[band_str].append(row["mag_ext_corrected"])
+                    photometries[band_str].append(row["mag_sep_ext_corrected"])
                     photometries[band_str + "_err"].append(row["mag_err"])
 
         tbl_cigale = table.QTable(photometries)
@@ -2899,7 +2899,7 @@ class ImagingEpoch(Epoch):
                         # 'PSF_FWHM_ERR': psf_fwhm_err,
                         'ZP': img_projected.extract_header_item(key="ZP"),
                         'ZP_ERR': img_projected.extract_header_item(key="ZP_ERR"),
-                        'ZPCAT': img_projected.extract_header_item(key="ZP_CAT")
+                        'ZPCAT': str(img_projected.extract_header_item(key="ZP_CAT"))
                     },
                     write=True,
                 )
