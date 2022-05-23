@@ -144,7 +144,7 @@ def cat_columns(cat, f: str = None):
 cat_instruments = {
     "des": "decam",
     "delve": "decam",
-    "panstarrss1": "panstarrs1",
+    "panstarrs1": "panstarrs1",
     "sdss": "sdss",
     "skymapper": "skymapper"
 }

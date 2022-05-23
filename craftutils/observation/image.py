@@ -1467,7 +1467,7 @@ class ImagingImage(Image):
         if not self.zeropoints:
             return None, None
 
-        ranking = self.rank_photometric_cat(cats=self.zeropoints)
+        ranking, diff = self.rank_photometric_cat(cats=self.zeropoints)
         if preferred is not None:
             ranking.insert(0, preferred)
 
@@ -1484,9 +1484,10 @@ class ImagingImage(Image):
         zp_tbl = table.QTable(zps)
         if len(zp_tbl) > 0:
             # zp_tbl.sort("zeropoint_img_err")
-            zp_tbl.write(os.path.join(self.data_path, f"{self.name}_zeropoints.ecsv"), format="ascii.ecsv",
-                         overwrite=True)
-            #        zp_tbl.write(os.path.join(self.data_path, f"{self.name}_zeropoints.csv"), format="ascii.csv")
+            zp_tbl.write(
+                os.path.join(self.data_path, f"{self.name}_zeropoints.ecsv"), format="ascii.ecsv",
+                overwrite=True
+            )
             best_row = zp_tbl[0]
             best_cat = best_row["catalogue"]
             best_img = best_row["image_name"]
@@ -4111,7 +4112,7 @@ class ImagingImage(Image):
                 differences[cat] = 0.1 * units.angstrom
 
         differences = dict(sorted(differences.items(), key=lambda x: x[1]))
-        return list(differences.keys())
+        return list(differences.keys()), list(differences.values())
 
 
 class CoaddedImage(ImagingImage):
