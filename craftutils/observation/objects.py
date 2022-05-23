@@ -296,14 +296,21 @@ class Object:
         cls = image.CoaddedImage.select_child_class(instrument=deepest["instrument"])
         deepest_img = cls(path=deepest_path)
         deepest_fwhm = deepest_img.extract_header_item("PSF_FWHM") * units.arcsec
+        if "do_mask" in deepest_dict:
+            do_mask = deepest_dict["do_mask"]
+        else:
+            do_mask = True
         mag, mag_err, snr, back = deepest_img.sep_elliptical_magnitude(
             centre=self.position,
             a_world=self.a,
             b_world=self.b,
             theta_world=self.theta,
             kron_radius=self.kron,
-            output=os.path.join(self.data_path,
-                                f"{self.name_filesys}_{deepest['instrument']}_{deepest['filter']}_{deepest['epoch_name']}"),
+            output=os.path.join(
+                self.data_path,
+                f"{self.name_filesys}_{deepest['instrument']}_{deepest['filter']}_{deepest['epoch_name']}"
+            ),
+            mask_nearby=do_mask
         )
         deepest_dict["mag_sep"] = mag[0]
         deepest_dict["mag_sep_err"] = mag_err[0]
@@ -333,7 +340,7 @@ class Object:
                         theta_world=self.theta,
                         kron_radius=self.kron,
                         output=os.path.join(self.data_path, f"{self.name_filesys}_{instrument}_{band}_{epoch}"),
-                        mask_nearby=True
+                        mask_nearby=do_mask
                     )
                     if mag is None:
                         mag = -999. * units.mag
@@ -355,7 +362,7 @@ class Object:
                         b_world=self.b,  # + delta_fwhm,
                         theta_world=self.theta,
                         kron_radius=self.kron,
-                        output=os.path.join(self.data_path, f"{self.name_filesys}_{instrument}_{band}_{epoch}"),
+                        # output=os.path.join(self.data_path, f"{self.name_filesys}_{instrument}_{band}_{epoch}"),
                         mask_nearby=False
                     )
                     if mag is None:
@@ -700,8 +707,10 @@ class Object:
             self.photometry[instrument][band][epoch_name]["ext_gal"] = row[key]
             self.photometry[instrument][band][epoch_name]["mag_ext_corrected"] = row["mag"] - row[key]
             if "mag_sep" in row.colnames:
-                self.photometry[instrument][band][epoch_name]["mag_sep_ext_corrected"] = row["mag_sep"] - row[key]
-
+                if row["mag_sep"] > -99 * units.mag:
+                    self.photometry[instrument][band][epoch_name]["mag_sep_ext_corrected"] = row["mag_sep"] - row[key]
+                else:
+                    self.photometry[instrument][band][epoch_name]["mag_sep_ext_corrected"] = -999 * units.mag
         # tbl_2 = self.photometry_to_table()
         # tbl_2.update(tbl)
         # tbl_2.write(self.build_photometry_table_path().replace("photometry", "photemetry_extended"))
@@ -856,7 +865,8 @@ class Object:
             "epoch_ellipse_date": deepest["epoch_date"],
             "theta_err": deepest["theta_err"],
             f"e_b-v": self.ebv_sandf,
-            f"class_star": best_psf["class_star"]}
+            f"class_star": best_psf["class_star"]
+        }
 
         for instrument in self.photometry:
             for fil in self.photometry[instrument]:

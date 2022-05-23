@@ -766,11 +766,11 @@ class Field:
                     photometries[band_str] = []
                     photometries[band_str + "_err"] = []
                 if np.isnan(row["mag_sep_ext_corrected"]):
-                    photometries[band_str].append(-999. * units.mag)
-                    photometries[band_str + "_err"].append(-999. * units.mag)
+                    photometries[band_str].append(-999.)
+                    photometries[band_str + "_err"].append(-999.)
                 else:
                     photometries[band_str].append(row["mag_sep_ext_corrected"])
-                    photometries[band_str + "_err"].append(row["mag_err"])
+                    photometries[band_str + "_err"].append(row["mag_sep_err"])
 
         tbl_cigale = table.QTable(photometries)
         print(tbl_cigale)

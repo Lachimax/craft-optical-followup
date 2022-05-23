@@ -157,6 +157,7 @@ def main(
     elif mode == "objects":
 
         field.object_properties()
+        exit()
 
     u.debug_print(2, "pipeline.py: type(epoch) ==", type(epoch))
     epoch.do = do
