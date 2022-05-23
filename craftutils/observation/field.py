@@ -2899,7 +2899,7 @@ class ImagingEpoch(Epoch):
                         # 'PSF_FWHM_ERR': psf_fwhm_err,
                         'ZP': img_projected.extract_header_item(key="ZP"),
                         'ZP_ERR': img_projected.extract_header_item(key="ZP_ERR"),
-                        'ZPCAT': str(img_projected.extract_header_item(key="ZP_CAT"))
+                        'ZPCAT': str(img_projected.extract_header_item(key="ZPCAT"))
                     },
                     write=True,
                 )
