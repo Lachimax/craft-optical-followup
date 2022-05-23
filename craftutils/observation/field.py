@@ -879,7 +879,7 @@ class Field:
             if field_class is FRBField:
                 ra_err = u.user_input("If you know the uncertainty in the FRB localisation RA, you can enter "
                                       "that now (in true arcseconds, not in RA units). Otherwise, leave blank.")
-                if ra_err in ["", " "]:
+                if ra_err in ["", " ", 'None']:
                     ra_err = 0.0
             dec = u.user_input(
                 "Please enter the Declination of the field target, in the format 00d00m00.0s or as a decimal number of degrees"
@@ -888,7 +888,7 @@ class Field:
             if field_class is FRBField:
                 dec_err = u.user_input("If you know the uncertainty in the FRB localisation Dec, you can enter "
                                        "that now, in arcseconds. Otherwise, leave blank.")
-                if dec_err in ["", " "]:
+                if dec_err in ["", " ", 'None']:
                     dec_err = 0.0
             try:
                 pos_coord = astm.attempt_skycoord((ra, dec))

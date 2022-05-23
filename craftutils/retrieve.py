@@ -1553,7 +1553,7 @@ def save_gaia(ra: float, dec: float, output: str, radius: units.Quantity = 0.5 *
     if len(table) > 0:
         u.mkdir_check_nested(path=output)
         print(f"Saving GAIA catalogue to {output}")
-        table.write(output, format="ascii.csv")
+        table.write(output, format="ascii.csv", overwrite=True)
         return str(table)
     else:
         print("No data retrieved from Gaia DR2")

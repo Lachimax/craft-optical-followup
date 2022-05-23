@@ -60,8 +60,8 @@ uncertainty_dict = {
 
 
 def skycoord_to_position_dict(skycoord: SkyCoord):
-    ra_float = skycoord.ra
-    dec_float = skycoord.dec
+    ra_float = skycoord.ra.value
+    dec_float = skycoord.dec.value
 
     s = skycoord.to_string("hmsdms")
     ra = s[:s.find(" ")]
