@@ -285,11 +285,14 @@ def add_entry(
             else:
                 tbl["template"][colname] = type(entry[colname])(-999)
 
-    for colname in tbl["template"]:
-        if colname not in entry:
-            entry[colname] = tbl["template"][colname]
-
     tbl[key] = entry
+
+    for other_entry in tbl:
+        for colname in tbl["template"]:
+            if colname not in other_entry:
+                other_entry[colname] = tbl["template"][colname]
+
+    return entry
 
 
 def add_epoch(
