@@ -12,6 +12,7 @@ import astropy.cosmology as cosmo
 from astropy.modeling import models, fitting
 from astropy.visualization import quantity_support
 import astropy.time as time
+import astropy.io.fits as fits
 
 ne2001_installed = True
 try:
@@ -1048,6 +1049,27 @@ class Galaxy(Object):
         else:
             self.mass_stellar = None
 
+        self.cigale_model_path = None
+        self.cigale_model = None
+
+        self.cigale_sfh_path = None
+        self.cigale_sfh = None
+
+        self.cigale_results = None
+
+    def load_cigale_model(self, force: bool = False):
+        if self.cigale_model_path is None:
+            print(f"Cannot load CIGALE model; {self}.cigale_model_path has not been set.")
+        elif force or self.cigale_model is None:
+            self.cigale_model = fits.open(self.cigale_model_path)
+
+        if self.cigale_sfh_path is None:
+            print(f"Cannot load CIGALE SFH; {self}.cigale_sfh_path has not been set.")
+        elif force or self.cigale_sfh is None:
+            self.cigale_sfh = fits.open(self.cigale_sfh_path)
+
+        return self.cigale_model, self.cigale_sfh
+
     def angular_size_distance(self):
         return cosmology.angular_diameter_distance(z=self.z)
 
@@ -1083,6 +1105,26 @@ class Galaxy(Object):
         angle = angle.to(units.rad).value
         dist = angle * self.D_A
         return dist
+
+    def _output_dict(self):
+        output = super()._output_dict()
+        output.update({
+            "cigale_model_path": self.cigale_model_path,
+            "cigale_sfh_path": self.cigale_sfh_path,
+            "cigale_results": self.cigale_results
+        })
+        return output
+
+    def load_output_file(self):
+        outputs = super().load_output_file()
+        if outputs is not None:
+            if "cigale_model_path" in outputs and outputs["cigale_model_path"] is not None:
+                self.cigale_model_path = outputs["cigale_model_path"]
+            if "cigale_sfh_path" in outputs and outputs["cigale_sfh_path"] is not None:
+                self.cigale_sfh_path = outputs["cigale_sfh_path"]
+            if "cigale_results" in outputs and outputs["cigale_results"] is not None:
+                self.cigale_results = outputs["cigale_results"]
+        return outputs
 
     @classmethod
     def default_params(cls):

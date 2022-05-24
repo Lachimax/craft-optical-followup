@@ -353,6 +353,7 @@ class Field:
         # Input attributes
 
         self.objects = []
+        self.objects_dict = {}
 
         if centre_coords is None:
             if objs is not None:
@@ -721,6 +722,7 @@ class Field:
 
     def add_object(self, obj: objects.Object):
         self.objects.append(obj)
+        self.objects_dict[obj.name] = obj
         obj.field = self
 
     def add_object_from_dict(self, obj_dict: dict):
@@ -778,6 +780,25 @@ class Field:
             os.path.join(self.data_path, f"{self.name}_cigale.csv"),
             overwrite=True
         )
+
+    def unpack_cigale_results(self, cigale_dir: str):
+        results = fits.open(os.path.join(cigale_dir, "results.fits"))
+        results_tbl = table.QTable(results[1].data)
+
+        for i, obj_name in enumerate(results_tbl["id"]):
+            model_path = os.path.join(cigale_dir, obj_name)
+            sfh_path = model_path.replace("best_model", "SFH")
+            if obj_name in self.objects_dict:
+                obj = self.objects_dict[obj_name]
+                obj.cigale_results = p.sanitise_yaml_dict(dict(results_tbl[i]))
+                obj.mass_stellar = obj.cigale_results["bayes.stellar.m_star"]
+                obj.mass_stellar_err = obj.cigale_results["bayes.stellar.m_star_err"]
+                if os.path.isfile(model_path):
+                    obj.cigale_model_path = model_path
+                if os.path.isfile(sfh_path):
+                    obj.cigale_sfh_path = sfh_path
+                obj.update_output_file()
+
 
     @classmethod
     def default_params(cls):
