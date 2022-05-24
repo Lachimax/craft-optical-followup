@@ -287,7 +287,8 @@ def add_entry(
 
     tbl[key] = entry
 
-    for other_entry in tbl:
+    for name in tbl:
+        other_entry = tbl[name]
         for colname in tbl["template"]:
             if colname not in other_entry:
                 other_entry[colname] = tbl["template"][colname]

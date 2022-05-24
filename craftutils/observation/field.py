@@ -799,7 +799,7 @@ class Field:
         # Check data_dir path for relevant .yamls (output_values, etc.)
 
         if param_dict is None:
-            raise FileNotFoundError(f"There is no param file for {name}")
+            raise FileNotFoundError(f"There is no param file at {param_file}")
         field_type = param_dict["type"]
         centre_ra, centre_dec = p.select_coords(param_dict["centre"])
         coord_str = f"{centre_ra} {centre_dec}"
