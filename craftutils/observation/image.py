@@ -2679,6 +2679,14 @@ class ImagingImage(Image):
         )
         cleaned.update_output_file()
 
+    def scale_to_jansky(self, ext: int = 0):
+        self.load_data()
+        data = self.data[ext].value
+        zp = self.zeropoint_best["zeropoint_img"].value
+        exptime = self.extract_exposure_time().value
+        data_scaled = 3631 * units.Jansky * 10 ** ((-2.5 * np.log10(data / exptime) + zp) / -2.5)
+        return data_scaled
+
     def reproject(
             self,
             other_image: 'ImagingImage',

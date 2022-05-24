@@ -1012,6 +1012,7 @@ class FRBField(Field):
 
     def plot_host_colour(
             self,
+            output_path: str,
             red: image.ImagingImage,
             blue: image.ImagingImage,
             green: image.ImagingImage = None,
@@ -1022,7 +1023,6 @@ class FRBField(Field):
             n: int = 1, n_x: int = 1, n_y: int = 1,
             frb_kwargs: dict = {},
             imshow_kwargs: dict = {},
-            output_path: str = None,
             ext: int = 0,
             vmaxes: tuple = (None, None, None),
             vmins: tuple = (None, None, None),
@@ -1055,7 +1055,7 @@ class FRBField(Field):
             output_path=output_path.replace(path_split, f"{red.name}_trimmed.fits")
         )
         red_trimmed.load_wcs(ext)
-        red_data = red_trimmed.data[ext].value
+        red_data = red_trimmed.scale_to_jansky(ext).value
         if vmaxes[0] is not None:
             red_data[red_data > vmaxes[0]] = vmaxes[0]
         if vmins[0] is not None:
@@ -1072,7 +1072,7 @@ class FRBField(Field):
             top=top,
             output_path=output_path.replace(path_split, f"{blue.name}_trimmed.fits")
         )
-        blue_data = blue_trimmed.data[ext].value
+        blue_data = blue_trimmed.scale_to_jansky(ext).value
         if vmaxes[0] is not None:
             blue_data[blue_data > vmaxes[0]] = vmaxes[0]
         if vmins[0] is not None:
@@ -1093,7 +1093,7 @@ class FRBField(Field):
                 output_path=output_path.replace(path_split, f"{green.name}_trimmed.fits")
 
             )
-            green_data = green_trimmed.data[ext].value
+            green_data = green_trimmed.scale_to_jansky(ext).value
             if vmaxes[0] is not None:
                 green_data[green_data > vmaxes[0]] = vmaxes[0]
             if vmins[0] is not None:
