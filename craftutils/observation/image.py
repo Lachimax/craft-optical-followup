@@ -1467,7 +1467,7 @@ class ImagingImage(Image):
         if not self.zeropoints:
             return None, None
 
-        ranking = self.rank_photometric_cat(cats=self.zeropoints)
+        ranking, diff = self.rank_photometric_cat(cats=self.zeropoints)
         if preferred is not None:
             ranking.insert(0, preferred)
 
@@ -1484,9 +1484,10 @@ class ImagingImage(Image):
         zp_tbl = table.QTable(zps)
         if len(zp_tbl) > 0:
             # zp_tbl.sort("zeropoint_img_err")
-            zp_tbl.write(os.path.join(self.data_path, f"{self.name}_zeropoints.ecsv"), format="ascii.ecsv",
-                         overwrite=True)
-            #        zp_tbl.write(os.path.join(self.data_path, f"{self.name}_zeropoints.csv"), format="ascii.csv")
+            zp_tbl.write(
+                os.path.join(self.data_path, f"{self.name}_zeropoints.ecsv"), format="ascii.ecsv",
+                overwrite=True
+            )
             best_row = zp_tbl[0]
             best_cat = best_row["catalogue"]
             best_img = best_row["image_name"]
@@ -3615,7 +3616,7 @@ class ImagingImage(Image):
             method: str = "sep",
             obj_value=1,
             back_value=0,
-            margins: tuple = (None, None, None, None)
+            margins: tuple = (None, None, None, None),
     ):
         """
         Uses a segmentation map to produce a
@@ -3692,7 +3693,7 @@ class ImagingImage(Image):
 
         mask_file = self.copy(output_path)
         mask_file.load_data()
-        mask_file.data[ext] = self.generate_mask(ext=ext, **mask_kwargs)
+        mask_file.data[ext] = self.generate_mask(ext=ext, **mask_kwargs) * units.dimensionless_unscaled
         mask_file.write_fits_file()
 
         mask_file.add_log(
@@ -3748,8 +3749,10 @@ class ImagingImage(Image):
 
         if isinstance(output, str):
             back_output = output + "_back.fits"
+            segmap_output = output + "_segmap.fits"
         else:
             back_output = None
+            segmap_output = None
 
         self.calculate_background(ext=ext, write=back_output)
         self.load_wcs(ext=ext)
@@ -3766,12 +3769,15 @@ class ImagingImage(Image):
         theta_deg = -theta_world + rotation_angle  # + 90 * units.deg
         theta = u.theta_range(theta_deg.to(units.rad)).value
 
+        u.debug_print(2, f"sep_elliptical_photometry: mask_nearby == {mask_nearby}")
+
         if mask_nearby:
-            mask = self.generate_mask(
+            mask = self.write_mask(
                 unmasked=centre,
                 ext=ext,
-                method="sep"
-            )
+                method="sep",
+                output_path=segmap_output
+            ).data[0].value
         else:
             mask = np.zeros_like(self.data[ext].data)
 
@@ -3870,6 +3876,8 @@ class ImagingImage(Image):
 
         if detection_threshold is None:
             detection_threshold = self.detection_threshold()
+
+        u.debug_print(2, f"sep_elliptical_magnitude(): mask_nearby == {mask_nearby}")
 
         flux, flux_err, flags, back = self.sep_elliptical_photometry(
             centre=centre,
@@ -4111,7 +4119,7 @@ class ImagingImage(Image):
                 differences[cat] = 0.1 * units.angstrom
 
         differences = dict(sorted(differences.items(), key=lambda x: x[1]))
-        return list(differences.keys())
+        return list(differences.keys()), list(differences.values())
 
 
 class CoaddedImage(ImagingImage):
@@ -4676,7 +4684,7 @@ class HubbleImage(CoaddedImage):
 
     def detection_threshold(self):
         if self.instrument_name == "hst-wfc3_uvis2":
-            thresh = 1.
+            thresh = 5.
         else:
             thresh = 5.
         return thresh

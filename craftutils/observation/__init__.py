@@ -12,7 +12,7 @@ config = p.config
 u.mkdir_check_nested(config["table_dir"])
 
 
-def _construct_column_lists(columns: dict):
+def _construct_column_lists(columns: dict, replace_str: bool = True):
     dtypes = []
     un = []
     colnames = []
@@ -32,21 +32,21 @@ def _construct_column_lists(columns: dict):
     for colname in colnames:
         val = columns_revised[colname]
 
-        dtype, unit = split_dtype(val)
+        dtype, unit = split_dtype(val, replace_str=replace_str)
         dtypes.append(dtype)
         un.append(unit)
 
     return colnames, dtypes, un
 
 
-def split_dtype(val):
+def split_dtype(val, replace_str: bool = True):
     if isinstance(val, units.Unit) or isinstance(val, units.IrreducibleUnit):
         dtype = units.Quantity
         unit = val
     else:
         dtype = val
         unit = None
-    if dtype is str:
+    if dtype is str and replace_str:
         dtype = "U32"
 
     return dtype, unit
@@ -137,9 +137,9 @@ master_objects_path = os.path.join(config["table_dir"], "master_select_objects_t
 master_objects_all = None
 master_objects_all_path = os.path.join(config["table_dir"], "master_all_objects_table.yaml")
 master_objects_columns = {
-    "jname": str,
     "field_name": str,
     "object_name": str,
+    "jname": str,
     "ra": units.deg,
     "ra_err": units.deg,
     "dec": units.deg,
@@ -155,6 +155,8 @@ master_objects_columns = {
     "epoch_ellipse_date": str,
     "theta_err": units.deg,
     "kron_radius": float,
+    "e_b-v": units.mag,
+    "class_star": float,
     # "mag_best_{:s}": units.mag,  # The magnitude from the deepest image in that band
     # "mag_best_{:s}_err": units.mag,
     # "snr_best_{:s}": float,
@@ -163,8 +165,6 @@ master_objects_columns = {
     # "epoch_best_{:s}": str,
     # "epoch_best_date_{:s}": str,
     # "ext_gal_{:s}": units.mag,
-    # "e_b-v": units.mag,
-    # "class_star": float,
     # "mag_psf_best_{:s}": units.mag,
     # "snr_psf_best_{:s}": float,
     # "mag_psf_best_{:s}_err": units.mag,
@@ -172,6 +172,23 @@ master_objects_columns = {
     # "mag_psf_mean_{:s}_err": units.mag,
 }
 
+def build_default(
+        columns: dict
+):
+    colnames, dtypes, un = _construct_column_lists(columns=columns, replace_str=False)
+    default = {}
+    for i in range(len(colnames)):
+        colname = colnames[i]
+        dtype = dtypes[i]
+        unit = un[i]
+        if unit is not None:
+            default_val = -999 * unit
+        elif dtype is str:
+            default_val = "N/A"
+        else:
+            default_val = dtype(-999)
+        default[colname] = default_val
+    return default
 
 def _build_furby_table_path():
     if p.furby_path is not None:
@@ -197,16 +214,16 @@ def load_furby_table(force: bool = False):
 def load_master_table(
         tbl: Union[None, table.Table],
         tbl_path: str,
+        columns: dict,
         force: bool = False,
 ):
     if force or tbl is None:
-        if not os.path.isfile(tbl_path):
-            tbl = {}
-            p.save_params(tbl_path, tbl)
-        else:
+        if os.path.isfile(tbl_path):
             tbl = p.load_params(tbl_path)
     if tbl is None:
-        tbl = {}
+        tbl = {
+            "template": build_default(columns=columns)
+        }
     return tbl
 
 
@@ -216,6 +233,7 @@ def load_master_imaging_table(force: bool = False):
     master_imaging = load_master_table(
         tbl=master_imaging,
         tbl_path=master_imaging_path,
+        columns=master_imaging_columns,
         force=force
     )
 
@@ -228,6 +246,7 @@ def load_master_objects_table(force: bool = False):
     master_objects = load_master_table(
         tbl=master_objects,
         tbl_path=master_objects_path,
+        columns=master_objects_columns,
         force=force
     )
 
@@ -240,6 +259,7 @@ def load_master_all_objects_table(force: bool = False):
     master_objects_all = load_master_table(
         tbl=master_objects_all,
         tbl_path=master_objects_all_path,
+        columns=master_objects_columns,
         force=force
     )
 
@@ -256,7 +276,24 @@ def add_entry(
         if item not in entry:
             raise ValueError(f"Required key {required} not found in entry.")
 
+    for colname in entry:
+        if colname not in tbl["template"]:
+            if isinstance(entry[colname], units.Quantity):
+                tbl["template"][colname] = -999 * entry[colname].unit
+            elif isinstance(entry[colname], str):
+                tbl["template"][colname] = "N/A"
+            else:
+                tbl["template"][colname] = type(entry[colname])(-999)
+
     tbl[key] = entry
+
+    for name in tbl:
+        other_entry = tbl[name]
+        for colname in tbl["template"]:
+            if colname not in other_entry:
+                other_entry[colname] = tbl["template"][colname]
+
+    return entry
 
 
 def add_epoch(
@@ -279,15 +316,13 @@ def add_photometry(
         object_name: str,
         entry: dict
 ):
-    if object_name in tbl:
-        tbl[object_name].update(entry)
-    else:
-        add_entry(
-            tbl=tbl,
-            key=object_name,
-            entry=entry,
-            required=master_objects_columns
-        )
+
+    add_entry(
+        tbl=tbl,
+        key=object_name,
+        entry=entry,
+        required=master_objects_columns
+    )
 
 
 def write_master_table(
@@ -298,9 +333,6 @@ def write_master_table(
     if tbl is None:
         tbl_name = os.path.split(tbl_path)[-1][:-5]
         raise ValueError(f"{tbl_name} not loaded.")
-    for key in tbl:
-        for key_2 in tbl[key]:
-            print(key_2, tbl[key][key_2], type(tbl[key][key_2]))
     p.save_params(tbl_path, tbl)
     tbl_list = list(map(lambda e: tbl[e], tbl))
     tbl_astropy = table.QTable(tbl_list)

@@ -144,7 +144,7 @@ def cat_columns(cat, f: str = None):
 cat_instruments = {
     "des": "decam",
     "delve": "decam",
-    "panstarrss1": "panstarrs1",
+    "panstarrs1": "panstarrs1",
     "sdss": "sdss",
     "skymapper": "skymapper"
 }
@@ -1553,7 +1553,7 @@ def save_gaia(ra: float, dec: float, output: str, radius: units.Quantity = 0.5 *
     if len(table) > 0:
         u.mkdir_check_nested(path=output)
         print(f"Saving GAIA catalogue to {output}")
-        table.write(output, format="ascii.csv")
+        table.write(output, format="ascii.csv", overwrite=True)
         return str(table)
     else:
         print("No data retrieved from Gaia DR2")

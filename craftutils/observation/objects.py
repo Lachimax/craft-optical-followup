@@ -12,6 +12,7 @@ import astropy.cosmology as cosmo
 from astropy.modeling import models, fitting
 from astropy.visualization import quantity_support
 import astropy.time as time
+import astropy.io.fits as fits
 
 ne2001_installed = True
 try:
@@ -60,8 +61,8 @@ uncertainty_dict = {
 
 
 def skycoord_to_position_dict(skycoord: SkyCoord):
-    ra_float = skycoord.ra
-    dec_float = skycoord.dec
+    ra_float = skycoord.ra.value
+    dec_float = skycoord.dec.value
 
     s = skycoord.to_string("hmsdms")
     ra = s[:s.find(" ")]
@@ -296,14 +297,21 @@ class Object:
         cls = image.CoaddedImage.select_child_class(instrument=deepest["instrument"])
         deepest_img = cls(path=deepest_path)
         deepest_fwhm = deepest_img.extract_header_item("PSF_FWHM") * units.arcsec
+        if "do_mask" in deepest_dict:
+            do_mask = deepest_dict["do_mask"]
+        else:
+            do_mask = True
         mag, mag_err, snr, back = deepest_img.sep_elliptical_magnitude(
             centre=self.position,
             a_world=self.a,
             b_world=self.b,
             theta_world=self.theta,
             kron_radius=self.kron,
-            output=os.path.join(self.data_path,
-                                f"{self.name_filesys}_{deepest['instrument']}_{deepest['filter']}_{deepest['epoch_name']}"),
+            output=os.path.join(
+                self.data_path,
+                f"{self.name_filesys}_{deepest['instrument']}_{deepest['filter']}_{deepest['epoch_name']}"
+            ),
+            mask_nearby=do_mask
         )
         deepest_dict["mag_sep"] = mag[0]
         deepest_dict["mag_sep_err"] = mag_err[0]
@@ -333,7 +341,7 @@ class Object:
                         theta_world=self.theta,
                         kron_radius=self.kron,
                         output=os.path.join(self.data_path, f"{self.name_filesys}_{instrument}_{band}_{epoch}"),
-                        mask_nearby=True
+                        mask_nearby=do_mask
                     )
                     if mag is None:
                         mag = -999. * units.mag
@@ -355,7 +363,7 @@ class Object:
                         b_world=self.b,  # + delta_fwhm,
                         theta_world=self.theta,
                         kron_radius=self.kron,
-                        output=os.path.join(self.data_path, f"{self.name_filesys}_{instrument}_{band}_{epoch}"),
+                        # output=os.path.join(self.data_path, f"{self.name_filesys}_{instrument}_{band}_{epoch}"),
                         mask_nearby=False
                     )
                     if mag is None:
@@ -700,8 +708,10 @@ class Object:
             self.photometry[instrument][band][epoch_name]["ext_gal"] = row[key]
             self.photometry[instrument][band][epoch_name]["mag_ext_corrected"] = row["mag"] - row[key]
             if "mag_sep" in row.colnames:
-                self.photometry[instrument][band][epoch_name]["mag_sep_ext_corrected"] = row["mag_sep"] - row[key]
-
+                if row["mag_sep"] > -99 * units.mag:
+                    self.photometry[instrument][band][epoch_name]["mag_sep_ext_corrected"] = row["mag_sep"] - row[key]
+                else:
+                    self.photometry[instrument][band][epoch_name]["mag_sep_ext_corrected"] = -999 * units.mag
         # tbl_2 = self.photometry_to_table()
         # tbl_2.update(tbl)
         # tbl_2.write(self.build_photometry_table_path().replace("photometry", "photemetry_extended"))
@@ -764,7 +774,8 @@ class Object:
             "mag": np.mean(fil_photom["mag"]),
             "mag_err": np.mean(fil_photom["mag_err"]),
             "mag_psf": np.mean(fil_photom["mag_psf"]),
-            "mag_psf_err": np.mean(fil_photom["mag_psf_err"])
+            "mag_psf_err": np.std(fil_photom["mag_psf_err"]) / len(fil_photom),
+            "n": len(fil_photom)
         }
         # TODO: Just meaning the whole table is probably not the best way to estimate uncertainties.
         return photom_dict, mean
@@ -783,7 +794,8 @@ class Object:
             "mag": np.mean(fil_photom["mag_sep"]),
             "mag_err": np.std(fil_photom["mag_sep"]),
             "mag_psf": np.mean(fil_photom["mag_psf"]),
-            "mag_psf_err": np.std(fil_photom["mag_psf"])
+            "mag_psf_err": np.std(fil_photom["mag_psf"]) / len(fil_photom),
+            "n": len(fil_photom)
         }
         u.debug_print(2, f"Object.select_photometry_sep(): {self.name=}, {fil=}, {instrument=}")
         return photom_dict, mean
@@ -824,10 +836,6 @@ class Object:
 
         jname = self.jname()
 
-        for instrument in self.photometry:
-            for fil in self.photometry[instrument]:
-                band_str = f"{instrument}_{fil.replace('_', '-')}"
-
         self.estimate_galactic_extinction()
         if select:
             self.get_good_photometry()
@@ -858,7 +866,8 @@ class Object:
             "epoch_ellipse_date": deepest["epoch_date"],
             "theta_err": deepest["theta_err"],
             f"e_b-v": self.ebv_sandf,
-            f"class_star": best_psf["class_star"]}
+            f"class_star": best_psf["class_star"]
+        }
 
         for instrument in self.photometry:
             for fil in self.photometry[instrument]:
@@ -879,6 +888,7 @@ class Object:
 
                 row[f"mag_mean_{band_str}"] = mean_photom["mag"]
                 row[f"mag_mean_{band_str}_err"] = mean_photom["mag_err"]
+                row[f"n_mean_{band_str}"] = mean_photom["n"]
                 row[f"ext_gal_{band_str}"] = best_photom["ext_gal"]
                 # else:
                 #     row[f"ext_gal_{band_str}"] = best_photom["ext_gal_sandf"]
@@ -1039,6 +1049,27 @@ class Galaxy(Object):
         else:
             self.mass_stellar = None
 
+        self.cigale_model_path = None
+        self.cigale_model = None
+
+        self.cigale_sfh_path = None
+        self.cigale_sfh = None
+
+        self.cigale_results = None
+
+    def load_cigale_model(self, force: bool = False):
+        if self.cigale_model_path is None:
+            print(f"Cannot load CIGALE model; {self}.cigale_model_path has not been set.")
+        elif force or self.cigale_model is None:
+            self.cigale_model = fits.open(self.cigale_model_path)
+
+        if self.cigale_sfh_path is None:
+            print(f"Cannot load CIGALE SFH; {self}.cigale_sfh_path has not been set.")
+        elif force or self.cigale_sfh is None:
+            self.cigale_sfh = fits.open(self.cigale_sfh_path)
+
+        return self.cigale_model, self.cigale_sfh
+
     def angular_size_distance(self):
         return cosmology.angular_diameter_distance(z=self.z)
 
@@ -1074,6 +1105,26 @@ class Galaxy(Object):
         angle = angle.to(units.rad).value
         dist = angle * self.D_A
         return dist
+
+    def _output_dict(self):
+        output = super()._output_dict()
+        output.update({
+            "cigale_model_path": self.cigale_model_path,
+            "cigale_sfh_path": self.cigale_sfh_path,
+            "cigale_results": self.cigale_results
+        })
+        return output
+
+    def load_output_file(self):
+        outputs = super().load_output_file()
+        if outputs is not None:
+            if "cigale_model_path" in outputs and outputs["cigale_model_path"] is not None:
+                self.cigale_model_path = outputs["cigale_model_path"]
+            if "cigale_sfh_path" in outputs and outputs["cigale_sfh_path"] is not None:
+                self.cigale_sfh_path = outputs["cigale_sfh_path"]
+            if "cigale_results" in outputs and outputs["cigale_results"] is not None:
+                self.cigale_results = outputs["cigale_results"]
+        return outputs
 
     @classmethod
     def default_params(cls):

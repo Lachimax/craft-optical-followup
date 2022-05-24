@@ -353,6 +353,7 @@ class Field:
         # Input attributes
 
         self.objects = []
+        self.objects_dict = {}
 
         if centre_coords is None:
             if objs is not None:
@@ -721,6 +722,7 @@ class Field:
 
     def add_object(self, obj: objects.Object):
         self.objects.append(obj)
+        self.objects_dict[obj.name] = obj
         obj.field = self
 
     def add_object_from_dict(self, obj_dict: dict):
@@ -735,9 +737,9 @@ class Field:
             obj.push_to_table(select=True)
             obj.write_plot_photometry()
             obj.update_output_file()
-        self.generate_cigale()
+        self.generate_cigale_photometry()
 
-    def generate_cigale(self):
+    def generate_cigale_photometry(self):
         photometries = {
             "Galaxy ID": [],
             "z": []
@@ -765,16 +767,38 @@ class Field:
                 if band_str not in photometries:
                     photometries[band_str] = []
                     photometries[band_str + "_err"] = []
-                if np.isnan(row["mag_ext_corrected"]):
-                    photometries[band_str].append(-999. * units.mag)
-                    photometries[band_str + "_err"].append(-999. * units.mag)
+                if np.isnan(row["mag_sep_ext_corrected"]):
+                    photometries[band_str].append(-999.)
+                    photometries[band_str + "_err"].append(-999.)
                 else:
-                    photometries[band_str].append(row["mag_ext_corrected"])
-                    photometries[band_str + "_err"].append(row["mag_err"])
+                    photometries[band_str].append(row["mag_sep_ext_corrected"])
+                    photometries[band_str + "_err"].append(row["mag_sep_err"])
 
         tbl_cigale = table.QTable(photometries)
         print(tbl_cigale)
-        tbl_cigale.write(os.path.join(self.data_path, f"{self.name}_cigale.csv"))
+        tbl_cigale.write(
+            os.path.join(self.data_path, f"{self.name}_cigale.csv"),
+            overwrite=True
+        )
+
+    def unpack_cigale_results(self, cigale_dir: str):
+        results = fits.open(os.path.join(cigale_dir, "results.fits"))
+        results_tbl = table.QTable(results[1].data)
+
+        for i, obj_name in enumerate(results_tbl["id"]):
+            model_path = os.path.join(cigale_dir, obj_name)
+            sfh_path = model_path.replace("best_model", "SFH")
+            if obj_name in self.objects_dict:
+                obj = self.objects_dict[obj_name]
+                obj.cigale_results = p.sanitise_yaml_dict(dict(results_tbl[i]))
+                obj.mass_stellar = obj.cigale_results["bayes.stellar.m_star"]
+                obj.mass_stellar_err = obj.cigale_results["bayes.stellar.m_star_err"]
+                if os.path.isfile(model_path):
+                    obj.cigale_model_path = model_path
+                if os.path.isfile(sfh_path):
+                    obj.cigale_sfh_path = sfh_path
+                obj.update_output_file()
+
 
     @classmethod
     def default_params(cls):
@@ -796,7 +820,7 @@ class Field:
         # Check data_dir path for relevant .yamls (output_values, etc.)
 
         if param_dict is None:
-            raise FileNotFoundError(f"There is no param file for {name}")
+            raise FileNotFoundError(f"There is no param file at {param_file}")
         field_type = param_dict["type"]
         centre_ra, centre_dec = p.select_coords(param_dict["centre"])
         coord_str = f"{centre_ra} {centre_dec}"
@@ -876,7 +900,7 @@ class Field:
             if field_class is FRBField:
                 ra_err = u.user_input("If you know the uncertainty in the FRB localisation RA, you can enter "
                                       "that now (in true arcseconds, not in RA units). Otherwise, leave blank.")
-                if ra_err in ["", " "]:
+                if ra_err in ["", " ", 'None']:
                     ra_err = 0.0
             dec = u.user_input(
                 "Please enter the Declination of the field target, in the format 00d00m00.0s or as a decimal number of degrees"
@@ -885,7 +909,7 @@ class Field:
             if field_class is FRBField:
                 dec_err = u.user_input("If you know the uncertainty in the FRB localisation Dec, you can enter "
                                        "that now, in arcseconds. Otherwise, leave blank.")
-                if dec_err in ["", " "]:
+                if dec_err in ["", " ", 'None']:
                     dec_err = 0.0
             try:
                 pos_coord = astm.attempt_skycoord((ra, dec))
@@ -2896,7 +2920,7 @@ class ImagingEpoch(Epoch):
                         # 'PSF_FWHM_ERR': psf_fwhm_err,
                         'ZP': img_projected.extract_header_item(key="ZP"),
                         'ZP_ERR': img_projected.extract_header_item(key="ZP_ERR"),
-                        'ZPCAT': img_projected.extract_header_item(key="ZP_CAT")
+                        'ZPCAT': str(img_projected.extract_header_item(key="ZPCAT"))
                     },
                     write=True,
                 )

@@ -104,11 +104,22 @@ def load_params(file: str):
     return p
 
 
+def sanitise_yaml_dict(dictionary: dict):
+    for key in dictionary:
+        if isinstance(dictionary[key], np.str_):
+            dictionary[key] = str(dictionary[key])
+    return dictionary
+
+
 def save_params(file: str, dictionary: dict):
     file = u.sanitise_file_ext(filename=file, ext=".yaml")
 
     u.debug_print(1, 'Saving parameter file to ' + str(file))
     u.debug_print(2, "params.save_params: dictionary ==", dictionary)
+
+    if u.debug_level > 2:
+        for key in dictionary:
+            print(key, type(dictionary[key]), dictionary[key])
 
     with open(file, 'w') as f:
         yaml.dump(dictionary, f)
