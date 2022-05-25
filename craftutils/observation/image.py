@@ -2684,6 +2684,7 @@ class ImagingImage(Image):
         data = self.data[ext].value
         zp = self.zeropoint_best["zeropoint_img"].value
         exptime = self.extract_exposure_time().value
+        data[data<=0.] = np.min(data[data>0.])
         data_scaled = 3631 * units.Jansky * 10 ** ((-2.5 * np.log10(data / exptime) + zp) / -2.5)
         return data_scaled
 

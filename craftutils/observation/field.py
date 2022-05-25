@@ -1048,6 +1048,7 @@ class FRBField(Field):
         red.load_data()
         x, y = red.world_to_pixel(centre, 0)
         left, right, bottom, top = u.frame_from_centre(frame=frame, x=x, y=y, data=red.data[ext])
+        print(left, right, bottom, top)
         red_trimmed = red.trim(
             left=left,
             right=right,
