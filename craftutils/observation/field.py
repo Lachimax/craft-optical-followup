@@ -786,10 +786,11 @@ class Field:
         results_tbl = table.QTable(results[1].data)
 
         for i, obj_name in enumerate(results_tbl["id"]):
-            model_path = os.path.join(cigale_dir, obj_name)
-            sfh_path = model_path.replace("best_model", "SFH")
             if obj_name in self.objects_dict:
+                model_path = os.path.join(cigale_dir, f"{obj_name}_best_model.fits")
+                sfh_path = os.path.join(cigale_dir, f"{obj_name}_SFH.fits")
                 obj = self.objects_dict[obj_name]
+                obj.load_output_file()
                 obj.cigale_results = p.sanitise_yaml_dict(dict(results_tbl[i]))
                 obj.mass_stellar = obj.cigale_results["bayes.stellar.m_star"]
                 obj.mass_stellar_err = obj.cigale_results["bayes.stellar.m_star_err"]

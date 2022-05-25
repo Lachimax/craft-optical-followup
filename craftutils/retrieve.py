@@ -669,7 +669,7 @@ def save_irsa_extinction(output: str, ra: float = None, dec: float = None, coord
     :return: Tuple: dictionary of retrieved values, table-formatted string.
     """
     table = retrieve_irsa_extinction(ra=ra, dec=dec, coord=coord)
-    table.write(output, format=fmt)
+    table.write(output, format=fmt, overwrite=True)
     return table
 
 
