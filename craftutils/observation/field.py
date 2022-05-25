@@ -800,7 +800,6 @@ class Field:
                     obj.cigale_sfh_path = sfh_path
                 obj.update_output_file()
 
-
     @classmethod
     def default_params(cls):
         default_params = {
@@ -1024,7 +1023,7 @@ class FRBField(Field):
             n: int = 1, n_x: int = 1, n_y: int = 1,
             frb_kwargs: dict = {},
             imshow_kwargs: dict = {},
-            ext: int = 0,
+            ext: Union[tuple, int] = (0, 0, 0),
             vmaxes: tuple = (None, None, None),
             vmins: tuple = (None, None, None),
             **kwargs
@@ -1037,75 +1036,50 @@ class FRBField(Field):
             centre = self.frb.host_galaxy.position
         if fig is None:
             fig = plt.figure()
+        if isinstance(ext, int):
+            ext = (ext, ext, ext)
 
         path_split = os.path.split(output_path)[-1]
 
         frame = u.check_quantity(frame, unit=units.pix)
 
-        red.extract_pixel_scale(ext)
-        frame = frame.to(units.pix, red.pixel_scale_y).value
-
-        red.load_data()
-        x, y = red.world_to_pixel(centre, 0)
-        left, right, bottom, top = u.frame_from_centre(frame=frame, x=x, y=y, data=red.data[ext])
-        print(left, right, bottom, top)
-        red_trimmed = red.trim(
-            left=left,
-            right=right,
-            bottom=bottom,
-            top=top,
-            output_path=output_path.replace(path_split, f"{red.name}_trimmed.fits")
+        red_data, red_trimmed = red.prep_for_colour(
+            output_path=output_path.replace(path_split, f"{red.name}_trimmed.fits"),
+            frame=frame,
+            centre=centre,
+            vmax=vmaxes[0],
+            vmin=vmins[0],
+            ext=ext[0]
         )
-        red_trimmed.load_wcs(ext)
-        red_data = red_trimmed.scale_to_jansky(ext).value
-        if vmaxes[0] is not None:
-            red_data[red_data > vmaxes[0]] = vmaxes[0]
-        if vmins[0] is not None:
-            red_data[red_data < vmins[0]] = vmins[0]
-        red_subbed = red_data - np.median(red_data)
 
-        blue.load_data()
-        x, y = blue.world_to_pixel(centre, 0)
-        left, right, bottom, top = u.frame_from_centre(frame=frame, x=x, y=y, data=blue.data[ext])
-        blue_trimmed = blue.trim(
-            left=left,
-            right=right,
-            bottom=bottom,
-            top=top,
-            output_path=output_path.replace(path_split, f"{blue.name}_trimmed.fits")
+        blue_data, _ = blue.prep_for_colour(
+            output_path=output_path.replace(path_split, f"{blue.name}_trimmed.fits"),
+            frame=frame,
+            centre=centre,
+            vmax=vmaxes[1],
+            vmin=vmins[1],
+            ext=ext[1]
         )
-        blue_data = blue_trimmed.scale_to_jansky(ext).value
-        if vmaxes[0] is not None:
-            blue_data[blue_data > vmaxes[0]] = vmaxes[0]
-        if vmins[0] is not None:
-            blue_data[blue_data < vmins[0]] = vmins[0]
-        blue_subbed = blue_data - np.median(blue_data)
 
         if green is None:
-            green_subbed = (red_subbed + blue_subbed) / 2
+            green_data = (red_data + blue_data) / 2
         else:
-            green.load_data()
-            x, y = green.world_to_pixel(centre, 0)
-            left, right, bottom, top = u.frame_from_centre(frame=frame, x=x, y=y, data=green.data[ext])
-            green_trimmed = green.trim(
-                left=left,
-                right=right,
-                bottom=bottom,
-                top=top,
-                output_path=output_path.replace(path_split, f"{green.name}_trimmed.fits")
-
+            green_data, _ = green.prep_for_colour(
+                output_path=output_path.replace(path_split, f"{green.name}_trimmed.fits"),
+                frame=frame,
+                centre=centre,
+                vmax=vmaxes[2],
+                vmin=vmins[2],
+                ext=ext[2]
             )
-            green_data = green_trimmed.scale_to_jansky(ext).value
-            if vmaxes[0] is not None:
-                green_data[green_data > vmaxes[0]] = vmaxes[0]
-            if vmins[0] is not None:
-                green_data[green_data < vmins[0]] = vmins[0]
-            green_subbed = green_data - np.median(green_data)
+
+        # max_all = max(np.max(red_data), np.max(green_data), np.max(blue_data))
+        # factor = max_all / 255
 
         colour = make_lupton_rgb(
-            red_subbed,
-            green_subbed,
-            blue_subbed,
+            red_data,
+            green_data,
+            blue_data,
             Q=7,
             stretch=30
         )
@@ -3418,7 +3392,6 @@ class ImagingEpoch(Epoch):
         coadded = self._get_images("final")
 
         for fil in self.filters:
-
             img = coadded[fil]
 
             inttime = coadded[fil].extract_header_item("INTTIME") * units.second

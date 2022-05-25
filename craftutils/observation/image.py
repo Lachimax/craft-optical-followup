@@ -2683,6 +2683,7 @@ class ImagingImage(Image):
         self.load_data()
         data = self.data[ext].value
         zp = self.zeropoint_best["zeropoint_img"].value
+        print(zp)
         exptime = self.extract_exposure_time().value
         data[data<=0.] = np.min(data[data>0.])
         data_scaled = 3631 * units.Jansky * 10 ** ((-2.5 * np.log10(data / exptime) + zp) / -2.5)
@@ -2946,16 +2947,6 @@ class ImagingImage(Image):
         i, _ = u.find_nearest(source_cat["NUMBER"], index)
         return source_cat[i], i
 
-    def generate_psf_image(self, x: int, y: int, output: str = None):
-        """
-        Generates an image of the modelled point-spread function of the image.
-        :param x:
-        :param y:
-        :param output:
-        :return:
-        """
-        pass
-
     def plot_subimage(
             self,
             centre: SkyCoord = None,
@@ -3048,6 +3039,40 @@ class ImagingImage(Image):
             fig.savefig(output_path)
 
         return ax, fig, other_args
+
+    def prep_for_colour(
+            self,
+            output_path: str,
+            frame: units.Quantity,
+            centre: SkyCoord = None,
+            vmax: float = None,
+            vmin: float = None,
+            ext: int = 0
+    ):
+        self.extract_pixel_scale(ext)
+        frame = frame.to(units.pix, self.pixel_scale_y).value
+
+        self.load_data()
+        x, y = self.world_to_pixel(centre, 0)
+        left, right, bottom, top = u.frame_from_centre(frame=frame, x=x, y=y, data=self.data[ext])
+        trimmed = self.trim(
+            left=left,
+            right=right,
+            bottom=bottom,
+            top=top,
+            output_path=output_path
+        )
+        trimmed.load_wcs(ext)
+        data = trimmed.scale_to_jansky(ext).value
+        if vmax is not None:
+            data[data > vmax] = vmax
+        if vmin is not None:
+            data[data < vmin] = vmin
+        median = np.nanmedian(data)
+        data_subbed = data - median
+        data_subbed[np.isnan(data_subbed)] = median
+        data_scaled = data_subbed * 255 / np.max(data_subbed)
+        return data_scaled, trimmed
 
     def nice_frame(
             self,
