@@ -2957,7 +2957,8 @@ class ImagingImage(Image):
             show_cbar: bool = False,
             show_grid: bool = False,
             ticks: int = None,
-            show_coords: bool = True, ylabel: str = None,
+            show_coords: bool = True,
+            ylabel: str = None,
             reverse_y=False,
             imshow_kwargs: dict = None,  # Can include cmap
             normalize_kwargs: dict = None,  # Can include vmin, vmax
@@ -3015,7 +3016,12 @@ class ImagingImage(Image):
         if "origin" not in imshow_kwargs:
             imshow_kwargs["origin"] = "lower"
 
-        ax = fig.add_subplot(n_x, n_y, n, projection=self.wcs)
+        if show_coords:
+            projection = self.wcs
+        else:
+            projection = None
+
+        ax = fig.add_subplot(n_x, n_y, n, projection=projection)
         ax.imshow(
             data,
             norm=ImageNormalize(
@@ -3071,8 +3077,8 @@ class ImagingImage(Image):
         median = np.nanmedian(data)
         data_subbed = data - median
         data_subbed[np.isnan(data_subbed)] = median
-        data_scaled = data_subbed * 255 / np.max(data_subbed)
-        return data_scaled, trimmed
+        # data_scaled = data_subbed * 255 / np.max(data_subbed)
+        return data_subbed, trimmed
 
     def nice_frame(
             self,

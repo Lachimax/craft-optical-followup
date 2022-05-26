@@ -1019,6 +1019,7 @@ class FRBField(Field):
             fig: plt.Figure = None,
             centre: SkyCoord = None,
             show_frb: bool = True,
+            show_coords: bool = True,
             frame: units.Quantity = 30 * units.pix,
             n: int = 1, n_x: int = 1, n_y: int = 1,
             frb_kwargs: dict = {},
@@ -1073,8 +1074,11 @@ class FRBField(Field):
                 ext=ext[2]
             )
 
-        # max_all = max(np.max(red_data), np.max(green_data), np.max(blue_data))
-        # factor = max_all / 255
+        max_all = max(np.max(red_data), np.max(green_data), np.max(blue_data))
+        factor = max_all / 255
+        red_data /= factor
+        green_data /= factor
+        blue_data /= factor
 
         colour = make_lupton_rgb(
             red_data,
@@ -1087,7 +1091,11 @@ class FRBField(Field):
         if "origin" not in imshow_kwargs:
             imshow_kwargs["origin"] = "lower"
 
-        ax = fig.add_subplot(n_x, n_y, n, projection=red_trimmed.wcs)
+        if show_coords:
+            projection = red_trimmed.wcs
+        else:
+            projection = None
+        ax = fig.add_subplot(n_x, n_y, n, projection=projection)
         ax.imshow(
             colour,
             **imshow_kwargs,
@@ -1099,6 +1107,10 @@ class FRBField(Field):
         ax.tick_params(labelsize=10)
         # ax.yaxis.set_label_position("right")
         # plt.tight_layout()
+
+        if show_frb:
+            self.frb_ellipse_to_plot(ext=ext[0], frb_kwargs=frb_kwargs, img=red_trimmed, plot=ax)
+
         fig.savefig(output_path)
         return ax, fig, colour
 
@@ -1114,14 +1126,13 @@ class FRBField(Field):
             # show_cbar: bool = False,
             # show_grid: bool = False,
             # ticks: int = None, interval: str = 'minmax',
-            # show_coords: bool = True,
             # font_size: int = 12,
             # reverse_y=False,
             frb_kwargs: dict = {},
             imshow_kwargs: dict = {},
             normalize_kwargs: dict = {},
             output_path: str = None,
-            show_legend: bool = True,
+            show_legend: bool = False,
             **kwargs
     ):
         pl.latex_setup()
@@ -1137,34 +1148,12 @@ class FRBField(Field):
             fig=fig,
             n=n, n_x=n_x, n_y=n_y,
             imshow_kwargs=imshow_kwargs,
-            normalize_kwargs=normalize_kwargs
+            normalize_kwargs=normalize_kwargs,
+            **kwargs
         )
 
         if show_frb:
-            from matplotlib.patches import Ellipse
-            img.load_headers()
-            frb = self.frb.position
-            x, y = img.world_to_pixel(frb, 0)
-            uncertainty = self.frb.position_err
-            a, b = uncertainty.uncertainty_quadrature()
-            theta = uncertainty.theta.to(units.deg)
-            rotation_angle = img.extract_rotation_angle(ext=ext)
-            theta = theta - rotation_angle
-            img_err = img.extract_astrometry_err()
-            if img_err is not None:
-                a = np.sqrt(a ** 2 + img_err ** 2)
-                b = np.sqrt(b ** 2 + img_err ** 2)
-
-            e = Ellipse(
-                xy=(x, y),
-                width=2 * a.to(units.pix, img.pixel_scale_y).value,
-                height=2 * b.to(units.pix, img.pixel_scale_y).value,
-                angle=theta.value
-            )
-            e.set_facecolor('none')
-            e.set_edgecolor('white')
-            plot.add_artist(e)
-            plot.scatter(x, y, c="white", marker="x")
+            self.frb_ellipse_to_plot(ext=ext, frb_kwargs=frb_kwargs, img=img, plot=plot)
             if show_legend:
                 plot.legend()
 
@@ -1172,6 +1161,39 @@ class FRBField(Field):
             fig.savefig(output_path)
 
         return plot, fig
+
+    def frb_ellipse_to_plot(
+            self,
+            plot,
+            img: image.ImagingImage,
+            ext: int = 0,
+            frb_kwargs: dict = {},
+        ):
+        from matplotlib.patches import Ellipse
+        img.load_headers()
+        frb = self.frb.position
+        x, y = img.world_to_pixel(frb, 0)
+        uncertainty = self.frb.position_err
+        a, b = uncertainty.uncertainty_quadrature()
+        theta = uncertainty.theta.to(units.deg)
+        rotation_angle = img.extract_rotation_angle(ext=ext)
+        theta = theta - rotation_angle
+        img_err = img.extract_astrometry_err()
+        img.extract_pixel_scale()
+        if img_err is not None:
+            a = np.sqrt(a ** 2 + img_err ** 2)
+            b = np.sqrt(b ** 2 + img_err ** 2)
+        e = Ellipse(
+            xy=(x, y),
+            width=2 * a.to(units.pix, img.pixel_scale_y).value,
+            height=2 * b.to(units.pix, img.pixel_scale_y).value,
+            angle=theta.value,
+            **frb_kwargs
+        )
+        e.set_facecolor('none')
+        e.set_edgecolor('white')
+        plot.add_artist(e)
+        plot.scatter(x, y, c="white", marker="x")
 
     @classmethod
     def default_params(cls):
