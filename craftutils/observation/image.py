@@ -2694,7 +2694,12 @@ class ImagingImage(Image):
         data_scaled = 3631 * units.Jansky * (data / exptime) * 10 ** (zp / -2.5)
         extra_vals = []
         for v in args:
-            extra_vals.append(3631 * units.Jansky * (v / exptime) * 10 ** (zp / -2.5))
+            if v is not None:
+                v = u.dequantify(v)
+                extra_vals.append(3631 * units.Jansky * (v / exptime) * 10 ** (zp / -2.5))
+            else:
+                extra_vals.append(v)
+        if extra_vals:
             return data_scaled, extra_vals
         else:
             return data_scaled
@@ -3090,8 +3095,8 @@ class ImagingImage(Image):
 
         if scale_to_jansky:
             data, vs = trimmed.scale_to_jansky(ext, vmax, vmin)
-            vmax = vs[0].value
-            vmin = vs[1].value
+            vmax = u.dequantify(vs[0])
+            vmin = u.dequantify(vs[1])
             data = data.value
         else:
             data = trimmed.data[0].value
