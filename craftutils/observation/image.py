@@ -3090,9 +3090,8 @@ class ImagingImage(Image):
 
         if scale_to_jansky:
             data, vs = trimmed.scale_to_jansky(ext, vmax, vmin)
-            vmax, vmin = vs
-            vmax = vmax.value
-            vmin = vmin.value
+            vmax = vs[0].value
+            vmin = vs[1].value
             data = data.value
         else:
             data = trimmed.data[0].value
