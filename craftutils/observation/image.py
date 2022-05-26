@@ -2679,15 +2679,25 @@ class ImagingImage(Image):
         )
         cleaned.update_output_file()
 
-    def scale_to_jansky(self, ext: int = 0):
+    def scale_to_jansky(
+            self,
+            ext: int = 0,
+            *args
+    ):
         self.load_data()
+        self.load_output_file()
         data = self.data[ext].value
         zp = self.zeropoint_best["zeropoint_img"].value
         print(zp)
         exptime = self.extract_exposure_time().value
-        data[data<=0.] = np.min(data[data>0.])
-        data_scaled = 3631 * units.Jansky * 10 ** ((-2.5 * np.log10(data / exptime) + zp) / -2.5)
-        return data_scaled
+        data[data <= 0.] = np.min(data[data > 0.])
+        data_scaled = 3631 * units.Jansky * (data / exptime) * 10 ** (zp / -2.5)
+        extra_vals = []
+        for v in args:
+            extra_vals.append(3631 * units.Jansky * (v / exptime) * 10 ** (zp / -2.5))
+            return data_scaled, extra_vals
+        else:
+            return data_scaled
 
     def reproject(
             self,
@@ -3022,6 +3032,13 @@ class ImagingImage(Image):
             projection = None
 
         ax = fig.add_subplot(n_x, n_y, n, projection=projection)
+
+        if not show_coords:
+            frame1 = plt.gca()
+            frame1.axes.get_xaxis().set_visible(False)
+            frame1.axes.set_yticks([])
+            frame1.axes.invert_yaxis()
+
         ax.imshow(
             data,
             norm=ImageNormalize(
@@ -3053,7 +3070,8 @@ class ImagingImage(Image):
             centre: SkyCoord = None,
             vmax: float = None,
             vmin: float = None,
-            ext: int = 0
+            ext: int = 0,
+            scale_to_jansky: bool = False
     ):
         self.extract_pixel_scale(ext)
         frame = frame.to(units.pix, self.pixel_scale_y).value
@@ -3069,11 +3087,21 @@ class ImagingImage(Image):
             output_path=output_path
         )
         trimmed.load_wcs(ext)
-        data = trimmed.scale_to_jansky(ext).value
+
+        if scale_to_jansky:
+            data, vs = trimmed.scale_to_jansky(ext, vmax, vmin)
+            vmax, vmin = vs
+            vmax = vmax.value
+            vmin = vmin.value
+            data = data.value
+        else:
+            data = trimmed.data[0].value
+
         if vmax is not None:
             data[data > vmax] = vmax
         if vmin is not None:
             data[data < vmin] = vmin
+
         median = np.nanmedian(data)
         data_subbed = data - median
         data_subbed[np.isnan(data_subbed)] = median

@@ -1027,6 +1027,8 @@ class FRBField(Field):
             ext: Union[tuple, int] = (0, 0, 0),
             vmaxes: tuple = (None, None, None),
             vmins: tuple = (None, None, None),
+            scale_to_jansky: bool = False,
+            scale_to_rgb: bool = False,
             **kwargs
     ):
         pl.latex_setup()
@@ -1050,7 +1052,8 @@ class FRBField(Field):
             centre=centre,
             vmax=vmaxes[0],
             vmin=vmins[0],
-            ext=ext[0]
+            ext=ext[0],
+            scale_to_jansky=scale_to_jansky
         )
 
         blue_data, _ = blue.prep_for_colour(
@@ -1059,7 +1062,8 @@ class FRBField(Field):
             centre=centre,
             vmax=vmaxes[1],
             vmin=vmins[1],
-            ext=ext[1]
+            ext=ext[1],
+            scale_to_jansky=scale_to_jansky
         )
 
         if green is None:
@@ -1071,14 +1075,16 @@ class FRBField(Field):
                 centre=centre,
                 vmax=vmaxes[2],
                 vmin=vmins[2],
-                ext=ext[2]
+                ext=ext[2],
+                scale_to_jansky=scale_to_jansky
             )
 
-        max_all = max(np.max(red_data), np.max(green_data), np.max(blue_data))
-        factor = max_all / 255
-        red_data /= factor
-        green_data /= factor
-        blue_data /= factor
+        if scale_to_rgb:
+            max_all = max(np.max(red_data), np.max(green_data), np.max(blue_data))
+            factor = max_all / 255
+            red_data /= factor
+            green_data /= factor
+            blue_data /= factor
 
         colour = make_lupton_rgb(
             red_data,
@@ -1096,6 +1102,12 @@ class FRBField(Field):
         else:
             projection = None
         ax = fig.add_subplot(n_x, n_y, n, projection=projection)
+
+        if not show_coords:
+            ax.get_xaxis().set_visible(False)
+            ax.set_yticks([])
+            ax.invert_yaxis()
+
         ax.imshow(
             colour,
             **imshow_kwargs,
@@ -1168,6 +1180,7 @@ class FRBField(Field):
             img: image.ImagingImage,
             ext: int = 0,
             frb_kwargs: dict = {},
+            plot_centre: bool = False
         ):
         from matplotlib.patches import Ellipse
         img.load_headers()
@@ -1193,7 +1206,8 @@ class FRBField(Field):
         e.set_facecolor('none')
         e.set_edgecolor('white')
         plot.add_artist(e)
-        plot.scatter(x, y, c="white", marker="x")
+        if plot_centre:
+            plot.scatter(x, y, c="white", marker="x")
 
     @classmethod
     def default_params(cls):
