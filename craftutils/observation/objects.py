@@ -197,6 +197,14 @@ class PositionUncertainty:
     def uncertainty_quadrature_equ(self):
         return np.sqrt(self.ra_sys ** 2 + self.ra_stat ** 2), np.sqrt(self.dec_stat ** 2 + self.dec_stat ** 2)
 
+    # TODO: Finish this
+
+    # def to_dict(self):
+    #     return {
+    #         "a_sys": self.a_sys,
+    #         "a_stat": self.a_stat
+    #     }
+
     @classmethod
     def default_params(cls):
         return {
@@ -453,6 +461,8 @@ class Object:
 
     def _output_dict(self):
         return {
+            "position": self.position,
+            # "position_err": self.position_err,
             "photometry": self.photometry,
             "irsa_extinction_path": self.irsa_extinction_path,
             "extinction_law": self.extinction_power_law,
@@ -463,6 +473,8 @@ class Object:
         if self.data_path is not None:
             outputs = p.load_output_file(self)
             if outputs is not None:
+                if "position" in outputs and outputs["position"] is not None:
+                    self.position = outputs["position"]
                 if "photometry" in outputs and outputs["photometry"] is not None:
                     self.photometry = outputs["photometry"]
                 if "irsa_extinction_path" in outputs and outputs["irsa_extinction_path"] is not None:
@@ -562,6 +574,15 @@ class Object:
     def build_photometry_table_path(self):
         self.check_data_path()
         return os.path.join(self.data_path, f"{self.name_filesys}_photometry.ecsv")
+
+    # def update_position_from_photometry(self):
+    #     self.photometry_to_table()
+    #     best = self.select_deepest_sep(local_output=False)
+    #     self.position = SkyCoord(best["ra"], best["dec"], unit=units.deg)
+    #     self.position_err = PositionUncertainty(
+    #         ra_err_stat=best["ra_err"],
+    #         dec_err_stat=best["dec_err"]
+    #     )
 
     def photometry_to_table(
             self,
@@ -921,6 +942,15 @@ class Object:
         )
         obs.write_master_objects_table()
 
+    # def plot_ellipse(
+    #         self,
+    #         plot,
+    #         img,
+    #         ext: int = 0,
+    #         colour: str = "white",
+    # ):
+
+
     @classmethod
     def default_params(cls):
         default_params = {
@@ -1048,6 +1078,10 @@ class Galaxy(Object):
             self.mass_stellar = kwargs["mass_stellar"]
         else:
             self.mass_stellar = None
+        if "mass_stellar_err" in kwargs:
+            self.mass_stellar_err = kwargs["mass_stellar_err"]
+        else:
+            self.mass_stellar_err = None
 
         self.cigale_model_path = None
         self.cigale_model = None
@@ -1109,6 +1143,8 @@ class Galaxy(Object):
     def _output_dict(self):
         output = super()._output_dict()
         output.update({
+            "mass_stellar": self.mass_stellar,
+            "mass_stellar_err": self.mass_stellar_err,
             "cigale_model_path": self.cigale_model_path,
             "cigale_sfh_path": self.cigale_sfh_path,
             "cigale_results": self.cigale_results
@@ -1118,6 +1154,10 @@ class Galaxy(Object):
     def load_output_file(self):
         outputs = super().load_output_file()
         if outputs is not None:
+            if "mass_stellar" in outputs and outputs["mass_stellar"] is not None:
+                self.mass_stellar = outputs["mass_stellar"]
+            if "mass_stellar_err" in outputs and outputs["mass_stellar_err"] is not None:
+                self.mass_stellar_err = outputs["mass_stellar_err"]
             if "cigale_model_path" in outputs and outputs["cigale_model_path"] is not None:
                 self.cigale_model_path = outputs["cigale_model_path"]
             if "cigale_sfh_path" in outputs and outputs["cigale_sfh_path"] is not None:

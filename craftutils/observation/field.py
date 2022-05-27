@@ -1179,9 +1179,10 @@ class FRBField(Field):
             plot,
             img: image.ImagingImage,
             ext: int = 0,
+            colour: str = "white",
             frb_kwargs: dict = {},
             plot_centre: bool = False
-        ):
+    ):
         from matplotlib.patches import Ellipse
         img.load_headers()
         frb = self.frb.position
@@ -1204,7 +1205,7 @@ class FRBField(Field):
             **frb_kwargs
         )
         e.set_facecolor('none')
-        e.set_edgecolor('white')
+        e.set_edgecolor(colour)
         plot.add_artist(e)
         if plot_centre:
             plot.scatter(x, y, c="white", marker="x")

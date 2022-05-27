@@ -2966,6 +2966,7 @@ class ImagingImage(Image):
             self,
             centre: SkyCoord = None,
             frame: units.Quantity = None,
+            corners: Tuple[SkyCoord] = None,
             ext: int = 0,
             fig: plt.Figure = None,
             n: int = 1, n_x: int = 1, n_y: int = 1,
@@ -2982,12 +2983,11 @@ class ImagingImage(Image):
             **kwargs,
     ):
         self.load_data()
-        self.load_wcs()
         _, scale = self.extract_pixel_scale()
         data = self.data[ext].value * 1.0
         other_args = {}
         if centre is not None and frame is not None:
-            x, y = self.wcs.all_world2pix(centre.ra.value, centre.dec.value, 0)
+            x, y = self.world_to_pixel(centre, 0)
             frame = u.check_quantity(
                 number=frame,
                 unit=units.pix,
@@ -2997,6 +2997,16 @@ class ImagingImage(Image):
             other_args["x"] = x
             other_args["y"] = y
             left, right, bottom, top = u.frame_from_centre(frame.to(units.pix, scale).value, x, y, data)
+        elif corners is not None:
+            x_0, y_0 = self.world_to_pixel(corners[0], 0)
+            x_1, y_1 = self.world_to_pixel(corners[1], 0)
+            xs = x_1, x_0
+            left = int(min(xs))
+            right = int(max(xs))
+            ys = y_1, y_0
+            bottom = int(min(ys))
+            top = int(max(ys))
+
         else:
             left = 0
             right = data.shape[1]
@@ -3043,6 +3053,9 @@ class ImagingImage(Image):
             frame1.axes.get_xaxis().set_visible(False)
             frame1.axes.set_yticks([])
             frame1.axes.invert_yaxis()
+
+        print(left, right, bottom, top)
+        print(type(left), type(right), type(bottom), type(top))
 
         ax.imshow(
             data,
