@@ -748,34 +748,35 @@ class Field:
             "z": []
         }
         for obj in self.objects:
-            obj.load_output_file()
-            obj.photometry_to_table()
-            tbl_this = obj.photometry_to_table(best=True)
-            photometries["Galaxy ID"].append(obj.name)
-            photometries["z"].append(obj.z)
-            for row in tbl_this:
-                instrument_name = row["instrument"]
-                instrument = inst.Instrument.from_params(instrument_name)
-                if instrument.cigale_name is not None:
-                    inst_cig = instrument.cigale_name
-                else:
-                    inst_cig = instrument_name
+            if isinstance(obj, objects.Galaxy):
+                obj.load_output_file()
+                obj.photometry_to_table()
+                tbl_this = obj.photometry_to_table(best=True)
+                photometries["Galaxy ID"].append(obj.name)
+                photometries["z"].append(obj.z)
+                for row in tbl_this:
+                    instrument_name = row["instrument"]
+                    instrument = inst.Instrument.from_params(instrument_name)
+                    if instrument.cigale_name is not None:
+                        inst_cig = instrument.cigale_name
+                    else:
+                        inst_cig = instrument_name
 
-                if instrument_name == "vlt-fors2":
-                    fil_cig = row["band"][0].lower()
-                else:
-                    fil_cig = row["band"]
-                band_str = f"{inst_cig}_{fil_cig}"
+                    if instrument_name == "vlt-fors2":
+                        fil_cig = row["band"][0].lower()
+                    else:
+                        fil_cig = row["band"]
+                    band_str = f"{inst_cig}_{fil_cig}"
 
-                if band_str not in photometries:
-                    photometries[band_str] = []
-                    photometries[band_str + "_err"] = []
-                if np.isnan(row["mag_sep_ext_corrected"]):
-                    photometries[band_str].append(-999.)
-                    photometries[band_str + "_err"].append(-999.)
-                else:
-                    photometries[band_str].append(row["mag_sep_ext_corrected"])
-                    photometries[band_str + "_err"].append(row["mag_sep_err"])
+                    if band_str not in photometries:
+                        photometries[band_str] = []
+                        photometries[band_str + "_err"] = []
+                    if np.isnan(row["mag_sep_ext_corrected"]):
+                        photometries[band_str].append(-999.)
+                        photometries[band_str + "_err"].append(-999.)
+                    else:
+                        photometries[band_str].append(row["mag_sep_ext_corrected"])
+                        photometries[band_str + "_err"].append(row["mag_sep_err"])
 
         tbl_cigale = table.QTable(photometries)
         print(tbl_cigale)

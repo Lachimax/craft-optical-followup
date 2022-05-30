@@ -3977,18 +3977,24 @@ class ImagingImage(Image):
         )
 
         if flux is None:
-            return None, None, None, None
+            return None
 
         snr = flux / flux_err
         mag, mag_err, _, _ = self.magnitude(
             flux, flux_err
         )
-        if snr < detection_threshold or np.isnan(mag):
-            mag_lim, _, _, _ = self.magnitude(
-                detection_threshold * flux_err
-            )
-            mag = min(mag, mag_lim)
-            mag_err = [-999. * units.mag]
+        for i, m in enumerate(mag):
+            if snr[i] < detection_threshold or np.isnan(m):
+                mag_lim, _, _, _ = self.magnitude(
+                    detection_threshold * flux_err[i]
+                )
+
+                if m > mag_lim or np.isnan(m):
+                    m = mag_lim
+                if np.isnan(m):
+                    m = [-999. * units.mag]
+                mag_err = [-999. * units.mag]
+                mag[i] = m
 
         return {
             "mag": mag,

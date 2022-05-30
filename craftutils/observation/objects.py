@@ -330,10 +330,17 @@ class Object:
             ),
             mask_nearby=do_mask
         )
-        deepest_dict["mag_sep"] = mag_results["mag"][0]
-        deepest_dict["mag_sep_err"] = mag_results["mag_err"][0]
-        deepest_dict["back_sep"] = mag_results["back"][0]
-        deepest_dict["snr_sep"] = mag_results["snr"][0]
+        if mag_results is not None:
+            deepest_dict["mag_sep"] = mag_results["mag"][0]
+            deepest_dict["mag_sep_err"] = mag_results["mag_err"][0]
+            deepest_dict["snr_sep"] = mag_results["snr"][0]
+            deepest_dict["back_sep"] = mag_results["back"][0]
+            deepest_dict["flux_sep"] = mag_results["flux"][0]
+            deepest_dict["flux_sep_err"] = mag_results["flux_err"][0]
+            deepest_dict["threshold_sep"] = mag_results["threshold"]
+        else:
+            deepest_dict["mag_sep"] = -999. * units.mag
+            deepest_dict["mag_sep_err"] = -999. * units.mag
         deepest_dict["zeropoint_sep"] = deepest_img.zeropoint_best["zeropoint_img"]
 
         for instrument in self.photometry:
@@ -360,18 +367,19 @@ class Object:
                         output=os.path.join(self.data_path, f"{self.name_filesys}_{instrument}_{band}_{epoch}"),
                         mask_nearby=do_mask
                     )
-                    snr = mag_results["snr"][0]
-                    back = mag_results["back"][0]
-                    if mag_results["mag"] is None:
-                        mag = -999. * units.mag
-                        mag_err = -999. * units.mag
+
+                    if mag_results is not None:
+                        phot_dict["mag_sep"] = mag_results["mag"][0]
+                        phot_dict["mag_sep_err"] = mag_results["mag_err"][0]
+                        phot_dict["snr_sep"] = mag_results["snr"][0]
+                        phot_dict["back_sep"] = mag_results["back"][0]
+                        phot_dict["flux_sep"] = mag_results["flux"][0]
+                        phot_dict["flux_sep_err"] = mag_results["flux_err"][0]
+                        phot_dict["threshold_sep"] = mag_results["threshold"]
                     else:
-                        mag = mag_results["mag"][0]
-                        mag_err = mag_results["mag_err"][0]
-                    phot_dict["mag_sep"] = mag
-                    phot_dict["mag_sep_err"] = mag_err
-                    phot_dict["snr_sep"] = snr
-                    phot_dict["back_sep"] = back
+                        phot_dict["mag_sep"] = -999. * units.mag
+                        phot_dict["mag_sep_err"] = -999. * units.mag
+                    phot_dict["zeropoint_sep"] = img.zeropoint_best["zeropoint_img"]
                     mag_results = img.sep_elliptical_magnitude(
                         centre=self.position,
                         a_world=self.a,  # + delta_fwhm,
@@ -381,16 +389,15 @@ class Object:
                         # output=os.path.join(self.data_path, f"{self.name_filesys}_{instrument}_{band}_{epoch}"),
                         mask_nearby=False
                     )
-                    snr = mag_results["snr"][0]
-                    if mag is None:
-                        mag = -999. * units.mag
-                        mag_err = -999. * units.mag
+                    if mag_results is not None:
+                        phot_dict["mag_sep_unmasked"] = mag_results["mag"][0]
+                        phot_dict["mag_sep_unmasked_err"] = mag_results["mag_err"][0]
+                        phot_dict["snr_sep_unmasked"] = mag_results["snr"][0]
+                        phot_dict["flux_sep_unmasked"] = mag_results["flux"][0]
+                        phot_dict["flux_sep_unmasked_err"] = mag_results["flux_err"][0]
                     else:
-                        mag = mag_results["mag"][0]
-                        mag_err = mag_results["mag_err"][0]
-                    phot_dict["mag_sep_unmasked"] = mag
-                    phot_dict["mag_sep_unmasked_err"] = mag_err
-                    phot_dict["snr_sep_unmasked"] = snr
+                        phot_dict["mag_sep"] = -999. * units.mag
+                        phot_dict["mag_sep_err"] = -999. * units.mag
 
         self.update_output_file()
 
@@ -1017,6 +1024,7 @@ class Object:
             'position_err':
         :return: Object reflecting dictionary.
         """
+        dict_pristine = dictionary.copy()
         ra, dec = p.select_coords(dictionary.pop("position"))
         if "position_err" in dictionary:
             position_err = dictionary.pop("position_err")
@@ -1048,7 +1056,7 @@ class Object:
                 **dictionary
             )
         else:
-            return selected.from_dict(dictionary=dictionary, field=field)
+            return selected.from_dict(dictionary=dict_pristine, field=field)
 
     @classmethod
     def select_child_class(cls, obj_type: str):

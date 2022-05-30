@@ -942,6 +942,21 @@ def round_to_sig_fig(x: float, n: int) -> float:
     return round(x, (n - 1) - int(np.floor(np.log10(abs(x)))))
 
 
+def round_decimals_up(number:float, decimals:int=2):
+    """
+    Returns a value rounded up to a specific number of decimal places.
+    Taken from https://kodify.net/python/math/round-decimals/#round-decimal-places-up-in-python
+    """
+    if not isinstance(decimals, int):
+        raise TypeError("decimal places must be an integer")
+    elif decimals < 0:
+        raise ValueError("decimal places has to be 0 or more")
+    elif decimals == 0:
+        return math.ceil(number)
+
+    factor = 10 ** decimals
+    return math.ceil(number * factor) / factor
+
 def wcs_as_deg(ra: str, dec: str):
     """
     Using the same syntax as astropy.coordinates.SkyCoord, converts a string of WCS coordinates into degrees.
