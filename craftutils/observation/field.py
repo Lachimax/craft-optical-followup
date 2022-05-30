@@ -2001,7 +2001,12 @@ class ImagingEpoch(Epoch):
         self.guess_data_path()
         self.source_extractor_config = source_extractor_config
         if self.source_extractor_config is None:
-            self.source_extractor_config = {}
+            self.source_extractor_config = {
+                 "dual_mode": True,
+                 "threshold": 1.5,
+                 "kron_factor": 3.5,
+                 "kron_radius_min": 1.0
+            }
 
         self.filters = []
         self.deepest = None
@@ -3551,8 +3556,7 @@ class ImagingEpoch(Epoch):
             "coadd":
                 {"frames": "astrometry"},
             "sextractor":
-                {"aperture_diameters": [7.72],
-                 "dual_mode": True,
+                {"dual_mode": True,
                  "threshold": 1.5,
                  "kron_factor": 3.5,
                  "kron_radius_min": 1.0
@@ -5020,6 +5024,11 @@ class ESOImagingEpoch(ImagingEpoch):
 
         u.debug_print(2, "ESOImagingEpoch.from_file(): param_dict ==", param_dict)
 
+        if "sextractor" in param_dict:
+            se = param_dict.pop("sextractor")
+        else:
+            se = None
+
         return cls(
             name=name,
             field=field,
@@ -5029,7 +5038,7 @@ class ESOImagingEpoch(ImagingEpoch):
             program_id=param_dict.pop('program_id'),
             date=param_dict.pop('date'),
             target=target,
-            source_extractor_config=param_dict['sextractor'],
+            source_extractor_config=se,
             **param_dict
         )
 
