@@ -648,9 +648,10 @@ def std_err_slope(
     s = s_regression / np.sqrt(np.nansum(x_weights * (x_obs - x_mean)) ** 2)
     return s
 
+
 def detect_problem_table(tbl: table.Table, fmt: str = "ecsv"):
     for i, row in enumerate(tbl):
-        tbl_this = tbl[:i+1]
+        tbl_this = tbl[:i + 1]
         try:
             writepath = os.path.join(os.path.expanduser("~"), f"test.{fmt}")
             tbl_this.write(writepath, overwrite=True, format=fmt)
@@ -663,6 +664,7 @@ def detect_problem_table(tbl: table.Table, fmt: str = "ecsv"):
             print("Problem row:")
             print(i, row)
             return i, row
+
 
 def std_err_intercept(
         y_model: np.ndarray,

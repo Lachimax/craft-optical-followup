@@ -274,7 +274,8 @@ class Object:
         self.kron = None
 
         self.photometry_args = None
-        if "photometry_args_manual" in kwargs and kwargs["photometry_args_manual"]["a"] != 0:
+        if "photometry_args_manual" in kwargs and kwargs["photometry_args_manual"]["a"] != 0 and \
+                kwargs["photometry_args_manual"]["b"]:
             self.photometry_args = kwargs["photometry_args_manual"]
             self.a = self.photometry_args["a"]
             self.b = self.photometry_args["b"]
@@ -307,11 +308,10 @@ class Object:
         import craftutils.observation.image as image
 
         self.estimate_galactic_extinction()
-        deepest = self.select_deepest()
-        deepest_dict = self.photometry[deepest["instrument"]][deepest["filter"]][deepest["epoch_name"]]
+        deepest_dict = self.select_deepest()
         deepest_path = deepest_dict["good_image_path"]
 
-        cls = image.CoaddedImage.select_child_class(instrument=deepest["instrument"])
+        cls = image.CoaddedImage.select_child_class(instrument=deepest_dict["instrument"])
         deepest_img = cls(path=deepest_path)
         deepest_fwhm = deepest_img.extract_header_item("PSF_FWHM") * units.arcsec
         if "do_mask" in deepest_dict:
@@ -326,7 +326,7 @@ class Object:
             kron_radius=self.kron,
             output=os.path.join(
                 self.data_path,
-                f"{self.name_filesys}_{deepest['instrument']}_{deepest['filter']}_{deepest['epoch_name']}"
+                f"{self.name_filesys}_{deepest_dict['instrument']}_{deepest_dict['filter']}_{deepest_dict['epoch_name']}"
             ),
             mask_nearby=do_mask
         )
@@ -451,6 +451,17 @@ class Object:
             "good_image_path": good_image_path,
             "do_mask": do_mask,
         }
+
+        if self.photometry_args is not None:
+            photometry["a"] = self.a
+            photometry["b"] = self.b
+            photometry["a_err"] = 0 * units.arcsec
+            photometry["b_err"] = 0 * units.arcsec
+            photometry["theta"] = self.theta
+            photometry["kron_radius"] = self.kron
+            if "fix_pos" in self.photometry_args and self.photometry_args["fix_pos"]:
+                photometry["ra"] = self.position.ra
+                photometry["dec"] = self.position.dec
 
         kwargs.update(photometry)
         if instrument not in self.photometry:
@@ -844,6 +855,7 @@ class Object:
         idx = np.argmax(self.photometry_tbl["snr"])
         row = self.photometry_tbl[idx]
         deepest = self.photometry[row["instrument"]][row["band"]][row["epoch_name"]]
+        # if self.photometry_args is None:
         self.a = deepest["a"]
         self.b = deepest["b"]
         self.theta = deepest["theta"]
@@ -851,6 +863,19 @@ class Object:
         ra = deepest["ra"]
         dec = deepest["dec"]
         self.position = SkyCoord(ra, dec)
+        # else:
+        #     deepest["a"] = self.a
+        #     deepest["b"] = self.b
+        #     deepest["theta"] = self.theta
+        #     deepest["kron_radius"] = self.kron
+        #     if "fix_pos" in self.photometry_args and self.photometry_args["fix_pos"]:
+        #         deepest["ra"] = self.position.ra
+        #         deepest["dec"] = self.position.dec
+        #     else:
+        #         ra = deepest["ra"]
+        #         dec = deepest["dec"]
+        #         self.position = SkyCoord(ra, dec)
+
         return deepest
 
     def select_deepest_sep(self, local_output: bool = True):
@@ -883,12 +908,13 @@ class Object:
             "dec": deepest["dec"],
             "dec_err": deepest["dec_err"],
             "epoch_position": deepest["epoch_name"],
-            "epoch_position_date": deepest["epoch_date"], "a": deepest["a"],
+            "epoch_position_date": deepest["epoch_date"],
+            "a": self.a,
             "a_err": deepest["a_err"],
-            "b": deepest["b"],
+            "b": self.b,
             "b_err": deepest["b_err"],
-            "theta": deepest["theta"],
-            "kron_radius": deepest["kron_radius"],
+            "theta": self.theta,
+            "kron_radius": self.kron,
             "epoch_ellipse": deepest["epoch_name"],
             "epoch_ellipse_date": deepest["epoch_date"],
             "theta_err": deepest["theta_err"],
@@ -961,7 +987,6 @@ class Object:
     #         ext: int = 0,
     #         colour: str = "white",
     # ):
-
 
     @classmethod
     def default_params(cls):
