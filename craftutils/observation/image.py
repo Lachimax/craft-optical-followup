@@ -3992,8 +3992,8 @@ class ImagingImage(Image):
                 if m > mag_lim or np.isnan(m):
                     m = mag_lim
                 if np.isnan(m):
-                    m = [-999. * units.mag]
-                mag_err = [-999. * units.mag]
+                    m = -999. * units.mag
+                mag_err[i] = -999. * units.mag
                 mag[i] = m
 
         return {
