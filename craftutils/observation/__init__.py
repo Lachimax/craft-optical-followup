@@ -1,5 +1,6 @@
 import os
 from typing import Union, Iterable
+import copy
 
 import astropy.table as table
 import astropy.units as units
@@ -334,6 +335,9 @@ def write_master_table(
         tbl_name = os.path.split(tbl_path)[-1][:-5]
         raise ValueError(f"{tbl_name} not loaded.")
     p.save_params(tbl_path, tbl)
+    tbl = copy.deepcopy(tbl)
+    if "template" in tbl:
+        tbl.pop("template")
     tbl_list = list(map(lambda e: tbl[e], tbl))
     tbl_astropy = table.QTable(tbl_list)
     tbl_names = tbl_astropy.colnames

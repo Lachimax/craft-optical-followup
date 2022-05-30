@@ -890,6 +890,12 @@ class Object:
             f"class_star": best_psf["class_star"]
         }
 
+        if isinstance(self, Galaxy) and self.z is not None:
+            row["z"] = self.z
+            row["d_A"] = self.D_A
+            row["d_L"] = self.D_L
+            row["mu"] = self.mu
+
         for instrument in self.photometry:
             for fil in self.photometry[instrument]:
 
@@ -1105,15 +1111,18 @@ class Galaxy(Object):
         return self.cigale_model, self.cigale_sfh
 
     def angular_size_distance(self):
-        return cosmology.angular_diameter_distance(z=self.z)
+        if self.z is not None:
+            return cosmology.angular_diameter_distance(z=self.z)
 
     def luminosity_distance(self):
-        return cosmology.luminosity_distance(z=self.z)
+        if self.z is not None:
+            return cosmology.luminosity_distance(z=self.z)
 
     def distance_modulus(self):
         d = self.luminosity_distance()
-        mu = (5 * np.log10(d / units.pc) - 5) * units.mag
-        return mu
+        if d is not None:
+            mu = (5 * np.log10(d / units.pc) - 5) * units.mag
+            return mu
 
     def absolute_magnitude(
             self,
