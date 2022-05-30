@@ -3983,14 +3983,22 @@ class ImagingImage(Image):
         mag, mag_err, _, _ = self.magnitude(
             flux, flux_err
         )
-        if snr < detection_threshold:
+        if snr < detection_threshold or np.isnan(mag):
             mag_lim, _, _, _ = self.magnitude(
                 detection_threshold * flux_err
             )
             mag = min(mag, mag_lim)
             mag_err = [-999. * units.mag]
 
-        return mag, mag_err, snr, back
+        return {
+            "mag": mag,
+            "mag_err": mag_err,
+            "snr": snr,
+            "back": back,
+            "flux": flux,
+            "flux_err": flux_err,
+            "threshold": detection_threshold
+        }
 
     def make_galfit_version(self, output_path: str = None, ext: int = 0):
         """

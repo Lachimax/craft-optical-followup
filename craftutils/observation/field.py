@@ -427,7 +427,7 @@ class Field:
         else:
             warnings.warn(f"param_dir is not set for this {type(self)}.")
 
-    def _gather_epochs(self, mode: str = "imaging"):
+    def _gather_epochs(self, mode: str = "imaging", quiet: bool = False):
         """
         Helper method for code reuse in gather_epochs_spectroscopy() and gather_epochs_imaging().
         Gathers all of the observation epochs of the given mode for this field.
@@ -435,14 +435,17 @@ class Field:
         :return: Dict, with keys being the epoch names and values being nested dictionaries containing the same
         information as the epoch .yaml files.
         """
-        print(f"Searching for {mode} epoch param files...")
+        if not quiet:
+            print(f"Searching for {mode} epoch param files...")
         epochs = {}
         if self.param_dir is not None:
             mode_path = os.path.join(self.param_dir, mode)
-            print(f"Looking in {mode_path}")
+            if not quiet:
+                print(f"Looking in {mode_path}")
             for instrument in filter(lambda d: os.path.isdir(os.path.join(mode_path, d)), os.listdir(mode_path)):
                 instrument_path = os.path.join(mode_path, instrument)
-                print(f"Looking in {instrument_path}")
+                if not quiet:
+                    print(f"Looking in {instrument_path}")
                 epoch_params = list(filter(lambda f: f.endswith(".yaml"), os.listdir(instrument_path)))
                 epoch_params.sort()
                 for epoch_param in epoch_params:
@@ -467,13 +470,13 @@ class Field:
         self.epochs_spectroscopy.update(epochs)
         return epochs
 
-    def gather_epochs_imaging(self):
+    def gather_epochs_imaging(self, quiet: bool = False):
         """
         Gathers all of the imaging observation epochs of this field.
         :return: Dict, with keys being the epoch names and values being nested dictionaries containing the same
         information as the epoch .yaml files.
         """
-        epochs = self._gather_epochs(mode="imaging")
+        epochs = self._gather_epochs(mode="imaging", quiet=quiet)
         self.epochs_imaging.update(epochs)
         return epochs
 
@@ -2819,7 +2822,7 @@ class ImagingEpoch(Epoch):
                 obj.cat_row = nearest
                 print()
 
-                if "MAG_PSF_ZP_best" in nearest:
+                if "MAG_PSF_ZP_best" in nearest.colnames:
                     mag_psf = nearest["MAG_PSF_ZP_best"]
                     mag_psf_err = nearest["MAGERR_PSF_ZP_best"]
                     snr_psf = nearest["FLUX_PSF"] / nearest["FLUXERR_PSF"]
@@ -4888,7 +4891,6 @@ class ESOImagingEpoch(ImagingEpoch):
                 frame.write_fits_file()
 
                 if frame.extract_chip_number() == 1:
-                    print('Upper Chip:')
                     trimmed = frame.trim(
                         left=up_left,
                         right=up_right,
@@ -4898,7 +4900,6 @@ class ESOImagingEpoch(ImagingEpoch):
                     self.add_frame_trimmed(trimmed)
 
                 elif frame.extract_chip_number() == 2:
-                    print('Lower Chip:')
                     trimmed = frame.trim(
                         left=dn_left,
                         right=dn_right,

@@ -226,7 +226,8 @@ class Object:
             position_err: Union[float, units.Quantity, dict, PositionUncertainty, tuple] = 0.0 * units.arcsec,
             field=None,
             row: table.Row = None,
-            plotting: dict = None
+            plotting: dict = None,
+            **kwargs
     ):
         self.name = name
 
@@ -272,6 +273,14 @@ class Object:
         self.theta = None
         self.kron = None
 
+        self.photometry_args = None
+        if "photometry_args_manual" in kwargs and kwargs["photometry_args_manual"]["a"] != 0:
+            self.photometry_args = kwargs["photometry_args_manual"]
+            self.a = self.photometry_args["a"]
+            self.b = self.photometry_args["b"]
+            self.theta = self.photometry_args["theta"]
+            self.kron = self.photometry_args["kron_radius"]
+
     def set_name_filesys(self):
         if self.name is not None:
             self.name_filesys = self.name.replace(" ", "-")
@@ -309,7 +318,7 @@ class Object:
             do_mask = deepest_dict["do_mask"]
         else:
             do_mask = True
-        mag, mag_err, snr, back = deepest_img.sep_elliptical_magnitude(
+        mag_results = deepest_img.sep_elliptical_magnitude(
             centre=self.position,
             a_world=self.a,
             b_world=self.b,
@@ -321,10 +330,10 @@ class Object:
             ),
             mask_nearby=do_mask
         )
-        deepest_dict["mag_sep"] = mag[0]
-        deepest_dict["mag_sep_err"] = mag_err[0]
-        deepest_dict["back_sep"] = back[0]
-        deepest_dict["snr_sep"] = snr[0]
+        deepest_dict["mag_sep"] = mag_results["mag"][0]
+        deepest_dict["mag_sep_err"] = mag_results["mag_err"][0]
+        deepest_dict["back_sep"] = mag_results["back"][0]
+        deepest_dict["snr_sep"] = mag_results["snr"][0]
         deepest_dict["zeropoint_sep"] = deepest_img.zeropoint_best["zeropoint_img"]
 
         for instrument in self.photometry:
@@ -342,7 +351,7 @@ class Object:
                         do_mask = phot_dict["do_mask"]
                     else:
                         do_mask = True
-                    mag, mag_err, snr, back = img.sep_elliptical_magnitude(
+                    mag_results = img.sep_elliptical_magnitude(
                         centre=self.position,
                         a_world=self.a,  # + delta_fwhm,
                         b_world=self.b,  # + delta_fwhm,
@@ -351,21 +360,19 @@ class Object:
                         output=os.path.join(self.data_path, f"{self.name_filesys}_{instrument}_{band}_{epoch}"),
                         mask_nearby=do_mask
                     )
-                    if mag is None:
+                    snr = mag_results["snr"][0]
+                    back = mag_results["back"][0]
+                    if mag_results["mag"] is None:
                         mag = -999. * units.mag
                         mag_err = -999. * units.mag
-                        snr = -999.
-                        back = -999.
                     else:
-                        mag = mag[0]
-                        mag_err = mag_err[0]
-                        snr = snr[0]
-                        back = back[0]
+                        mag = mag_results["mag"][0]
+                        mag_err = mag_results["mag_err"][0]
                     phot_dict["mag_sep"] = mag
                     phot_dict["mag_sep_err"] = mag_err
                     phot_dict["snr_sep"] = snr
                     phot_dict["back_sep"] = back
-                    mag, mag_err, snr, back = img.sep_elliptical_magnitude(
+                    mag_results = img.sep_elliptical_magnitude(
                         centre=self.position,
                         a_world=self.a,  # + delta_fwhm,
                         b_world=self.b,  # + delta_fwhm,
@@ -374,14 +381,13 @@ class Object:
                         # output=os.path.join(self.data_path, f"{self.name_filesys}_{instrument}_{band}_{epoch}"),
                         mask_nearby=False
                     )
+                    snr = mag_results["snr"][0]
                     if mag is None:
                         mag = -999. * units.mag
                         mag_err = -999. * units.mag
-                        snr = -999.
                     else:
-                        mag = mag[0]
-                        mag_err = mag_err[0]
-                        snr = snr[0]
+                        mag = mag_results["mag"][0]
+                        mag_err = mag_results["mag_err"][0]
                     phot_dict["mag_sep_unmasked"] = mag
                     phot_dict["mag_sep_unmasked_err"] = mag_err
                     phot_dict["snr_sep_unmasked"] = snr
@@ -637,7 +643,7 @@ class Object:
 
         if output is not False:
             for fmt in fmts:
-                # u.detect_problem_table(self.photometry_tbl)
+                u.detect_problem_table(self.photometry_tbl, fmt="csv")
                 self.photometry_tbl.write(output.replace(".ecsv", fmt[fmt.find("."):]), format=fmt, overwrite=True)
         return self.photometry_tbl
 
@@ -986,9 +992,9 @@ class Object:
             'position_err':
         :return: Object reflecting dictionary.
         """
-        ra, dec = p.select_coords(dictionary["position"])
+        ra, dec = p.select_coords(dictionary.pop("position"))
         if "position_err" in dictionary:
-            position_err = dictionary["position_err"]
+            position_err = dictionary.pop("position_err")
         else:
             position_err = PositionUncertainty.default_params()
 
@@ -998,17 +1004,23 @@ class Object:
             selected = cls
 
         if "plotting" in dictionary:
-            plotting = dictionary["plotting"]
+            plotting = dictionary.pop("plotting")
         else:
             plotting = None
 
+        if "name" in dictionary:
+            name = dictionary.pop("name")
+        else:
+            name = None
+
         if selected in (Object, FRB):
             return selected(
-                name=dictionary["name"],
+                name=name,
                 position=f"{ra} {dec}",
                 position_err=position_err,
                 field=field,
-                plotting=plotting
+                plotting=plotting,
+                **dictionary
             )
         else:
             return selected.from_dict(dictionary=dictionary, field=field)
@@ -1069,7 +1081,8 @@ class Galaxy(Object):
             position=position,
             position_err=position_err,
             field=field,
-            plotting=plotting
+            plotting=plotting,
+            **kwargs
         )
         self.z = z
         self.D_A = self.angular_size_distance()
@@ -1213,13 +1226,15 @@ class FRB(Object):
             dm: Union[float, units.Quantity] = None,
             field=None,
             plotting: dict = None,
+            **kwargs
     ):
         super().__init__(
             name=name,
             position=position,
             position_err=position_err,
             field=field,
-            plotting=plotting
+            plotting=plotting,
+            **kwargs
         )
         self.host_galaxy = host_galaxy
         self.dm = dm
