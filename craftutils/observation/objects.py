@@ -480,14 +480,19 @@ class Object:
         return kwargs
 
     def find_in_cat(self, cat_name: str):
-        cat = self.field.load_catalogue(cat_name=cat_name)
+        # cat = self.field.load_catalogue(cat_name=cat_name)
+        cat_path = self.field.get_path(f"cat_csv_{cat_name}")
+        cat = table.QTable.read(cat_path)
+
         cols = r.cat_columns(cat_name)
         ra_col = cols["ra"]
         dec_col = cols["dec"]
-        coord = SkyCoord(cat[ra_col], cat[dec_col], unit=units.deg)
-        separation = coord.separation(self.position)
-        best_index = np.argmin(separation)
-        return cat[best_index]
+        cat = astm.sanitise_coord(cat, dec_col)
+        ra = cat[ra_col]
+        dec = cat[dec_col]
+        coord = SkyCoord(ra, dec, unit=units.deg)
+        best_index, sep = astm.find_nearest(self.position, coord)
+        return cat[best_index], sep
 
     def _output_dict(self):
         return {
@@ -812,7 +817,7 @@ class Object:
     def get_photometry_table(self, output: bool = False):
         if output is True:
             output = None
-        if self.photometry_tbl is None:
+        if self.photometry_tbl is None or len(self.photometry_tbl) == 0:
             self.photometry_to_table(output=output)
 
     def select_photometry(self, fil: str, instrument: str, local_output: bool = True):
