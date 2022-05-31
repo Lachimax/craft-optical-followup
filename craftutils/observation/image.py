@@ -2770,11 +2770,15 @@ class ImagingImage(Image):
         right, top = top_right.to_pixel(wcs=self.wcs, origin=0)
         return self.trim(left=left, right=right, bottom=bottom, top=top, output_path=output_path)
 
-    def match_to_cat(self, cat: Union[str, table.QTable],
-                     ra_col: str = "ra", dec_col: str = "dec",
-                     offset_tolerance: units.Quantity = 1 * units.arcsec,
-                     star_tolerance: float = None,
-                     dual: bool = False):
+    def match_to_cat(
+            self,
+            cat: Union[str, table.QTable],
+            ra_col: str = "ra",
+            dec_col: str = "dec",
+            offset_tolerance: units.Quantity = 1 * units.arcsec,
+            star_tolerance: float = None,
+            dual: bool = False
+    ):
 
         source_cat = self.get_source_cat(dual=dual)
 

@@ -481,7 +481,13 @@ class Object:
 
     def find_in_cat(self, cat_name: str):
         cat = self.field.load_catalogue(cat_name=cat_name)
-        pass
+        cols = r.cat_columns(cat_name)
+        ra_col = cols["ra"]
+        dec_col = cols["dec"]
+        coord = SkyCoord(cat[ra_col], cat[dec_col], unit=units.deg)
+        separation = coord.separation(self.position)
+        best_index = np.argmin(separation)
+        return cat[best_index]
 
     def _output_dict(self):
         return {
