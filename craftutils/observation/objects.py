@@ -815,11 +815,19 @@ class Object:
         fil_photom = fil_photom[fil_photom["instrument"] == instrument]
         row = fil_photom[np.argmax(fil_photom["snr"])]
         photom_dict = self.photometry[instrument][fil][row["epoch_name"]]
+
+        if len(fil_photom) > 1:
+            mag_psf_err = np.std(fil_photom["mag_psf"]) / len(fil_photom)
+            mag_err = np.std(fil_photom["mag_sep"]) / len(fil_photom)
+        else:
+            mag_psf_err = fil_photom["mag_psf_err"][0]
+            mag_err = fil_photom["mag_sep_err"][0]
+
         mean = {
             "mag": np.mean(fil_photom["mag"]),
-            "mag_err": np.mean(fil_photom["mag_err"]),
+            "mag_err": mag_err,
             "mag_psf": np.mean(fil_photom["mag_psf"]),
-            "mag_psf_err": np.std(fil_photom["mag_psf_err"]) / len(fil_photom),
+            "mag_psf_err": mag_psf_err,
             "n": len(fil_photom)
         }
         # TODO: Just meaning the whole table is probably not the best way to estimate uncertainties.
@@ -835,11 +843,19 @@ class Object:
         fil_photom = fil_photom[fil_photom["instrument"] == instrument]
         row = fil_photom[np.argmax(fil_photom["snr_sep"])]
         photom_dict = self.photometry[instrument][fil][row["epoch_name"]]
+
+        if len(fil_photom) > 1:
+            mag_psf_err = np.std(fil_photom["mag_psf"]) / len(fil_photom)
+            mag_err = np.std(fil_photom["mag_sep"]) / len(fil_photom)
+        else:
+            mag_psf_err = fil_photom["mag_psf_err"][0]
+            mag_err = fil_photom["mag_sep_err"][0]
+
         mean = {
             "mag": np.mean(fil_photom["mag_sep"]),
-            "mag_err": np.std(fil_photom["mag_sep"]),
+            "mag_err": mag_err,
             "mag_psf": np.mean(fil_photom["mag_psf"]),
-            "mag_psf_err": np.std(fil_photom["mag_psf"]) / len(fil_photom),
+            "mag_psf_err": mag_psf_err,
             "n": len(fil_photom)
         }
         u.debug_print(2, f"Object.select_photometry_sep(): {self.name=}, {fil=}, {instrument=}")

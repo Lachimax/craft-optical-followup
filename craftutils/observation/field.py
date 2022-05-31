@@ -3558,8 +3558,8 @@ class ImagingEpoch(Epoch):
             "sextractor":
                 {"dual_mode": True,
                  "threshold": 1.5,
-                 "kron_factor": 3.5,
-                 "kron_radius_min": 1.0
+                 "kron_factor": 2.5,
+                 "kron_radius_min": 3.5
                  },
             # "background_subtraction":
             #     {"renormalise_centre": objects.position_dictionary.copy(),
@@ -4350,8 +4350,11 @@ class SurveyImagingEpoch(ImagingEpoch):
 
     def add_coadded_image(self, img: Union[str, image.Image], key: str, **kwargs):
         if isinstance(img, str):
-            cls = self.coadded_class
-            img = cls(path=img)
+            if os.path.isfile(img):
+                cls = self.coadded_class
+                img = cls(path=img)
+            else:
+                return None
         img.epoch = self
         self.coadded[key] = img
         self.coadded_unprojected[key] = img
