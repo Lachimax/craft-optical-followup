@@ -1314,6 +1314,16 @@ class FRB(Object):
         b = self.position_galactic.b.value
         return model_ne.DM(l, b, mw.r200.value)
 
+    def estimate_dm_mw_halo(self):
+        outputs = {}
+        mw_halo_yf17 = halos.YF17()
+        mw_halo_x = halos.MilkyWay()
+        mw_halo_mb15 = halos.MB15()
+        outputs["dm_halo_mw_yf17"] = mw_halo_yf17.Ne_Rperp(0. * units.kpc, rmax=3.) / 2
+        outputs["dm_halo_mw_pz19"] = mw_halo_x.Ne_Rperp(0. * units.kpc, rmax=3.) / 2
+        outputs["dm_halo_mw_mb15"] = mw_halo_mb15.Ne_Rperp(0. * units.kpc, rmax=3.) / 2
+        return outputs
+
     def estimate_dm_cosmic(self):
         if not frb_installed:
             raise ImportError("FRB is not installed.")
@@ -1335,6 +1345,189 @@ class FRB(Object):
         dm_ism = self.estimate_dm_mw_ism()
         dm_halo = 60 * dm_units
         return self.dm - dm_ism - dm_halo
+
+    def foreground_accounting(self, rmax=3.):
+
+        from frb.halos.utils import halomass_from_stellarmass
+        from frb.halos.hmf import halo_incidence
+
+        outputs = self.estimate_dm_mw_halo()
+        
+        host = self.host_galaxy
+        foregrounds = list(filter(lambda o: isinstance(o, Galaxy) and o.z <= self.host_galaxy.z, self.field.objects))
+
+        frb_err_ra, frb_err_dec = self.position_err.uncertainty_quadrature_equ()
+        frb_err_dec = frb_err_dec.to(units.arcsec)
+
+        print("DM_FRB:")
+        print(self.dm)
+
+        print("DM_MW:")
+
+        print("\tDM_MWISM:")
+        outputs["dm_ism_mw"] = self.estimate_dm_mw_ism()
+        print("\t", outputs["dm_ism_mw"])
+
+        print("\tDM_MWHalo_PZ19:")
+        print("\t", outputs["dm_halo_mw_pz19"])
+
+        print("\tDM_MWHalo_YF15:")
+        print("\t", outputs["dm_halo_mw_yf17"])
+
+        print("\tDM_MWHalo_MB15:")
+        print("\t", outputs["dm_halo_mw_mb15"])
+
+        print("\tDM_MW:")
+        outputs["dm_mw"] = outputs["dm_halo_mw_pz19"] + outputs["dm_ism_mw"]
+        print("\t", outputs["dm_mw"])
+
+        print("DM_exgal:")
+        outputs["dm_exgal"] = self.dm - outputs["dm_mw"]
+        print(outputs["dm_exgal"])
+
+        print("Avg DM_cosmic:")
+        outputs["dm_cosmic_avg"] = self.estimate_dm_cosmic()
+        print(outputs["dm_cosmic_avg"])
+        print("\tAvg DM_halos:")
+        outputs["dm_halos_avg"] = self.estimate_dm_halos()
+        print("\t", outputs["dm_halos_avg"])
+        print("\tAvg DM_igm:")
+        outputs["dm_igm"] = outputs["dm_cosmic_avg"] - outputs["dm_halos_avg"]
+        print("\t", outputs["dm_igm"])
+
+        print("Empirical DM_halos:")
+        halo_inform = []
+        halo_profiles = {}
+        halo_nes_all = {}
+        dm_halo_host = None
+        for obj in foregrounds:
+            print(f"\tDM_halo_{obj.name}:")
+            obj.load_output_file()
+            obj.select_deepest()
+            halo_info = {}
+            halo_info["id"] = obj.name
+            halo_info["z"] = obj.z
+            halo_info["ra"] = obj.position.ra
+            halo_info["dec"] = obj.position.dec
+
+            cat_row, sep = obj.find_in_cat("panstarrs1")
+
+            if sep < 1 * units.arcsec:
+                halo_info["id_cat"] = cat_row["objName"]
+                halo_info["ra_cat"] = cat_row["raStack"]
+                halo_info["dec_cat"] = cat_row["decStack"]
+
+            halo_info["offset_cat"] = sep.to(units.arcsec)
+            halo_info["offset_angle"] = offset_angle = self.position.separation(obj.position).to(units.arcsec)
+            fg_pos_err = max(
+                obj.position_err.dec_stat,
+                obj.position_err.ra_stat)
+            halo_info["offset_angle_err"] = offset_angle_err = np.sqrt(fg_pos_err ** 2 + frb_err_dec ** 2)
+            halo_info["offset_physical"] = offset = obj.projected_distance(offset_angle).to(units.kpc)
+            halo_info["offset_physical_err"] = obj.projected_distance(offset_angle_err).to(units.kpc)
+            halo_info["mass_stellar"] = fg_m_star = obj.mass_stellar
+            halo_info["mass_stellar_err"] = fg_m_star_err = obj.mass_stellar_err
+            halo_info["log_mass_stellar"] = fg_log_m_star = np.log10(fg_m_star)
+            halo_info["log_mass_stellar_err"] = u.uncertainty_log10(
+                arg=fg_m_star,
+                uncertainty_arg=fg_m_star_err)
+            halo_info["log_mass_halo"] = log_fg_m_halo = halomass_from_stellarmass(
+                log_mstar=fg_log_m_star,
+                z=obj.z
+            )
+            halo_info["h"] = h = cosmology.H(z=obj.z) / (
+                    100 * units.km * units.second ** -1 * units.Mpc ** -1)
+            halo_info["c"] = c = 4.67 * (10 ** log_fg_m_halo / (10 ** 14 * h ** -1)) ** (-0.11)
+            halo_info["mass_halo"] = 10 ** log_fg_m_halo
+
+            fg_mnfw = halos.ModifiedNFW(
+                log_Mhalo=log_fg_m_halo,
+                z=obj.z,
+                cosmo=cosmology,
+                c=float(c),
+                y0=2.,
+                alpha=2.
+            )
+
+            halo_nes = []
+            rs = []
+            dm_val = np.inf
+            i = 0
+            r = 0 * units.kpc
+            while dm_val > 1.:
+                r = i * units.kpc
+                dm_val = fg_mnfw.Ne_Rperp(r, rmax=rmax).value / (1 + obj.z)
+                halo_nes.append(dm_val)
+                rs.append(r.value)
+                i += 1
+
+            halo_info["r_lim"] = r
+
+            halo_info["dm_halo"] = dm_halo = fg_mnfw.Ne_Rperp(Rperp=offset, rmax=rmax) / (1 + obj.z)
+
+            halo_info["r_200"] = fg_mnfw.r200
+            if obj.name.startswith("HG"):
+                halo_info["dm_halo"] = dm_halo_host = dm_halo / 2
+                halo_info["id_short"] = "HG"
+            else:
+                halo_info["id_short"] = obj.name[:3]
+
+            print("\t", halo_info["dm_halo"])
+
+            halo_profiles[obj.name] = fg_mnfw
+
+            halo_inform.append(halo_info)
+
+            halo_nes_all[obj.name] = halo_nes
+
+            halo_info["n_intersect_avg"] = halo_incidence(
+                Mlow=halo_info["mass_halo"],
+                zFRB=self.host_galaxy.z,
+                radius=halo_info["offset_physical"]
+            )
+
+        #         plt.plot(rs, halo_nes)
+        #         plt.plot([offset.value, offset.value], [0, max(halo_nes)])
+
+        halo_tbl = table.QTable(halo_inform)
+
+        print("\tEmpirical DM_halos:")
+        outputs["dm_halos_emp"] = halo_tbl["dm_halo"].sum() - dm_halo_host
+        print("\t", outputs["dm_halos_emp"])
+
+        print("\tEmpirical DM_cosmic:")
+        outputs["dm_cosmic_emp"] = outputs["dm_igm"] + outputs["dm_halos_emp"]
+        print("\t", outputs["dm_cosmic_emp"])
+
+        print("DM_host:")
+        print("\tMedian DM_host:")
+        outputs["dm_host_median"] = 186 * dm_units / (1 + host.z)  # Check this!!
+        print("\t", outputs["dm_host_median"])
+
+        print("\tDM_halo_host")
+        outputs["dm_halo_host"] = dm_halo_host
+        print("\t", outputs["dm_halo_host"])
+
+        print("\tDM_host:")
+        outputs["dm_host_ism"] = outputs["dm_host_median"] - outputs["dm_halo_host"]
+
+        print("Excess DM estimate:")
+        outputs["dm_excess_avg"] = self.dm - outputs["dm_cosmic_avg"] - outputs["dm_mw"] - outputs["dm_host_median"]
+        print("\t", outputs["dm_excess_avg"])
+
+        print("Empirical Excess DM:")
+        outputs["dm_excess_emp"] = self.dm - outputs["dm_cosmic_emp"] - outputs["dm_mw"] - outputs["dm_host_median"]
+        print("\t", outputs["dm_excess_emp"])
+
+        #     r_eff_proj = foreground.projected_distance(r_eff).to(units.kpc)
+        #     r_eff_proj_err = foreground.projected_distance(r_eff_err).to(units.kpc)
+        #     print("Projected effective radius:")
+        #     print(r_eff_proj, "+/-", r_eff_proj_err)
+        #     print("FG-normalized offset:")
+        #     print(offset / r_eff_proj)
+        #     print("DM_host:", 50 * dmunits / (1 + host.z))
+
+        return halo_tbl, halo_profiles, halo_nes_all, outputs
 
     @classmethod
     def from_dict(cls, dictionary: dict, name: str = None, field=None):
