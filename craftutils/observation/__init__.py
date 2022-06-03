@@ -1,5 +1,6 @@
 import os
 from typing import Union, Iterable
+import copy
 
 import astropy.table as table
 import astropy.units as units
@@ -151,9 +152,9 @@ master_objects_columns = {
     "b": units.arcsec,
     "b_err": units.arcsec,
     "theta": units.deg,
+    "theta_err": units.deg,
     "epoch_ellipse": str,
     "epoch_ellipse_date": str,
-    "theta_err": units.deg,
     "kron_radius": float,
     "e_b-v": units.mag,
     "class_star": float,
@@ -172,6 +173,7 @@ master_objects_columns = {
     # "mag_psf_mean_{:s}_err": units.mag,
 }
 
+
 def build_default(
         columns: dict
 ):
@@ -189,6 +191,7 @@ def build_default(
             default_val = dtype(-999)
         default[colname] = default_val
     return default
+
 
 def _build_furby_table_path():
     if p.furby_path is not None:
@@ -316,7 +319,6 @@ def add_photometry(
         object_name: str,
         entry: dict
 ):
-
     add_entry(
         tbl=tbl,
         key=object_name,
@@ -334,6 +336,9 @@ def write_master_table(
         tbl_name = os.path.split(tbl_path)[-1][:-5]
         raise ValueError(f"{tbl_name} not loaded.")
     p.save_params(tbl_path, tbl)
+    tbl = copy.deepcopy(tbl)
+    if "template" in tbl:
+        tbl.pop("template")
     tbl_list = list(map(lambda e: tbl[e], tbl))
     tbl_astropy = table.QTable(tbl_list)
     tbl_names = tbl_astropy.colnames

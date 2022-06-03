@@ -26,11 +26,11 @@ def jname(coord: SkyCoord, ra_precision: int = 2, dec_precision: int = 1):
     ra_second = np.round(float(s_ra[s_ra.find("m") + 1:s_ra.find("s")]), ra_precision)
     if ra_precision <= 0:
         ra_second = int(ra_second)
-    ra_second = str(ra_second)#.ljust(6, "0")
+    ra_second = str(ra_second)  # .ljust(6, "0")
     dec_second = np.round(float(s_dec[s_dec.find("m") + 1:s_dec.find("s")]), dec_precision)
     if dec_precision == 0:
         dec_second = int(dec_second)
-    dec_second = str(dec_second)#.ljust(5, "0")
+    dec_second = str(dec_second)  # .ljust(5, "0")
     s_ra = s_ra[:s_ra.find("m")].replace("h", "")
     s_dec = s_dec[:s_dec.find("m")].replace("d", "")
     name = f"J{s_ra}{ra_second}{s_dec}{dec_second}"
@@ -493,6 +493,23 @@ def find_nearest(coord: SkyCoord, search_coords: SkyCoord):
     return match_id, separations[match_id]
 
 
+def sanitise_coord(
+        cat: table.Table,
+        dec_col: str,
+):
+
+    if isinstance(cat[dec_col][0], units.Quantity):
+        upper = 90 * units.deg
+        lower = -90 * units.deg
+    else:
+        upper = 90
+        lower = -90
+
+    cat = cat[cat[dec_col] <= upper]
+    cat = cat[cat[dec_col] >= lower]
+    return cat
+
+
 def match_catalogs(
         cat_1: table.Table, cat_2: table.Table,
         ra_col_1: str = "RA", dec_col_1: str = "DEC",
@@ -501,11 +518,9 @@ def match_catalogs(
 ):
     # Clean out any invalid declinations
     u.debug_print(2, "match_catalogs(): type(cat_1) ==", type(cat_1), "type(cat_2) ==", type(cat_2))
-    cat_1 = cat_1[cat_1[dec_col_1] <= 90 * units.deg]
-    cat_1 = cat_1[cat_1[dec_col_1] >= -90 * units.deg]
 
-    cat_2 = cat_2[cat_2[dec_col_2] <= 90 * units.deg]
-    cat_2 = cat_2[cat_2[dec_col_2] >= -90 * units.deg]
+    cat_1 = sanitise_coord(cat_1, dec_col_1)
+    cat_2 = sanitise_coord(cat_2, dec_col_2)
 
     coords_1 = SkyCoord(cat_1[ra_col_1], cat_1[dec_col_1])
     coords_2 = SkyCoord(cat_2[ra_col_2], cat_2[dec_col_2])

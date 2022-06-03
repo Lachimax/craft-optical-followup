@@ -427,7 +427,7 @@ class Field:
         else:
             warnings.warn(f"param_dir is not set for this {type(self)}.")
 
-    def _gather_epochs(self, mode: str = "imaging"):
+    def _gather_epochs(self, mode: str = "imaging", quiet: bool = False):
         """
         Helper method for code reuse in gather_epochs_spectroscopy() and gather_epochs_imaging().
         Gathers all of the observation epochs of the given mode for this field.
@@ -435,14 +435,17 @@ class Field:
         :return: Dict, with keys being the epoch names and values being nested dictionaries containing the same
         information as the epoch .yaml files.
         """
-        print(f"Searching for {mode} epoch param files...")
+        if not quiet:
+            print(f"Searching for {mode} epoch param files...")
         epochs = {}
         if self.param_dir is not None:
             mode_path = os.path.join(self.param_dir, mode)
-            print(f"Looking in {mode_path}")
+            if not quiet:
+                print(f"Looking in {mode_path}")
             for instrument in filter(lambda d: os.path.isdir(os.path.join(mode_path, d)), os.listdir(mode_path)):
                 instrument_path = os.path.join(mode_path, instrument)
-                print(f"Looking in {instrument_path}")
+                if not quiet:
+                    print(f"Looking in {instrument_path}")
                 epoch_params = list(filter(lambda f: f.endswith(".yaml"), os.listdir(instrument_path)))
                 epoch_params.sort()
                 for epoch_param in epoch_params:
@@ -467,13 +470,13 @@ class Field:
         self.epochs_spectroscopy.update(epochs)
         return epochs
 
-    def gather_epochs_imaging(self):
+    def gather_epochs_imaging(self, quiet: bool = False):
         """
         Gathers all of the imaging observation epochs of this field.
         :return: Dict, with keys being the epoch names and values being nested dictionaries containing the same
         information as the epoch .yaml files.
         """
-        epochs = self._gather_epochs(mode="imaging")
+        epochs = self._gather_epochs(mode="imaging", quiet=quiet)
         self.epochs_imaging.update(epochs)
         return epochs
 
@@ -745,34 +748,35 @@ class Field:
             "z": []
         }
         for obj in self.objects:
-            obj.load_output_file()
-            obj.photometry_to_table()
-            tbl_this = obj.photometry_to_table(best=True)
-            photometries["Galaxy ID"].append(obj.name)
-            photometries["z"].append(obj.z)
-            for row in tbl_this:
-                instrument_name = row["instrument"]
-                instrument = inst.Instrument.from_params(instrument_name)
-                if instrument.cigale_name is not None:
-                    inst_cig = instrument.cigale_name
-                else:
-                    inst_cig = instrument_name
+            if isinstance(obj, objects.Galaxy):
+                obj.load_output_file()
+                obj.photometry_to_table()
+                tbl_this = obj.photometry_to_table(best=True)
+                photometries["Galaxy ID"].append(obj.name)
+                photometries["z"].append(obj.z)
+                for row in tbl_this:
+                    instrument_name = row["instrument"]
+                    instrument = inst.Instrument.from_params(instrument_name)
+                    if instrument.cigale_name is not None:
+                        inst_cig = instrument.cigale_name
+                    else:
+                        inst_cig = instrument_name
 
-                if instrument_name == "vlt-fors2":
-                    fil_cig = row["band"][0].lower()
-                else:
-                    fil_cig = row["band"]
-                band_str = f"{inst_cig}_{fil_cig}"
+                    if instrument_name == "vlt-fors2":
+                        fil_cig = row["band"][0].lower()
+                    else:
+                        fil_cig = row["band"]
+                    band_str = f"{inst_cig}_{fil_cig}"
 
-                if band_str not in photometries:
-                    photometries[band_str] = []
-                    photometries[band_str + "_err"] = []
-                if np.isnan(row["mag_sep_ext_corrected"]):
-                    photometries[band_str].append(-999.)
-                    photometries[band_str + "_err"].append(-999.)
-                else:
-                    photometries[band_str].append(row["mag_sep_ext_corrected"])
-                    photometries[band_str + "_err"].append(row["mag_sep_err"])
+                    if band_str not in photometries:
+                        photometries[band_str] = []
+                        photometries[band_str + "_err"] = []
+                    if np.isnan(row["mag_sep_ext_corrected"]):
+                        photometries[band_str].append(-999.)
+                        photometries[band_str + "_err"].append(-999.)
+                    else:
+                        photometries[band_str].append(row["mag_sep_ext_corrected"])
+                        photometries[band_str + "_err"].append(row["mag_sep_err"])
 
         tbl_cigale = table.QTable(photometries)
         print(tbl_cigale)
@@ -786,10 +790,11 @@ class Field:
         results_tbl = table.QTable(results[1].data)
 
         for i, obj_name in enumerate(results_tbl["id"]):
-            model_path = os.path.join(cigale_dir, obj_name)
-            sfh_path = model_path.replace("best_model", "SFH")
             if obj_name in self.objects_dict:
+                model_path = os.path.join(cigale_dir, f"{obj_name}_best_model.fits")
+                sfh_path = os.path.join(cigale_dir, f"{obj_name}_SFH.fits")
                 obj = self.objects_dict[obj_name]
+                obj.load_output_file()
                 obj.cigale_results = p.sanitise_yaml_dict(dict(results_tbl[i]))
                 obj.mass_stellar = obj.cigale_results["bayes.stellar.m_star"]
                 obj.mass_stellar_err = obj.cigale_results["bayes.stellar.m_star_err"]
@@ -798,7 +803,6 @@ class Field:
                 if os.path.isfile(sfh_path):
                     obj.cigale_sfh_path = sfh_path
                 obj.update_output_file()
-
 
     @classmethod
     def default_params(cls):
@@ -1012,20 +1016,23 @@ class FRBField(Field):
 
     def plot_host_colour(
             self,
+            output_path: str,
             red: image.ImagingImage,
             blue: image.ImagingImage,
             green: image.ImagingImage = None,
             fig: plt.Figure = None,
             centre: SkyCoord = None,
             show_frb: bool = True,
+            show_coords: bool = True,
             frame: units.Quantity = 30 * units.pix,
             n: int = 1, n_x: int = 1, n_y: int = 1,
             frb_kwargs: dict = {},
             imshow_kwargs: dict = {},
-            output_path: str = None,
-            ext: int = 0,
+            ext: Union[tuple, int] = (0, 0, 0),
             vmaxes: tuple = (None, None, None),
             vmins: tuple = (None, None, None),
+            scale_to_jansky: bool = False,
+            scale_to_rgb: bool = False,
             **kwargs
     ):
         pl.latex_setup()
@@ -1036,74 +1043,57 @@ class FRBField(Field):
             centre = self.frb.host_galaxy.position
         if fig is None:
             fig = plt.figure()
+        if isinstance(ext, int):
+            ext = (ext, ext, ext)
 
         path_split = os.path.split(output_path)[-1]
 
         frame = u.check_quantity(frame, unit=units.pix)
 
-        red.extract_pixel_scale(ext)
-        frame = frame.to(units.pix, red.pixel_scale_y).value
-
-        red.load_data()
-        x, y = red.world_to_pixel(centre, 0)
-        left, right, bottom, top = u.frame_from_centre(frame=frame, x=x, y=y, data=red.data[ext])
-        red_trimmed = red.trim(
-            left=left,
-            right=right,
-            bottom=bottom,
-            top=top,
-            output_path=output_path.replace(path_split, f"{red.name}_trimmed.fits")
+        red_data, red_trimmed = red.prep_for_colour(
+            output_path=output_path.replace(path_split, f"{red.name}_trimmed.fits"),
+            frame=frame,
+            centre=centre,
+            vmax=vmaxes[0],
+            vmin=vmins[0],
+            ext=ext[0],
+            scale_to_jansky=scale_to_jansky
         )
-        red_trimmed.load_wcs(ext)
-        red_data = red_trimmed.data[ext].value
-        if vmaxes[0] is not None:
-            red_data[red_data > vmaxes[0]] = vmaxes[0]
-        if vmins[0] is not None:
-            red_data[red_data < vmins[0]] = vmins[0]
-        red_subbed = red_data - np.median(red_data)
 
-        blue.load_data()
-        x, y = blue.world_to_pixel(centre, 0)
-        left, right, bottom, top = u.frame_from_centre(frame=frame, x=x, y=y, data=blue.data[ext])
-        blue_trimmed = blue.trim(
-            left=left,
-            right=right,
-            bottom=bottom,
-            top=top,
-            output_path=output_path.replace(path_split, f"{blue.name}_trimmed.fits")
+        blue_data, _ = blue.prep_for_colour(
+            output_path=output_path.replace(path_split, f"{blue.name}_trimmed.fits"),
+            frame=frame,
+            centre=centre,
+            vmax=vmaxes[1],
+            vmin=vmins[1],
+            ext=ext[1],
+            scale_to_jansky=scale_to_jansky
         )
-        blue_data = blue_trimmed.data[ext].value
-        if vmaxes[0] is not None:
-            blue_data[blue_data > vmaxes[0]] = vmaxes[0]
-        if vmins[0] is not None:
-            blue_data[blue_data < vmins[0]] = vmins[0]
-        blue_subbed = blue_data - np.median(blue_data)
 
         if green is None:
-            green_subbed = (red_subbed + blue_subbed) / 2
+            green_data = (red_data + blue_data) / 2
         else:
-            green.load_data()
-            x, y = green.world_to_pixel(centre, 0)
-            left, right, bottom, top = u.frame_from_centre(frame=frame, x=x, y=y, data=green.data[ext])
-            green_trimmed = green.trim(
-                left=left,
-                right=right,
-                bottom=bottom,
-                top=top,
-                output_path=output_path.replace(path_split, f"{green.name}_trimmed.fits")
-
+            green_data, _ = green.prep_for_colour(
+                output_path=output_path.replace(path_split, f"{green.name}_trimmed.fits"),
+                frame=frame,
+                centre=centre,
+                vmax=vmaxes[2],
+                vmin=vmins[2],
+                ext=ext[2],
+                scale_to_jansky=scale_to_jansky
             )
-            green_data = green_trimmed.data[ext].value
-            if vmaxes[0] is not None:
-                green_data[green_data > vmaxes[0]] = vmaxes[0]
-            if vmins[0] is not None:
-                green_data[green_data < vmins[0]] = vmins[0]
-            green_subbed = green_data - np.median(green_data)
+
+        if scale_to_rgb:
+            max_all = max(np.max(red_data), np.max(green_data), np.max(blue_data))
+            factor = max_all / 255
+            red_data /= factor
+            green_data /= factor
+            blue_data /= factor
 
         colour = make_lupton_rgb(
-            red_subbed,
-            green_subbed,
-            blue_subbed,
+            red_data,
+            green_data,
+            blue_data,
             Q=7,
             stretch=30
         )
@@ -1111,7 +1101,17 @@ class FRBField(Field):
         if "origin" not in imshow_kwargs:
             imshow_kwargs["origin"] = "lower"
 
-        ax = fig.add_subplot(n_x, n_y, n, projection=red_trimmed.wcs)
+        if show_coords:
+            projection = red_trimmed.wcs
+        else:
+            projection = None
+        ax = fig.add_subplot(n_x, n_y, n, projection=projection)
+
+        if not show_coords:
+            ax.get_xaxis().set_visible(False)
+            ax.set_yticks([])
+            ax.invert_yaxis()
+
         ax.imshow(
             colour,
             **imshow_kwargs,
@@ -1123,6 +1123,10 @@ class FRBField(Field):
         ax.tick_params(labelsize=10)
         # ax.yaxis.set_label_position("right")
         # plt.tight_layout()
+
+        if show_frb:
+            self.frb_ellipse_to_plot(ext=ext[0], frb_kwargs=frb_kwargs, img=red_trimmed, plot=ax)
+
         fig.savefig(output_path)
         return ax, fig, colour
 
@@ -1138,14 +1142,13 @@ class FRBField(Field):
             # show_cbar: bool = False,
             # show_grid: bool = False,
             # ticks: int = None, interval: str = 'minmax',
-            # show_coords: bool = True,
             # font_size: int = 12,
             # reverse_y=False,
             frb_kwargs: dict = {},
             imshow_kwargs: dict = {},
             normalize_kwargs: dict = {},
             output_path: str = None,
-            show_legend: bool = True,
+            show_legend: bool = False,
             **kwargs
     ):
         pl.latex_setup()
@@ -1161,34 +1164,12 @@ class FRBField(Field):
             fig=fig,
             n=n, n_x=n_x, n_y=n_y,
             imshow_kwargs=imshow_kwargs,
-            normalize_kwargs=normalize_kwargs
+            normalize_kwargs=normalize_kwargs,
+            **kwargs
         )
 
         if show_frb:
-            from matplotlib.patches import Ellipse
-            img.load_headers()
-            frb = self.frb.position
-            x, y = img.world_to_pixel(frb, 0)
-            uncertainty = self.frb.position_err
-            a, b = uncertainty.uncertainty_quadrature()
-            theta = uncertainty.theta.to(units.deg)
-            rotation_angle = img.extract_rotation_angle(ext=ext)
-            theta = theta - rotation_angle
-            img_err = img.extract_astrometry_err()
-            if img_err is not None:
-                a = np.sqrt(a ** 2 + img_err ** 2)
-                b = np.sqrt(b ** 2 + img_err ** 2)
-
-            e = Ellipse(
-                xy=(x, y),
-                width=2 * a.to(units.pix, img.pixel_scale_y).value,
-                height=2 * b.to(units.pix, img.pixel_scale_y).value,
-                angle=theta.value
-            )
-            e.set_facecolor('none')
-            e.set_edgecolor('white')
-            plot.add_artist(e)
-            plot.scatter(x, y, c="white", marker="x")
+            self.frb_ellipse_to_plot(ext=ext, frb_kwargs=frb_kwargs, img=img, plot=plot)
             if show_legend:
                 plot.legend()
 
@@ -1196,6 +1177,42 @@ class FRBField(Field):
             fig.savefig(output_path)
 
         return plot, fig
+
+    def frb_ellipse_to_plot(
+            self,
+            plot,
+            img: image.ImagingImage,
+            ext: int = 0,
+            colour: str = "white",
+            frb_kwargs: dict = {},
+            plot_centre: bool = False
+    ):
+        from matplotlib.patches import Ellipse
+        img.load_headers()
+        frb = self.frb.position
+        x, y = img.world_to_pixel(frb, 0)
+        uncertainty = self.frb.position_err
+        a, b = uncertainty.uncertainty_quadrature()
+        theta = uncertainty.theta.to(units.deg)
+        rotation_angle = img.extract_rotation_angle(ext=ext)
+        theta = theta - rotation_angle
+        img_err = img.extract_astrometry_err()
+        img.extract_pixel_scale()
+        if img_err is not None:
+            a = np.sqrt(a ** 2 + img_err ** 2)
+            b = np.sqrt(b ** 2 + img_err ** 2)
+        e = Ellipse(
+            xy=(x, y),
+            width=2 * a.to(units.pix, img.pixel_scale_y).value,
+            height=2 * b.to(units.pix, img.pixel_scale_y).value,
+            angle=theta.value,
+            **frb_kwargs
+        )
+        e.set_facecolor('none')
+        e.set_edgecolor(colour)
+        plot.add_artist(e)
+        if plot_centre:
+            plot.scatter(x, y, c="white", marker="x")
 
     @classmethod
     def default_params(cls):
@@ -1984,7 +2001,12 @@ class ImagingEpoch(Epoch):
         self.guess_data_path()
         self.source_extractor_config = source_extractor_config
         if self.source_extractor_config is None:
-            self.source_extractor_config = {}
+            self.source_extractor_config = {
+                 "dual_mode": True,
+                 "threshold": 1.5,
+                 "kron_factor": 3.5,
+                 "kron_radius_min": 1.0
+            }
 
         self.filters = []
         self.deepest = None
@@ -2806,7 +2828,7 @@ class ImagingEpoch(Epoch):
                 obj.cat_row = nearest
                 print()
 
-                if "MAG_PSF_ZP_best" in nearest:
+                if "MAG_PSF_ZP_best" in nearest.colnames:
                     mag_psf = nearest["MAG_PSF_ZP_best"]
                     mag_psf_err = nearest["MAGERR_PSF_ZP_best"]
                     snr_psf = nearest["FLUX_PSF"] / nearest["FLUXERR_PSF"]
@@ -3416,7 +3438,6 @@ class ImagingEpoch(Epoch):
         coadded = self._get_images("final")
 
         for fil in self.filters:
-
             img = coadded[fil]
 
             inttime = coadded[fil].extract_header_item("INTTIME") * units.second
@@ -3535,11 +3556,10 @@ class ImagingEpoch(Epoch):
             "coadd":
                 {"frames": "astrometry"},
             "sextractor":
-                {"aperture_diameters": [7.72],
-                 "dual_mode": True,
+                {"dual_mode": True,
                  "threshold": 1.5,
-                 "kron_factor": 3.5,
-                 "kron_radius_min": 1.0
+                 "kron_factor": 2.5,
+                 "kron_radius_min": 3.5
                  },
             # "background_subtraction":
             #     {"renormalise_centre": objects.position_dictionary.copy(),
@@ -4330,8 +4350,11 @@ class SurveyImagingEpoch(ImagingEpoch):
 
     def add_coadded_image(self, img: Union[str, image.Image], key: str, **kwargs):
         if isinstance(img, str):
-            cls = self.coadded_class
-            img = cls(path=img)
+            if os.path.isfile(img):
+                cls = self.coadded_class
+                img = cls(path=img)
+            else:
+                return None
         img.epoch = self
         self.coadded[key] = img
         self.coadded_unprojected[key] = img
@@ -4876,7 +4899,6 @@ class ESOImagingEpoch(ImagingEpoch):
                 frame.write_fits_file()
 
                 if frame.extract_chip_number() == 1:
-                    print('Upper Chip:')
                     trimmed = frame.trim(
                         left=up_left,
                         right=up_right,
@@ -4886,7 +4908,6 @@ class ESOImagingEpoch(ImagingEpoch):
                     self.add_frame_trimmed(trimmed)
 
                 elif frame.extract_chip_number() == 2:
-                    print('Lower Chip:')
                     trimmed = frame.trim(
                         left=dn_left,
                         right=dn_right,
@@ -5006,6 +5027,11 @@ class ESOImagingEpoch(ImagingEpoch):
 
         u.debug_print(2, "ESOImagingEpoch.from_file(): param_dict ==", param_dict)
 
+        if "sextractor" in param_dict:
+            se = param_dict.pop("sextractor")
+        else:
+            se = None
+
         return cls(
             name=name,
             field=field,
@@ -5015,7 +5041,7 @@ class ESOImagingEpoch(ImagingEpoch):
             program_id=param_dict.pop('program_id'),
             date=param_dict.pop('date'),
             target=target,
-            source_extractor_config=param_dict['sextractor'],
+            source_extractor_config=se,
             **param_dict
         )
 

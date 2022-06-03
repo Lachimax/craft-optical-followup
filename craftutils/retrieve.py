@@ -669,7 +669,7 @@ def save_irsa_extinction(output: str, ra: float = None, dec: float = None, coord
     :return: Tuple: dictionary of retrieved values, table-formatted string.
     """
     table = retrieve_irsa_extinction(ra=ra, dec=dec, coord=coord)
-    table.write(output, format=fmt)
+    table.write(output, format=fmt, overwrite=True)
     return table
 
 
@@ -1405,6 +1405,7 @@ catalogue_filters = {
 catalogue_columns = {
     "panstarrs1": [
         "objID",
+        "objName",
         "qualityFlag",
         "raStack", "decStack",
         "raStackErr", "decStackErr",
@@ -1429,20 +1430,26 @@ catalogue_columns = {
 def construct_columns(cat="panstarrs1"):
     cat = cat.lower()
     columns = catalogue_columns[cat]
-    filters = catalogue_filters[cat]
+    fils = catalogue_filters[cat]
     columns_build = []
     for column in columns:
         if "{:s}" not in column:
             columns_build.append(column)
         else:
-            for f in filters:
+            for f in fils:
                 columns_build.append(column.format(f))
 
     return columns_build
 
 
-def retrieve_mast_photometry(ra: float, dec: float, cat: str = "panstarrs1", release="dr2", table="stack",
-                             radius: units.Quantity = 0.1 * units.deg):
+def retrieve_mast_photometry(
+        ra: float,
+        dec: float,
+        cat: str = "panstarrs1",
+        release="dr2",
+        table="stack",
+        radius: units.Quantity = 0.1 * units.deg
+):
     if cat.lower() == "panstarrs1":
         cat_str = "panstarrs"
     else:

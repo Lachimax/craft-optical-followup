@@ -2679,6 +2679,31 @@ class ImagingImage(Image):
         )
         cleaned.update_output_file()
 
+    def scale_to_jansky(
+            self,
+            ext: int = 0,
+            *args
+    ):
+        self.load_data()
+        self.load_output_file()
+        data = self.data[ext].value
+        zp = self.zeropoint_best["zeropoint_img"].value
+        print(zp)
+        exptime = self.extract_exposure_time().value
+        data[data <= 0.] = np.min(data[data > 0.])
+        data_scaled = 3631 * units.Jansky * (data / exptime) * 10 ** (zp / -2.5)
+        extra_vals = []
+        for v in args:
+            if v is not None:
+                v = u.dequantify(v)
+                extra_vals.append(3631 * units.Jansky * (v / exptime) * 10 ** (zp / -2.5))
+            else:
+                extra_vals.append(v)
+        if extra_vals:
+            return data_scaled, extra_vals
+        else:
+            return data_scaled
+
     def reproject(
             self,
             other_image: 'ImagingImage',
@@ -2745,11 +2770,15 @@ class ImagingImage(Image):
         right, top = top_right.to_pixel(wcs=self.wcs, origin=0)
         return self.trim(left=left, right=right, bottom=bottom, top=top, output_path=output_path)
 
-    def match_to_cat(self, cat: Union[str, table.QTable],
-                     ra_col: str = "ra", dec_col: str = "dec",
-                     offset_tolerance: units.Quantity = 1 * units.arcsec,
-                     star_tolerance: float = None,
-                     dual: bool = False):
+    def match_to_cat(
+            self,
+            cat: Union[str, table.QTable],
+            ra_col: str = "ra",
+            dec_col: str = "dec",
+            offset_tolerance: units.Quantity = 1 * units.arcsec,
+            star_tolerance: float = None,
+            dual: bool = False
+    ):
 
         source_cat = self.get_source_cat(dual=dual)
 
@@ -2937,27 +2966,19 @@ class ImagingImage(Image):
         i, _ = u.find_nearest(source_cat["NUMBER"], index)
         return source_cat[i], i
 
-    def generate_psf_image(self, x: int, y: int, output: str = None):
-        """
-        Generates an image of the modelled point-spread function of the image.
-        :param x:
-        :param y:
-        :param output:
-        :return:
-        """
-        pass
-
     def plot_subimage(
             self,
             centre: SkyCoord = None,
             frame: units.Quantity = None,
+            corners: Tuple[SkyCoord] = None,
             ext: int = 0,
             fig: plt.Figure = None,
             n: int = 1, n_x: int = 1, n_y: int = 1,
             show_cbar: bool = False,
             show_grid: bool = False,
             ticks: int = None,
-            show_coords: bool = True, ylabel: str = None,
+            show_coords: bool = True,
+            ylabel: str = None,
             reverse_y=False,
             imshow_kwargs: dict = None,  # Can include cmap
             normalize_kwargs: dict = None,  # Can include vmin, vmax
@@ -2966,12 +2987,11 @@ class ImagingImage(Image):
             **kwargs,
     ):
         self.load_data()
-        self.load_wcs()
         _, scale = self.extract_pixel_scale()
         data = self.data[ext].value * 1.0
         other_args = {}
         if centre is not None and frame is not None:
-            x, y = self.wcs.all_world2pix(centre.ra.value, centre.dec.value, 0)
+            x, y = self.world_to_pixel(centre, 0)
             frame = u.check_quantity(
                 number=frame,
                 unit=units.pix,
@@ -2981,6 +3001,16 @@ class ImagingImage(Image):
             other_args["x"] = x
             other_args["y"] = y
             left, right, bottom, top = u.frame_from_centre(frame.to(units.pix, scale).value, x, y, data)
+        elif corners is not None:
+            x_0, y_0 = self.world_to_pixel(corners[0], 0)
+            x_1, y_1 = self.world_to_pixel(corners[1], 0)
+            xs = x_1, x_0
+            left = int(min(xs))
+            right = int(max(xs))
+            ys = y_1, y_0
+            bottom = int(min(ys))
+            top = int(max(ys))
+
         else:
             left = 0
             right = data.shape[1]
@@ -3015,7 +3045,22 @@ class ImagingImage(Image):
         if "origin" not in imshow_kwargs:
             imshow_kwargs["origin"] = "lower"
 
-        ax = fig.add_subplot(n_x, n_y, n, projection=self.wcs)
+        if show_coords:
+            projection = self.wcs
+        else:
+            projection = None
+
+        ax = fig.add_subplot(n_x, n_y, n, projection=projection)
+
+        if not show_coords:
+            frame1 = plt.gca()
+            frame1.axes.get_xaxis().set_visible(False)
+            frame1.axes.set_yticks([])
+            frame1.axes.invert_yaxis()
+
+        print(left, right, bottom, top)
+        print(type(left), type(right), type(bottom), type(top))
+
         ax.imshow(
             data,
             norm=ImageNormalize(
@@ -3039,6 +3084,50 @@ class ImagingImage(Image):
             fig.savefig(output_path)
 
         return ax, fig, other_args
+
+    def prep_for_colour(
+            self,
+            output_path: str,
+            frame: units.Quantity,
+            centre: SkyCoord = None,
+            vmax: float = None,
+            vmin: float = None,
+            ext: int = 0,
+            scale_to_jansky: bool = False
+    ):
+        self.extract_pixel_scale(ext)
+        frame = frame.to(units.pix, self.pixel_scale_y).value
+
+        self.load_data()
+        x, y = self.world_to_pixel(centre, 0)
+        left, right, bottom, top = u.frame_from_centre(frame=frame, x=x, y=y, data=self.data[ext])
+        trimmed = self.trim(
+            left=left,
+            right=right,
+            bottom=bottom,
+            top=top,
+            output_path=output_path
+        )
+        trimmed.load_wcs(ext)
+
+        if scale_to_jansky:
+            data, vs = trimmed.scale_to_jansky(ext, vmax, vmin)
+            vmax = u.dequantify(vs[0])
+            vmin = u.dequantify(vs[1])
+            data = data.value
+        else:
+            data = trimmed.data[0].value
+
+        if vmax is not None:
+            data[data > vmax] = vmax
+        if vmin is not None:
+            data[data < vmin] = vmin
+
+        median = np.nanmedian(data)
+        data_subbed = data - median
+        data_subbed[np.isnan(data_subbed)] = median
+        # data_scaled = data_subbed * 255 / np.max(data_subbed)
+        return data_subbed, trimmed
 
     def nice_frame(
             self,
@@ -3892,20 +3981,34 @@ class ImagingImage(Image):
         )
 
         if flux is None:
-            return None, None, None, None
+            return None
 
         snr = flux / flux_err
         mag, mag_err, _, _ = self.magnitude(
             flux, flux_err
         )
-        if snr < detection_threshold:
-            mag_lim, _, _, _ = self.magnitude(
-                detection_threshold * flux_err
-            )
-            mag = min(mag, mag_lim)
-            mag_err = [-999. * units.mag]
+        for i, m in enumerate(mag):
+            if snr[i] < detection_threshold or np.isnan(m):
+                mag_lim, _, _, _ = self.magnitude(
+                    detection_threshold * flux_err[i]
+                )
 
-        return mag, mag_err, snr, back
+                if m > mag_lim or np.isnan(m):
+                    m = mag_lim
+                if np.isnan(m):
+                    m = -999. * units.mag
+                mag_err[i] = -999. * units.mag
+                mag[i] = m
+
+        return {
+            "mag": mag,
+            "mag_err": mag_err,
+            "snr": snr,
+            "back": back,
+            "flux": flux,
+            "flux_err": flux_err,
+            "threshold": detection_threshold
+        }
 
     def make_galfit_version(self, output_path: str = None, ext: int = 0):
         """

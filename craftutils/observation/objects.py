@@ -197,6 +197,14 @@ class PositionUncertainty:
     def uncertainty_quadrature_equ(self):
         return np.sqrt(self.ra_sys ** 2 + self.ra_stat ** 2), np.sqrt(self.dec_stat ** 2 + self.dec_stat ** 2)
 
+    # TODO: Finish this
+
+    # def to_dict(self):
+    #     return {
+    #         "a_sys": self.a_sys,
+    #         "a_stat": self.a_stat
+    #     }
+
     @classmethod
     def default_params(cls):
         return {
@@ -218,7 +226,8 @@ class Object:
             position_err: Union[float, units.Quantity, dict, PositionUncertainty, tuple] = 0.0 * units.arcsec,
             field=None,
             row: table.Row = None,
-            plotting: dict = None
+            plotting: dict = None,
+            **kwargs
     ):
         self.name = name
 
@@ -264,6 +273,15 @@ class Object:
         self.theta = None
         self.kron = None
 
+        self.photometry_args = None
+        if "photometry_args_manual" in kwargs and kwargs["photometry_args_manual"]["a"] != 0 and \
+                kwargs["photometry_args_manual"]["b"]:
+            self.photometry_args = kwargs["photometry_args_manual"]
+            self.a = self.photometry_args["a"]
+            self.b = self.photometry_args["b"]
+            self.theta = self.photometry_args["theta"]
+            self.kron = self.photometry_args["kron_radius"]
+
     def set_name_filesys(self):
         if self.name is not None:
             self.name_filesys = self.name.replace(" ", "-")
@@ -290,18 +308,17 @@ class Object:
         import craftutils.observation.image as image
 
         self.estimate_galactic_extinction()
-        deepest = self.select_deepest()
-        deepest_dict = self.photometry[deepest["instrument"]][deepest["filter"]][deepest["epoch_name"]]
+        deepest_dict = self.select_deepest()
         deepest_path = deepest_dict["good_image_path"]
 
-        cls = image.CoaddedImage.select_child_class(instrument=deepest["instrument"])
+        cls = image.CoaddedImage.select_child_class(instrument=deepest_dict["instrument"])
         deepest_img = cls(path=deepest_path)
         deepest_fwhm = deepest_img.extract_header_item("PSF_FWHM") * units.arcsec
         if "do_mask" in deepest_dict:
             do_mask = deepest_dict["do_mask"]
         else:
             do_mask = True
-        mag, mag_err, snr, back = deepest_img.sep_elliptical_magnitude(
+        mag_results = deepest_img.sep_elliptical_magnitude(
             centre=self.position,
             a_world=self.a,
             b_world=self.b,
@@ -309,14 +326,21 @@ class Object:
             kron_radius=self.kron,
             output=os.path.join(
                 self.data_path,
-                f"{self.name_filesys}_{deepest['instrument']}_{deepest['filter']}_{deepest['epoch_name']}"
+                f"{self.name_filesys}_{deepest_dict['instrument']}_{deepest_dict['filter']}_{deepest_dict['epoch_name']}"
             ),
             mask_nearby=do_mask
         )
-        deepest_dict["mag_sep"] = mag[0]
-        deepest_dict["mag_sep_err"] = mag_err[0]
-        deepest_dict["back_sep"] = back[0]
-        deepest_dict["snr_sep"] = snr[0]
+        if mag_results is not None:
+            deepest_dict["mag_sep"] = mag_results["mag"][0]
+            deepest_dict["mag_sep_err"] = mag_results["mag_err"][0]
+            deepest_dict["snr_sep"] = mag_results["snr"][0]
+            deepest_dict["back_sep"] = mag_results["back"][0]
+            deepest_dict["flux_sep"] = mag_results["flux"][0]
+            deepest_dict["flux_sep_err"] = mag_results["flux_err"][0]
+            deepest_dict["threshold_sep"] = mag_results["threshold"]
+        else:
+            deepest_dict["mag_sep"] = -999. * units.mag
+            deepest_dict["mag_sep_err"] = -999. * units.mag
         deepest_dict["zeropoint_sep"] = deepest_img.zeropoint_best["zeropoint_img"]
 
         for instrument in self.photometry:
@@ -334,7 +358,7 @@ class Object:
                         do_mask = phot_dict["do_mask"]
                     else:
                         do_mask = True
-                    mag, mag_err, snr, back = img.sep_elliptical_magnitude(
+                    mag_results = img.sep_elliptical_magnitude(
                         centre=self.position,
                         a_world=self.a,  # + delta_fwhm,
                         b_world=self.b,  # + delta_fwhm,
@@ -343,21 +367,20 @@ class Object:
                         output=os.path.join(self.data_path, f"{self.name_filesys}_{instrument}_{band}_{epoch}"),
                         mask_nearby=do_mask
                     )
-                    if mag is None:
-                        mag = -999. * units.mag
-                        mag_err = -999. * units.mag
-                        snr = -999.
-                        back = -999.
+
+                    if mag_results is not None:
+                        phot_dict["mag_sep"] = mag_results["mag"][0]
+                        phot_dict["mag_sep_err"] = mag_results["mag_err"][0]
+                        phot_dict["snr_sep"] = mag_results["snr"][0]
+                        phot_dict["back_sep"] = mag_results["back"][0]
+                        phot_dict["flux_sep"] = mag_results["flux"][0]
+                        phot_dict["flux_sep_err"] = mag_results["flux_err"][0]
+                        phot_dict["threshold_sep"] = mag_results["threshold"]
                     else:
-                        mag = mag[0]
-                        mag_err = mag_err[0]
-                        snr = snr[0]
-                        back = back[0]
-                    phot_dict["mag_sep"] = mag
-                    phot_dict["mag_sep_err"] = mag_err
-                    phot_dict["snr_sep"] = snr
-                    phot_dict["back_sep"] = back
-                    mag, mag_err, snr, back = img.sep_elliptical_magnitude(
+                        phot_dict["mag_sep"] = -999. * units.mag
+                        phot_dict["mag_sep_err"] = -999. * units.mag
+                    phot_dict["zeropoint_sep"] = img.zeropoint_best["zeropoint_img"]
+                    mag_results = img.sep_elliptical_magnitude(
                         centre=self.position,
                         a_world=self.a,  # + delta_fwhm,
                         b_world=self.b,  # + delta_fwhm,
@@ -366,17 +389,15 @@ class Object:
                         # output=os.path.join(self.data_path, f"{self.name_filesys}_{instrument}_{band}_{epoch}"),
                         mask_nearby=False
                     )
-                    if mag is None:
-                        mag = -999. * units.mag
-                        mag_err = -999. * units.mag
-                        snr = -999.
+                    if mag_results is not None:
+                        phot_dict["mag_sep_unmasked"] = mag_results["mag"][0]
+                        phot_dict["mag_sep_unmasked_err"] = mag_results["mag_err"][0]
+                        phot_dict["snr_sep_unmasked"] = mag_results["snr"][0]
+                        phot_dict["flux_sep_unmasked"] = mag_results["flux"][0]
+                        phot_dict["flux_sep_unmasked_err"] = mag_results["flux_err"][0]
                     else:
-                        mag = mag[0]
-                        mag_err = mag_err[0]
-                        snr = snr[0]
-                    phot_dict["mag_sep_unmasked"] = mag
-                    phot_dict["mag_sep_unmasked_err"] = mag_err
-                    phot_dict["snr_sep_unmasked"] = snr
+                        phot_dict["mag_sep"] = -999. * units.mag
+                        phot_dict["mag_sep_err"] = -999. * units.mag
 
         self.update_output_file()
 
@@ -438,6 +459,17 @@ class Object:
             "do_mask": do_mask,
         }
 
+        if self.photometry_args is not None:
+            photometry["a"] = self.a
+            photometry["b"] = self.b
+            photometry["a_err"] = 0 * units.arcsec
+            photometry["b_err"] = 0 * units.arcsec
+            photometry["theta"] = self.theta
+            photometry["kron_radius"] = self.kron
+            if "fix_pos" in self.photometry_args and self.photometry_args["fix_pos"]:
+                photometry["ra"] = self.position.ra
+                photometry["dec"] = self.position.dec
+
         kwargs.update(photometry)
         if instrument not in self.photometry:
             self.photometry[instrument] = {}
@@ -448,11 +480,24 @@ class Object:
         return kwargs
 
     def find_in_cat(self, cat_name: str):
-        cat = self.field.load_catalogue(cat_name=cat_name)
-        pass
+        # cat = self.field.load_catalogue(cat_name=cat_name)
+        cat_path = self.field.get_path(f"cat_csv_{cat_name}")
+        cat = table.QTable.read(cat_path)
+
+        cols = r.cat_columns(cat_name)
+        ra_col = cols["ra"]
+        dec_col = cols["dec"]
+        cat = astm.sanitise_coord(cat, dec_col)
+        ra = cat[ra_col]
+        dec = cat[dec_col]
+        coord = SkyCoord(ra, dec, unit=units.deg)
+        best_index, sep = astm.find_nearest(self.position, coord)
+        return cat[best_index], sep
 
     def _output_dict(self):
         return {
+            "position": self.position,
+            # "position_err": self.position_err,
             "photometry": self.photometry,
             "irsa_extinction_path": self.irsa_extinction_path,
             "extinction_law": self.extinction_power_law,
@@ -463,6 +508,8 @@ class Object:
         if self.data_path is not None:
             outputs = p.load_output_file(self)
             if outputs is not None:
+                if "position" in outputs and outputs["position"] is not None:
+                    self.position = outputs["position"]
                 if "photometry" in outputs and outputs["photometry"] is not None:
                     self.photometry = outputs["photometry"]
                 if "irsa_extinction_path" in outputs and outputs["irsa_extinction_path"] is not None:
@@ -563,6 +610,15 @@ class Object:
         self.check_data_path()
         return os.path.join(self.data_path, f"{self.name_filesys}_photometry.ecsv")
 
+    # def update_position_from_photometry(self):
+    #     self.photometry_to_table()
+    #     best = self.select_deepest_sep(local_output=False)
+    #     self.position = SkyCoord(best["ra"], best["dec"], unit=units.deg)
+    #     self.position_err = PositionUncertainty(
+    #         ra_err_stat=best["ra_err"],
+    #         dec_err_stat=best["dec_err"]
+    #     )
+
     def photometry_to_table(
             self,
             output: str = None,
@@ -616,7 +672,7 @@ class Object:
 
         if output is not False:
             for fmt in fmts:
-                # u.detect_problem_table(self.photometry_tbl)
+                u.detect_problem_table(self.photometry_tbl, fmt="csv")
                 self.photometry_tbl.write(output.replace(".ecsv", fmt[fmt.find("."):]), format=fmt, overwrite=True)
         return self.photometry_tbl
 
@@ -761,7 +817,7 @@ class Object:
     def get_photometry_table(self, output: bool = False):
         if output is True:
             output = None
-        if self.photometry_tbl is None:
+        if self.photometry_tbl is None or len(self.photometry_tbl) == 0:
             self.photometry_to_table(output=output)
 
     def select_photometry(self, fil: str, instrument: str, local_output: bool = True):
@@ -770,11 +826,19 @@ class Object:
         fil_photom = fil_photom[fil_photom["instrument"] == instrument]
         row = fil_photom[np.argmax(fil_photom["snr"])]
         photom_dict = self.photometry[instrument][fil][row["epoch_name"]]
+
+        if len(fil_photom) > 1:
+            mag_psf_err = np.std(fil_photom["mag_psf"]) / len(fil_photom)
+            mag_err = np.std(fil_photom["mag_sep"]) / len(fil_photom)
+        else:
+            mag_psf_err = fil_photom["mag_psf_err"][0]
+            mag_err = fil_photom["mag_sep_err"][0]
+
         mean = {
             "mag": np.mean(fil_photom["mag"]),
-            "mag_err": np.mean(fil_photom["mag_err"]),
+            "mag_err": mag_err,
             "mag_psf": np.mean(fil_photom["mag_psf"]),
-            "mag_psf_err": np.std(fil_photom["mag_psf_err"]) / len(fil_photom),
+            "mag_psf_err": mag_psf_err,
             "n": len(fil_photom)
         }
         # TODO: Just meaning the whole table is probably not the best way to estimate uncertainties.
@@ -790,11 +854,19 @@ class Object:
         fil_photom = fil_photom[fil_photom["instrument"] == instrument]
         row = fil_photom[np.argmax(fil_photom["snr_sep"])]
         photom_dict = self.photometry[instrument][fil][row["epoch_name"]]
+
+        if len(fil_photom) > 1:
+            mag_psf_err = np.std(fil_photom["mag_psf"]) / len(fil_photom)
+            mag_err = np.std(fil_photom["mag_sep"]) / len(fil_photom)
+        else:
+            mag_psf_err = fil_photom["mag_psf_err"][0]
+            mag_err = fil_photom["mag_sep_err"][0]
+
         mean = {
             "mag": np.mean(fil_photom["mag_sep"]),
-            "mag_err": np.std(fil_photom["mag_sep"]),
+            "mag_err": mag_err,
             "mag_psf": np.mean(fil_photom["mag_psf"]),
-            "mag_psf_err": np.std(fil_photom["mag_psf"]) / len(fil_photom),
+            "mag_psf_err": mag_psf_err,
             "n": len(fil_photom)
         }
         u.debug_print(2, f"Object.select_photometry_sep(): {self.name=}, {fil=}, {instrument=}")
@@ -817,6 +889,7 @@ class Object:
         idx = np.argmax(self.photometry_tbl["snr"])
         row = self.photometry_tbl[idx]
         deepest = self.photometry[row["instrument"]][row["band"]][row["epoch_name"]]
+        # if self.photometry_args is None:
         self.a = deepest["a"]
         self.b = deepest["b"]
         self.theta = deepest["theta"]
@@ -824,6 +897,19 @@ class Object:
         ra = deepest["ra"]
         dec = deepest["dec"]
         self.position = SkyCoord(ra, dec)
+        # else:
+        #     deepest["a"] = self.a
+        #     deepest["b"] = self.b
+        #     deepest["theta"] = self.theta
+        #     deepest["kron_radius"] = self.kron
+        #     if "fix_pos" in self.photometry_args and self.photometry_args["fix_pos"]:
+        #         deepest["ra"] = self.position.ra
+        #         deepest["dec"] = self.position.dec
+        #     else:
+        #         ra = deepest["ra"]
+        #         dec = deepest["dec"]
+        #         self.position = SkyCoord(ra, dec)
+
         return deepest
 
     def select_deepest_sep(self, local_output: bool = True):
@@ -856,18 +942,25 @@ class Object:
             "dec": deepest["dec"],
             "dec_err": deepest["dec_err"],
             "epoch_position": deepest["epoch_name"],
-            "epoch_position_date": deepest["epoch_date"], "a": deepest["a"],
+            "epoch_position_date": deepest["epoch_date"],
+            "a": self.a,
             "a_err": deepest["a_err"],
-            "b": deepest["b"],
+            "b": self.b,
             "b_err": deepest["b_err"],
-            "theta": deepest["theta"],
-            "kron_radius": deepest["kron_radius"],
+            "theta": self.theta,
+            "kron_radius": self.kron,
             "epoch_ellipse": deepest["epoch_name"],
             "epoch_ellipse_date": deepest["epoch_date"],
             "theta_err": deepest["theta_err"],
             f"e_b-v": self.ebv_sandf,
             f"class_star": best_psf["class_star"]
         }
+
+        if isinstance(self, Galaxy) and self.z is not None:
+            row["z"] = self.z
+            row["d_A"] = self.D_A
+            row["d_L"] = self.D_L
+            row["mu"] = self.mu
 
         for instrument in self.photometry:
             for fil in self.photometry[instrument]:
@@ -921,6 +1014,14 @@ class Object:
         )
         obs.write_master_objects_table()
 
+    # def plot_ellipse(
+    #         self,
+    #         plot,
+    #         img,
+    #         ext: int = 0,
+    #         colour: str = "white",
+    # ):
+
     @classmethod
     def default_params(cls):
         default_params = {
@@ -950,9 +1051,10 @@ class Object:
             'position_err':
         :return: Object reflecting dictionary.
         """
-        ra, dec = p.select_coords(dictionary["position"])
+        dict_pristine = dictionary.copy()
+        ra, dec = p.select_coords(dictionary.pop("position"))
         if "position_err" in dictionary:
-            position_err = dictionary["position_err"]
+            position_err = dictionary.pop("position_err")
         else:
             position_err = PositionUncertainty.default_params()
 
@@ -962,20 +1064,26 @@ class Object:
             selected = cls
 
         if "plotting" in dictionary:
-            plotting = dictionary["plotting"]
+            plotting = dictionary.pop("plotting")
         else:
             plotting = None
 
+        if "name" in dictionary:
+            name = dictionary.pop("name")
+        else:
+            name = None
+
         if selected in (Object, FRB):
             return selected(
-                name=dictionary["name"],
+                name=name,
                 position=f"{ra} {dec}",
                 position_err=position_err,
                 field=field,
-                plotting=plotting
+                plotting=plotting,
+                **dictionary
             )
         else:
-            return selected.from_dict(dictionary=dictionary, field=field)
+            return selected.from_dict(dictionary=dict_pristine, field=field)
 
     @classmethod
     def select_child_class(cls, obj_type: str):
@@ -1033,7 +1141,8 @@ class Galaxy(Object):
             position=position,
             position_err=position_err,
             field=field,
-            plotting=plotting
+            plotting=plotting,
+            **kwargs
         )
         self.z = z
         self.D_A = self.angular_size_distance()
@@ -1048,6 +1157,10 @@ class Galaxy(Object):
             self.mass_stellar = kwargs["mass_stellar"]
         else:
             self.mass_stellar = None
+        if "mass_stellar_err" in kwargs:
+            self.mass_stellar_err = kwargs["mass_stellar_err"]
+        else:
+            self.mass_stellar_err = None
 
         self.cigale_model_path = None
         self.cigale_model = None
@@ -1071,15 +1184,18 @@ class Galaxy(Object):
         return self.cigale_model, self.cigale_sfh
 
     def angular_size_distance(self):
-        return cosmology.angular_diameter_distance(z=self.z)
+        if self.z is not None:
+            return cosmology.angular_diameter_distance(z=self.z)
 
     def luminosity_distance(self):
-        return cosmology.luminosity_distance(z=self.z)
+        if self.z is not None:
+            return cosmology.luminosity_distance(z=self.z)
 
     def distance_modulus(self):
         d = self.luminosity_distance()
-        mu = (5 * np.log10(d / units.pc) - 5) * units.mag
-        return mu
+        if d is not None:
+            mu = (5 * np.log10(d / units.pc) - 5) * units.mag
+            return mu
 
     def absolute_magnitude(
             self,
@@ -1109,6 +1225,8 @@ class Galaxy(Object):
     def _output_dict(self):
         output = super()._output_dict()
         output.update({
+            "mass_stellar": self.mass_stellar,
+            "mass_stellar_err": self.mass_stellar_err,
             "cigale_model_path": self.cigale_model_path,
             "cigale_sfh_path": self.cigale_sfh_path,
             "cigale_results": self.cigale_results
@@ -1118,6 +1236,10 @@ class Galaxy(Object):
     def load_output_file(self):
         outputs = super().load_output_file()
         if outputs is not None:
+            if "mass_stellar" in outputs and outputs["mass_stellar"] is not None:
+                self.mass_stellar = outputs["mass_stellar"]
+            if "mass_stellar_err" in outputs and outputs["mass_stellar_err"] is not None:
+                self.mass_stellar_err = outputs["mass_stellar_err"]
             if "cigale_model_path" in outputs and outputs["cigale_model_path"] is not None:
                 self.cigale_model_path = outputs["cigale_model_path"]
             if "cigale_sfh_path" in outputs and outputs["cigale_sfh_path"] is not None:
@@ -1164,13 +1286,15 @@ class FRB(Object):
             dm: Union[float, units.Quantity] = None,
             field=None,
             plotting: dict = None,
+            **kwargs
     ):
         super().__init__(
             name=name,
             position=position,
             position_err=position_err,
             field=field,
-            plotting=plotting
+            plotting=plotting,
+            **kwargs
         )
         self.host_galaxy = host_galaxy
         self.dm = dm

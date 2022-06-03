@@ -648,16 +648,23 @@ def std_err_slope(
     s = s_regression / np.sqrt(np.nansum(x_weights * (x_obs - x_mean)) ** 2)
     return s
 
-def detect_problem_table(tbl: table.Table):
+
+def detect_problem_table(tbl: table.Table, fmt: str = "ecsv"):
     for i, row in enumerate(tbl):
-        tbl_this = tbl[:i+1]
+        tbl_this = tbl[:i + 1]
         try:
-            writepath = os.path.join(os.path.expanduser("~"), "test.ecsv")
-            tbl_this.write(writepath, overwrite=True)
+            writepath = os.path.join(os.path.expanduser("~"), f"test.{fmt}")
+            tbl_this.write(writepath, overwrite=True, format=fmt)
             os.remove(writepath)
         except NotImplementedError:
             print("Problem row:")
+            print(i, row)
             return i, row
+        except ValueError:
+            print("Problem row:")
+            print(i, row)
+            return i, row
+
 
 def std_err_intercept(
         y_model: np.ndarray,
@@ -934,6 +941,21 @@ def round_to_sig_fig(x: float, n: int) -> float:
 
     return round(x, (n - 1) - int(np.floor(np.log10(abs(x)))))
 
+
+def round_decimals_up(number:float, decimals:int=2):
+    """
+    Returns a value rounded up to a specific number of decimal places.
+    Taken from https://kodify.net/python/math/round-decimals/#round-decimal-places-up-in-python
+    """
+    if not isinstance(decimals, int):
+        raise TypeError("decimal places must be an integer")
+    elif decimals < 0:
+        raise ValueError("decimal places has to be 0 or more")
+    elif decimals == 0:
+        return math.ceil(number)
+
+    factor = 10 ** decimals
+    return math.ceil(number * factor) / factor
 
 def wcs_as_deg(ra: str, dec: str):
     """
