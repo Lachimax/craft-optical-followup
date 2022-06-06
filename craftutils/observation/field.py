@@ -779,11 +779,11 @@ class Field:
                         photometries[band_str + "_err"].append(row["mag_sep_err"])
 
         tbl_cigale = table.QTable(photometries)
-        print(tbl_cigale)
         tbl_cigale.write(
             os.path.join(self.data_path, f"{self.name}_cigale.csv"),
             overwrite=True
         )
+        return tbl_cigale
 
     def unpack_cigale_results(self, cigale_dir: str):
         results = fits.open(os.path.join(cigale_dir, "results.fits"))
