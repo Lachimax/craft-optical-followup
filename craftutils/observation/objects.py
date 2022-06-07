@@ -1154,13 +1154,18 @@ class Galaxy(Object):
         else:
             self.mass = None
         if "mass_stellar" in kwargs:
-            self.mass_stellar = kwargs["mass_stellar"]
+            self.mass_stellar = kwargs["mass_stellar"] * units.solMass
         else:
             self.mass_stellar = None
         if "mass_stellar_err" in kwargs:
-            self.mass_stellar_err = kwargs["mass_stellar_err"]
+            self.mass_stellar_err = kwargs["mass_stellar_err"] * units.solMass
         else:
             self.mass_stellar_err = None
+
+        self.mass_halo = None
+        self.log_mass_halo = None
+
+        self.halo_mfnw = None
 
         self.cigale_model_path = None
         self.cigale_model = None
@@ -1190,6 +1195,10 @@ class Galaxy(Object):
     def luminosity_distance(self):
         if self.z is not None:
             return cosmology.luminosity_distance(z=self.z)
+
+    def comoving_distance(self):
+        if self.z is not None:
+            return cosmology.comoving_distance(z=self.z)
 
     def distance_modulus(self):
         d = self.luminosity_distance()
@@ -1247,6 +1256,39 @@ class Galaxy(Object):
             if "cigale_results" in outputs and outputs["cigale_results"] is not None:
                 self.cigale_results = outputs["cigale_results"]
         return outputs
+
+    def h(self):
+        return cosmology.H(z=self.z) / (100 * units.km * units.second ** -1 * units.Mpc ** -1)
+
+    def halo_mass(self):
+        from frb.halos.utils import halomass_from_stellarmass
+        self.log_mass_halo = halomass_from_stellarmass(
+            log_mstar=np.log10(self.mass_stellar / units.solMass),
+            z=self.z
+        )
+        self.mass_halo = (10 ** self.log_mass_halo) * units.solMass
+
+        return self.mass_halo, self.log_mass_halo
+
+    def halo_concentration_parameter(self):
+        if self.log_mass_halo is None:
+            self.halo_mass()
+        c = 4.67 * (10 ** self.log_mass_halo / (10 ** 14 * self.h() ** -1)) ** (-0.11)
+        return float(c)
+
+    def halo_model_mnfw(self, y0=2., alpha=2., **kwargs):
+        if self.log_mass_halo is None:
+            self.halo_mass()
+        self.halo_mfnw = halos.ModifiedNFW(
+                log_Mhalo=self.log_mass_halo,
+                z=self.z,
+                cosmo=cosmology,
+                c=self.halo_concentration_parameter(),
+                y0=y0,
+                alpha=alpha,
+                **kwargs
+            )
+        return self.halo_mfnw
 
     @classmethod
     def default_params(cls):
@@ -1348,11 +1390,10 @@ class FRB(Object):
 
     def foreground_accounting(self, rmax=3.):
 
-        from frb.halos.utils import halomass_from_stellarmass
         from frb.halos.hmf import halo_incidence
 
         outputs = self.estimate_dm_mw_halo()
-        
+
         host = self.host_galaxy
         foregrounds = list(filter(lambda o: isinstance(o, Galaxy) and o.z <= self.host_galaxy.z, self.field.objects))
 
@@ -1422,46 +1463,39 @@ class FRB(Object):
             fg_pos_err = max(
                 obj.position_err.dec_stat,
                 obj.position_err.ra_stat)
+            halo_info["distance_angular_size"] = obj.angular_size_distance()
+            halo_info["distance_luminosity"] = obj.luminosity_distance()
+            halo_info["distance_comoving"] = obj.comoving_distance()
             halo_info["offset_angle_err"] = offset_angle_err = np.sqrt(fg_pos_err ** 2 + frb_err_dec ** 2)
-            halo_info["offset_physical"] = offset = obj.projected_distance(offset_angle).to(units.kpc)
-            halo_info["offset_physical_err"] = obj.projected_distance(offset_angle_err).to(units.kpc)
+            halo_info["r_perp"] = offset = obj.projected_distance(offset_angle).to(units.kpc)
+            halo_info["r_perp_err"] = obj.projected_distance(offset_angle_err).to(units.kpc)
             halo_info["mass_stellar"] = fg_m_star = obj.mass_stellar
             halo_info["mass_stellar_err"] = fg_m_star_err = obj.mass_stellar_err
-            halo_info["log_mass_stellar"] = fg_log_m_star = np.log10(fg_m_star)
+            halo_info["log_mass_stellar"] = np.log10(fg_m_star / units.solMass)
             halo_info["log_mass_stellar_err"] = u.uncertainty_log10(
                 arg=fg_m_star,
                 uncertainty_arg=fg_m_star_err)
-            halo_info["log_mass_halo"] = log_fg_m_halo = halomass_from_stellarmass(
-                log_mstar=fg_log_m_star,
-                z=obj.z
-            )
-            halo_info["h"] = h = cosmology.H(z=obj.z) / (
-                    100 * units.km * units.second ** -1 * units.Mpc ** -1)
-            halo_info["c"] = c = 4.67 * (10 ** log_fg_m_halo / (10 ** 14 * h ** -1)) ** (-0.11)
-            halo_info["mass_halo"] = 10 ** log_fg_m_halo
+            obj.halo_mass()
+            halo_info["mass_halo"] = obj.mass_halo
+            halo_info["log_mass_halo"] = obj.log_mass_halo
+            halo_info["h"] = obj.h()
+            halo_info["c"] = obj.halo_concentration_parameter()
 
-            fg_mnfw = halos.ModifiedNFW(
-                log_Mhalo=log_fg_m_halo,
-                z=obj.z,
-                cosmo=cosmology,
-                c=float(c),
-                y0=2.,
-                alpha=2.
-            )
+            fg_mnfw = obj.halo_model_mnfw()
 
             halo_nes = []
             rs = []
             dm_val = np.inf
             i = 0
-            r = 0 * units.kpc
+            r_perp = 0 * units.kpc
             while dm_val > 1.:
-                r = i * units.kpc
-                dm_val = fg_mnfw.Ne_Rperp(r, rmax=rmax).value / (1 + obj.z)
+                r_perp = i * units.kpc
+                dm_val = fg_mnfw.Ne_Rperp(r_perp, rmax=rmax).value / (1 + obj.z)
                 halo_nes.append(dm_val)
-                rs.append(r.value)
+                rs.append(r_perp.value)
                 i += 1
 
-            halo_info["r_lim"] = r
+            halo_info["r_lim"] = r_perp
 
             halo_info["dm_halo"] = dm_halo = fg_mnfw.Ne_Rperp(Rperp=offset, rmax=rmax) / (1 + obj.z)
 
@@ -1508,8 +1542,9 @@ class FRB(Object):
         outputs["dm_halo_host"] = dm_halo_host
         print("\t", outputs["dm_halo_host"])
 
-        print("\tDM_host:")
+        print("\tDM_host,ism:")
         outputs["dm_host_ism"] = outputs["dm_host_median"] - outputs["dm_halo_host"]
+        print("\t", outputs["dm_host_ism"])
 
         print("Excess DM estimate:")
         outputs["dm_excess_avg"] = self.dm - outputs["dm_cosmic_avg"] - outputs["dm_mw"] - outputs["dm_host_median"]

@@ -796,8 +796,8 @@ class Field:
                 obj = self.objects_dict[obj_name]
                 obj.load_output_file()
                 obj.cigale_results = p.sanitise_yaml_dict(dict(results_tbl[i]))
-                obj.mass_stellar = obj.cigale_results["bayes.stellar.m_star"]
-                obj.mass_stellar_err = obj.cigale_results["bayes.stellar.m_star_err"]
+                obj.mass_stellar = obj.cigale_results["bayes.stellar.m_star"] * units.solMass
+                obj.mass_stellar_err = obj.cigale_results["bayes.stellar.m_star_err"] * units.solMass
                 if os.path.isfile(model_path):
                     obj.cigale_model_path = model_path
                 if os.path.isfile(sfh_path):
