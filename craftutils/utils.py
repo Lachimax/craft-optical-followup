@@ -962,30 +962,54 @@ def uncertainty_string(
         uncertainty: float,
         n_digits_err: int = 1,
         unit: units.Unit = None,
-        brackets: bool = True
+        brackets: bool = True,
+        limit_val: int = None,
+        limit_type="upper",
+        nan_string="--"
 ):
+    limit_vals = (limit_val, -99, -999)
     value = dequantify(value, unit)
     uncertainty = dequantify(uncertainty, unit)
-
-    precision = np.log10(uncertainty)
-    if precision < 0:
-        precision = int(-precision + n_digits_err)
+    if limit_type == "upper":
+        limit_char = "<"
     else:
-        precision = n_digits_err
-    uncertainty = round_decimals_up(uncertainty, abs(precision))
-    value = np.round(value, precision)
+        limit_char = ">"
 
-    val_rnd = str(value)
-    while len(val_rnd[val_rnd.find("."):]) < precision + 1:
-        val_rnd += "0"
-
-    if brackets:
-        uncertainty_digit = str(uncertainty)[-n_digits_err:]
-        this_str = f"${val_rnd}({uncertainty_digit})$"
+    # If we have an upper limit, set uncertainty to blank
+    if uncertainty in limit_vals:
+        uncertainty = nan_string
+        precision = 1
     else:
-        this_str = f"${val_rnd} \\pm {uncertainty}$"
+        precision = np.log10(uncertainty)
+        if precision < 0:
+            precision = int(-precision + n_digits_err)
+        else:
+            precision = n_digits_err
+        uncertainty = round_decimals_up(uncertainty, abs(precision))
+
+    if value in limit_vals:
+        value = nan_string
+    else:
+        value = np.round(value, precision)
+
+    if uncertainty == nan_string:
+        if value != nan_string:
+            this_str = f"${limit_char} {value}$"
+        else:
+            this_str = "--"
+    else:
+        val_rnd = str(value)
+        while len(val_rnd[val_rnd.find("."):]) < precision + 1:
+            val_rnd += "0"
+
+        if brackets:
+            uncertainty_digit = str(uncertainty)[-n_digits_err:]
+            this_str = f"${val_rnd}({uncertainty_digit})$"
+        else:
+            this_str = f"${val_rnd} \\pm {uncertainty}$"
 
     return this_str, value, uncertainty
+
 
 def wcs_as_deg(ra: str, dec: str):
     """
