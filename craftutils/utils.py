@@ -967,7 +967,7 @@ def uncertainty_string(
     value = dequantify(value, unit)
     uncertainty = dequantify(uncertainty, unit)
 
-    precision = np.log10(value)
+    precision = np.log10(uncertainty)
     if precision < 0:
         precision = int(-precision + n_digits_err)
     else:
