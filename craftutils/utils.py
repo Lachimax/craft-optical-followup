@@ -942,20 +942,50 @@ def round_to_sig_fig(x: float, n: int) -> float:
     return round(x, (n - 1) - int(np.floor(np.log10(abs(x)))))
 
 
-def round_decimals_up(number:float, decimals:int=2):
+def round_decimals_up(number: float, decimals: int = 2):
     """
     Returns a value rounded up to a specific number of decimal places.
     Taken from https://kodify.net/python/math/round-decimals/#round-decimal-places-up-in-python
     """
-    if not isinstance(decimals, int):
-        raise TypeError("decimal places must be an integer")
-    elif decimals < 0:
-        raise ValueError("decimal places has to be 0 or more")
+
+    if decimals < 0:
+        raise ValueError(f"decimal places has to be 0 or more (received {decimals})")
     elif decimals == 0:
         return math.ceil(number)
 
     factor = 10 ** decimals
     return math.ceil(number * factor) / factor
+
+
+def uncertainty_string(
+        value: float,
+        uncertainty: float,
+        n_digits_err: int = 1,
+        unit: units.Unit = None,
+        brackets: bool = True
+):
+    value = dequantify(value, unit)
+    uncertainty = dequantify(uncertainty, unit)
+
+    precision = np.log10(value)
+    if precision < 0:
+        precision = int(-precision + n_digits_err)
+    else:
+        precision = n_digits_err
+    uncertainty = round_decimals_up(uncertainty, abs(precision))
+    value = np.round(value, precision)
+
+    val_rnd = str(value)
+    while len(val_rnd[val_rnd.find("."):]) < precision + 1:
+        val_rnd += "0"
+
+    if brackets:
+        uncertainty_digit = str(uncertainty)[-n_digits_err:]
+        this_str = f"${val_rnd}({uncertainty_digit})$"
+    else:
+        this_str = f"${val_rnd} \\pm {uncertainty}$"
+
+    return this_str, value, uncertainty
 
 def wcs_as_deg(ra: str, dec: str):
     """
