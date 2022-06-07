@@ -1164,6 +1164,8 @@ class Galaxy(Object):
 
         self.mass_halo = None
         self.log_mass_halo = None
+        self.log_mass_halo_upper = None
+        self.log_mass_halo_lower = None
 
         self.halo_mfnw = None
 
@@ -1173,6 +1175,7 @@ class Galaxy(Object):
         self.cigale_sfh_path = None
         self.cigale_sfh = None
 
+        self.cigale_results_path = None
         self.cigale_results = None
 
     def load_cigale_model(self, force: bool = False):
@@ -1186,7 +1189,12 @@ class Galaxy(Object):
         elif force or self.cigale_sfh is None:
             self.cigale_sfh = fits.open(self.cigale_sfh_path)
 
-        return self.cigale_model, self.cigale_sfh
+        # if self.cigale_results_path is None:
+        #     print(f"Cannot load CIGALE SFH; {self}.cigale_sfh_path has not been set.")
+        # elif force or self.cigale_results is None:
+        #     self.cigale_results = fits.open(self.cigale_results_path)
+
+        return self.cigale_model, self.cigale_sfh #, self.cigale_results
 
     def angular_size_distance(self):
         if self.z is not None:
@@ -1267,6 +1275,16 @@ class Galaxy(Object):
             z=self.z
         )
         self.mass_halo = (10 ** self.log_mass_halo) * units.solMass
+
+        self.log_mass_halo_upper = halomass_from_stellarmass(
+            log_mstar=np.log10((self.mass_stellar + self.mass_stellar_err) / units.solMass),
+            z=self.z
+        )
+
+        self.log_mass_halo_lower = halomass_from_stellarmass(
+            log_mstar=np.log10((self.mass_stellar - self.mass_stellar_err) / units.solMass),
+            z=self.z
+        )
 
         return self.mass_halo, self.log_mass_halo
 
@@ -1478,6 +1496,8 @@ class FRB(Object):
             obj.halo_mass()
             halo_info["mass_halo"] = obj.mass_halo
             halo_info["log_mass_halo"] = obj.log_mass_halo
+            halo_info["log_mass_halo_upper"] = obj.log_mass_halo_upper
+            halo_info["log_mass_halo_lower"] = obj.log_mass_halo_lower
             halo_info["h"] = obj.h()
             halo_info["c"] = obj.halo_concentration_parameter()
 
@@ -1515,10 +1535,12 @@ class FRB(Object):
             halo_nes_all[obj.name] = halo_nes
 
             halo_info["n_intersect_avg"] = halo_incidence(
-                Mlow=halo_info["mass_halo"],
+                Mlow=obj.mass_halo.value,
                 zFRB=self.host_galaxy.z,
-                radius=halo_info["offset_physical"]
+                radius=halo_info["r_perp"]
             )
+
+            halo_info["u-r"] = obj.cigale_results["bayes.param.restframe_u_prime-r_prime"]
 
         #         plt.plot(rs, halo_nes)
         #         plt.plot([offset.value, offset.value], [0, max(halo_nes)])
