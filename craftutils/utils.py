@@ -964,8 +964,8 @@ def uncertainty_string(
         unit: units.Unit = None,
         brackets: bool = True,
         limit_val: int = None,
-        limit_type="upper",
-        nan_string="--"
+        limit_type: str = "upper",
+        nan_string: str = "--"
 ):
     limit_vals = (limit_val, -99, -999)
     value = dequantify(value, unit)

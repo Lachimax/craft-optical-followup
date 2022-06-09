@@ -785,7 +785,10 @@ class Field:
         )
         return tbl_cigale
 
-    def unpack_cigale_results(self, cigale_dir: str):
+    def unpack_cigale_results(
+            self,
+            cigale_dir: str
+    ):
         results = fits.open(os.path.join(cigale_dir, "results.fits"))
         results_tbl = table.QTable(results[1].data)
 
@@ -798,6 +801,8 @@ class Field:
                 obj.cigale_results = p.sanitise_yaml_dict(dict(results_tbl[i]))
                 obj.mass_stellar = obj.cigale_results["bayes.stellar.m_star"] * units.solMass
                 obj.mass_stellar_err = obj.cigale_results["bayes.stellar.m_star_err"] * units.solMass
+                obj.sfr = obj.cigale_results["bayes.sfh.sfr"] * units.solMass / units.year
+                obj.sfr_err = obj.cigale_results["bayes.sfh.sfr_err"] * units.solMass / units.year
                 if os.path.isfile(model_path):
                     obj.cigale_model_path = model_path
                 if os.path.isfile(sfh_path):
