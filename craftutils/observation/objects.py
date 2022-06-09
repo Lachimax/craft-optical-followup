@@ -1711,9 +1711,13 @@ class FRB(Object):
         print("\t", outputs["dm_cosmic_emp"])
 
         print("DM_host:")
+        # Obtained using James 2021
         print("\tMedian DM_host:")
-        outputs["dm_host_median"] = 186 * dm_units / (1 + host.z)  # Check this!!
+        outputs["dm_host_median"] = 130 * dm_units / (1 + host.z)  # Check this!!
         print("\t", outputs["dm_host_median"])
+        print("\tMax-probability DM_host:")
+        outputs["dm_host_max_p"] = 98 * dm_units / (1 + host.z)
+        print("\t", outputs["dm_host_max_p"])
 
         print("\tDM_halo_host")
         outputs["dm_halo_host"] = dm_halo_host
