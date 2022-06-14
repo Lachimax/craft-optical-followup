@@ -52,7 +52,6 @@ uncertainty_dict = {
     "stat": 0.0
 }
 
-
 def skycoord_to_position_dict(skycoord: SkyCoord):
     ra_float = skycoord.ra.value
     dec_float = skycoord.dec.value
@@ -1364,6 +1363,11 @@ class Galaxy(Object):
 
 dm_units = units.parsec * units.cm ** -3
 
+dm_host_median = {
+    "james_22A": 129 * dm_units,
+    "james_22B": 186 * dm_units
+}
+
 
 class FRB(Object):
     def __init__(
@@ -1510,7 +1514,7 @@ class FRB(Object):
 
     def foreground_accounting(
             self,
-            rmax=3.,
+            rmax=1.,
             cat_search: str = None,
             step_size_halo: units.Quantity = 0.1 * units.kpc,
             neval_cosmic: int = 10000
@@ -1540,7 +1544,7 @@ class FRB(Object):
         print("\tDM_MWHalo_PZ19:")
         print("\t", outputs["dm_halo_mw_pz19"])
 
-        print("\tDM_MWHalo_YF15:")
+        print("\tDM_MWHalo_YF17:")
         print("\t", outputs["dm_halo_mw_yf17"])
 
         print("\tDM_MWHalo_MB15:")
@@ -1713,11 +1717,12 @@ class FRB(Object):
         print("DM_host:")
         # Obtained using James 2021
         print("\tMedian DM_host:")
-        outputs["dm_host_median"] = 130 * dm_units / (1 + host.z)  # Check this!!
+        outputs["dm_host_median_james22A"] = dm_host_median["james_22A"] / (1 + host.z)
+        outputs["dm_host_median"] = dm_host_median["james_22B"] / (1 + host.z)
         print("\t", outputs["dm_host_median"])
-        print("\tMax-probability DM_host:")
-        outputs["dm_host_max_p"] = 98 * dm_units / (1 + host.z)
-        print("\t", outputs["dm_host_max_p"])
+        # print("\tMax-probability DM_host:")
+        # outputs["dm_host_max_p_james22A"] = 98 * dm_units / (1 + host.z)
+        # print("\t", outputs["dm_host_max_p"])
 
         print("\tDM_halo_host")
         outputs["dm_halo_host"] = dm_halo_host
@@ -1741,7 +1746,6 @@ class FRB(Object):
         #     print(r_eff_proj, "+/-", r_eff_proj_err)
         #     print("FG-normalized offset:")
         #     print(offset / r_eff_proj)
-        #     print("DM_host:", 50 * dmunits / (1 + host.z))
 
         outputs["halo_table"] = halo_tbl
         outputs["halo_models"] = halo_models
