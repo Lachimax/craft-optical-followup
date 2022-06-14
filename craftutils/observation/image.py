@@ -756,7 +756,9 @@ class ESOImage(Image):
     @classmethod
     def header_keys(cls):
         header_keys = super().header_keys()
-        header_keys.update({"mode": "HIERARCH ESO INS MODE"})
+        header_keys.update({
+            "mode": "HIERARCH ESO INS MODE",
+        })
         return header_keys
 
 
@@ -4577,7 +4579,8 @@ class HAWKICoaddedImage(ESOImagingImage):
     def header_keys(cls):
         header_keys = super().header_keys()
         header_keys.update({
-            "gain": "GAIN"
+            "gain": "GAIN",
+            "filter": "HIERARCH ESO INS FILT1 NAME"
         })
         return header_keys
 
@@ -4625,9 +4628,9 @@ class FORS2Image(ESOImagingImage):
         header_keys.update(ESOImage.header_keys())
         header_keys.update({
             "noise_read": "HIERARCH ESO DET OUT1 RON",
-            "filter": "HIERARCH ESO INS FILT1 NAME",
             "gain": "HIERARCH ESO DET OUT1 GAIN",
             "program_id": "HIERARCH ESO OBS PROG ID",
+            "filter": "HIERARCH ESO INS FILT1 NAME"
         })
         return header_keys
 
