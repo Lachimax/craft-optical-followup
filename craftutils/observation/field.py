@@ -2007,10 +2007,10 @@ class ImagingEpoch(Epoch):
         self.source_extractor_config = source_extractor_config
         if self.source_extractor_config is None:
             self.source_extractor_config = {
-                 "dual_mode": True,
-                 "threshold": 1.5,
-                 "kron_factor": 3.5,
-                 "kron_radius_min": 1.0
+                "dual_mode": True,
+                "threshold": 1.5,
+                "kron_factor": 3.5,
+                "kron_radius_min": 1.0
             }
 
         self.filters = []
@@ -4602,6 +4602,10 @@ class ESOImagingEpoch(ImagingEpoch):
 
         # Collect and save some stats on those filters:
         for i, fil in enumerate(self.filters):
+            if len(self.frames_science[fil]) == 0:
+                self.filters.remove(fil)
+                self.frames_science.pop(fil)
+                continue
             exp_times = list(map(lambda frame: frame.extract_exposure_time().value, self.frames_science[fil]))
             u.debug_print(1, "exposure times:")
             u.debug_print(1, exp_times)
@@ -4609,9 +4613,12 @@ class ESOImagingEpoch(ImagingEpoch):
             self.exp_time_err[fil] = np.nanstd(exp_times) * units.second
 
             airmasses = list(map(lambda frame: frame.extract_airmass(), self.frames_science[fil]))
+
             self.airmass_mean[fil] = np.nanmean(airmasses)
-            self.airmass_err[fil] = max(np.nanmax(airmasses) - self.airmass_mean[fil],
-                                        self.airmass_mean[fil] - np.nanmin(airmasses))
+            self.airmass_err[fil] = max(
+                np.nanmax(airmasses) - self.airmass_mean[fil],
+                self.airmass_mean[fil] - np.nanmin(airmasses)
+            )
 
             print(f'Copying {fil} calibration data to standard folder...')
 
