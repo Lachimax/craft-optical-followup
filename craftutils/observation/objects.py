@@ -1394,13 +1394,14 @@ class FRB(Object):
         if self.dm is not None:
             self.dm = u.check_quantity(self.dm, unit=dm_units)
 
-    def estimate_dm_mw_ism(self, distance: Union[units.Quantity, float] = 100. * units.kpc):
+    def dm_mw_ism_ne2001(self, distance: Union[units.Quantity, float] = 100. * units.kpc):
         """
         Borrowed from frb.mw
         :param distance:
         :return:
         """
         # from frb.mw import ismDM
+
         from ne2001 import density
         distance = u.dequantify(distance, unit=units.kpc)
         ne = density.ElectronDensity()
@@ -1411,20 +1412,38 @@ class FRB(Object):
         )
         return dm_ism
 
-    def estimate_dm_mw_ism_cum(
+    def dm_mw_ism_ymw16(self, distance: Union[units.Quantity, float] = 100. * units.kpc):
+        import pygedm
+        return pygedm.dist_to_dm(
+            self.position.galactic.l,
+            self.position.galactic.b,
+            distance,
+            method="ymw16"
+        )
+
+    def dm_mw_ism_cum(
             self,
             max_distance: units.Quantity = 20. * units.kpc,
             step_size: units.Quantity = 0.1 * units.kpc,
             max_dm: units.Quantity = 30. * dm_units,
+            model: str = "ne2001"
     ):
         max_dm = u.check_quantity(max_dm, dm_units)
         i = 0 * units.kpc
         dm_this = 0 * dm_units
         dm = []
         d = []
+
+        if model == "ne2001":
+            func = self.dm_mw_ism_ne2001
+        elif model == "ymw16":
+            func = self.dm_mw_ism_ymw16
+        else:
+            raise ValueError(f"Model {model} not recognised.")
+
         while i < max_distance and dm_this < max_dm:
             d.append(i * 1.)
-            dm_this = self.estimate_dm_mw_ism(distance=i)
+            dm_this = func(distance=i)
             dm.append(dm_this)
             i += step_size
 
@@ -1433,7 +1452,7 @@ class FRB(Object):
             "d": d
         })
 
-    def estimate_dm_mw_halo(self):
+    def dm_mw_halo(self):
         import frb.halos.models as halos
         # from frb.mw import haloDM
         outputs = {}
@@ -1522,7 +1541,7 @@ class FRB(Object):
 
         from frb.halos.hmf import halo_incidence
 
-        outputs = self.estimate_dm_mw_halo()
+        outputs = self.dm_mw_halo()
 
         host = self.host_galaxy
         foregrounds = list(filter(lambda o: isinstance(o, Galaxy) and o.z <= self.host_galaxy.z, self.field.objects))
@@ -1537,7 +1556,7 @@ class FRB(Object):
         print("DM_MW:")
 
         print("\tDM_MWISM:")
-        outputs["dm_ism_mw"] = self.estimate_dm_mw_ism()
+        outputs["dm_ism_mw"] = self.dm_mw_ism_ne2001()
         # outputs["dm_ism_mw_cum"] = self.estimate_dm_mw_ism_cum(max_dm=outputs["dm_ism_mw"] - 0.5 * dm_units)
         print("\t", outputs["dm_ism_mw"])
 
