@@ -327,13 +327,14 @@ def _check_do_list(do: Union[list, str], num_stages: int):
                 raise ValueError("do string is not correctly formatted.")
             do = list(map(int, do.split(char)))
 
-            do_nu = []
-            for n in do:
-                if n < 0:
-                    do_nu.append(num_stages + n)
-                else:
-                    do_nu.append(n)
-            do = do_nu
+    if isinstance(do, list):
+        do_nu = []
+        for n in do:
+            if n < 0:
+                do_nu.append(num_stages + n)
+            else:
+                do_nu.append(n)
+        do = do_nu
 
     return do
 
@@ -1666,6 +1667,7 @@ class Epoch:
             raise ValueError(f"data_path has not been set for {self}")
         self.field.retrieve_catalogues()
         self.do = _check_do_list(self.do, num_stages=len(self.stages()))
+        print(f"Doing stages {self.do}")
         self.paths["download"] = os.path.join(self.data_path, "0-download")
 
     def proc_initial_setup(self, output_dir: str, **kwargs):
