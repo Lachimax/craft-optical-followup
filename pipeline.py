@@ -156,7 +156,13 @@ def main(
 
     elif mode == "objects":
 
-        field.object_properties()
+        if u.select_yn_exit("Update photometry from all epochs?"):
+            epochs = field.gather_epochs_imaging()
+            for epoch_name in epochs:
+                epoch = fld.epoch_from_directory(epoch_name)
+                epoch.do = [-1]
+        if u.select_yn_exit("Refine photometry?"):
+            field.object_properties()
         exit()
 
     u.debug_print(2, "pipeline.py: type(epoch) ==", type(epoch))
