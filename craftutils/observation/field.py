@@ -1657,6 +1657,13 @@ class Epoch:
             raise ValueError(f"data_path has not been set for {self}")
         self.field.retrieve_catalogues()
         self.do = _check_do_list(self.do)
+        do_nu = []
+        for n in self.do:
+            if n < 0:
+                do_nu.append(len(self.stages()) + n)
+            else:
+                do_nu.append(n)
+        self.do = do_nu
         self.paths["download"] = os.path.join(self.data_path, "0-download")
 
     def proc_initial_setup(self, output_dir: str, **kwargs):
@@ -1732,14 +1739,7 @@ class Epoch:
                 time_since = (Time.now() - done).sec * units.second
                 time_since = u.relevant_timescale(time_since)
                 message += f" (last performed at {done.isot}, {time_since.round(1)} ago)"
-            options = ["No", "Yes", "Exit"]
-            opt, _ = u.select_option(message=message, options=options)
-            if opt == 0:
-                return False
-            if opt == 1:
-                return True
-            if opt == 2:
-                exit(0)
+            return u.select_yn_exit(message=message)
 
     # def set_survey(self):
 
@@ -2144,11 +2144,11 @@ class ImagingEpoch(Epoch):
                 "message": "Get photometry?",
                 "default": True,
             },
-            "get_photometry_all": {
-                "method": cls.proc_get_photometry_all,
-                "message": "Get all photometry?",
-                "default": True
-            }
+            # "get_photometry_all": {
+            #     "method": cls.proc_get_photometry_all,
+            #     "message": "Get all photometry?",
+            #     "default": True
+            # }
         }
         )
         return stages
@@ -5094,7 +5094,7 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
             "photometric_calibration": ie_stages["photometric_calibration"],
             "dual_mode_source_extraction": ie_stages["dual_mode_source_extraction"],
             "get_photometry": ie_stages["get_photometry"],
-            "get_photometry_all": ie_stages["get_photometry_all"]
+            # "get_photometry_all": ie_stages["get_photometry_all"]
         }
 
         u.debug_print(2, f"FORS2ImagingEpoch.stages(): stages ==", stages)

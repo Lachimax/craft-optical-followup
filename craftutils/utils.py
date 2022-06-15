@@ -1196,6 +1196,17 @@ def select_yn(message: str, default: Union[str, bool] = None):
         return False
 
 
+def select_yn_exit(message: str):
+    options = ["No", "Yes", "Exit"]
+    opt, _ = select_option(message=message, options=options)
+    if opt == 0:
+        return False
+    if opt == 1:
+        return True
+    if opt == 2:
+        exit(0)
+
+
 def user_input(message: str, typ: type = str, default=None):
     inp = None
     if default is not None:
