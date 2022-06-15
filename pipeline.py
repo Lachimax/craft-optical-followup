@@ -161,6 +161,7 @@ def main(
             for epoch_name in epochs:
                 epoch = fld.epoch_from_directory(epoch_name)
                 epoch.do = [-1]
+                epoch.pipeline()
         if u.select_yn_exit("Refine photometry?"):
             field.object_properties()
         exit()

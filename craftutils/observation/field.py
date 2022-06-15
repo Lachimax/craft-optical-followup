@@ -314,7 +314,7 @@ def _retrieve_eso_epoch(epoch: Union['ESOImagingEpoch', 'ESOSpectroscopyEpoch'],
     return r
 
 
-def _check_do_list(do: Union[list, str]):
+def _check_do_list(do: Union[list, str], num_stages: int):
     if type(do) is str:
         try:
             do = [int(do)]
@@ -326,6 +326,15 @@ def _check_do_list(do: Union[list, str]):
             else:
                 raise ValueError("do string is not correctly formatted.")
             do = list(map(int, do.split(char)))
+
+            do_nu = []
+            for n in do:
+                if n < 0:
+                    do_nu.append(num_stages + n)
+                else:
+                    do_nu.append(n)
+            do = do_nu
+
     return do
 
 
@@ -1656,14 +1665,7 @@ class Epoch:
         else:
             raise ValueError(f"data_path has not been set for {self}")
         self.field.retrieve_catalogues()
-        self.do = _check_do_list(self.do)
-        do_nu = []
-        for n in self.do:
-            if n < 0:
-                do_nu.append(len(self.stages()) + n)
-            else:
-                do_nu.append(n)
-        self.do = do_nu
+        self.do = _check_do_list(self.do, num_stages=len(self.stages()))
         self.paths["download"] = os.path.join(self.data_path, "0-download")
 
     def proc_initial_setup(self, output_dir: str, **kwargs):
