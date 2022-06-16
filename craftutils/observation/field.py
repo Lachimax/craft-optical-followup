@@ -753,17 +753,19 @@ class Field:
         self.generate_cigale_photometry()
 
     def generate_cigale_photometry(self):
-        photometries = {
-            "Galaxy ID": [],
-            "z": []
-        }
+        # photometries = {
+        #     "Galaxy ID": [],
+        #     "z": []
+        # }
+        photometries = []
         for obj in self.objects:
             if isinstance(obj, objects.Galaxy):
+                photometry = {}
                 obj.load_output_file()
                 obj.photometry_to_table()
                 tbl_this = obj.photometry_to_table(best=True)
-                photometries["Galaxy ID"].append(obj.name)
-                photometries["z"].append(obj.z)
+                photometry["Galaxy ID"] = obj.name
+                photometry["z"] = obj.z
                 for row in tbl_this:
                     instrument_name = row["instrument"]
                     instrument = inst.Instrument.from_params(instrument_name)
@@ -777,17 +779,21 @@ class Field:
                     else:
                         fil_cig = row["band"]
                     band_str = f"{inst_cig}_{fil_cig}"
-
-                    if band_str not in photometries:
-                        photometries[band_str] = []
-                        photometries[band_str + "_err"] = []
                     if np.isnan(row["mag_sep_ext_corrected"]):
-                        photometries[band_str].append(-999.)
-                        photometries[band_str + "_err"].append(-999.)
+                        photometry[band_str] = -999.
+                        photometry[band_str + "_err"] = -999.
                     else:
-                        photometries[band_str].append(row["mag_sep_ext_corrected"])
-                        photometries[band_str + "_err"].append(row["mag_sep_err"])
+                        photometry[band_str] = row["mag_sep_ext_corrected"]
+                        photometry[band_str + "_err"] = row["mag_sep_err"]
+                for entry in photometries:
+                    for name in entry:
+                        if name not in photometry:
+                            photometry[name] = -999.
+                    for name in photometry:
+                        if name not in entry:
+                            entry[name] = -999.
 
+                photometries.append(photometry)
         tbl_cigale = table.QTable(photometries)
         tbl_cigale.write(
             os.path.join(self.data_path, f"{self.name}_cigale.csv"),
@@ -818,6 +824,10 @@ class Field:
                 if os.path.isfile(sfh_path):
                     obj.cigale_sfh_path = sfh_path
                 obj.update_output_file()
+
+    def load_all_objects(self):
+        for obj in self.objects:
+            obj.load_output_file()
 
     @classmethod
     def default_params(cls):
@@ -2794,7 +2804,13 @@ class ImagingEpoch(Epoch):
             image_type = "final"
         self.get_photometry(output_dir, image_type=image_type)
 
-    def get_photometry(self, path: str, image_type: str = "final", dual: bool = True):
+    def get_photometry(
+            self,
+            path: str,
+            image_type: str = "final",
+            dual: bool = True,
+            match_tolerance: units.Quantity = 3 * units.arcsec
+    ):
         """
         Retrieve photometric properties of key objects and write to disk.
         :param path: Path to which to write the data products.
@@ -2821,6 +2837,9 @@ class ImagingEpoch(Epoch):
                 plt.close()
                 # Get nearest Source-Extractor object:
                 nearest, separation = img.find_object(obj.position, dual=dual)
+
+                if separation > match_tolerance:
+                    continue
                 names.append(obj.name)
                 rows.append(nearest)
                 u.debug_print(2, "ImagingImage.get_photometry(): nearest.colnames ==", nearest.colnames)
@@ -2845,6 +2864,9 @@ class ImagingEpoch(Epoch):
                     mag_psf = -999.0 * units.mag
                     mag_psf_err = -999.0 * units.mag
                     snr_psf = -999.0
+
+                if "secure" not in img.depth:
+                    img.estimate_depth()
 
                 obj.add_photometry(
                     instrument=self.instrument_name,
@@ -2965,7 +2987,6 @@ class ImagingEpoch(Epoch):
                 refined_path = self.field.survey.refined_stage_path
 
                 if refined_path is not None:
-                    print(self.field.survey.name)
                     if self.field.survey.name == "FURBY":
                         cwd = os.getcwd()
                         os.chdir(refined_path)
