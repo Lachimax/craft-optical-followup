@@ -52,6 +52,7 @@ uncertainty_dict = {
     "stat": 0.0
 }
 
+
 def skycoord_to_position_dict(skycoord: SkyCoord):
     ra_float = skycoord.ra.value
     dec_float = skycoord.dec.value
@@ -226,6 +227,8 @@ class Object:
         self.cat_row = row
         self.position = None
         self.position_err = None
+        self.position_photometry = None
+        self.position_photometry_err = None
         if self.cat_row is not None:
             self.position_from_cat_row()
         else:
@@ -329,10 +332,14 @@ class Object:
             deepest_dict["back_sep"] = mag_results["back"][0]
             deepest_dict["flux_sep"] = mag_results["flux"][0]
             deepest_dict["flux_sep_err"] = mag_results["flux_err"][0]
-            deepest_dict["threshold_sep"] = mag_results["threshold"]
         else:
             deepest_dict["mag_sep"] = -999. * units.mag
             deepest_dict["mag_sep_err"] = -999. * units.mag
+            deepest_dict["snr_sep"] = -999.
+            deepest_dict["back_sep"] = 0.
+            deepest_dict["flux_sep"] = -999.
+            deepest_dict["flux_sep_err"] = -999.
+            deepest_dict["threshold_sep"] = -999.
         deepest_dict["zeropoint_sep"] = deepest_img.zeropoint_best["zeropoint_img"]
 
         for instrument in self.photometry:
@@ -367,10 +374,14 @@ class Object:
                         phot_dict["back_sep"] = mag_results["back"][0]
                         phot_dict["flux_sep"] = mag_results["flux"][0]
                         phot_dict["flux_sep_err"] = mag_results["flux_err"][0]
-                        phot_dict["threshold_sep"] = mag_results["threshold"]
                     else:
                         phot_dict["mag_sep"] = -999. * units.mag
                         phot_dict["mag_sep_err"] = -999. * units.mag
+                        phot_dict["snr_sep"] = -999.
+                        phot_dict["back_sep"] = 0.
+                        phot_dict["flux_sep"] = -999.
+                        phot_dict["flux_sep_err"] = -999.
+                        phot_dict["threshold_sep"] = -999.
                     phot_dict["zeropoint_sep"] = img.zeropoint_best["zeropoint_img"]
                     mag_results = img.sep_elliptical_magnitude(
                         centre=self.position,
@@ -388,8 +399,11 @@ class Object:
                         phot_dict["flux_sep_unmasked"] = mag_results["flux"][0]
                         phot_dict["flux_sep_unmasked_err"] = mag_results["flux_err"][0]
                     else:
-                        phot_dict["mag_sep"] = -999. * units.mag
-                        phot_dict["mag_sep_err"] = -999. * units.mag
+                        phot_dict["mag_sep_unmasked"] = -999. * units.mag
+                        phot_dict["mag_sep_unmasked_err"] = -999. * units.mag
+                        phot_dict["snr_sep"] = -999.
+                        phot_dict["flux_sep_unmasked"] = -999.
+                        phot_dict["flux_sep_unmasked_err"] = -999.
 
         self.update_output_file()
 
@@ -1412,14 +1426,15 @@ class FRB(Object):
         )
         return dm_ism
 
-    def dm_mw_ism_ymw16(self, distance: Union[units.Quantity, float] = 100. * units.kpc):
+    def dm_mw_ism_ymw16(self, distance: Union[units.Quantity, float] = 50. * units.kpc):
         import pygedm
-        return pygedm.dist_to_dm(
+        dm, tau = pygedm.dist_to_dm(
             self.position.galactic.l,
             self.position.galactic.b,
             distance,
             method="ymw16"
         )
+        return dm
 
     def dm_mw_ism_cum(
             self,
@@ -1471,7 +1486,7 @@ class FRB(Object):
             self,
             distance: units.Quantity = None,
             zero: bool = True,
-            halo_model = None
+            halo_model=None
     ):
         from frb.halos.models import MilkyWay
         from ne2001 import density
@@ -1492,7 +1507,7 @@ class FRB(Object):
         )
         return dm_ism
 
-    def estimate_dm_mw_halo_cum(
+    def dm_mw_halo_cum(
             self,
             rmax: float = 1.,
             step_size: units.Quantity = 1 * units.kpc,
@@ -1514,12 +1529,12 @@ class FRB(Object):
             "d": d
         })
 
-    def estimate_dm_cosmic(self, **kwargs):
+    def dm_cosmic(self, **kwargs):
         if not frb_installed:
             raise ImportError("FRB is not installed.")
         return igm.average_DM(self.host_galaxy.z, cosmo=cosmo.Planck18, **kwargs)
 
-    def estimate_dm_halos(self, **kwargs):
+    def dm_halos_avg(self, **kwargs):
         if not frb_installed:
             raise ImportError("FRB is not installed.")
         hmf.init_hmf()
@@ -1543,8 +1558,15 @@ class FRB(Object):
 
         outputs = self.dm_mw_halo()
 
+        self.field.load_all_objects()
+
         host = self.host_galaxy
-        foregrounds = list(filter(lambda o: isinstance(o, Galaxy) and o.z <= self.host_galaxy.z, self.field.objects))
+        foregrounds = list(
+            filter(
+                lambda o: isinstance(o, Galaxy) and o.z <= self.host_galaxy.z and o.mass_stellar is not None,
+                self.field.objects
+            )
+        )
 
         frb_err_ra, frb_err_dec = self.position_err.uncertainty_quadrature_equ()
         frb_err_dec = frb_err_dec.to(units.arcsec)
@@ -1556,9 +1578,14 @@ class FRB(Object):
         print("DM_MW:")
 
         print("\tDM_MWISM:")
-        outputs["dm_ism_mw"] = self.dm_mw_ism_ne2001()
-        # outputs["dm_ism_mw_cum"] = self.estimate_dm_mw_ism_cum(max_dm=outputs["dm_ism_mw"] - 0.5 * dm_units)
-        print("\t", outputs["dm_ism_mw"])
+        # outputs["dm_ism_mw_cum"] = self.estimate_dm_mw_ism_cum(max_dm=outputs["dm_ism_mw_ne2001"] - 0.5 * dm_units)
+        print("\t\tDM_MWISM_NE2001")
+        outputs["dm_ism_mw_ne2001"] = self.dm_mw_ism_ne2001()
+        print("\t\t", outputs["dm_ism_mw_ne2001"])
+        
+        print("\t\tDM_MWISM_YMW16")
+        outputs["dm_ism_mw_ymw16"] = self.dm_mw_ism_ymw16()
+        print("\t\t", outputs["dm_ism_mw_ymw16"])
 
         print("\tDM_MWHalo_PZ19:")
         print("\t", outputs["dm_halo_mw_pz19"])
@@ -1570,7 +1597,7 @@ class FRB(Object):
         print("\t", outputs["dm_halo_mw_mb15"])
 
         print("\tDM_MW:")
-        outputs["dm_mw"] = outputs["dm_halo_mw_pz19"] + outputs["dm_ism_mw"]
+        outputs["dm_mw"] = outputs["dm_halo_mw_pz19"] + outputs["dm_ism_mw_ne2001"]
         print("\t", outputs["dm_mw"])
 
         print("DM_exgal:")
@@ -1578,14 +1605,14 @@ class FRB(Object):
         print(outputs["dm_exgal"])
 
         print("Avg DM_cosmic:")
-        dm_cosmic, z = self.estimate_dm_cosmic(cumul=True, neval=neval_cosmic)
+        dm_cosmic, z = self.dm_cosmic(cumul=True, neval=neval_cosmic)
         cosmic_tbl["z"] = z
         cosmic_tbl["comoving_distance"] = cosmology.comoving_distance(cosmic_tbl["z"])
         cosmic_tbl["dm_cosmic_avg"] = dm_cosmic
         outputs["dm_cosmic_avg"] = dm_cosmic[-1]
         print(outputs["dm_cosmic_avg"])
         print("\tAvg DM_halos:")
-        dm_halos, _ = self.estimate_dm_halos(rmax=rmax, neval=neval_cosmic, cumul=True)
+        dm_halos, _ = self.dm_halos_avg(rmax=rmax, neval=neval_cosmic, cumul=True)
         cosmic_tbl["dm_halos_avg"] = dm_halos
         outputs["dm_halos_avg"] = dm_halos[-1]
         print("\t", outputs["dm_halos_avg"])
