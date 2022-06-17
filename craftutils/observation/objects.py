@@ -1183,7 +1183,7 @@ class Galaxy(Object):
         self.log_mass_halo_upper = None
         self.log_mass_halo_lower = None
 
-        self.halo_mfnw = None
+        self.halo_mnfw = None
 
         self.cigale_model_path = None
         self.cigale_model = None
@@ -1320,7 +1320,7 @@ class Galaxy(Object):
         import frb.halos.models as halos
         if self.log_mass_halo is None:
             self.halo_mass()
-        self.halo_mfnw = halos.ModifiedNFW(
+        self.halo_mnfw = halos.ModifiedNFW(
             log_Mhalo=self.log_mass_halo,
             z=self.z,
             cosmo=cosmology,
@@ -1329,7 +1329,8 @@ class Galaxy(Object):
             alpha=alpha,
             **kwargs
         )
-        return self.halo_mfnw
+        self.halo_mnfw.coord = self.position
+        return self.halo_mnfw
 
     def halo_dm_cum(
             self,
@@ -1337,7 +1338,7 @@ class Galaxy(Object):
             rperp: units.Quantity = 0. * units.kpc,
             step_size: units.Quantity = 0.1 * units.kpc
     ):
-        d, dm = self.halo_mfnw.Ne_Rperp(
+        d, dm = self.halo_mnfw.Ne_Rperp(
             rperp,
             step_size=step_size,
             rmax=rmax,

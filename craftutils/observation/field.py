@@ -2827,6 +2827,8 @@ class ImagingEpoch(Epoch):
             fil_output_path = os.path.join(path, fil)
             u.mkdir_check(fil_output_path)
             img = image_dict[fil]
+            if "secure" not in img.depth:
+                img.estimate_depth()
             print("Getting photometry for", img)
 
             img.calibrate_magnitudes(zeropoint_name="best", dual=dual, force=True)
@@ -2837,104 +2839,130 @@ class ImagingEpoch(Epoch):
                 plt.close()
                 # Get nearest Source-Extractor object:
                 nearest, separation = img.find_object(obj.position, dual=dual)
-
-                if separation > match_tolerance:
-                    continue
                 names.append(obj.name)
                 rows.append(nearest)
-                u.debug_print(2, "ImagingImage.get_photometry(): nearest.colnames ==", nearest.colnames)
-                err = nearest[f'MAGERR_AUTO_ZP_best']
-                print("FILTER:", fil)
-                print(f"MAG_AUTO = {nearest['MAG_AUTO_ZP_best']} +/- {err}")
-                print(f"A = {nearest['A_WORLD'].to(units.arcsec)}; B = {nearest['B_WORLD'].to(units.arcsec)}")
-                img.plot_source_extractor_object(
-                    nearest,
-                    output=os.path.join(fil_output_path, f"{obj.name_filesys}.png"),
-                    show=False,
-                    title=f"{obj.name}, {fil}-band, {nearest['MAG_AUTO_ZP_best'].round(3).value} ± {err.round(3)}"
-                )
-                obj.cat_row = nearest
-                print()
 
-                if "MAG_PSF_ZP_best" in nearest.colnames:
-                    mag_psf = nearest["MAG_PSF_ZP_best"]
-                    mag_psf_err = nearest["MAGERR_PSF_ZP_best"]
-                    snr_psf = nearest["FLUX_PSF"] / nearest["FLUXERR_PSF"]
-                else:
-                    mag_psf = -999.0 * units.mag
-                    mag_psf_err = -999.0 * units.mag
-                    snr_psf = -999.0
-
-                if "secure" not in img.depth:
-                    img.estimate_depth()
-
-                obj.add_photometry(
-                    instrument=self.instrument_name,
-                    fil=fil,
-                    epoch_name=self.name,
-                    mag=nearest['MAG_AUTO_ZP_best'],
-                    mag_err=err,
-                    snr=nearest['SNR_SE'],
-                    ellipse_a=nearest['A_WORLD'],
-                    ellipse_a_err=nearest["ERRA_WORLD"],
-                    ellipse_b=nearest['B_WORLD'],
-                    ellipse_b_err=nearest["ERRB_WORLD"],
-                    ellipse_theta=nearest['THETA_WORLD'],
-                    ellipse_theta_err=nearest['ERRTHETA_WORLD'],
-                    ra=nearest['RA'],
-                    ra_err=np.sqrt(nearest["ERRX2_WORLD"]),
-                    dec=nearest['DEC'],
-                    dec_err=np.sqrt(nearest["ERRY2_WORLD"]),
-                    kron_radius=nearest["KRON_RADIUS"],
-                    separation_from_given=separation,
-                    epoch_date=self.date_str(),
-                    class_star=nearest["CLASS_STAR"],
-                    mag_psf=mag_psf,
-                    mag_psf_err=mag_psf_err,
-                    snr_psf=snr_psf,
-                    image_depth=img.depth["secure"]["SNR_SE"][f"5-sigma"],
-                    image_path=img.path,
-                    good_image_path=self.coadded_unprojected[fil].path,
-                    do_mask=img.mask_nearby()
-                )
-
-                if isinstance(self.field, FRBField):
-                    if "frame" in obj.plotting_params and obj.plotting_params["frame"] is not None:
-                        frame = obj.plotting_params["frame"]
-                    else:
-                        frame = img.nice_frame(row=obj.cat_row)
-
-                    normalize_kwargs = None
-                    if fil in obj.plotting_params:
-                        if "normalize" in obj.plotting_params[fil]:
-                            normalize_kwargs = obj.plotting_params[fil]["normalize"]
-
-                    centre = obj.position_from_cat_row()
-                    fig = plt.figure(figsize=(6, 5))
-                    plot, fig = self.field.plot_host(
-                        img=img,
-                        fig=fig,
-                        centre=centre,
-                        show_frb=True,
-                        frame=frame,
-                        imshow_kwargs={
-                            "cmap": "plasma"
-                        },
-                        normalize_kwargs=normalize_kwargs
+                if separation > match_tolerance:
+                    obj.add_photometry(
+                        instrument=self.instrument_name,
+                        fil=fil,
+                        epoch_name=self.name,
+                        mag=-999 * units.mag,
+                        mag_err=-999 * units.mag,
+                        snr=-999,
+                        ellipse_a=-999 * units.arcsec,
+                        ellipse_a_err=-999 * units.arcsec,
+                        ellipse_b=-999 * units.arcsec,
+                        ellipse_b_err=-999 * units.arcsec,
+                        ellipse_theta=-999 * units.arcsec,
+                        ellipse_theta_err=-999 * units.arcsec,
+                        ra=-999 * units.deg,
+                        ra_err=-999 * units.deg,
+                        dec=-999 * units.deg,
+                        dec_err=-999 * units.deg,
+                        kron_radius=-999.,
+                        separation_from_given=separation,
+                        epoch_date=self.date_str(),
+                        class_star=-999.,
+                        mag_psf=-999. * units.mag,
+                        mag_psf_err=-999. * units.mag,
+                        snr_psf=-999.,
+                        image_depth=img.depth["secure"]["SNR_SE"][f"5-sigma"],
+                        image_path=img.path,
+                        good_image_path=self.coadded_unprojected[fil].path,
+                        do_mask=img.mask_nearby()
                     )
-                    output_path = os.path.join(fil_output_path, f"{obj.name_filesys}_{fil}.pdf")
-                    name = obj.name
-                    name = name.replace("HG", "HG\,")
-                    img.extract_filter()
-                    if img.filter is None:
-                        f_name = fil
+                else:
+                    u.debug_print(2, "ImagingImage.get_photometry(): nearest.colnames ==", nearest.colnames)
+                    err = nearest[f'MAGERR_AUTO_ZP_best']
+                    print("FILTER:", fil)
+                    print(f"MAG_AUTO = {nearest['MAG_AUTO_ZP_best']} +/- {err}")
+                    print(f"A = {nearest['A_WORLD'].to(units.arcsec)}; B = {nearest['B_WORLD'].to(units.arcsec)}")
+                    img.plot_source_extractor_object(
+                        nearest,
+                        output=os.path.join(fil_output_path, f"{obj.name_filesys}.png"),
+                        show=False,
+                        title=f"{obj.name}, {fil}-band, {nearest['MAG_AUTO_ZP_best'].round(3).value} ± {err.round(3)}"
+                    )
+                    obj.cat_row = nearest
+                    print()
+
+                    if "MAG_PSF_ZP_best" in nearest.colnames:
+                        mag_psf = nearest["MAG_PSF_ZP_best"]
+                        mag_psf_err = nearest["MAGERR_PSF_ZP_best"]
+                        snr_psf = nearest["FLUX_PSF"] / nearest["FLUXERR_PSF"]
                     else:
-                        f_name = img.filter.nice_name()
-                    plot.set_title(u.latex_sanitise(f"{name}, {f_name}"))
-                    fig.savefig(output_path)
-                    fig.savefig(output_path.replace(".pdf", ".png"))
-                    plt.close(fig)
-                    pl.latex_off()
+                        mag_psf = -999.0 * units.mag
+                        mag_psf_err = -999.0 * units.mag
+                        snr_psf = -999.0
+
+                    obj.add_photometry(
+                        instrument=self.instrument_name,
+                        fil=fil,
+                        epoch_name=self.name,
+                        mag=nearest['MAG_AUTO_ZP_best'],
+                        mag_err=err,
+                        snr=nearest['SNR_SE'],
+                        ellipse_a=nearest['A_WORLD'],
+                        ellipse_a_err=nearest["ERRA_WORLD"],
+                        ellipse_b=nearest['B_WORLD'],
+                        ellipse_b_err=nearest["ERRB_WORLD"],
+                        ellipse_theta=nearest['THETA_WORLD'],
+                        ellipse_theta_err=nearest['ERRTHETA_WORLD'],
+                        ra=nearest['RA'],
+                        ra_err=np.sqrt(nearest["ERRX2_WORLD"]),
+                        dec=nearest['DEC'],
+                        dec_err=np.sqrt(nearest["ERRY2_WORLD"]),
+                        kron_radius=nearest["KRON_RADIUS"],
+                        separation_from_given=separation,
+                        epoch_date=self.date_str(),
+                        class_star=nearest["CLASS_STAR"],
+                        mag_psf=mag_psf,
+                        mag_psf_err=mag_psf_err,
+                        snr_psf=snr_psf,
+                        image_depth=img.depth["secure"]["SNR_SE"][f"5-sigma"],
+                        image_path=img.path,
+                        good_image_path=self.coadded_unprojected[fil].path,
+                        do_mask=img.mask_nearby()
+                    )
+
+                    if isinstance(self.field, FRBField):
+                        if "frame" in obj.plotting_params and obj.plotting_params["frame"] is not None:
+                            frame = obj.plotting_params["frame"]
+                        else:
+                            frame = img.nice_frame(row=obj.cat_row)
+
+                        normalize_kwargs = None
+                        if fil in obj.plotting_params:
+                            if "normalize" in obj.plotting_params[fil]:
+                                normalize_kwargs = obj.plotting_params[fil]["normalize"]
+
+                        centre = obj.position_from_cat_row()
+                        fig = plt.figure(figsize=(6, 5))
+                        plot, fig = self.field.plot_host(
+                            img=img,
+                            fig=fig,
+                            centre=centre,
+                            show_frb=True,
+                            frame=frame,
+                            imshow_kwargs={
+                                "cmap": "plasma"
+                            },
+                            normalize_kwargs=normalize_kwargs
+                        )
+                        output_path = os.path.join(fil_output_path, f"{obj.name_filesys}_{fil}.pdf")
+                        name = obj.name
+                        name = name.replace("HG", "HG\,")
+                        img.extract_filter()
+                        if img.filter is None:
+                            f_name = fil
+                        else:
+                            f_name = img.filter.nice_name()
+                        plot.set_title(u.latex_sanitise(f"{name}, {f_name}"))
+                        fig.savefig(output_path)
+                        fig.savefig(output_path.replace(".pdf", ".png"))
+                        plt.close(fig)
+                        pl.latex_off()
 
             tbl = table.vstack(rows)
             tbl.add_column(names, name="NAME")
