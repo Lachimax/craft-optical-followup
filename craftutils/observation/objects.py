@@ -1184,6 +1184,9 @@ class Galaxy(Object):
         self.log_mass_halo_lower = None
 
         self.halo_mnfw = None
+        self.halo_yf17 = None
+        self.halo_mb15 = None
+        self.halo_mb04 = None
 
         self.cigale_model_path = None
         self.cigale_model = None
@@ -1313,14 +1316,14 @@ class Galaxy(Object):
     def halo_concentration_parameter(self):
         if self.log_mass_halo is None:
             self.halo_mass()
-        c = 4.67 * (10 ** self.log_mass_halo / (10 ** 14 * self.h() ** -1)) ** (-0.11)
+        c = 4.67 * (self.mass_halo / (10 ** 14 * self.h() ** -1)) ** (-0.11)
         return float(c)
 
     def halo_model_mnfw(self, y0=2., alpha=2., **kwargs):
-        import frb.halos.models as halos
+        from frb.halos.models import ModifiedNFW
         if self.log_mass_halo is None:
             self.halo_mass()
-        self.halo_mnfw = halos.ModifiedNFW(
+        self.halo_mnfw = ModifiedNFW(
             log_Mhalo=self.log_mass_halo,
             z=self.z,
             cosmo=cosmology,
@@ -1331,6 +1334,44 @@ class Galaxy(Object):
         )
         self.halo_mnfw.coord = self.position
         return self.halo_mnfw
+
+    def halo_model_yf17(self, **kwargs):
+        from frb.halos.models import YF17
+        if self.log_mass_halo is None:
+            self.halo_mass()
+        self.halo_yf17 = YF17(
+            log_Mhalo=self.log_mass_halo,
+            z=self.z,
+            cosmo=cosmology,
+            **kwargs
+        )
+        return self.halo_yf17
+
+    def halo_model_mb04(self, Rc=147*units.kpc, **kwargs):
+        from frb.halos.models import MB04
+        if self.log_mass_halo is None:
+            self.halo_mass()
+        self.halo_mb04 = MB04(
+            log_Mhalo=self.log_mass_halo,
+            z=self.z,
+            cosmo=cosmology,
+            c=self.halo_concentration_parameter(),
+            Rc=Rc
+            **kwargs
+        )
+        return self.halo_mb04
+
+    def halo_model_mb15(self, **kwargs):
+        from frb.halos.models import MB15
+        if self.log_mass_halo is None:
+            self.halo_mass()
+        self.halo_mb15 = MB15(
+            log_Mhalo=self.log_mass_halo,
+            z=self.z,
+            cosmo=cosmology,
+            **kwargs
+        )
+        return self.halo_mb15
 
     def halo_dm_cum(
             self,
@@ -1468,7 +1509,7 @@ class FRB(Object):
             "d": d
         })
 
-    def dm_mw_halo(self):
+    def dm_mw_halo(self, rmax: float = 1.):
         import frb.halos.models as halos
         # from frb.mw import haloDM
         outputs = {}
@@ -1476,9 +1517,9 @@ class FRB(Object):
         mw_halo_x = halos.MilkyWay()
         mw_halo_mb15 = halos.MB15()
         sun_orbit = 2.7e17 * units.km
-        outputs["dm_halo_mw_yf17"] = mw_halo_yf17.Ne_Rperp(sun_orbit, rmax=3.) / 2
-        outputs["dm_halo_mw_pz19_rough"] = mw_halo_x.Ne_Rperp(sun_orbit, rmax=3.) / 2
-        outputs["dm_halo_mw_mb15"] = mw_halo_mb15.Ne_Rperp(sun_orbit, rmax=3.) / 2
+        outputs["dm_halo_mw_yf17"] = mw_halo_yf17.Ne_Rperp(sun_orbit, rmax=rmax) / 2
+        outputs["dm_halo_mw_pz19_rough"] = mw_halo_x.Ne_Rperp(sun_orbit, rmax=rmax) / 2
+        outputs["dm_halo_mw_mb15"] = mw_halo_mb15.Ne_Rperp(sun_orbit, rmax=rmax) / 2
         # outputs["dm_halo_mw_pz19"] = haloDM(self.position)
         outputs["dm_halo_mw_pz19"] = self.dm_mw_halo_pz19()
         return outputs
