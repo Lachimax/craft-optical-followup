@@ -1,4 +1,4 @@
-# Code by Lachlan Marnoch, 2019-2021
+# Code by Lachlan Marnoch, 2019-2022
 
 import math
 import os
@@ -442,7 +442,6 @@ def mkdir_check(*paths: str):
             debug_print(2, f"Directory {path} already exists, doing nothing.")
 
 
-# TODO: Make this system independent.
 def mkdir_check_nested(path: str, remove_last: bool = True):
     """
     Does mkdir_check, but for all parent directories of the given path.
@@ -537,25 +536,7 @@ def uncertainty_log10(arg: float, uncertainty_arg: float, a: float = 1.):
     return np.abs(a * uncertainty_arg / (arg * np.log(10)))
 
 
-def error_product(value, measurements, errors):
-    """
-    Produces the absolute uncertainty of a value calculated as a product or as a quotient.
-    :param value: The final calculated value.
-    :param measurements: An array of the measurements used to calculate the value.
-    :param errors: An array of the respective errors of the measurements. Expected to be in the same order as
-        measurements.
-    :return:
-    """
-
-    measurements = np.array(measurements)
-    errors = np.array(errors)
-    print("VALUE:", value)
-    print("UNCERTAINTIES:", errors)
-    print("MEASUREMENTS:", measurements)
-    return value * np.sum(np.abs(errors[measurements != 0.] / measurements[measurements != 0.]))
-
-
-def error_func(arg, err, func=lambda x: np.log10(x), absolute=False):
+def uncertainty_func(arg, err, func=lambda x: np.log10(x), absolute=False):
     """
 
     :param arg:
@@ -588,8 +569,8 @@ def error_func(arg, err, func=lambda x: np.log10(x), absolute=False):
         return np.array([measurement, error_plus_actual, error_minus_actual])
 
 
-def error_func_percent(arg, err, func=lambda x: np.log10(x)):
-    measurement, error_plus, error_minus = error_func(arg=arg, err=err, func=func, absolute=False)
+def uncertainty_func_percent(arg, err, func=lambda x: np.log10(x)):
+    measurement, error_plus, error_minus = uncertainty_func(arg=arg, err=err, func=func, absolute=False)
     return np.array([error_plus / measurement, error_minus / measurement])
 
 
@@ -647,23 +628,6 @@ def std_err_slope(
     x_mean = np.nanmean(x_obs)
     s = s_regression / np.sqrt(np.nansum(x_weights * (x_obs - x_mean)) ** 2)
     return s
-
-
-def detect_problem_table(tbl: table.Table, fmt: str = "ecsv"):
-    for i, row in enumerate(tbl):
-        tbl_this = tbl[:i + 1]
-        try:
-            writepath = os.path.join(os.path.expanduser("~"), f"test.{fmt}")
-            tbl_this.write(writepath, overwrite=True, format=fmt)
-            os.remove(writepath)
-        except NotImplementedError:
-            print("Problem row:")
-            print(i, row)
-            return i, row
-        except ValueError:
-            print("Problem row:")
-            print(i, row)
-            return i, row
 
 
 def std_err_intercept(
@@ -735,17 +699,21 @@ def root_mean_squared_error(
     )
     return np.sqrt(mse)
 
-
-def bucket_mode(data: np.ndarray, precision: int):
-    """
-    With help from https://www.statology.org/numpy-mode/
-    :param data:
-    :param precision:
-    :return:
-    """
-    vals, counts = np.unique(np.round(data, precision), return_counts=True)
-    return vals[counts == np.max(counts)]
-
+def detect_problem_table(tbl: table.Table, fmt: str = "ecsv"):
+    for i, row in enumerate(tbl):
+        tbl_this = tbl[:i + 1]
+        try:
+            writepath = os.path.join(os.path.expanduser("~"), f"test.{fmt}")
+            tbl_this.write(writepath, overwrite=True, format=fmt)
+            os.remove(writepath)
+        except NotImplementedError:
+            print("Problem row:")
+            print(i, row)
+            return i, row
+        except ValueError:
+            print("Problem row:")
+            print(i, row)
+            return i, row
 
 def mode(lst: list):
     return max(set(lst), key=list.count)
@@ -1231,6 +1199,17 @@ def user_input(message: str, typ: type = str, default=None):
                 print(f"Could not cast {inp} to {typ}. Try again:")
     print(f"You have entered {inp}.")
     return inp
+
+
+def bucket_mode(data: np.ndarray, precision: int):
+    """
+    With help from https://www.statology.org/numpy-mode/
+    :param data:
+    :param precision:
+    :return:
+    """
+    vals, counts = np.unique(np.round(data, precision), return_counts=True)
+    return vals[counts == np.max(counts)]
 
 
 def scan_nested_dict(dictionary: dict, keys: list):
