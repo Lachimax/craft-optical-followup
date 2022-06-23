@@ -1347,7 +1347,7 @@ class Galaxy(Object):
         )
         return self.halo_yf17
 
-    def halo_model_mb04(self, Rc=147*units.kpc, **kwargs):
+    def halo_model_mb04(self, r_c=147 * units.kpc, **kwargs):
         from frb.halos.models import MB04
         if self.log_mass_halo is None:
             self.halo_mass()
@@ -1356,7 +1356,7 @@ class Galaxy(Object):
             z=self.z,
             cosmo=cosmology,
             c=self.halo_concentration_parameter(),
-            Rc=Rc
+            Rc=r_c,
             **kwargs
         )
         return self.halo_mb04
@@ -1716,6 +1716,9 @@ class FRB(Object):
             halo_info["c"] = obj.halo_concentration_parameter()
 
             mnfw = obj.halo_model_mnfw()
+            yf17 = obj.halo_model_yf17()
+            mb04 = obj.halo_model_mb04()
+            mb15 = obj.halo_model_mb15()
 
             halo_nes = []
             rs = []
@@ -1740,6 +1743,21 @@ class FRB(Object):
                 rmax=rmax,
                 step_size=step_size_halo
             ) / (1 + obj.z)
+            halo_info["dm_halo_yf17"] = yf17.Ne_Rperp(
+                Rperp=offset,
+                rmax=rmax,
+                step_size=step_size_halo
+            ) / (1 + obj.z)
+            halo_info["dm_halo_mb04"] = mb04.Ne_Rperp(
+                Rperp=offset,
+                rmax=rmax,
+                step_size=step_size_halo
+            ) / (1 + obj.z)
+            halo_info["dm_halo_mb15"] = mb15.Ne_Rperp(
+                Rperp=offset,
+                rmax=rmax,
+                step_size=step_size_halo
+            ) / (1 + obj.z)
 
             halo_info["r_200"] = mnfw.r200
             if obj.name.startswith("HG"):
@@ -1756,13 +1774,20 @@ class FRB(Object):
 
             halo_profiles[obj.name] = halo_nes
 
-            halo_info["n_intersect_avg"] = halo_incidence(
+            halo_info["n_intersect_greater"] = halo_incidence(
                 Mlow=obj.mass_halo.value,
                 zFRB=self.host_galaxy.z,
                 radius=halo_info["r_perp"]
             )
 
-            halo_info["u-r"] = obj.cigale_results["bayes.param.restframe_u_prime-r_prime"]
+            halo_info["n_intersect_partition"] = halo_incidence(
+                Mlow=10**(np.floor(np.log10(obj.log_mass_halo.value))),
+                Mhigh=10**(np.ceil(np.log10(obj.log_mass_halo.value))),
+                zFRB=self.host_galaxy.z,
+                radius=halo_info["r_perp"]
+            )
+
+            halo_info["u-r"] = obj.cigale_results["bayes.param.restframe_u_prime-r_prime"] * units.mag
             halo_info["sfr"] = obj.sfr
             halo_info["sfr_err"] = obj.sfr_err
 
@@ -1796,6 +1821,10 @@ class FRB(Object):
 
         print("\tEmpirical DM_halos:")
         outputs["dm_halos_emp"] = halo_tbl["dm_halo"].sum() - dm_halo_host
+        outputs["dm_halos_yf17"] = halo_tbl["dm_halo_yf17"].sum() - dm_halo_host
+        outputs["dm_halos_mb04"] = halo_tbl["dm_halo_mb04"].sum() - dm_halo_host
+        outputs["dm_halos_mb15"] = halo_tbl["dm_halo_mb15"].sum() - dm_halo_host
+
         print("\t", outputs["dm_halos_emp"])
 
         print("\tEmpirical DM_cosmic:")
