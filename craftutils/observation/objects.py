@@ -229,9 +229,10 @@ class Object:
         self.position_err = None
         self.position_photometry = None
         self.position_photometry_err = None
+
         if self.cat_row is not None:
             self.position_from_cat_row()
-        else:
+        elif position is not None:
             self.position = astm.attempt_skycoord(position)
             if type(position_err) is not PositionUncertainty:
                 self.position_err = PositionUncertainty(uncertainty=position_err, position=self.position)
@@ -811,14 +812,15 @@ class Object:
                 self.irsa_extinction = table.QTable.read(self.irsa_extinction_path, format="ascii.ecsv")
 
     def jname(self):
-        name = astm.jname(
-            coord=self.position,
-            ra_precision=2,
-            dec_precision=1
-        )
-        if self.name is None:
-            self.name = name
-        return name
+        if self.position is not None:
+            name = astm.jname(
+                coord=self.position,
+                ra_precision=2,
+                dec_precision=1
+            )
+            if self.name is None:
+                self.name = name
+            return name
 
     def get_photometry_table(self, output: bool = False):
         if output is True:
@@ -1155,33 +1157,33 @@ class Galaxy(Object):
         self.D_L = self.luminosity_distance()
         self.mu = self.distance_modulus()
 
+        self.mass = None
         if "mass" in kwargs:
             self.mass = kwargs["mass"]
-        else:
-            self.mass = None
 
+        self.mass_stellar = None
         if "mass_stellar" in kwargs:
-            self.mass_stellar = kwargs["mass_stellar"] * units.solMass
-        else:
-            self.mass_stellar = None
-        if "mass_stellar_err" in kwargs:
-            self.mass_stellar_err = kwargs["mass_stellar_err"] * units.solMass
-        else:
-            self.mass_stellar_err = None
+            self.mass_stellar = u.check_quantity(kwargs["mass_stellar"], units.solMass)
 
+        self.mass_stellar_err = None
+        if "mass_stellar_err" in kwargs:
+            self.mass_stellar_err = u.check_quantity(kwargs["mass_stellar_err"], units.solMass)
+
+        self.sfr = None
         if "sfr" in kwargs:
             self.sfr = kwargs["sfr"] * units.solMass
-        else:
-            self.sfr = None
+
+        self.sfr_err = None
         if "sfr_err" in kwargs:
             self.sfr_err = kwargs["sfr_err"] * units.solMass
-        else:
-            self.sfr_err = None
 
         self.mass_halo = None
         self.log_mass_halo = None
         self.log_mass_halo_upper = None
         self.log_mass_halo_lower = None
+        if "mass_halo" in kwargs:
+            self.mass_halo = u.check_quantity(kwargs["mass_halo"], units.solMass)
+            self.log_mass_halo = np.log10(self.mass_halo / units.solMass)
 
         self.halo_mnfw = None
         self.halo_yf17 = None
@@ -1295,12 +1297,15 @@ class Galaxy(Object):
 
     def halo_mass(self):
         from frb.halos.utils import halomass_from_stellarmass
+        if self.mass_stellar is None:
+            raise ValueError(f"{self}.mass_stellar has not been defined.")
         self.log_mass_halo = halomass_from_stellarmass(
             log_mstar=np.log10(self.mass_stellar / units.solMass),
             z=self.z
         )
         self.mass_halo = (10 ** self.log_mass_halo) * units.solMass
-
+        if self.mass_stellar_err is None:
+            self.mass_stellar_err = 0. * units.solMass
         self.log_mass_halo_upper = halomass_from_stellarmass(
             log_mstar=np.log10((self.mass_stellar + self.mass_stellar_err) / units.solMass),
             z=self.z
@@ -1316,7 +1321,7 @@ class Galaxy(Object):
     def halo_concentration_parameter(self):
         if self.log_mass_halo is None:
             self.halo_mass()
-        c = 4.67 * (self.mass_halo / (10 ** 14 * self.h() ** -1)) ** (-0.11)
+        c = 4.67 * (self.mass_halo / (10 ** 14 * self.h() ** -1 * units.solMass)) ** (-0.11)
         return float(c)
 
     def halo_model_mnfw(self, y0=2., alpha=2., **kwargs):
