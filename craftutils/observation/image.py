@@ -2975,6 +2975,7 @@ class ImagingImage(Image):
             corners: Tuple[SkyCoord] = None,
             ext: int = 0,
             fig: plt.Figure = None,
+            ax: plt.Axes = None,
             n: int = 1, n_x: int = 1, n_y: int = 1,
             show_cbar: bool = False,
             show_grid: bool = False,
@@ -3047,12 +3048,13 @@ class ImagingImage(Image):
         if "origin" not in imshow_kwargs:
             imshow_kwargs["origin"] = "lower"
 
-        if show_coords:
-            projection = self.wcs
-        else:
-            projection = None
+        if ax is None:
+            if show_coords:
+                projection = self.wcs
+            else:
+                projection = None
 
-        ax = fig.add_subplot(n_x, n_y, n, projection=projection)
+            ax = fig.add_subplot(n_x, n_y, n, projection=projection)
 
         if not show_coords:
             frame1 = plt.gca()
@@ -4441,7 +4443,7 @@ class PanSTARRS1Cutout(SurveyCutout):
         self.extract_exposure_time()
 
     def mask_nearby(self):
-        return False
+        return True
 
     def detection_threshold(self):
         return 10.
