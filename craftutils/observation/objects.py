@@ -922,6 +922,8 @@ class Object:
 
     def select_deepest_sep(self, local_output: bool = True):
         self.get_photometry_table(output=local_output)
+        if "snr_sep" not in self.photometry_tbl.colnames:
+            return None
         idx = np.argmax(self.photometry_tbl["snr_sep"])
         row = self.photometry_tbl[idx]
         return self.photometry[row["instrument"]][row["band"]][row["epoch_name"]]
@@ -1785,9 +1787,15 @@ class FRB(Object):
                 radius=halo_info["r_perp"]
             )
 
+            m_low = 10**(np.floor(obj.log_mass_halo))
+            m_high = 10 ** (np.ceil(obj.log_mass_halo))
+            if m_low < 2e10:
+                m_high += 2e10 - m_low
+                m_low = 2e10
+
             halo_info["n_intersect_partition"] = halo_incidence(
-                Mlow=10**(np.floor(np.log10(obj.log_mass_halo.value))),
-                Mhigh=10**(np.ceil(np.log10(obj.log_mass_halo.value))),
+                Mlow=m_low,
+                Mhigh=m_high,
                 zFRB=self.host_galaxy.z,
                 radius=halo_info["r_perp"]
             )
