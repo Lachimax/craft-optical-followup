@@ -1225,6 +1225,10 @@ class FRBField(Field):
         theta = theta - rotation_angle
         img_err = img.extract_astrometry_err()
         img.extract_pixel_scale()
+        if "edgecolor" not in frb_kwargs:
+            frb_kwargs["edgecolor"] = colour
+        if "facecolor" not in frb_kwargs:
+            frb_kwargs["facecolor"] = "none"
         if img_err is not None:
             a = np.sqrt(a ** 2 + img_err ** 2)
             b = np.sqrt(b ** 2 + img_err ** 2)
@@ -1235,11 +1239,10 @@ class FRBField(Field):
             angle=theta.value,
             **frb_kwargs
         )
-        e.set_facecolor('none')
-        e.set_edgecolor(colour)
+        # e.set_edgecolor(color)
         plot.add_artist(e)
         if plot_centre:
-            plot.scatter(x, y, c="white", marker="x")
+            plot.scatter(x, y, c=frb_kwargs["edgecolor"], marker="x")
 
     @classmethod
     def default_params(cls):
@@ -4718,10 +4721,10 @@ class ESOImagingEpoch(ImagingEpoch):
 
         self.update_output_file()
 
-        if str(self.field.survey) == "FURBY":
-            u.system_command_verbose(
-                f"furby_vlt_ob {self.field.name} {tmp.filter.band_name} --observed {self.date_str()}"
-            )
+        # if str(self.field.survey) == "FURBY":
+        #     u.system_command_verbose(
+        #         f"furby_vlt_ob {self.field.name} {tmp.filter.band_name} --observed {self.date_str()}"
+        #     )
             # u.system_command_verbose(f"furby_vlt_ob {self.field.name} {tmp.filter.band_name} --completed")
 
         try:

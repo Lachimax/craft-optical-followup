@@ -1549,12 +1549,12 @@ class FRB(Object):
             halo_model.zero_inner_ne = 10.  # kpc
         params = dict(F=1., e_density=1.)
         model_ne = density.NEobject(halo_model.ne, **params)
-        dm_ism = model_ne.DM(
+        dm_halo = model_ne.DM(
             self.position.galactic.l.value,
             self.position.galactic.b.value,
             distance
         )
-        return dm_ism
+        return dm_halo
 
     def dm_mw_halo_cum(
             self,
