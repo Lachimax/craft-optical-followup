@@ -16,7 +16,6 @@ import astropy.io.fits as fits
 
 frb_installed = True
 try:
-
     import frb.halos.hmf as hmf
     import frb.dm.igm as igm
 except ImportError:
@@ -285,15 +284,15 @@ class Object:
     def position_from_cat_row(self, cat_row: table.Row = None):
         if cat_row is not None:
             self.cat_row = cat_row
-        self.position = SkyCoord(self.cat_row["RA"], self.cat_row["DEC"])
-        self.position_err = PositionUncertainty(
+        self.position_photometry = SkyCoord(self.cat_row["RA"], self.cat_row["DEC"])
+        self.position_photometry_err = PositionUncertainty(
             ra_err_stat=self.cat_row["RA_ERR"],
             ra_err_sys=0.0 * units.arcsec,
             dec_err_stat=self.cat_row["DEC_ERR"],
             dec_err_sys=0.0 * units.arcsec,
-            position=self.position
+            position=self.position_photometry
         )
-        return self.position
+        return self.position_photometry
 
     def get_photometry(self):
         for cat in self.field.cats:
@@ -315,7 +314,7 @@ class Object:
         else:
             do_mask = True
         mag_results = deepest_img.sep_elliptical_magnitude(
-            centre=self.position,
+            centre=self.position_photometry,
             a_world=self.a,
             b_world=self.b,
             theta_world=self.theta,
@@ -359,7 +358,7 @@ class Object:
                     else:
                         do_mask = True
                     mag_results = img.sep_elliptical_magnitude(
-                        centre=self.position,
+                        centre=self.position_photometry,
                         a_world=self.a,  # + delta_fwhm,
                         b_world=self.b,  # + delta_fwhm,
                         theta_world=self.theta,
@@ -385,7 +384,7 @@ class Object:
                         phot_dict["threshold_sep"] = -999.
                     phot_dict["zeropoint_sep"] = img.zeropoint_best["zeropoint_img"]
                     mag_results = img.sep_elliptical_magnitude(
-                        centre=self.position,
+                        centre=self.position_photometry,
                         a_world=self.a,  # + delta_fwhm,
                         b_world=self.b,  # + delta_fwhm,
                         theta_world=self.theta,
@@ -474,8 +473,8 @@ class Object:
             photometry["theta"] = self.theta
             photometry["kron_radius"] = self.kron
             if "fix_pos" in self.photometry_args and self.photometry_args["fix_pos"]:
-                photometry["ra"] = self.position.ra
-                photometry["dec"] = self.position.dec
+                photometry["ra"] = self.position_photometry.ra
+                photometry["dec"] = self.position_photometry.dec
 
         kwargs.update(photometry)
         if instrument not in self.photometry:
@@ -503,8 +502,8 @@ class Object:
 
     def _output_dict(self):
         return {
-            "position": self.position,
-            # "position_err": self.position_err,
+            "position_photometry": self.position_photometry,
+            "position_photometry_err": self.position_photometry_err,
             "photometry": self.photometry,
             "irsa_extinction_path": self.irsa_extinction_path,
             "extinction_law": self.extinction_power_law,
@@ -515,8 +514,10 @@ class Object:
         if self.data_path is not None:
             outputs = p.load_output_file(self)
             if outputs is not None:
-                if "position" in outputs and outputs["position"] is not None:
-                    self.position = outputs["position"]
+                if "position_photometry" in outputs and outputs["position_photometry"] is not None:
+                    self.position_photometry = outputs["position_photometry"]
+                if "position_photometry_err" in outputs and outputs["position_photometry_err"] is not None:
+                    self.position_photometry_err = outputs["position_photometry_err"]
                 if "photometry" in outputs and outputs["photometry"] is not None:
                     self.photometry = outputs["photometry"]
                 if "irsa_extinction_path" in outputs and outputs["irsa_extinction_path"] is not None:
@@ -904,7 +905,10 @@ class Object:
         self.kron = deepest["kron_radius"]
         ra = deepest["ra"]
         dec = deepest["dec"]
-        self.position = SkyCoord(ra, dec)
+        try:
+            self.position_photometry = SkyCoord(ra, dec)
+        except ValueError:
+            print("Deepest observation is a limit only.")
         # else:
         #     deepest["a"] = self.a
         #     deepest["b"] = self.b
@@ -1046,9 +1050,11 @@ class Object:
                     "theta": 0.0 * units.arcsec,
                     "kron_radius": 3.5
                 },
-            "plotting": {
+            "plotting":
+                {
                 "frame": None
-            }
+            },
+            "publication_doi": None
         }
         return default_params
 
@@ -1684,8 +1690,8 @@ class FRB(Object):
             halo_info = {
                 "id": obj.name,
                 "z": obj.z,
-                "ra": obj.position.ra,
-                "dec": obj.position.dec
+                "ra": obj.position_photometry.ra,
+                "dec": obj.position_photometry.dec
             }
 
             if cat_search is not None:
@@ -1698,10 +1704,10 @@ class FRB(Object):
                     halo_info["id_cat"] = "--"
                 halo_info["offset_cat"] = sep.to(units.arcsec)
 
-            halo_info["offset_angle"] = offset_angle = self.position.separation(obj.position).to(units.arcsec)
+            halo_info["offset_angle"] = offset_angle = self.position.separation(obj.position_photometry).to(units.arcsec)
             fg_pos_err = max(
-                obj.position_err.dec_stat,
-                obj.position_err.ra_stat)
+                obj.position_photometry_err.dec_stat,
+                obj.position_photometry_err.ra_stat)
             halo_info["distance_angular_size"] = obj.angular_size_distance()
             halo_info["distance_luminosity"] = obj.luminosity_distance()
             halo_info["distance_comoving"] = obj.comoving_distance()
@@ -1889,7 +1895,7 @@ class FRB(Object):
     def from_dict(cls, dictionary: dict, name: str = None, field=None):
         frb = super().from_dict(dictionary=dictionary)
         if "dm" in dictionary:
-            frb.dm = dictionary["dm"] * dm_units
+            frb.dm = u.check_quantity(dictionary["dm"], dm_units)
         frb.host_galaxy = Galaxy.from_dict(dictionary=dictionary["host_galaxy"], field=field)
         return frb
 
@@ -1900,6 +1906,6 @@ class FRB(Object):
             "host_galaxy": Galaxy.default_params(),
             "mjd": 58000,
             "dm": 0.0 * dm_units,
-            "snr": 0.0
+            "snr": 0.0,
         })
         return default_params

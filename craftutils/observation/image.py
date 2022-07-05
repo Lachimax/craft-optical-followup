@@ -1054,10 +1054,9 @@ class ImagingImage(Image):
         self.load_source_cat_sextractor(force=True)
         self.load_source_cat_sextractor_dual(force=True)
 
-        if dual:
-            cat = self.source_cat_dual
-        else:
-            cat = self.source_cat
+        self.plot_apertures()
+
+        cat = self.get_source_cat(dual=dual)
 
         if len(cat) == 0:
             print()
@@ -1890,13 +1889,13 @@ class ImagingImage(Image):
         # We do this to ensure that, in the "secure" step, object i+1 is the next-brightest in the catalogue
         source_cat.sort("FLUX_AUTO")
 
-        for sigma in range(1, 6):
-            for snr_key in ["SNR_SE"]:  # ["SNR_CCD", "SNR_MEASURED", "SNR_SE"]:
+        for snr_key in ["SNR_SE"]:  # ["SNR_CCD", "SNR_MEASURED", "SNR_SE"]:
+            self.depth["max"][snr_key] = {}
+            self.depth["point_max"][snr_key] = {}
+            self.depth["secure"][snr_key] = {}
+            self.depth["point_secure"][snr_key] = {}
+            for sigma in range(1, 6):
                 u.debug_print(1, "ImagingImage.estimate_depth(): snr_key, sigma ==", snr_key, sigma)
-                self.depth["max"][snr_key] = {}
-                self.depth["point_max"][snr_key] = {}
-                self.depth["secure"][snr_key] = {}
-                self.depth["point_secure"][snr_key] = {}
                 # Faintest source at x-sigma:
                 u.debug_print(
                     1, f"ImagingImage.estimate_depth(): source_cat[{snr_key}].unit ==",
@@ -1908,16 +1907,24 @@ class ImagingImage(Image):
                     cat_more_xsigma_point[f"MAG_AUTO_ZP_{zeropoint_name}"])
 
                 # Brightest source less than x-sigma (kind of)
+
+                # Get the sources with SNR less than x-sigma
                 source_less_sigma = source_cat[source_cat[snr_key] < sigma]
+                print(f"Found {len(source_less_sigma)} sources with SNR < {sigma}")
                 src_lim_point = None
                 if len(source_less_sigma) > 0:
+                    # Make sure it isn't infinite
                     source_less_sigma = source_less_sigma[source_less_sigma[snr_key] != np.inf]
+                    # Get the source with the greatest flux
                     i = np.argmax(source_less_sigma["FLUX_AUTO"])
+                    # Find its counterpart in the full catalogue
                     i, _ = u.find_nearest(source_cat["NUMBER"], source_less_sigma[i]["NUMBER"])
+                    # Get the source that is next in brightness (being brighter)
                     i += 1
                     src_lim = source_cat[i]
 
                     source_less_sigma_point = source_less_sigma[source_less_sigma["CLASS_STAR"] > star_tolerance]
+                    print(f"Found {len(source_less_sigma_point)} point-sources with SNR < {sigma}")
                     if len(source_less_sigma_point) > 0:
                         i = np.argmax(source_less_sigma_point["FLUX_AUTO"])
                         i, _ = u.find_nearest(source_cat["NUMBER"], source_less_sigma_point[i]["NUMBER"])
@@ -2941,11 +2948,16 @@ class ImagingImage(Image):
             print("Sky background already estimated.")
         return self.sky_background
 
-    def plot_apertures(self):
-        self.load_source_cat()
-        pl.plot_all_params(image=self.path, cat=self.source_cat, kron=True, show=False)
-        plt.title(self.filter_name)
-        plt.show()
+    def plot_apertures(self, dual=True, output: str = None, show: bool = False):
+        cat = self.get_source_cat(dual=dual)
+        if cat is not None:
+            pl.plot_all_params(image=self.path, cat=cat, kron=True, show=False)
+            plt.title(self.filter_name)
+            if output is None:
+                output = os.path.join(self.data_path, f"{self.name}_source_cat_dual-{dual}.pdf")
+            plt.savefig(output)
+            if show:
+                plt.show()
 
     def find_object(self, coord: SkyCoord, dual: bool = True):
         cat = self.get_source_cat(dual=dual)
@@ -4955,8 +4967,12 @@ class Spec1DCoadded(Spectrum):
 
 
 def deepest(
-        img_1: ImagingImage, img_2: ImagingImage, sigma: int = 5, depth_type: str = "secure",
-        snr_type: str = "SNR_SE"):
+        img_1: ImagingImage,
+        img_2: ImagingImage,
+        sigma: int = 3,
+        depth_type: str = "secure",
+        snr_type: str = "SNR_SE"
+):
     if img_1.depth[depth_type][snr_type][f"{sigma}-sigma"] > \
             img_2.depth[depth_type][snr_type][f"{sigma}-sigma"]:
         return img_1

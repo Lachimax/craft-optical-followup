@@ -2839,13 +2839,15 @@ class ImagingEpoch(Epoch):
             img.calibrate_magnitudes(zeropoint_name="best", dual=dual, force=True)
             rows = []
             names = []
+            separations = []
             for obj in self.field.objects:
-                obj.load_output_file()
+                # obj.load_output_file()
                 plt.close()
                 # Get nearest Source-Extractor object:
                 nearest, separation = img.find_object(obj.position, dual=dual)
                 names.append(obj.name)
                 rows.append(nearest)
+                separations.append(separation.to(units.arcsec))
 
                 if separation > match_tolerance:
                     obj.add_photometry(
@@ -2971,6 +2973,7 @@ class ImagingEpoch(Epoch):
 
             tbl = table.vstack(rows)
             tbl.add_column(names, name="NAME")
+            tbl.add_column(separations, name="OFFSET_FROM_TARGET")
 
             tbl.write(
                 os.path.join(fil_output_path, f"{self.field.name}_{self.name}_{fil}.ecsv"),
