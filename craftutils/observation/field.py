@@ -2147,7 +2147,6 @@ class ImagingEpoch(Epoch):
                 "keywords": {
                     "distance_tolerance": None,
                     "snr_min": 3.,
-                    "class_star_tolerance": 0.95,
                     "image_type": "coadded_trimmed",
                     "preferred_zeropoint": {},
                     "suppress_select": False
@@ -2713,8 +2712,6 @@ class ImagingEpoch(Epoch):
             kwargs["distance_tolerance"] = u.check_quantity(kwargs["distance_tolerance"], units.arcsec, convert=True)
         if "snr_min" not in kwargs or kwargs["snr_min"] is None:
             kwargs["snr_min"] = 3.
-        if "class_star_tolerance" not in kwargs:
-            kwargs["star_class_tolerance"] = 0.95
         if "suppress_select" not in kwargs:
             kwargs["suppress_select"] = False
 
@@ -2741,7 +2738,7 @@ class ImagingEpoch(Epoch):
             output_path: str,
             distance_tolerance: units.Quantity = None,
             snr_min: float = 3.,
-            star_class_tolerance: float = 0.95,
+            star_class_tolerance: int = 1,
             suppress_select: bool = False,
             **kwargs
     ):
@@ -2871,6 +2868,9 @@ class ImagingEpoch(Epoch):
                         separation_from_given=separation,
                         epoch_date=self.date_str(),
                         class_star=-999.,
+                        spread_model=-999.,
+                        spread_model_err=-999.,
+                        class_flag=-999,
                         mag_psf=-999. * units.mag,
                         mag_psf_err=-999. * units.mag,
                         snr_psf=-999.,
@@ -2924,6 +2924,9 @@ class ImagingEpoch(Epoch):
                         separation_from_given=separation,
                         epoch_date=self.date_str(),
                         class_star=nearest["CLASS_STAR"],
+                        spread_model=nearest["SPREAD_MODEL"],
+                        spread_model_err=nearest["SPREADERR_MODEL"],
+                        class_flag=nearest["CLASS_FLAG"],
                         mag_psf=mag_psf,
                         mag_psf_err=mag_psf_err,
                         snr_psf=snr_psf,
@@ -3718,7 +3721,7 @@ class FORS2StandardEpoch(StandardEpoch, ImagingEpoch):
             output_path: str,
             distance_tolerance: units.Quantity = None,
             snr_min: float = 3.,
-            star_class_tolerance: float = 0.9,
+            star_class_tolerance: float = 1,
             suppress_select: bool = False,
             **kwargs
     ):
@@ -4383,7 +4386,7 @@ class SurveyImagingEpoch(ImagingEpoch):
             output_path: str,
             distance_tolerance: units.Quantity = 1 * units.arcsec,
             snr_min: float = 3.,
-            star_class_tolerance: float = 0.95,
+            star_class_tolerance: float = 1,
             **kwargs
     ):
         u.debug_print(2, f"", self.filters)

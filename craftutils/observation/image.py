@@ -1256,6 +1256,9 @@ class ImagingImage(Image):
                 separation_from_given=None,
                 epoch_date=str(self.epoch.date.isot),
                 class_star=row["CLASS_STAR"],
+                spread_model=row["SPREAD_MODEL"],
+                spread_model_err=row["SPREADERR_MODEL"],
+                class_flag=row["CLASS_FLAG"],
                 mag_psf=row["MAG_PSF_ZP_best"],
                 mag_psf_err=row["MAGERR_PSF_ZP_best"],
                 snr_psf=row["FLUX_PSF"] / row["FLUXERR_PSF"],
@@ -1550,8 +1553,6 @@ class ImagingImage(Image):
             sex_dec_col: str = 'DEC',
             sex_flux_col: str = 'FLUX_PSF',
             stars_only: bool = True,
-            star_class_col: str = 'CLASS_STAR',
-            star_class_tol: float = 0.95,
             mag_range_sex_lower: units.Quantity = -100. * units.mag,
             mag_range_sex_upper: units.Quantity = 100. * units.mag,
             dist_tol: units.Quantity = None,
@@ -1603,8 +1604,6 @@ class ImagingImage(Image):
             mag_range_sex_upper=mag_range_sex_upper,
             mag_range_sex_lower=mag_range_sex_lower,
             stars_only=stars_only,
-            star_class_tol=star_class_tol,
-            star_class_col=star_class_col,
             exp_time=self.extract_exposure_time(),
             cat_type=cat_type,
             cat_zeropoint=cat_zeropoint,
@@ -1861,7 +1860,7 @@ class ImagingImage(Image):
             self,
             zeropoint_name: str = "best",
             dual: bool = False,
-            star_tolerance: float = 0.9,
+            star_tolerance: int = 1,
             do_magnitude_calibration: bool = True
     ):
         """
@@ -1889,6 +1888,8 @@ class ImagingImage(Image):
         # We do this to ensure that, in the "secure" step, object i+1 is the next-brightest in the catalogue
         source_cat.sort("FLUX_AUTO")
 
+        source_cat = u.trim_to_class(cat=source_cat, modify=True, allowed=(0, 1, 2, 3))
+
         for snr_key in ["SNR_SE"]:  # ["SNR_CCD", "SNR_MEASURED", "SNR_SE"]:
             self.depth["max"][snr_key] = {}
             self.depth["point_max"][snr_key] = {}
@@ -1901,7 +1902,7 @@ class ImagingImage(Image):
                     1, f"ImagingImage.estimate_depth(): source_cat[{snr_key}].unit ==",
                     source_cat[snr_key].unit)
                 cat_more_xsigma = source_cat[source_cat[snr_key] > sigma]
-                cat_more_xsigma_point = cat_more_xsigma[cat_more_xsigma["CLASS_STAR"] > star_tolerance]
+                cat_more_xsigma_point = cat_more_xsigma[cat_more_xsigma["CLASS_FLAG"] <= star_tolerance]
                 self.depth["max"][snr_key][f"{sigma}-sigma"] = np.max(cat_more_xsigma[f"MAG_AUTO_ZP_{zeropoint_name}"])
                 self.depth["point_max"][snr_key][f"{sigma}-sigma"] = np.max(
                     cat_more_xsigma_point[f"MAG_AUTO_ZP_{zeropoint_name}"])
@@ -1923,7 +1924,7 @@ class ImagingImage(Image):
                     i += 1
                     src_lim = source_cat[i]
 
-                    source_less_sigma_point = source_less_sigma[source_less_sigma["CLASS_STAR"] > star_tolerance]
+                    source_less_sigma_point = source_less_sigma[source_less_sigma["CLASS_FLAG"] <= star_tolerance]
                     print(f"Found {len(source_less_sigma_point)} point-sources with SNR < {sigma}")
                     if len(source_less_sigma_point) > 0:
                         i = np.argmax(source_less_sigma_point["FLUX_AUTO"])
@@ -2241,7 +2242,7 @@ class ImagingImage(Image):
         :param dec_col:
         :param mag_col:
         :param offset_tolerance: Maximum offset to be matched.
-        :param star_tolerance: Minimum CLASS_STAR for object to be considered.
+        :param star_tolerance: Maximum CLASS_FLAG for object to be considered.
         :param local_coord:
         :param local_radius:
         :param show_plots:
@@ -2450,10 +2451,10 @@ class ImagingImage(Image):
 
     def psf_diagnostics(
             self,
-            star_class_tol: float = 0.95,
             mag_max: float = 0.0 * units.mag,
             mag_min: float = -50. * units.mag,
             match_to: table.Table = None,
+            star_class_tol: int = 0,
             frame: float = None,
             ext: int = 0,
             target: SkyCoord = None,
@@ -2471,7 +2472,6 @@ class ImagingImage(Image):
         stars_moffat, stars_gauss, stars_sex = ph.image_psf_diagnostics(
             hdu=self.hdu_list,
             cat=self.source_cat,
-            star_class_tol=star_class_tol,
             mag_max=mag_max,
             mag_min=mag_min,
             match_to=match_to,
@@ -2481,6 +2481,7 @@ class ImagingImage(Image):
             output=output_path,
             plot_file_prefix=self.name,
             ext=ext,
+            star_class_tol=star_class_tol,
         )
 
         fwhm_gauss = stars_gauss["GAUSSIAN_FWHM_FITTED"]
@@ -2794,7 +2795,7 @@ class ImagingImage(Image):
         _, scale = self.extract_pixel_scale()
 
         if star_tolerance is not None:
-            source_cat = source_cat[source_cat["CLASS_STAR"] > star_tolerance]
+            source_cat = source_cat = u.trim_to_class(cat=source_cat, modify=True, allowed=np.arange(0, star_tolerance + 1))
 
         matches_source_cat, matches_ext_cat, distance = astm.match_catalogs(
             cat_1=source_cat,
@@ -3563,6 +3564,12 @@ class ImagingImage(Image):
         plt.xlabel("Inserted magnitude")
         plt.ylabel("Class star")
         plt.savefig(os.path.join(output_dir, "class_star.png"))
+        plt.close()
+
+        plt.scatter(sources["mag_inserted"], sources["SPREAD_MODEL"])
+        plt.xlabel("Inserted magnitude")
+        plt.ylabel("Spread Model")
+        plt.savefig(os.path.join(output_dir, "spread_model.png"))
         plt.close()
 
         plt.scatter(sources["mag_inserted"], sources["matching_dist"])

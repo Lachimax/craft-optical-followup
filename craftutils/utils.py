@@ -4,7 +4,7 @@ import math
 import os
 import shutil
 import sys
-from typing import List, Union, Tuple
+from typing import List, Union, Tuple, Iterable
 from datetime import datetime as dt
 import subprocess
 
@@ -1315,3 +1315,24 @@ def classify_spread_model(
     cat[class_flag_col][(cat[sm_col] + cat[sm_col]) < cutoffs[0]] = -1
 
     return cat
+
+
+def trim_to_class(
+        cat: table.Table,
+        allowed: Iterable = [0],
+        modify: bool = True,
+        classify_kwargs: dict = {},
+):
+    cat = classify_spread_model(cat, **classify_kwargs)
+    if "class_flag_col" in classify_kwargs:
+        star_class_col = classify_kwargs["class_flag_col"]
+    else:
+        star_class_col = "CLASS_FLAG"
+    good = []
+    for row in cat:
+        good.append(row[star_class_col] not in allowed)
+    if modify:
+        cat = cat[good]
+        return cat
+    else:
+        return good

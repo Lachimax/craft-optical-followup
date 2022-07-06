@@ -425,6 +425,8 @@ class Object:
             separation_from_given: units.Quantity = None,
             epoch_date: str = None,
             class_star: float = None,
+            spread_model: float = None, spread_model_err: float = None,
+            class_flag: int = None,
             mag_psf: units.Quantity = None, mag_psf_err: units.Quantity = None,
             snr_psf: float = None,
             image_depth: units.Quantity = None,
@@ -456,6 +458,9 @@ class Object:
             "separation_from_given": u.check_quantity(separation_from_given, units.arcsec, convert=True),
             "epoch_date": str(epoch_date),
             "class_star": float(class_star),
+            "spread_model": float(spread_model),
+            "spread_model_err": float(spread_model_err),
+            "class_flag": int(class_flag),
             "mag_psf": u.check_quantity(mag_psf, unit=units.mag),
             "mag_psf_err": u.check_quantity(mag_psf_err, unit=units.mag),
             "snr_psf": snr_psf,
@@ -967,7 +972,10 @@ class Object:
             "epoch_ellipse_date": deepest["epoch_date"],
             "theta_err": deepest["theta_err"],
             f"e_b-v": self.ebv_sandf,
-            f"class_star": best_psf["class_star"]
+            f"class_star": best_psf["class_star"],
+            "spread_model": best_psf["spread_model"],
+            "spread_model_err": best_psf["spread_model_err"],
+            "class_flag": best_psf["class_flag"],
         }
 
         if isinstance(self, Galaxy) and self.z is not None:
