@@ -2730,7 +2730,7 @@ class ImagingEpoch(Epoch):
         self.deepest_filter = deepest.filter_name
         self.deepest = deepest
 
-        print("DEEPEST FILTER:", self.deepest_filter, self.deepest.depth["secure"]["SNR_SE"]["5-sigma"])
+        print("DEEPEST FILTER:", self.deepest_filter, self.deepest.depth["secure"]["SNR_PSF"]["5-sigma"])
 
     def zeropoint(
             self,
@@ -2874,7 +2874,7 @@ class ImagingEpoch(Epoch):
                         mag_psf=-999. * units.mag,
                         mag_psf_err=-999. * units.mag,
                         snr_psf=-999.,
-                        image_depth=img.depth["secure"]["SNR_SE"][f"5-sigma"],
+                        image_depth=img.depth["secure"]["SNR_PSF"][f"5-sigma"],
                         image_path=img.path,
                         good_image_path=self.coadded_unprojected[fil].path,
                         do_mask=img.mask_nearby()
@@ -2909,7 +2909,7 @@ class ImagingEpoch(Epoch):
                         epoch_name=self.name,
                         mag=nearest['MAG_AUTO_ZP_best'],
                         mag_err=err,
-                        snr=nearest['SNR_SE'],
+                        snr=nearest['SNR_PSF'],
                         ellipse_a=nearest['A_WORLD'],
                         ellipse_a_err=nearest["ERRA_WORLD"],
                         ellipse_b=nearest['B_WORLD'],
@@ -2930,7 +2930,7 @@ class ImagingEpoch(Epoch):
                         mag_psf=mag_psf,
                         mag_psf_err=mag_psf_err,
                         snr_psf=snr_psf,
-                        image_depth=img.depth["secure"]["SNR_SE"][f"5-sigma"],
+                        image_depth=img.depth["secure"]["SNR_PSF"][f"5-sigma"],
                         image_path=img.path,
                         good_image_path=self.coadded_unprojected[fil].path,
                         do_mask=img.mask_nearby()
@@ -3532,7 +3532,7 @@ class ImagingEpoch(Epoch):
                 "zeropoint_err": coadded[fil].zeropoint_best["zeropoint_img_err"],
                 "zeropoint_source": coadded[fil].zeropoint_best["catalogue"],
                 "last_processed": Time.now().strftime("%Y-%m-%dT%H:%M:%S"),
-                "depth": img.depth["secure"]["SNR_SE"]["5-sigma"]
+                "depth": img.depth["secure"]["SNR_PSF"]["5-sigma"]
             }
 
             obs.add_epoch(

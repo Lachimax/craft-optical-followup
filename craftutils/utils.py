@@ -1330,7 +1330,7 @@ def trim_to_class(
         star_class_col = "CLASS_FLAG"
     good = []
     for row in cat:
-        good.append(row[star_class_col] not in allowed)
+        good.append(row[star_class_col] in allowed)
     if modify:
         cat = cat[good]
         return cat

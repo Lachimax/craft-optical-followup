@@ -1241,7 +1241,7 @@ class ImagingImage(Image):
                 epoch_name=self.epoch.name,
                 mag=row['MAG_AUTO_ZP_best'],
                 mag_err=row[f'MAGERR_AUTO_ZP_best'],
-                snr=row[f'SNR_SE'],
+                snr=row[f'SNR_AUTO'],
                 ellipse_a=row['A_WORLD'],
                 ellipse_a_err=row["ERRA_WORLD"],
                 ellipse_b=row['B_WORLD'],
@@ -1262,7 +1262,7 @@ class ImagingImage(Image):
                 mag_psf=row["MAG_PSF_ZP_best"],
                 mag_psf_err=row["MAGERR_PSF_ZP_best"],
                 snr_psf=row["FLUX_PSF"] / row["FLUXERR_PSF"],
-                image_depth=self.depth["secure"]["SNR_SE"][f"5-sigma"],
+                image_depth=self.depth["secure"]["SNR_PSF"][f"5-sigma"],
                 image_path=self.path,
                 do_mask=self.mask_nearby(),
                 zeropoint=row["ZP_best_ATM_CORR"]
@@ -1553,6 +1553,7 @@ class ImagingImage(Image):
             sex_dec_col: str = 'DEC',
             sex_flux_col: str = 'FLUX_PSF',
             stars_only: bool = True,
+            star_class_tol: int = 1,
             mag_range_sex_lower: units.Quantity = -100. * units.mag,
             mag_range_sex_upper: units.Quantity = 100. * units.mag,
             dist_tol: units.Quantity = None,
@@ -1604,11 +1605,12 @@ class ImagingImage(Image):
             mag_range_sex_upper=mag_range_sex_upper,
             mag_range_sex_lower=mag_range_sex_lower,
             stars_only=stars_only,
+            star_class_tol=star_class_tol,
             exp_time=self.extract_exposure_time(),
             cat_type=cat_type,
             cat_zeropoint=cat_zeropoint,
             cat_zeropoint_err=cat_zeropoint_err,
-            snr_col='SNR_SE',
+            snr_col='SNR_PSF',
             snr_cut=snr_cut,
             iterate_uncertainty=iterate_uncertainty,
             do_x_shift=do_x_shift
@@ -1870,7 +1872,7 @@ class ImagingImage(Image):
         :return:
         """
 
-        self.signal_to_noise_ccd(dual=dual)
+        # self.signal_to_noise_ccd(dual=dual)
         self.signal_to_noise_measure(dual=dual)
         if do_magnitude_calibration:
             self.calibrate_magnitudes(zeropoint_name=zeropoint_name, dual=dual)
@@ -1878,69 +1880,48 @@ class ImagingImage(Image):
         source_cat = self.get_source_cat(dual=dual)
 
         # "max" stores the magnitude of the faintest object with S/N > x sigma
-        self.depth["max"] = {}
-        self.depth["point_max"] = {}
+        self.depth = {"max": {}, "secure": {}}
         # "secure" finds the brightest object with S/N < x sigma, then increments to the
         # overall; thus giving the faintest magnitude at which we can be confident of a detection
-        self.depth["secure"] = {}
-        self.depth["point_secure"] = {}
 
-        # We do this to ensure that, in the "secure" step, object i+1 is the next-brightest in the catalogue
-        source_cat.sort("FLUX_AUTO")
+        source_cat = u.trim_to_class(cat=source_cat, modify=True, allowed=np.arange(0, star_tolerance+1))
 
-        source_cat = u.trim_to_class(cat=source_cat, modify=True, allowed=(0, 1, 2, 3))
 
-        for snr_key in ["SNR_SE"]:  # ["SNR_CCD", "SNR_MEASURED", "SNR_SE"]:
-            self.depth["max"][snr_key] = {}
-            self.depth["point_max"][snr_key] = {}
-            self.depth["secure"][snr_key] = {}
-            self.depth["point_secure"][snr_key] = {}
+        for snr_key in ["PSF"]:  # ["SNR_CCD", "SNR_MEASURED", "SNR_SE"]:
+            # We do this to ensure that, in the "secure" step, object i+1 is the next-brightest in the catalogue
+            source_cat.sort(f"FLUX_{snr_key}")
+            self.depth["max"][f"SNR_{snr_key}"] = {}
+            self.depth["secure"][f"SNR_{snr_key}"] = {}
+            # Dispose of the infinite SNRs and mags
+            source_cat = source_cat[np.invert(np.isinf(source_cat[f"MAG_{snr_key}"]))]
+            source_cat = source_cat[np.invert(np.isinf(source_cat[f"SNR_{snr_key}"]))]
+            source_cat.sort(f"FLUX_{snr_key}")
             for sigma in range(1, 6):
                 u.debug_print(1, "ImagingImage.estimate_depth(): snr_key, sigma ==", snr_key, sigma)
                 # Faintest source at x-sigma:
                 u.debug_print(
-                    1, f"ImagingImage.estimate_depth(): source_cat[{snr_key}].unit ==",
-                    source_cat[snr_key].unit)
-                cat_more_xsigma = source_cat[source_cat[snr_key] > sigma]
-                cat_more_xsigma_point = cat_more_xsigma[cat_more_xsigma["CLASS_FLAG"] <= star_tolerance]
-                self.depth["max"][snr_key][f"{sigma}-sigma"] = np.max(cat_more_xsigma[f"MAG_AUTO_ZP_{zeropoint_name}"])
-                self.depth["point_max"][snr_key][f"{sigma}-sigma"] = np.max(
-                    cat_more_xsigma_point[f"MAG_AUTO_ZP_{zeropoint_name}"])
+                    1, f"ImagingImage.estimate_depth(): source_cat[SNR_{snr_key}].unit ==",
+                    source_cat[f"SNR_{snr_key}"].unit)
+                cat_more_xsigma = source_cat[source_cat[f"SNR_{snr_key}"] > sigma]
+                self.depth["max"][f"SNR_{snr_key}"][f"{sigma}-sigma"] = np.max(cat_more_xsigma[f"MAG_PSF_ZP_{zeropoint_name}"])
 
                 # Brightest source less than x-sigma (kind of)
-
                 # Get the sources with SNR less than x-sigma
-                source_less_sigma = source_cat[source_cat[snr_key] < sigma]
-                print(f"Found {len(source_less_sigma)} sources with SNR < {sigma}")
-                src_lim_point = None
+                source_less_sigma = source_cat[source_cat[f"SNR_{snr_key}"] < sigma]
+                print(f"Found {len(source_less_sigma)} point-sources with SNR < {sigma}")
                 if len(source_less_sigma) > 0:
-                    # Make sure it isn't infinite
-                    source_less_sigma = source_less_sigma[source_less_sigma[snr_key] != np.inf]
                     # Get the source with the greatest flux
-                    i = np.argmax(source_less_sigma["FLUX_AUTO"])
+                    i = np.argmax(source_less_sigma["FLUX_PSF"])
                     # Find its counterpart in the full catalogue
                     i, _ = u.find_nearest(source_cat["NUMBER"], source_less_sigma[i]["NUMBER"])
-                    # Get the source that is next in brightness (being brighter)
+                    # Get the source that is next up in brightness (being brighter)
                     i += 1
                     src_lim = source_cat[i]
 
-                    source_less_sigma_point = source_less_sigma[source_less_sigma["CLASS_FLAG"] <= star_tolerance]
-                    print(f"Found {len(source_less_sigma_point)} point-sources with SNR < {sigma}")
-                    if len(source_less_sigma_point) > 0:
-                        i = np.argmax(source_less_sigma_point["FLUX_AUTO"])
-                        i, _ = u.find_nearest(source_cat["NUMBER"], source_less_sigma_point[i]["NUMBER"])
-                        i += 1
-                        src_lim_point = source_cat[i]
                 else:
-                    src_lim = source_cat[0]
+                    src_lim = source_cat[source_cat[f"SNR_{snr_key}"].argmin()]
 
-                self.depth["secure"][snr_key][f"{sigma}-sigma"] = src_lim[f"MAG_AUTO_ZP_{zeropoint_name}"]
-                if src_lim_point is not None:
-                    self.depth["point_secure"][snr_key][f"{sigma}-sigma"] = src_lim_point[
-                        f"MAG_AUTO_ZP_{zeropoint_name}"]
-                else:
-                    self.depth["point_secure"][snr_key][f"{sigma}-sigma"] = None
-                self.update_output_file()
+                self.depth["secure"][f"SNR_{snr_key}"][f"{sigma}-sigma"] = src_lim[f"MAG_PSF_ZP_{zeropoint_name}"]
 
         source_cat.sort("NUMBER")
         self.add_log(
@@ -2860,7 +2841,8 @@ class ImagingImage(Image):
         print("Measuring signal-to-noise of sources...")
         source_cat = self.get_source_cat(dual=dual)
 
-        source_cat["SNR_SE"] = source_cat["FLUX_AUTO"] / source_cat["FLUXERR_AUTO"]
+        source_cat["SNR_AUTO"] = source_cat["FLUX_AUTO"] / source_cat["FLUXERR_AUTO"]
+        source_cat["SNR_PSF"] = source_cat["FLUX_PSF"] / source_cat["FLUXERR_PSF"]
 
         # self.load_data()
         # _, scale = self.extract_pixel_scale()
@@ -2910,7 +2892,7 @@ class ImagingImage(Image):
         #
         # source_cat["SNR_MEASURED"] = snrs
         # source_cat["NOISE_MEASURED"] = sigma_fluxes
-        # source_cat["SNR_SE"] = snrs_se
+        # source_cat["SNR_PSF"] = snrs_se
 
         self._set_source_cat(source_cat=source_cat, dual=dual)
 
@@ -3584,7 +3566,7 @@ class ImagingImage(Image):
         plt.savefig(os.path.join(output_dir, "matching_dist.png"))
         plt.close()
 
-        plt.scatter(sources["mag_inserted"], sources["SNR_SE"])
+        plt.scatter(sources["mag_inserted"], sources["SNR_PSF"])
         plt.xlabel("Inserted magnitude")
         plt.ylabel("S/N, measured by SEP")
         plt.savefig(os.path.join(output_dir, "matching_dist.png"))
@@ -4978,7 +4960,7 @@ def deepest(
         img_2: ImagingImage,
         sigma: int = 3,
         depth_type: str = "secure",
-        snr_type: str = "SNR_SE"
+        snr_type: str = "SNR_PSF"
 ):
     if img_1.depth[depth_type][snr_type][f"{sigma}-sigma"] > \
             img_2.depth[depth_type][snr_type][f"{sigma}-sigma"]:
