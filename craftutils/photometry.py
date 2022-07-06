@@ -666,7 +666,7 @@ def determine_zeropoint_sextractor(
         star_class_col = "CLASS_FLAG"
     if stars_only:
         good = u.trim_to_class(
-            cat,
+            matches,
             classify_kwargs=star_class_kwargs,
             modify=False,
             allowed=np.arange(0, star_class_tol + 1)

@@ -2026,7 +2026,7 @@ class ImagingEpoch(Epoch):
         self.source_extractor_config = source_extractor_config
         if self.source_extractor_config is None:
             self.source_extractor_config = {
-                "dual_mode": True,
+                "dual_mode": False,
                 "threshold": 1.5,
                 "kron_factor": 3.5,
                 "kron_radius_min": 1.0
@@ -2129,7 +2129,7 @@ class ImagingEpoch(Epoch):
                 "message": "Trim / reproject coadded images to same footprint?",
                 "default": True,
                 "keywords": {
-                    "reproject": True  # Reproject to same footprint?
+                    "reproject": False  # Reproject to same footprint?
                 }
             },
             "source_extraction": {
@@ -2155,7 +2155,7 @@ class ImagingEpoch(Epoch):
             "dual_mode_source_extraction": {
                 "method": cls.proc_dual_mode_source_extraction,
                 "message": "Do source extraction in dual-mode, using deepest image as footprint?",
-                "default": True,
+                "default": False,
             },
             "get_photometry": {
                 "method": cls.proc_get_photometry,
@@ -2616,10 +2616,10 @@ class ImagingEpoch(Epoch):
         if "reproject" in kwargs:
             reproject = kwargs["reproject"]
         else:
-            reproject = True
+            reproject = False
         self.trim_coadded(output_dir, images=images, reproject=reproject)
 
-    def trim_coadded(self, output_dir: str, images: dict = None, reproject: bool = True):
+    def trim_coadded(self, output_dir: str, images: dict = None, reproject: bool = False):
         if images is None:
             images = self.coadded
         u.mkdir_check(output_dir)
@@ -2647,14 +2647,13 @@ class ImagingEpoch(Epoch):
         do_diag = True
         if "do_astrometry_diagnostics" in kwargs:
             do_diag = kwargs.pop("do_astrometry_diagnostics")
-        for image_type in "final", "coadded_unprojected":
-            self.source_extraction(
-                output_dir=output_dir,
-                do_astrometry_diagnostics=do_diag,
-                do_psf_diagnostics=do_diag,
-                image_type=image_type,
-                **kwargs
-            )
+        self.source_extraction(
+            output_dir=output_dir,
+            do_astrometry_diagnostics=do_diag,
+            do_psf_diagnostics=do_diag,
+            image_type="final",
+            **kwargs
+        )
 
     def source_extraction(
             self,
@@ -2665,7 +2664,7 @@ class ImagingEpoch(Epoch):
             **kwargs
     ):
         images = self._get_images(image_type)
-        print("Extracting sources for", image_type)
+        print("Extracting sources for", image_type, "with", len(list(images.keys())))
         for fil in images:
             img = images[fil]
             print(f"Extracting sources from {img}")
@@ -2810,7 +2809,7 @@ class ImagingEpoch(Epoch):
             self,
             path: str,
             image_type: str = "final",
-            dual: bool = True,
+            dual: bool = False,
             match_tolerance: units.Quantity = 3 * units.arcsec
     ):
         """
@@ -3060,7 +3059,11 @@ class ImagingEpoch(Epoch):
             image_type = "final"
         self.get_photometry_all(output_dir, image_type=image_type)
 
-    def get_photometry_all(self, path: str, image_type: str = "coadded_trimmed", dual: bool = True):
+    def get_photometry_all(
+            self, path: str,
+            image_type: str = "coadded_trimmed",
+            dual: bool = False
+    ):
         obs.load_master_all_objects_table()
         image_dict = self._get_images(image_type=image_type)
         u.mkdir_check(path)
@@ -3625,7 +3628,7 @@ class ImagingEpoch(Epoch):
             "coadd":
                 {"frames": "astrometry"},
             "sextractor":
-                {"dual_mode": True,
+                {"dual_mode": False,
                  "threshold": 1.5,
                  "kron_factor": 2.5,
                  "kron_radius_min": 3.5

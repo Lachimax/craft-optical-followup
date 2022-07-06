@@ -2776,7 +2776,7 @@ class ImagingImage(Image):
         _, scale = self.extract_pixel_scale()
 
         if star_tolerance is not None:
-            source_cat = source_cat = u.trim_to_class(cat=source_cat, modify=True, allowed=np.arange(0, star_tolerance + 1))
+            source_cat = u.trim_to_class(cat=source_cat, modify=True, allowed=np.arange(0, star_tolerance + 1))
 
         matches_source_cat, matches_ext_cat, distance = astm.match_catalogs(
             cat_1=source_cat,
