@@ -699,6 +699,7 @@ def root_mean_squared_error(
     )
     return np.sqrt(mse)
 
+
 def detect_problem_table(tbl: table.Table, fmt: str = "ecsv"):
     for i, row in enumerate(tbl):
         tbl_this = tbl[:i + 1]
@@ -714,6 +715,7 @@ def detect_problem_table(tbl: table.Table, fmt: str = "ecsv"):
             print("Problem row:")
             print(i, row)
             return i, row
+
 
 def mode(lst: list):
     return max(set(lst), key=list.count)
@@ -1295,3 +1297,21 @@ def system_package_version(package_name: str):
         return verstring[9:]
     else:
         return None
+
+
+def classify_spread_model(
+        cat: table.Table,
+        cutoffs: Tuple[float, float, float, float] = (-0.005, 0.005, 0.003, 0.003),
+        sm_col: str = "SPREAD_MODEL",
+        sm_err_col: str = "SPREADERR_MODEL",
+        class_flag_col: str = "CLASS_FLAG"
+):
+    cat[class_flag_col] = (
+            ((cat[sm_col] + 3 * cat[sm_err_col]) > cutoffs[1]).astype(int)
+            + ((cat[sm_col] + cat[sm_err_col]) > cutoffs[2]).astype(int)
+            + ((cat[sm_col] - cat[sm_err_col]) > cutoffs[3]).astype(int)
+    )
+
+    cat[class_flag_col][(cat[sm_col] + cat[sm_col]) < cutoffs[0]] = -1
+
+    return cat
