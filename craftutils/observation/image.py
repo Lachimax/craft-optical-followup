@@ -1235,6 +1235,10 @@ class ImagingImage(Image):
         for i, row in enumerate(source_cat):
             print(f"Row {i} of {len(source_cat)}")
             obj = objects.Object(row=row, field=self.epoch.field)
+            if "SNR_PSF" in self.depth["secure"]:
+                depth = self.depth["secure"]["SNR_PSF"][f"5-sigma"]
+            else:
+                depth = self.depth["secure"]["SNR_AUTO"][f"5-sigma"]
             obj.add_photometry(
                 instrument=self.instrument_name,
                 fil=self.filter_name,
@@ -1262,7 +1266,7 @@ class ImagingImage(Image):
                 mag_psf=row["MAG_PSF_ZP_best"],
                 mag_psf_err=row["MAGERR_PSF_ZP_best"],
                 snr_psf=row["FLUX_PSF"] / row["FLUXERR_PSF"],
-                image_depth=self.depth["secure"]["SNR_PSF"][f"5-sigma"],
+                image_depth=depth,
                 image_path=self.path,
                 do_mask=self.mask_nearby(),
                 zeropoint=row["ZP_best_ATM_CORR"]
@@ -1542,18 +1546,16 @@ class ImagingImage(Image):
             self,
             cat_path: str,
             output_path: str,
-            cat_name: str = 'Catalogue',
+            cat_name: str,
             cat_zeropoint: units.Quantity = 0.0 * units.mag,
             cat_zeropoint_err: units.Quantity = 0.0 * units.mag,
             image_name: str = None,
             show: bool = False,
-            sex_x_col: str = 'XPSF_IMAGE',
-            sex_y_col: str = 'YPSF_IMAGE',
-            sex_ra_col: str = 'RA',
-            sex_dec_col: str = 'DEC',
-            sex_flux_col: str = 'FLUX_PSF',
+            phot_type: str = "PSF",
+            sex_ra_col: str = "RA",
+            sex_dec_col: str = "DEC",
             stars_only: bool = True,
-            star_class_tol: int = 1,
+            star_class_tol: float = 0.95,
             mag_range_sex_lower: units.Quantity = -100. * units.mag,
             mag_range_sex_upper: units.Quantity = 100. * units.mag,
             dist_tol: units.Quantity = None,
@@ -1562,6 +1564,16 @@ class ImagingImage(Image):
             do_x_shift: bool = True
     ):
         print(f"\nEstimating photometric zeropoint for {self.name}, {type(self)}\n")
+
+        sex_flux_col = f"FLUX_{phot_type}"
+
+        if phot_type == "PSF":
+            sex_x_col = "XPSF_IMAGE"
+            sex_y_col = "YPSF_IMAGE"
+        else:
+            sex_x_col = "X_IMAGE"
+            sex_y_col = "Y_IMAGE"
+
         self.signal_to_noise_measure()
         if image_name is None:
             image_name = self.name
@@ -1610,7 +1622,7 @@ class ImagingImage(Image):
             cat_type=cat_type,
             cat_zeropoint=cat_zeropoint,
             cat_zeropoint_err=cat_zeropoint_err,
-            snr_col='SNR_PSF',
+            snr_col=f'SNR_{phot_type}',
             snr_cut=snr_cut,
             iterate_uncertainty=iterate_uncertainty,
             do_x_shift=do_x_shift
@@ -1886,9 +1898,10 @@ class ImagingImage(Image):
 
         source_cat = u.trim_to_class(cat=source_cat, modify=True, allowed=np.arange(0, star_tolerance+1))
 
-
-        for snr_key in ["PSF"]:  # ["SNR_CCD", "SNR_MEASURED", "SNR_SE"]:
+        for snr_key in ["PSF", "AUTO"]:  # ["SNR_CCD", "SNR_MEASURED", "SNR_SE"]:
             # We do this to ensure that, in the "secure" step, object i+1 is the next-brightest in the catalogue
+            if f"FLUX_{snr_key}" not in source_cat.colnames:
+                continue
             source_cat.sort(f"FLUX_{snr_key}")
             self.depth["max"][f"SNR_{snr_key}"] = {}
             self.depth["secure"][f"SNR_{snr_key}"] = {}
@@ -2776,7 +2789,11 @@ class ImagingImage(Image):
         _, scale = self.extract_pixel_scale()
 
         if star_tolerance is not None:
-            source_cat = u.trim_to_class(cat=source_cat, modify=True, allowed=np.arange(0, star_tolerance + 1))
+            source_cat = u.trim_to_class(
+                cat=source_cat,
+                modify=True,
+                allowed=np.arange(0, star_tolerance + 1)
+            )
 
         matches_source_cat, matches_ext_cat, distance = astm.match_catalogs(
             cat_1=source_cat,
@@ -2842,7 +2859,8 @@ class ImagingImage(Image):
         source_cat = self.get_source_cat(dual=dual)
 
         source_cat["SNR_AUTO"] = source_cat["FLUX_AUTO"] / source_cat["FLUXERR_AUTO"]
-        source_cat["SNR_PSF"] = source_cat["FLUX_PSF"] / source_cat["FLUXERR_PSF"]
+        if "FLUX_PSF" in source_cat.colnames:
+            source_cat["SNR_PSF"] = source_cat["FLUX_PSF"] / source_cat["FLUXERR_PSF"]
 
         # self.load_data()
         # _, scale = self.extract_pixel_scale()

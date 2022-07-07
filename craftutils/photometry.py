@@ -461,7 +461,8 @@ def determine_zeropoint_sextractor(
         mag_range_sex_upper: units.Quantity = 100 * units.mag,
         mag_range_sex_lower: units.Quantity = -100 * units.mag,
         stars_only: bool = True,
-        star_class_tol: int = 0,
+        star_class_tol: float = 0.95,
+        star_class_type: str = "CLASS_STAR",
         star_class_kwargs={},
         exp_time: float = None,
         y_lower: units.Quantity = 0 * units.pix,
@@ -660,19 +661,26 @@ def determine_zeropoint_sextractor(
     params[f'matches_{n_match}_nans_cat'] = int(sum(np.invert(remove)))
     n_match += 1
 
-    if "class_flag_col" in star_class_kwargs:
-        star_class_col = star_class_kwargs["class_flag_col"]
-    else:
-        star_class_col = "CLASS_FLAG"
+    star_class_col = "CLASS_STAR"
     if stars_only:
-        good = u.trim_to_class(
-            matches,
-            classify_kwargs=star_class_kwargs,
-            modify=False,
-            allowed=np.arange(0, star_class_tol + 1)
-        )
-        remove = remove + np.invert(good)
-        print(sum(np.invert(remove)), 'matches after removing non-stars (class_flag in ' + str(star_class_tol) + ')')
+        if star_class_type == "SPREAD_MODEL":
+            if "class_flag_col" in star_class_kwargs:
+                star_class_col = star_class_kwargs["class_flag_col"]
+            else:
+                star_class_col = "CLASS_FLAG"
+            is_star = u.trim_to_class(
+                matches,
+                classify_kwargs=star_class_kwargs,
+                modify=False,
+                allowed=np.arange(0, star_class_tol + 1)
+            )
+            remove = remove + np.invert(is_star)
+            print(sum(np.invert(remove)), 'matches after removing non-stars (class_flag < ' + str(star_class_tol) + ')')
+        else:
+            if "class_flag_col" in star_class_kwargs:
+                star_class_col = star_class_kwargs["class_flag_col"]
+            remove = remove + (matches[star_class_col] < star_class_tol)
+            print(sum(np.invert(remove)), 'matches after removing non-stars (class_star >= ' + str(star_class_tol) + ')')
         params[f'matches_{n_match}_non_stars'] = int(sum(np.invert(remove)))
         n_match += 1
 

@@ -2147,6 +2147,7 @@ class ImagingEpoch(Epoch):
                 "keywords": {
                     "distance_tolerance": None,
                     "snr_min": 3.,
+                    "class_star_tolerance": 0.95,
                     "image_type": "coadded_trimmed",
                     "preferred_zeropoint": {},
                     "suppress_select": False
@@ -2737,7 +2738,7 @@ class ImagingEpoch(Epoch):
             output_path: str,
             distance_tolerance: units.Quantity = None,
             snr_min: float = 3.,
-            star_class_tolerance: int = 1,
+            star_class_tolerance: int = 0.95,
             suppress_select: bool = False,
             **kwargs
     ):
@@ -2836,6 +2837,12 @@ class ImagingEpoch(Epoch):
             rows = []
             names = []
             separations = []
+
+            if "SNR_PSF" in img.depth["secure"]:
+                depth = img.depth["secure"]["SNR_PSF"][f"5-sigma"]
+            else:
+                depth = img.depth["secure"]["SNR_AUTO"][f"5-sigma"]
+
             for obj in self.field.objects:
                 # obj.load_output_file()
                 plt.close()
@@ -2929,7 +2936,7 @@ class ImagingEpoch(Epoch):
                         mag_psf=mag_psf,
                         mag_psf_err=mag_psf_err,
                         snr_psf=snr_psf,
-                        image_depth=img.depth["secure"]["SNR_PSF"][f"5-sigma"],
+                        image_depth=depth,
                         image_path=img.path,
                         good_image_path=self.coadded_unprojected[fil].path,
                         do_mask=img.mask_nearby()
@@ -3724,7 +3731,7 @@ class FORS2StandardEpoch(StandardEpoch, ImagingEpoch):
             output_path: str,
             distance_tolerance: units.Quantity = None,
             snr_min: float = 3.,
-            star_class_tolerance: float = 1,
+            star_class_tolerance: float = 0.9,
             suppress_select: bool = False,
             **kwargs
     ):
@@ -4389,7 +4396,7 @@ class SurveyImagingEpoch(ImagingEpoch):
             output_path: str,
             distance_tolerance: units.Quantity = 1 * units.arcsec,
             snr_min: float = 3.,
-            star_class_tolerance: float = 1,
+            star_class_tolerance: float = 0.95,
             **kwargs
     ):
         u.debug_print(2, f"", self.filters)
