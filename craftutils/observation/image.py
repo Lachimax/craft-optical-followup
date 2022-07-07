@@ -1049,14 +1049,11 @@ class ImagingImage(Image):
             dual = True
         if dual:
             self.source_cat_sextractor_dual_path = cat_path
+            cat = self.load_source_cat_sextractor_dual(force=True)
         else:
             self.source_cat_sextractor_path = cat_path
-        self.load_source_cat_sextractor(force=True)
-        self.load_source_cat_sextractor_dual(force=True)
+            cat = self.load_source_cat_sextractor(force=True)
 
-        self.plot_apertures()
-
-        cat = self.get_source_cat(dual=dual)
 
         if len(cat) == 0:
             print()
@@ -1074,13 +1071,14 @@ class ImagingImage(Image):
             )
             if dual:
                 self.source_cat_sextractor_dual_path = cat_path
+                cat = self.load_source_cat_sextractor_dual(force=True)
             else:
                 self.source_cat_sextractor_path = cat_path
-            self.load_source_cat_sextractor(force=True)
-            self.load_source_cat_sextractor_dual(force=True)
+                cat = self.load_source_cat_sextractor(force=True)
         else:
             self.psfex_successful = True
         self.write_source_cat()
+        self.plot_apertures()
         self.add_log(
             action="Sources extracted using Source Extractor with PSFEx PSF modelling.",
             method=self.source_extraction_psf,
@@ -1088,7 +1086,6 @@ class ImagingImage(Image):
             packages=["psfex", "source-extractor"]
         )
         self.signal_to_noise_measure(dual=dual)
-
         self.update_output_file()
 
     def _load_source_cat_sextractor(self, path: str):
@@ -1160,6 +1157,8 @@ class ImagingImage(Image):
         else:
             print("source_cat could not be loaded from SE file because source_cat_sextractor_path has not been set.")
 
+        return self.source_cat
+
     def load_source_cat_sextractor_dual(self, force: bool = False):
         if self.source_cat_sextractor_dual_path is not None:
             if force:
@@ -1169,6 +1168,8 @@ class ImagingImage(Image):
         else:
             print(
                 "source_cat_dual could not be loaded from SE file because source_cat_sextractor_dual_path has not been set.")
+
+        return self.source_cat_dual
 
     def load_source_cat(self, force: bool = False):
         u.debug_print(2, f"ImagingImage.load_source_cat(): {self}.name ==", self.name)
@@ -1196,7 +1197,6 @@ class ImagingImage(Image):
             source_cat = self.source_cat_dual
         else:
             source_cat = self.source_cat
-
         return source_cat
 
     def _set_source_cat(self, source_cat: table.QTable, dual: bool):
@@ -1896,7 +1896,7 @@ class ImagingImage(Image):
         # "secure" finds the brightest object with S/N < x sigma, then increments to the
         # overall; thus giving the faintest magnitude at which we can be confident of a detection
 
-        source_cat = u.trim_to_class(cat=source_cat, modify=True, allowed=np.arange(0, star_tolerance+1))
+        source_cat = u.trim_to_class(cat=source_cat, modify=True, allowed=np.arange(0, star_tolerance + 1))
 
         for snr_key in ["PSF", "AUTO"]:  # ["SNR_CCD", "SNR_MEASURED", "SNR_SE"]:
             # We do this to ensure that, in the "secure" step, object i+1 is the next-brightest in the catalogue
@@ -1916,7 +1916,8 @@ class ImagingImage(Image):
                     1, f"ImagingImage.estimate_depth(): source_cat[SNR_{snr_key}].unit ==",
                     source_cat[f"SNR_{snr_key}"].unit)
                 cat_more_xsigma = source_cat[source_cat[f"SNR_{snr_key}"] > sigma]
-                self.depth["max"][f"SNR_{snr_key}"][f"{sigma}-sigma"] = np.max(cat_more_xsigma[f"MAG_PSF_ZP_{zeropoint_name}"])
+                self.depth["max"][f"SNR_{snr_key}"][f"{sigma}-sigma"] = np.max(
+                    cat_more_xsigma[f"MAG_PSF_ZP_{zeropoint_name}"])
 
                 # Brightest source less than x-sigma (kind of)
                 # Get the sources with SNR less than x-sigma
@@ -2223,7 +2224,7 @@ class ImagingImage(Image):
             reference_cat: Union[str, table.QTable],
             ra_col: str = "ra", dec_col: str = "dec", mag_col: str = "phot_g_mean_mag",
             offset_tolerance: units.Quantity = 0.5 * units.arcsec,
-            star_tolerance: float = 0.8,
+            # star_tolerance: float = 1,
             local_coord: SkyCoord = None,
             local_radius: units.Quantity = 0.5 * units.arcmin,
             show_plots: bool = False,
@@ -2285,12 +2286,16 @@ class ImagingImage(Image):
             ref_cat_coords = SkyCoord(reference_cat[ra_col], reference_cat[dec_col])
             in_footprint = self.wcs.footprint_contains(ref_cat_coords)
 
-            plt.scatter(self.source_cat["RA"],
-                        self.source_cat["DEC"],
-                        marker='x')
-            plt.scatter(reference_cat[ra_col][in_footprint],
-                        reference_cat[dec_col][in_footprint],
-                        marker='x')
+            plt.scatter(
+                self.source_cat["RA"],
+                self.source_cat["DEC"],
+                marker='x'
+            )
+            plt.scatter(
+                reference_cat[ra_col][in_footprint],
+                reference_cat[dec_col][in_footprint],
+                marker='x'
+            )
             plt.xlabel("Right Ascension (Catalogue)")
             plt.ylabel("Declination (Catalogue)")
             # plt.colorbar(label="Offset of measured position from catalogue (\")")
@@ -2304,7 +2309,7 @@ class ImagingImage(Image):
                 ra_col=ra_col,
                 dec_col=dec_col,
                 offset_tolerance=offset_tolerance,
-                star_tolerance=star_tolerance
+                # star_tolerance=star_tolerance
             )
             if len(matches_source_cat) < 1:
                 self.astrometry_err = -99 * units.arcsec
@@ -2410,7 +2415,7 @@ class ImagingImage(Image):
         self.astrometry_stats["n_local"] = len(distance_local)
         self.astrometry_stats["local_coord"] = local_coord
         self.astrometry_stats["local_tolerance"] = local_radius
-        self.astrometry_stats["star_tolerance"] = star_tolerance
+        # self.astrometry_stats["star_tolerance"] = star_tolerance
         self.astrometry_stats["offset_tolerance"] = offset_tolerance
 
         self.send_column_to_source_cat(colname="OFFSET_FROM_REF", sample=matches_source_cat)
@@ -2448,7 +2453,7 @@ class ImagingImage(Image):
             mag_max: float = 0.0 * units.mag,
             mag_min: float = -50. * units.mag,
             match_to: table.Table = None,
-            star_class_tol: int = 0,
+            star_class_tol: int = 0.95,
             frame: float = None,
             ext: int = 0,
             target: SkyCoord = None,
@@ -2795,6 +2800,7 @@ class ImagingImage(Image):
                 allowed=np.arange(0, star_tolerance + 1)
             )
 
+        print("len(source_cat) match_catalogs:", len(source_cat))
         matches_source_cat, matches_ext_cat, distance = astm.match_catalogs(
             cat_1=source_cat,
             cat_2=cat,
@@ -2857,7 +2863,6 @@ class ImagingImage(Image):
     def signal_to_noise_measure(self, dual: bool = False):
         print("Measuring signal-to-noise of sources...")
         source_cat = self.get_source_cat(dual=dual)
-
         source_cat["SNR_AUTO"] = source_cat["FLUX_AUTO"] / source_cat["FLUXERR_AUTO"]
         if "FLUX_PSF" in source_cat.colnames:
             source_cat["SNR_PSF"] = source_cat["FLUX_PSF"] / source_cat["FLUXERR_PSF"]
@@ -2951,6 +2956,7 @@ class ImagingImage(Image):
 
     def plot_apertures(self, dual=True, output: str = None, show: bool = False):
         cat = self.get_source_cat(dual=dual)
+
         if cat is not None:
             pl.plot_all_params(image=self.path, cat=cat, kron=True, show=False)
             plt.title(self.filter_name)

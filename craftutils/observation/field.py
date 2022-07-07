@@ -244,9 +244,13 @@ def list_fields(include_std: bool = False):
 def list_fields_old():
     print("Searching for old-format field param files...")
     param_path = os.path.join(config['param_dir'], 'FRBs')
-    fields = filter(lambda d: os.path.isfile(os.path.join(param_path, d)) and d.endswith('.yaml'),
-                    os.listdir(param_path))
-    fields = list(map(lambda f: f.split(".")[0], fields))
+    if os.path.isdir(param_path):
+        fields = filter(
+            lambda d: os.path.isfile(os.path.join(param_path, d)) and d.endswith('.yaml'),
+            os.listdir(param_path))
+        fields = list(map(lambda f: f.split(".")[0], fields))
+    else:
+        fields = []
     fields.sort()
     return fields
 
@@ -2837,6 +2841,8 @@ class ImagingEpoch(Epoch):
             rows = []
             names = []
             separations = []
+            ra_target = []
+            dec_target = []
 
             if "SNR_PSF" in img.depth["secure"]:
                 depth = img.depth["secure"]["SNR_PSF"][f"5-sigma"]
@@ -2851,6 +2857,8 @@ class ImagingEpoch(Epoch):
                 names.append(obj.name)
                 rows.append(nearest)
                 separations.append(separation.to(units.arcsec))
+                ra_target.append(obj.position.ra)
+                dec_target.append(obj.position.dec)
 
                 if separation > match_tolerance:
                     obj.add_photometry(
@@ -2983,6 +2991,8 @@ class ImagingEpoch(Epoch):
             tbl = table.vstack(rows)
             tbl.add_column(names, name="NAME")
             tbl.add_column(separations, name="OFFSET_FROM_TARGET")
+            tbl.add_column(ra_target, name="RA_TARGET")
+            tbl.add_column(dec_target, name="DEC_TARGET")
 
             tbl.write(
                 os.path.join(fil_output_path, f"{self.field.name}_{self.name}_{fil}.ecsv"),
@@ -3299,8 +3309,6 @@ class ImagingEpoch(Epoch):
                         self.add_coadded_astrometry_image(img=outputs["coadded_astrometry"][fil], key=fil, **kwargs)
             if "std_pointings" in outputs:
                 self.std_pointings = outputs["std_pointings"]
-
-        print(self.filters)
 
         return outputs
 
@@ -4332,7 +4340,7 @@ class SurveyImagingEpoch(ImagingEpoch):
             "initial_setup": super_stages["initial_setup"],
             "source_extraction": super_stages["source_extraction"],
             "photometric_calibration": super_stages["photometric_calibration"],
-            "dual_mode_source_extraction": super_stages["dual_mode_source_extraction"],
+            # "dual_mode_source_extraction": super_stages["dual_mode_source_extraction"],
             "get_photometry": super_stages["get_photometry"]
         }
         return stages
@@ -4343,8 +4351,7 @@ class SurveyImagingEpoch(ImagingEpoch):
         self.paths["download"] = os.path.join(self.data_path, "0-download")
         # self.frames_final = "coadded"
 
-        # TODO: Automatic cutout download; don't worry for now.
-
+    # TODO: Automatic cutout download; don't worry for now.
     def proc_download(self, output_dir: str, **kwargs):
         """
         Automatically download survey cutout.
@@ -4741,7 +4748,7 @@ class ESOImagingEpoch(ImagingEpoch):
         #     u.system_command_verbose(
         #         f"furby_vlt_ob {self.field.name} {tmp.filter.band_name} --observed {self.date_str()}"
         #     )
-            # u.system_command_verbose(f"furby_vlt_ob {self.field.name} {tmp.filter.band_name} --completed")
+        # u.system_command_verbose(f"furby_vlt_ob {self.field.name} {tmp.filter.band_name} --completed")
 
         try:
             u.system_command_verbose("esoreflex")
