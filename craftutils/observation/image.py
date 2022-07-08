@@ -264,6 +264,23 @@ def detect_instrument(path: str, ext: int = 0, fail_quietly: bool = False):
                 return None
 
 
+def from_path(path: str, cls: type = None, **kwargs):
+    """
+    To be used when there may already be an image instance for this path floating around in memory, and it's okay
+    (or better) to access this one instead of creating a new instance.
+    When the image may have overwritten a previous file, instantiating the image directly is better.
+    :param path:
+    :param cls:
+    :param kwargs:
+    :return:
+    """
+    u.debug_print(3, "image.from_path(): path ==", path)
+    if path in active_images:
+        return active_images[path]
+    if cls is not None:
+        return cls(path, **kwargs)
+
+
 class Image:
     instrument_name = "dummy"
     num_chips = 1
@@ -277,6 +294,7 @@ class Image:
     ):
 
         self.path = path
+        active_images[path] = self
         if not os.path.isfile(self.path):
             raise FileNotFoundError(f"The image file file {path} does not exist.")
         self.output_file = path.replace(".fits", "_outputs.yaml")
@@ -1054,7 +1072,6 @@ class ImagingImage(Image):
             self.source_cat_sextractor_path = cat_path
             cat = self.load_source_cat_sextractor(force=True)
 
-
         if len(cat) == 0:
             print()
             print("PSF source extraction was unsuccessful, probably due to lack of viable sources. Trying again without"
@@ -1077,7 +1094,28 @@ class ImagingImage(Image):
                 cat = self.load_source_cat_sextractor(force=True)
         else:
             self.psfex_successful = True
+
+        print("dual, template:", dual, template)
+        print()
+        print(self.name)
+        print("in source_extraction_psf 1:")
+        print("\tsource_cat_path", self.source_cat_path)
+        print("\tsource_cat_dual_path", self.source_cat_dual_path)
+        print("\tsource_cat_sextractor_path", self.source_cat_sextractor_path)
+        print("\tsource_cat_sextractor_dual_path", self.source_cat_sextractor_dual_path)
+        print()
+
         self.write_source_cat()
+
+        print()
+        print(self.name)
+        print("in source_extraction_psf 2:")
+        print("\tsource_cat_path", self.source_cat_path)
+        print("\tsource_cat_dual_path", self.source_cat_dual_path)
+        print("\tsource_cat_sextractor_path", self.source_cat_sextractor_path)
+        print("\tsource_cat_sextractor_dual_path", self.source_cat_sextractor_dual_path)
+        print()
+
         self.plot_apertures()
         self.add_log(
             action="Sources extracted using Source Extractor with PSFEx PSF modelling.",
@@ -1086,12 +1124,24 @@ class ImagingImage(Image):
             packages=["psfex", "source-extractor"]
         )
         self.signal_to_noise_measure(dual=dual)
+        print()
         self.update_output_file()
+
+        print()
+        print(self.name)
+        print("in source_extraction_psf 3:")
+        print("\tsource_cat_path", self.source_cat_path)
+        print("\tsource_cat_dual_path", self.source_cat_dual_path)
+        print("\tsource_cat_sextractor_path", self.source_cat_sextractor_path)
+        print("\tsource_cat_sextractor_dual_path", self.source_cat_sextractor_dual_path)
+        print()
 
     def _load_source_cat_sextractor(self, path: str):
         self.load_wcs()
         print("Loading source catalogue from", path)
         source_cat = table.QTable.read(path, format="ascii.sextractor")
+        if "SPREAD_MODEL" in source_cat.colnames:
+            source_cat = u.classify_spread_model(source_cat)
         source_cat["RA"], source_cat["DEC"] = self.wcs.all_pix2world(
             source_cat["X_IMAGE"],
             source_cat["Y_IMAGE"],
@@ -1885,18 +1935,56 @@ class ImagingImage(Image):
         """
 
         # self.signal_to_noise_ccd(dual=dual)
+        print()
+        print(self.name)
+        print("in estimate_depth 1:")
+        print("\tsource_cat_path", self.source_cat_path)
+        print("\tsource_cat_dual_path", self.source_cat_dual_path)
+        print("\tsource_cat_sextractor_path", self.source_cat_sextractor_path)
+        print("\tsource_cat_sextractor_dual_path", self.source_cat_sextractor_dual_path)
+        print()
         self.signal_to_noise_measure(dual=dual)
         if do_magnitude_calibration:
             self.calibrate_magnitudes(zeropoint_name=zeropoint_name, dual=dual)
-
+        print()
+        print("in estimate_depth 2:")
+        print("\tsource_cat_path", self.source_cat_path)
+        print("\tsource_cat_dual_path", self.source_cat_dual_path)
+        print("\tsource_cat_sextractor_path", self.source_cat_sextractor_path)
+        print("\tsource_cat_sextractor_dual_path", self.source_cat_sextractor_dual_path)
+        print()
         source_cat = self.get_source_cat(dual=dual)
-
+        print()
+        print("in estimate_depth 3:")
+        print("\tsource_cat_path", self.source_cat_path)
+        print("\tsource_cat_dual_path", self.source_cat_dual_path)
+        print("\tsource_cat_sextractor_path", self.source_cat_sextractor_path)
+        print("\tsource_cat_sextractor_dual_path", self.source_cat_sextractor_dual_path)
+        print()
         # "max" stores the magnitude of the faintest object with S/N > x sigma
         self.depth = {"max": {}, "secure": {}}
         # "secure" finds the brightest object with S/N < x sigma, then increments to the
         # overall; thus giving the faintest magnitude at which we can be confident of a detection
 
-        source_cat = u.trim_to_class(cat=source_cat, modify=True, allowed=np.arange(0, star_tolerance + 1))
+        stars = u.trim_to_class(cat=source_cat, modify=True, allowed=np.arange(0, star_tolerance + 1))
+        print()
+        print("in estimate_depth 4:")
+        print("\tsource_cat_path", self.source_cat_path)
+        print("\tsource_cat_dual_path", self.source_cat_dual_path)
+        print("\tsource_cat_sextractor_path", self.source_cat_sextractor_path)
+        print("\tsource_cat_sextractor_dual_path", self.source_cat_sextractor_dual_path)
+        print()
+        if stars is None or len(stars) < 10:
+            stars = source_cat[source_cat["CLASS_STAR"] >= 0.9]
+        source_cat = stars
+
+        print()
+        print("in estimate_depth 5:")
+        print("\tsource_cat_path", self.source_cat_path)
+        print("\tsource_cat_dual_path", self.source_cat_dual_path)
+        print("\tsource_cat_sextractor_path", self.source_cat_sextractor_path)
+        print("\tsource_cat_sextractor_dual_path", self.source_cat_sextractor_dual_path)
+        print()
 
         for snr_key in ["PSF", "AUTO"]:  # ["SNR_CCD", "SNR_MEASURED", "SNR_SE"]:
             # We do this to ensure that, in the "secure" step, object i+1 is the next-brightest in the catalogue
@@ -1917,7 +2005,7 @@ class ImagingImage(Image):
                     source_cat[f"SNR_{snr_key}"].unit)
                 cat_more_xsigma = source_cat[source_cat[f"SNR_{snr_key}"] > sigma]
                 self.depth["max"][f"SNR_{snr_key}"][f"{sigma}-sigma"] = np.max(
-                    cat_more_xsigma[f"MAG_PSF_ZP_{zeropoint_name}"])
+                    cat_more_xsigma[f"MAG_{snr_key}_ZP_{zeropoint_name}"])
 
                 # Brightest source less than x-sigma (kind of)
                 # Get the sources with SNR less than x-sigma
@@ -1925,7 +2013,7 @@ class ImagingImage(Image):
                 print(f"Found {len(source_less_sigma)} point-sources with SNR < {sigma}")
                 if len(source_less_sigma) > 0:
                     # Get the source with the greatest flux
-                    i = np.argmax(source_less_sigma["FLUX_PSF"])
+                    i = np.argmax(source_less_sigma[f"FLUX_{snr_key}"])
                     # Find its counterpart in the full catalogue
                     i, _ = u.find_nearest(source_cat["NUMBER"], source_less_sigma[i]["NUMBER"])
                     # Get the source that is next up in brightness (being brighter)
@@ -1935,7 +2023,16 @@ class ImagingImage(Image):
                 else:
                     src_lim = source_cat[source_cat[f"SNR_{snr_key}"].argmin()]
 
-                self.depth["secure"][f"SNR_{snr_key}"][f"{sigma}-sigma"] = src_lim[f"MAG_PSF_ZP_{zeropoint_name}"]
+                self.depth["secure"][f"SNR_{snr_key}"][f"{sigma}-sigma"] = src_lim[f"MAG_{snr_key}_ZP_{zeropoint_name}"]
+                self.update_output_file()
+
+        print()
+        print("in estimate_depth 6:")
+        print("\tsource_cat_path", self.source_cat_path)
+        print("\tsource_cat_dual_path", self.source_cat_dual_path)
+        print("\tsource_cat_sextractor_path", self.source_cat_sextractor_path)
+        print("\tsource_cat_sextractor_dual_path", self.source_cat_sextractor_dual_path)
+        print()
 
         source_cat.sort("NUMBER")
         self.add_log(
@@ -1943,6 +2040,14 @@ class ImagingImage(Image):
             method=self.estimate_depth,
         )
         self.update_output_file()
+        print()
+        print(self.name)
+        print("in estimate_depth 7:")
+        print("\tsource_cat_path", self.source_cat_path)
+        print("\tsource_cat_dual_path", self.source_cat_dual_path)
+        print("\tsource_cat_sextractor_path", self.source_cat_sextractor_path)
+        print("\tsource_cat_sextractor_dual_path", self.source_cat_sextractor_dual_path)
+        print()
         return self.depth
 
     def send_column_to_source_cat(self, colname: str, sample: table.Table):
@@ -2453,7 +2558,7 @@ class ImagingImage(Image):
             mag_max: float = 0.0 * units.mag,
             mag_min: float = -50. * units.mag,
             match_to: table.Table = None,
-            star_class_tol: int = 0.95,
+            star_class_tol: int = 0,
             frame: float = None,
             ext: int = 0,
             target: SkyCoord = None,
@@ -2862,6 +2967,7 @@ class ImagingImage(Image):
 
     def signal_to_noise_measure(self, dual: bool = False):
         print("Measuring signal-to-noise of sources...")
+
         source_cat = self.get_source_cat(dual=dual)
         source_cat["SNR_AUTO"] = source_cat["FLUX_AUTO"] / source_cat["FLUXERR_AUTO"]
         if "FLUX_PSF" in source_cat.colnames:
@@ -4855,14 +4961,14 @@ class Spectrum(Image):
         if 'frame_type' in kwargs:
             frame_type = kwargs['frame_type']
             if frame_type == "coadded":
-                return Spec1DCoadded
+                return Coadded1DSpectrum
             elif frame_type == "raw":
-                return SpecRaw
+                return RawSpectrum
         else:
             raise KeyError("frame_type is required.")
 
 
-class SpecRaw(Spectrum):
+class RawSpectrum(Spectrum):
     frame_type = "raw"
 
     def __init__(self, path: str = None, frame_type: str = None, decker: str = None, binning: str = None):
@@ -4873,15 +4979,18 @@ class SpecRaw(Spectrum):
     def from_pypeit_line(cls, line: str, pypeit_raw_path: str):
         attributes = line.split('|')
         attributes = list(map(lambda at: at.replace(" ", ""), attributes))
-        inst = SpecRaw(path=os.path.join(pypeit_raw_path, attributes[1]),
-                       frame_type=attributes[2],
-                       decker=attributes[7],
-                       binning=attributes[8])
+        inst = from_path(
+            path=os.path.join(pypeit_raw_path, attributes[1]),
+            frame_type=attributes[2],
+            decker=attributes[7],
+            binning=attributes[8],
+            cls=RawSpectrum
+        )
         inst.pypeit_line = line
         return inst
 
 
-class Spec1DCoadded(Spectrum):
+class Coadded1DSpectrum(Spectrum):
     def __init__(self, path: str = None, grism: str = None):
         super().__init__(path=path, grism=grism)
         self.marz_format_path = None

@@ -1849,7 +1849,11 @@ class Epoch:
                 cls = image.CoaddedImage.select_child_class(instrument=self.instrument_name)
                 u.debug_print(2, f"Epoch._add_coadded(): cls ==", cls)
 
-                img = cls(path=img, instrument_name=self.instrument_name)
+                img = image.from_path(
+                    path=img,
+                    instrument_name=self.instrument_name,
+                    cls=cls
+                )
             else:
                 return None
         img.epoch = self
@@ -2226,7 +2230,10 @@ class ImagingEpoch(Epoch):
                 tmp = template
                 n_template = -1
             elif isinstance(template, str):
-                tmp = image.ImagingImage(path=template)
+                tmp = image.from_path(
+                    path=template,
+                    cls=image.ImagingImage
+                )
                 n_template = -1
             else:
                 tmp = frames[fil][template[fil]]
@@ -2327,7 +2334,10 @@ class ImagingEpoch(Epoch):
                     self.update_output_file()
 
                 if 'registration_template' in kwargs and kwargs['registration_template'] is not None:
-                    first_success = image.ImagingImage(kwargs['registration_template'])
+                    first_success = image.from_path(
+                        kwargs['registration_template'],
+                        cls=image.ImagingImage
+                    )
                 elif first_success is None:
                     tmp = frames_by_chip[chip][0]
                     print(
@@ -2598,7 +2608,7 @@ class ImagingEpoch(Epoch):
 
         if first_success is None and aa_template is not None:
             cls = image.detect_instrument(path=aa_template)
-            first_success = cls(path=aa_template)
+            first_success = image.from_path(path=aa_template, cls=cls)
 
         if first_success is not None:
             for fil in unsuccessful:
@@ -2699,10 +2709,19 @@ class ImagingEpoch(Epoch):
             img = image_dict[fil]
             img.zeropoints = {}
             img.zeropoint_best = None
+            print()
+            print(img.name)
+            print("in epoch.proc_photometric_calibration 1:")
+            print("\tsource_cat_path", img.source_cat_path)
+            print("\tsource_cat_dual_path", img.source_cat_dual_path)
+            print("\tsource_cat_sextractor_path", img.source_cat_sextractor_path)
+            print("\tsource_cat_sextractor_dual_path", img.source_cat_sextractor_dual_path)
+            print()
         self.photometric_calibration(
             output_path=output_dir,
             image_dict=image_dict,
-            **kwargs)
+            **kwargs
+        )
 
     def photometric_calibration(
             self,
@@ -2726,10 +2745,27 @@ class ImagingEpoch(Epoch):
         )
 
         for fil in image_dict:
-            if self.coadded_unprojected[fil] is not None:
-                self.coadded_unprojected[fil].zeropoints = image_dict[fil].zeropoints
-                self.coadded_unprojected[fil].zeropoint_best = image_dict[fil].zeropoint_best
-                self.coadded_unprojected[fil].update_output_file()
+            if self.coadded_unprojected[fil] is not None and self.coadded_unprojected[fil] is not image_dict[fil]:
+                img = self.coadded_unprojected[fil]
+                print()
+                print(img.name)
+                print("in epoch.photometric_calibration 1:")
+                print("\tsource_cat_path", img.source_cat_path)
+                print("\tsource_cat_dual_path", img.source_cat_dual_path)
+                print("\tsource_cat_sextractor_path", img.source_cat_sextractor_path)
+                print("\tsource_cat_sextractor_dual_path", img.source_cat_sextractor_dual_path)
+                print()
+                img.zeropoints = image_dict[fil].zeropoints
+                img.zeropoint_best = image_dict[fil].zeropoint_best
+                img.update_output_file()
+                print()
+                print(img.name)
+                print("in epoch.photometric_calibration 2:")
+                print("\tsource_cat_path", img.source_cat_path)
+                print("\tsource_cat_dual_path", img.source_cat_dual_path)
+                print("\tsource_cat_sextractor_path", img.source_cat_sextractor_path)
+                print("\tsource_cat_sextractor_dual_path", img.source_cat_sextractor_dual_path)
+                print()
 
         self.deepest_filter = deepest.filter_name
         self.deepest = deepest
@@ -2808,6 +2844,7 @@ class ImagingEpoch(Epoch):
             image_type = kwargs["image_type"]
         else:
             image_type = "final"
+        print("image_type:", image_type)
         self.get_photometry(output_dir, image_type=image_type)
 
     def get_photometry(
@@ -2888,7 +2925,7 @@ class ImagingEpoch(Epoch):
                         mag_psf=-999. * units.mag,
                         mag_psf_err=-999. * units.mag,
                         snr_psf=-999.,
-                        image_depth=img.depth["secure"]["SNR_PSF"][f"5-sigma"],
+                        image_depth=depth,
                         image_path=img.path,
                         good_image_path=self.coadded_unprojected[fil].path,
                         do_mask=img.mask_nearby()
@@ -2912,10 +2949,16 @@ class ImagingEpoch(Epoch):
                         mag_psf = nearest["MAG_PSF_ZP_best"]
                         mag_psf_err = nearest["MAGERR_PSF_ZP_best"]
                         snr_psf = nearest["FLUX_PSF"] / nearest["FLUXERR_PSF"]
+                        spread_model = nearest["SPREAD_MODEL"]
+                        spread_model_err = nearest["SPREADERR_MODEL"]
+                        class_flag = nearest["CLASS_FLAG"]
                     else:
                         mag_psf = -999.0 * units.mag
                         mag_psf_err = -999.0 * units.mag
                         snr_psf = -999.0
+                        spread_model = -999.0
+                        spread_model_err = -999.0
+                        class_flag = -999
 
                     obj.add_photometry(
                         instrument=self.instrument_name,
@@ -2923,7 +2966,7 @@ class ImagingEpoch(Epoch):
                         epoch_name=self.name,
                         mag=nearest['MAG_AUTO_ZP_best'],
                         mag_err=err,
-                        snr=nearest['SNR_PSF'],
+                        snr=nearest['SNR_AUTO'],
                         ellipse_a=nearest['A_WORLD'],
                         ellipse_a_err=nearest["ERRA_WORLD"],
                         ellipse_b=nearest['B_WORLD'],
@@ -2938,9 +2981,9 @@ class ImagingEpoch(Epoch):
                         separation_from_given=separation,
                         epoch_date=self.date_str(),
                         class_star=nearest["CLASS_STAR"],
-                        spread_model=nearest["SPREAD_MODEL"],
-                        spread_model_err=nearest["SPREADERR_MODEL"],
-                        class_flag=nearest["CLASS_FLAG"],
+                        spread_model=spread_model,
+                        spread_model_err=spread_model_err,
+                        class_flag=class_flag,
                         mag_psf=mag_psf,
                         mag_psf_err=mag_psf_err,
                         snr_psf=snr_psf,
@@ -3230,14 +3273,18 @@ class ImagingEpoch(Epoch):
     def load_output_file(self, **kwargs):
         outputs = super().load_output_file(**kwargs)
         if isinstance(outputs, dict):
-            cls = image.Image.select_child_class(instrument=self.instrument_name, mode='imaging')
+            frame_cls = image.ImagingImage.select_child_class(instrument=self.instrument_name, mode='imaging')
+            coadd_class = image.CoaddedImage.select_child_class(instrument=self.instrument_name, mode='imaging')
             if self.date is None:
                 if "date" in outputs:
                     self.date = outputs["date"]
             if "filters" in outputs:
                 self.filters = outputs["filters"]
             if self._check_output_file_path("deepest", outputs):
-                self.deepest = cls(path=outputs["deepest"])
+                self.deepest = image.from_path(
+                    path=outputs["deepest"],
+                    cls=coadd_class
+                )
             if "deepest_filter" in outputs:
                 self.deepest_filter = outputs["deepest_filter"]
             if "exp_time_mean" in outputs:
@@ -3363,7 +3410,11 @@ class ImagingEpoch(Epoch):
             if os.path.isfile(frame):
                 cls = image.ImagingImage.select_child_class(instrument=self.instrument_name)
                 u.debug_print(2, f"{cls} {self.instrument_name}")
-                frame = cls(path=frame, frame_type=frame_type)
+                frame = image.from_path(
+                    path=frame,
+                    frame_type=frame_type,
+                    cls=cls
+                )
             else:
                 u.debug_print(2, f"File {frame} not found.")
                 return None, None
@@ -3531,6 +3582,12 @@ class ImagingEpoch(Epoch):
             n_frames = self.n_frames(fil)
             frame_exp_time = self.exp_time_mean[fil].round()
 
+            if "SNR_PSF" in img.depth["secure"]:
+                depth = img.depth["secure"]["SNR_PSF"][f"5-sigma"]
+            else:
+                depth = img.depth["secure"]["SNR_AUTO"][f"5-sigma"]
+
+            print("coadded[fil]", coadded[fil], type(coadded[fil]))
             entry = {
                 "field_name": self.field.name,
                 "epoch_name": self.name,
@@ -3550,7 +3607,7 @@ class ImagingEpoch(Epoch):
                 "zeropoint_err": coadded[fil].zeropoint_best["zeropoint_img_err"],
                 "zeropoint_source": coadded[fil].zeropoint_best["catalogue"],
                 "last_processed": Time.now().strftime("%Y-%m-%dT%H:%M:%S"),
-                "depth": img.depth["secure"]["SNR_PSF"]["5-sigma"]
+                "depth": depth
             }
 
             obs.add_epoch(
@@ -4101,7 +4158,10 @@ class GSAOIImagingEpoch(ImagingEpoch):
             # Since GSAOI science files cannot be relied upon to include the object/target in the header, we group
             # images by RA and Dec.
             path = os.path.join(input_dir, file)
-            img = image.GSAOIImage(path=path)
+            img = image.from_path(
+                path,
+                cls=image.GSAOIImage
+            )
             pointing = img.extract_pointing()
             associated = False
             for pointing_str in pointings:
@@ -4176,7 +4236,10 @@ class HubbleImagingEpoch(ImagingEpoch):
         #     shutil.move(os.path.join(self.data_path, file), output_dir)
         for file in filter(lambda f: f.endswith(".fits"), os.listdir(download_dir)):
             path = os.path.join(download_dir, file)
-            img = image.HubbleImage(path)
+            img = image.from_path(
+                path,
+                cls=image.HubbleImage
+            )
             if self.instrument_name in [None, "hst-dummy"]:
                 self.instrument_name = img.instrument_name
             fil = img.extract_filter()
@@ -4255,7 +4318,10 @@ class HubbleImagingEpoch(ImagingEpoch):
     def add_coadded_image(self, img: Union[str, image.Image], key: str, **kwargs):
         try:
             if isinstance(img, str):
-                img = image.HubbleImage(path=img)
+                img = image.from_path(
+                    img,
+                    cls=image.HubbleImage
+                )
             img.epoch = self
             self.coadded[key] = img
             return img
@@ -4410,6 +4476,14 @@ class SurveyImagingEpoch(ImagingEpoch):
         deepest = None
         for fil in self.coadded:
             img = self.coadded[fil]
+            print()
+            print(img.name)
+            print("in epoch.zeropoint 1:")
+            print("\tsource_cat_path", img.source_cat_path)
+            print("\tsource_cat_dual_path", img.source_cat_dual_path)
+            print("\tsource_cat_sextractor_path", img.source_cat_sextractor_path)
+            print("\tsource_cat_sextractor_dual_path", img.source_cat_sextractor_dual_path)
+            print()
             zp = img.zeropoint(
                 cat_path=self.field.get_path(f"cat_csv_{self.catalogue}"),
                 output_path=os.path.join(output_path, img.name),
@@ -4420,9 +4494,32 @@ class SurveyImagingEpoch(ImagingEpoch):
                 star_class_tol=star_class_tolerance,
                 image_name=f"{self.catalogue}",
             )
+            print()
+            print(img.name)
+            print("in epoch.zeropoint 2:")
+            print("\tsource_cat_path", img.source_cat_path)
+            print("\tsource_cat_dual_path", img.source_cat_dual_path)
+            print("\tsource_cat_sextractor_path", img.source_cat_sextractor_path)
+            print("\tsource_cat_sextractor_dual_path", img.source_cat_sextractor_dual_path)
+            print()
             img.select_zeropoint(True, preferred=self.preferred_zeropoint)
+            print()
+            print(img.name)
+            print("in epoch.zeropoint 3:")
+            print("\tsource_cat_path", img.source_cat_path)
+            print("\tsource_cat_dual_path", img.source_cat_dual_path)
+            print("\tsource_cat_sextractor_path", img.source_cat_sextractor_path)
+            print("\tsource_cat_sextractor_dual_path", img.source_cat_sextractor_dual_path)
+            print()
             img.estimate_depth(zeropoint_name=self.catalogue)  # , do_magnitude_calibration=False)
-
+            print()
+            print(img.name)
+            print("in epoch.zeropoint 4:")
+            print("\tsource_cat_path", img.source_cat_path)
+            print("\tsource_cat_dual_path", img.source_cat_dual_path)
+            print("\tsource_cat_sextractor_path", img.source_cat_sextractor_path)
+            print("\tsource_cat_sextractor_dual_path", img.source_cat_sextractor_dual_path)
+            print()
             if deepest is not None:
                 deepest = image.deepest(deepest, img)
             else:
@@ -4438,7 +4535,7 @@ class SurveyImagingEpoch(ImagingEpoch):
         if isinstance(img, str):
             if os.path.isfile(img):
                 cls = self.coadded_class
-                img = cls(path=img)
+                img = image.from_path(path=img, cls=cls)
             else:
                 return None
         img.epoch = self
@@ -4671,7 +4768,7 @@ class ESOImagingEpoch(ImagingEpoch):
         for row in tbl_full:
             path = os.path.join(raw_dir, row["identifier"])
             cls = image.ImagingImage.select_child_class(instrument=self.instrument_name, mode="imaging")
-            img = cls(path)
+            img = image.from_path(path, cls=cls)
             img.extract_frame_type()
             img.extract_filter()
             u.debug_print(1, self.instrument_name, cls, img.name, img.frame_type)
@@ -4797,7 +4894,10 @@ class ESOImagingEpoch(ImagingEpoch):
                     for file in filter(lambda f: f.endswith(".fits"), os.listdir(output_subdir)):
                         path = os.path.join(output_subdir, file)
                         # TODO: This (and other FORS2Image instances in this method) WILL NOT WORK WITH HAWKI. Must make more flexible.
-                        img = image.FORS2Image(path)
+                        img = image.from_path(
+                            path,
+                            cls=image.FORS2Image
+                        )
                         self.add_frame_reduced(img)
                 backgrounds = os.path.join(output_dir, "backgrounds")
                 for fil in filter(lambda d: os.path.isdir(os.path.join(backgrounds, d)), os.listdir(backgrounds)):
@@ -4805,7 +4905,10 @@ class ESOImagingEpoch(ImagingEpoch):
                     print(f"Adding background images from {output_subdir}")
                     for file in filter(lambda f: f.endswith(".fits"), os.listdir(output_subdir)):
                         path = os.path.join(output_subdir, file)
-                        img = image.FORS2Image(path)
+                        img = image.from_path(
+                            path,
+                            cls=image.FORS2Image
+                        )
                         self.add_frame_background(img)
 
             else:
@@ -4831,15 +4934,20 @@ class ESOImagingEpoch(ImagingEpoch):
                         subpath = os.path.join(date_dir, subdirectory)
                         print(f"\tSearching {subpath}")
                         # Get the files within the image directory.
-                        files = filter(lambda d: os.path.isfile(os.path.join(subpath, d)),
-                                       os.listdir(subpath))
+                        files = filter(
+                            lambda d: os.path.isfile(os.path.join(subpath, d)),
+                            os.listdir(subpath)
+                        )
                         for file_name in files:
                             # Retrieve the target object name from the fits file.
                             file_path = os.path.join(subpath, file_name)
                             inst_file = image.detect_instrument(file_path)
                             if inst_file != "vlt-fors2":
                                 continue
-                            file = image.FORS2Image(file_path)
+                            file = image.from_path(
+                                path=file_path,
+                                cls=image.FORS2Image
+                            )
                             file_obj = file.extract_object().lower()
                             file_mjd = int(file.extract_header_item('MJD-OBS'))
                             file_filter = file.extract_filter()
@@ -4876,7 +4984,10 @@ class ESOImagingEpoch(ImagingEpoch):
                                 file.copy(file_destination)
                                 if delete_output and os.path.isfile(file_destination):
                                     os.remove(file_path)
-                                img = image.FORS2Image(file_destination)
+                                img = image.from_path(
+                                    path=file_path,
+                                    cls=image.FORS2Image
+                                )
                                 u.debug_print(2, "ESOImagingEpoch._sort_after_esoreflex(): file_type ==", file_type)
                                 if file_type == "science":
                                     self.add_frame_reduced(img)
@@ -5787,7 +5898,7 @@ class SpectroscopyEpoch(Epoch):
     mode = "spectrocopy"
     grisms = {}
     frame_class = image.Spectrum
-    coadded_class = image.Spec1DCoadded
+    coadded_class = image.Coadded1DSpectrum
 
     def __init__(self,
                  param_path: str = None,
@@ -5906,7 +6017,7 @@ class SpectroscopyEpoch(Epoch):
         f_start = pypeit_lines.index("data read\n") + 3
         f_end = pypeit_lines.index("data end\n")
         for line in pypeit_lines[f_start:f_end]:
-            raw = image.SpecRaw.from_pypeit_line(line=line, pypeit_raw_path=self.paths["raw_dir"])
+            raw = image.RawSpectrum.from_pypeit_line(line=line, pypeit_raw_path=self.paths["raw_dir"])
             self.add_frame_raw(raw)
         return pypeit_lines
 
@@ -6242,7 +6353,7 @@ class FORS2SpectroscopyEpoch(ESOSpectroscopyEpoch):
             bias_lines = list(filter(lambda s: "bias" in s and "CHIP1" in s, self._pypeit_sorted_file))
             # Find line containing information for standard observation.
             std_line = filter(lambda s: "standard" in s and "CHIP1" in s, self._pypeit_sorted_file).__next__()
-            std_raw = image.SpecRaw.from_pypeit_line(std_line, pypeit_raw_path=self.paths['raw_dir'])
+            std_raw = image.RawSpectrum.from_pypeit_line(std_line, pypeit_raw_path=self.paths['raw_dir'])
             self.standards_raw.append(std_raw)
             std_start_index = self._pypeit_sorted_file.index(std_line)
             # Find last line of the std-obs configuration (encapsulating the required calibration files)
@@ -6520,10 +6631,14 @@ class XShooterSpectroscopyEpoch(ESOSpectroscopyEpoch):
                 self.coadded[arm].convert_to_marz_format()
             self.stages_complete[f'6-convert_to_marz_format'] = Time.now()
 
-    def add_coadded_image(self, img: Union[str, image.Spec1DCoadded], **kwargs):
+    def add_coadded_image(self, img: Union[str, image.Coadded1DSpectrum], **kwargs):
         arm = kwargs["key"]
         if isinstance(img, str):
-            img = image.Spec1DCoadded(path=img, grism=arm)
+            img = image.from_path(
+                path=img,
+                grism=arm,
+                cls=image.Coadded1DSpectrum
+            )
         img.epoch = self
         self.coadded[arm] = img
         return img

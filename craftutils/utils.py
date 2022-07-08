@@ -1306,6 +1306,9 @@ def classify_spread_model(
         sm_err_col: str = "SPREADERR_MODEL",
         class_flag_col: str = "CLASS_FLAG"
 ):
+    if sm_col not in cat.colnames:
+        print(sm_col, "not found in catalogue columns.")
+        return None
     cat[class_flag_col] = (
             ((cat[sm_col] + 3 * cat[sm_err_col]) > cutoffs[1]).astype(int)
             + ((cat[sm_col] + cat[sm_err_col]) > cutoffs[2]).astype(int)
@@ -1324,6 +1327,8 @@ def trim_to_class(
         classify_kwargs: dict = {},
 ):
     cat = classify_spread_model(cat, **classify_kwargs)
+    if cat is None:
+        return None
     if "class_flag_col" in classify_kwargs:
         star_class_col = classify_kwargs["class_flag_col"]
     else:
