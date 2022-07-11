@@ -191,11 +191,18 @@ class PositionUncertainty:
 
     # TODO: Finish this
 
-    # def to_dict(self):
-    #     return {
-    #         "a_sys": self.a_sys,
-    #         "a_stat": self.a_stat
-    #     }
+    def to_dict(self):
+        return {
+            "a_sys": self.a_sys,
+            "a_stat": self.a_stat,
+            "b_sys": self.b_sys,
+            "b_stat": self.b_stat,
+            "theta": self.theta,
+            "ra_err_sys": self.ra_sys,
+            "dec_err_sys": self.dec_sys,
+            "ra_err_stat": self.ra_stat,
+            "dec_err_stat": self.dec_stat
+        }
 
     @classmethod
     def default_params(cls):
@@ -425,6 +432,8 @@ class Object:
             separation_from_given: units.Quantity = None,
             epoch_date: str = None,
             class_star: float = None,
+            spread_model: float = None, spread_model_err: float = None,
+            class_flag: int = None,
             mag_psf: units.Quantity = None, mag_psf_err: units.Quantity = None,
             snr_psf: float = None,
             image_depth: units.Quantity = None,
@@ -456,6 +465,9 @@ class Object:
             "separation_from_given": u.check_quantity(separation_from_given, units.arcsec, convert=True),
             "epoch_date": str(epoch_date),
             "class_star": float(class_star),
+            "spread_model": float(spread_model),
+            "spread_model_err": float(spread_model_err),
+            "class_flag": int(class_flag),
             "mag_psf": u.check_quantity(mag_psf, unit=units.mag),
             "mag_psf_err": u.check_quantity(mag_psf_err, unit=units.mag),
             "snr_psf": snr_psf,
@@ -501,9 +513,12 @@ class Object:
         return cat[best_index], sep
 
     def _output_dict(self):
+        pos_phot_err = None
+        if self.position_photometry_err is not None:
+            pos_phot_err = self.position_photometry_err.to_dict()
         return {
             "position_photometry": self.position_photometry,
-            "position_photometry_err": self.position_photometry_err,
+            "position_photometry_err": pos_phot_err,
             "photometry": self.photometry,
             "irsa_extinction_path": self.irsa_extinction_path,
             "extinction_law": self.extinction_power_law,
@@ -517,7 +532,10 @@ class Object:
                 if "position_photometry" in outputs and outputs["position_photometry"] is not None:
                     self.position_photometry = outputs["position_photometry"]
                 if "position_photometry_err" in outputs and outputs["position_photometry_err"] is not None:
-                    self.position_photometry_err = outputs["position_photometry_err"]
+                    self.position_photometry_err = PositionUncertainty(
+                        **outputs["position_photometry_err"],
+                        position=self.position_photometry
+                    )
                 if "photometry" in outputs and outputs["photometry"] is not None:
                     self.photometry = outputs["photometry"]
                 if "irsa_extinction_path" in outputs and outputs["irsa_extinction_path"] is not None:
@@ -967,7 +985,10 @@ class Object:
             "epoch_ellipse_date": deepest["epoch_date"],
             "theta_err": deepest["theta_err"],
             f"e_b-v": self.ebv_sandf,
-            f"class_star": best_psf["class_star"]
+            f"class_star": best_psf["class_star"],
+            "spread_model": best_psf["spread_model"],
+            "spread_model_err": best_psf["spread_model_err"],
+            "class_flag": best_psf["class_flag"],
         }
 
         if isinstance(self, Galaxy) and self.z is not None:
@@ -1052,8 +1073,8 @@ class Object:
                 },
             "plotting":
                 {
-                "frame": None
-            },
+                    "frame": None
+                },
             "publication_doi": None
         }
         return default_params
@@ -1637,7 +1658,7 @@ class FRB(Object):
         print("\t\tDM_MWISM_NE2001")
         outputs["dm_ism_mw_ne2001"] = self.dm_mw_ism_ne2001()
         print("\t\t", outputs["dm_ism_mw_ne2001"])
-        
+
         print("\t\tDM_MWISM_YMW16")
         outputs["dm_ism_mw_ymw16"] = self.dm_mw_ism_ymw16()
         print("\t\t", outputs["dm_ism_mw_ymw16"])
@@ -1704,7 +1725,8 @@ class FRB(Object):
                     halo_info["id_cat"] = "--"
                 halo_info["offset_cat"] = sep.to(units.arcsec)
 
-            halo_info["offset_angle"] = offset_angle = self.position.separation(obj.position_photometry).to(units.arcsec)
+            halo_info["offset_angle"] = offset_angle = self.position.separation(obj.position_photometry).to(
+                units.arcsec)
             fg_pos_err = max(
                 obj.position_photometry_err.dec_stat,
                 obj.position_photometry_err.ra_stat)
@@ -1793,7 +1815,7 @@ class FRB(Object):
                 radius=halo_info["r_perp"]
             )
 
-            m_low = 10**(np.floor(obj.log_mass_halo))
+            m_low = 10 ** (np.floor(obj.log_mass_halo))
             m_high = 10 ** (np.ceil(obj.log_mass_halo))
             if m_low < 2e10:
                 m_high += 2e10 - m_low
