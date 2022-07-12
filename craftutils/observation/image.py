@@ -4172,6 +4172,38 @@ class ImagingImage(Image):
         new.write_fits_file()
         return new
 
+    def make_galfit_psf(
+            self,
+            output_dir: str,
+            x: float,
+            y: float
+    ):
+        # We obtain an oversampled PSF, because GALFIT works best with one.
+        psfex_path = os.path.join(output_dir, f"{self.name}_galfit_psfex.psf")
+        if not os.path.isfile(psfex_path):
+            self.psfex(
+                output_dir=output_dir,
+                PSF_SAMPLING=0.5,  # Equivalent to GALFIT fine-sampling factor = 2
+                # PSF_SIZE=50,
+                force=True,
+                set_attributes=True
+            )
+        else:
+            self.psfex_path = psfex_path
+            self.load_psfex_output()
+        # Load oversampled PSF image
+        psf_img = self.psf_image(x=x[0], y=y[0], match_pixel_scale=False)[0]
+        psf_img /= np.max(psf_img)
+        # Write our PSF image to disk for GALFIT to find
+        psf_hdu = fits.hdu.PrimaryHDU(psf_img)
+        psf_hdu_list = fits.hdu.HDUList(psf_hdu)
+        psf_path = os.path.join(output_dir, f"{self.name}_psf.fits")
+        psf_hdu_list.writeto(
+            psf_path,
+            overwrite=True
+        )
+        return psf_path
+
     def galfit(
             self,
             coords: SkyCoord,
@@ -4205,32 +4237,9 @@ class ImagingImage(Image):
             output_path=os.path.join(output_dir, self.filename.replace(".fits", "_galfit.fits"))
         )
         new.open()
-        hdu = new.hdu_list[ext]
-        data = hdu.data
-        # We obtain an oversampled PSF, because GALFIT works best with one.
-        psfex_path = os.path.join(output_dir, f"{self.name}_galfit_psfex.psf")
-        if not os.path.isfile(psfex_path):
-            new.psfex(
-                output_dir=output_dir,
-                PSF_SAMPLING=0.5,  # Equivalent to GALFIT fine-sampling factor = 2
-                # PSF_SIZE=50,
-                force=True,
-                set_attributes=True
-            )
-        else:
-            new.psfex_path = psfex_path
-            new.load_psfex_output()
-        # Load oversampled PSF image
-        psf_img = new.psf_image(x=x[0], y=y[0], match_pixel_scale=False)[0]
-        psf_img /= np.max(psf_img)
-        # Write our PSF image to disk for GALFIT to find
-        psf_hdu = fits.hdu.PrimaryHDU(psf_img)
-        psf_hdu_list = fits.hdu.HDUList(psf_hdu)
-        psf_path = os.path.join(output_dir, f"{self.name}_psf.fits")
-        psf_hdu_list.writeto(
-            psf_path,
-            overwrite=True
-        )
+
+        psf_path = new.make_galfit_psf(output_dir=output_dir)
+
         new.load_data()
         data = new.data[ext].copy()
         new.close()
