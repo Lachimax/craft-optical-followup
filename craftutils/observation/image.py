@@ -1734,8 +1734,13 @@ class ImagingImage(Image):
         zp_dict = kwargs.copy()
         if extinction is None:
             extinction = extinction_err = 0. * units.mag
+        elif extinction_err is None:
+            extinction_err = 0. * units.mag
+
         if airmass is None:
-            airmass = airmass_err = 0. * units.mag
+            airmass = airmass_err = 0.
+        elif airmass_err is None:
+            airmass_err = 0.
         zp_dict.update({
             "zeropoint": u.check_quantity(zeropoint, units.mag),
             "zeropoint_err": u.check_quantity(zeropoint_err, units.mag),

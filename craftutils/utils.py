@@ -503,6 +503,10 @@ def uncertainty_product(value, *args: tuple):
     Each arg should be a tuple, in which the first entry is the measurement and the second entry is the uncertainty in
     that measurement. These may be in the form of numpy arrays or table columns.
     """
+    if None in args:
+        raise TypeError("A 'None' has been passed as an arg.")
+    if value is None:
+        raise TypeError("value is None.")
     variance_pre = 0.
     for measurement, uncertainty in args:
         if hasattr(measurement, "__len__"):
@@ -514,7 +518,10 @@ def uncertainty_product(value, *args: tuple):
             measurement = sys.float_info.min
 
         debug_print(2, "uncertainty_product(): uncertainty, measurement ==", uncertainty, measurement)
-        variance_pre += (uncertainty / measurement) ** 2
+        try:
+            variance_pre += (uncertainty / measurement) ** 2
+        except units.UnitConversionError:
+            raise units.UnitConversionError(f"uncertainty {uncertainty} and measurement {measurement} have units that do not match.")
     sigma_pre = np.sqrt(variance_pre)
     sigma = np.abs(value) * sigma_pre
     return sigma
