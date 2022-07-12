@@ -4213,24 +4213,27 @@ class ImagingImage(Image):
             ext: int = 0,
             model_guesses: dict = None
     ):
-        import frb.galaxies.galfit as galfit
-
+        # import frb.galaxies.galfit as galfit
+        import craftutils.wrap.galfit as galfit
         if model_guesses is None:
-            model_guesses = {
-                "int_mag": 0.0,
-                "r_e": 3.0,
-                "n": 1.0,
-                "axis_ratio": 1.0,
-                "pa": 0.0
-            }
+            model_guesses = [{
+                "object_type": "sersic",
+                "int_mag": 20.0
+            }]
 
-        x, y = self.world_to_pixel(
-            coord=coords,
-            origin=1
-        )
+        coords = u.check_iterable(coords)
+        for i, coord in enumerate(coords):
+            x, y = self.world_to_pixel(
+                coord=coord,
+                origin=1
+            )
+            model_guesses[i]["x"] = x
+            model_guesses[i]["y"] = y
         x = u.check_iterable(x)
         y = u.check_iterable(y)
         self.extract_pixel_scale()
+        dx = (1 * units.arcsec).to(units.pixel, self.pixel_scale_x).value
+        dy = (1 * units.arcsec).to(units.pixel, self.pixel_scale_y).value
         if output_dir is None:
             output_dir = self.data_path
         new = self.make_galfit_version(
@@ -4238,7 +4241,7 @@ class ImagingImage(Image):
         )
         new.open()
 
-        psf_path = new.make_galfit_psf(output_dir=output_dir)
+        psf_path = new.make_galfit_psf(x=x, y=y, output_dir=output_dir)
 
         new.load_data()
         data = new.data[ext].copy()
@@ -4262,21 +4265,36 @@ class ImagingImage(Image):
             )
             mask_data = u.trim_image(mask.data[ext], margins=margins)
             img_block_path = os.path.join(output_dir, f"{self.name}_galfit_out_{frame}.fits")
-            galfit.run(
-                imgfile=new.path,
-                psffile=psf_path,
-                outdir=output_dir,
-                configfile=f"{self.name}_{frame}.feedme",
-                outfile=img_block_path,
-                finesample=2,
-                badpix=mask_path,
-                region=margins,
-                convobox=(frame * 2, frame * 2),
+            feedme_path = os.path.join(output_dir, f"{self.name}_{frame}.feedme")
+            output_file = os.path.join(output_dir, f"{self.name}_galfit-out_{frame}.fits")
+            galfit.galfit_feedme(
+                feedme_path=feedme_path,
+                input_file=new.path,
+                output_file=output_file,
                 zeropoint=self.zeropoint_best["zeropoint_img"].value,
-                position=(int(x[0]), int(y[0])),
-                skip_sky=False,
-                **model_guesses
+                psf_file=psf_path,
+                psf_fine_sampling=2,
+                mask_file=mask_path,
+                fitting_region_margins=margins,
+                convolution_size=(frame * 2, frame * 2),
+                plate_scale=(dx, dy),
+                models=model_guesses
             )
+            # galfit.run(
+            #     imgfile=new.path,
+            #     psffile=psf_path,
+            #     outdir=output_dir,
+            #     configfile=f"{self.name}_{frame}.feedme",
+            #     outfile=img_block_path,
+            #     finesample=2,
+            #     badpix=mask_path,
+            #     region=margins,
+            #     convobox=(frame * 2, frame * 2),
+            #     zeropoint=self.zeropoint_best["zeropoint_img"].value,
+            #     position=(int(x[0]), int(y[0])),
+            #     skip_sky=False,
+            #     **model_guesses
+            # )
             try:
                 img_block = fits.open(img_block_path, mode='update')
             except FileNotFoundError:

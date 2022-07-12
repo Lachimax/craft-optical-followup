@@ -1,4 +1,5 @@
 import shutil
+import os
 from typing import Tuple, Union, List
 
 import astropy.io.fits as fits
@@ -7,15 +8,18 @@ import craftutils.params as p
 import craftutils.utils as u
 
 
-def galfit(output_dir: str):
-    shutil.copy(p.path_to_config_galfit(), output_dir)
+def galfit(config: str, output_dir: str):
+    cwd = os.getcwd()
+    os.chdir(output_dir)
+    u.system_command_verbose(f"galfit {config}")
+    os.chdir(cwd)
 
 
 def feedme_sky_model(
         background_center: float = (1.3920, True),
         gradient_x: Union[float, Tuple[float, bool]] = (0.0, True),
         gradient_y: Union[float, Tuple[float, bool]] = (0.0, True),
-        output_option: Union[int, Tuple[int, bool]] = 0
+        output_option: int = 0
 ):
     return feedme_model(
         "sky",
@@ -30,12 +34,12 @@ def feedme_sky_model(
 
 def feedme_sersic_model(
         x: float, y: float,
-        mag: Union[float, Tuple[float, bool]],
-        r_e: Union[float, Tuple[float, bool]] = (5., True),
-        n: Union[int, Tuple[int, bool]] = (1, True),
+        int_mag: Union[float, Tuple[float, bool]],
+        r_e: Union[float, Tuple[float, bool]] = (3., True),
+        n: Union[float, Tuple[float, bool]] = (1., True),
         axis_ratio: Union[float, Tuple[float, bool]] = (0.5, True),
         position_angle: Union[float, Tuple[float, bool]] = (0., True),
-        output_option: Union[int, Tuple[int, bool]] = (0, True),
+        output_option: int = 0,
         fit_position: Union[bool, Tuple[bool, bool]] = (True, True)
 ):
     return feedme_model(
@@ -44,7 +48,7 @@ def feedme_sersic_model(
         (x, y),
         fit_position,
         (0., False),
-        mag,
+        int_mag,
         r_e,
         n,
         (0., False),
@@ -101,14 +105,14 @@ def galfit_feedme(
         input_file: str,
         output_file: str,
         zeropoint: float,
+        plate_scale: Union[Tuple[float, float], float],
         sigma_file: str = None,
         psf_file: str = None,
         psf_fine_sampling: int = None,
         mask_file: str = None,
         constraint_file: str = None,
         fitting_region_margins: Tuple[int, int, int, int] = (1, 93, 1, 93),
-        convolution_size: Union[Tuple[int, int], int] = 100,
-        plate_scale: Union[Tuple[int, int], int] = 0.038,
+        convolution_size: Union[Tuple[int, int], int] = (100, 100),
         display_type: str = "regular",
         run_type: Union[str, int] = 0,
         models: List[dict] = {},
@@ -196,3 +200,7 @@ def galfit_feedme(
     u.rm_check(feedme_path)
     with open(feedme_path, "w") as output:
         output.writelines(lines)
+    return lines
+
+# def galfit_best(path: str):
+#
