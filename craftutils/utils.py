@@ -1,10 +1,10 @@
-# Code by Lachlan Marnoch, 2019-2021
+# Code by Lachlan Marnoch, 2019-2022
 
 import math
 import os
 import shutil
 import sys
-from typing import List, Union, Tuple
+from typing import List, Union, Tuple, Iterable
 from datetime import datetime as dt
 import subprocess
 
@@ -442,7 +442,6 @@ def mkdir_check(*paths: str):
             debug_print(2, f"Directory {path} already exists, doing nothing.")
 
 
-# TODO: Make this system independent.
 def mkdir_check_nested(path: str, remove_last: bool = True):
     """
     Does mkdir_check, but for all parent directories of the given path.
@@ -504,6 +503,10 @@ def uncertainty_product(value, *args: tuple):
     Each arg should be a tuple, in which the first entry is the measurement and the second entry is the uncertainty in
     that measurement. These may be in the form of numpy arrays or table columns.
     """
+    if None in args:
+        raise TypeError("A 'None' has been passed as an arg.")
+    if value is None:
+        raise TypeError("value is None.")
     variance_pre = 0.
     for measurement, uncertainty in args:
         if hasattr(measurement, "__len__"):
@@ -515,7 +518,10 @@ def uncertainty_product(value, *args: tuple):
             measurement = sys.float_info.min
 
         debug_print(2, "uncertainty_product(): uncertainty, measurement ==", uncertainty, measurement)
-        variance_pre += (uncertainty / measurement) ** 2
+        try:
+            variance_pre += (uncertainty / measurement) ** 2
+        except units.UnitConversionError:
+            raise units.UnitConversionError(f"uncertainty {uncertainty} and measurement {measurement} have units that do not match.")
     sigma_pre = np.sqrt(variance_pre)
     sigma = np.abs(value) * sigma_pre
     return sigma
@@ -537,25 +543,7 @@ def uncertainty_log10(arg: float, uncertainty_arg: float, a: float = 1.):
     return np.abs(a * uncertainty_arg / (arg * np.log(10)))
 
 
-def error_product(value, measurements, errors):
-    """
-    Produces the absolute uncertainty of a value calculated as a product or as a quotient.
-    :param value: The final calculated value.
-    :param measurements: An array of the measurements used to calculate the value.
-    :param errors: An array of the respective errors of the measurements. Expected to be in the same order as
-        measurements.
-    :return:
-    """
-
-    measurements = np.array(measurements)
-    errors = np.array(errors)
-    print("VALUE:", value)
-    print("UNCERTAINTIES:", errors)
-    print("MEASUREMENTS:", measurements)
-    return value * np.sum(np.abs(errors[measurements != 0.] / measurements[measurements != 0.]))
-
-
-def error_func(arg, err, func=lambda x: np.log10(x), absolute=False):
+def uncertainty_func(arg, err, func=lambda x: np.log10(x), absolute=False):
     """
 
     :param arg:
@@ -588,8 +576,8 @@ def error_func(arg, err, func=lambda x: np.log10(x), absolute=False):
         return np.array([measurement, error_plus_actual, error_minus_actual])
 
 
-def error_func_percent(arg, err, func=lambda x: np.log10(x)):
-    measurement, error_plus, error_minus = error_func(arg=arg, err=err, func=func, absolute=False)
+def uncertainty_func_percent(arg, err, func=lambda x: np.log10(x)):
+    measurement, error_plus, error_minus = uncertainty_func(arg=arg, err=err, func=func, absolute=False)
     return np.array([error_plus / measurement, error_minus / measurement])
 
 
@@ -647,23 +635,6 @@ def std_err_slope(
     x_mean = np.nanmean(x_obs)
     s = s_regression / np.sqrt(np.nansum(x_weights * (x_obs - x_mean)) ** 2)
     return s
-
-
-def detect_problem_table(tbl: table.Table, fmt: str = "ecsv"):
-    for i, row in enumerate(tbl):
-        tbl_this = tbl[:i + 1]
-        try:
-            writepath = os.path.join(os.path.expanduser("~"), f"test.{fmt}")
-            tbl_this.write(writepath, overwrite=True, format=fmt)
-            os.remove(writepath)
-        except NotImplementedError:
-            print("Problem row:")
-            print(i, row)
-            return i, row
-        except ValueError:
-            print("Problem row:")
-            print(i, row)
-            return i, row
 
 
 def std_err_intercept(
@@ -736,15 +707,21 @@ def root_mean_squared_error(
     return np.sqrt(mse)
 
 
-def bucket_mode(data: np.ndarray, precision: int):
-    """
-    With help from https://www.statology.org/numpy-mode/
-    :param data:
-    :param precision:
-    :return:
-    """
-    vals, counts = np.unique(np.round(data, precision), return_counts=True)
-    return vals[counts == np.max(counts)]
+def detect_problem_table(tbl: table.Table, fmt: str = "ecsv"):
+    for i, row in enumerate(tbl):
+        tbl_this = tbl[:i + 1]
+        try:
+            writepath = os.path.join(os.path.expanduser("~"), f"test.{fmt}")
+            tbl_this.write(writepath, overwrite=True, format=fmt)
+            os.remove(writepath)
+        except NotImplementedError:
+            print("Problem row:")
+            print(i, row)
+            return i, row
+        except ValueError:
+            print("Problem row:")
+            print(i, row)
+            return i, row
 
 
 def mode(lst: list):
@@ -942,20 +919,74 @@ def round_to_sig_fig(x: float, n: int) -> float:
     return round(x, (n - 1) - int(np.floor(np.log10(abs(x)))))
 
 
-def round_decimals_up(number:float, decimals:int=2):
+def round_decimals_up(number: float, decimals: int = 2):
     """
     Returns a value rounded up to a specific number of decimal places.
     Taken from https://kodify.net/python/math/round-decimals/#round-decimal-places-up-in-python
     """
-    if not isinstance(decimals, int):
-        raise TypeError("decimal places must be an integer")
-    elif decimals < 0:
-        raise ValueError("decimal places has to be 0 or more")
+
+    if decimals < 0:
+        raise ValueError(f"decimal places has to be 0 or more (received {decimals})")
     elif decimals == 0:
         return math.ceil(number)
 
     factor = 10 ** decimals
     return math.ceil(number * factor) / factor
+
+
+def uncertainty_string(
+        value: float,
+        uncertainty: float,
+        n_digits_err: int = 1,
+        unit: units.Unit = None,
+        brackets: bool = True,
+        limit_val: int = None,
+        limit_type: str = "upper",
+        nan_string: str = "--"
+):
+    limit_vals = (limit_val, -99, -999)
+    value = dequantify(value, unit)
+    uncertainty = dequantify(uncertainty, unit)
+    if limit_type == "upper":
+        limit_char = "<"
+    else:
+        limit_char = ">"
+
+    # If we have an upper limit, set uncertainty to blank
+    if uncertainty in limit_vals:
+        uncertainty = nan_string
+        precision = 1
+    else:
+        precision = np.log10(uncertainty)
+        if precision < 0:
+            precision = int(-precision + n_digits_err)
+        else:
+            precision = n_digits_err
+        uncertainty = round_decimals_up(uncertainty, abs(precision))
+
+    if value in limit_vals:
+        value = nan_string
+    else:
+        value = np.round(value, precision)
+
+    if uncertainty == nan_string:
+        if value != nan_string:
+            this_str = f"${limit_char} {value}$"
+        else:
+            this_str = "--"
+    else:
+        val_rnd = str(value)
+        while len(val_rnd[val_rnd.find("."):]) < precision + 1:
+            val_rnd += "0"
+
+        if brackets:
+            uncertainty_digit = str(uncertainty)[-n_digits_err:]
+            this_str = f"${val_rnd}({uncertainty_digit})$"
+        else:
+            this_str = f"${val_rnd} \\pm {uncertainty}$"
+
+    return this_str, value, uncertainty
+
 
 def wcs_as_deg(ra: str, dec: str):
     """
@@ -1142,6 +1173,17 @@ def select_yn(message: str, default: Union[str, bool] = None):
         return False
 
 
+def select_yn_exit(message: str):
+    options = ["No", "Yes", "Exit"]
+    opt, _ = select_option(message=message, options=options)
+    if opt == 0:
+        return False
+    if opt == 1:
+        return True
+    if opt == 2:
+        exit(0)
+
+
 def user_input(message: str, typ: type = str, default=None):
     inp = None
     if default is not None:
@@ -1166,6 +1208,17 @@ def user_input(message: str, typ: type = str, default=None):
                 print(f"Could not cast {inp} to {typ}. Try again:")
     print(f"You have entered {inp}.")
     return inp
+
+
+def bucket_mode(data: np.ndarray, precision: int):
+    """
+    With help from https://www.statology.org/numpy-mode/
+    :param data:
+    :param precision:
+    :return:
+    """
+    vals, counts = np.unique(np.round(data, precision), return_counts=True)
+    return vals[counts == np.max(counts)]
 
 
 def scan_nested_dict(dictionary: dict, keys: list):
@@ -1251,3 +1304,47 @@ def system_package_version(package_name: str):
         return verstring[9:]
     else:
         return None
+
+
+def classify_spread_model(
+        cat: table.Table,
+        cutoffs: Tuple[float, float, float, float] = (-0.005, 0.005, 0.003, 0.003),
+        sm_col: str = "SPREAD_MODEL",
+        sm_err_col: str = "SPREADERR_MODEL",
+        class_flag_col: str = "CLASS_FLAG"
+):
+    if sm_col not in cat.colnames:
+        print(sm_col, "not found in catalogue columns.")
+        return None
+    cat[class_flag_col] = (
+            ((cat[sm_col] + 3 * cat[sm_err_col]) > cutoffs[1]).astype(int)
+            + ((cat[sm_col] + cat[sm_err_col]) > cutoffs[2]).astype(int)
+            + ((cat[sm_col] - cat[sm_err_col]) > cutoffs[3]).astype(int)
+    )
+
+    cat[class_flag_col][(cat[sm_col] + cat[sm_col]) < cutoffs[0]] = -1
+
+    return cat
+
+
+def trim_to_class(
+        cat: table.Table,
+        allowed: Iterable = [0],
+        modify: bool = True,
+        classify_kwargs: dict = {},
+):
+    cat = classify_spread_model(cat, **classify_kwargs)
+    if cat is None:
+        return None
+    if "class_flag_col" in classify_kwargs:
+        star_class_col = classify_kwargs["class_flag_col"]
+    else:
+        star_class_col = "CLASS_FLAG"
+    good = []
+    for row in cat:
+        good.append(row[star_class_col] in allowed)
+    if modify:
+        cat = cat[good]
+        return cat
+    else:
+        return good
