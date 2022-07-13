@@ -1422,7 +1422,7 @@ class Galaxy(Object):
     def default_params(cls):
         default_params = super().default_params()
         default_params.update({
-            "z": 0.0,
+            "z": None,
             "type": "galaxy"
         })
         return default_params

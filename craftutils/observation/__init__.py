@@ -159,7 +159,8 @@ master_objects_columns = {
     "e_b-v": units.mag,
     "class_star": float,
     "spread_model": float,
-    "spread_model_err": int,
+    "spread_model_err": float,
+    "class_flag": int,
     # "mag_best_{:s}": units.mag,  # The magnitude from the deepest image in that band
     # "mag_best_{:s}_err": units.mag,
     # "snr_best_{:s}": float,
