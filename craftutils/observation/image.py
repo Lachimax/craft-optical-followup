@@ -2831,11 +2831,14 @@ class ImagingImage(Image):
             output_path: str = None,
             include_footprint: bool = False,
             write_footprint: bool = True,
-            method: str = 'exact'
+            method: str = 'exact',
+            mask_mode: bool = False
     ):
         import reproject as rp
+        print(output_path)
         if output_path is None:
             output_path = self.path.replace(".fits", "_reprojected.fits")
+        print(output_path)
         other_image.load_headers(force=True)
         print(f"Reprojecting {self.filename} into the pixel space of {other_image.filename}")
         if method == 'exact':
@@ -2846,12 +2849,17 @@ class ImagingImage(Image):
             reprojected, footprint = rp.reproject_interp(self.path, other_image.headers[ext])
         else:
             raise ValueError(f"Reprojection method {method} not recognised.")
+
+        # if not mask_mode:
         reprojected *= other_image.extract_unit(astropy=True)
         footprint *= units.pix
+        if mask_mode:
+            reprojected = np.round(reprojected)
 
         if output_path == self.path:
             reprojected_image = self
         else:
+            print(output_path)
             reprojected_image = self.copy(output_path)
         reprojected_image.load_data(force=True)
         reprojected_image.data[ext] = reprojected
@@ -3973,7 +3981,7 @@ class ImagingImage(Image):
             kron_radius: float = 1.,
             ext: int = 0,
             output: str = None,
-            mask_nearby: bool = True,
+            mask_nearby = True,
             subtract_background: bool = True,
     ):
 
@@ -4001,7 +4009,9 @@ class ImagingImage(Image):
 
         u.debug_print(2, f"sep_elliptical_photometry: mask_nearby == {mask_nearby}")
 
-        if mask_nearby:
+        if isinstance(mask_nearby, ImagingImage):
+            mask = mask_nearby.data[0].value
+        elif mask_nearby:
             mask = self.write_mask(
                 unmasked=centre,
                 ext=ext,
@@ -4100,7 +4110,7 @@ class ImagingImage(Image):
             kron_radius: float = 1.,
             ext: int = 0,
             output: str = None,
-            mask_nearby: bool = True,
+            mask_nearby = True,
             detection_threshold: float = None
     ):
 

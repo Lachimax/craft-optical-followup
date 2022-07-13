@@ -308,18 +308,20 @@ class Object:
     def get_good_photometry(self):
 
         import craftutils.observation.image as image
-
         self.estimate_galactic_extinction()
         deepest_dict = self.select_deepest()
         deepest_path = deepest_dict["good_image_path"]
 
         cls = image.CoaddedImage.select_child_class(instrument=deepest_dict["instrument"])
         deepest_img = cls(path=deepest_path)
-        deepest_fwhm = deepest_img.extract_header_item("PSF_FWHM") * units.arcsec
-        if "do_mask" in deepest_dict:
-            do_mask = deepest_dict["do_mask"]
-        else:
-            do_mask = True
+        deep_mask = deepest_img.write_mask(
+            output_path=os.path.join(
+                self.data_path,
+                f"{self.name_filesys}_master-mask_{deepest_dict['instrument']}_{deepest_dict['filter']}_{deepest_dict['epoch_name']}.fits",
+            ),
+            method="sep",
+            unmasked=self.position_photometry
+        )
         mag_results = deepest_img.sep_elliptical_magnitude(
             centre=self.position_photometry,
             a_world=self.a,
@@ -330,7 +332,7 @@ class Object:
                 self.data_path,
                 f"{self.name_filesys}_{deepest_dict['instrument']}_{deepest_dict['filter']}_{deepest_dict['epoch_name']}"
             ),
-            mask_nearby=do_mask
+            mask_nearby=deep_mask
         )
         if mag_results is not None:
             deepest_dict["mag_sep"] = mag_results["mag"][0]
@@ -358,12 +360,16 @@ class Object:
                         continue
                     cls = image.CoaddedImage.select_child_class(instrument=instrument)
                     img = cls(path=phot_dict["good_image_path"])
-                    fwhm = img.extract_header_item("PSF_FWHM") * units.arcsec
-                    delta_fwhm = fwhm - deepest_fwhm
-                    if "do_mask" in phot_dict:
-                        do_mask = phot_dict["do_mask"]
-                    else:
-                        do_mask = True
+                    mask_rp = deep_mask.reproject(
+                        other_image=img,
+                        output_path=os.path.join(
+                             self.data_path,
+                            f"{self.name_filesys}_mask_{phot_dict['instrument']}_{phot_dict['filter']}_{phot_dict['epoch_name']}.fits",
+                        ),
+                        write_footprint=False,
+                        method="interp",
+                        mask_mode=True
+                    )
                     mag_results = img.sep_elliptical_magnitude(
                         centre=self.position_photometry,
                         a_world=self.a,  # + delta_fwhm,
@@ -371,7 +377,7 @@ class Object:
                         theta_world=self.theta,
                         kron_radius=self.kron,
                         output=os.path.join(self.data_path, f"{self.name_filesys}_{instrument}_{band}_{epoch}"),
-                        mask_nearby=do_mask
+                        mask_nearby=mask_rp
                     )
 
                     if mag_results is not None:
