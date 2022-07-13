@@ -318,8 +318,12 @@ def _retrieve_eso_epoch(epoch: Union['ESOImagingEpoch', 'ESOSpectroscopyEpoch'],
     return r
 
 
-def _check_do_list(do: Union[list, str], num_stages: int):
-    if type(do) is str:
+def _check_do_list(
+        do: Union[list, str],
+        stages
+):
+    num_stages = len(stages)
+    if isinstance(do, str):
         try:
             do = [int(do)]
         except ValueError:
@@ -334,13 +338,17 @@ def _check_do_list(do: Union[list, str], num_stages: int):
     if isinstance(do, list):
         do_nu = []
         for n in do:
-            if n < 0:
-                do_nu.append(num_stages + n)
-            else:
-                do_nu.append(n)
+            if isinstance(n, int):
+                if n < 0:
+                    do_nu.append(num_stages + n)
+                else:
+                    do_nu.append(n)
+            elif isinstance(n, str):
+                if n in stages:
+                    do_nu.append(n)
         do = do_nu
 
-    return do
+    return do_nu
 
 
 class Field:
@@ -1685,7 +1693,7 @@ class Epoch:
         else:
             raise ValueError(f"data_path has not been set for {self}")
         self.field.retrieve_catalogues()
-        self.do = _check_do_list(self.do, num_stages=len(self.stages()))
+        self.do = _check_do_list(self.do, stages=list(self.stages().keys()))
         print(f"Doing stages {self.do}")
         self.paths["download"] = os.path.join(self.data_path, "0-download")
 
@@ -1752,7 +1760,7 @@ class Epoch:
         if n == int(n):
             n = int(n)
         if self.do is not None:
-            if n in self.do:
+            if stage_name in self.do:
                 return True
         else:
             message = f"{n}. {message}"
