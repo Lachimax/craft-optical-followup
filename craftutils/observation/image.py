@@ -23,11 +23,6 @@ from astropy.coordinates import SkyCoord
 from astropy.time import Time
 from astropy.visualization import quantity_support
 
-try:
-    from astroalign import register
-except ModuleNotFoundError:
-    print("Astroalign not installed; frame registration will not be available.")
-
 import photutils
 
 try:
@@ -579,7 +574,10 @@ class Image:
         key = self.header_keys()["unit"]
         unit = self.extract_header_item(key)
         if astropy:
-            unit = units.Unit(unit)
+            if unit is not None:
+                unit = units.Unit(unit)
+            else:
+                unit = units.ct
         return unit
 
     def extract_units(self):
@@ -677,7 +675,6 @@ class Image:
 
         while len(self.hdu_list) > len(self.headers):
             self.hdu_list.pop(-1)
-            print(len(self.hdu_list))
 
         self.hdu_list.writeto(self.path, overwrite=True)
 
@@ -1096,26 +1093,9 @@ class ImagingImage(Image):
         else:
             self.psfex_successful = True
 
-        print("dual, template:", dual, template)
-        print()
-        print(self.name)
-        print("in source_extraction_psf 1:")
-        print("\tsource_cat_path", self.source_cat_path)
-        print("\tsource_cat_dual_path", self.source_cat_dual_path)
-        print("\tsource_cat_sextractor_path", self.source_cat_sextractor_path)
-        print("\tsource_cat_sextractor_dual_path", self.source_cat_sextractor_dual_path)
-        print()
+        u.debug_print(2, "dual, template:", dual, template)
 
         self.write_source_cat()
-
-        print()
-        print(self.name)
-        print("in source_extraction_psf 2:")
-        print("\tsource_cat_path", self.source_cat_path)
-        print("\tsource_cat_dual_path", self.source_cat_dual_path)
-        print("\tsource_cat_sextractor_path", self.source_cat_sextractor_path)
-        print("\tsource_cat_sextractor_dual_path", self.source_cat_sextractor_dual_path)
-        print()
 
         self.plot_apertures()
         self.add_log(
@@ -1127,15 +1107,6 @@ class ImagingImage(Image):
         self.signal_to_noise_measure(dual=dual)
         print()
         self.update_output_file()
-
-        print()
-        print(self.name)
-        print("in source_extraction_psf 3:")
-        print("\tsource_cat_path", self.source_cat_path)
-        print("\tsource_cat_dual_path", self.source_cat_dual_path)
-        print("\tsource_cat_sextractor_path", self.source_cat_sextractor_path)
-        print("\tsource_cat_sextractor_dual_path", self.source_cat_sextractor_dual_path)
-        print()
 
     def _load_source_cat_sextractor(self, path: str):
         self.load_wcs()
@@ -1284,7 +1255,7 @@ class ImagingImage(Image):
     def push_source_cat(self, dual: bool = True):
         source_cat = self.get_source_cat(dual=dual)
         for i, row in enumerate(source_cat):
-            print(f"Row {i} of {len(source_cat)}")
+            print(f"Pushing row {i} of {len(source_cat)}")
             obj = objects.Object(row=row, field=self.epoch.field)
             if "SNR_PSF" in self.depth["secure"]:
                 depth = self.depth["secure"]["SNR_PSF"][f"5-sigma"]
@@ -1629,10 +1600,7 @@ class ImagingImage(Image):
         if image_name is None:
             image_name = self.name
         self.extract_filter()
-        print("FILTER:", self.filter_short)
-        print("CAT_NAME:", cat_name)
         column_names = cat_columns(cat=cat_name, f=self.filter_short)
-        print("MAG NAME:", column_names['mag_psf'])
         cat_ra_col = column_names['ra']
         cat_dec_col = column_names['dec']
         cat_mag_col = column_names['mag_psf']
@@ -1941,56 +1909,23 @@ class ImagingImage(Image):
         """
 
         # self.signal_to_noise_ccd(dual=dual)
-        print()
-        print(self.name)
-        print("in estimate_depth 1:")
-        print("\tsource_cat_path", self.source_cat_path)
-        print("\tsource_cat_dual_path", self.source_cat_dual_path)
-        print("\tsource_cat_sextractor_path", self.source_cat_sextractor_path)
-        print("\tsource_cat_sextractor_dual_path", self.source_cat_sextractor_dual_path)
-        print()
+
         self.signal_to_noise_measure(dual=dual)
         if do_magnitude_calibration:
             self.calibrate_magnitudes(zeropoint_name=zeropoint_name, dual=dual)
-        print()
-        print("in estimate_depth 2:")
-        print("\tsource_cat_path", self.source_cat_path)
-        print("\tsource_cat_dual_path", self.source_cat_dual_path)
-        print("\tsource_cat_sextractor_path", self.source_cat_sextractor_path)
-        print("\tsource_cat_sextractor_dual_path", self.source_cat_sextractor_dual_path)
-        print()
+
         source_cat = self.get_source_cat(dual=dual)
-        print()
-        print("in estimate_depth 3:")
-        print("\tsource_cat_path", self.source_cat_path)
-        print("\tsource_cat_dual_path", self.source_cat_dual_path)
-        print("\tsource_cat_sextractor_path", self.source_cat_sextractor_path)
-        print("\tsource_cat_sextractor_dual_path", self.source_cat_sextractor_dual_path)
-        print()
+
         # "max" stores the magnitude of the faintest object with S/N > x sigma
         self.depth = {"max": {}, "secure": {}}
         # "secure" finds the brightest object with S/N < x sigma, then increments to the
         # overall; thus giving the faintest magnitude at which we can be confident of a detection
 
         stars = u.trim_to_class(cat=source_cat, modify=True, allowed=np.arange(0, star_tolerance + 1))
-        print()
-        print("in estimate_depth 4:")
-        print("\tsource_cat_path", self.source_cat_path)
-        print("\tsource_cat_dual_path", self.source_cat_dual_path)
-        print("\tsource_cat_sextractor_path", self.source_cat_sextractor_path)
-        print("\tsource_cat_sextractor_dual_path", self.source_cat_sextractor_dual_path)
-        print()
+
         if stars is None or len(stars) < 10:
             stars = source_cat[source_cat["CLASS_STAR"] >= 0.9]
         source_cat = stars
-
-        print()
-        print("in estimate_depth 5:")
-        print("\tsource_cat_path", self.source_cat_path)
-        print("\tsource_cat_dual_path", self.source_cat_dual_path)
-        print("\tsource_cat_sextractor_path", self.source_cat_sextractor_path)
-        print("\tsource_cat_sextractor_dual_path", self.source_cat_sextractor_dual_path)
-        print()
 
         for snr_key in ["PSF", "AUTO"]:  # ["SNR_CCD", "SNR_MEASURED", "SNR_SE"]:
             # We do this to ensure that, in the "secure" step, object i+1 is the next-brightest in the catalogue
@@ -2016,7 +1951,6 @@ class ImagingImage(Image):
                 # Brightest source less than x-sigma (kind of)
                 # Get the sources with SNR less than x-sigma
                 source_less_sigma = source_cat[source_cat[f"SNR_{snr_key}"] < sigma]
-                print(f"Found {len(source_less_sigma)} point-sources with SNR < {sigma}")
                 if len(source_less_sigma) > 0:
                     # Get the source with the greatest flux
                     i = np.argmax(source_less_sigma[f"FLUX_{snr_key}"])
@@ -2032,28 +1966,13 @@ class ImagingImage(Image):
                 self.depth["secure"][f"SNR_{snr_key}"][f"{sigma}-sigma"] = src_lim[f"MAG_{snr_key}_ZP_{zeropoint_name}"]
                 self.update_output_file()
 
-        print()
-        print("in estimate_depth 6:")
-        print("\tsource_cat_path", self.source_cat_path)
-        print("\tsource_cat_dual_path", self.source_cat_dual_path)
-        print("\tsource_cat_sextractor_path", self.source_cat_sextractor_path)
-        print("\tsource_cat_sextractor_dual_path", self.source_cat_sextractor_dual_path)
-        print()
-
         source_cat.sort("NUMBER")
         self.add_log(
             action=f"Estimated image depth.",
             method=self.estimate_depth,
         )
         self.update_output_file()
-        print()
-        print(self.name)
-        print("in estimate_depth 7:")
-        print("\tsource_cat_path", self.source_cat_path)
-        print("\tsource_cat_dual_path", self.source_cat_dual_path)
-        print("\tsource_cat_sextractor_path", self.source_cat_sextractor_path)
-        print("\tsource_cat_sextractor_dual_path", self.source_cat_sextractor_dual_path)
-        print()
+
         return self.depth
 
     def send_column_to_source_cat(self, colname: str, sample: table.Table):
@@ -2084,6 +2003,7 @@ class ImagingImage(Image):
             trim: bool = True,
             **kwargs
     ):
+        from astroalign import register
         self.load_data()
         target.load_data()
 
@@ -2439,8 +2359,6 @@ class ImagingImage(Image):
             distance_clipped = sigma_clip(distance, masked=False)
             distance_clipped_masked = sigma_clip(distance, masked=True)
             mask = ~distance_clipped_masked.mask
-            # print(distance_clipped)
-            # print(distance_clipped ** 2)
 
             offset_ra = matches_source_cat["RA"][mask] - matches_ext_cat[ra_col][mask]
             offset_dec = matches_source_cat["DEC"][mask] - matches_ext_cat[dec_col][mask]
@@ -2808,7 +2726,6 @@ class ImagingImage(Image):
         self.load_output_file()
         data = self.data[ext].value
         zp = self.zeropoint_best["zeropoint_img"].value
-        print(zp)
         exptime = self.extract_exposure_time().value
         data[data <= 0.] = np.min(data[data > 0.])
         data_scaled = 3631 * units.Jansky * (data / exptime) * 10 ** (zp / -2.5)
@@ -2835,10 +2752,8 @@ class ImagingImage(Image):
             mask_mode: bool = False
     ):
         import reproject as rp
-        print(output_path)
         if output_path is None:
             output_path = self.path.replace(".fits", "_reprojected.fits")
-        print(output_path)
         other_image.load_headers(force=True)
         print(f"Reprojecting {self.filename} into the pixel space of {other_image.filename}")
         if method == 'exact':
@@ -2859,7 +2774,6 @@ class ImagingImage(Image):
         if output_path == self.path:
             reprojected_image = self
         else:
-            print(output_path)
             reprojected_image = self.copy(output_path)
         reprojected_image.load_data(force=True)
         reprojected_image.data[ext] = reprojected
@@ -2919,7 +2833,7 @@ class ImagingImage(Image):
                 allowed=np.arange(0, star_tolerance + 1)
             )
 
-        print("len(source_cat) match_catalogs:", len(source_cat))
+        u.debug_print(2, "len(source_cat) match_catalogs:", len(source_cat))
         matches_source_cat, matches_ext_cat, distance = astm.match_catalogs(
             cat_1=source_cat,
             cat_2=cat,
@@ -2969,7 +2883,6 @@ class ImagingImage(Image):
         self._set_source_cat(source_cat, dual)
 
         self.update_output_file()
-        print("MEDIAN SNR:", np.nanmedian(source_cat["SNR_CCD"]))
 
         self.add_log(
             action=f"Estimated SNR using CCD Equation.",
@@ -3200,9 +3113,6 @@ class ImagingImage(Image):
             frame1.axes.get_xaxis().set_visible(False)
             frame1.axes.set_yticks([])
             frame1.axes.invert_yaxis()
-
-        print(left, right, bottom, top)
-        print(type(left), type(right), type(bottom), type(top))
 
         ax.imshow(
             data,

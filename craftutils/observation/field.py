@@ -5,11 +5,6 @@ import warnings
 from typing import Union, List, Dict
 import shutil
 
-try:
-    import ccdproc
-except ImportError:
-    print('There is a problem with ccdproc. Some functionality will not be available.')
-
 import matplotlib.pyplot as plt
 import numpy as np
 
@@ -20,6 +15,8 @@ import astropy.table as table
 import astropy.io.fits as fits
 from astropy.modeling import models, fitting
 from astropy.visualization import make_lupton_rgb, ImageNormalize
+
+import ccdproc
 
 import craftutils.astrometry as astm
 import craftutils.fits_files as ff
@@ -2284,16 +2281,13 @@ class ImagingEpoch(Epoch):
         if "skip_indices" in kwargs:
             skip = kwargs.pop("skip_indices")
 
-        print(kwargs)
-        print("skip ==", skip)
+        u.debug_print(2, kwargs)
+        u.debug_print(1, "skip ==", skip)
 
         if not skip:
             self.generate_astrometry_indices()
 
         self.frames_astrometry = {}
-
-        if "upper_only" in kwargs:
-            print(f"upper_only={kwargs['upper_only']}")
 
         if "register_frames" in self.do_kwargs and self.do_kwargs["register_frames"]:
             self.correct_astrometry_frames(
@@ -2359,7 +2353,7 @@ class ImagingEpoch(Epoch):
                     self.astrometry_successful[fil][tmp.name] = "coarse"
                     self.update_output_file()
 
-                print("first_success", first_success)
+                u.debug_print(2, "first_success", first_success)
 
                 print()
                 print(f"Re-processing failed frames for chip {chip} with astroalign, with template {first_success}:")
@@ -2498,6 +2492,7 @@ class ImagingEpoch(Epoch):
         :param frames: Name of frames list to coadd.
         :return:
         """
+        import ccdproc
         u.mkdir_check(output_dir)
         frame_dict = self._get_frames(frame_type=frames)
         input_frames = self._get_frames(frames)
@@ -2650,8 +2645,8 @@ class ImagingEpoch(Epoch):
         for fil in images:
             img = images[fil]
             output_path = os.path.join(output_dir, img.filename.replace(".fits", "_trimmed.fits"))
-            print("trim_coadded img.path:", img.path)
-            print("trim_coadded img.area_file:", img.area_file)
+            u.debug_print(2, "trim_coadded img.path:", img.path)
+            u.debug_print(2, "trim_coadded img.area_file:", img.area_file)
             trimmed = img.trim_from_area(output_path=output_path)
             # trimmed.write_fits_file()
             self.add_coadded_unprojected_image(trimmed, key=fil)
@@ -2717,14 +2712,7 @@ class ImagingEpoch(Epoch):
             img = image_dict[fil]
             img.zeropoints = {}
             img.zeropoint_best = None
-            print()
-            print(img.name)
-            print("in epoch.proc_photometric_calibration 1:")
-            print("\tsource_cat_path", img.source_cat_path)
-            print("\tsource_cat_dual_path", img.source_cat_dual_path)
-            print("\tsource_cat_sextractor_path", img.source_cat_sextractor_path)
-            print("\tsource_cat_sextractor_dual_path", img.source_cat_sextractor_dual_path)
-            print()
+
         self.photometric_calibration(
             output_path=output_dir,
             image_dict=image_dict,
@@ -2755,25 +2743,9 @@ class ImagingEpoch(Epoch):
         for fil in image_dict:
             if self.coadded_unprojected[fil] is not None and self.coadded_unprojected[fil] is not image_dict[fil]:
                 img = self.coadded_unprojected[fil]
-                print()
-                print(img.name)
-                print("in epoch.photometric_calibration 1:")
-                print("\tsource_cat_path", img.source_cat_path)
-                print("\tsource_cat_dual_path", img.source_cat_dual_path)
-                print("\tsource_cat_sextractor_path", img.source_cat_sextractor_path)
-                print("\tsource_cat_sextractor_dual_path", img.source_cat_sextractor_dual_path)
-                print()
                 img.zeropoints = image_dict[fil].zeropoints
                 img.zeropoint_best = image_dict[fil].zeropoint_best
                 img.update_output_file()
-                print()
-                print(img.name)
-                print("in epoch.photometric_calibration 2:")
-                print("\tsource_cat_path", img.source_cat_path)
-                print("\tsource_cat_dual_path", img.source_cat_dual_path)
-                print("\tsource_cat_sextractor_path", img.source_cat_sextractor_path)
-                print("\tsource_cat_sextractor_dual_path", img.source_cat_sextractor_dual_path)
-                print()
 
         self.deepest_filter = deepest.filter_name
         self.deepest = deepest
@@ -2852,7 +2824,7 @@ class ImagingEpoch(Epoch):
             image_type = kwargs["image_type"]
         else:
             image_type = "final"
-        print("image_type:", image_type)
+        u.debug_print(2, f"{self}.proc_get_photometry(): image_type ==:", image_type)
         self.get_photometry(output_dir, image_type=image_type)
 
     def get_photometry(
@@ -3140,7 +3112,6 @@ class ImagingEpoch(Epoch):
             fil_output_path = os.path.join(path, fil)
             u.mkdir_check(fil_output_path)
             img = image_dict[fil]
-            print(img.filename)
             img.push_source_cat(dual=dual)
 
     def astrometry_diagnostics(
@@ -3595,7 +3566,6 @@ class ImagingEpoch(Epoch):
             else:
                 depth = img.depth["secure"]["SNR_AUTO"][f"5-sigma"]
 
-            print("coadded[fil]", coadded[fil], type(coadded[fil]))
             entry = {
                 "field_name": self.field.name,
                 "epoch_name": self.name,
@@ -3782,8 +3752,6 @@ class FORS2StandardEpoch(StandardEpoch, ImagingEpoch):
             output_path = os.path.join(self.data_path, "photometric_calibration")
 
         u.mkdir_check_nested(output_path)
-        print("frames_reduced:")
-        print(self.frames_reduced)
 
         self.source_extraction(
             output_dir=output_path,
@@ -3936,7 +3904,6 @@ class GSAOIImagingEpoch(ImagingEpoch):
         for img in science_files:
             fil = str(img["filter_name"])
             self.check_filter(fil)
-        print(self.filters)
 
         # Get the calibration files for the retrieved filters
         for fil in self.filters:
@@ -3967,9 +3934,6 @@ class GSAOIImagingEpoch(ImagingEpoch):
         ).splitlines(False)[3:]
         self.paths["science_list"] = os.path.join(redux_dir, science_list_name)
 
-        print("Science frames:")
-        print(science_list)
-
         science_tbl_name = "science.csv"
         science_tbl = dragons.showd(
             input_filenames=science_list,
@@ -3997,9 +3961,6 @@ class GSAOIImagingEpoch(ImagingEpoch):
                 output=flats_list_name
             ).splitlines(False)[3:]
 
-            print(f"Flats for {fil}:")
-            print(flats_list)
-
             self.flats_lists[fil] = os.path.join(redux_dir, flats_list_name)
             self.frames_flat[fil] = flats_list
 
@@ -4014,9 +3975,6 @@ class GSAOIImagingEpoch(ImagingEpoch):
             expression=f"observation_class==\"partnerCal\"",
             output=std_list_name
         ).splitlines(False)[3:]
-
-        print("Standard observation frames:")
-        print(std_list)
 
         std_tbl = dragons.showd(
             input_filenames=std_list,
@@ -4345,8 +4303,6 @@ class HubbleImagingEpoch(ImagingEpoch):
         name, param_file, param_dict = p.params_init(param_file)
         if param_dict is None:
             raise FileNotFoundError(f"No parameter file found at {param_file}.")
-
-        print(param_dict)
 
         if field is None:
             field = param_dict.pop("field")
@@ -5683,7 +5639,7 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
 
                             phot_coeff_table = fits.open(phot_coeff_table)[1].data
 
-                            print(f"Chip {chip}, zeropoint {phot_coeff_table['ZPOINT'][0] * units.mag}")
+                            u.debug_print(1, f"Chip {chip}, zeropoint {phot_coeff_table['ZPOINT'][0] * units.mag}")
 
                             # The intention here is that a chip 1 zeropoint override a chip 2 zeropoint, but
                             # if chip 1 doesn't work a chip 2 one will do.
@@ -5708,10 +5664,6 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
                         print(f"Insufficient standard observations to calculate esorex zeropoint for {img}")
 
         print("Estimating zeropoints from standard observations...")
-        print(self.frames_standard)
-        print(std_sets)
-        print(self.std_epochs)
-        print(self.filters)
         for jname in self.std_epochs:
             std_epoch = self.std_epochs[jname]
             std_epoch.photometric_calibration()
@@ -5720,7 +5672,6 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
                 # We save time by only bothering with non-qc1-obtainable zeropoints.
                 if fil in std_epoch.frames_reduced and fil not in inst.FORS2Filter.qc1_retrievable:
                     for std in std_epoch.frames_reduced[fil]:
-                        # print(std, type(std))
                         img.add_zeropoint_from_other(std)
 
         zeropoints = p.load_params(zeropoint_yaml)

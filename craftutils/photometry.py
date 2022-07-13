@@ -84,7 +84,6 @@ def image_psf_diagnostics(
         stars_near = stars[near_centre.separation(coords) < near_radius]
         print("len(stars_near):", len(stars_near), "near_radius:", near_radius, "img_width_ang:", img_width_ang)
         while len(stars_near) < min_stars and near_radius < img_width_ang:
-            print(near_centre.separation(coords).max(), near_centre.separation(coords).mean())
             stars_near = stars[near_centre.separation(coords) < near_radius]
             print(f"Num stars within {near_radius} of {near_centre}:", len(stars_near))
             near_radius += 0.5 * units.arcmin
@@ -163,7 +162,7 @@ def image_psf_diagnostics(
     print(f"Num stars after sigma clipping w. Sextractor PSF:", len(stars_clip_sex))
 
     plt.close()
-    print(f"image_psf_diagnostics(): {output=}")
+    u.debug_print(2, f"image_psf_diagnostics(): {output=}")
     if output is not None:
 
         with quantity_support():
@@ -187,52 +186,6 @@ def image_psf_diagnostics(
                 plt.close()
 
     return stars_clip_moffat, stars_clip_gauss, stars_clip_sex
-
-
-def image_depth_diagnostics(
-        hdu: Union[str, fits.HDUList],
-        fil: str,
-        sextractor: str,
-        cat_path: str,
-        cat_name: str,
-        output_path: str):
-    file = ff.path_or_hdu(hdu=hdu)
-    sextractor_cat = table.Table.read(sextractor, format="ascii.sextractor")
-    sextractor_3sigma = sextractor_cat[sextractor_cat["SNR_WIN"] > 3.0]
-    # TODO: Calculate SNR properly
-    exp_time = ff.get_exp_time(file)
-
-    column_names = r.cat_columns(cat=cat_name, f=fil[0])
-    cat_ra_col = column_names['ra']
-    cat_dec_col = column_names['dec']
-    cat_mag_col = column_names['mag_psf']
-
-    zp = determine_zeropoint_sextractor(
-        sextractor_cat=sextractor,
-        image=file,
-        cat_path=cat_path,
-        cat_name=cat_name,
-        output_path=output_path,
-        show=False,
-        cat_ra_col=cat_ra_col,
-        cat_dec_col=cat_dec_col,
-        cat_mag_col=cat_mag_col,
-        sex_ra_col="ALPHAPSF_SKY",
-        sex_dec_col="DELTAPSF_SKY",
-        sex_x_col='XPSF_IMAGE',
-        sex_y_col='YPSF_IMAGE',
-        dist_tol=5.0 * units.pixel,
-        flux_column="FLUX_PSF",
-        stars_only=True,
-        exp_time=exp_time,
-    )
-
-    zeropoint = zp["zeropoint"]
-    depth = np.max(sextractor_3sigma["MAG_WIN"]) + zeropoint
-    print("OBJECTS SNR > 3:", len(sextractor_3sigma))
-    print("DEPTH:", depth)
-
-    return depth
 
 
 def get_median_background(image: Union[str, fits.HDUList], ra: float = None, dec: float = None, frame: int = 100,
@@ -301,12 +254,8 @@ def fit_background(data: np.ndarray, model_type='polynomial', deg: int = 2, foot
     else:
         raise ValueError("Unrecognised model; must be in", accepted_models)
     fitter = fitting.LevMarLSQFitter()
-    # print(footprint)
     if weights is not None:
         weights = weights[footprint[0]:footprint[1], footprint[2]:footprint[3]]
-    # print(data[footprint[0]:footprint[1], footprint[2]:footprint[3]].shape)
-    # print(x.shape)
-    # print(y.shape)
     model = fitter(init, x, y, data[footprint[0]:footprint[1], footprint[2]:footprint[3]],
                    weights=weights)
 
@@ -527,13 +476,11 @@ def determine_zeropoint_sextractor(
 
     # Extract pixel scales from images.
     _, pix_scale = ff.get_pixel_scale(image, astropy_units=True)
-    print('PIXEL SCALE:', pix_scale)
     # Get tolerance as angle.
     if dist_tol.unit.is_equivalent(units.pix):
         tolerance = dist_tol.to(units.deg, pix_scale)
     else:
         tolerance = dist_tol
-    print('TOLERANCE:', tolerance)
 
     # Import the catalogue of the sky region.
     if cat_type != 'sextractor':
@@ -555,7 +502,6 @@ def determine_zeropoint_sextractor(
     params['time'] = str(time.Time.now())
     params['catalogue'] = str(cat_name)
     params['airmass'] = 0.0
-    print('Airmass:', params['airmass'])
     params['exp_time'] = exp_time = u.check_quantity(exp_time, units.second)
     params['pix_tol'] = dist_tol
     params['ang_tol'] = tolerance = u.check_quantity(tolerance, units.deg)
@@ -825,7 +771,6 @@ def determine_zeropoint_sextractor(
             x_weights_iter = x_weights_iter[keep]
             matches_iter = matches_iter[keep]
             zps_iter = x_iter - y_iter
-            # print(y_weights_iter)
             zp_mean_iter = np.average(zps_iter, weights=y_weights_iter)
             err_this = u.root_mean_squared_error(
                 model_values=zp_mean_iter * np.ones_like(zps_iter).value,
@@ -1052,7 +997,6 @@ def determine_zeropoint_sextractor(
         dof_correction=1
     ) / np.sqrt(len(zps_clipped))
 
-    # print(type(linear_model_fixed), type(x), type(y), type(weights))
     fitted_clipped = fitter(linear_model_fixed, x_clipped, y_clipped, weights=y_weights_clipped)
     fitted_free_clipped = fitter(linear_model_free, x_clipped, y_clipped, weights=y_weights_clipped)
 
@@ -1197,7 +1141,6 @@ def single_aperture_photometry(data: np.ndarray, aperture: ph.Aperture, annulus:
     mask = annulus.to_mask()
     annulus_data = mask.multiply(data)[mask.data > 0]
     _, median, _ = stats.sigma_clipped_stats(annulus_data)
-    print('BACKGROUND MEDIAN:', median)
     # Get the photometry of the aperture
     cat_photutils = ph.aperture_photometry(data=data, apertures=aperture)
     # Multiply the median by the aperture area, so that we subtract the right amount for the aperture:
@@ -1444,7 +1387,6 @@ def source_table(file: Union[fits.HDUList, str],
 
     if not fwhm_override and algorithm == 'IRAF':
         fwhm = np.mean(sources['fwhm'])
-    print("FWHM:", fwhm)
 
     # Feed locations to our aperture photometry function.
     phot, _, _ = aperture_photometry(data=data, x=x, y=y, fwhm=fwhm, exp_time=exp_time, plot=plot,
@@ -1887,7 +1829,6 @@ def insert_synthetic_point_sources_psfex(
 
     combine = np.zeros(image.shape)
     print('Generating additive image...')
-    print(x, y, type(x), isinstance(x, Iterable))
     for i in range(len(x)):
         flux = mag_to_flux(mag=mag[i], exp_time=exp_time, zeropoint=zeropoint, extinction=extinction,
                            airmass=airmass)
@@ -1960,13 +1901,10 @@ def insert_point_sources_to_file(
 
     if saturate is None and 'SATURATE' in file[0].header:
         saturate = file[0].header['SATURATE']
-        print('SATURATE:', saturate)
     if airmass is None and 'AIRMASS' in file[0].header:
         airmass = file[0].header['AIRMASS']
-        print('AIRMASS:', airmass)
     if exp_time is None and 'EXPTIME' in file[0].header:
         exp_time = file[0].header['EXPTIME']
-        print('EXPTIME:', exp_time)
 
     wcs_info = wcs.WCS(file[0].header)
     if world_coordinates:
@@ -2120,7 +2058,6 @@ def insert_synthetic(obj: Union[dict, str], x, y, test_path, filters: list, magn
         f_0 = f[0]
 
         fwhm = output_properties[f_0 + '_fwhm_pix']
-        print(instrument)
         zeropoint, _, airmass, _, extinction, _ = select_zeropoint(obj, f, instrument=instrument)
 
         base_path = paths[f_0 + '_' + params['subtraction_image']]
@@ -2169,8 +2106,6 @@ def select_zeropoint(obj: str, filt: str, instrument: str, outputs: dict = None)
         zeropoint = zeropoint_dict['zeropoint']
         zeropoint_err = zeropoint_dict['zeropoint_err']
         typ = zeropoint_dict['type']
-
-        print(typ)
 
         if typ == 'science_field':
             airmass = 0.0

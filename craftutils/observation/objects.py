@@ -14,14 +14,6 @@ from astropy.visualization import quantity_support
 import astropy.time as time
 import astropy.io.fits as fits
 
-frb_installed = True
-try:
-    import frb.halos.hmf as hmf
-    import frb.dm.igm as igm
-except ImportError:
-    print("FRB is not installed; DM_ISM estimates will not be available.")
-    frb_installed = False
-
 import craftutils.params as p
 import craftutils.astrometry as astm
 import craftutils.utils as u
@@ -551,7 +543,6 @@ class Object:
     def check_data_path(self):
         if self.field is not None:
             u.debug_print(2, "", self.name)
-            # print(self.field.data_path, self.name_filesys)
             self.data_path = os.path.join(self.field.data_path, "objects", self.name_filesys)
             u.mkdir_check(self.data_path)
             self.output_file = os.path.join(self.data_path, f"{self.name_filesys}_outputs.yaml")
@@ -1245,11 +1236,6 @@ class Galaxy(Object):
         elif force or self.cigale_sfh is None:
             self.cigale_sfh = fits.open(self.cigale_sfh_path)
 
-        # if self.cigale_results_path is None:
-        #     print(f"Cannot load CIGALE SFH; {self}.cigale_sfh_path has not been set.")
-        # elif force or self.cigale_results is None:
-        #     self.cigale_results = fits.open(self.cigale_results_path)
-
         return self.cigale_model, self.cigale_sfh  # , self.cigale_results
 
     def angular_size_distance(self):
@@ -1612,15 +1598,14 @@ class FRB(Object):
         })
 
     def dm_cosmic(self, **kwargs):
-        if not frb_installed:
-            raise ImportError("FRB is not installed.")
-        return igm.average_DM(self.host_galaxy.z, cosmo=cosmo.Planck18, **kwargs)
+        from frb.dm.igm import average_DM
+        return average_DM(self.host_galaxy.z, cosmo=cosmo.Planck18, **kwargs)
 
     def dm_halos_avg(self, **kwargs):
-        if not frb_installed:
-            raise ImportError("FRB is not installed.")
+        import frb.halos.hmf as hmf
+        from frb.dm.igm import average_DMhalos
         hmf.init_hmf()
-        return igm.average_DMhalos(self.host_galaxy.z, cosmo=cosmo.Planck18, **kwargs)
+        return average_DMhalos(self.host_galaxy.z, cosmo=cosmo.Planck18, **kwargs)
 
     # def estimate_dm_excess(self):
     #     dm_ism = self.estimate_dm_mw_ism()
