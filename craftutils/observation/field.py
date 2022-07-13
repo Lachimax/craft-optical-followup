@@ -348,7 +348,7 @@ def _check_do_list(
                     do_nu.append(n)
         do = do_nu
 
-    return do_nu
+    return do
 
 
 class Field:
