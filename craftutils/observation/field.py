@@ -4476,14 +4476,6 @@ class SurveyImagingEpoch(ImagingEpoch):
         deepest = None
         for fil in self.coadded:
             img = self.coadded[fil]
-            print()
-            print(img.name)
-            print("in epoch.zeropoint 1:")
-            print("\tsource_cat_path", img.source_cat_path)
-            print("\tsource_cat_dual_path", img.source_cat_dual_path)
-            print("\tsource_cat_sextractor_path", img.source_cat_sextractor_path)
-            print("\tsource_cat_sextractor_dual_path", img.source_cat_sextractor_dual_path)
-            print()
             zp = img.zeropoint(
                 cat_path=self.field.get_path(f"cat_csv_{self.catalogue}"),
                 output_path=os.path.join(output_path, img.name),
@@ -4494,32 +4486,8 @@ class SurveyImagingEpoch(ImagingEpoch):
                 star_class_tol=star_class_tolerance,
                 image_name=f"{self.catalogue}",
             )
-            print()
-            print(img.name)
-            print("in epoch.zeropoint 2:")
-            print("\tsource_cat_path", img.source_cat_path)
-            print("\tsource_cat_dual_path", img.source_cat_dual_path)
-            print("\tsource_cat_sextractor_path", img.source_cat_sextractor_path)
-            print("\tsource_cat_sextractor_dual_path", img.source_cat_sextractor_dual_path)
-            print()
             img.select_zeropoint(True, preferred=self.preferred_zeropoint)
-            print()
-            print(img.name)
-            print("in epoch.zeropoint 3:")
-            print("\tsource_cat_path", img.source_cat_path)
-            print("\tsource_cat_dual_path", img.source_cat_dual_path)
-            print("\tsource_cat_sextractor_path", img.source_cat_sextractor_path)
-            print("\tsource_cat_sextractor_dual_path", img.source_cat_sextractor_dual_path)
-            print()
             img.estimate_depth(zeropoint_name=self.catalogue)  # , do_magnitude_calibration=False)
-            print()
-            print(img.name)
-            print("in epoch.zeropoint 4:")
-            print("\tsource_cat_path", img.source_cat_path)
-            print("\tsource_cat_dual_path", img.source_cat_dual_path)
-            print("\tsource_cat_sextractor_path", img.source_cat_sextractor_path)
-            print("\tsource_cat_sextractor_dual_path", img.source_cat_sextractor_dual_path)
-            print()
             if deepest is not None:
                 deepest = image.deepest(deepest, img)
             else:
@@ -4607,7 +4575,7 @@ class DESEpoch(SurveyImagingEpoch):
             },
             "source_extraction": super_stages["source_extraction"],
             "photometric_calibration": super_stages["photometric_calibration"],
-            "dual_mode_source_extraction": super_stages["dual_mode_source_extraction"],
+            # "dual_mode_source_extraction": super_stages["dual_mode_source_extraction"],
             "get_photometry": super_stages["get_photometry"]
         }
         return stages

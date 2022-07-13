@@ -3,6 +3,7 @@ import os
 from typing import Tuple, Union, List
 
 import astropy.io.fits as fits
+import astropy.units as units
 
 import craftutils.params as p
 import craftutils.utils as u
@@ -40,7 +41,8 @@ def feedme_sersic_model(
         axis_ratio: Union[float, Tuple[float, bool]] = (0.5, True),
         position_angle: Union[float, Tuple[float, bool]] = (0., True),
         output_option: int = 0,
-        fit_position: Union[bool, Tuple[bool, bool]] = (True, True)
+        fit_position: Union[bool, Tuple[bool, bool]] = (True, True),
+        **kwargs
 ):
     return feedme_model(
         "sersic",
@@ -96,9 +98,11 @@ def feedme_model(
     lines.append(f"Z) {output_option}\n")
     return lines
 
+
 feedme_funcs = {
     "sersic": feedme_sersic_model
 }
+
 
 def galfit_feedme(
         feedme_path: str,
@@ -185,7 +189,7 @@ def galfit_feedme(
         object_type = model_dict["object_type"]
         if object_type in feedme_funcs:
             func = feedme_funcs[object_type]
-            model_dict.pop("object_type")
+            # model_dict.pop("object_type")
         else:
             func = feedme_model
         model_lines = func(**model_dict)
@@ -202,5 +206,73 @@ def galfit_feedme(
         output.writelines(lines)
     return lines
 
+
+def extract_fit_params(header: fits.Header):
+    i = 1
+    components = {}
+    while f"COMP_{i}" in header:
+        comp_type = header[f"COMP_{i}"]
+        component_dict = extract_funcs[comp_type](i, header)
+        components[f"COMP_{i}"] = component_dict
+        i += 1
+    return components
+
+def strip_values(string: str):
+    string = string.replace("[", "")
+    string = string.replace("]", "")
+    string = string.replace("*", "")
+    return u.split_uncertainty_string(string)
+
+def extract_sersic_params(component_n: int, header: fits.Header):
+    x, x_err = strip_values(header[f"{component_n}_XC"])
+    y, y_err = strip_values(header[f"{component_n}_YC"])
+    mag, mag_err = strip_values(header[f"{component_n}_MAG"])
+    n, n_err = strip_values(header[f"{component_n}_N"])
+    axis_ratio, axis_ratio_err = strip_values(header[f"{component_n}_AR"])
+    theta, theta_err = strip_values(header[f"{component_n}_PA"])
+
+    component = {
+        "x": x * units.pix,
+        "x_err": x_err * units.pix,
+        "y": y * units.pix,
+        "y_err": y_err * units.pix,
+        "mag": mag * units.mag,
+        "mag_err": mag_err * units.mag,
+        "n": n,
+        "n_err": n_err,
+        "axis_ratio": axis_ratio,
+        "axis_ratio_err": axis_ratio_err,
+        "theta": theta,
+        "theta_err": theta_err
+    }
+    return component
+
+
+def extract_sky_params(component_n: int, header: fits.Header):
+    x, x_err = strip_values(header[f"{component_n}_XC"])
+    y, y_err = strip_values(header[f"{component_n}_YC"])
+    sky, sky_err = strip_values(header[f"{component_n}_SKY"])
+    dsky_dx, dsky_dx_err = strip_values(header[f"{component_n}_DSDX"])
+    dsky_dy, dsky_dy_err = strip_values(header[f"{component_n}_DSDY"])
+
+    component = {
+        "x": x * units.pix,
+        "x_err": x_err * units.pix,
+        "y": y * units.pix,
+        "y_err": y_err * units.pix,
+        "sky": sky * units.ct,
+        "sky_err": sky_err * units.ct,
+        "dsky_dx": dsky_dx * units.ct / units.pix,
+        "dsky_dx_err": dsky_dx_err * units.ct / units.pix,
+        "dsky_dy": dsky_dy * units.ct / units.pix,
+        "dsky_dy_err": dsky_dy_err * units.ct / units.pix,
+    }
+    return component
+
+
+extract_funcs = {
+    "sky": extract_sky_params,
+    "sersic": extract_sersic_params
+}
 # def galfit_best(path: str):
 #

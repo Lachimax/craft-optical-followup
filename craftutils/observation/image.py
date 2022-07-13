@@ -47,6 +47,7 @@ from craftutils.stats import gaussian_distributed_point
 import craftutils.observation.instrument as inst
 import craftutils.wrap.source_extractor as se
 import craftutils.wrap.psfex as psfex
+import craftutils.wrap.galfit as galfit
 from craftutils.wrap.astrometry_net import solve_field
 from craftutils.retrieve import cat_columns, cat_instruments
 
@@ -4150,7 +4151,11 @@ class ImagingImage(Image):
             "threshold": detection_threshold
         }
 
-    def make_galfit_version(self, output_path: str = None, ext: int = 0):
+    def make_galfit_version(
+            self,
+            output_path: str = None,
+            ext: int = 0
+    ):
         """
         Generate a version of this file for use with GALFIT.
         Modifies header item GAIN to conform to GALFIT's expectations (outlined in the GALFIT User Manual,
@@ -4192,7 +4197,7 @@ class ImagingImage(Image):
             self.psfex_path = psfex_path
             self.load_psfex_output()
         # Load oversampled PSF image
-        psf_img = self.psf_image(x=x[0], y=y[0], match_pixel_scale=False)[0]
+        psf_img = self.psf_image(x=x, y=y, match_pixel_scale=False)[0]
         psf_img /= np.max(psf_img)
         # Write our PSF image to disk for GALFIT to find
         psf_hdu = fits.hdu.PrimaryHDU(psf_img)
@@ -4204,120 +4209,234 @@ class ImagingImage(Image):
         )
         return psf_path
 
+    def make_galfit_feedme(
+            self,
+            feedme_path: str,
+            img_block_path: str,
+            psf_file: str = None,
+            psf_fine_sampling: int = 2,
+            mask_file: str = None,
+            fitting_region_margins: tuple = None,
+            convolution_size: tuple = None,
+            models: List[dict] = None
+    ):
+        if fitting_region_margins is None:
+            self.load_data()
+            max_x, max_y = self.data[0].shape
+            fitting_region_margins = 0, max_x - 1, 0, max_y - 1
+        if convolution_size is None:
+            left, right, bottom, top = fitting_region_margins
+            convolution_size = int(right - left), int(top - bottom)
+
+        self.extract_pixel_scale()
+        dx = (1 * units.pixel).to(units.arcsec, self.pixel_scale_x).value
+        dy = (1 * units.pixel).to(units.arcsec, self.pixel_scale_y).value
+
+        galfit.galfit_feedme(
+            feedme_path=feedme_path,
+            input_file=self.filename,
+            output_file=img_block_path,
+            zeropoint=self.zeropoint_best["zeropoint_img"].value,
+            psf_file=psf_file,
+            psf_fine_sampling=psf_fine_sampling,
+            mask_file=mask_file,
+            fitting_region_margins=fitting_region_margins,
+            convolution_size=convolution_size,
+            plate_scale=(dx, dy),
+            models=models
+        )
+
     def galfit(
             self,
-            coords: SkyCoord,
             output_dir: str = None,
+            output_prefix=None,
             frame_lower: int = 30,
             frame_upper: int = 100,
             ext: int = 0,
-            model_guesses: dict = None
+            model_guesses: Union[dict, List[dict]] = None,
+            psf_path: str = None,
+            use_frb_galfit: bool = False
     ):
-        # import frb.galaxies.galfit as galfit
-        import craftutils.wrap.galfit as galfit
+        """
+
+        :param coords:
+        :param output_dir:
+        :param frame_lower:
+        :param frame_upper:
+        :param ext:
+        :param model_guesses:
+            Either "position" can be provided as a SkyCoord object, or x & y as pixel coordinates.
+        :param use_frb_galfit: Use the FRB repo frb.galaxies.galfit module. Single-sersic only; if multiple models are provided only one will be used.
+        :return:
+        """
+        if output_prefix is None:
+            output_prefix = self.name
         if model_guesses is None:
             model_guesses = [{
                 "object_type": "sersic",
-                "int_mag": 20.0
+                "int_mag": 20.0,
+                "position": self.epoch.field.objects[0].position
             }]
 
-        coords = u.check_iterable(coords)
-        for i, coord in enumerate(coords):
-            x, y = self.world_to_pixel(
-                coord=coord,
-                origin=1
-            )
-            model_guesses[i]["x"] = x
-            model_guesses[i]["y"] = y
-        x = u.check_iterable(x)
-        y = u.check_iterable(y)
-        self.extract_pixel_scale()
-        dx = (1 * units.arcsec).to(units.pixel, self.pixel_scale_x).value
-        dy = (1 * units.arcsec).to(units.pixel, self.pixel_scale_y).value
+        if isinstance(model_guesses, dict):
+            model_guesses = [model_guesses]
+        gf_tbls = {}
+        for i, model in enumerate(model_guesses):
+            if "position" in model:
+                x, y = self.world_to_pixel(
+                    coord=model["position"],
+                    origin=1
+                )
+                model_guesses[i]["x"] = x
+                model_guesses[i]["y"] = y
+            elif "x" in model and "y" in model:
+                model_guesses["position"] = self.pixel_to_world(
+                    x=model["x"],
+                    y=model["y"],
+                    origin=1
+                )
+            else:
+                raise ValueError("All model dicts must have either 'position' or 'x' & 'y' keys.")
+            gf_tbls[f"COMP_{i+1}"] = []
+        gf_tbls[f"COMP_{i+2}"] = []
+
         if output_dir is None:
             output_dir = self.data_path
+        self.load_output_file()
         new = self.make_galfit_version(
-            output_path=os.path.join(output_dir, self.filename.replace(".fits", "_galfit.fits"))
+            output_path=os.path.join(output_dir, f"{output_prefix}_galfit.fits")
         )
+        new.zeropoint_best = self.zeropoint_best
         new.open()
 
-        psf_path = new.make_galfit_psf(x=x, y=y, output_dir=output_dir)
+        x = model_guesses[0]["x"]
+        y = model_guesses[0]["y"]
+        if psf_path is None:
+            psf_path = new.make_galfit_psf(
+                x=x,
+                y=y,
+                output_dir=output_dir
+            )
+        # Turn the first model into something the frb repo can use, and hope it's a sersic
+        if use_frb_galfit:
+            model_dict = model_guesses[0].copy()
+            x = int(model_dict.pop("x"))
+            y = int(model_dict.pop("y"))
+            model_dict["position"] = (x, y)
+            model_dict.pop("object_type")
+
+        psf_file = os.path.split(psf_path)[-1]
+        psf_path_moved = os.path.join(output_dir, psf_file)
+        if not os.path.isfile(psf_path_moved):
+            shutil.copy(psf_path, psf_path_moved)
+        psf_path = psf_path_moved
 
         new.load_data()
         data = new.data[ext].copy()
         new.close()
 
-        gf_tbls = []
+        mask_file = f"{output_prefix}_mask.fits"
+        mask_path = os.path.join(output_dir, mask_file)
+        margins_max = u.frame_from_centre(frame_upper + 1, x, y, data)
+        mask = new.write_mask(
+            output_path=mask_path,
+            unmasked=list(map(lambda m: m["position"], model_guesses)),
+            ext=ext,
+            method="sep",
+            obj_value=1,
+            back_value=0,
+            margins=margins_max
+        )
+
+        self.extract_pixel_scale(ext)
 
         for frame in range(frame_lower, frame_upper + 1):
-            margins = u.frame_from_centre(frame, x[0], y[0], data)
+            margins = u.frame_from_centre(frame, x, y, data)
             print("Generating mask...")
             data_trim = u.trim_image(data, margins=margins)
-            mask_path = os.path.join(output_dir, f"{self.name}_mask_{frame}.fits")
-            mask = new.write_mask(
-                output_path=mask_path,
-                unmasked=coords,
-                ext=ext,
-                method="sep",
-                obj_value=1,
-                back_value=0,
-                margins=margins
-            )
-            mask_data = u.trim_image(mask.data[ext], margins=margins)
-            img_block_path = os.path.join(output_dir, f"{self.name}_galfit_out_{frame}.fits")
-            feedme_path = os.path.join(output_dir, f"{self.name}_{frame}.feedme")
-            output_file = os.path.join(output_dir, f"{self.name}_galfit-out_{frame}.fits")
-            galfit.galfit_feedme(
-                feedme_path=feedme_path,
-                input_file=new.path,
-                output_file=output_file,
-                zeropoint=self.zeropoint_best["zeropoint_img"].value,
-                psf_file=psf_path,
-                psf_fine_sampling=2,
-                mask_file=mask_path,
-                fitting_region_margins=margins,
-                convolution_size=(frame * 2, frame * 2),
-                plate_scale=(dx, dy),
-                models=model_guesses
-            )
-            # galfit.run(
-            #     imgfile=new.path,
-            #     psffile=psf_path,
-            #     outdir=output_dir,
-            #     configfile=f"{self.name}_{frame}.feedme",
-            #     outfile=img_block_path,
-            #     finesample=2,
-            #     badpix=mask_path,
-            #     region=margins,
-            #     convobox=(frame * 2, frame * 2),
-            #     zeropoint=self.zeropoint_best["zeropoint_img"].value,
-            #     position=(int(x[0]), int(y[0])),
-            #     skip_sky=False,
-            #     **model_guesses
-            # )
+            mask_data = u.trim_image(mask.data[ext], margins=margins).value
+            feedme_file = f"{output_prefix}_{frame}.feedme"
+            feedme_path = os.path.join(output_dir, feedme_file)
+            img_block_file = f"{output_prefix}_galfit-out_{frame}.fits"
+            img_block_path = os.path.join(output_dir, img_block_file)
+            if not use_frb_galfit:
+                new.make_galfit_feedme(
+                    feedme_path=feedme_path,
+                    img_block_path=img_block_file,
+                    psf_file=psf_file,
+                    psf_fine_sampling=2,
+                    mask_file=mask_file,
+                    fitting_region_margins=margins,
+                    convolution_size=(frame * 2, frame * 2),
+                    models=model_guesses
+                )
+                galfit.galfit(
+                    config=feedme_file,
+                    output_dir=output_dir
+                )
+            else:
+                import frb.galaxies.galfit as galfit_frb
+                galfit_frb.run(
+                    imgfile=new.path,
+                    psffile=psf_path,
+                    outdir=output_dir,
+                    configfile=feedme_file,
+                    outfile=img_block_path,
+                    finesample=2,
+                    badpix=mask_path,
+                    region=margins,
+                    convobox=(frame * 2, frame * 2),
+                    zeropoint=self.zeropoint_best["zeropoint_img"].value,
+                    skip_sky=False,
+                    **model_dict
+                )
+            shutil.copy(os.path.join(output_dir, "fit.log"), os.path.join(output_dir, f"{output_prefix}_{frame}_fit.log"))
+
             try:
-                img_block = fits.open(img_block_path, mode='update')
+                img_block = fits.open(img_block_path)
             except FileNotFoundError:
                 return None
 
-            results_table = table.QTable(img_block[4].data)
-            results_table["frame"] = [frame]
-            gf_tbls.append(results_table)
+            results_header = img_block[2].header
+            components = galfit.extract_fit_params(results_header)
+            for compname in components:
+                component = components[compname]
+                pos = self.pixel_to_world(component["x"], component["y"])
+                component["ra"] = pos.ra
+                component["dec"] = pos.dec
+                # TODO: This assumes RA and Dec are along x & y (neglecting image rotation), which isn't great
+                component["ra_err"] = component["x_err"].to(units.deg, self.pixel_scale_x)
+                component["dec_err"] = component["y_err"].to(units.deg, self.pixel_scale_y)
+                component["frame"] = frame
+                results_table = table.QTable([component])
+                gf_tbls[compname].append(results_table)
 
-            img_block.append(img_block[3].copy())
-            img_block[5].data *= np.invert(mask_data.astype(bool)).astype(int)  # + #
+            mask_ones = np.invert(mask_data.astype(bool)).astype(int)
+
+            # Masked data
+            img_block.insert(4, img_block[1].copy())
+            img_block[4].data *= mask_ones  # + #
+            img_block[4].data += mask_data * np.median(img_block[1].data)
+
+            # Masked, subtracted data
+            img_block.insert(5, img_block[3].copy())
+            img_block[5].data *= mask_ones  # + #
             img_block[5].data += mask_data * np.median(img_block[3].data)
 
-            img_block.append(img_block[1].copy())
-            img_block[6].data *= np.invert(mask_data.astype(bool)).astype(int)  # + #
-            img_block[6].data += mask_data * np.median(img_block[1].data)
-            img_block.close()
+            for idx in [2, 3]:
+                img_block[idx].header.insert('OBJECT', ('PCOUNT', 0))
+                img_block[idx].header.insert('OBJECT', ('GCOUNT', 1))
 
-        gf_tbl = table.vstack(gf_tbls)
+            img_block.writeto(img_block_path, overwrite=True)
+
+        component_tables = {}
+        for compname in gf_tbls:
+            gf_tbl = table.vstack(gf_tbls[compname])
+            component_tables[compname] = gf_tbl
 
         shutil.copy(p.path_to_config_galfit(), output_dir)
 
-        return gf_tbl
+        return component_tables
 
     @classmethod
     def select_child_class(cls, instrument: str, **kwargs):

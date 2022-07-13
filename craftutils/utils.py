@@ -521,7 +521,8 @@ def uncertainty_product(value, *args: tuple):
         try:
             variance_pre += (uncertainty / measurement) ** 2
         except units.UnitConversionError:
-            raise units.UnitConversionError(f"uncertainty {uncertainty} and measurement {measurement} have units that do not match.")
+            raise units.UnitConversionError(
+                f"uncertainty {uncertainty} and measurement {measurement} have units that do not match.")
     sigma_pre = np.sqrt(variance_pre)
     sigma = np.abs(value) * sigma_pre
     return sigma
@@ -1348,3 +1349,9 @@ def trim_to_class(
         return cat
     else:
         return good
+
+
+def split_uncertainty_string(string: str, delim: str = "+/-"):
+    value = float(string[:string.find(delim)])
+    uncertainty = float(string[string.find(delim) + len(delim):])
+    return value, uncertainty
