@@ -8,24 +8,8 @@ import numpy as np
 import astropy.io.fits as fits
 
 import craftutils.utils as u
-from craftutils.observation.image import fits_table_all
 from craftutils.photometry import gain_median_combine, gain_mean_combine
-import craftutils.observation.image as img
-
-
-def header_keys():
-    return {
-        "airmass": "AIRMASS",
-        "saturate": "SATURATE",
-        "object": "OBJECT",
-        "filter": "FILTER",
-        "mjd-obs": "MJD-OBS",
-        "date-obs": "DATE-OBS",
-        "gain": "GAIN",
-        "exptime": "EXPTIME",
-        "instrument": "INSTRUME"
-    }
-
+import craftutils.observation.image as image
 
 def image_table(input_directory: str, output_path: str = "images.tbl"):
     """
@@ -51,47 +35,54 @@ def make_header(table_path: str, output_path: str):
 
 def check_input_images(input_directory: str,
                        **kwargs):
-    table = fits_table_all(input_directory, science_only=True)
+    table = image.fits_table_all(input_directory, science_only=True)
     table.sort("FILENAME")
 
-    keys = header_keys()
-    exptime_key = keys["exptime"]
+    template = table[0]
+    template_path = os.path.join(input_directory, template["FILENAME"])
+    template_img = image.ImagingImage.select_child_class(
+        instrument=image.detect_instrument(path=template_path)
+    )(template_path)
+    keys = template_img.header_keys()
+    exptime_key = keys["exposure_time"]
     instrument_key = keys["instrument"]
     if "gain_key" in kwargs:
         gain_key = kwargs["gain_key"]
     else:
         gain_key = keys["gain"]
 
-    template = table[0]
+    if gain_key.startswith("HIERARCH"):
+        gain_key = gain_key[9:]
+
     exptime = np.round(float(template[exptime_key]))
     instrument = template[instrument_key]
     gain = np.round(template[gain_key])
     for file in table[1:]:
         if np.round(float(file[exptime_key])) != exptime:
             raise ValueError(
-                f"Input files have different EXPTIME ({file[exptime_key]} != {exptime}), file {file['filename']}")
+                f"Input files have different EXPTIME ({file[exptime_key]} != {exptime}), file {file['FILENAME']}")
         if file[instrument_key] != instrument:
             raise ValueError(
                 f"Input files were taken with different instruments ({file[instrument_key]} != {instrument}), file {file['filename']}.")
         if np.round(file[gain_key]) != gain:
-            raise ValueError(f"Files specify different gains ({gain} != {file[gain_key]}, file {file['filename']}")
+            raise ValueError(f"Files specify different gains ({gain} != {file[gain_key]}, file {file['FILENAME']}")
 
 
 def inject_header(
         file_path: str, input_directory: str,
         extra_items: dict = None, keys: dict = None,
-        coadd_type: str = 'median', ext: int = 0,
-        instrument: str = "vlt-fors2"):
-    table = fits_table_all(input_directory, science_only=False)
+        coadd_type: str = 'median', ext: int = 0
+):
+    table = image.fits_table_all(input_directory, science_only=False)
     table.sort("FILENAME")
 
-    important_keys = header_keys()
+    template = image.ImagingImage.from_fits(table[0]["PATH"])
+    cls = type(template)
+
+    important_keys = template.header_keys()
 
     if keys is not None:
         important_keys.update(keys)
-
-    template = img.ImagingImage.from_fits(table[0]["PATH"])
-    cls = type(template)
 
     airmasses = np.float64(table[important_keys['airmass']])
     airmass_mean = np.nanmean(airmasses)
@@ -104,7 +95,7 @@ def inject_header(
         f"OBJECT": template.extract_object(),
         f"MJD-OBS": float(np.nanmin(np.float64(table[important_keys["mjd-obs"]]))),
         f"DATE-OBS": template.extract_date_obs(),
-        f"EXPTIME": np.nanmean(table[important_keys["exptime"]]),
+        f"EXPTIME": np.nanmean(table[important_keys["exposure_time"]]),
         f"FILTER": template.extract_filter(),
         f"INSTRUME": template.instrument_name,
         f"RON": template.extract_noise_read().value,
@@ -126,8 +117,12 @@ def inject_header(
     if important_keys["filter"] in table.colnames:
         insert_dict["FILTER"] = table[important_keys["filter"]][0]
 
-    if important_keys["gain"] in table.colnames:
-        old_gain = np.nanmean(np.float64(table[important_keys["gain"]]))
+    gain_key = important_keys["gain"]
+    if gain_key.startswith("HIERARCH"):
+        gain_key = gain_key[9:]
+
+    if gain_key in table.colnames:
+        old_gain = np.nanmean(np.float64(table[gain_key]))
         if coadd_type == "median":
             new_gain = gain_median_combine(old_gain=old_gain, n_frames=n_frames)
         elif coadd_type == "mean":
@@ -371,7 +366,6 @@ def standard_script(
             inject_header(
                 file_path=output_file_name_coadd,
                 input_directory=input_directory,
-                instrument="vlt-fors2",
                 coadd_type=coadd_type)
 
         file_paths.append(os.path.join(output_directory, output_file_name_coadd))

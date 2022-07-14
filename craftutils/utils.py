@@ -1,10 +1,10 @@
-# Code by Lachlan Marnoch, 2019-2021
+# Code by Lachlan Marnoch, 2019-2022
 
 import math
 import os
 import shutil
 import sys
-from typing import List, Union, Tuple
+from typing import List, Union, Tuple, Iterable
 from datetime import datetime as dt
 import subprocess
 
@@ -20,6 +20,13 @@ from astropy.time import Time
 # TODO: Also comment.
 
 debug_level = 0
+
+
+def pad_zeroes(n: int, length: int = 2):
+    n_str = str(n)
+    while len(n_str) < length:
+        n_str = "0" + n_str
+    return n_str
 
 
 def get_git_hash(directory: str, short: bool = False):
@@ -65,22 +72,22 @@ def check_margins(data, left=None, right=None, bottom=None, top=None, margins: t
     if margins is not None:
         left, right, bottom, top = margins
 
-    if left is None:
+    if left is None or left < 0.:
         left = 0
     else:
         left = int(dequantify(left))
 
-    if right is None:
+    if right is None or right < 0.:
         right = shape[1]
     else:
         right = int(dequantify(right))
 
-    if bottom is None:
+    if bottom is None or bottom < 0.:
         bottom = 0
     else:
         bottom = int(dequantify(bottom))
 
-    if top is None:
+    if top is None or top < 0.:
         top = shape[0]
     else:
         top = int(dequantify(top))
@@ -93,7 +100,15 @@ def check_margins(data, left=None, right=None, bottom=None, top=None, margins: t
     return left, right, bottom, top
 
 
-def trim_image(data, left=None, right=None, bottom=None, top=None, margins: tuple = None):
+def trim_image(
+        data,
+        left=None,
+        right=None,
+        bottom=None,
+        top=None,
+        margins: tuple = None,
+        return_margins: bool = False
+):
     """
 
     :param data:
@@ -104,13 +119,17 @@ def trim_image(data, left=None, right=None, bottom=None, top=None, margins: tupl
     :param margins:
     :return:
     """
-    left, right, bottom, top = check_margins(
+    left, right, bottom, top = margins = check_margins(
         data=data,
         left=left, right=right, bottom=bottom, top=top,
         margins=margins
     )
     debug_print(2, "fits_files.trim(): left ==", left, "right ==", right, "bottom ==", bottom, "top ==", top)
-    return data[bottom:top + 1, left:right + 1]
+    trimmed = data[bottom:top + 1, left:right + 1]
+    if return_margins:
+        return trimmed, margins
+    else:
+        return trimmed
 
 
 def check_iterable(obj):
@@ -162,9 +181,9 @@ def write_list_to_file(path: str, file: list):
     # Delete file, to be rewritten.
     rm_check(path)
     # Write file to disk.
-    print(f"Writing pypeit file to {path}")
-    with open(path, 'w') as pypeit_file:
-        pypeit_file.writelines(file)
+    print(f"Writing file to {path}")
+    with open(path, 'w') as file_stream:
+        file_stream.writelines(file)
 
 
 def relevant_timescale(time: units.Quantity):
@@ -242,8 +261,12 @@ def check_dict(key: str, dictionary: dict, na_values: Union[tuple, list] = (None
 
 
 def check_quantity(
-        number: Union[float, int, units.Quantity], unit: units.Unit, allow_mismatch: bool = True,
-        convert: bool = False):
+        number: Union[float, int, units.Quantity],
+        unit: units.Unit,
+        allow_mismatch: bool = True,
+        enforce_equivalency: bool = True,
+        convert: bool = False
+):
     """
     If the passed number is not a Quantity, turns it into one with the passed unit. If it is already a Quantity,
     checks the unit; if the unit is compatible with the passed unit, the quantity is returned unchanged (unless convert
@@ -263,7 +286,7 @@ def check_quantity(
         if not allow_mismatch:
             raise units.UnitsError(
                 f"This is already a Quantity, but with units {number.unit}; units {unit} were specified.")
-        elif not (number.unit.is_equivalent(unit)):
+        elif enforce_equivalency and not (number.unit.is_equivalent(unit)):
             raise units.UnitsError(
                 f"This number is already a Quantity, but with incompatible units ({number.unit}); units {unit} were specified.")
         elif convert:
@@ -355,7 +378,7 @@ def world_angle_se_to_pu(
     """
     theta = check_quantity(theta, units.deg)
     rot_angle = check_quantity(rot_angle, units.deg)
-    return -theta.to(units.radian).value + rot_angle.to(units.radian).value
+    return theta.to(units.radian).value + rot_angle.to(units.radian).value
 
 
 def size_from_ang_size_distance(theta: float, ang_size_distance: float):
@@ -419,7 +442,6 @@ def mkdir_check(*paths: str):
             debug_print(2, f"Directory {path} already exists, doing nothing.")
 
 
-# TODO: Make this system independent.
 def mkdir_check_nested(path: str, remove_last: bool = True):
     """
     Does mkdir_check, but for all parent directories of the given path.
@@ -481,6 +503,10 @@ def uncertainty_product(value, *args: tuple):
     Each arg should be a tuple, in which the first entry is the measurement and the second entry is the uncertainty in
     that measurement. These may be in the form of numpy arrays or table columns.
     """
+    if None in args:
+        raise TypeError("A 'None' has been passed as an arg.")
+    if value is None:
+        raise TypeError("value is None.")
     variance_pre = 0.
     for measurement, uncertainty in args:
         if hasattr(measurement, "__len__"):
@@ -492,7 +518,11 @@ def uncertainty_product(value, *args: tuple):
             measurement = sys.float_info.min
 
         debug_print(2, "uncertainty_product(): uncertainty, measurement ==", uncertainty, measurement)
-        variance_pre += (uncertainty / measurement) ** 2
+        try:
+            variance_pre += (uncertainty / measurement) ** 2
+        except units.UnitConversionError:
+            raise units.UnitConversionError(
+                f"uncertainty {uncertainty} and measurement {measurement} have units that do not match.")
     sigma_pre = np.sqrt(variance_pre)
     sigma = np.abs(value) * sigma_pre
     return sigma
@@ -514,25 +544,7 @@ def uncertainty_log10(arg: float, uncertainty_arg: float, a: float = 1.):
     return np.abs(a * uncertainty_arg / (arg * np.log(10)))
 
 
-def error_product(value, measurements, errors):
-    """
-    Produces the absolute uncertainty of a value calculated as a product or as a quotient.
-    :param value: The final calculated value.
-    :param measurements: An array of the measurements used to calculate the value.
-    :param errors: An array of the respective errors of the measurements. Expected to be in the same order as
-        measurements.
-    :return:
-    """
-
-    measurements = np.array(measurements)
-    errors = np.array(errors)
-    print("VALUE:", value)
-    print("UNCERTAINTIES:", errors)
-    print("MEASUREMENTS:", measurements)
-    return value * np.sum(np.abs(errors[measurements != 0.] / measurements[measurements != 0.]))
-
-
-def error_func(arg, err, func=lambda x: np.log10(x), absolute=False):
+def uncertainty_func(arg, err, func=lambda x: np.log10(x), absolute=False):
     """
 
     :param arg:
@@ -565,8 +577,8 @@ def error_func(arg, err, func=lambda x: np.log10(x), absolute=False):
         return np.array([measurement, error_plus_actual, error_minus_actual])
 
 
-def error_func_percent(arg, err, func=lambda x: np.log10(x)):
-    measurement, error_plus, error_minus = error_func(arg=arg, err=err, func=func, absolute=False)
+def uncertainty_func_percent(arg, err, func=lambda x: np.log10(x)):
+    measurement, error_plus, error_minus = uncertainty_func(arg=arg, err=err, func=func, absolute=False)
     return np.array([error_plus / measurement, error_minus / measurement])
 
 
@@ -591,39 +603,129 @@ def get_column_names_sextractor(path):
     return columns
 
 
-def mean_squared_error(model_values, obs_values, weights=None, quiet=True):
+def std_err_slope(
+        y_model: np.ndarray,
+        y_obs: np.ndarray,
+        x_obs: np.ndarray,
+        y_weights: np.ndarray = None,
+        x_weights: np.ndarray = None,
+        dof_correction: int = 2,
+):
+    """
+    https://sites.chem.utoronto.ca/chemistry/coursenotes/analsci/stats/ErrRegr.html
+    https://www.statology.org/standard-error-of-regression-slope/
+    :param y_model:
+    :param y_obs:
+    :param y_weights:
+    :return:
+    """
+
+    s_regression = root_mean_squared_error(
+        model_values=y_model,
+        obs_values=y_obs,
+        weights=y_weights,
+        dof_correction=dof_correction
+    )
+
+    if x_weights is None:
+        x_weights = 1
+    else:
+        x_weights = x_weights / np.linalg.norm(x_weights, ord=1)
+        n = 1
+
+    x_mean = np.nanmean(x_obs)
+    s = s_regression / np.sqrt(np.nansum(x_weights * (x_obs - x_mean)) ** 2)
+    return s
+
+
+def std_err_intercept(
+        y_model: np.ndarray,
+        y_obs: np.ndarray,
+        x_obs: np.ndarray,
+        y_weights: np.ndarray = None,
+        x_weights: np.ndarray = None,
+        dof_correction: int = 2,
+):
+    """
+    https://sites.chem.utoronto.ca/chemistry/coursenotes/analsci/stats/ErrRegr.html
+    :return:
+    """
+    s_regression = root_mean_squared_error(
+        model_values=y_model,
+        obs_values=y_obs,
+        weights=y_weights,
+        dof_correction=dof_correction
+    )
+
+    n = len(x_obs)
+    x_mean = np.nanmean(x_obs)
+
+    if x_weights is None:
+        x_weights = 1
+    else:
+        x_weights = x_weights / np.linalg.norm(x_weights, ord=1)
+        n = 1
+
+    s = s_regression * np.sqrt(np.nansum(x_weights * x_obs ** 2) / (n * np.nansum((x_obs - x_mean) ** 2)))
+    return s
+
+
+def mean_squared_error(model_values, obs_values, weights=None, dof_correction: int = 2):
     """
     Weighting from https://stats.stackexchange.com/questions/230517/weighted-root-mean-square-error
     :param model_values:
     :param obs_values:
     :param weights:
     :param quiet:
+    :param dof_correction: see https://sites.chem.utoronto.ca/chemistry/coursenotes/analsci/stats/ErrRegr.html
     :return:
     """
     if len(model_values) != len(obs_values):
         raise ValueError("Arrays must be the same length.")
     n = len(model_values)
-    if not quiet:
-        print("n:", n)
     if weights is None:
         weights = 1
     else:
         weights = weights / np.linalg.norm(weights, ord=1)
         n = 1
-        if not quiet:
-            print("Normalised weights:", np.sum(weights))
+        dof_correction = 0
 
-    return (1 / n) * np.sum(weights * (obs_values - model_values) ** 2)
+    return (1 / (n - dof_correction)) * np.nansum(weights * (obs_values - model_values) ** 2)
 
 
-def root_mean_squared_error(model_values, obs_values, weights=None, quiet=True):
-    mse = mean_squared_error(model_values=model_values, obs_values=obs_values, weights=weights, quiet=quiet)
-    if not quiet:
-        print("MSE:", mse)
+def root_mean_squared_error(
+        model_values: np.ndarray,
+        obs_values: np.ndarray,
+        weights: np.ndarray = None,
+        dof_correction: int = 2
+):
+    mse = mean_squared_error(
+        model_values=model_values,
+        obs_values=obs_values,
+        weights=weights,
+        dof_correction=dof_correction
+    )
     return np.sqrt(mse)
 
 
-def mode(lst: 'list'):
+def detect_problem_table(tbl: table.Table, fmt: str = "ecsv"):
+    for i, row in enumerate(tbl):
+        tbl_this = tbl[:i + 1]
+        try:
+            writepath = os.path.join(os.path.expanduser("~"), f"test.{fmt}")
+            tbl_this.write(writepath, overwrite=True, format=fmt)
+            os.remove(writepath)
+        except NotImplementedError:
+            print("Problem row:")
+            print(i, row)
+            return i, row
+        except ValueError:
+            print("Problem row:")
+            print(i, row)
+            return i, row
+
+
+def mode(lst: list):
     return max(set(lst), key=list.count)
 
 
@@ -818,6 +920,75 @@ def round_to_sig_fig(x: float, n: int) -> float:
     return round(x, (n - 1) - int(np.floor(np.log10(abs(x)))))
 
 
+def round_decimals_up(number: float, decimals: int = 2):
+    """
+    Returns a value rounded up to a specific number of decimal places.
+    Taken from https://kodify.net/python/math/round-decimals/#round-decimal-places-up-in-python
+    """
+
+    if decimals < 0:
+        raise ValueError(f"decimal places has to be 0 or more (received {decimals})")
+    elif decimals == 0:
+        return math.ceil(number)
+
+    factor = 10 ** decimals
+    return math.ceil(number * factor) / factor
+
+
+def uncertainty_string(
+        value: float,
+        uncertainty: float,
+        n_digits_err: int = 1,
+        unit: units.Unit = None,
+        brackets: bool = True,
+        limit_val: int = None,
+        limit_type: str = "upper",
+        nan_string: str = "--"
+):
+    limit_vals = (limit_val, -99, -999)
+    value = dequantify(value, unit)
+    uncertainty = dequantify(uncertainty, unit)
+    if limit_type == "upper":
+        limit_char = "<"
+    else:
+        limit_char = ">"
+
+    # If we have an upper limit, set uncertainty to blank
+    if uncertainty in limit_vals:
+        uncertainty = nan_string
+        precision = 1
+    else:
+        precision = np.log10(uncertainty)
+        if precision < 0:
+            precision = int(-precision + n_digits_err)
+        else:
+            precision = n_digits_err
+        uncertainty = round_decimals_up(uncertainty, abs(precision))
+
+    if value in limit_vals:
+        value = nan_string
+    else:
+        value = np.round(value, precision)
+
+    if uncertainty == nan_string:
+        if value != nan_string:
+            this_str = f"${limit_char} {value}$"
+        else:
+            this_str = "--"
+    else:
+        val_rnd = str(value)
+        while len(val_rnd[val_rnd.find("."):]) < precision + 1:
+            val_rnd += "0"
+
+        if brackets:
+            uncertainty_digit = str(uncertainty)[-n_digits_err:]
+            this_str = f"${val_rnd}({uncertainty_digit})$"
+        else:
+            this_str = f"${val_rnd} \\pm {uncertainty}$"
+
+    return this_str, value, uncertainty
+
+
 def wcs_as_deg(ra: str, dec: str):
     """
     Using the same syntax as astropy.coordinates.SkyCoord, converts a string of WCS coordinates into degrees.
@@ -1003,6 +1174,17 @@ def select_yn(message: str, default: Union[str, bool] = None):
         return False
 
 
+def select_yn_exit(message: str):
+    options = ["No", "Yes", "Exit"]
+    opt, _ = select_option(message=message, options=options)
+    if opt == 0:
+        return False
+    if opt == 1:
+        return True
+    if opt == 2:
+        exit(0)
+
+
 def user_input(message: str, typ: type = str, default=None):
     inp = None
     if default is not None:
@@ -1029,62 +1211,22 @@ def user_input(message: str, typ: type = str, default=None):
     return inp
 
 
+def bucket_mode(data: np.ndarray, precision: int):
+    """
+    With help from https://www.statology.org/numpy-mode/
+    :param data:
+    :param precision:
+    :return:
+    """
+    vals, counts = np.unique(np.round(data, precision), return_counts=True)
+    return vals[counts == np.max(counts)]
+
+
 def scan_nested_dict(dictionary: dict, keys: list):
     value = dictionary
     for key in keys:
         value = value[key]
     return value
-
-
-def get_scope(lines: list, levels: list):
-    this_dict = {}
-    this_level = levels[0]
-    for i, line in enumerate(lines):
-        if levels[i] == this_level:
-            scope_start = i + 1
-            scope_end = i + 1
-            while scope_end < len(levels) and levels[scope_end] > this_level:
-                scope_end += 1
-            if "=" in line:
-                key, value = line.split("=")
-                this_dict[key] = value
-            else:
-                this_dict[line] = get_scope(lines=lines[scope_start:scope_end], levels=levels[scope_start:scope_end])
-
-    return this_dict
-
-
-def get_pypeit_param_levels(lines: list):
-    levels = []
-    last_non_zero = 0
-    for i, line in enumerate(lines):
-        level = line.count("[")
-        if level == 0:
-            level = levels[last_non_zero] + 1
-        else:
-            last_non_zero = i
-        levels.append(level)
-        line = line.replace("\t", "").replace(" ", "").replace("[", "").replace("]", "").replace("\n", "")
-        if "#" in line:
-            line = line.split("#")[0]
-        lines[i] = line
-    return lines, levels
-
-
-def get_pypeit_user_params(file: Union[list, str]):
-    if isinstance(file, str):
-        with open(file) as f:
-            file = f.readlines()
-
-    p_start = file.index("# User-defined execution parameters\n") + 1
-    p_end = p_start + 1
-    while file[p_end] != "\n":
-        p_end += 1
-
-    lines, levels = get_pypeit_param_levels(lines=file[p_start:p_end])
-    param_dict = get_scope(lines=lines, levels=levels)
-
-    return param_dict
 
 
 def print_nested_dict(dictionary, level: int = 0):
@@ -1163,3 +1305,53 @@ def system_package_version(package_name: str):
         return verstring[9:]
     else:
         return None
+
+
+def classify_spread_model(
+        cat: table.Table,
+        cutoffs: Tuple[float, float, float, float] = (-0.005, 0.005, 0.003, 0.003),
+        sm_col: str = "SPREAD_MODEL",
+        sm_err_col: str = "SPREADERR_MODEL",
+        class_flag_col: str = "CLASS_FLAG"
+):
+    if sm_col not in cat.colnames:
+        print(sm_col, "not found in catalogue columns.")
+        return None
+    cat[class_flag_col] = (
+            ((cat[sm_col] + 3 * cat[sm_err_col]) > cutoffs[1]).astype(int)
+            + ((cat[sm_col] + cat[sm_err_col]) > cutoffs[2]).astype(int)
+            + ((cat[sm_col] - cat[sm_err_col]) > cutoffs[3]).astype(int)
+    )
+
+    cat[class_flag_col][(cat[sm_col] + cat[sm_col]) < cutoffs[0]] = -1
+
+    return cat
+
+
+def trim_to_class(
+        cat: table.Table,
+        allowed: Iterable = [0],
+        modify: bool = True,
+        classify_kwargs: dict = {},
+):
+    cat = classify_spread_model(cat, **classify_kwargs)
+    if cat is None:
+        return None
+    if "class_flag_col" in classify_kwargs:
+        star_class_col = classify_kwargs["class_flag_col"]
+    else:
+        star_class_col = "CLASS_FLAG"
+    good = []
+    for row in cat:
+        good.append(row[star_class_col] in allowed)
+    if modify:
+        cat = cat[good]
+        return cat
+    else:
+        return good
+
+
+def split_uncertainty_string(string: str, delim: str = "+/-"):
+    value = float(string[:string.find(delim)])
+    uncertainty = float(string[string.find(delim) + len(delim):])
+    return value, uncertainty

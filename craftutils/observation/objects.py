@@ -1,5 +1,6 @@
 from typing import Union, Tuple, List
 import os
+import copy
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -10,22 +11,8 @@ import astropy.table as table
 import astropy.cosmology as cosmo
 from astropy.modeling import models, fitting
 from astropy.visualization import quantity_support
-
-ne2001_installed = True
-try:
-    from ne2001.density import NEobject
-except ImportError:
-    print("ne2001 is not installed; DM_ISM estimates will not be available.")
-    ne2001_installed = False
-
-frb_installed = True
-try:
-    import frb.halos.models as halos
-    import frb.halos.hmf as hmf
-    import frb.dm.igm as igm
-except ImportError:
-    print("FRB is not installed; DM_ISM estimates will not be available.")
-    frb_installed = False
+import astropy.time as time
+import astropy.io.fits as fits
 
 import craftutils.params as p
 import craftutils.astrometry as astm
@@ -56,9 +43,10 @@ uncertainty_dict = {
     "stat": 0.0
 }
 
+
 def skycoord_to_position_dict(skycoord: SkyCoord):
-    ra_float = skycoord.ra
-    dec_float = skycoord.dec
+    ra_float = skycoord.ra.value
+    dec_float = skycoord.dec.value
 
     s = skycoord.to_string("hmsdms")
     ra = s[:s.find(" ")]
@@ -68,6 +56,7 @@ def skycoord_to_position_dict(skycoord: SkyCoord):
                 "ra": {"decimal": ra_float, "hms": ra}}
 
     return position
+
 
 class PositionUncertainty:
     def __init__(
@@ -192,13 +181,28 @@ class PositionUncertainty:
     def uncertainty_quadrature_equ(self):
         return np.sqrt(self.ra_sys ** 2 + self.ra_stat ** 2), np.sqrt(self.dec_stat ** 2 + self.dec_stat ** 2)
 
+    # TODO: Finish this
+
+    def to_dict(self):
+        return {
+            "a_sys": self.a_sys,
+            "a_stat": self.a_stat,
+            "b_sys": self.b_sys,
+            "b_stat": self.b_stat,
+            "theta": self.theta,
+            "ra_err_sys": self.ra_sys,
+            "dec_err_sys": self.dec_sys,
+            "ra_err_stat": self.ra_stat,
+            "dec_err_stat": self.dec_stat
+        }
+
     @classmethod
     def default_params(cls):
         return {
-            "ra": uncertainty_dict.copy(),
-            "dec": uncertainty_dict.copy(),
-            "a": uncertainty_dict.copy(),
-            "b": uncertainty_dict.copy(),
+            "ra": copy.deepcopy(uncertainty_dict),
+            "dec": copy.deepcopy(uncertainty_dict),
+            "a": copy.deepcopy(uncertainty_dict),
+            "b": copy.deepcopy(uncertainty_dict),
             "theta": 0.0,
             "sigma": None,
             "healpix_path": None
@@ -213,16 +217,20 @@ class Object:
             position_err: Union[float, units.Quantity, dict, PositionUncertainty, tuple] = 0.0 * units.arcsec,
             field=None,
             row: table.Row = None,
-            plotting: dict = None
+            plotting: dict = None,
+            **kwargs
     ):
         self.name = name
 
         self.cat_row = row
         self.position = None
         self.position_err = None
+        self.position_photometry = None
+        self.position_photometry_err = None
+
         if self.cat_row is not None:
             self.position_from_cat_row()
-        else:
+        elif position is not None:
             self.position = astm.attempt_skycoord(position)
             if type(position_err) is not PositionUncertainty:
                 self.position_err = PositionUncertainty(uncertainty=position_err, position=self.position)
@@ -259,6 +267,15 @@ class Object:
         self.theta = None
         self.kron = None
 
+        self.photometry_args = None
+        if "photometry_args_manual" in kwargs and kwargs["photometry_args_manual"]["a"] != 0 and \
+                kwargs["photometry_args_manual"]["b"]:
+            self.photometry_args = kwargs["photometry_args_manual"]
+            self.a = self.photometry_args["a"]
+            self.b = self.photometry_args["b"]
+            self.theta = self.photometry_args["theta"]
+            self.kron = self.photometry_args["kron_radius"]
+
     def set_name_filesys(self):
         if self.name is not None:
             self.name_filesys = self.name.replace(" ", "-")
@@ -266,15 +283,15 @@ class Object:
     def position_from_cat_row(self, cat_row: table.Row = None):
         if cat_row is not None:
             self.cat_row = cat_row
-        self.position = SkyCoord(self.cat_row["RA"], self.cat_row["DEC"])
-        self.position_err = PositionUncertainty(
+        self.position_photometry = SkyCoord(self.cat_row["RA"], self.cat_row["DEC"])
+        self.position_photometry_err = PositionUncertainty(
             ra_err_stat=self.cat_row["RA_ERR"],
             ra_err_sys=0.0 * units.arcsec,
             dec_err_stat=self.cat_row["DEC_ERR"],
             dec_err_sys=0.0 * units.arcsec,
-            position=self.position
+            position=self.position_photometry
         )
-        return self.position
+        return self.position_photometry
 
     def get_photometry(self):
         for cat in self.field.cats:
@@ -283,48 +300,115 @@ class Object:
     def get_good_photometry(self):
 
         import craftutils.observation.image as image
-
         self.estimate_galactic_extinction()
-        deepest = self.select_deepest()
-        deepest_dict = self.photometry[deepest["instrument"]][deepest["band"]][deepest["epoch_name"]]
+        deepest_dict = self.select_deepest()
         deepest_path = deepest_dict["good_image_path"]
 
-        cls = image.CoaddedImage.select_child_class(instrument=deepest["instrument"])
+        cls = image.CoaddedImage.select_child_class(instrument=deepest_dict["instrument"])
         deepest_img = cls(path=deepest_path)
-        deepest_fwhm = deepest_img.extract_header_item("PSF_FWHM") * units.arcsec
-        mag, mag_err, snr = deepest_img.sep_elliptical_magnitude(
-            centre=self.position,
+        deep_mask = deepest_img.write_mask(
+            output_path=os.path.join(
+                self.data_path,
+                f"{self.name_filesys}_master-mask_{deepest_dict['instrument']}_{deepest_dict['filter']}_{deepest_dict['epoch_name']}.fits",
+            ),
+            method="sep",
+            unmasked=self.position_photometry
+        )
+        mag_results = deepest_img.sep_elliptical_magnitude(
+            centre=self.position_photometry,
             a_world=self.a,
             b_world=self.b,
             theta_world=self.theta,
             kron_radius=self.kron,
-            plot=os.path.join(self.data_path, f"{self.name_filesys}_{deepest['instrument']}_{deepest['band']}_{deepest['epoch_name']}.png")
+            output=os.path.join(
+                self.data_path,
+                f"{self.name_filesys}_{deepest_dict['instrument']}_{deepest_dict['filter']}_{deepest_dict['epoch_name']}"
+            ),
+            mask_nearby=deep_mask
         )
-        deepest_dict["mag_sep"] = mag[0]
-        deepest_dict["mag_sep_err"] = mag_err[0]
-        deepest_dict["snr_sep"] = snr[0]
+        if mag_results is not None:
+            deepest_dict["mag_sep"] = mag_results["mag"][0]
+            deepest_dict["mag_sep_err"] = mag_results["mag_err"][0]
+            deepest_dict["snr_sep"] = mag_results["snr"][0]
+            deepest_dict["back_sep"] = mag_results["back"][0]
+            deepest_dict["flux_sep"] = mag_results["flux"][0]
+            deepest_dict["flux_sep_err"] = mag_results["flux_err"][0]
+        else:
+            deepest_dict["mag_sep"] = -999. * units.mag
+            deepest_dict["mag_sep_err"] = -999. * units.mag
+            deepest_dict["snr_sep"] = -999.
+            deepest_dict["back_sep"] = 0.
+            deepest_dict["flux_sep"] = -999.
+            deepest_dict["flux_sep_err"] = -999.
+            deepest_dict["threshold_sep"] = -999.
+        deepest_dict["zeropoint_sep"] = deepest_img.zeropoint_best["zeropoint_img"]
 
         for instrument in self.photometry:
             for band in self.photometry[instrument]:
                 for epoch in self.photometry[instrument][band]:
+                    print(f"Extracting photometry for {self.name} in {instrument} {band}, epoch {epoch}.")
                     phot_dict = self.photometry[instrument][band][epoch]
-                    if phot_dict["image_path"] == deepest_path:
+                    if phot_dict["good_image_path"] == deepest_path:
                         continue
                     cls = image.CoaddedImage.select_child_class(instrument=instrument)
-                    img = cls(path=phot_dict["image_path"])
-                    fwhm = img.extract_header_item("PSF_FWHM") * units.arcsec
-                    delta_fwhm = fwhm - deepest_fwhm
-                    mag, mag_err, snr = img.sep_elliptical_magnitude(
-                        centre=self.position,
-                        a_world=self.a, #+ delta_fwhm,
-                        b_world=self.b, #+ delta_fwhm,
+                    img = cls(path=phot_dict["good_image_path"])
+                    mask_rp = deep_mask.reproject(
+                        other_image=img,
+                        output_path=os.path.join(
+                             self.data_path,
+                            f"{self.name_filesys}_mask_{phot_dict['instrument']}_{phot_dict['filter']}_{phot_dict['epoch_name']}.fits",
+                        ),
+                        write_footprint=False,
+                        method="interp",
+                        mask_mode=True
+                    )
+                    mag_results = img.sep_elliptical_magnitude(
+                        centre=self.position_photometry,
+                        a_world=self.a,  # + delta_fwhm,
+                        b_world=self.b,  # + delta_fwhm,
                         theta_world=self.theta,
                         kron_radius=self.kron,
-                        plot=os.path.join(self.data_path, f"{self.name_filesys}_{instrument}_{band}_{epoch}.png")
+                        output=os.path.join(self.data_path, f"{self.name_filesys}_{instrument}_{band}_{epoch}"),
+                        mask_nearby=mask_rp
                     )
-                    phot_dict["mag_sep"] = mag[0]
-                    phot_dict["mag_sep_err"] = mag_err[0]
-                    phot_dict["snr_sep"] = snr[0]
+
+                    if mag_results is not None:
+                        phot_dict["mag_sep"] = mag_results["mag"][0]
+                        phot_dict["mag_sep_err"] = mag_results["mag_err"][0]
+                        phot_dict["snr_sep"] = mag_results["snr"][0]
+                        phot_dict["back_sep"] = mag_results["back"][0]
+                        phot_dict["flux_sep"] = mag_results["flux"][0]
+                        phot_dict["flux_sep_err"] = mag_results["flux_err"][0]
+                    else:
+                        phot_dict["mag_sep"] = -999. * units.mag
+                        phot_dict["mag_sep_err"] = -999. * units.mag
+                        phot_dict["snr_sep"] = -999.
+                        phot_dict["back_sep"] = 0.
+                        phot_dict["flux_sep"] = -999.
+                        phot_dict["flux_sep_err"] = -999.
+                        phot_dict["threshold_sep"] = -999.
+                    phot_dict["zeropoint_sep"] = img.zeropoint_best["zeropoint_img"]
+                    mag_results = img.sep_elliptical_magnitude(
+                        centre=self.position_photometry,
+                        a_world=self.a,  # + delta_fwhm,
+                        b_world=self.b,  # + delta_fwhm,
+                        theta_world=self.theta,
+                        kron_radius=self.kron,
+                        # output=os.path.join(self.data_path, f"{self.name_filesys}_{instrument}_{band}_{epoch}"),
+                        mask_nearby=False
+                    )
+                    if mag_results is not None:
+                        phot_dict["mag_sep_unmasked"] = mag_results["mag"][0]
+                        phot_dict["mag_sep_unmasked_err"] = mag_results["mag_err"][0]
+                        phot_dict["snr_sep_unmasked"] = mag_results["snr"][0]
+                        phot_dict["flux_sep_unmasked"] = mag_results["flux"][0]
+                        phot_dict["flux_sep_unmasked_err"] = mag_results["flux_err"][0]
+                    else:
+                        phot_dict["mag_sep_unmasked"] = -999. * units.mag
+                        phot_dict["mag_sep_unmasked_err"] = -999. * units.mag
+                        phot_dict["snr_sep"] = -999.
+                        phot_dict["flux_sep_unmasked"] = -999.
+                        phot_dict["flux_sep_unmasked_err"] = -999.
 
         self.update_output_file()
 
@@ -346,13 +430,18 @@ class Object:
             separation_from_given: units.Quantity = None,
             epoch_date: str = None,
             class_star: float = None,
+            spread_model: float = None, spread_model_err: float = None,
+            class_flag: int = None,
             mag_psf: units.Quantity = None, mag_psf_err: units.Quantity = None,
             snr_psf: float = None,
             image_depth: units.Quantity = None,
+            do_mask: bool = True,
             **kwargs
     ):
         if good_image_path is None:
             good_image_path = image_path
+        if isinstance(epoch_date, time.Time):
+            epoch_date = epoch_date.strftime('%Y-%m-%d')
         photometry = {
             "instrument": str(instrument),
             "filter": str(fil),
@@ -374,13 +463,28 @@ class Object:
             "separation_from_given": u.check_quantity(separation_from_given, units.arcsec, convert=True),
             "epoch_date": str(epoch_date),
             "class_star": float(class_star),
+            "spread_model": float(spread_model),
+            "spread_model_err": float(spread_model_err),
+            "class_flag": int(class_flag),
             "mag_psf": u.check_quantity(mag_psf, unit=units.mag),
             "mag_psf_err": u.check_quantity(mag_psf_err, unit=units.mag),
-            "snr_psf": float(snr_psf),
+            "snr_psf": snr_psf,
             "image_depth": u.check_quantity(image_depth, unit=units.mag),
             "image_path": image_path,
-            "good_image_path": good_image_path
+            "good_image_path": good_image_path,
+            "do_mask": do_mask,
         }
+
+        if self.photometry_args is not None:
+            photometry["a"] = self.a
+            photometry["b"] = self.b
+            photometry["a_err"] = 0 * units.arcsec
+            photometry["b_err"] = 0 * units.arcsec
+            photometry["theta"] = self.theta
+            photometry["kron_radius"] = self.kron
+            if "fix_pos" in self.photometry_args and self.photometry_args["fix_pos"]:
+                photometry["ra"] = self.position_photometry.ra
+                photometry["dec"] = self.position_photometry.dec
 
         kwargs.update(photometry)
         if instrument not in self.photometry:
@@ -388,14 +492,31 @@ class Object:
         if fil not in self.photometry[instrument]:
             self.photometry[instrument][fil] = {}
         self.photometry[instrument][fil][epoch_name] = kwargs
+        self.update_output_file()
         return kwargs
 
     def find_in_cat(self, cat_name: str):
-        cat = self.field.load_catalogue(cat_name=cat_name)
-        pass
+        # cat = self.field.load_catalogue(cat_name=cat_name)
+        cat_path = self.field.get_path(f"cat_csv_{cat_name}")
+        cat = table.QTable.read(cat_path)
+
+        cols = r.cat_columns(cat_name)
+        ra_col = cols["ra"]
+        dec_col = cols["dec"]
+        cat = astm.sanitise_coord(cat, dec_col)
+        ra = cat[ra_col]
+        dec = cat[dec_col]
+        coord = SkyCoord(ra, dec, unit=units.deg)
+        best_index, sep = astm.find_nearest(self.position, coord)
+        return cat[best_index], sep
 
     def _output_dict(self):
+        pos_phot_err = None
+        if self.position_photometry_err is not None:
+            pos_phot_err = self.position_photometry_err.to_dict()
         return {
+            "position_photometry": self.position_photometry,
+            "position_photometry_err": pos_phot_err,
             "photometry": self.photometry,
             "irsa_extinction_path": self.irsa_extinction_path,
             "extinction_law": self.extinction_power_law,
@@ -406,6 +527,13 @@ class Object:
         if self.data_path is not None:
             outputs = p.load_output_file(self)
             if outputs is not None:
+                if "position_photometry" in outputs and outputs["position_photometry"] is not None:
+                    self.position_photometry = outputs["position_photometry"]
+                if "position_photometry_err" in outputs and outputs["position_photometry_err"] is not None:
+                    self.position_photometry_err = PositionUncertainty(
+                        **outputs["position_photometry_err"],
+                        position=self.position_photometry
+                    )
                 if "photometry" in outputs and outputs["photometry"] is not None:
                     self.photometry = outputs["photometry"]
                 if "irsa_extinction_path" in outputs and outputs["irsa_extinction_path"] is not None:
@@ -415,7 +543,6 @@ class Object:
     def check_data_path(self):
         if self.field is not None:
             u.debug_print(2, "", self.name)
-            # print(self.field.data_path, self.name_filesys)
             self.data_path = os.path.join(self.field.data_path, "objects", self.name_filesys)
             u.mkdir_check(self.data_path)
             self.output_file = os.path.join(self.data_path, f"{self.name_filesys}_outputs.yaml")
@@ -436,9 +563,11 @@ class Object:
         if output is None:
             output = os.path.join(self.data_path, f"{self.name_filesys}_photometry.pdf")
 
+        plt.close()
         ax = self.plot_photometry(**kwargs)
         ax.legend()
         plt.savefig(output)
+        plt.close()
         return ax
 
     def plot_photometry(self, ax=None, **kwargs):
@@ -458,21 +587,42 @@ class Object:
             kwargs["ecolor"] = "black"
 
         self.estimate_galactic_extinction()
-        self.photometry_to_table()
+        self.photometry_to_table(fmts=["ascii.ecsv", "ascii.csv"], best=False)
+        self.photometry_to_table(
+            output=self.build_photometry_table_path().replace(".ecsv", "_best.ecsv"),
+            fmts=["ascii.ecsv", "ascii.csv"], best=True)
 
         with quantity_support():
+
+            valid = self.photometry_tbl[self.photometry_tbl["mag_sep"] > -990 * units.mag]
+            plot_limit = (-999 * units.mag == valid["mag_sep_err"])
+            limits = valid[plot_limit]
+            mags = valid[np.invert(plot_limit)]
+
             ax.errorbar(
-                self.photometry_tbl["lambda_eff"],
-                self.photometry_tbl["mag"],
-                yerr=self.photometry_tbl["mag_err"],
+                mags["lambda_eff"],
+                mags["mag_sep"],
+                yerr=mags["mag_sep_err"],
                 label="Magnitude",
                 **kwargs,
             )
             ax.scatter(
-                self.photometry_tbl["lambda_eff"],
-                self.photometry_tbl["mag_ext_corrected"],
-                # color="violet",
+                limits["lambda_eff"],
+                limits["mag_sep"],
+                label="Magnitude upper limit",
+                marker="v",
+            )
+            ax.scatter(
+                mags["lambda_eff"],
+                mags["mag_sep_ext_corrected"],
+                color="orange",
                 label="Corrected for Galactic extinction"
+            )
+            ax.scatter(
+                limits["lambda_eff"],
+                limits["mag_sep_ext_corrected"],
+                label="Magnitude upper limit",
+                marker="v",
             )
             ax.set_ylabel("Apparent magnitude")
             ax.set_xlabel("$\lambda_\mathrm{eff}$ (\AA)")
@@ -483,7 +633,21 @@ class Object:
         self.check_data_path()
         return os.path.join(self.data_path, f"{self.name_filesys}_photometry.ecsv")
 
-    def photometry_to_table(self, output: str = None, fmts: List[str] = ("ascii.ecsv", "ascii.csv")):
+    # def update_position_from_photometry(self):
+    #     self.photometry_to_table()
+    #     best = self.select_deepest_sep(local_output=False)
+    #     self.position = SkyCoord(best["ra"], best["dec"], unit=units.deg)
+    #     self.position_err = PositionUncertainty(
+    #         ra_err_stat=best["ra_err"],
+    #         dec_err_stat=best["dec_err"]
+    #     )
+
+    def photometry_to_table(
+            self,
+            output: str = None,
+            best: bool = False,
+            fmts: List[str] = ("ascii.ecsv", "ascii.csv")
+    ):
         """
         Converts the photometry information, which is stored internally as a dictionary, into an astropy QTable.
         :param output: Where to write table.
@@ -500,22 +664,38 @@ class Object:
             instrument = inst.Instrument.from_params(instrument_name)
             for filter_name in self.photometry[instrument_name]:
                 fil = instrument.filters[filter_name]
-                for epoch in self.photometry[instrument_name][filter_name]:
 
-                    phot_dict = self.photometry[instrument_name][filter_name][epoch].copy()
+                if best:
+                    phot_dict, _ = self.select_photometry_sep(fil=filter_name, instrument=instrument_name)
                     phot_dict["band"] = filter_name
                     phot_dict["instrument"] = instrument_name
                     phot_dict["lambda_eff"] = u.check_quantity(
                         number=fil.lambda_eff,
                         unit=units.Angstrom
                     )
-                    #tbl = table.QTable([phot_dict])
+                    # tbl = table.QTable([phot_dict])
                     tbls.append(phot_dict)
 
-        self.photometry_tbl = table.QTable(tbls)
+                else:
+                    for epoch in self.photometry[instrument_name][filter_name]:
+                        phot_dict = self.photometry[instrument_name][filter_name][epoch].copy()
+                        phot_dict["band"] = filter_name
+                        phot_dict["instrument"] = instrument_name
+                        phot_dict["lambda_eff"] = u.check_quantity(
+                            number=fil.lambda_eff,
+                            unit=units.Angstrom
+                        )
+                        # tbl = table.QTable([phot_dict])
+                        tbls.append(phot_dict)
+
+        if best:
+            self.photometry_tbl = table.vstack(tbls)
+        else:
+            self.photometry_tbl = table.QTable(tbls)
 
         if output is not False:
             for fmt in fmts:
+                u.detect_problem_table(self.photometry_tbl, fmt="csv")
                 self.photometry_tbl.write(output.replace(".ecsv", fmt[fmt.find("."):]), format=fmt, overwrite=True)
         return self.photometry_tbl
 
@@ -606,7 +786,11 @@ class Object:
             self.photometry[instrument][band][epoch_name]["ext_gal_type"] = "s_and_f"
             self.photometry[instrument][band][epoch_name]["ext_gal"] = row[key]
             self.photometry[instrument][band][epoch_name]["mag_ext_corrected"] = row["mag"] - row[key]
-
+            if "mag_sep" in row.colnames:
+                if row["mag_sep"] > -99 * units.mag:
+                    self.photometry[instrument][band][epoch_name]["mag_sep_ext_corrected"] = row["mag_sep"] - row[key]
+                else:
+                    self.photometry[instrument][band][epoch_name]["mag_sep_ext_corrected"] = -999 * units.mag
         # tbl_2 = self.photometry_to_table()
         # tbl_2.update(tbl)
         # tbl_2.write(self.build_photometry_table_path().replace("photometry", "photemetry_extended"))
@@ -635,7 +819,7 @@ class Object:
         if force or self.ebv_sandf is None:
             # Get E(B-V) at this coordinate.
             tbl = r.retrieve_irsa_details(coord=self.position)
-            self.ebv_sandf = tbl["ext SandF ref"] * units.mag
+            self.ebv_sandf = tbl["ext SandF ref"][0] * units.mag
 
     def load_extinction_table(self, force: bool = False):
         if force or self.irsa_extinction is None:
@@ -644,88 +828,128 @@ class Object:
                 self.irsa_extinction = table.QTable.read(self.irsa_extinction_path, format="ascii.ecsv")
 
     def jname(self):
-        name = astm.jname(
-            coord=self.position,
-            ra_precision=2,
-            dec_precision=1
-        )
-        if self.name is None:
-            self.name = name
-        return name
+        if self.position is not None:
+            name = astm.jname(
+                coord=self.position,
+                ra_precision=2,
+                dec_precision=1
+            )
+            if self.name is None:
+                self.name = name
+            return name
 
     def get_photometry_table(self, output: bool = False):
         if output is True:
             output = None
-        if self.photometry_tbl is None:
+        if self.photometry_tbl is None or len(self.photometry_tbl) == 0:
             self.photometry_to_table(output=output)
 
     def select_photometry(self, fil: str, instrument: str, local_output: bool = True):
         self.get_photometry_table(output=local_output)
         fil_photom = self.photometry_tbl[self.photometry_tbl["band"] == fil]
         fil_photom = fil_photom[fil_photom["instrument"] == instrument]
+        row = fil_photom[np.argmax(fil_photom["snr"])]
+        photom_dict = self.photometry[instrument][fil][row["epoch_name"]]
+
+        if len(fil_photom) > 1:
+            mag_psf_err = np.std(fil_photom["mag_psf"]) / len(fil_photom)
+            mag_err = np.std(fil_photom["mag_sep"]) / len(fil_photom)
+        else:
+            mag_psf_err = fil_photom["mag_psf_err"][0]
+            mag_err = fil_photom["mag_sep_err"][0]
+
         mean = {
             "mag": np.mean(fil_photom["mag"]),
-            "mag_err": np.mean(fil_photom["mag_err"]),
+            "mag_err": mag_err,
             "mag_psf": np.mean(fil_photom["mag_psf"]),
-            "mag_psf_err": np.mean(fil_photom["mag_psf_err"])
+            "mag_psf_err": mag_psf_err,
+            "n": len(fil_photom)
         }
         # TODO: Just meaning the whole table is probably not the best way to estimate uncertainties.
-        return fil_photom[np.argmax(fil_photom["snr"])], mean
+        return photom_dict, mean
 
-    def select_photometry_sep(self, fil: str, instrument: str, local_output: bool = True):
+    def select_photometry_sep(
+            self,
+            fil: str,
+            instrument: str,
+            local_output: bool = True
+    ):
         fil_photom = self.photometry_tbl[self.photometry_tbl["band"] == fil]
         fil_photom = fil_photom[fil_photom["instrument"] == instrument]
+        row = fil_photom[np.argmax(fil_photom["snr_sep"])]
+        photom_dict = self.photometry[instrument][fil][row["epoch_name"]]
+
+        if len(fil_photom) > 1:
+            mag_psf_err = np.std(fil_photom["mag_psf"]) / len(fil_photom)
+            mag_err = np.std(fil_photom["mag_sep"]) / len(fil_photom)
+        else:
+            mag_psf_err = fil_photom["mag_psf_err"][0]
+            mag_err = fil_photom["mag_sep_err"][0]
+
         mean = {
             "mag": np.mean(fil_photom["mag_sep"]),
-            "mag_err": np.mean(fil_photom["mag_sep_err"]),
+            "mag_err": mag_err,
             "mag_psf": np.mean(fil_photom["mag_psf"]),
-            "mag_psf_err": np.mean(fil_photom["mag_psf_err"])
+            "mag_psf_err": mag_psf_err,
+            "n": len(fil_photom)
         }
-        return fil_photom[np.argmax(fil_photom["snr_sep"])], mean
+        u.debug_print(2, f"Object.select_photometry_sep(): {self.name=}, {fil=}, {instrument=}")
+        return photom_dict, mean
 
     def select_psf_photometry(self, local_output: bool = True):
         self.get_photometry_table(output=local_output)
         idx = np.argmax(self.photometry_tbl["snr_psf"])
-        return self.photometry_tbl[idx]
+        row = self.photometry_tbl[idx]
+        return self.photometry[row["instrument"]][row["band"]][row["epoch_name"]]
 
     def select_best_position(self, local_output: bool = True):
         self.get_photometry_table(output=local_output)
         idx = np.argmin(self.photometry_tbl["ra_err"] * self.photometry_tbl["dec_err"])
-        return self.photometry_tbl[idx]
+        row = self.photometry_tbl[idx]
+        return self.photometry[row["instrument"]][row["band"]][row["epoch_name"]]
 
     def select_deepest(self, local_output: bool = True):
         self.get_photometry_table(output=local_output)
         idx = np.argmax(self.photometry_tbl["snr"])
-        deepest = self.photometry_tbl[idx]
+        row = self.photometry_tbl[idx]
+        deepest = self.photometry[row["instrument"]][row["band"]][row["epoch_name"]]
+        # if self.photometry_args is None:
         self.a = deepest["a"]
         self.b = deepest["b"]
         self.theta = deepest["theta"]
         self.kron = deepest["kron_radius"]
         ra = deepest["ra"]
         dec = deepest["dec"]
-        self.position = SkyCoord(ra, dec)
+        try:
+            self.position_photometry = SkyCoord(ra, dec)
+        except ValueError:
+            print("Deepest observation is a limit only.")
+        # else:
+        #     deepest["a"] = self.a
+        #     deepest["b"] = self.b
+        #     deepest["theta"] = self.theta
+        #     deepest["kron_radius"] = self.kron
+        #     if "fix_pos" in self.photometry_args and self.photometry_args["fix_pos"]:
+        #         deepest["ra"] = self.position.ra
+        #         deepest["dec"] = self.position.dec
+        #     else:
+        #         ra = deepest["ra"]
+        #         dec = deepest["dec"]
+        #         self.position = SkyCoord(ra, dec)
+
         return deepest
 
     def select_deepest_sep(self, local_output: bool = True):
         self.get_photometry_table(output=local_output)
+        if "snr_sep" not in self.photometry_tbl.colnames:
+            return None
         idx = np.argmax(self.photometry_tbl["snr_sep"])
-        return self.photometry_tbl[idx]
+        row = self.photometry_tbl[idx]
+        return self.photometry[row["instrument"]][row["band"]][row["epoch_name"]]
 
     def push_to_table(self, select: bool = False, local_output: bool = True):
+
         jname = self.jname()
-
-        for instrument in self.photometry:
-            for fil in self.photometry[instrument]:
-                band_str = f"{instrument}_{fil.replace('_', '-')}"
-                obs.add_columns_to_master_objects(band_str)
-
-        if select:
-            row, index = obs.get_row(tbl=obs.master_objects_table, colname="object_name", colval=self.name)
-        else:
-            row, index = obs.get_row(tbl=obs.master_objects_all_table, colname="object_name", colval=self.name)
-
-        if row is None:
-            row = {}
 
         self.estimate_galactic_extinction()
         if select:
@@ -738,32 +962,42 @@ class Object:
         # best_position = self.select_best_position(local_output=local_output)
         best_psf = self.select_psf_photometry(local_output=local_output)
 
+        row = {
+            "jname": jname,
+            "field_name": self.field.name,
+            "object_name": self.name,
+            "ra": deepest["ra"],
+            "ra_err": deepest["ra_err"],
+            "dec": deepest["dec"],
+            "dec_err": deepest["dec_err"],
+            "epoch_position": deepest["epoch_name"],
+            "epoch_position_date": deepest["epoch_date"],
+            "a": self.a,
+            "a_err": deepest["a_err"],
+            "b": self.b,
+            "b_err": deepest["b_err"],
+            "theta": self.theta,
+            "kron_radius": self.kron,
+            "epoch_ellipse": deepest["epoch_name"],
+            "epoch_ellipse_date": deepest["epoch_date"],
+            "theta_err": deepest["theta_err"],
+            f"e_b-v": self.ebv_sandf,
+            f"class_star": best_psf["class_star"],
+            "spread_model": best_psf["spread_model"],
+            "spread_model_err": best_psf["spread_model_err"],
+            "class_flag": best_psf["class_flag"],
+        }
 
-        row["jname"] = jname
-        row["field_name"] = self.field.name
-        row["object_name"] = self.name
-        row["ra"] = deepest["ra"]
-        row["ra_err"] = deepest["ra_err"]
-        row["dec"] = deepest["dec"]
-        row["dec_err"] = deepest["dec_err"]
-        row["epoch_position"] = deepest["epoch_name"]
-        row["epoch_position_date"] = deepest["epoch_date"]
-        row["a"] = deepest["a"]
-        row["a_err"] = deepest["a_err"]
-        row["b"] = deepest["b"]
-        row["b_err"] = deepest["b_err"]
-        row["theta"] = deepest["theta"]
-        row["epoch_ellipse"] = deepest["epoch_name"]
-        row["epoch_ellipse_date"] = deepest["epoch_date"]
-        row["theta_err"] = deepest["theta_err"]
-        row[f"e_b-v"] = self.ebv_sandf
-        row[f"class_star"] = best_psf["class_star"]
+        if isinstance(self, Galaxy) and self.z is not None:
+            row["z"] = self.z
+            row["d_A"] = self.D_A
+            row["d_L"] = self.D_L
+            row["mu"] = self.mu
 
         for instrument in self.photometry:
             for fil in self.photometry[instrument]:
 
                 band_str = f"{instrument}_{fil.replace('_', '-')}"
-                obs.add_columns_to_master_objects(band_str)
 
                 if select:
                     best_photom, mean_photom = self.select_photometry_sep(fil, instrument, local_output=local_output)
@@ -779,40 +1013,53 @@ class Object:
 
                 row[f"mag_mean_{band_str}"] = mean_photom["mag"]
                 row[f"mag_mean_{band_str}_err"] = mean_photom["mag_err"]
+                row[f"n_mean_{band_str}"] = mean_photom["n"]
                 row[f"ext_gal_{band_str}"] = best_photom["ext_gal"]
                 # else:
                 #     row[f"ext_gal_{band_str}"] = best_photom["ext_gal_sandf"]
                 row[f"epoch_best_{band_str}"] = best_photom[f"epoch_name"]
-                row[f"epoch_best_date_{band_str}"] = best_photom[f"epoch_date"]
+                row[f"epoch_best_date_{band_str}"] = str(best_photom[f"epoch_date"])
                 row[f"mag_psf_best_{band_str}"] = best_photom[f"mag_psf"]
                 row[f"mag_psf_best_{band_str}_err"] = best_photom[f"mag_psf_err"]
                 row[f"snr_psf_best_{band_str}"] = best_photom["snr_psf"]
                 row[f"mag_psf_mean_{band_str}"] = mean_photom[f"mag_psf"]
                 row[f"mag_psf_mean_{band_str}_err"] = mean_photom[f"mag_psf_err"]
 
-        # obs.w
+        # colnames = obs.master_objects_columns
+        # for colname in colnames:
+        #     if colname not in row:
+        #         if "epoch" in colname:
+        #             row[colname] = "N/A"
+        #         else:
+        #             row[colname] = tbl[0][colname]
 
         u.debug_print(2, "Object.push_to_table(): select ==", select)
-        print()
         if select:
-            if index is None:
-                obs.master_objects_table.add_row(row)
-            else:
-                obs.master_objects_table[index] = row
-            obs.write_master_objects_table()
+            tbl = obs.load_master_objects_table()
         else:
-            if index is None:
-                obs.master_objects_all_table.add_row(row)
-            else:
-                obs.master_objects_all_table[index] = row
-            obs.write_master_all_objects_table()
+            tbl = obs.load_master_all_objects_table()
+
+        obs.add_photometry(
+            tbl=tbl,
+            object_name=self.name,
+            entry=row,
+        )
+        obs.write_master_objects_table()
+
+    # def plot_ellipse(
+    #         self,
+    #         plot,
+    #         img,
+    #         ext: int = 0,
+    #         colour: str = "white",
+    # ):
 
     @classmethod
     def default_params(cls):
         default_params = {
             "name": None,
-            "position": position_dictionary.copy(),
-            "position_err": PositionUncertainty.default_params(),
+            "position": copy.deepcopy(position_dictionary),
+            "position_err": copy.deepcopy(PositionUncertainty.default_params()),
             "type": None,
             "photometry_args_manual":
                 {
@@ -821,9 +1068,11 @@ class Object:
                     "theta": 0.0 * units.arcsec,
                     "kron_radius": 3.5
                 },
-            "plotting": {
-                "frame": None
-            }
+            "plotting":
+                {
+                    "frame": None
+                },
+            "publication_doi": None
         }
         return default_params
 
@@ -836,9 +1085,10 @@ class Object:
             'position_err':
         :return: Object reflecting dictionary.
         """
-        ra, dec = p.select_coords(dictionary["position"])
+        dict_pristine = dictionary.copy()
+        ra, dec = p.select_coords(dictionary.pop("position"))
         if "position_err" in dictionary:
-            position_err = dictionary["position_err"]
+            position_err = dictionary.pop("position_err")
         else:
             position_err = PositionUncertainty.default_params()
 
@@ -848,20 +1098,26 @@ class Object:
             selected = cls
 
         if "plotting" in dictionary:
-            plotting = dictionary["plotting"]
+            plotting = dictionary.pop("plotting")
         else:
             plotting = None
 
+        if "name" in dictionary:
+            name = dictionary.pop("name")
+        else:
+            name = None
+
         if selected in (Object, FRB):
             return selected(
-                name=dictionary["name"],
+                name=name,
                 position=f"{ra} {dec}",
                 position_err=position_err,
                 field=field,
-                plotting=plotting
+                plotting=plotting,
+                **dictionary
             )
         else:
-            return selected.from_dict(dictionary=dictionary, field=field)
+            return selected.from_dict(dictionary=dict_pristine, field=field)
 
     @classmethod
     def select_child_class(cls, obj_type: str):
@@ -870,6 +1126,8 @@ class Object:
             return Galaxy
         elif obj_type == "frb":
             return FRB
+        elif obj_type == "star":
+            return Object
         else:
             raise ValueError(f"Didn't recognise obj_type '{obj_type}'")
 
@@ -897,6 +1155,10 @@ class Object:
         return obj
 
 
+class Star(Object):
+    pass
+
+
 class Galaxy(Object):
     def __init__(
             self,
@@ -913,32 +1175,86 @@ class Galaxy(Object):
             position=position,
             position_err=position_err,
             field=field,
-            plotting=plotting
+            plotting=plotting,
+            **kwargs
         )
         self.z = z
         self.D_A = self.angular_size_distance()
         self.D_L = self.luminosity_distance()
         self.mu = self.distance_modulus()
 
+        self.mass = None
         if "mass" in kwargs:
             self.mass = kwargs["mass"]
-        else:
-            self.mass = None
+
+        self.mass_stellar = None
         if "mass_stellar" in kwargs:
-            self.mass_stellar = kwargs["mass_stellar"]
-        else:
-            self.mass_stellar = None
+            self.mass_stellar = u.check_quantity(kwargs["mass_stellar"], units.solMass)
+
+        self.mass_stellar_err = None
+        if "mass_stellar_err" in kwargs:
+            self.mass_stellar_err = u.check_quantity(kwargs["mass_stellar_err"], units.solMass)
+
+        self.sfr = None
+        if "sfr" in kwargs:
+            self.sfr = kwargs["sfr"] * units.solMass
+
+        self.sfr_err = None
+        if "sfr_err" in kwargs:
+            self.sfr_err = kwargs["sfr_err"] * units.solMass
+
+        self.mass_halo = None
+        self.log_mass_halo = None
+        self.log_mass_halo_upper = None
+        self.log_mass_halo_lower = None
+        if "mass_halo" in kwargs:
+            self.mass_halo = u.check_quantity(kwargs["mass_halo"], units.solMass)
+            self.log_mass_halo = np.log10(self.mass_halo / units.solMass)
+
+        self.halo_mnfw = None
+        self.halo_yf17 = None
+        self.halo_mb15 = None
+        self.halo_mb04 = None
+
+        self.cigale_model_path = None
+        self.cigale_model = None
+
+        self.cigale_sfh_path = None
+        self.cigale_sfh = None
+
+        self.cigale_results_path = None
+        self.cigale_results = None
+
+    def load_cigale_model(self, force: bool = False):
+        if self.cigale_model_path is None:
+            print(f"Cannot load CIGALE model; {self}.cigale_model_path has not been set.")
+        elif force or self.cigale_model is None:
+            self.cigale_model = fits.open(self.cigale_model_path)
+
+        if self.cigale_sfh_path is None:
+            print(f"Cannot load CIGALE SFH; {self}.cigale_sfh_path has not been set.")
+        elif force or self.cigale_sfh is None:
+            self.cigale_sfh = fits.open(self.cigale_sfh_path)
+
+        return self.cigale_model, self.cigale_sfh  # , self.cigale_results
 
     def angular_size_distance(self):
-        return cosmology.angular_diameter_distance(z=self.z)
+        if self.z is not None:
+            return cosmology.angular_diameter_distance(z=self.z)
 
     def luminosity_distance(self):
-        return cosmology.luminosity_distance(z=self.z)
+        if self.z is not None:
+            return cosmology.luminosity_distance(z=self.z)
+
+    def comoving_distance(self):
+        if self.z is not None:
+            return cosmology.comoving_distance(z=self.z)
 
     def distance_modulus(self):
         d = self.luminosity_distance()
-        mu = (5 * np.log10(d / units.pc) - 5) * units.mag
-        return mu
+        if d is not None:
+            mu = (5 * np.log10(d / units.pc) - 5) * units.mag
+            return mu
 
     def absolute_magnitude(
             self,
@@ -965,15 +1281,153 @@ class Galaxy(Object):
         dist = angle * self.D_A
         return dist
 
+    def _output_dict(self):
+        output = super()._output_dict()
+        output.update({
+            "mass_stellar": self.mass_stellar,
+            "mass_stellar_err": self.mass_stellar_err,
+            "sfr": self.sfr,
+            "sfr_err": self.sfr_err,
+            "cigale_model_path": self.cigale_model_path,
+            "cigale_sfh_path": self.cigale_sfh_path,
+            "cigale_results": self.cigale_results
+        })
+        return output
+
+    def load_output_file(self):
+        outputs = super().load_output_file()
+        if outputs is not None:
+            if "mass_stellar" in outputs and outputs["mass_stellar"] is not None:
+                self.mass_stellar = outputs["mass_stellar"]
+            if "mass_stellar_err" in outputs and outputs["mass_stellar_err"] is not None:
+                self.mass_stellar_err = outputs["mass_stellar_err"]
+            if "sfr" in outputs and outputs["sfr"] is not None:
+                self.sfr = outputs["sfr"]
+            if "sfr_err" in outputs and outputs["sfr_err"] is not None:
+                self.sfr_err = outputs["sfr_err"]
+            if "cigale_model_path" in outputs and outputs["cigale_model_path"] is not None:
+                self.cigale_model_path = outputs["cigale_model_path"]
+            if "cigale_sfh_path" in outputs and outputs["cigale_sfh_path"] is not None:
+                self.cigale_sfh_path = outputs["cigale_sfh_path"]
+            if "cigale_results" in outputs and outputs["cigale_results"] is not None:
+                self.cigale_results = outputs["cigale_results"]
+        return outputs
+
+    def h(self):
+        return cosmology.H(z=self.z) / (100 * units.km * units.second ** -1 * units.Mpc ** -1)
+
+    def halo_mass(self):
+        from frb.halos.utils import halomass_from_stellarmass
+        if self.mass_stellar is None:
+            raise ValueError(f"{self}.mass_stellar has not been defined.")
+        self.log_mass_halo = halomass_from_stellarmass(
+            log_mstar=np.log10(self.mass_stellar / units.solMass),
+            z=self.z
+        )
+        self.mass_halo = (10 ** self.log_mass_halo) * units.solMass
+        if self.mass_stellar_err is None:
+            self.mass_stellar_err = 0. * units.solMass
+        self.log_mass_halo_upper = halomass_from_stellarmass(
+            log_mstar=np.log10((self.mass_stellar + self.mass_stellar_err) / units.solMass),
+            z=self.z
+        )
+
+        self.log_mass_halo_lower = halomass_from_stellarmass(
+            log_mstar=np.log10((self.mass_stellar - self.mass_stellar_err) / units.solMass),
+            z=self.z
+        )
+
+        return self.mass_halo, self.log_mass_halo
+
+    def halo_concentration_parameter(self):
+        if self.log_mass_halo is None:
+            self.halo_mass()
+        c = 4.67 * (self.mass_halo / (10 ** 14 * self.h() ** -1 * units.solMass)) ** (-0.11)
+        return float(c)
+
+    def halo_model_mnfw(self, y0=2., alpha=2., **kwargs):
+        from frb.halos.models import ModifiedNFW
+        if self.log_mass_halo is None:
+            self.halo_mass()
+        self.halo_mnfw = ModifiedNFW(
+            log_Mhalo=self.log_mass_halo,
+            z=self.z,
+            cosmo=cosmology,
+            c=self.halo_concentration_parameter(),
+            y0=y0,
+            alpha=alpha,
+            **kwargs
+        )
+        self.halo_mnfw.coord = self.position
+        return self.halo_mnfw
+
+    def halo_model_yf17(self, **kwargs):
+        from frb.halos.models import YF17
+        if self.log_mass_halo is None:
+            self.halo_mass()
+        self.halo_yf17 = YF17(
+            log_Mhalo=self.log_mass_halo,
+            z=self.z,
+            cosmo=cosmology,
+            **kwargs
+        )
+        return self.halo_yf17
+
+    def halo_model_mb04(self, r_c=147 * units.kpc, **kwargs):
+        from frb.halos.models import MB04
+        if self.log_mass_halo is None:
+            self.halo_mass()
+        self.halo_mb04 = MB04(
+            log_Mhalo=self.log_mass_halo,
+            z=self.z,
+            cosmo=cosmology,
+            c=self.halo_concentration_parameter(),
+            Rc=r_c,
+            **kwargs
+        )
+        return self.halo_mb04
+
+    def halo_model_mb15(self, **kwargs):
+        from frb.halos.models import MB15
+        if self.log_mass_halo is None:
+            self.halo_mass()
+        self.halo_mb15 = MB15(
+            log_Mhalo=self.log_mass_halo,
+            z=self.z,
+            cosmo=cosmology,
+            **kwargs
+        )
+        return self.halo_mb15
+
+    def halo_dm_cum(
+            self,
+            rmax: float = 1.,
+            rperp: units.Quantity = 0. * units.kpc,
+            step_size: units.Quantity = 0.1 * units.kpc
+    ):
+        d, dm = self.halo_mnfw.Ne_Rperp(
+            rperp,
+            step_size=step_size,
+            rmax=rmax,
+            cumul=True
+        )
+        tbl = table.QTable({
+            "d": d * units.kpc,
+            "d_abs": d * units.kpc + self.comoving_distance(),
+            "DM": dm * dm_units / (1 + self.z),
+        })
+        return tbl
+
     @classmethod
     def default_params(cls):
         default_params = super().default_params()
         default_params.update({
-            "z": 0.0,
+            "z": None,
             "type": "galaxy"
         })
         return default_params
 
+    # TODO: There do not need to be separate methods per class for this. Just pass dictionary as a **kwargs and be done with it
     @classmethod
     def from_dict(cls, dictionary: dict, field=None):
         ra, dec = p.select_coords(dictionary.pop("position"))
@@ -991,6 +1445,11 @@ class Galaxy(Object):
 
 dm_units = units.parsec * units.cm ** -3
 
+dm_host_median = {
+    "james_22A": 129 * dm_units,
+    "james_22B": 186 * dm_units
+}
+
 
 class FRB(Object):
     def __init__(
@@ -1002,59 +1461,454 @@ class FRB(Object):
             dm: Union[float, units.Quantity] = None,
             field=None,
             plotting: dict = None,
+            **kwargs
     ):
         super().__init__(
             name=name,
             position=position,
             position_err=position_err,
             field=field,
-            plotting=plotting
+            plotting=plotting,
+            **kwargs
         )
         self.host_galaxy = host_galaxy
         self.dm = dm
         if self.dm is not None:
             self.dm = u.check_quantity(self.dm, unit=dm_units)
 
-    def estimate_dm_mw_ism(self):
-        if not frb_installed:
-            raise ImportError("FRB is not installed.")
-        if not ne2001_installed:
-            raise ImportError("ne2001 is not installed.")
-        mw = halos.MilkyWay()
-        # Declare MW parameters
+    def dm_mw_ism_ne2001(self, distance: Union[units.Quantity, float] = 100. * units.kpc):
+        """
+        Borrowed from frb.mw
+        :param distance:
+        :return:
+        """
+        # from frb.mw import ismDM
+
+        from ne2001 import density
+        distance = u.dequantify(distance, unit=units.kpc)
+        ne = density.ElectronDensity()
+        dm_ism = ne.DM(
+            self.position.galactic.l.value,
+            self.position.galactic.b.value,
+            distance
+        )
+        return dm_ism
+
+    def dm_mw_ism_ymw16(self, distance: Union[units.Quantity, float] = 50. * units.kpc):
+        import pygedm
+        dm, tau = pygedm.dist_to_dm(
+            self.position.galactic.l,
+            self.position.galactic.b,
+            distance,
+            method="ymw16"
+        )
+        return dm
+
+    def dm_mw_ism_cum(
+            self,
+            max_distance: units.Quantity = 20. * units.kpc,
+            step_size: units.Quantity = 0.1 * units.kpc,
+            max_dm: units.Quantity = 30. * dm_units,
+            model: str = "ne2001"
+    ):
+        max_dm = u.check_quantity(max_dm, dm_units)
+        i = 0 * units.kpc
+        dm_this = 0 * dm_units
+        dm = []
+        d = []
+
+        if model == "ne2001":
+            func = self.dm_mw_ism_ne2001
+        elif model == "ymw16":
+            func = self.dm_mw_ism_ymw16
+        else:
+            raise ValueError(f"Model {model} not recognised.")
+
+        while i < max_distance and dm_this < max_dm:
+            d.append(i * 1.)
+            dm_this = func(distance=i)
+            dm.append(dm_this)
+            i += step_size
+
+        return table.QTable({
+            "DM": dm,
+            "d": d
+        })
+
+    def dm_mw_halo(self, rmax: float = 1.):
+        import frb.halos.models as halos
+        # from frb.mw import haloDM
+        outputs = {}
+        mw_halo_yf17 = halos.YF17()
+        mw_halo_x = halos.MilkyWay()
+        mw_halo_mb15 = halos.MB15()
+        sun_orbit = 2.7e17 * units.km
+        outputs["dm_halo_mw_yf17"] = mw_halo_yf17.Ne_Rperp(sun_orbit, rmax=rmax) / 2
+        outputs["dm_halo_mw_pz19_rough"] = mw_halo_x.Ne_Rperp(sun_orbit, rmax=rmax) / 2
+        outputs["dm_halo_mw_mb15"] = mw_halo_mb15.Ne_Rperp(sun_orbit, rmax=rmax) / 2
+        # outputs["dm_halo_mw_pz19"] = haloDM(self.position)
+        outputs["dm_halo_mw_pz19"] = self.dm_mw_halo_pz19()
+        return outputs
+
+    def dm_mw_halo_pz19(
+            self,
+            distance: units.Quantity = None,
+            zero: bool = True,
+            halo_model=None
+    ):
+        from frb.halos.models import MilkyWay
+        from ne2001 import density
+        if halo_model is None:
+            halo_model = MilkyWay()
+        if distance is None:
+            distance = halo_model.r200
+        u.dequantify(distance, units.kpc)
+        # Zero out inner 10kpc?
+        if zero:
+            halo_model.zero_inner_ne = 10.  # kpc
         params = dict(F=1., e_density=1.)
-        model_ne = NEobject(mw.ne, **params)
-        l = self.position_galactic.l.value
-        b = self.position_galactic.b.value
-        return model_ne.DM(l, b, mw.r200.value)
+        model_ne = density.NEobject(halo_model.ne, **params)
+        dm_halo = model_ne.DM(
+            self.position.galactic.l.value,
+            self.position.galactic.b.value,
+            distance
+        )
+        return dm_halo
 
-    def estimate_dm_cosmic(self):
-        if not frb_installed:
-            raise ImportError("FRB is not installed.")
-        return igm.average_DM(self.host_galaxy.z, cosmo=cosmo.Planck18)
+    def dm_mw_halo_cum(
+            self,
+            rmax: float = 1.,
+            step_size: units.Quantity = 1 * units.kpc,
+    ):
+        from frb.halos.models import MilkyWay
+        halo_model = MilkyWay()
+        max_distance = rmax * halo_model.r200
+        i = 0 * units.kpc
+        dm = []
+        d = []
+        while i < max_distance:
+            d.append(i * 1.)
+            dm_this = self.dm_mw_halo_pz19(distance=i)
+            dm.append(dm_this)
+            i += step_size
 
-    def estimate_dm_halos(self):
-        if not frb_installed:
-            raise ImportError("FRB is not installed.")
+        return table.QTable({
+            "DM": dm,
+            "d": d
+        })
+
+    def dm_cosmic(self, **kwargs):
+        from frb.dm.igm import average_DM
+        return average_DM(self.host_galaxy.z, cosmo=cosmo.Planck18, **kwargs)
+
+    def dm_halos_avg(self, **kwargs):
+        import frb.halos.hmf as hmf
+        from frb.dm.igm import average_DMhalos
         hmf.init_hmf()
-        return igm.average_DMhalos(self.host_galaxy.z, cosmo=cosmo.Planck18)
+        return average_DMhalos(self.host_galaxy.z, cosmo=cosmo.Planck18, **kwargs)
 
-    def estimate_dm_excess(self):
-        dm_ism = self.estimate_dm_mw_ism()
-        dm_cosmic = self.estimate_dm_cosmic()
-        dm_halo = 60 * dm_units
-        return self.dm - dm_ism - dm_cosmic - dm_halo
+    # def estimate_dm_excess(self):
+    #     dm_ism = self.estimate_dm_mw_ism()
+    #     dm_cosmic = self.estimate_dm_cosmic()
+    #     dm_halo = 60 * dm_units
+    #     return self.dm - dm_ism - dm_cosmic - dm_halo
 
-    def estimate_dm_exgal(self):
-        dm_ism = self.estimate_dm_mw_ism()
-        dm_halo = 60 * dm_units
-        return self.dm - dm_ism - dm_halo
+    def foreground_accounting(
+            self,
+            rmax=1.,
+            cat_search: str = None,
+            step_size_halo: units.Quantity = 0.1 * units.kpc,
+            neval_cosmic: int = 10000
+    ):
+
+        from frb.halos.hmf import halo_incidence
+
+        outputs = self.dm_mw_halo()
+
+        self.field.load_all_objects()
+
+        host = self.host_galaxy
+        foregrounds = list(
+            filter(
+                lambda o: isinstance(o, Galaxy) and o.z <= self.host_galaxy.z and o.mass_stellar is not None,
+                self.field.objects
+            )
+        )
+
+        frb_err_ra, frb_err_dec = self.position_err.uncertainty_quadrature_equ()
+        frb_err_dec = frb_err_dec.to(units.arcsec)
+        cosmic_tbl = table.QTable()
+
+        print("DM_FRB:")
+        print(self.dm)
+
+        print("DM_MW:")
+
+        print("\tDM_MWISM:")
+        # outputs["dm_ism_mw_cum"] = self.estimate_dm_mw_ism_cum(max_dm=outputs["dm_ism_mw_ne2001"] - 0.5 * dm_units)
+        print("\t\tDM_MWISM_NE2001")
+        outputs["dm_ism_mw_ne2001"] = self.dm_mw_ism_ne2001()
+        print("\t\t", outputs["dm_ism_mw_ne2001"])
+
+        print("\t\tDM_MWISM_YMW16")
+        outputs["dm_ism_mw_ymw16"] = self.dm_mw_ism_ymw16()
+        print("\t\t", outputs["dm_ism_mw_ymw16"])
+
+        print("\tDM_MWHalo_PZ19:")
+        print("\t", outputs["dm_halo_mw_pz19"])
+
+        print("\tDM_MWHalo_YF17:")
+        print("\t", outputs["dm_halo_mw_yf17"])
+
+        print("\tDM_MWHalo_MB15:")
+        print("\t", outputs["dm_halo_mw_mb15"])
+
+        print("\tDM_MW:")
+        outputs["dm_mw"] = outputs["dm_halo_mw_pz19"] + outputs["dm_ism_mw_ne2001"]
+        print("\t", outputs["dm_mw"])
+
+        print("DM_exgal:")
+        outputs["dm_exgal"] = self.dm - outputs["dm_mw"]
+        print(outputs["dm_exgal"])
+
+        print("Avg DM_cosmic:")
+        dm_cosmic, z = self.dm_cosmic(cumul=True, neval=neval_cosmic)
+        cosmic_tbl["z"] = z
+        cosmic_tbl["comoving_distance"] = cosmology.comoving_distance(cosmic_tbl["z"])
+        cosmic_tbl["dm_cosmic_avg"] = dm_cosmic
+        outputs["dm_cosmic_avg"] = dm_cosmic[-1]
+        print(outputs["dm_cosmic_avg"])
+        print("\tAvg DM_halos:")
+        dm_halos, _ = self.dm_halos_avg(rmax=rmax, neval=neval_cosmic, cumul=True)
+        cosmic_tbl["dm_halos_avg"] = dm_halos
+        outputs["dm_halos_avg"] = dm_halos[-1]
+        print("\t", outputs["dm_halos_avg"])
+        print("\tAvg DM_igm:")
+        outputs["dm_igm"] = outputs["dm_cosmic_avg"] - outputs["dm_halos_avg"]
+        cosmic_tbl["dm_igm"] = cosmic_tbl["dm_cosmic_avg"] - cosmic_tbl["dm_halos_avg"]
+        print("\t", outputs["dm_igm"])
+
+        print("Empirical DM_halos:")
+        halo_inform = []
+        halo_models = {}
+        halo_profiles = {}
+        dm_halo_host = None
+        dm_halo_cum = {}
+        cosmic_tbl["dm_halos_emp"] = cosmic_tbl["dm_halos_avg"] * 0
+        for obj in foregrounds:
+            print(f"\tDM_halo_{obj.name}:")
+            obj.load_output_file()
+            obj.select_deepest()
+            halo_info = {
+                "id": obj.name,
+                "z": obj.z,
+                "ra": obj.position_photometry.ra,
+                "dec": obj.position_photometry.dec
+            }
+
+            if cat_search is not None:
+                cat_row, sep = obj.find_in_cat(cat_search)
+                if sep < 1 * units.arcsec:
+                    halo_info["id_cat"] = cat_row["objName"]
+                    halo_info["ra_cat"] = cat_row["raStack"]
+                    halo_info["dec_cat"] = cat_row["decStack"]
+                else:
+                    halo_info["id_cat"] = "--"
+                halo_info["offset_cat"] = sep.to(units.arcsec)
+
+            halo_info["offset_angle"] = offset_angle = self.position.separation(obj.position_photometry).to(
+                units.arcsec)
+            fg_pos_err = max(
+                obj.position_photometry_err.dec_stat,
+                obj.position_photometry_err.ra_stat)
+            halo_info["distance_angular_size"] = obj.angular_size_distance()
+            halo_info["distance_luminosity"] = obj.luminosity_distance()
+            halo_info["distance_comoving"] = obj.comoving_distance()
+            halo_info["offset_angle_err"] = offset_angle_err = np.sqrt(fg_pos_err ** 2 + frb_err_dec ** 2)
+            halo_info["r_perp"] = offset = obj.projected_distance(offset_angle).to(units.kpc)
+            halo_info["r_perp_err"] = obj.projected_distance(offset_angle_err).to(units.kpc)
+            halo_info["mass_stellar"] = fg_m_star = obj.mass_stellar
+            halo_info["mass_stellar_err"] = fg_m_star_err = obj.mass_stellar_err
+            halo_info["log_mass_stellar"] = np.log10(fg_m_star / units.solMass)
+            halo_info["log_mass_stellar_err"] = u.uncertainty_log10(
+                arg=fg_m_star,
+                uncertainty_arg=fg_m_star_err)
+            obj.halo_mass()
+            halo_info["mass_halo"] = obj.mass_halo
+            halo_info["log_mass_halo"] = obj.log_mass_halo
+            halo_info["log_mass_halo_upper"] = obj.log_mass_halo_upper
+            halo_info["log_mass_halo_lower"] = obj.log_mass_halo_lower
+            halo_info["h"] = obj.h()
+            halo_info["c"] = obj.halo_concentration_parameter()
+
+            mnfw = obj.halo_model_mnfw()
+            yf17 = obj.halo_model_yf17()
+            mb04 = obj.halo_model_mb04()
+            mb15 = obj.halo_model_mb15()
+
+            halo_nes = []
+            rs = []
+            dm_val = np.inf
+            i = 0
+            # r_perp = 0 * units.kpc
+            while dm_val > rmax:  # 1.
+                r_perp = i * step_size_halo
+                dm_val = mnfw.Ne_Rperp(
+                    r_perp,
+                    rmax=rmax,
+                    step_size=step_size_halo
+                ).value / (1 + obj.z)
+                halo_nes.append(dm_val)
+                rs.append(r_perp.value)
+                i += 1
+
+            # halo_info["r_lim"] = r_perp
+
+            halo_info["dm_halo"] = dm_halo = mnfw.Ne_Rperp(
+                Rperp=offset,
+                rmax=rmax,
+                step_size=step_size_halo
+            ) / (1 + obj.z)
+            halo_info["dm_halo_yf17"] = yf17.Ne_Rperp(
+                Rperp=offset,
+                rmax=rmax,
+                step_size=step_size_halo
+            ) / (1 + obj.z)
+            halo_info["dm_halo_mb04"] = mb04.Ne_Rperp(
+                Rperp=offset,
+                rmax=rmax,
+                step_size=step_size_halo
+            ) / (1 + obj.z)
+            halo_info["dm_halo_mb15"] = mb15.Ne_Rperp(
+                Rperp=offset,
+                rmax=rmax,
+                step_size=step_size_halo
+            ) / (1 + obj.z)
+
+            halo_info["r_200"] = mnfw.r200
+            if obj.name.startswith("HG"):
+                halo_info["dm_halo"] = dm_halo_host = dm_halo / 2
+                halo_info["id_short"] = "HG"
+            else:
+                halo_info["id_short"] = obj.name[:3]
+
+            print("\t", halo_info["dm_halo"])
+
+            halo_models[obj.name] = mnfw
+
+            halo_inform.append(halo_info)
+
+            halo_profiles[obj.name] = halo_nes
+
+            halo_info["n_intersect_greater"] = halo_incidence(
+                Mlow=obj.mass_halo.value,
+                zFRB=self.host_galaxy.z,
+                radius=halo_info["r_perp"]
+            )
+
+            m_low = 10 ** (np.floor(obj.log_mass_halo))
+            m_high = 10 ** (np.ceil(obj.log_mass_halo))
+            if m_low < 2e10:
+                m_high += 2e10 - m_low
+                m_low = 2e10
+
+            halo_info["n_intersect_partition"] = halo_incidence(
+                Mlow=m_low,
+                Mhigh=m_high,
+                zFRB=self.host_galaxy.z,
+                radius=halo_info["r_perp"]
+            )
+
+            halo_info["u-r"] = obj.cigale_results["bayes.param.restframe_u_prime-r_prime"] * units.mag
+            halo_info["sfr"] = obj.sfr
+            halo_info["sfr_err"] = obj.sfr_err
+
+            if halo_info["dm_halo"] > 0. * dm_units:
+                dm_halo_cum_this = obj.halo_dm_cum(
+                    rmax=rmax,
+                    rperp=offset,
+                    step_size=step_size_halo
+                )
+
+                if obj is not self.host_galaxy:
+                    dm_halo_cum[obj.name] = dm_halo_cum_this
+                    cosmic_tbl["dm_halos_emp"] += np.interp(
+                        cosmic_tbl["comoving_distance"],
+                        dm_halo_cum_this["d_abs"],
+                        dm_halo_cum_this["DM"]
+                    )
+                else:
+                    dm_halo_cum[obj.name] = dm_halo_cum_this[:len(dm_halo_cum_this) // 2]
+                    cosmic_tbl["dm_halo_host"] = np.interp(
+                        cosmic_tbl["comoving_distance"],
+                        dm_halo_cum_this["d_abs"],
+                        dm_halo_cum_this["DM"]
+                    )
+
+        #         plt.plot(rs, halo_nes)
+        #         plt.plot([offset.value, offset.value], [0, max(halo_nes)])
+
+        halo_tbl = table.QTable(halo_inform)
+        cosmic_tbl["dm_cosmic_emp"] = cosmic_tbl["dm_halos_emp"] + cosmic_tbl["dm_igm"]
+
+        print("\tEmpirical DM_halos:")
+        outputs["dm_halos_emp"] = halo_tbl["dm_halo"].sum() - dm_halo_host
+        outputs["dm_halos_yf17"] = halo_tbl["dm_halo_yf17"].sum() - dm_halo_host
+        outputs["dm_halos_mb04"] = halo_tbl["dm_halo_mb04"].sum() - dm_halo_host
+        outputs["dm_halos_mb15"] = halo_tbl["dm_halo_mb15"].sum() - dm_halo_host
+
+        print("\t", outputs["dm_halos_emp"])
+
+        print("\tEmpirical DM_cosmic:")
+        outputs["dm_cosmic_emp"] = outputs["dm_igm"] + outputs["dm_halos_emp"]
+        print("\t", outputs["dm_cosmic_emp"])
+
+        print("DM_host:")
+        # Obtained using James 2021
+        print("\tMedian DM_host:")
+        outputs["dm_host_median_james22A"] = dm_host_median["james_22A"] / (1 + host.z)
+        outputs["dm_host_median"] = dm_host_median["james_22B"] / (1 + host.z)
+        print("\t", outputs["dm_host_median"])
+        # print("\tMax-probability DM_host:")
+        # outputs["dm_host_max_p_james22A"] = 98 * dm_units / (1 + host.z)
+        # print("\t", outputs["dm_host_max_p"])
+
+        print("\tDM_halo_host")
+        outputs["dm_halo_host"] = dm_halo_host
+        print("\t", outputs["dm_halo_host"])
+
+        print("\tDM_host,ism:")
+        outputs["dm_host_ism"] = outputs["dm_host_median"] - outputs["dm_halo_host"]
+        print("\t", outputs["dm_host_ism"])
+
+        print("Excess DM estimate:")
+        outputs["dm_excess_avg"] = self.dm - outputs["dm_cosmic_avg"] - outputs["dm_mw"] - outputs["dm_host_median"]
+        print("\t", outputs["dm_excess_avg"])
+
+        print("Empirical Excess DM:")
+        outputs["dm_excess_emp"] = self.dm - outputs["dm_cosmic_emp"] - outputs["dm_mw"] - outputs["dm_host_median"]
+        print("\t", outputs["dm_excess_emp"])
+
+        #     r_eff_proj = foreground.projected_distance(r_eff).to(units.kpc)
+        #     r_eff_proj_err = foreground.projected_distance(r_eff_err).to(units.kpc)
+        #     print("Projected effective radius:")
+        #     print(r_eff_proj, "+/-", r_eff_proj_err)
+        #     print("FG-normalized offset:")
+        #     print(offset / r_eff_proj)
+
+        outputs["halo_table"] = halo_tbl
+        outputs["halo_models"] = halo_models
+        outputs["halo_dm_profiles"] = halo_profiles
+        outputs["halo_dm_cum"] = dm_halo_cum
+        outputs["dm_cum_table"] = cosmic_tbl
+
+        return outputs
 
     @classmethod
     def from_dict(cls, dictionary: dict, name: str = None, field=None):
         frb = super().from_dict(dictionary=dictionary)
         if "dm" in dictionary:
-            frb.dm = dictionary["dm"] * dm_units
+            frb.dm = u.check_quantity(dictionary["dm"], dm_units)
         frb.host_galaxy = Galaxy.from_dict(dictionary=dictionary["host_galaxy"], field=field)
         return frb
 
@@ -1065,6 +1919,6 @@ class FRB(Object):
             "host_galaxy": Galaxy.default_params(),
             "mjd": 58000,
             "dm": 0.0 * dm_units,
-            "snr": 0.0
+            "snr": 0.0,
         })
         return default_params
