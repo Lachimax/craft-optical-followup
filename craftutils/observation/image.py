@@ -23,11 +23,6 @@ from astropy.coordinates import SkyCoord
 from astropy.time import Time
 from astropy.visualization import quantity_support
 
-try:
-    from astroalign import register
-except ModuleNotFoundError:
-    print("Astroalign not installed; frame registration will not be available.")
-
 import photutils
 
 try:
@@ -47,6 +42,7 @@ from craftutils.stats import gaussian_distributed_point
 import craftutils.observation.instrument as inst
 import craftutils.wrap.source_extractor as se
 import craftutils.wrap.psfex as psfex
+import craftutils.wrap.galfit as galfit
 from craftutils.wrap.astrometry_net import solve_field
 from craftutils.retrieve import cat_columns, cat_instruments
 
@@ -578,7 +574,10 @@ class Image:
         key = self.header_keys()["unit"]
         unit = self.extract_header_item(key)
         if astropy:
-            unit = units.Unit(unit)
+            if unit is not None:
+                unit = units.Unit(unit)
+            else:
+                unit = units.ct
         return unit
 
     def extract_units(self):
@@ -676,7 +675,6 @@ class Image:
 
         while len(self.hdu_list) > len(self.headers):
             self.hdu_list.pop(-1)
-            print(len(self.hdu_list))
 
         self.hdu_list.writeto(self.path, overwrite=True)
 
@@ -1095,26 +1093,9 @@ class ImagingImage(Image):
         else:
             self.psfex_successful = True
 
-        print("dual, template:", dual, template)
-        print()
-        print(self.name)
-        print("in source_extraction_psf 1:")
-        print("\tsource_cat_path", self.source_cat_path)
-        print("\tsource_cat_dual_path", self.source_cat_dual_path)
-        print("\tsource_cat_sextractor_path", self.source_cat_sextractor_path)
-        print("\tsource_cat_sextractor_dual_path", self.source_cat_sextractor_dual_path)
-        print()
+        u.debug_print(2, "dual, template:", dual, template)
 
         self.write_source_cat()
-
-        print()
-        print(self.name)
-        print("in source_extraction_psf 2:")
-        print("\tsource_cat_path", self.source_cat_path)
-        print("\tsource_cat_dual_path", self.source_cat_dual_path)
-        print("\tsource_cat_sextractor_path", self.source_cat_sextractor_path)
-        print("\tsource_cat_sextractor_dual_path", self.source_cat_sextractor_dual_path)
-        print()
 
         self.plot_apertures()
         self.add_log(
@@ -1126,15 +1107,6 @@ class ImagingImage(Image):
         self.signal_to_noise_measure(dual=dual)
         print()
         self.update_output_file()
-
-        print()
-        print(self.name)
-        print("in source_extraction_psf 3:")
-        print("\tsource_cat_path", self.source_cat_path)
-        print("\tsource_cat_dual_path", self.source_cat_dual_path)
-        print("\tsource_cat_sextractor_path", self.source_cat_sextractor_path)
-        print("\tsource_cat_sextractor_dual_path", self.source_cat_sextractor_dual_path)
-        print()
 
     def _load_source_cat_sextractor(self, path: str):
         self.load_wcs()
@@ -1283,7 +1255,7 @@ class ImagingImage(Image):
     def push_source_cat(self, dual: bool = True):
         source_cat = self.get_source_cat(dual=dual)
         for i, row in enumerate(source_cat):
-            print(f"Row {i} of {len(source_cat)}")
+            print(f"Pushing row {i} of {len(source_cat)}")
             obj = objects.Object(row=row, field=self.epoch.field)
             if "SNR_PSF" in self.depth["secure"]:
                 depth = self.depth["secure"]["SNR_PSF"][f"5-sigma"]
@@ -1628,10 +1600,7 @@ class ImagingImage(Image):
         if image_name is None:
             image_name = self.name
         self.extract_filter()
-        print("FILTER:", self.filter_short)
-        print("CAT_NAME:", cat_name)
         column_names = cat_columns(cat=cat_name, f=self.filter_short)
-        print("MAG NAME:", column_names['mag_psf'])
         cat_ra_col = column_names['ra']
         cat_dec_col = column_names['dec']
         cat_mag_col = column_names['mag_psf']
@@ -1940,56 +1909,23 @@ class ImagingImage(Image):
         """
 
         # self.signal_to_noise_ccd(dual=dual)
-        print()
-        print(self.name)
-        print("in estimate_depth 1:")
-        print("\tsource_cat_path", self.source_cat_path)
-        print("\tsource_cat_dual_path", self.source_cat_dual_path)
-        print("\tsource_cat_sextractor_path", self.source_cat_sextractor_path)
-        print("\tsource_cat_sextractor_dual_path", self.source_cat_sextractor_dual_path)
-        print()
+
         self.signal_to_noise_measure(dual=dual)
         if do_magnitude_calibration:
             self.calibrate_magnitudes(zeropoint_name=zeropoint_name, dual=dual)
-        print()
-        print("in estimate_depth 2:")
-        print("\tsource_cat_path", self.source_cat_path)
-        print("\tsource_cat_dual_path", self.source_cat_dual_path)
-        print("\tsource_cat_sextractor_path", self.source_cat_sextractor_path)
-        print("\tsource_cat_sextractor_dual_path", self.source_cat_sextractor_dual_path)
-        print()
+
         source_cat = self.get_source_cat(dual=dual)
-        print()
-        print("in estimate_depth 3:")
-        print("\tsource_cat_path", self.source_cat_path)
-        print("\tsource_cat_dual_path", self.source_cat_dual_path)
-        print("\tsource_cat_sextractor_path", self.source_cat_sextractor_path)
-        print("\tsource_cat_sextractor_dual_path", self.source_cat_sextractor_dual_path)
-        print()
+
         # "max" stores the magnitude of the faintest object with S/N > x sigma
         self.depth = {"max": {}, "secure": {}}
         # "secure" finds the brightest object with S/N < x sigma, then increments to the
         # overall; thus giving the faintest magnitude at which we can be confident of a detection
 
         stars = u.trim_to_class(cat=source_cat, modify=True, allowed=np.arange(0, star_tolerance + 1))
-        print()
-        print("in estimate_depth 4:")
-        print("\tsource_cat_path", self.source_cat_path)
-        print("\tsource_cat_dual_path", self.source_cat_dual_path)
-        print("\tsource_cat_sextractor_path", self.source_cat_sextractor_path)
-        print("\tsource_cat_sextractor_dual_path", self.source_cat_sextractor_dual_path)
-        print()
+
         if stars is None or len(stars) < 10:
             stars = source_cat[source_cat["CLASS_STAR"] >= 0.9]
         source_cat = stars
-
-        print()
-        print("in estimate_depth 5:")
-        print("\tsource_cat_path", self.source_cat_path)
-        print("\tsource_cat_dual_path", self.source_cat_dual_path)
-        print("\tsource_cat_sextractor_path", self.source_cat_sextractor_path)
-        print("\tsource_cat_sextractor_dual_path", self.source_cat_sextractor_dual_path)
-        print()
 
         for snr_key in ["PSF", "AUTO"]:  # ["SNR_CCD", "SNR_MEASURED", "SNR_SE"]:
             # We do this to ensure that, in the "secure" step, object i+1 is the next-brightest in the catalogue
@@ -2015,7 +1951,6 @@ class ImagingImage(Image):
                 # Brightest source less than x-sigma (kind of)
                 # Get the sources with SNR less than x-sigma
                 source_less_sigma = source_cat[source_cat[f"SNR_{snr_key}"] < sigma]
-                print(f"Found {len(source_less_sigma)} point-sources with SNR < {sigma}")
                 if len(source_less_sigma) > 0:
                     # Get the source with the greatest flux
                     i = np.argmax(source_less_sigma[f"FLUX_{snr_key}"])
@@ -2031,28 +1966,13 @@ class ImagingImage(Image):
                 self.depth["secure"][f"SNR_{snr_key}"][f"{sigma}-sigma"] = src_lim[f"MAG_{snr_key}_ZP_{zeropoint_name}"]
                 self.update_output_file()
 
-        print()
-        print("in estimate_depth 6:")
-        print("\tsource_cat_path", self.source_cat_path)
-        print("\tsource_cat_dual_path", self.source_cat_dual_path)
-        print("\tsource_cat_sextractor_path", self.source_cat_sextractor_path)
-        print("\tsource_cat_sextractor_dual_path", self.source_cat_sextractor_dual_path)
-        print()
-
         source_cat.sort("NUMBER")
         self.add_log(
             action=f"Estimated image depth.",
             method=self.estimate_depth,
         )
         self.update_output_file()
-        print()
-        print(self.name)
-        print("in estimate_depth 7:")
-        print("\tsource_cat_path", self.source_cat_path)
-        print("\tsource_cat_dual_path", self.source_cat_dual_path)
-        print("\tsource_cat_sextractor_path", self.source_cat_sextractor_path)
-        print("\tsource_cat_sextractor_dual_path", self.source_cat_sextractor_dual_path)
-        print()
+
         return self.depth
 
     def send_column_to_source_cat(self, colname: str, sample: table.Table):
@@ -2083,6 +2003,7 @@ class ImagingImage(Image):
             trim: bool = True,
             **kwargs
     ):
+        from astroalign import register
         self.load_data()
         target.load_data()
 
@@ -2438,8 +2359,6 @@ class ImagingImage(Image):
             distance_clipped = sigma_clip(distance, masked=False)
             distance_clipped_masked = sigma_clip(distance, masked=True)
             mask = ~distance_clipped_masked.mask
-            # print(distance_clipped)
-            # print(distance_clipped ** 2)
 
             offset_ra = matches_source_cat["RA"][mask] - matches_ext_cat[ra_col][mask]
             offset_dec = matches_source_cat["DEC"][mask] - matches_ext_cat[dec_col][mask]
@@ -2807,7 +2726,6 @@ class ImagingImage(Image):
         self.load_output_file()
         data = self.data[ext].value
         zp = self.zeropoint_best["zeropoint_img"].value
-        print(zp)
         exptime = self.extract_exposure_time().value
         data[data <= 0.] = np.min(data[data > 0.])
         data_scaled = 3631 * units.Jansky * (data / exptime) * 10 ** (zp / -2.5)
@@ -2830,7 +2748,8 @@ class ImagingImage(Image):
             output_path: str = None,
             include_footprint: bool = False,
             write_footprint: bool = True,
-            method: str = 'exact'
+            method: str = 'exact',
+            mask_mode: bool = False
     ):
         import reproject as rp
         if output_path is None:
@@ -2845,8 +2764,12 @@ class ImagingImage(Image):
             reprojected, footprint = rp.reproject_interp(self.path, other_image.headers[ext])
         else:
             raise ValueError(f"Reprojection method {method} not recognised.")
+
+        # if not mask_mode:
         reprojected *= other_image.extract_unit(astropy=True)
         footprint *= units.pix
+        if mask_mode:
+            reprojected = np.round(reprojected)
 
         if output_path == self.path:
             reprojected_image = self
@@ -2910,7 +2833,7 @@ class ImagingImage(Image):
                 allowed=np.arange(0, star_tolerance + 1)
             )
 
-        print("len(source_cat) match_catalogs:", len(source_cat))
+        u.debug_print(2, "len(source_cat) match_catalogs:", len(source_cat))
         matches_source_cat, matches_ext_cat, distance = astm.match_catalogs(
             cat_1=source_cat,
             cat_2=cat,
@@ -2960,7 +2883,6 @@ class ImagingImage(Image):
         self._set_source_cat(source_cat, dual)
 
         self.update_output_file()
-        print("MEDIAN SNR:", np.nanmedian(source_cat["SNR_CCD"]))
 
         self.add_log(
             action=f"Estimated SNR using CCD Equation.",
@@ -3191,9 +3113,6 @@ class ImagingImage(Image):
             frame1.axes.get_xaxis().set_visible(False)
             frame1.axes.set_yticks([])
             frame1.axes.invert_yaxis()
-
-        print(left, right, bottom, top)
-        print(type(left), type(right), type(bottom), type(top))
 
         ax.imshow(
             data,
@@ -3972,7 +3891,7 @@ class ImagingImage(Image):
             kron_radius: float = 1.,
             ext: int = 0,
             output: str = None,
-            mask_nearby: bool = True,
+            mask_nearby = True,
             subtract_background: bool = True,
     ):
 
@@ -4000,7 +3919,9 @@ class ImagingImage(Image):
 
         u.debug_print(2, f"sep_elliptical_photometry: mask_nearby == {mask_nearby}")
 
-        if mask_nearby:
+        if isinstance(mask_nearby, ImagingImage):
+            mask = mask_nearby.data[0].value
+        elif mask_nearby:
             mask = self.write_mask(
                 unmasked=centre,
                 ext=ext,
@@ -4099,7 +4020,7 @@ class ImagingImage(Image):
             kron_radius: float = 1.,
             ext: int = 0,
             output: str = None,
-            mask_nearby: bool = True,
+            mask_nearby = True,
             detection_threshold: float = None
     ):
 
@@ -4150,7 +4071,11 @@ class ImagingImage(Image):
             "threshold": detection_threshold
         }
 
-    def make_galfit_version(self, output_path: str = None, ext: int = 0):
+    def make_galfit_version(
+            self,
+            output_path: str = None,
+            ext: int = 0
+    ):
         """
         Generate a version of this file for use with GALFIT.
         Modifies header item GAIN to conform to GALFIT's expectations (outlined in the GALFIT User Manual,
@@ -4172,45 +4097,16 @@ class ImagingImage(Image):
         new.write_fits_file()
         return new
 
-    def galfit(
+    def make_galfit_psf(
             self,
-            coords: SkyCoord,
-            output_dir: str = None,
-            frame_lower: int = 30,
-            frame_upper: int = 100,
-            ext: int = 0,
-            model_guesses: dict = None
+            output_dir: str,
+            x: float,
+            y: float
     ):
-        import frb.galaxies.galfit as galfit
-
-        if model_guesses is None:
-            model_guesses = {
-                "int_mag": 0.0,
-                "r_e": 3.0,
-                "n": 1.0,
-                "axis_ratio": 1.0,
-                "pa": 0.0
-            }
-
-        x, y = self.world_to_pixel(
-            coord=coords,
-            origin=1
-        )
-        x = u.check_iterable(x)
-        y = u.check_iterable(y)
-        self.extract_pixel_scale()
-        if output_dir is None:
-            output_dir = self.data_path
-        new = self.make_galfit_version(
-            output_path=os.path.join(output_dir, self.filename.replace(".fits", "_galfit.fits"))
-        )
-        new.open()
-        hdu = new.hdu_list[ext]
-        data = hdu.data
         # We obtain an oversampled PSF, because GALFIT works best with one.
         psfex_path = os.path.join(output_dir, f"{self.name}_galfit_psfex.psf")
         if not os.path.isfile(psfex_path):
-            new.psfex(
+            self.psfex(
                 output_dir=output_dir,
                 PSF_SAMPLING=0.5,  # Equivalent to GALFIT fine-sampling factor = 2
                 # PSF_SIZE=50,
@@ -4218,10 +4114,10 @@ class ImagingImage(Image):
                 set_attributes=True
             )
         else:
-            new.psfex_path = psfex_path
-            new.load_psfex_output()
+            self.psfex_path = psfex_path
+            self.load_psfex_output()
         # Load oversampled PSF image
-        psf_img = new.psf_image(x=x[0], y=y[0], match_pixel_scale=False)[0]
+        psf_img = self.psf_image(x=x, y=y, match_pixel_scale=False)[0]
         psf_img /= np.max(psf_img)
         # Write our PSF image to disk for GALFIT to find
         psf_hdu = fits.hdu.PrimaryHDU(psf_img)
@@ -4231,66 +4127,236 @@ class ImagingImage(Image):
             psf_path,
             overwrite=True
         )
+        return psf_path
+
+    def make_galfit_feedme(
+            self,
+            feedme_path: str,
+            img_block_path: str,
+            psf_file: str = None,
+            psf_fine_sampling: int = 2,
+            mask_file: str = None,
+            fitting_region_margins: tuple = None,
+            convolution_size: tuple = None,
+            models: List[dict] = None
+    ):
+        if fitting_region_margins is None:
+            self.load_data()
+            max_x, max_y = self.data[0].shape
+            fitting_region_margins = 0, max_x - 1, 0, max_y - 1
+        if convolution_size is None:
+            left, right, bottom, top = fitting_region_margins
+            convolution_size = int(right - left), int(top - bottom)
+
+        self.extract_pixel_scale()
+        dx = (1 * units.pixel).to(units.arcsec, self.pixel_scale_x).value
+        dy = (1 * units.pixel).to(units.arcsec, self.pixel_scale_y).value
+
+        galfit.galfit_feedme(
+            feedme_path=feedme_path,
+            input_file=self.filename,
+            output_file=img_block_path,
+            zeropoint=self.zeropoint_best["zeropoint_img"].value,
+            psf_file=psf_file,
+            psf_fine_sampling=psf_fine_sampling,
+            mask_file=mask_file,
+            fitting_region_margins=fitting_region_margins,
+            convolution_size=convolution_size,
+            plate_scale=(dx, dy),
+            models=models
+        )
+
+    def galfit(
+            self,
+            output_dir: str = None,
+            output_prefix=None,
+            frame_lower: int = 30,
+            frame_upper: int = 100,
+            ext: int = 0,
+            model_guesses: Union[dict, List[dict]] = None,
+            psf_path: str = None,
+            use_frb_galfit: bool = False
+    ):
+        """
+
+        :param coords:
+        :param output_dir:
+        :param frame_lower:
+        :param frame_upper:
+        :param ext:
+        :param model_guesses:
+            Either "position" can be provided as a SkyCoord object, or x & y as pixel coordinates.
+        :param use_frb_galfit: Use the FRB repo frb.galaxies.galfit module. Single-sersic only; if multiple models are provided only one will be used.
+        :return:
+        """
+        if output_prefix is None:
+            output_prefix = self.name
+        if model_guesses is None:
+            model_guesses = [{
+                "object_type": "sersic",
+                "int_mag": 20.0,
+                "position": self.epoch.field.objects[0].position
+            }]
+
+        if isinstance(model_guesses, dict):
+            model_guesses = [model_guesses]
+        gf_tbls = {}
+        for i, model in enumerate(model_guesses):
+            if "position" in model:
+                x, y = self.world_to_pixel(
+                    coord=model["position"],
+                    origin=1
+                )
+                model_guesses[i]["x"] = x
+                model_guesses[i]["y"] = y
+            elif "x" in model and "y" in model:
+                model_guesses["position"] = self.pixel_to_world(
+                    x=model["x"],
+                    y=model["y"],
+                    origin=1
+                )
+            else:
+                raise ValueError("All model dicts must have either 'position' or 'x' & 'y' keys.")
+            gf_tbls[f"COMP_{i+1}"] = []
+        gf_tbls[f"COMP_{i+2}"] = []
+
+        if output_dir is None:
+            output_dir = self.data_path
+        self.load_output_file()
+        new = self.make_galfit_version(
+            output_path=os.path.join(output_dir, f"{output_prefix}_galfit.fits")
+        )
+        new.zeropoint_best = self.zeropoint_best
+        new.open()
+
+        x = model_guesses[0]["x"]
+        y = model_guesses[0]["y"]
+        if psf_path is None:
+            psf_path = new.make_galfit_psf(
+                x=x,
+                y=y,
+                output_dir=output_dir
+            )
+        # Turn the first model into something the frb repo can use, and hope it's a sersic
+        if use_frb_galfit:
+            model_dict = model_guesses[0].copy()
+            x = int(model_dict.pop("x"))
+            y = int(model_dict.pop("y"))
+            model_dict["position"] = (x, y)
+            model_dict.pop("object_type")
+
+        psf_file = os.path.split(psf_path)[-1]
+        psf_path_moved = os.path.join(output_dir, psf_file)
+        if not os.path.isfile(psf_path_moved):
+            shutil.copy(psf_path, psf_path_moved)
+        psf_path = psf_path_moved
+
         new.load_data()
         data = new.data[ext].copy()
         new.close()
 
-        gf_tbls = []
+        mask_file = f"{output_prefix}_mask.fits"
+        mask_path = os.path.join(output_dir, mask_file)
+        margins_max = u.frame_from_centre(frame_upper + 1, x, y, data)
+        mask = new.write_mask(
+            output_path=mask_path,
+            unmasked=list(map(lambda m: m["position"], model_guesses)),
+            ext=ext,
+            method="sep",
+            obj_value=1,
+            back_value=0,
+            margins=margins_max
+        )
+
+        self.extract_pixel_scale(ext)
 
         for frame in range(frame_lower, frame_upper + 1):
-            margins = u.frame_from_centre(frame, x[0], y[0], data)
+            margins = u.frame_from_centre(frame, x, y, data)
             print("Generating mask...")
             data_trim = u.trim_image(data, margins=margins)
-            mask_path = os.path.join(output_dir, f"{self.name}_mask_{frame}.fits")
-            mask = new.write_mask(
-                output_path=mask_path,
-                unmasked=coords,
-                ext=ext,
-                method="sep",
-                obj_value=1,
-                back_value=0,
-                margins=margins
-            )
-            mask_data = u.trim_image(mask.data[ext], margins=margins)
-            img_block_path = os.path.join(output_dir, f"{self.name}_galfit_out_{frame}.fits")
-            galfit.run(
-                imgfile=new.path,
-                psffile=psf_path,
-                outdir=output_dir,
-                configfile=f"{self.name}_{frame}.feedme",
-                outfile=img_block_path,
-                finesample=2,
-                badpix=mask_path,
-                region=margins,
-                convobox=(frame * 2, frame * 2),
-                zeropoint=self.zeropoint_best["zeropoint_img"].value,
-                position=(int(x[0]), int(y[0])),
-                skip_sky=False,
-                **model_guesses
-            )
+            mask_data = u.trim_image(mask.data[ext], margins=margins).value
+            feedme_file = f"{output_prefix}_{frame}.feedme"
+            feedme_path = os.path.join(output_dir, feedme_file)
+            img_block_file = f"{output_prefix}_galfit-out_{frame}.fits"
+            img_block_path = os.path.join(output_dir, img_block_file)
+            if not use_frb_galfit:
+                new.make_galfit_feedme(
+                    feedme_path=feedme_path,
+                    img_block_path=img_block_file,
+                    psf_file=psf_file,
+                    psf_fine_sampling=2,
+                    mask_file=mask_file,
+                    fitting_region_margins=margins,
+                    convolution_size=(frame * 2, frame * 2),
+                    models=model_guesses
+                )
+                galfit.galfit(
+                    config=feedme_file,
+                    output_dir=output_dir
+                )
+            else:
+                import frb.galaxies.galfit as galfit_frb
+                galfit_frb.run(
+                    imgfile=new.path,
+                    psffile=psf_path,
+                    outdir=output_dir,
+                    configfile=feedme_file,
+                    outfile=img_block_path,
+                    finesample=2,
+                    badpix=mask_path,
+                    region=margins,
+                    convobox=(frame * 2, frame * 2),
+                    zeropoint=self.zeropoint_best["zeropoint_img"].value,
+                    skip_sky=False,
+                    **model_dict
+                )
+            shutil.copy(os.path.join(output_dir, "fit.log"), os.path.join(output_dir, f"{output_prefix}_{frame}_fit.log"))
+
             try:
-                img_block = fits.open(img_block_path, mode='update')
+                img_block = fits.open(img_block_path)
             except FileNotFoundError:
                 return None
 
-            results_table = table.QTable(img_block[4].data)
-            results_table["frame"] = [frame]
-            gf_tbls.append(results_table)
+            results_header = img_block[2].header
+            components = galfit.extract_fit_params(results_header)
+            for compname in components:
+                component = components[compname]
+                pos = self.pixel_to_world(component["x"], component["y"])
+                component["ra"] = pos.ra
+                component["dec"] = pos.dec
+                # TODO: This assumes RA and Dec are along x & y (neglecting image rotation), which isn't great
+                component["ra_err"] = component["x_err"].to(units.deg, self.pixel_scale_x)
+                component["dec_err"] = component["y_err"].to(units.deg, self.pixel_scale_y)
+                component["frame"] = frame
+                results_table = table.QTable([component])
+                gf_tbls[compname].append(results_table)
 
-            img_block.append(img_block[3].copy())
-            img_block[5].data *= np.invert(mask_data.astype(bool)).astype(int)  # + #
+            mask_ones = np.invert(mask_data.astype(bool)).astype(int)
+
+            # Masked data
+            img_block.insert(4, img_block[1].copy())
+            img_block[4].data *= mask_ones  # + #
+            img_block[4].data += mask_data * np.median(img_block[1].data)
+
+            # Masked, subtracted data
+            img_block.insert(5, img_block[3].copy())
+            img_block[5].data *= mask_ones  # + #
             img_block[5].data += mask_data * np.median(img_block[3].data)
 
-            img_block.append(img_block[1].copy())
-            img_block[6].data *= np.invert(mask_data.astype(bool)).astype(int)  # + #
-            img_block[6].data += mask_data * np.median(img_block[1].data)
-            img_block.close()
+            for idx in [2, 3]:
+                img_block[idx].header.insert('OBJECT', ('PCOUNT', 0))
+                img_block[idx].header.insert('OBJECT', ('GCOUNT', 1))
 
-        gf_tbl = table.vstack(gf_tbls)
+            img_block.writeto(img_block_path, overwrite=True)
+
+        component_tables = {}
+        for compname in gf_tbls:
+            gf_tbl = table.vstack(gf_tbls[compname])
+            component_tables[compname] = gf_tbl
 
         shutil.copy(p.path_to_config_galfit(), output_dir)
 
-        return gf_tbl
+        return component_tables
 
     @classmethod
     def select_child_class(cls, instrument: str, **kwargs):

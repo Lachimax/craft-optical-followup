@@ -14,14 +14,6 @@ from astropy.visualization import quantity_support
 import astropy.time as time
 import astropy.io.fits as fits
 
-frb_installed = True
-try:
-    import frb.halos.hmf as hmf
-    import frb.dm.igm as igm
-except ImportError:
-    print("FRB is not installed; DM_ISM estimates will not be available.")
-    frb_installed = False
-
 import craftutils.params as p
 import craftutils.astrometry as astm
 import craftutils.utils as u
@@ -308,18 +300,20 @@ class Object:
     def get_good_photometry(self):
 
         import craftutils.observation.image as image
-
         self.estimate_galactic_extinction()
         deepest_dict = self.select_deepest()
         deepest_path = deepest_dict["good_image_path"]
 
         cls = image.CoaddedImage.select_child_class(instrument=deepest_dict["instrument"])
         deepest_img = cls(path=deepest_path)
-        deepest_fwhm = deepest_img.extract_header_item("PSF_FWHM") * units.arcsec
-        if "do_mask" in deepest_dict:
-            do_mask = deepest_dict["do_mask"]
-        else:
-            do_mask = True
+        deep_mask = deepest_img.write_mask(
+            output_path=os.path.join(
+                self.data_path,
+                f"{self.name_filesys}_master-mask_{deepest_dict['instrument']}_{deepest_dict['filter']}_{deepest_dict['epoch_name']}.fits",
+            ),
+            method="sep",
+            unmasked=self.position_photometry
+        )
         mag_results = deepest_img.sep_elliptical_magnitude(
             centre=self.position_photometry,
             a_world=self.a,
@@ -330,7 +324,7 @@ class Object:
                 self.data_path,
                 f"{self.name_filesys}_{deepest_dict['instrument']}_{deepest_dict['filter']}_{deepest_dict['epoch_name']}"
             ),
-            mask_nearby=do_mask
+            mask_nearby=deep_mask
         )
         if mag_results is not None:
             deepest_dict["mag_sep"] = mag_results["mag"][0]
@@ -358,12 +352,16 @@ class Object:
                         continue
                     cls = image.CoaddedImage.select_child_class(instrument=instrument)
                     img = cls(path=phot_dict["good_image_path"])
-                    fwhm = img.extract_header_item("PSF_FWHM") * units.arcsec
-                    delta_fwhm = fwhm - deepest_fwhm
-                    if "do_mask" in phot_dict:
-                        do_mask = phot_dict["do_mask"]
-                    else:
-                        do_mask = True
+                    mask_rp = deep_mask.reproject(
+                        other_image=img,
+                        output_path=os.path.join(
+                             self.data_path,
+                            f"{self.name_filesys}_mask_{phot_dict['instrument']}_{phot_dict['filter']}_{phot_dict['epoch_name']}.fits",
+                        ),
+                        write_footprint=False,
+                        method="interp",
+                        mask_mode=True
+                    )
                     mag_results = img.sep_elliptical_magnitude(
                         centre=self.position_photometry,
                         a_world=self.a,  # + delta_fwhm,
@@ -371,7 +369,7 @@ class Object:
                         theta_world=self.theta,
                         kron_radius=self.kron,
                         output=os.path.join(self.data_path, f"{self.name_filesys}_{instrument}_{band}_{epoch}"),
-                        mask_nearby=do_mask
+                        mask_nearby=mask_rp
                     )
 
                     if mag_results is not None:
@@ -545,7 +543,6 @@ class Object:
     def check_data_path(self):
         if self.field is not None:
             u.debug_print(2, "", self.name)
-            # print(self.field.data_path, self.name_filesys)
             self.data_path = os.path.join(self.field.data_path, "objects", self.name_filesys)
             u.mkdir_check(self.data_path)
             self.output_file = os.path.join(self.data_path, f"{self.name_filesys}_outputs.yaml")
@@ -1239,11 +1236,6 @@ class Galaxy(Object):
         elif force or self.cigale_sfh is None:
             self.cigale_sfh = fits.open(self.cigale_sfh_path)
 
-        # if self.cigale_results_path is None:
-        #     print(f"Cannot load CIGALE SFH; {self}.cigale_sfh_path has not been set.")
-        # elif force or self.cigale_results is None:
-        #     self.cigale_results = fits.open(self.cigale_results_path)
-
         return self.cigale_model, self.cigale_sfh  # , self.cigale_results
 
     def angular_size_distance(self):
@@ -1430,7 +1422,7 @@ class Galaxy(Object):
     def default_params(cls):
         default_params = super().default_params()
         default_params.update({
-            "z": 0.0,
+            "z": None,
             "type": "galaxy"
         })
         return default_params
@@ -1606,15 +1598,14 @@ class FRB(Object):
         })
 
     def dm_cosmic(self, **kwargs):
-        if not frb_installed:
-            raise ImportError("FRB is not installed.")
-        return igm.average_DM(self.host_galaxy.z, cosmo=cosmo.Planck18, **kwargs)
+        from frb.dm.igm import average_DM
+        return average_DM(self.host_galaxy.z, cosmo=cosmo.Planck18, **kwargs)
 
     def dm_halos_avg(self, **kwargs):
-        if not frb_installed:
-            raise ImportError("FRB is not installed.")
+        import frb.halos.hmf as hmf
+        from frb.dm.igm import average_DMhalos
         hmf.init_hmf()
-        return igm.average_DMhalos(self.host_galaxy.z, cosmo=cosmo.Planck18, **kwargs)
+        return average_DMhalos(self.host_galaxy.z, cosmo=cosmo.Planck18, **kwargs)
 
     # def estimate_dm_excess(self):
     #     dm_ism = self.estimate_dm_mw_ism()
