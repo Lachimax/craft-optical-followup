@@ -1418,6 +1418,9 @@ class Galaxy(Object):
         })
         return tbl
 
+    def galfit_best(self):
+        self.select_deepest_sep()
+
     @classmethod
     def default_params(cls):
         default_params = super().default_params()

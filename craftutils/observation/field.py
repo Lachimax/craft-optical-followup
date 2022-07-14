@@ -838,6 +838,11 @@ class Field:
         for obj in self.objects:
             obj.load_output_file()
 
+    def galfit(self):
+        for obj in self.objects:
+            if isinstance(obj, objects.Galaxy):
+                obj.galfit_best()
+
     @classmethod
     def default_params(cls):
         default_params = {

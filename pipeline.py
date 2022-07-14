@@ -164,6 +164,8 @@ def main(
                 epoch.pipeline()
         if u.select_yn_exit("Refine photometry?"):
             field.object_properties()
+        if u.select_yn("Perform basic GALFIT on best images?"):
+            field.galfit()
         exit()
 
     u.debug_print(2, "pipeline.py: type(epoch) ==", type(epoch))
