@@ -3106,7 +3106,7 @@ class ImagingImage(Image):
             else:
                 projection = None
 
-            ax = fig.add_subplot(n_x, n_y, n, projection=projection)
+            ax = fig.add_subplot(n_y, n_x, n, projection=projection)
 
         if not show_coords:
             frame1 = plt.gca()
