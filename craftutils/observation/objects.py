@@ -225,8 +225,7 @@ class Object:
         self.cat_row = row
         self.position = None
         self.position_err = None
-        self.position_photometry = None
-        self.position_photometry_err = None
+
 
         if self.cat_row is not None:
             self.position_from_cat_row()
@@ -237,6 +236,9 @@ class Object:
             self.position_galactic = None
             if isinstance(self.position, SkyCoord):
                 self.position_galactic = self.position.transform_to("galactic")
+
+        self.position_photometry = self.position.copy()
+        self.position_photometry_err = self.position_err
 
         if self.name is None:
             self.jname()

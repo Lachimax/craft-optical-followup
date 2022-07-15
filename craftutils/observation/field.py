@@ -319,7 +319,6 @@ def _check_do_list(
         do: Union[list, str],
         stages
 ):
-    num_stages = len(stages)
     if isinstance(do, str):
         try:
             do = [int(do)]
@@ -336,10 +335,7 @@ def _check_do_list(
         do_nu = []
         for n in do:
             if isinstance(n, int):
-                if n < 0:
-                    do_nu.append(num_stages + n)
-                else:
-                    do_nu.append(n)
+                do_nu.append(stages[n])
             elif isinstance(n, str):
                 if n in stages:
                     do_nu.append(n)
