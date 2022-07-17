@@ -1821,9 +1821,12 @@ class FRB(Object):
                 radius=halo_info["r_perp"]
             )
 
-            halo_info["u-r"] = obj.cigale_results["bayes.param.restframe_u_prime-r_prime"] * units.mag
-            halo_info["sfr"] = obj.sfr
-            halo_info["sfr_err"] = obj.sfr_err
+            if obj.cigale_results is not None:
+                halo_info["u-r"] = obj.cigale_results["bayes.param.restframe_u_prime-r_prime"] * units.mag
+            if obj.sfr is not None:
+                halo_info["sfr"] = obj.sfr
+            if obj.sfr_err is not None:
+                halo_info["sfr_err"] = obj.sfr_err
 
             if halo_info["dm_halo"] > 0. * dm_units:
                 dm_halo_cum_this = obj.halo_dm_cum(
