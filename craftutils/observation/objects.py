@@ -1181,6 +1181,8 @@ class Galaxy(Object):
             **kwargs
         )
         self.z = z
+        if "z_err" in kwargs:
+            self.z_err = kwargs["z_err"]
         self.D_A = self.angular_size_distance()
         self.D_L = self.luminosity_distance()
         self.mu = self.distance_modulus()
@@ -1425,6 +1427,7 @@ class Galaxy(Object):
         default_params = super().default_params()
         default_params.update({
             "z": None,
+            "z_err": None,
             "type": "galaxy"
         })
         return default_params
@@ -1620,7 +1623,8 @@ class FRB(Object):
             rmax=1.,
             cat_search: str = None,
             step_size_halo: units.Quantity = 0.1 * units.kpc,
-            neval_cosmic: int = 10000
+            neval_cosmic: int = 10000,
+            foreground_objects: list = None
     ):
 
         from frb.halos.hmf import halo_incidence
@@ -1630,12 +1634,15 @@ class FRB(Object):
         self.field.load_all_objects()
 
         host = self.host_galaxy
-        foregrounds = list(
-            filter(
-                lambda o: isinstance(o, Galaxy) and o.z <= self.host_galaxy.z and o.mass_stellar is not None,
-                self.field.objects
+        if foreground_objects is None:
+            foreground_objects = list(
+                filter(
+                    lambda o: isinstance(o, Galaxy) and o.z <= self.host_galaxy.z and o.mass_stellar is not None,
+                    self.field.objects
+                )
             )
-        )
+        if host not in foreground_objects:
+            foreground_objects.append(host)
 
         frb_err_ra, frb_err_dec = self.position_err.uncertainty_quadrature_equ()
         frb_err_dec = frb_err_dec.to(units.arcsec)
@@ -1697,7 +1704,7 @@ class FRB(Object):
         dm_halo_host = None
         dm_halo_cum = {}
         cosmic_tbl["dm_halos_emp"] = cosmic_tbl["dm_halos_avg"] * 0
-        for obj in foregrounds:
+        for obj in foreground_objects:
             print(f"\tDM_halo_{obj.name}:")
             obj.load_output_file()
             obj.select_deepest()
@@ -1792,7 +1799,7 @@ class FRB(Object):
                 halo_info["dm_halo"] = dm_halo_host = dm_halo / 2
                 halo_info["id_short"] = "HG"
             else:
-                halo_info["id_short"] = obj.name[:3]
+                halo_info["id_short"] = obj.name[:obj.name.find[:"_"]]
 
             print("\t", halo_info["dm_halo"])
 
@@ -1857,10 +1864,10 @@ class FRB(Object):
         cosmic_tbl["dm_cosmic_emp"] = cosmic_tbl["dm_halos_emp"] + cosmic_tbl["dm_igm"]
 
         print("\tEmpirical DM_halos:")
-        outputs["dm_halos_emp"] = halo_tbl["dm_halo"].sum() - dm_halo_host
-        outputs["dm_halos_yf17"] = halo_tbl["dm_halo_yf17"].sum() - dm_halo_host
-        outputs["dm_halos_mb04"] = halo_tbl["dm_halo_mb04"].sum() - dm_halo_host
-        outputs["dm_halos_mb15"] = halo_tbl["dm_halo_mb15"].sum() - dm_halo_host
+        outputs["dm_halos_emp"] = halo_tbl["dm_halo"].nansum() - dm_halo_host
+        outputs["dm_halos_yf17"] = halo_tbl["dm_halo_yf17"].nansum() - dm_halo_host
+        outputs["dm_halos_mb04"] = halo_tbl["dm_halo_mb04"].nansum() - dm_halo_host
+        outputs["dm_halos_mb15"] = halo_tbl["dm_halo_mb15"].nansum() - dm_halo_host
 
         print("\t", outputs["dm_halos_emp"])
 
