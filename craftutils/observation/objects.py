@@ -1799,7 +1799,7 @@ class FRB(Object):
                 halo_info["dm_halo"] = dm_halo_host = dm_halo / 2
                 halo_info["id_short"] = "HG"
             else:
-                halo_info["id_short"] = obj.name[:obj.name.find[:"_"]]
+                halo_info["id_short"] = obj.name[:obj.name.find("_")]
 
             print("\t", halo_info["dm_halo"])
 
@@ -1820,6 +1820,12 @@ class FRB(Object):
             if m_low < 2e10:
                 m_high += 2e10 - m_low
                 m_low = 2e10
+
+            halo_info["mass_halo_partition_high"] = m_high * units.solMass
+            halo_info["mass_halo_partition_low"] = m_low * units.solMass
+
+            halo_info["log_mass_halo_partition_high"] = np.log10(m_high)
+            halo_info["log_mass_halo_partition_low"] = np.log10(m_low)
 
             halo_info["n_intersect_partition"] = halo_incidence(
                 Mlow=m_low,
