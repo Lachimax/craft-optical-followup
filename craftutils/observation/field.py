@@ -4869,7 +4869,7 @@ class ESOImagingEpoch(ImagingEpoch):
                         for file_name in files:
                             # Retrieve the target object name from the fits file.
                             file_path = os.path.join(subpath, file_name)
-                            inst_file = image.detect_instrument(file_path)
+                            inst_file = image.detect_instrument(file_path, fail_quietly=True)
                             if inst_file != "vlt-fors2":
                                 continue
                             file = image.from_path(

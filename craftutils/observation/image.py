@@ -236,29 +236,35 @@ def fits_table_all(input_path: str, output_path: str = "", science_only: bool = 
 
 
 def detect_instrument(path: str, ext: int = 0, fail_quietly: bool = False):
-    with fits.open(path) as file:
-        if "INSTRUME" in file[ext].header:
-            inst_str = file[ext].header["INSTRUME"]
-            if "WFC3" in inst_str:
-                det_str = file[ext].header["DETECTOR"]
-                if "UVIS" in det_str:
-                    return "hst-wfc3_uvis2"
-                elif "IR" in det_str:
-                    return "hst-wfc3_ir"
-            if "FORS2" in inst_str:
-                return "vlt-fors2"
-            elif "HAWKI" in inst_str:
-                return "vlt-hawki"
-        elif "FPA.TELESCOPE" in file[ext].header:
-            inst_str = file[ext].header["FPA.TELESCOPE"]
-            if "PS1" in inst_str:
-                return "panstarrs1"
-        else:
-            if not fail_quietly:
-                raise ValueError(f"Could not establish instrument from file header on {path}.")
+    try:
+        with fits.open(path) as file:
+            if "INSTRUME" in file[ext].header:
+                inst_str = file[ext].header["INSTRUME"]
+                if "WFC3" in inst_str:
+                    det_str = file[ext].header["DETECTOR"]
+                    if "UVIS" in det_str:
+                        return "hst-wfc3_uvis2"
+                    elif "IR" in det_str:
+                        return "hst-wfc3_ir"
+                if "FORS2" in inst_str:
+                    return "vlt-fors2"
+                elif "HAWKI" in inst_str:
+                    return "vlt-hawki"
+            elif "FPA.TELESCOPE" in file[ext].header:
+                inst_str = file[ext].header["FPA.TELESCOPE"]
+                if "PS1" in inst_str:
+                    return "panstarrs1"
             else:
-                return None
-
+                if not fail_quietly:
+                    raise ValueError(f"Could not establish instrument from file header on {path}.")
+                else:
+                    return None
+    except OSError:
+        if fail_quietly:
+            print(f"The file {path} is missing the SIMPLE card and may be corrupt.")
+            return None
+        else:
+            raise OSError(f"The file {path} is missing the SIMPLE card and may be corrupt.")
 
 def from_path(path: str, cls: type = None, **kwargs):
     """
