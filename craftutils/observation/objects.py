@@ -1624,14 +1624,16 @@ class FRB(Object):
             cat_search: str = None,
             step_size_halo: units.Quantity = 0.1 * units.kpc,
             neval_cosmic: int = 10000,
-            foreground_objects: list = None
+            foreground_objects: list = None,
+            load_objects: bool = True
     ):
 
         from frb.halos.hmf import halo_incidence
 
-        outputs = self.dm_mw_halo()
+        outputs = self.dm_mw_halo(rmax=rmax)
 
-        self.field.load_all_objects()
+        if load_objects:
+            self.field.load_all_objects()
 
         host = self.host_galaxy
         if foreground_objects is None:
@@ -1706,7 +1708,8 @@ class FRB(Object):
         cosmic_tbl["dm_halos_emp"] = cosmic_tbl["dm_halos_avg"] * 0
         for obj in foreground_objects:
             print(f"\tDM_halo_{obj.name}:")
-            obj.load_output_file()
+            # if load_objects:
+            #     obj.load_output_file()
             obj.select_deepest()
             halo_info = {
                 "id": obj.name,
