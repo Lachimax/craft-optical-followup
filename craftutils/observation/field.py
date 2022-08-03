@@ -1225,6 +1225,8 @@ class FRBField(Field):
         x, y = img.world_to_pixel(frb, 0)
         uncertainty = self.frb.position_err
         a, b = uncertainty.uncertainty_quadrature()
+        if a == 0 * units.arcsec or b == 0 * units.arcsec:
+            a, b = uncertainty.uncertainty_quadrature_equ()
         theta = uncertainty.theta.to(units.deg)
         rotation_angle = img.extract_rotation_angle(ext=ext)
         theta = theta - rotation_angle
