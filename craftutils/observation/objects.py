@@ -226,7 +226,6 @@ class Object:
         self.position = None
         self.position_err = None
 
-
         if self.cat_row is not None:
             self.position_from_cat_row()
         elif position is not None:
@@ -357,7 +356,7 @@ class Object:
                     mask_rp = deep_mask.reproject(
                         other_image=img,
                         output_path=os.path.join(
-                             self.data_path,
+                            self.data_path,
                             f"{self.name_filesys}_mask_{phot_dict['instrument']}_{phot_dict['filter']}_{phot_dict['epoch_name']}.fits",
                         ),
                         write_footprint=False,
@@ -1445,6 +1444,7 @@ dm_host_median = {
     "james_22B": 186 * dm_units
 }
 
+
 class Transient(Object):
     def __init__(
             self,
@@ -1452,10 +1452,25 @@ class Transient(Object):
             date: time.Time = None,
             **kwargs
     ):
+        super().__init__(
+            **kwargs
+        )
         self.host_galaxy = host_galaxy
+        if not isinstance(date, time.Time) and date is not None:
+            date = time.Time(date)
+        self.date = date
+
+    @classmethod
+    def default_params(cls):
+        default_params = super().default_params()
+        default_params.update({
+            "host_galaxy": Galaxy.default_params(),
+            "date": "0000-00-00",
+        })
+        return default_params
 
 
-class FRB(Object):
+class FRB(Transient):
     def __init__(
             self,
             dm: Union[float, units.Quantity] = None,
@@ -1933,17 +1948,16 @@ class FRB(Object):
     @classmethod
     def from_dict(cls, dictionary: dict, name: str = None, field=None):
         frb = super().from_dict(dictionary=dictionary)
-        if "dm" in dictionary:
-            frb.dm = u.check_quantity(dictionary["dm"], dm_units)
-        frb.host_galaxy = Galaxy.from_dict(dictionary=dictionary["host_galaxy"], field=field)
+        # if "dm" in dictionary:
+        #     frb.dm = u.check_quantity(dictionary["dm"], dm_units)
+        host_galaxy = Galaxy.from_dict(dictionary=dictionary["host_galaxy"], field=field)
+        frb.host_galaxy = host_galaxy
         return frb
 
     @classmethod
     def default_params(cls):
         default_params = super().default_params()
         default_params.update({
-            "host_galaxy": Galaxy.default_params(),
-            "mjd": 58000,
             "dm": 0.0 * dm_units,
             "snr": 0.0,
         })
