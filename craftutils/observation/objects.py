@@ -1164,20 +1164,10 @@ class Star(Object):
 class Galaxy(Object):
     def __init__(
             self,
-            name: str = None,
-            position: Union[SkyCoord, str] = None,
-            position_err: Union[float, units.Quantity, dict, PositionUncertainty, tuple] = 0.0 * units.arcsec,
             z: float = 0.0,
-            field=None,
-            plotting: dict = None,
             **kwargs
     ):
         super().__init__(
-            name=name,
-            position=position,
-            position_err=position_err,
-            field=field,
-            plotting=plotting,
             **kwargs
         )
         self.z = z
@@ -1455,31 +1445,46 @@ dm_host_median = {
     "james_22B": 186 * dm_units
 }
 
+class Transient(Object):
+    def __init__(
+            self,
+            host_galaxy: Galaxy = None,
+            date: time.Time = None,
+            **kwargs
+    ):
+        self.host_galaxy = host_galaxy
+
 
 class FRB(Object):
     def __init__(
             self,
-            name: str = None,
-            position: Union[SkyCoord, str] = None,
-            position_err: Union[float, units.Quantity, dict, PositionUncertainty, tuple] = 0.0 * units.arcsec,
-            host_galaxy: Galaxy = None,
             dm: Union[float, units.Quantity] = None,
-            field=None,
-            plotting: dict = None,
             **kwargs
     ):
         super().__init__(
-            name=name,
-            position=position,
-            position_err=position_err,
-            field=field,
-            plotting=plotting,
             **kwargs
         )
-        self.host_galaxy = host_galaxy
         self.dm = dm
         if self.dm is not None:
             self.dm = u.check_quantity(self.dm, unit=dm_units)
+
+    def date_from_name(self):
+        if self.name.startswith("FRB"):
+            name = self.name
+            name.replace(" ", "")
+            date_str = name[3:]
+            while date_str[-1].isalpha():
+                # Get rid of TNS-style trailing letters
+                date_str = date_str[:-1]
+            if len(self.name) == 9:
+                # Then presumably we have format FRBYYDDMM
+                date_str = "20" + date_str
+            date_str = f"{date_str[:4]}-{date_str[4:6]}-{date_str[6:]}"
+            return time.Time(date_str)
+
+        else:
+            print("Date could not be resolved from object name.")
+            return None
 
     def dm_mw_ism_ne2001(self, distance: Union[units.Quantity, float] = 100. * units.kpc):
         """

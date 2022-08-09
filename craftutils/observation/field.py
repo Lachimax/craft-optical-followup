@@ -2997,7 +2997,6 @@ class ImagingEpoch(Epoch):
                         )
                         output_path = os.path.join(fil_output_path, f"{obj.name_filesys}_{fil}.pdf")
                         name = obj.name
-                        name = name.replace("HG", "HG\,")
                         img.extract_filter()
                         if img.filter is None:
                             f_name = fil
