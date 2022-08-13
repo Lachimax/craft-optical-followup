@@ -941,8 +941,9 @@ class Field:
                 " (for an FRB field, this should be the FRB coordinates). Eg: -18d50m16.7s, -18.83797222d")
             dec_err = 0.0
             if field_class is FRBField:
-                dec_err = u.user_input("If you know the uncertainty in the FRB localisation Dec, you can enter "
-                                       "that now, in arcseconds. Otherwise, leave blank.")
+                dec_err = u.user_input(
+                    "If you know the uncertainty in the FRB localisation Dec, you can enter "
+                    "that now, in arcseconds. Otherwise, leave blank.")
                 if dec_err in ["", " ", 'None']:
                     dec_err = 0.0
             try:
@@ -953,6 +954,7 @@ class Field:
         position = objects.skycoord_to_position_dict(skycoord=pos_coord)
 
         field_param_path_yaml = os.path.join(field_param_path, f"{field_name}.yaml")
+
         yaml_dict = field_class.new_yaml(
             path=field_param_path,
             name=field_name,
@@ -964,6 +966,12 @@ class Field:
                 ra_err = 0.
             if dec_err is None:
                 dec_err = 0.
+            date = u.user_input(
+                "If you have a precise FRB arrival time, please enter that now; otherwise, leave blank."
+            )
+            if date in ["", " ", 'None']:
+                date = objects.FRB._date_from_name(field_name)
+            yaml_dict["frb"]["date"] = date
             yaml_dict["frb"]["position"] = position
             yaml_dict["frb"]["position_err"]["a"]["stat"] = float(ra_err)
             yaml_dict["frb"]["position_err"]["b"]["stat"] = float(dec_err)

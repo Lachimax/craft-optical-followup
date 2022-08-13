@@ -1465,7 +1465,7 @@ class Transient(Object):
         default_params = super().default_params()
         default_params.update({
             "host_galaxy": Galaxy.default_params(),
-            "date": "0000-00-00",
+            "date": "0000-01-01",
         })
         return default_params
 
@@ -1483,23 +1483,33 @@ class FRB(Transient):
         if self.dm is not None:
             self.dm = u.check_quantity(self.dm, unit=dm_units)
 
-    def date_from_name(self):
-        if self.name.startswith("FRB"):
-            name = self.name
+    @classmethod
+    def _date_from_name(cls, name):
+        if name.startswith("FRB"):
+            name = name
             name.replace(" ", "")
             date_str = name[3:]
             while date_str[-1].isalpha():
                 # Get rid of TNS-style trailing letters
                 date_str = date_str[:-1]
-            if len(self.name) == 9:
+            if len(name) == 9:
                 # Then presumably we have format FRBYYDDMM
                 date_str = "20" + date_str
             date_str = f"{date_str[:4]}-{date_str[4:6]}-{date_str[6:]}"
-            return time.Time(date_str)
+            return date_str
 
         else:
             print("Date could not be resolved from object name.")
             return None
+
+    def date_from_name(self):
+        date_str = self._date_from_name(self.name)
+        try:
+            date = time.Time(date_str)
+            self.date = date
+            return date
+        except ValueError:
+            return date_str
 
     def dm_mw_ism_ne2001(self, distance: Union[units.Quantity, float] = 100. * units.kpc):
         """
