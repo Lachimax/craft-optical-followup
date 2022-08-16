@@ -4922,7 +4922,7 @@ class ESOImagingEpoch(ImagingEpoch):
                                 if delete_output and os.path.isfile(file_destination):
                                     os.remove(file_path)
                                 img = image.from_path(
-                                    path=file_path,
+                                    path=file_destination,
                                     cls=image.FORS2Image
                                 )
                                 u.debug_print(2, "ESOImagingEpoch._sort_after_esoreflex(): file_type ==", file_type)
