@@ -265,6 +265,7 @@ def match_catalogs(
 ):
     # Clean out any invalid declinations
     u.debug_print(2, "match_catalogs(): type(cat_1) ==", type(cat_1), "type(cat_2) ==", type(cat_2))
+    print("len(cat_1) match_catalogs:", len(cat_1))
     cat_1 = sanitise_coord(cat_1, dec_col_1)
     cat_2 = sanitise_coord(cat_2, dec_col_2)
 
