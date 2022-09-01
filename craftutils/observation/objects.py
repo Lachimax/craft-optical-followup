@@ -840,6 +840,8 @@ class Object:
             return name
 
     def get_photometry_table(self, output: bool = False):
+        if not self.photometry:
+            self.load_output_file()
         if output is True:
             output = None
         if self.photometry_tbl is None or len(self.photometry_tbl) == 0:
@@ -875,6 +877,7 @@ class Object:
             instrument: str,
             local_output: bool = True
     ):
+        self.get_photometry_table(output=local_output)
         fil_photom = self.photometry_tbl[self.photometry_tbl["band"] == fil]
         fil_photom = fil_photom[fil_photom["instrument"] == instrument]
         row = fil_photom[np.argmax(fil_photom["snr_sep"])]
@@ -1273,6 +1276,7 @@ class Galaxy(Object):
         angle = angle.to(units.rad).value
         dist = angle * self.D_A
         return dist
+
 
     def _output_dict(self):
         output = super()._output_dict()

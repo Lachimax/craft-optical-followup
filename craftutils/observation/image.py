@@ -266,6 +266,7 @@ def detect_instrument(path: str, ext: int = 0, fail_quietly: bool = False):
         else:
             raise OSError(f"The file {path} is missing the SIMPLE card and may be corrupt.")
 
+
 def from_path(path: str, cls: type = None, **kwargs):
     """
     To be used when there may already be an image instance for this path floating around in memory, and it's okay
@@ -3897,7 +3898,7 @@ class ImagingImage(Image):
             kron_radius: float = 1.,
             ext: int = 0,
             output: str = None,
-            mask_nearby = True,
+            mask_nearby=True,
             subtract_background: bool = True,
     ):
 
@@ -4026,7 +4027,7 @@ class ImagingImage(Image):
             kron_radius: float = 1.,
             ext: int = 0,
             output: str = None,
-            mask_nearby = True,
+            mask_nearby=True,
             detection_threshold: float = None
     ):
 
@@ -4190,8 +4191,10 @@ class ImagingImage(Image):
         :param frame_lower:
         :param frame_upper:
         :param ext:
-        :param model_guesses:
-            Either "position" can be provided as a SkyCoord object, or x & y as pixel coordinates.
+        :param model_guesses: dict, with:
+            object_type: str
+            position: Either "position" can be provided as a SkyCoord object, or x & y as pixel coordinates.
+
         :param use_frb_galfit: Use the FRB repo frb.galaxies.galfit module. Single-sersic only; if multiple models are provided only one will be used.
         :return:
         """
@@ -4223,8 +4226,8 @@ class ImagingImage(Image):
                 )
             else:
                 raise ValueError("All model dicts must have either 'position' or 'x' & 'y' keys.")
-            gf_tbls[f"COMP_{i+1}"] = []
-        gf_tbls[f"COMP_{i+2}"] = []
+            gf_tbls[f"COMP_{i + 1}"] = []
+        gf_tbls[f"COMP_{i + 2}"] = []
 
         if output_dir is None:
             output_dir = self.data_path
@@ -4316,7 +4319,8 @@ class ImagingImage(Image):
                     skip_sky=False,
                     **model_dict
                 )
-            shutil.copy(os.path.join(output_dir, "fit.log"), os.path.join(output_dir, f"{output_prefix}_{frame}_fit.log"))
+            shutil.copy(os.path.join(output_dir, "fit.log"),
+                        os.path.join(output_dir, f"{output_prefix}_{frame}_fit.log"))
 
             try:
                 img_block = fits.open(img_block_path)
@@ -4330,7 +4334,10 @@ class ImagingImage(Image):
                 pos = self.pixel_to_world(component["x"], component["y"])
                 component["ra"] = pos.ra
                 component["dec"] = pos.dec
-                # TODO: This assumes RA and Dec are along x & y (neglecting image rotation), which isn't great
+                if "r_eff" in component:
+                    component["r_eff_ang"] = component["r_eff"].to(units.arcsec, self.pixel_scale_x)
+                    component["r_eff_ang_err"] = component["r_eff_err"].to(units.arcsec, self.pixel_scale_x)
+                # TODO: The below assumes RA and Dec are along x & y (neglecting image rotation), which isn't great
                 component["ra_err"] = component["x_err"].to(units.deg, self.pixel_scale_x)
                 component["dec_err"] = component["y_err"].to(units.deg, self.pixel_scale_y)
                 component["frame"] = frame
@@ -4363,6 +4370,39 @@ class ImagingImage(Image):
         shutil.copy(p.path_to_config_galfit(), output_dir)
 
         return component_tables
+
+    def galfit_object(
+            self,
+            obj: objects.Galaxy,
+            pivot_component: int = 2,
+            **kwargs
+    ):
+
+        photometry, _ = obj.select_photometry(
+            fil=self.filter_name,
+            instrument=self.instrument_name,
+        )
+
+        if "model_guesses" in kwargs:
+            model_guesses = kwargs["model_guesses"]
+        else:
+            model_guesses = [{
+                "object_type": "sersic"
+            }]
+
+        for model in model_guesses:
+            model["position"] = obj.position
+            model["int_mag"] = photometry["mag"].value
+
+        model_tbls = self.galfit(
+            model_guesses=model_guesses,
+            **kwargs
+        )
+
+        best_params = galfit.sersic_best_row(model_tbls[f"COMP_{pivot_component}"])
+        best_params["r_eff_proj"] = obj.projected_distance(best_params["r_eff_ang"]).to("kpc")
+        best_params["r_eff_proj_err"] = obj.projected_distance(best_params["r_eff_ang_err"]).to("kpc")
+        return best_params
 
     @classmethod
     def select_child_class(cls, instrument: str, **kwargs):
