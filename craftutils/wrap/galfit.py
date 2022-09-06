@@ -289,18 +289,18 @@ def extract_rotation_params(component_n: int, header: fits.Header):
 
     component = {
         "rot_type": rot_type,
-        "r_in": r_in,
-        "r_in_err": r_in_err,
-        "r_out": r_out,
-        "r_out_err": r_out_err,
-        "theta_out": theta_out,
-        "theta_out_err": theta_out_err,
-        "r_ws": r_ws,
-        "r_ws_err": r_ws_err,
-        "theta_inc": theta_inc,
-        "theta_inc_err": theta_inc_err,
-        "theta_pa": theta_pa,
-        "theta_pa_err": theta_pa_err,
+        "r_in": r_in * units.pix,
+        "r_in_err": r_in_err * units.pix,
+        "r_out": r_out * units.pix,
+        "r_out_err": r_out_err * units.pix,
+        "theta_out": theta_out * units.deg,
+        "theta_out_err": theta_out_err * units.deg,
+        "r_ws": r_ws * units.pix,
+        "r_ws_err": r_ws_err * units.pix,
+        "theta_inc": theta_inc * units.deg,
+        "theta_inc_err": theta_inc_err * units.deg,
+        "theta_pa": theta_pa * units.deg,
+        "theta_pa_err": theta_pa_err * units.deg,
     }
     return component
 
