@@ -245,7 +245,6 @@ def sanitise_coord(
         cat: table.Table,
         dec_col: str,
 ):
-    print("len(cat) sanitise_coord:", len(cat))
     if isinstance(cat[dec_col][0], units.Quantity):
         upper = 90 * units.deg
         lower = -90 * units.deg

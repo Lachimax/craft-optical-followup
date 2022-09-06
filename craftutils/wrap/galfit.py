@@ -2,8 +2,11 @@ import shutil
 import os
 from typing import Tuple, Union, List
 
+import numpy as np
+
 import astropy.io.fits as fits
 import astropy.units as units
+import astropy.table as table
 
 import craftutils.params as p
 import craftutils.utils as u
@@ -208,10 +211,17 @@ def galfit_feedme(
 
 
 def extract_fit_params(header: fits.Header):
+    """
+    Extract the fitted parameters for all components from a GALFIT imgblock header.
+    :param header: the GALFIT-generated image header, as read by astropy.io.fits.
+    :return: nested dict, with keys being the component name (COMP_1, COMP_2...) and values being another level of
+        dicts; for this second level, keys are the model parameter names and values are the best-fitting values,
+    """
     i = 1
     components = {}
     while f"COMP_{i}" in header:
         comp_type = header[f"COMP_{i}"]
+        # Use the dedicated function for this particular model type to extract fitted parameters
         component_dict = extract_funcs[comp_type](i, header)
         components[f"COMP_{i}"] = component_dict
         i += 1
@@ -224,10 +234,17 @@ def strip_values(string: str):
     return u.split_uncertainty_string(string)
 
 def extract_sersic_params(component_n: int, header: fits.Header):
+    """
+    Pull the fitted parameter values for a Sersic profile from a GALFIT imgblock header.
+    :param component_n: Component number (In header: COMP_N, where N is component_n)
+    :param header: the GALFIT-generated image header, as read by astropy.io.fits.
+    :return: dict with keys being parameter names and values fitted parameter values
+    """
     x, x_err = strip_values(header[f"{component_n}_XC"])
     y, y_err = strip_values(header[f"{component_n}_YC"])
     mag, mag_err = strip_values(header[f"{component_n}_MAG"])
     n, n_err = strip_values(header[f"{component_n}_N"])
+    r_eff, r_eff_err = strip_values(header[f"{component_n}_RE"])
     axis_ratio, axis_ratio_err = strip_values(header[f"{component_n}_AR"])
     theta, theta_err = strip_values(header[f"{component_n}_PA"])
 
@@ -240,10 +257,12 @@ def extract_sersic_params(component_n: int, header: fits.Header):
         "mag_err": mag_err * units.mag,
         "n": n,
         "n_err": n_err,
+        "r_eff": r_eff * units.pix,
+        "r_eff_err": r_eff_err * units.pix,
         "axis_ratio": axis_ratio,
         "axis_ratio_err": axis_ratio_err,
-        "theta": theta,
-        "theta_err": theta_err
+        "theta": theta * units.deg,
+        "theta_err": theta_err * units.deg
     }
     return component
 
@@ -269,6 +288,11 @@ def extract_sky_params(component_n: int, header: fits.Header):
     }
     return component
 
+def sersic_best_row(tbl: table.Table):
+    best_index = max(np.argmin(tbl["r_eff_err"]), np.argmin(tbl["n_err"]))
+    best_row = tbl[best_index]
+    best_dict = dict(best_row)
+    return best_dict
 
 extract_funcs = {
     "sky": extract_sky_params,

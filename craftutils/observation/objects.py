@@ -225,8 +225,6 @@ class Object:
         self.cat_row = row
         self.position = None
         self.position_err = None
-        self.position_photometry = None
-        self.position_photometry_err = None
 
         if self.cat_row is not None:
             self.position_from_cat_row()
@@ -237,6 +235,9 @@ class Object:
             self.position_galactic = None
             if isinstance(self.position, SkyCoord):
                 self.position_galactic = self.position.transform_to("galactic")
+
+        self.position_photometry = self.position.copy()
+        self.position_photometry_err = self.position_err
 
         if self.name is None:
             self.jname()
@@ -355,7 +356,7 @@ class Object:
                     mask_rp = deep_mask.reproject(
                         other_image=img,
                         output_path=os.path.join(
-                             self.data_path,
+                            self.data_path,
                             f"{self.name_filesys}_mask_{phot_dict['instrument']}_{phot_dict['filter']}_{phot_dict['epoch_name']}.fits",
                         ),
                         write_footprint=False,
@@ -839,6 +840,8 @@ class Object:
             return name
 
     def get_photometry_table(self, output: bool = False):
+        if not self.photometry:
+            self.load_output_file()
         if output is True:
             output = None
         if self.photometry_tbl is None or len(self.photometry_tbl) == 0:
@@ -874,6 +877,7 @@ class Object:
             instrument: str,
             local_output: bool = True
     ):
+        self.get_photometry_table(output=local_output)
         fil_photom = self.photometry_tbl[self.photometry_tbl["band"] == fil]
         fil_photom = fil_photom[fil_photom["instrument"] == instrument]
         row = fil_photom[np.argmax(fil_photom["snr_sep"])]
@@ -1162,23 +1166,15 @@ class Star(Object):
 class Galaxy(Object):
     def __init__(
             self,
-            name: str = None,
-            position: Union[SkyCoord, str] = None,
-            position_err: Union[float, units.Quantity, dict, PositionUncertainty, tuple] = 0.0 * units.arcsec,
             z: float = 0.0,
-            field=None,
-            plotting: dict = None,
             **kwargs
     ):
         super().__init__(
-            name=name,
-            position=position,
-            position_err=position_err,
-            field=field,
-            plotting=plotting,
             **kwargs
         )
         self.z = z
+        if "z_err" in kwargs:
+            self.z_err = kwargs["z_err"]
         self.D_A = self.angular_size_distance()
         self.D_L = self.luminosity_distance()
         self.mu = self.distance_modulus()
@@ -1280,6 +1276,7 @@ class Galaxy(Object):
         angle = angle.to(units.rad).value
         dist = angle * self.D_A
         return dist
+
 
     def _output_dict(self):
         output = super()._output_dict()
@@ -1426,6 +1423,7 @@ class Galaxy(Object):
         default_params = super().default_params()
         default_params.update({
             "z": None,
+            "z_err": None,
             "type": "galaxy"
         })
         return default_params
@@ -1454,30 +1452,71 @@ dm_host_median = {
 }
 
 
-class FRB(Object):
+class Transient(Object):
     def __init__(
             self,
-            name: str = None,
-            position: Union[SkyCoord, str] = None,
-            position_err: Union[float, units.Quantity, dict, PositionUncertainty, tuple] = 0.0 * units.arcsec,
             host_galaxy: Galaxy = None,
-            dm: Union[float, units.Quantity] = None,
-            field=None,
-            plotting: dict = None,
+            date: time.Time = None,
             **kwargs
     ):
         super().__init__(
-            name=name,
-            position=position,
-            position_err=position_err,
-            field=field,
-            plotting=plotting,
             **kwargs
         )
         self.host_galaxy = host_galaxy
+        if not isinstance(date, time.Time) and date is not None:
+            date = time.Time(date)
+        self.date = date
+
+    @classmethod
+    def default_params(cls):
+        default_params = super().default_params()
+        default_params.update({
+            "host_galaxy": Galaxy.default_params(),
+            "date": "0000-01-01",
+        })
+        return default_params
+
+
+class FRB(Transient):
+    def __init__(
+            self,
+            dm: Union[float, units.Quantity] = None,
+            **kwargs
+    ):
+        super().__init__(
+            **kwargs
+        )
         self.dm = dm
         if self.dm is not None:
             self.dm = u.check_quantity(self.dm, unit=dm_units)
+
+    @classmethod
+    def _date_from_name(cls, name):
+        if name.startswith("FRB"):
+            name = name
+            name.replace(" ", "")
+            date_str = name[3:]
+            while date_str[-1].isalpha():
+                # Get rid of TNS-style trailing letters
+                date_str = date_str[:-1]
+            if len(name) == 9:
+                # Then presumably we have format FRBYYDDMM
+                date_str = "20" + date_str
+            date_str = f"{date_str[:4]}-{date_str[4:6]}-{date_str[6:]}"
+            return date_str
+
+        else:
+            print("Date could not be resolved from object name.")
+            return None
+
+    def date_from_name(self):
+        date_str = self._date_from_name(self.name)
+        try:
+            date = time.Time(date_str)
+            self.date = date
+            return date
+        except ValueError:
+            return date_str
 
     def dm_mw_ism_ne2001(self, distance: Union[units.Quantity, float] = 100. * units.kpc):
         """
@@ -1621,22 +1660,28 @@ class FRB(Object):
             rmax=1.,
             cat_search: str = None,
             step_size_halo: units.Quantity = 0.1 * units.kpc,
-            neval_cosmic: int = 10000
+            neval_cosmic: int = 10000,
+            foreground_objects: list = None,
+            load_objects: bool = True
     ):
 
         from frb.halos.hmf import halo_incidence
 
-        outputs = self.dm_mw_halo()
+        outputs = self.dm_mw_halo(rmax=rmax)
 
-        self.field.load_all_objects()
+        if load_objects:
+            self.field.load_all_objects()
 
         host = self.host_galaxy
-        foregrounds = list(
-            filter(
-                lambda o: isinstance(o, Galaxy) and o.z <= self.host_galaxy.z and o.mass_stellar is not None,
-                self.field.objects
+        if foreground_objects is None:
+            foreground_objects = list(
+                filter(
+                    lambda o: isinstance(o, Galaxy) and o.z <= self.host_galaxy.z and o.mass_stellar is not None,
+                    self.field.objects
+                )
             )
-        )
+        if host not in foreground_objects:
+            foreground_objects.append(host)
 
         frb_err_ra, frb_err_dec = self.position_err.uncertainty_quadrature_equ()
         frb_err_dec = frb_err_dec.to(units.arcsec)
@@ -1698,9 +1743,10 @@ class FRB(Object):
         dm_halo_host = None
         dm_halo_cum = {}
         cosmic_tbl["dm_halos_emp"] = cosmic_tbl["dm_halos_avg"] * 0
-        for obj in foregrounds:
+        for obj in foreground_objects:
             print(f"\tDM_halo_{obj.name}:")
-            obj.load_output_file()
+            # if load_objects:
+            #     obj.load_output_file()
             obj.select_deepest()
             halo_info = {
                 "id": obj.name,
@@ -1793,7 +1839,7 @@ class FRB(Object):
                 halo_info["dm_halo"] = dm_halo_host = dm_halo / 2
                 halo_info["id_short"] = "HG"
             else:
-                halo_info["id_short"] = obj.name[:3]
+                halo_info["id_short"] = obj.name[:obj.name.find("_")]
 
             print("\t", halo_info["dm_halo"])
 
@@ -1815,6 +1861,12 @@ class FRB(Object):
                 m_high += 2e10 - m_low
                 m_low = 2e10
 
+            halo_info["mass_halo_partition_high"] = m_high * units.solMass
+            halo_info["mass_halo_partition_low"] = m_low * units.solMass
+
+            halo_info["log_mass_halo_partition_high"] = np.log10(m_high)
+            halo_info["log_mass_halo_partition_low"] = np.log10(m_low)
+
             halo_info["n_intersect_partition"] = halo_incidence(
                 Mlow=m_low,
                 Mhigh=m_high,
@@ -1822,9 +1874,12 @@ class FRB(Object):
                 radius=halo_info["r_perp"]
             )
 
-            halo_info["u-r"] = obj.cigale_results["bayes.param.restframe_u_prime-r_prime"] * units.mag
-            halo_info["sfr"] = obj.sfr
-            halo_info["sfr_err"] = obj.sfr_err
+            if obj.cigale_results is not None:
+                halo_info["u-r"] = obj.cigale_results["bayes.param.restframe_u_prime-r_prime"] * units.mag
+            if obj.sfr is not None:
+                halo_info["sfr"] = obj.sfr
+            if obj.sfr_err is not None:
+                halo_info["sfr_err"] = obj.sfr_err
 
             if halo_info["dm_halo"] > 0. * dm_units:
                 dm_halo_cum_this = obj.halo_dm_cum(
@@ -1855,10 +1910,10 @@ class FRB(Object):
         cosmic_tbl["dm_cosmic_emp"] = cosmic_tbl["dm_halos_emp"] + cosmic_tbl["dm_igm"]
 
         print("\tEmpirical DM_halos:")
-        outputs["dm_halos_emp"] = halo_tbl["dm_halo"].sum() - dm_halo_host
-        outputs["dm_halos_yf17"] = halo_tbl["dm_halo_yf17"].sum() - dm_halo_host
-        outputs["dm_halos_mb04"] = halo_tbl["dm_halo_mb04"].sum() - dm_halo_host
-        outputs["dm_halos_mb15"] = halo_tbl["dm_halo_mb15"].sum() - dm_halo_host
+        outputs["dm_halos_emp"] = halo_tbl["dm_halo"].nansum() - dm_halo_host
+        outputs["dm_halos_yf17"] = halo_tbl["dm_halo_yf17"].nansum() - dm_halo_host
+        outputs["dm_halos_mb04"] = halo_tbl["dm_halo_mb04"].nansum() - dm_halo_host
+        outputs["dm_halos_mb15"] = halo_tbl["dm_halo_mb15"].nansum() - dm_halo_host
 
         print("\t", outputs["dm_halos_emp"])
 
@@ -1910,17 +1965,16 @@ class FRB(Object):
     @classmethod
     def from_dict(cls, dictionary: dict, name: str = None, field=None):
         frb = super().from_dict(dictionary=dictionary)
-        if "dm" in dictionary:
-            frb.dm = u.check_quantity(dictionary["dm"], dm_units)
-        frb.host_galaxy = Galaxy.from_dict(dictionary=dictionary["host_galaxy"], field=field)
+        # if "dm" in dictionary:
+        #     frb.dm = u.check_quantity(dictionary["dm"], dm_units)
+        host_galaxy = Galaxy.from_dict(dictionary=dictionary["host_galaxy"], field=field)
+        frb.host_galaxy = host_galaxy
         return frb
 
     @classmethod
     def default_params(cls):
         default_params = super().default_params()
         default_params.update({
-            "host_galaxy": Galaxy.default_params(),
-            "mjd": 58000,
             "dm": 0.0 * dm_units,
             "snr": 0.0,
         })
