@@ -74,6 +74,8 @@ def feedme_model(
     """
     Generate the input file lines for an arbitrary model for use with GALFIT.
     :param object_type: string indicating the type of model, to be parsed by GALFIT.
+    :param output_option:
+    :param position:
     :param args: (value, fit), with value being the initial guess for a parameter and fit being a boolean indicating
         whether this parameter should be fit for (True) or held fixed (False).
         If value is provided without fit, fit defaults to True.
@@ -227,11 +229,13 @@ def extract_fit_params(header: fits.Header):
         i += 1
     return components
 
+
 def strip_values(string: str):
     string = string.replace("[", "")
     string = string.replace("]", "")
     string = string.replace("*", "")
     return u.split_uncertainty_string(string)
+
 
 def extract_sersic_params(component_n: int, header: fits.Header):
     """
@@ -264,6 +268,40 @@ def extract_sersic_params(component_n: int, header: fits.Header):
         "theta": theta * units.deg,
         "theta_err": theta_err * units.deg
     }
+    component.update(
+        extract_rotation_params(
+            component_n=component_n,
+            header=header
+        ))
+    return component
+
+
+def extract_rotation_params(component_n: int, header: fits.Header):
+    if f"{component_n}_ROTF" not in header:
+        return {}
+    rot_type = header[f"{component_n}_ROTF"]
+    r_in, r_in_err = strip_values(header[f"{component_n}_RIN"])
+    r_out, r_out_err = strip_values(header[f"{component_n}_ROUT"])
+    theta_out, theta_out_err = strip_values(header[f"{component_n}_RANG"])
+    r_ws, r_ws_err = strip_values(header[f"{component_n}_RWS"])
+    theta_inc, theta_inc_err = strip_values(header[f"{component_n}_INCL"])
+    theta_pa, theta_pa_err = strip_values(header[f"{component_n}_SPA"])
+
+    component = {
+        "rot_type": rot_type,
+        "r_in": r_in,
+        "r_in_err": r_in_err,
+        "r_out": r_out,
+        "r_out_err": r_out_err,
+        "theta_out": theta_out,
+        "theta_out_err": theta_out_err,
+        "r_ws": r_ws,
+        "r_ws_err": r_ws_err,
+        "theta_inc": theta_inc,
+        "theta_inc_err": theta_inc_err,
+        "theta_pa": theta_pa,
+        "theta_pa_err": theta_pa_err,
+    }
     return component
 
 
@@ -288,11 +326,13 @@ def extract_sky_params(component_n: int, header: fits.Header):
     }
     return component
 
+
 def sersic_best_row(tbl: table.Table):
     best_index = max(np.argmin(tbl["r_eff_err"]), np.argmin(tbl["n_err"]))
     best_row = tbl[best_index]
     best_dict = dict(best_row)
     return best_dict
+
 
 extract_funcs = {
     "sky": extract_sky_params,

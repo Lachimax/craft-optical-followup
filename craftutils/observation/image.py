@@ -4394,8 +4394,9 @@ class ImagingImage(Image):
             model["position"] = obj.position
             model["int_mag"] = photometry["mag"].value
 
+        kwargs["model_guesses"] = model_guesses
+
         model_tbls = self.galfit(
-            model_guesses=model_guesses,
             **kwargs
         )
 
