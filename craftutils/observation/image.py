@@ -4341,6 +4341,8 @@ class ImagingImage(Image):
                 component["ra_err"] = component["x_err"].to(units.deg, self.pixel_scale_x)
                 component["dec_err"] = component["y_err"].to(units.deg, self.pixel_scale_y)
                 component["frame"] = frame
+                component["x_min"], component["x_max"], component["y_min"], component["y_max"] = margins
+
                 results_table = table.QTable([component])
                 gf_tbls[compname].append(results_table)
 
@@ -4375,6 +4377,7 @@ class ImagingImage(Image):
             self,
             obj: objects.Galaxy,
             pivot_component: int = 2,
+            output_dir: str = None,
             **kwargs
     ):
 
@@ -4395,14 +4398,25 @@ class ImagingImage(Image):
             model["int_mag"] = photometry["mag"].value
 
         kwargs["model_guesses"] = model_guesses
+        kwargs["output_dir"] = output_dir
 
         model_tbls = self.galfit(
             **kwargs
         )
 
-        best_params = galfit.sersic_best_row(model_tbls[f"COMP_{pivot_component}"])
-        best_params["r_eff_proj"] = obj.projected_distance(best_params["r_eff_ang"]).to("kpc")
-        best_params["r_eff_proj_err"] = obj.projected_distance(best_params["r_eff_ang_err"]).to("kpc")
+        best_params = {}
+        best_index, best_dict = galfit.sersic_best_row(model_tbls[f"COMP_{pivot_component}"])
+        for component in model_tbls:
+            if "r_eff_ang" in model_tbls[component].colnames:
+                model_tbls[component]["r_eff_proj"] = obj.projected_distance(model_tbls[component]["r_eff_ang"]).to("kpc")
+                model_tbls[component]["r_eff_proj_err"] = obj.projected_distance(model_tbls[component]["r_eff_ang_err"]).to("kpc")
+            model_tbls[component].write(
+                os.path.join(output_dir, f"{component}_fits.ecsv"),
+                format="ascii.ecsv",
+                overwrite=True
+            )
+            best_params[component] = dict(model_tbls[component][best_index])
+
         return best_params
 
     @classmethod

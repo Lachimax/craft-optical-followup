@@ -68,7 +68,7 @@ def feedme_sersic_model(
         rot_lines = feedme_rot(
             **rot_kwargs
         )
-        lines.insert(-1, rot_lines)
+        lines[-1:-1] = rot_lines
 
     return lines
 
@@ -102,7 +102,7 @@ def feedme_model(
             fit_x = fit_y = fit_position
         lines.append(f"{i}) {position[0]} {position[1]} {int(fit_x)} {int(fit_y)}\n")
         i += 1
-    lines += _feedme_lines(i, "", *args)
+    lines.extend(_feedme_lines(i, "", *args))
 
     lines.append(f"Z) {output_option}\n")
     return lines
@@ -135,7 +135,7 @@ def feedme_rot(
         theta_pa: Union[float, Tuple[float, bool]] = (45., True),
 ):
     i = 0
-    lines = [f"{i}) {rot_type}\n"]
+    lines = [f"R{i}) {rot_type}\n"]
     i += 1
     args = (
         r_in,
@@ -150,7 +150,7 @@ def feedme_rot(
         theta_pa
     )
 
-    lines += _feedme_lines(i, "R", *args)
+    lines.extend(_feedme_lines(i, "R", *args))
     return lines
 
 
@@ -250,11 +250,11 @@ def galfit_feedme(
         model_lines = func(**model_dict)
 
         lines.append(f"# Object number: {i}\n")
-        lines += model_lines
+        lines.extend(model_lines)
         lines.append("\n")
         i += 1
 
-    lines += "===============================================================================\n\n"
+    lines.append("===============================================================================\n\n")
 
     u.rm_check(feedme_path)
     with open(feedme_path, "w") as output:
@@ -381,7 +381,7 @@ def sersic_best_row(tbl: table.Table):
     best_index = max(np.argmin(tbl["r_eff_err"]), np.argmin(tbl["n_err"]))
     best_row = tbl[best_index]
     best_dict = dict(best_row)
-    return best_dict
+    return best_index, best_dict
 
 
 extract_funcs = {
