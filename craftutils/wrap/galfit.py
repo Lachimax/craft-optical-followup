@@ -45,9 +45,10 @@ def feedme_sersic_model(
         position_angle: Union[float, Tuple[float, bool]] = (0., True),
         output_option: int = 0,
         fit_position: Union[bool, Tuple[bool, bool]] = (True, True),
+        rot_kwargs: dict = {},
         **kwargs
 ):
-    return feedme_model(
+    lines = feedme_model(
         "sersic",
         output_option,
         (x, y),
@@ -63,13 +64,21 @@ def feedme_sersic_model(
         position_angle,
     )
 
+    if rot_kwargs:
+        rot_lines = feedme_rot(
+            **rot_kwargs
+        )
+        lines.insert(-1, rot_lines)
+
+    return lines
+
 
 def feedme_model(
         object_type: str,
         output_option: int,
         position: Tuple[float, float],
         fit_position: Union[bool, Tuple[bool, bool]],
-        *args
+        *args,
 ):
     """
     Generate the input file lines for an arbitrary model for use with GALFIT.
@@ -86,21 +95,62 @@ def feedme_model(
     i += 1
     if position is not None:
         try:
+            # See if we can get the position as a tuple
             fit_x, fit_y = fit_position
         except TypeError:
+            # If not, assume it's a single value that both x and y adopt
             fit_x = fit_y = fit_position
         lines.append(f"{i}) {position[0]} {position[1]} {int(fit_x)} {int(fit_y)}\n")
         i += 1
-    for arg in args:
-        try:
-            guess, fit = arg
-        except TypeError:
-            guess = arg
-            fit = True
-        lines.append(f"{i}) {guess}     {int(fit)}\n")
-        i += 1
+    lines += _feedme_lines(i, "", *args)
 
     lines.append(f"Z) {output_option}\n")
+    return lines
+
+
+def _feedme_lines(i_start: int = 0, prefix: str = "", *args):
+    i = i_start
+    lines = []
+    for arg in args:
+        try:
+            # If the arg is a Tuple, the first entry is the initial guess and the second is a bool telling us whether to
+            # fit for this param (True) or hold fixed (False).
+            guess, fit = arg
+        except TypeError:
+            # Otherwise, we just have the value and we assume that we should fit.
+            guess = arg
+            fit = True
+        lines.append(f"{prefix}{i}) {guess}     {int(fit)}\n")
+        i += 1
+    return lines
+
+
+def feedme_rot(
+        rot_type: str = "log",
+        r_in: Union[float, Tuple[float, bool]] = (0., True),
+        r_out: Union[float, Tuple[float, bool]] = (5., True),
+        theta_out: Union[float, Tuple[float, bool]] = (180., True),
+        r_ws: Union[float, Tuple[float, bool]] = (2., True),
+        theta_inc: Union[float, Tuple[float, bool]] = (45., True),
+        theta_pa: Union[float, Tuple[float, bool]] = (45., True),
+):
+    i = 0
+    lines = [f"{i}) {rot_type}\n"]
+    i += 1
+    args = (
+        r_in,
+        r_out,
+        theta_out,
+        r_ws,
+        (0, False),
+        (0, False),
+        (0, False),
+        (0, False),
+        theta_inc,
+        theta_pa
+    )
+
+    lines += _feedme_lines(i, "R", *args)
     return lines
 
 
@@ -265,8 +315,8 @@ def extract_sersic_params(component_n: int, header: fits.Header):
         "r_eff_err": r_eff_err * units.pix,
         "axis_ratio": axis_ratio,
         "axis_ratio_err": axis_ratio_err,
-        "theta": theta * units.deg,
-        "theta_err": theta_err * units.deg
+        "position_angle": theta * units.deg,
+        "position_angle_err": theta_err * units.deg
     }
     component.update(
         extract_rotation_params(
