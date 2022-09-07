@@ -48,6 +48,8 @@ def feedme_sersic_model(
         rot_kwargs: dict = {},
         **kwargs
 ):
+    # TODO: Support units (by converting and stripping them) here.
+    # Will need to make the fit bools separate arguments, probably
     lines = feedme_model(
         "sersic",
         output_option,
@@ -303,6 +305,7 @@ def extract_sersic_params(component_n: int, header: fits.Header):
     theta, theta_err = strip_values(header[f"{component_n}_PA"])
 
     component = {
+        "object_type": header[f"COMP_{component_n}"],
         "x": x * units.pix,
         "x_err": x_err * units.pix,
         "y": y * units.pix,
@@ -333,9 +336,8 @@ def extract_rotation_params(component_n: int, header: fits.Header):
     r_in, r_in_err = strip_values(header[f"{component_n}_RIN"])
     r_out, r_out_err = strip_values(header[f"{component_n}_ROUT"])
     theta_out, theta_out_err = strip_values(header[f"{component_n}_RANG"])
-    r_ws, r_ws_err = strip_values(header[f"{component_n}_RWS"])
-    theta_inc, theta_inc_err = strip_values(header[f"{component_n}_INCL"])
     theta_pa, theta_pa_err = strip_values(header[f"{component_n}_SPA"])
+    theta_inc, theta_inc_err = strip_values(header[f"{component_n}_INCL"])
 
     component = {
         "rot_type": rot_type,
@@ -345,13 +347,31 @@ def extract_rotation_params(component_n: int, header: fits.Header):
         "r_out_err": r_out_err * units.pix,
         "theta_out": theta_out * units.deg,
         "theta_out_err": theta_out_err * units.deg,
-        "r_ws": r_ws * units.pix,
-        "r_ws_err": r_ws_err * units.pix,
-        "theta_inc": theta_inc * units.deg,
-        "theta_inc_err": theta_inc_err * units.deg,
         "theta_pa": theta_pa * units.deg,
         "theta_pa_err": theta_pa_err * units.deg,
+        "theta_inc": theta_inc * units.deg,
+        "theta_inc_err": theta_inc_err * units.deg,
     }
+
+    if rot_type == "log":
+        r_ws, r_ws_err = strip_values(header[f"{component_n}_RWS"])
+
+        component.update({
+            "r_ws": r_ws * units.pix,
+            "r_ws_err": r_ws_err * units.pix,
+        })
+
+    elif rot_type == "power":
+        alpha, alpha_err = strip_values(header[f"{component_n}_ALPHA"])
+
+        component.update({
+            "alpha": alpha * units.pix,
+            "alpha_err": alpha_err * units.pix,
+        })
+
+    else:
+        raise ValueError(f"Unrecognised coordinate rotation type '{rot_type}'")
+
     return component
 
 

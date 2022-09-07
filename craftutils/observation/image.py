@@ -4381,11 +4381,6 @@ class ImagingImage(Image):
             **kwargs
     ):
 
-        photometry, _ = obj.select_photometry(
-            fil=self.filter_name,
-            instrument=self.instrument_name,
-        )
-
         if "model_guesses" in kwargs:
             model_guesses = kwargs["model_guesses"]
         else:
@@ -4394,8 +4389,14 @@ class ImagingImage(Image):
             }]
 
         for model in model_guesses:
-            model["position"] = obj.position
-            model["int_mag"] = photometry["mag"].value
+            if "position" not in model:
+                model["position"] = obj.position
+            if "int_mag" not in model:
+                photometry, _ = obj.select_photometry(
+                    fil=self.filter_name,
+                    instrument=self.instrument_name,
+                )
+                model["int_mag"] = photometry["mag"].value
 
         kwargs["model_guesses"] = model_guesses
         kwargs["output_dir"] = output_dir
@@ -4403,6 +4404,9 @@ class ImagingImage(Image):
         model_tbls = self.galfit(
             **kwargs
         )
+
+        if model_tbls is None:
+            return None
 
         best_params = {}
         best_index, best_dict = galfit.sersic_best_row(model_tbls[f"COMP_{pivot_component}"])
