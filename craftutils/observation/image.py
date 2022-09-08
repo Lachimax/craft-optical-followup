@@ -4121,7 +4121,7 @@ class ImagingImage(Image):
                 {
                     "GAIN": old_exptime * old_gain
                 }
-        )
+            )
         new.write_fits_file()
         return new
 
@@ -4197,7 +4197,7 @@ class ImagingImage(Image):
     def galfit(
             self,
             output_dir: str = None,
-            output_prefix=None,
+            output_prefix: str = None,
             frame_lower: int = 30,
             frame_upper: int = 100,
             ext: int = 0,
@@ -4399,6 +4399,7 @@ class ImagingImage(Image):
             obj: objects.Galaxy,
             pivot_component: int = 2,
             output_dir: str = None,
+            output_prefix: str = None,
             **kwargs
     ):
 
@@ -4421,6 +4422,7 @@ class ImagingImage(Image):
 
         kwargs["model_guesses"] = model_guesses
         kwargs["output_dir"] = output_dir
+        kwargs["output_prefix"] = output_prefix
 
         model_tbls = self.galfit(
             **kwargs
@@ -4433,10 +4435,12 @@ class ImagingImage(Image):
         best_index, best_dict = galfit.sersic_best_row(model_tbls[f"COMP_{pivot_component}"])
         for component in model_tbls:
             if "r_eff_ang" in model_tbls[component].colnames:
-                model_tbls[component]["r_eff_proj"] = obj.projected_distance(model_tbls[component]["r_eff_ang"]).to("kpc")
-                model_tbls[component]["r_eff_proj_err"] = obj.projected_distance(model_tbls[component]["r_eff_ang_err"]).to("kpc")
+                model_tbls[component]["r_eff_proj"] = obj.projected_distance(model_tbls[component]["r_eff_ang"]).to(
+                    "kpc")
+                model_tbls[component]["r_eff_proj_err"] = obj.projected_distance(
+                    model_tbls[component]["r_eff_ang_err"]).to("kpc")
             model_tbls[component].write(
-                os.path.join(output_dir, f"{component}_fits.ecsv"),
+                os.path.join(output_dir, f"{output_prefix}_{component}_fits.ecsv"),
                 format="ascii.ecsv",
                 overwrite=True
             )

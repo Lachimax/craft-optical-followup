@@ -20,31 +20,42 @@ def galfit(config: str, output_dir: str):
 
 
 def feedme_sky_model(
-        background_center: float = (1.3920, True),
-        gradient_x: Union[float, Tuple[float, bool]] = (0.0, True),
-        gradient_y: Union[float, Tuple[float, bool]] = (0.0, True),
-        output_option: int = 0
+        background_center: float = 1.3920,
+        fit_background_center: bool = True,
+        gradient_x: float = 0.0,
+        fit_gradient_x: bool = True,
+        gradient_y: float = 0.0,
+        fit_gradient_y: bool = True,
+        output_option: int = 0,
+        **kwargs
 ):
     return feedme_model(
         "sky",
         output_option,
         None,
         (False, False),
-        background_center,
-        gradient_x,
-        gradient_y
+        (background_center, fit_background_center),
+        (gradient_x, fit_gradient_x),
+        (gradient_y, fit_gradient_y)
     )
 
 
 def feedme_sersic_model(
-        x: float, y: float,
-        int_mag: Union[float, Tuple[float, bool]],
-        r_e: Union[float, Tuple[float, bool]] = (3., True),
-        n: Union[float, Tuple[float, bool]] = (1., True),
-        axis_ratio: Union[float, Tuple[float, bool]] = (0.5, True),
-        position_angle: Union[float, Tuple[float, bool]] = (0., True),
+        x: units.Quantity,
+        y: units.Quantity,
+        int_mag: units.Quantity,
+        fit_x: bool = True,
+        fit_y: bool = True,
+        fit_int_mag: bool = True,
+        r_e: units.Quantity = 3. * units.pix,
+        fit_r_e: bool = True,
+        n: float = 1.,
+        fit_n: bool = True,
+        axis_ratio: float = 0.5,
+        fit_axis_ratio: bool = True,
+        position_angle: units.Quantity = 0. * units.deg,
+        fit_position_angle: bool = True,
         output_option: int = 0,
-        fit_position: Union[bool, Tuple[bool, bool]] = (True, True),
         rot_kwargs: dict = {},
         **kwargs
 ):
@@ -53,17 +64,17 @@ def feedme_sersic_model(
     lines = feedme_model(
         "sersic",
         output_option,
-        (x, y),
-        fit_position,
+        (u.dequantify(x, unit=units.pix), u.dequantify(y, unit=units.pix)),
+        (fit_x, fit_y),
         (0., False),
-        int_mag,
-        r_e,
-        n,
+        (u.dequantify(int_mag, unit=units.mag), fit_int_mag),
+        (u.dequantify(r_e, unit=units.pix), fit_r_e),
+        (u.dequantify(n), fit_n),
         (0., False),
         (0., False),
         (0., False),
-        axis_ratio,
-        position_angle,
+        (u.dequantify(axis_ratio), fit_axis_ratio),
+        (u.dequantify(position_angle, unit=units.deg), fit_position_angle),
     )
 
     if rot_kwargs:
@@ -72,6 +83,42 @@ def feedme_sersic_model(
         )
         lines[-1:-1] = rot_lines
 
+    return lines
+
+
+def feedme_rot(
+        rot_type: str = "log",
+        r_in: units.Quantity = 0. * units.pix,
+        fit_r_in: bool = True,
+        r_out: units.Quantity = 5. * units.pix,
+        fit_r_out: bool = True,
+        theta_out: units.Quantity = 180. * units.deg,
+        fit_theta_out: bool = True,
+        r_ws: units.Quantity = 2. * units.pix,
+        fit_r_ws: bool = True,
+        theta_inc: units.Quantity = 45. * units.deg,
+        fit_theta_inc: units.Quantity = True,
+        theta_pa: units.Quantity = 45. * units.deg,
+        fit_theta_pa: bool = True,
+        **kwargs
+):
+    i = 0
+    lines = [f"R{i}) {rot_type}\n"]
+    i += 1
+    args = (
+        (u.dequantify(r_in, unit=units.pix), fit_r_in),
+        (u.dequantify(r_out, unit=units.pix), fit_r_out),
+        (u.dequantify(theta_out, unit=units.deg), fit_theta_out),
+        (u.dequantify(r_ws, unit=units.pix), fit_r_ws),
+        (0, False),
+        (0, False),
+        (0, False),
+        (0, False),
+        (u.dequantify(theta_inc, unit=units.deg), fit_theta_inc),
+        (u.dequantify(theta_pa, unit=units.deg), fit_theta_pa)
+    )
+
+    lines.extend(_feedme_lines(i, "R", *args))
     return lines
 
 
@@ -124,35 +171,6 @@ def _feedme_lines(i_start: int = 0, prefix: str = "", *args):
             fit = True
         lines.append(f"{prefix}{i}) {guess}     {int(fit)}\n")
         i += 1
-    return lines
-
-
-def feedme_rot(
-        rot_type: str = "log",
-        r_in: Union[float, Tuple[float, bool]] = (0., True),
-        r_out: Union[float, Tuple[float, bool]] = (5., True),
-        theta_out: Union[float, Tuple[float, bool]] = (180., True),
-        r_ws: Union[float, Tuple[float, bool]] = (2., True),
-        theta_inc: Union[float, Tuple[float, bool]] = (45., True),
-        theta_pa: Union[float, Tuple[float, bool]] = (45., True),
-):
-    i = 0
-    lines = [f"R{i}) {rot_type}\n"]
-    i += 1
-    args = (
-        r_in,
-        r_out,
-        theta_out,
-        r_ws,
-        (0, False),
-        (0, False),
-        (0, False),
-        (0, False),
-        theta_inc,
-        theta_pa
-    )
-
-    lines.extend(_feedme_lines(i, "R", *args))
     return lines
 
 
