@@ -2806,6 +2806,25 @@ class ImagingImage(Image):
 
         return reprojected_image
 
+    def flip_horizontal(
+            self,
+            output_path: str,
+            ext: int = 0
+    ):
+        """
+        Flips the pixels of an image horizontally, and corrects the WCS to reflect this.
+        :param output_path: Path to write flipped copy to
+        :param ext: Fits extension to flip
+        :return:
+        """
+        new = self.copy_with_outputs(output_path)
+        new.load_data()
+        new.data[ext] = np.fliplr(new.data[ext])
+        new.headers[ext]["CDELT1"] = -new.headers[ext]["CDELT1"]
+        new.headers[ext]["CRPIX1"] = new.headers[ext]["NAXIS1"] - new.headers[ext]["CRPIX1"] + 1
+        new.write_fits_file()
+        return new
+
     def trim_to_wcs(self, bottom_left: SkyCoord, top_right: SkyCoord, output_path: str = None) -> 'ImagingImage':
         """
         Trims the image to a footprint defined by two RA/DEC coordinates
