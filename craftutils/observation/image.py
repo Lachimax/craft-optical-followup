@@ -4114,11 +4114,13 @@ class ImagingImage(Image):
             output_path = self.path.replace(".fits", "_galfit.fits")
         new = self.copy(output_path)
         new.load_headers()
-        new.set_header_items(
-            {
-                "GAIN": self.extract_header_item(key="OLD_EXPTIME", ext=ext) *
-                        self.extract_header_item(key="OLD_GAIN", ext=ext)
-            }
+        old_exptime = self.extract_header_item(key="OLD_EXPTIME", ext=ext)
+        old_gain = self.extract_header_item(key="OLD_GAIN", ext=ext)
+        if old_exptime is not None and old_gain is not None:
+            new.set_header_items(
+                {
+                    "GAIN": old_exptime * old_gain
+                }
         )
         new.write_fits_file()
         return new
