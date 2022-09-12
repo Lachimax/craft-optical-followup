@@ -552,27 +552,32 @@ class Field:
     def new_epoch_spectroscopy(self):
         return self._new_epoch(mode="spectroscopy")
 
-    def _new_epoch(self, mode: str):
+    def _new_epoch(self, mode: str) -> 'Epoch':
         """
         Helper method for generating a new epoch.
         :param mode:
         :return:
         """
+        # User selects instrument from those available in param directory, and we set up the relevant Epoch object
         instrument = select_instrument(mode=mode)
+        is_combined = False
         if mode == "imaging":
             cls = ImagingEpoch.select_child_class(instrument=instrument)
+            if len(self.epochs_imaging) > 1:
+                is_combined = u.select_yn("Create a pseudo-epoch combining other epochs for maximum depth?")
         elif mode == "spectroscopy":
             cls = SpectroscopyEpoch.select_child_class(instrument=instrument)
         else:
             raise ValueError("mode must be 'imaging' or 'spectroscopy'.")
         new_params = cls.default_params()
+
         if instrument in surveys:
             new_params["name"] = instrument.upper()
             new_params["date"] = None
             new_params["program_id"] = None
-            survey = True
+            is_survey = True
         else:
-            survey = False
+            is_survey = False
             new_params["name"] = u.user_input("Please enter a name for the epoch.")
             # new_params["date"] = u.enter_time(message="Enter UTC observation date, in iso or isot format:").strftime(
             #     '%Y-%m-%d')
@@ -583,12 +588,52 @@ class Field:
             instrument=instrument,
             date=new_params["date"],
             epoch_name=new_params["name"],
-            survey=survey)
+            survey=is_survey
+        )
         new_params["field"] = self.name
+        # For a combined epoch, we want to skip the reduction stages and take frames already reduced.
+        if is_combined:
+            new_params["combined_epoch"] = True
+            for stage_name in cls.skip_for_combined:
+                new_params["do"][stage_name] = False
         param_path = self._epoch_param_path(mode=mode, instrument=instrument, epoch_name=new_params["name"])
 
         p.save_params(file=param_path, dictionary=new_params)
         epoch = cls.from_file(param_file=param_path, field=self)
+
+        # Set up a combined epoch by gathering reduced frames from other epochs.
+        if is_combined:
+            dates = []
+            print(f"Gathering reduced frames from all {instrument} epochs")
+            # Get list of other epochs
+            epochs = self.gather_epochs_imaging()
+            frame_type = epoch.frames_for_combined
+            this_frame_dict = epoch._get_frames(frame_type=frame_type)
+            for other_epoch_name in epochs:
+                # Loop over gathered epochs
+                other_epoch_dict = epochs[other_epoch_name]
+                other_instrument = other_epoch_dict["instrument"]
+                # Check if instrument is compatible and that it isn't the same epoch
+                if other_instrument.lower() == instrument.lower() and other_epoch_name != epoch.name:
+                    # If so, add to internal 'combined_from' list
+                    other_epoch = self.epoch_from_params(other_epoch_name, instrument)
+                    if other_epoch.date is not None:
+                        dates.append(other_epoch.date)
+                    epoch.combined_from.append(other_epoch.name)
+                    # Get appropriate frame dictionary from other epoch
+                    frame_dict = other_epoch._get_frames(frame_type)
+                    # Loop through and add to this epoch's dict
+                    for fil in frame_dict:
+                        if len(frame_dict[fil]) > 0:
+                            epoch.check_filter(fil)
+                        for frame in frame_dict[fil]:
+                            epoch._add_frame(
+                                frame,
+                                frames_dict=this_frame_dict,
+                                frame_type=frame_type
+                            )
+            epoch.update_output_file()
+            epoch.date = Time(np.mean(list(map(lambda d: d.mjd, dates))), format="mjd")
 
         return epoch
 
@@ -1567,6 +1612,8 @@ class Epoch:
 
         self.param_file = kwargs
 
+        self.combined_from = []
+
         # self.load_output_file()
 
     def __str__(self):
@@ -1735,7 +1782,8 @@ class Epoch:
             "frames_std": _output_img_dict_list(self.frames_standard),
             "frames_bias": _output_img_list(self.frames_bias),
             "coadded": _output_img_dict_single(self.coadded),
-            "log": self.log.to_dict()
+            "log": self.log.to_dict(),
+            "combined_from": self.combined_from
         }
 
     def update_output_file(self):
@@ -1923,7 +1971,8 @@ class Epoch:
             "target": None,
             "program_id": None,
             "do": {},
-            "notes": []
+            "notes": [],
+            "combined_epoch": False
         }
         # Pull the list of applicable kwargs from the stage information
         stages = cls.stages()
@@ -2015,6 +2064,14 @@ class ImagingEpoch(Epoch):
     mode = "imaging"
     frame_class = image.ImagingImage
     coadded_class = image.CoaddedImage
+    frames_for_combined = "normalised"
+    skip_for_combined = [
+        "download",
+        "initial_setup",
+        "sort_reduced",
+        "trim_reduced",
+        "convert_to_cs"
+    ]
 
     def __init__(
             self,
