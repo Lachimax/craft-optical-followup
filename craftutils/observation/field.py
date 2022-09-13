@@ -16,8 +16,6 @@ import astropy.io.fits as fits
 from astropy.modeling import models, fitting
 from astropy.visualization import make_lupton_rgb, ImageNormalize
 
-import ccdproc
-
 import craftutils.astrometry as astm
 import craftutils.fits_files as ff
 import craftutils.observation as obs
@@ -5193,7 +5191,9 @@ class ESOImagingEpoch(ImagingEpoch):
 
 class HAWKIImagingEpoch(ESOImagingEpoch):
     instrument_name = "vlt-hawki"
-    # frame_class = imag
+    frame_class = image.HAWKIImage
+    coadded_class = image.HAWKICoaddedImage
+
 
 
 class FORS2ImagingEpoch(ESOImagingEpoch):
