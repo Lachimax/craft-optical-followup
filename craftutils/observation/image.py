@@ -4166,7 +4166,8 @@ class ImagingImage(Image):
             mask_file: str = None,
             fitting_region_margins: tuple = None,
             convolution_size: tuple = None,
-            models: List[dict] = None
+            models: List[dict] = None,
+            **feedme_kwargs
     ):
         if fitting_region_margins is None:
             self.load_data()
@@ -4191,7 +4192,8 @@ class ImagingImage(Image):
             fitting_region_margins=fitting_region_margins,
             convolution_size=convolution_size,
             plate_scale=(dx, dy),
-            models=models
+            models=models,
+            **feedme_kwargs
         )
 
     def galfit(
@@ -4203,7 +4205,8 @@ class ImagingImage(Image):
             ext: int = 0,
             model_guesses: Union[dict, List[dict]] = None,
             psf_path: str = None,
-            use_frb_galfit: bool = False
+            use_frb_galfit: bool = False,
+            feedme_kwargs: dict = {}
     ):
         """
 
@@ -4247,6 +4250,10 @@ class ImagingImage(Image):
                 )
             else:
                 raise ValueError("All model dicts must have either 'position' or 'x' & 'y' keys.")
+
+            if "fit_position" in model:
+                model["fit_x"] = model["fit_y"] = model["fit_position"]
+
             gf_tbls[f"COMP_{i + 1}"] = []
         gf_tbls[f"COMP_{i + 2}"] = []
 
@@ -4318,7 +4325,8 @@ class ImagingImage(Image):
                     mask_file=mask_file,
                     fitting_region_margins=margins,
                     convolution_size=(frame * 2, frame * 2),
-                    models=model_guesses
+                    models=model_guesses,
+                    **feedme_kwargs
                 )
                 galfit.galfit(
                     config=feedme_file,
