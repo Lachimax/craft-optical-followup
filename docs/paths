@@ -1,3 +1,0 @@
-cat_path: For survey imaging epochs, cat_path is the path to the catalogue csv file retrieved from the survey database.
-
-pypeit_dir: base-level directory for pypeit runs.

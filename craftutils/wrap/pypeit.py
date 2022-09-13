@@ -1,5 +1,58 @@
 import os
 
+from typing import Union
+
+
+def get_scope(lines: list, levels: list):
+    this_dict = {}
+    this_level = levels[0]
+    for i, line in enumerate(lines):
+        if levels[i] == this_level:
+            scope_start = i + 1
+            scope_end = i + 1
+            while scope_end < len(levels) and levels[scope_end] > this_level:
+                scope_end += 1
+            if "=" in line:
+                key, value = line.split("=")
+                this_dict[key] = value
+            else:
+                this_dict[line] = get_scope(lines=lines[scope_start:scope_end], levels=levels[scope_start:scope_end])
+
+    return this_dict
+
+
+def get_pypeit_param_levels(lines: list):
+    levels = []
+    last_non_zero = 0
+    for i, line in enumerate(lines):
+        level = line.count("[")
+        if level == 0:
+            level = levels[last_non_zero] + 1
+        else:
+            last_non_zero = i
+        levels.append(level)
+        line = line.replace("\t", "").replace(" ", "").replace("[", "").replace("]", "").replace("\n", "")
+        if "#" in line:
+            line = line.split("#")[0]
+        lines[i] = line
+    return lines, levels
+
+
+def get_pypeit_user_params(file: Union[list, str]):
+    if isinstance(file, str):
+        with open(file) as f:
+            file = f.readlines()
+
+    p_start = file.index("# User-defined execution parameters\n") + 1
+    p_end = p_start + 1
+    while file[p_end] != "\n":
+        p_end += 1
+
+    lines, levels = get_pypeit_param_levels(lines=file[p_start:p_end])
+    param_dict = get_scope(lines=lines, levels=levels)
+
+    return param_dict
+
 
 def pypeit_setup(root: str, output_path: str, spectrograph: str, cfg_split: str = None):
     """
