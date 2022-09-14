@@ -265,18 +265,23 @@ def check_quantity(
         unit: units.Unit,
         allow_mismatch: bool = True,
         enforce_equivalency: bool = True,
-        convert: bool = False
+        convert: bool = False,
+        equivalencies: List[Tuple] = (),
 ):
     """
     If the passed number is not a Quantity, turns it into one with the passed unit. If it is already a Quantity,
     checks the unit; if the unit is compatible with the passed unit, the quantity is returned unchanged (unless convert
     is True).
 
-    :param number: Quantity (or not) to check.
+    :param number: value (or not) to check.
     :param unit: Unit to check for.
-    :param allow_mismatch: If False, even compatible units will not be allowed.
+    :param allow_mismatch: If False, even compatible but mismatched units will not be allowed; ie, the unit of the
+        quantity must match the one specified in the "unit" parameter.
+    :param enforce_equivalency: If True, an error will be raised if the unit is incompatible; otherwise, we let it
+        slide.
     :param convert: If True, convert compatible Quantity to units unit.
-    :return:
+    :param equivalencies: List of Equivalency objects to pass to to() function if convert is True.
+    :return: number as Quantity with specified unit.
     """
     if number is None:
         return None
@@ -290,22 +295,27 @@ def check_quantity(
             raise units.UnitsError(
                 f"This number is already a Quantity, but with incompatible units ({number.unit}); units {unit} were specified.")
         elif convert:
-            number = number.to(unit)
+            number = number.to(unit, equivalencies=equivalencies)
     return number
 
 
-def dequantify(number: Union[float, int, units.Quantity], unit: units.Unit = None):
+def dequantify(
+        number: Union[float, int, units.Quantity],
+        unit: units.Unit = None,
+        equivalencies: List[Tuple] = (),
+) -> float:
     """
     Removes the unit from an astropy Quantity, or returns the number unchanged if it is not a Quantity.
     If a unit is provided, and number is a Quantity, an attempt will be made to convert the number to that unit before
     returning the value.
-    :param number:
-    :param unit:
-    :return:
+    :param number: value to strip.
+    :param unit: unit to check for.
+    :param equivalencies: List of Equivalency objects to pass to to() function for conversion.
+    :return: number that has been stripped of its units, if present.
     """
     if isinstance(number, units.Quantity):
         if unit is not None:
-            number = check_quantity(number=number, unit=unit, convert=True)
+            number = check_quantity(number=number, unit=unit, convert=True, equivalencies=equivalencies)
         return number.value
     else:
         return number
