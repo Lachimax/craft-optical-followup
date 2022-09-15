@@ -247,7 +247,12 @@ def check_key(key: str, dictionary: dict, na_values: Union[tuple, list] = (None)
     return key in dictionary and dictionary[key] not in na_values
 
 
-def check_dict(key: str, dictionary: dict, na_values: Union[tuple, list] = (None), fail_val=None):
+def check_dict(
+        key: str,
+        dictionary: dict,
+        na_values: Union[tuple, list] = (None),
+        fail_val=None
+):
     """
 
     :param key:
@@ -266,7 +271,7 @@ def check_quantity(
         allow_mismatch: bool = True,
         enforce_equivalency: bool = True,
         convert: bool = False,
-        equivalencies: List[Tuple] = (),
+        equivalencies: Union[List[Tuple], units.Equivalency] = (),
 ):
     """
     If the passed number is not a Quantity, turns it into one with the passed unit. If it is already a Quantity,
@@ -302,7 +307,7 @@ def check_quantity(
 def dequantify(
         number: Union[float, int, units.Quantity],
         unit: units.Unit = None,
-        equivalencies: List[Tuple] = (),
+        equivalencies: Union[List[Tuple], units.Equivalency] = (),
 ) -> float:
     """
     Removes the unit from an astropy Quantity, or returns the number unchanged if it is not a Quantity.

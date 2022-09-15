@@ -20,23 +20,41 @@ def galfit(config: str, output_dir: str):
 
 
 def feedme_sky_model(
-        background_center: float = 1.3920,
+        background_center: float = 1.3920 * units.adu,
         fit_background_center: bool = True,
-        gradient_x: float = 0.0,
+        gradient_x: float = 0.0 * units.adu / units.pix,
         fit_gradient_x: bool = True,
-        gradient_y: float = 0.0,
+        gradient_y: float = 0.0 * units.adu / units.pix,
         fit_gradient_y: bool = True,
-        output_option: int = 0,
+        skip_in_output: bool = False,
         **kwargs
 ):
+    """
+    Generate input file lines in the GALFIT feedme format, for sky model.
+    Parameters provided in valid astropy units will be converted to the units used by GALFIT.
+    :param background_center: Background level at centre of fitting region.
+        Corresponds to item 1) in the GALFIT feedme definition.
+    :param fit_background_center: If True, GALFIT will fit for background_center; if False, it will remain fixed.
+    :param gradient_x: dsky/dx in ADU / pixel
+        Corresponds to item 2) in the GALFIT feedme definition.
+    :param fit_gradient_x: If True, GALFIT will fit for gradient_x; if False, it will remain fixed.
+    :param gradient_y: dsky/dy in ADU / pixel
+        Corresponds to item 3) in the GALFIT feedme definition.
+    :param fit_gradient_y: If True, GALFIT will fit for gradient_y; if False, it will remain fixed.
+    :param skip_in_output: Skip in output image block?
+        Corresponds to item Z) in the GALFIT feedme definition.
+    :param pix_scale: pixel scale for conversion from angular sizes (eg arcsec) to pixels.
+    :return: List of strings corresponding to lines in a .feedme input file, suitable for use with open().writelines().
+    """
+
     return feedme_model(
         "sky",
-        output_option,
+        skip_in_output,
         None,
         (False, False),
-        (background_center, fit_background_center),
-        (gradient_x, fit_gradient_x),
-        (gradient_y, fit_gradient_y)
+        (u.dequantify(background_center), fit_background_center),
+        (u.dequantify(gradient_x), fit_gradient_x),
+        (u.dequantify(gradient_y), fit_gradient_y)
     )
 
 
@@ -55,20 +73,49 @@ def feedme_sersic_model(
         fit_axis_ratio: bool = True,
         position_angle: units.Quantity = 0. * units.deg,
         fit_position_angle: bool = True,
-        output_option: int = 0,
-        rot_kwargs: dict = {},
+        skip_in_output: bool = 0,
+        rotation_params: dict = {},
+        pix_scale: Tuple = (),
         **kwargs
 ):
-    # TODO: Support units (by converting and stripping them) here.
-    # Will need to make the fit bools separate arguments, probably
+    """
+    Generate input file lines in the GALFIT feedme format, for sersic model.
+    Parameters provided in valid astropy units will be converted to the units used by GALFIT.
+    :param x: x-position of model centre, in pixels.
+        Corresponds to first component of item 1) in the GALFIT feedme definition.
+    :param y: y-position of model centre, in pixels.
+        Corresponds to second component of item 1) in the GALFIT feedme definition.
+    :param int_mag: integrated magnitude of model.
+        Corresponds to item 3) in the GALFIT feedme definition.
+    :param fit_x: If True, GALFIT will fit for x; if False, it will remain fixed.
+    :param fit_y: If True, GALFIT will fit for y; if False, it will remain fixed.
+    :param fit_int_mag: If True, GALFIT will fit for int_mag; if False, it will remain fixed.
+    :param r_e: Effective radius of model, in pixels.
+        Corresponds to item 4) in the GALFIT feedme definition.
+    :param fit_r_e: If True, GALFIT will fit for r_e; if False, it will remain fixed.
+    :param n: Sersic index n of model.
+        Corresponds to item 5) in the GALFIT feedme definition.
+    :param fit_n: If True, GALFIT will fit for n; if False, it will remain fixed.
+    :param axis_ratio: axis ratio b/a of model.
+        Corresponds to item 9) in the GALFIT feedme definition.
+    :param fit_axis_ratio: If True, GALFIT will fit for axis_ratio; if False, it will remain fixed.
+    :param position_angle: position angle (PA) of model, in degrees, with up=0 and left=90
+        Corresponds to item 10) in the GALFIT feedme definition.
+    :param fit_position_angle: If True, GALFIT will fit for position_angle; if False, it will remain fixed.
+    :param skip_in_output: Skip in output image block?
+        Corresponds to item Z) in the GALFIT feedme definition.
+    :param rotation_params: Coordinate rotation parameters (eg for fitting spiral arms)
+    :param pix_scale: pixel scale for conversion from angular sizes (eg arcsec) to pixels.
+    :return: List of strings corresponding to lines in a .feedme input file, suitable for use with open().writelines().
+    """
     lines = feedme_model(
         "sersic",
-        output_option,
-        (u.dequantify(x, unit=units.pix), u.dequantify(y, unit=units.pix)),
+        skip_in_output,
+        (u.dequantify(x, unit=units.pix, equivalencies=pix_scale), u.dequantify(y, unit=units.pix)),
         (fit_x, fit_y),
         (0., False),
         (u.dequantify(int_mag, unit=units.mag), fit_int_mag),
-        (u.dequantify(r_e, unit=units.pix), fit_r_e),
+        (u.dequantify(r_e, unit=units.pix, equivalencies=pix_scale), fit_r_e),
         (u.dequantify(n), fit_n),
         (0., False),
         (0., False),
@@ -77,9 +124,10 @@ def feedme_sersic_model(
         (u.dequantify(position_angle, unit=units.deg), fit_position_angle),
     )
 
-    if rot_kwargs:
+    if rotation_params:
         rot_lines = feedme_rot(
-            **rot_kwargs
+            pix_scale=pix_scale,
+            **rotation_params
         )
         lines[-1:-1] = rot_lines
 
@@ -100,16 +148,43 @@ def feedme_rot(
         fit_theta_inc: units.Quantity = True,
         theta_pa: units.Quantity = 45. * units.deg,
         fit_theta_pa: bool = True,
+        pix_scale: Tuple = (),
         **kwargs
 ):
+    """
+    Generate input file lines in the GALFIT feedme format, for coordinate rotation (eg for fitting spiral arms).
+    Parameters provided in valid astropy units will be converted to the units used by GALFIT.
+    :param rot_type: "log" or "power", determining which rotation function to use.
+        Corresponds to item R0) in the GALFIT feedme definition.
+    :param r_in: Spiral inner radius, in pixels. If this goes extremely negative in fitting, fix to 0.
+        Corresponds to item R1) in the GALFIT feedme definition.
+    :param fit_r_in: If True, GALFIT will fit for r_in; if False, it will remain fixed.
+    :param r_out: Spiral outer radius, in pixels.
+        Corresponds to item R2) in the GALFIT feedme definition.
+    :param fit_r_out: If True, GALFIT will fit for r_out; if False, it will remain fixed.
+    :param theta_out: Cumulative rotation to outer radius, in degrees.
+        Corresponds to item R3) in the GALFIT feedme definition.
+    :param fit_theta_out: If True, GALFIT will fit for theta_out; if False, it will remain fixed.
+    :param r_ws: winding scale radius, in pixels.
+        Corresponds to item R4) in the GALFIT feedme definition.
+    :param fit_r_ws: If True, GALFIT will fit for r_ws; if False, it will remain fixed.
+    :param theta_inc: inclination to line-of-sight, in degrees.
+        Corresponds to item R9) in the GALFIT feedme definition.
+    :param fit_theta_inc: If True, GALFIT will fit for theta_inc; if False, it will remain fixed.
+    :param theta_pa: Position angle of the axis about which the galaxy is rotated for inclination.
+        Corresponds to item R10) in the GALFIT feedme definition.
+    :param fit_theta_pa: If True, GALFIT will fit for theta_pa; if False, it will remain fixed.
+    :param pix_scale: pixel scale for conversion from angular sizes (eg arcsec) to pixels.
+    :return: List of strings corresponding to lines in a .feedme input file, suitable for use with open().writelines().
+    """
     i = 0
     lines = [f"R{i}) {rot_type}\n"]
     i += 1
     args = (
-        (u.dequantify(r_in, unit=units.pix), fit_r_in),
-        (u.dequantify(r_out, unit=units.pix), fit_r_out),
+        (u.dequantify(r_in, unit=units.pix, equivalencies=pix_scale), fit_r_in),
+        (u.dequantify(r_out, unit=units.pix, equivalencies=pix_scale), fit_r_out),
         (u.dequantify(theta_out, unit=units.deg), fit_theta_out),
-        (u.dequantify(r_ws, unit=units.pix), fit_r_ws),
+        (u.dequantify(r_ws, unit=units.pix, equivalencies=pix_scale), fit_r_ws),
         (0, False),
         (0, False),
         (0, False),
@@ -124,7 +199,7 @@ def feedme_rot(
 
 def feedme_model(
         object_type: str,
-        output_option: int,
+        skip_in_output: bool,
         position: Tuple[float, float],
         fit_position: Union[bool, Tuple[bool, bool]],
         *args,
@@ -132,32 +207,42 @@ def feedme_model(
     """
     Generate the input file lines for an arbitrary model for use with GALFIT.
     :param object_type: string indicating the type of model, to be parsed by GALFIT.
-    :param output_option:
-    :param position:
+    :param skip_in_output: Skip in output image block?
+        Corresponds to item Z) in the GALFIT feedme definition.
+    :param position: Tuple containing (x, y).
+    :param fit_position: Tuple containing (fit_x, fit_y), each specifying whether to fit x and y position respectively.
     :param args: (value, fit), with value being the initial guess for a parameter and fit being a boolean indicating
         whether this parameter should be fit for (True) or held fixed (False).
         If value is provided without fit, fit defaults to True.
-    :return: list of lines, suitable for use with open().writelines().
+    :return: List of strings corresponding to lines in a .feedme input file, suitable for use with open().writelines().
     """
     i = 0
     lines = [f"{i}) {object_type}\n"]
     i += 1
     if position is not None:
         try:
-            # See if we can get the position as a tuple
+            # See if we can get the position fit bools as a tuple
             fit_x, fit_y = fit_position
         except TypeError:
-            # If not, assume it's a single value that both x and y adopt
+            # If not, assume it's a single value that both fit_x and fit_y adopt
             fit_x = fit_y = fit_position
         lines.append(f"{i}) {position[0]} {position[1]} {int(fit_x)} {int(fit_y)}\n")
         i += 1
     lines.extend(_feedme_lines(i, "", *args))
 
-    lines.append(f"Z) {output_option}\n")
+    lines.append(f"Z) {int(skip_in_output)}\n")
     return lines
 
 
 def _feedme_lines(i_start: int = 0, prefix: str = "", *args):
+    """
+    Helper function for generating feedme parameter lines in format <prefix><i>) <initial value>    <fit value?>.
+    :param i_start: number at which to begin item number.
+    :param prefix: prefix character to place in front of item number, eg R is the prefix for R0).
+    :param args: Either tuples with (value, fit_param) where fit_param is a bool specifying whether the parameter is to
+        be fitted for in GALFIT or remain fixed.
+    :return: List of strings corresponding to lines in a .feedme input file, suitable for use with open().writelines().
+    """
     i = i_start
     lines = []
     for arg in args:
@@ -183,7 +268,7 @@ def galfit_feedme(
         feedme_path: str,
         input_file: str,
         output_file: str,
-        zeropoint: float,
+        zeropoint: units.Quantity,
         plate_scale: Union[Tuple[float, float], float],
         sigma_file: str = None,
         psf_file: str = None,
@@ -198,12 +283,39 @@ def galfit_feedme(
         sky_model_init: dict = None,
 ):
     """
+    Generates and writes full GALFIT input .feedme parameter file.
     Any unset values will be left as the GALFIT defaults (see param/galfit/galfit.feedme)
-    :param feedme_path:
-    :param input_file:
-    :param output_file:
-    :param sigma_file:
-    :return:
+    :param feedme_path: Path to write parameter file to.
+    :param input_file: Path to input image FITS file.
+        Corresponds to item A) in the GALFIT feedme definition.
+    :param output_file: Path to write output image block FITS file.
+        Corresponds to item B) in the GALFIT feedme definition.
+    :param zeropoint: Path to write output image block FITS file.
+        Corresponds to item J) in the GALFIT feedme definition.
+    :param plate_scale: The pixel scale of the image, in arcsec / pixel. If provided as a tuple:
+        (plate_scale_x, plate_scale_y)
+        Corresponds to item I) in the GALFIT feedme definition.
+    :param sigma_file: Path to sigma image, if used. GALFIT is quite good at generating these internally.
+        Corresponds to item C) in the GALFIT feedme definition.
+    :param psf_file: Path to input PSF image.
+        Corresponds to item D) in the GALFIT feedme definition.
+    :param psf_fine_sampling: PSF fine sampling factor relative to data; ie, if the PSF image has double the resolution,
+        psf_fine_sampling is 2. GALFIT only understands integers for this value.
+        Corresponds to item E) in the GALFIT feedme definition.
+    :param mask_file: Path to pixel mask file, a FITS image or ASCII coord list.
+        Corresponds to item F) in the GALFIT feedme definition.
+    :param constraint_file: Path to file with parameter constraints (ASCII file).
+        Corresponds to item G) in the GALFIT feedme definition.
+    :param fitting_region_margins: Image region to fit (xmin xmax ymin ymax) in pixels.
+        Corresponds to item H) in the GALFIT feedme definition.
+    :param convolution_size: Size of the convolution box (x y) in pixels.
+        Corresponds to item I) in the GALFIT feedme definition.
+    :param display_type: regular, curses or both. I don't actually know what this does.
+        Corresponds to item O) in the GALFIT feedme definition.
+    :param run_type: optimize, model, imgblock or subcomps, in that order.
+    :param models: List of dicts containing model initial guesses, excluding sky.
+    :param sky_model_init: A model for the sky. Not required as GALFIT finds this pretty easily.
+    :return: List of strings corresponding to lines in a .feedme input file, suitable for use with open().writelines().
     """
 
     if sigma_file is None:
@@ -243,7 +355,7 @@ def galfit_feedme(
         f"G) {constraint_file}\n",
         f"H) {xmin} {xmax} {ymin} {ymax}\n",
         f"I) {convolution_size[0]} {convolution_size[1]}\n",
-        f"J) {zeropoint}\n",
+        f"J) {u.dequantify(zeropoint, units.mag)}\n",
         f"K) {plate_scale[0]} {plate_scale[1]}\n",
         f"O) {display_type}\n",
         f"P) {run_type}\n",
@@ -300,13 +412,6 @@ def extract_fit_params(header: fits.Header):
     return components
 
 
-def strip_values(string: str):
-    string = string.replace("[", "")
-    string = string.replace("]", "")
-    string = string.replace("*", "")
-    return u.split_uncertainty_string(string)
-
-
 def extract_sersic_params(component_n: int, header: fits.Header):
     """
     Pull the fitted parameter values for a Sersic profile from a GALFIT imgblock header.
@@ -314,13 +419,13 @@ def extract_sersic_params(component_n: int, header: fits.Header):
     :param header: the GALFIT-generated image header, as read by astropy.io.fits.
     :return: dict with keys being parameter names and values fitted parameter values
     """
-    x, x_err = strip_values(header[f"{component_n}_XC"])
-    y, y_err = strip_values(header[f"{component_n}_YC"])
-    mag, mag_err = strip_values(header[f"{component_n}_MAG"])
-    n, n_err = strip_values(header[f"{component_n}_N"])
-    r_eff, r_eff_err = strip_values(header[f"{component_n}_RE"])
-    axis_ratio, axis_ratio_err = strip_values(header[f"{component_n}_AR"])
-    theta, theta_err = strip_values(header[f"{component_n}_PA"])
+    x, x_err = _strip_values(header[f"{component_n}_XC"])
+    y, y_err = _strip_values(header[f"{component_n}_YC"])
+    mag, mag_err = _strip_values(header[f"{component_n}_MAG"])
+    n, n_err = _strip_values(header[f"{component_n}_N"])
+    r_eff, r_eff_err = _strip_values(header[f"{component_n}_RE"])
+    axis_ratio, axis_ratio_err = _strip_values(header[f"{component_n}_AR"])
+    theta, theta_err = _strip_values(header[f"{component_n}_PA"])
 
     component = {
         "object_type": header[f"COMP_{component_n}"],
@@ -339,23 +444,32 @@ def extract_sersic_params(component_n: int, header: fits.Header):
         "position_angle": theta * units.deg,
         "position_angle_err": theta_err * units.deg
     }
-    component.update(
-        extract_rotation_params(
-            component_n=component_n,
-            header=header
-        ))
+
+    rotation_params = extract_rotation_params(
+        component_n=component_n,
+        header=header
+    )
+    if rotation_params:
+        component["rotation_params"] = rotation_params
+
     return component
 
 
 def extract_rotation_params(component_n: int, header: fits.Header):
+    """
+    Pull the fitted parameter values for a coordinate-rotated model from a GALFIT imgblock header.
+    :param component_n: Component number (In header: COMP_N, where N is component_n)
+    :param header: the GALFIT-generated image header, as read by astropy.io.fits.
+    :return: dict with keys being parameter names and values fitted parameter values
+    """
     if f"{component_n}_ROTF" not in header:
         return {}
     rot_type = header[f"{component_n}_ROTF"]
-    r_in, r_in_err = strip_values(header[f"{component_n}_RIN"])
-    r_out, r_out_err = strip_values(header[f"{component_n}_ROUT"])
-    theta_out, theta_out_err = strip_values(header[f"{component_n}_RANG"])
-    theta_pa, theta_pa_err = strip_values(header[f"{component_n}_SPA"])
-    theta_inc, theta_inc_err = strip_values(header[f"{component_n}_INCL"])
+    r_in, r_in_err = _strip_values(header[f"{component_n}_RIN"])
+    r_out, r_out_err = _strip_values(header[f"{component_n}_ROUT"])
+    theta_out, theta_out_err = _strip_values(header[f"{component_n}_RANG"])
+    theta_pa, theta_pa_err = _strip_values(header[f"{component_n}_SPA"])
+    theta_inc, theta_inc_err = _strip_values(header[f"{component_n}_INCL"])
 
     component = {
         "rot_type": rot_type,
@@ -372,7 +486,7 @@ def extract_rotation_params(component_n: int, header: fits.Header):
     }
 
     if rot_type == "log":
-        r_ws, r_ws_err = strip_values(header[f"{component_n}_RWS"])
+        r_ws, r_ws_err = _strip_values(header[f"{component_n}_RWS"])
 
         component.update({
             "r_ws": r_ws * units.pix,
@@ -380,7 +494,7 @@ def extract_rotation_params(component_n: int, header: fits.Header):
         })
 
     elif rot_type == "power":
-        alpha, alpha_err = strip_values(header[f"{component_n}_ALPHA"])
+        alpha, alpha_err = _strip_values(header[f"{component_n}_ALPHA"])
 
         component.update({
             "alpha": alpha * units.pix,
@@ -394,11 +508,17 @@ def extract_rotation_params(component_n: int, header: fits.Header):
 
 
 def extract_sky_params(component_n: int, header: fits.Header):
-    x, x_err = strip_values(header[f"{component_n}_XC"])
-    y, y_err = strip_values(header[f"{component_n}_YC"])
-    sky, sky_err = strip_values(header[f"{component_n}_SKY"])
-    dsky_dx, dsky_dx_err = strip_values(header[f"{component_n}_DSDX"])
-    dsky_dy, dsky_dy_err = strip_values(header[f"{component_n}_DSDY"])
+    """
+    Pull the fitted parameter values for a sky model from a GALFIT imgblock header.
+    :param component_n: Component number (In header: COMP_N, where N is component_n)
+    :param header: the GALFIT-generated image header, as read by astropy.io.fits.
+    :return: dict with keys being parameter names and values fitted parameter values
+    """
+    x, x_err = _strip_values(header[f"{component_n}_XC"])
+    y, y_err = _strip_values(header[f"{component_n}_YC"])
+    sky, sky_err = _strip_values(header[f"{component_n}_SKY"])
+    dsky_dx, dsky_dx_err = _strip_values(header[f"{component_n}_DSDX"])
+    dsky_dy, dsky_dy_err = _strip_values(header[f"{component_n}_DSDY"])
 
     component = {
         "x": x * units.pix,
@@ -415,7 +535,25 @@ def extract_sky_params(component_n: int, header: fits.Header):
     return component
 
 
+def _strip_values(string: str):
+    """
+    Helper function to remove [] (which specify that a parameter was fixed) and ** (which specify that a parameter is
+    unreliable) from parameters in image block headers.
+    :param string: string to strip.
+    :return:
+    """
+    string = string.replace("[", "")
+    string = string.replace("]", "")
+    string = string.replace("*", "")
+    return u.split_uncertainty_string(string)
+
+
 def sersic_best_row(tbl: table.Table):
+    """
+    Find the best model from a table of Sersic models.
+    :param tbl:
+    :return:
+    """
     best_index = max(np.argmin(tbl["r_eff_err"]), np.argmin(tbl["n_err"]))
     best_row = tbl[best_index]
     best_dict = dict(best_row)
@@ -426,5 +564,85 @@ extract_funcs = {
     "sky": extract_sky_params,
     "sersic": extract_sersic_params
 }
-# def galfit_best(path: str):
-#
+
+
+# Here we encode the PA rotation as a function of radius, which allows GALFIT to fit spiral arms
+# See the Galfit User's Manual (Peng 2010) for a detailed explanation.
+
+def _spiral_log_tanh(r_in, r_out, r_ws, theta_inc, theta_pa, theta_out, r):
+    """
+    Calculates coordinate rotation angle theta
+    :param r_in:
+    :param r_out:
+    :param r_ws:
+    :param theta_inc:
+    :param theta_pa:
+    :param theta_out:
+    :param r:
+    :return:
+    """
+    tanh_spiral = tanh_func(
+        r_in=r_in,
+        r_out=r_out,
+        theta_inc=theta_inc,
+        theta_pa=theta_pa,
+        theta_out=theta_out,
+        r=r
+    )
+    log_spiral = _spiral_log(theta_out, r_out, r_ws)
+    theta_spiral = log_spiral * tanh_spiral
+    return theta_spiral
+
+def tanh_func(
+        r_in: units.Quantity,
+        r_out: units.Quantity,
+        theta_out: units.Quantity,
+        r
+):
+    """
+    Calculates the tanh function (not the hyperbolic tangent, but a function based around it) as defined in Galfit
+    User's Manual, Appendix A (Peng 2010)
+    :param r_in: Spiral inner radius, in pixels. If this goes extremely negative in fitting, fix to 0.
+        Corresponds to item R1) in the GALFIT feedme definition.
+    :param r_out: Spiral outer radius, in pixels.
+        Corresponds to item R2) in the GALFIT feedme definition.
+    :param theta_out: Cumulative rotation to outer radius, in degrees.
+        Corresponds to item R3) in the GALFIT feedme definition.
+    :param r: r coordinate; distance from the centre of the spiral model, in pixels.
+    :return:
+    """
+    b = b_func(r_in, r_out, theta_out)
+    return 0.5 * (np.tanh((b * (r / r_out - 1) + 2 * units.rad)) + 1)
+
+
+def b_func(
+        r_in: units.Quantity,
+        r_out: units.Quantity,
+        theta_out: units.Quantity
+):
+    """
+    Calculates the value B as defined in Galfit User's Manual, Appendix A (Peng 2010)
+    :param r_in: Spiral inner radius, in pixels. If this goes extremely negative in fitting, fix to 0.
+        Corresponds to item R1) in the GALFIT feedme definition.
+    :param r_out: Spiral outer radius, in pixels.
+        Corresponds to item R2) in the GALFIT feedme definition.
+    :param theta_out: Cumulative rotation to outer radius, in degrees.
+        Corresponds to item R3) in the GALFIT feedme definition.
+    :return: B, in radians
+    """
+    a = a_func(theta_out)
+    b = (2 * units.rad - np.arctanh(a)) * (r_out / (r_out - r_in))
+    return b
+
+
+def a_func(theta_out: units.Quantity) -> units.Quantity:
+    """
+    Calculates the value A as defined in Galfit User's Manual, Appendix A (Peng 2010)
+    :param theta_out: Cumulative rotation to outer radius, in degrees.
+        Corresponds to item R3) in the GALFIT feedme definition.
+    :return: A (dimensionless)
+    """
+    # cdef is a constant for the bar definition (Peng 2010, Appendix A)
+    cdef = 0.23 * units.rad
+    a = 2 * cdef / (np.abs(theta_out) + cdef) - 1.00001
+    return a

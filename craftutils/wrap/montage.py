@@ -11,6 +11,7 @@ import craftutils.utils as u
 from craftutils.photometry import gain_median_combine, gain_mean_combine
 import craftutils.observation.image as image
 
+
 def image_table(input_directory: str, output_path: str = "images.tbl"):
     """
     Executes the Montage task mImgtbl <input_directory> <output_path>
