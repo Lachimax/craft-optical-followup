@@ -688,7 +688,11 @@ class Field:
         else:
             print("Could not load catalogue; field is outside footprint.")
 
-    def generate_astrometry_indices(self, cat_name: str = "gaia"):
+    def generate_astrometry_indices(
+            self,
+            cat_name: str = "gaia",
+            correct_to_epoch: bool = True
+    ):
         self.retrieve_catalogue(cat_name=cat_name)
         if not self.check_cat(cat_name=cat_name):
             print(f"Field is not in {cat_name}; index file could not be created.")
@@ -2281,7 +2285,12 @@ class ImagingEpoch(Epoch):
                             tmp.filename.replace(".fits", "_registered.fits")))
                     self.add_frame_registered(registered)
 
-    def proc_correct_astrometry_frames(self, output_dir: str, **kwargs):
+    def proc_correct_astrometry_frames(
+            self,
+            output_dir: str,
+            correct_to_epoch: bool = True,
+            **kwargs
+    ):
 
         skip = False
         if "skip_indices" in kwargs:
@@ -2291,7 +2300,7 @@ class ImagingEpoch(Epoch):
         u.debug_print(1, "skip ==", skip)
 
         if not skip:
-            self.generate_astrometry_indices()
+            self.generate_astrometry_indices(correct_to_epoch=correct_to_epoch)
 
         self.frames_astrometry = {}
 
@@ -2306,7 +2315,13 @@ class ImagingEpoch(Epoch):
                 frames=self.frames_normalised,
                 **kwargs)
 
-    def correct_astrometry_frames(self, output_dir: str, frames: dict = None, am_params: dict = {}, **kwargs):
+    def correct_astrometry_frames(
+            self,
+            output_dir: str,
+            frames: dict = None,
+            am_params: dict = {},
+            **kwargs
+    ):
         self.frames_astrometry = {}
 
         if frames is None:
@@ -3354,7 +3369,8 @@ class ImagingEpoch(Epoch):
     def generate_astrometry_indices(
             self,
             cat_name="gaia",
-            correct_to_epoch: bool = True):
+            correct_to_epoch: bool = True
+    ):
         if not isinstance(self.field, Field):
             raise ValueError("field has not been set for this observation.")
         self.field.retrieve_catalogue(cat_name=cat_name)
@@ -3364,7 +3380,7 @@ class ImagingEpoch(Epoch):
         csv_path = self.field.get_path(f"cat_csv_{cat_name}")
 
         if cat_name == "gaia" and correct_to_epoch:
-            cat = self.epoch_gaia_catalogue()
+            cat = self.epoch_gaia_catalogue(correct_to_epoch=correct_to_epoch)
         else:
             cat = retrieve.load_catalogue(
                 cat_name=cat_name,
@@ -3387,14 +3403,20 @@ class ImagingEpoch(Epoch):
 
         return cat
 
-    def epoch_gaia_catalogue(self):
+    def epoch_gaia_catalogue(
+            self,
+            correct_to_epoch: bool = True
+    ):
         if self.gaia_catalogue is None:
             if self.date is None:
                 raise ValueError(f"{self}.date not set; needed to correct Gaia cat to epoch.")
-            self.gaia_catalogue = astm.correct_gaia_to_epoch(
-                self.field.get_path(f"cat_csv_gaia"),
-                new_epoch=self.date
-            )
+            if correct_to_epoch:
+                self.gaia_catalogue = astm.correct_gaia_to_epoch(
+                    self.field.get_path(f"cat_csv_gaia"),
+                    new_epoch=self.date
+                )
+            else:
+                self.gaia_catalogue = astm.load_catalogue(cat_name="gaia", cat=self.field.get_path(f"cat_csv_gaia"))
         return self.gaia_catalogue
 
     def _check_frame(self, frame: Union[image.ImagingImage, str], frame_type: str):
