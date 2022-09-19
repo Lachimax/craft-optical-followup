@@ -161,6 +161,7 @@ def main(
             for epoch_name in epochs:
                 epoch = fld.epoch_from_directory(epoch_name)
                 epoch.do = [-1]
+                # Run only the last stage of each epoch pipeline
                 epoch.pipeline()
         if u.select_yn_exit("Refine photometry?"):
             field.object_properties()
@@ -182,11 +183,19 @@ if __name__ == '__main__':
 
     parser = argparse.ArgumentParser(description="General pipeline for optical/infrared data reduction.")
     parser.add_argument(
-        "--field", help='Name of field, eg FRB180924', type=str, default=None)
+        "--field",
+        help='Name of field, eg FRB180924',
+        type=str,
+        default=None)
     parser.add_argument(
-        "--epoch", help='Name of epoch, eg FRB181112_1', type=str, default=None)
+        "--epoch",
+        help='Name of epoch, eg FRB181112_1',
+        type=str,
+        default=None)
     parser.add_argument(
-        "--instrument", help="Name of instrument on which epoch was observed, eg 'vlt-fors2'", type=str,
+        "--instrument",
+        help="Name of instrument on which epoch was observed, eg 'vlt-fors2'",
+        type=str,
         default=None)
     parser.add_argument(
         "--mode",
@@ -194,8 +203,9 @@ if __name__ == '__main__':
         default=None,
     )
     parser.add_argument(
-        "--do", help="Epoch processing stages to perform (overrides manual selection if provided). "
-                     "Numbers separated by space or comma.",
+        "--do",
+        help="Epoch processing stages to perform (overrides manual selection if provided). "
+             "Numbers separated by space or comma.",
         type=str)
     parser.add_argument(
         "--do_not_reuse_masters",

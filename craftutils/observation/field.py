@@ -2488,7 +2488,8 @@ class ImagingEpoch(Epoch):
                     print(f"Median PSF FWHM {fwhm_median} > upper limit {upper_limit}")
 
     def proc_coadd(self, output_dir: str, **kwargs):
-        kwargs["frames"] = self.frames_final
+        if "frames" not in kwargs:
+            kwargs["frames"] = self.frames_final
         self.coadd(output_dir, **kwargs)
 
     def coadd(self, output_dir: str, frames: str = "astrometry", sigma_clip: float = 1.5):
@@ -2668,14 +2669,14 @@ class ImagingEpoch(Epoch):
             self.add_coadded_trimmed_image(trimmed, key=fil)
 
     def proc_source_extraction(self, output_dir: str, **kwargs):
-        do_diag = True
-        if "do_astrometry_diagnostics" in kwargs:
-            do_diag = kwargs.pop("do_astrometry_diagnostics")
+        if "do_astrometry_diagnostics" not in kwargs:
+            kwargs["do_astrometry_diagnostics"] = True
+        if "do_psf_diagnostics" not in kwargs:
+            kwargs["do_psf_diagnostics"] = True
+        if "image_type" not in kwargs:
+            kwargs["image_type"] = "final"
         self.source_extraction(
             output_dir=output_dir,
-            do_astrometry_diagnostics=do_diag,
-            do_psf_diagnostics=do_diag,
-            image_type="final",
             **kwargs
         )
 
@@ -3140,6 +3141,7 @@ class ImagingEpoch(Epoch):
                 local_coord=self.field.centre_coords,
                 offset_tolerance=offset_tolerance
             )
+            self.astrometry_stats[fil]["file_path"] = img.path
 
         self.add_log(
             "Ran astrometry diagnostics.",
@@ -3160,6 +3162,7 @@ class ImagingEpoch(Epoch):
             img = images[fil]
             print(f"Performing PSF measurements on {img}...")
             self.psf_stats[fil], _, _, _ = img.psf_diagnostics()
+            self.psf_stats[fil]["file_path"] = img.path
 
         self.update_output_file()
         return self.psf_stats
@@ -3183,7 +3186,12 @@ class ImagingEpoch(Epoch):
             raise ValueError(f"Images type '{image_type}' not recognised.")
         return image_dict
 
-    def _get_frames(self, frame_type: str):
+    def _get_frames(self, frame_type: str) -> dict:
+        """
+        A helper method for finding the desired frame
+        :param frame_type: "science", "reduced", "trimmed", "normalised", "registered", "astrometry" or "diagnosed"
+        :return:
+        """
         if frame_type == "final":
             if self.frames_final is not None:
                 frame_type = self.frames_final
