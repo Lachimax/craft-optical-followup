@@ -1370,3 +1370,23 @@ def split_uncertainty_string(string: str, delim: str = "+/-"):
     value = float(string[:string.find(delim)])
     uncertainty = float(string[string.find(delim) + len(delim):])
     return value, uncertainty
+
+
+def polar_to_cartesian(
+        r: float,
+        theta: float,
+        centre_x: units.Quantity = 0,
+        centre_y: units.Quantity = 0
+) -> tuple:
+    """
+    Transforms polar (r, theta) coordinate to cartesian (x, y). Works with astropy Quantities, so long as r has the
+    same units as centre_x and centre_y and theta has valid angular units.
+    :param r: Radial polar coordinate
+    :param theta: Angular polar coordinate
+    :param centre_x: x coordinate of centre of polar coordinate system
+    :param centre_y: y coordinate of centre of polar coordinate system
+    :return: x, y with same units as r.
+    """
+    x = r * np.cos(theta) + centre_x
+    y = r * np.sin(theta) + centre_y
+    return x, y

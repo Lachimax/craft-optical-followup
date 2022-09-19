@@ -569,35 +569,43 @@ extract_funcs = {
 # Here we encode the PA rotation as a function of radius, which allows GALFIT to fit spiral arms
 # See the Galfit User's Manual (Peng 2010) for a detailed explanation.
 
-def _spiral_log_tanh(r_in, r_out, r_ws, theta_inc, theta_pa, theta_out, r):
+def a_func(theta_out):
     """
-    Calculates coordinate rotation angle theta
-    :param r_in:
-    :param r_out:
-    :param r_ws:
-    :param theta_inc:
-    :param theta_pa:
-    :param theta_out:
-    :param r:
-    :return:
+    Calculates the value A as defined in Galfit User's Manual, Appendix A (Peng 2010)
+    :param theta_out: Cumulative rotation to outer radius, in degrees.
+        Corresponds to item R3) in the GALFIT feedme definition.
+    :return: A (dimensionless)
     """
-    tanh_spiral = tanh_func(
-        r_in=r_in,
-        r_out=r_out,
-        theta_inc=theta_inc,
-        theta_pa=theta_pa,
-        theta_out=theta_out,
-        r=r
-    )
-    log_spiral = _spiral_log(theta_out, r_out, r_ws)
-    theta_spiral = log_spiral * tanh_spiral
-    return theta_spiral
+    cdef = 0.23 * units.rad
+    a = 2 * cdef / (np.abs(theta_out) + cdef) - 1.00001
+    return a
+
+
+def b_func(
+        r_in: units.Quantity,
+        r_out: units.Quantity,
+        theta_out: units.Quantity
+):
+    """
+        Calculates the value B as defined in Galfit User's Manual, Appendix A (Peng 2010)
+        :param r_in: Spiral inner radius, in pixels. If this goes extremely negative in fitting, fix to 0.
+            Corresponds to item R1) in the GALFIT feedme definition.
+        :param r_out: Spiral outer radius, in pixels.
+            Corresponds to item R2) in the GALFIT feedme definition.
+        :param theta_out: Cumulative rotation to outer radius, in degrees.
+            Corresponds to item R3) in the GALFIT feedme definition.
+        :return: B, in radians
+        """
+    a = a_func(theta_out)
+    b = (2 * units.rad - np.arctanh(a)) * (r_out / (r_out - r_in))
+    return b
+
 
 def tanh_func(
         r_in: units.Quantity,
         r_out: units.Quantity,
         theta_out: units.Quantity,
-        r
+        r: units.Quantity
 ):
     """
     Calculates the tanh function (not the hyperbolic tangent, but a function based around it) as defined in Galfit
@@ -608,41 +616,307 @@ def tanh_func(
         Corresponds to item R2) in the GALFIT feedme definition.
     :param theta_out: Cumulative rotation to outer radius, in degrees.
         Corresponds to item R3) in the GALFIT feedme definition.
-    :param r: r coordinate; distance from the centre of the spiral model, in pixels.
-    :return:
+    :param r: r coordinate of point(s); distance from the centre of the spiral model, in pixels.
+    :return: output of tanh function
     """
-    b = b_func(r_in, r_out, theta_out)
+    b = b_func(
+        r_in=r_in,
+        r_out=r_out,
+        theta_out=theta_out
+    )
     return 0.5 * (np.tanh((b * (r / r_out - 1) + 2 * units.rad)) + 1)
 
 
-def b_func(
-        r_in: units.Quantity,
+def _spiral_log(
         r_out: units.Quantity,
-        theta_out: units.Quantity
+        r_ws: units.Quantity,
+        theta_out: units.Quantity,
+        r: units.Quantity,
 ):
     """
-    Calculates the value B as defined in Galfit User's Manual, Appendix A (Peng 2010)
-    :param r_in: Spiral inner radius, in pixels. If this goes extremely negative in fitting, fix to 0.
-        Corresponds to item R1) in the GALFIT feedme definition.
+    Calculates coordinate rotation angle theta for a pure logarithmic spiral, based on the equation given in Galfit
+    User's Manual, Appendix A (Peng 2010).
     :param r_out: Spiral outer radius, in pixels.
-        Corresponds to item R2) in the GALFIT feedme definition.
+            Corresponds to item R2) in the GALFIT feedme definition.
+    :param r_ws: winding scale radius, in pixels.
+        Corresponds to item R4) in the GALFIT feedme definition.
     :param theta_out: Cumulative rotation to outer radius, in degrees.
         Corresponds to item R3) in the GALFIT feedme definition.
-    :return: B, in radians
+    :param r: r coordinate; distance from the centre of the spiral model, in pixels.
+    :return: theta coordinate for pure log spiral
     """
-    a = a_func(theta_out)
-    b = (2 * units.rad - np.arctanh(a)) * (r_out / (r_out - r_in))
-    return b
+    return theta_out * (np.log(r / r_ws + 1) / np.log(r_out / r_ws + 1))
 
 
-def a_func(theta_out: units.Quantity) -> units.Quantity:
+def _spiral_log_tanh(
+        r_in: units.Quantity,
+        r_out: units.Quantity,
+        r_ws: units.Quantity,
+        theta_out: units.Quantity,
+        r: units.Quantity
+):
     """
-    Calculates the value A as defined in Galfit User's Manual, Appendix A (Peng 2010)
+    Calculates coordinate rotation angle theta for a tanh log spiral, as defined in Galfit User's Manual (Peng 2010)
+    :param r_in: Spiral inner radius, in pixels. If this goes extremely negative in fitting, fix to 0.
+            Corresponds to item R1) in the GALFIT feedme definition.
+    :param r_out: Spiral outer radius, in pixels.
+            Corresponds to item R2) in the GALFIT feedme definition.
+    :param r_ws: winding scale radius, in pixels.
+        Corresponds to item R4) in the GALFIT feedme definition.
     :param theta_out: Cumulative rotation to outer radius, in degrees.
         Corresponds to item R3) in the GALFIT feedme definition.
-    :return: A (dimensionless)
+    :param r: r coordinate; distance from the centre of the spiral model, in pixels.
+    :return: theta coordinate for tanh log spiral
     """
-    # cdef is a constant for the bar definition (Peng 2010, Appendix A)
-    cdef = 0.23 * units.rad
-    a = 2 * cdef / (np.abs(theta_out) + cdef) - 1.00001
-    return a
+    tanh_spiral = tanh_func(
+        r_in=r_in,
+        r_out=r_out,
+        theta_out=theta_out,
+        r=r
+    )
+    log_spiral = _spiral_log(
+        r=r,
+        theta_out=theta_out,
+        r_out=r_out,
+        r_ws=r_ws
+    )
+    theta_spiral = log_spiral * tanh_spiral
+    return theta_spiral
+
+
+def tilt_spiral(
+        theta_inc: units.Quantity,
+        theta_pa: units.Quantity,
+        r: units.Quantity,
+        theta: units.Quantity,
+):
+    """
+    Apply transformations to r coordinate to account for model inclination.
+    :param theta_inc: inclination to line-of-sight, in degrees.
+        Corresponds to item R9) in the GALFIT feedme definition.
+    :param theta_pa: Position angle of the axis about which the galaxy is rotated for inclination.
+        Corresponds to item R10) in the GALFIT feedme definition.
+    :param r: r coordinate; distance from the centre of the spiral model, in pixels.
+    :param r: theta coordinate
+    :return: r_prime, appropriately transformed r coordinate
+    """
+    theta = theta - theta_pa
+    a = r
+    b = r * np.cos(theta_inc)
+    # Use ellipse as projected circle onto coordinate plane
+    r_prime = a * b / np.sqrt((b * np.cos(theta)) ** 2 + (a * np.sin(theta)) ** 2)
+    return r_prime
+
+
+def _spiral_arms(
+        theta: units.Quantity,
+        theta_inc: units.Quantity,
+        theta_pa: units.Quantity,
+        position_angle: units.Quantity,
+        x: units.Quantity,
+        y: units.Quantity,
+        r: units.Quantity,
+        tilt: bool = True,
+        fudge_factor: float = 1.
+):
+    """
+    Helper function for generating spiral arm coordinates.
+    :param theta: angular coordinate of point(s).
+    :param theta_inc: inclination to line-of-sight, in degrees.
+        Corresponds to item R9) in the GALFIT feedme definition.
+    :param theta_pa: Position angle of the axis about which the galaxy is rotated for inclination.
+        Corresponds to item R10) in the GALFIT feedme definition.
+    :param position_angle: position angle (PA) of model, in degrees, with up=0 and left=90
+        Corresponds to item 10) in the GALFIT feedme definition.
+    :param x: x-position of model centre, in pixels.
+        Corresponds to first component of item 1) in the GALFIT feedme definition.
+    :param y: y-position of model centre, in pixels.
+        Corresponds to second component of item 1) in the GALFIT feedme definition.
+    :param r: r coordinate; distance from the centre of the spiral model, in pixels.
+    :param tilt: If True, the spiral is transformed to account for its inclination angle.
+        If False, the output spiral is equivalent to theta_inc == 0 deg.
+    :param fudge_factor: Sometimes, infuriatingly, the
+    :return: theta_1, x_1, y_1, theta_2, x_2, y_2, where 1 and 2 refer to each spiral arm.
+    """
+    # Rotate to GALFIT coordinates
+    theta_1 = theta + position_angle - 90 * units.deg
+    # Set up opposite spiral arm
+    theta_2 = theta_1 - 180 * units.deg
+    # Account for inclination of model
+    if tilt:
+        r_prime = tilt_spiral(
+            r=r,
+            theta_inc=theta_inc,
+            theta=theta_1,
+            theta_pa=theta_pa
+        ) * fudge_factor
+    else:
+        r_prime = r
+    # Calculate x and y coordinates of spiral points
+    x_1, y_1 = u.polar_to_cartesian(
+        theta=theta_1,
+        r=r_prime,
+        centre_x=x,
+        centre_y=y
+    )
+    x_2, y_2 = u.polar_to_cartesian(
+        theta=theta_2,
+        r=r_prime,
+        centre_x=x,
+        centre_y=y
+    )
+    theta_out = np.append(np.flip(theta_2), theta_1)
+    x_out = np.append(np.flip(x_2), x_1)
+    y_out = np.append(np.flip(y_2), y_1)
+    return theta_out, x_out, y_out
+
+
+def spiral_log_tanh(
+        r_in: units.Quantity,
+        r_out: units.Quantity,
+        r_ws: units.Quantity,
+        theta_inc: units.Quantity,
+        theta_pa: units.Quantity,
+        theta_out: units.Quantity,
+        position_angle: units.Quantity,
+        x: units.Quantity,
+        y: units.Quantity,
+        r: units.Quantity,
+        tilt: bool = True,
+):
+    """
+    Calculates theta, x and y (image coordinates) for a GALFIT tanh log spiral, as defined in Galfit User's Manual
+    (Peng 2010), including tilt.
+    :param r_in: Spiral inner radius, in pixels. If this goes extremely negative in fitting, fix to 0.
+            Corresponds to item R1) in the GALFIT feedme definition.
+    :param r_out: Spiral outer radius, in pixels.
+            Corresponds to item R2) in the GALFIT feedme definition.
+    :param r_ws: winding scale radius, in pixels.
+        Corresponds to item R4) in the GALFIT feedme definition.
+    :param theta_inc: inclination to line-of-sight, in degrees.
+        Corresponds to item R9) in the GALFIT feedme definition.
+    :param theta_pa: Position angle of the axis about which the galaxy is rotated for inclination.
+        Corresponds to item R10) in the GALFIT feedme definition.
+    :param theta_out: Cumulative rotation to outer radius, in degrees.
+        Corresponds to item R3) in the GALFIT feedme definition.
+    :param position_angle: position angle (PA) of model, in degrees, with up=0 and left=90
+        Corresponds to item 10) in the GALFIT feedme definition.
+    :param x: x-position of model centre, in pixels.
+        Corresponds to first component of item 1) in the GALFIT feedme definition.
+    :param y: y-position of model centre, in pixels.
+        Corresponds to second component of item 1) in the GALFIT feedme definition.
+    :param r: r coordinate; distance from the centre of the spiral model, in pixels.
+    :param tilt: If True, the spiral is transformed to account for its inclination angle.
+        If False, the output spiral is equivalent to theta_inc == 0 deg.
+    :return: theta_1, x_1, y_1, theta_2, x_2, y_2, where 1 and 2 refer to each spiral arm.
+    """
+    theta = _spiral_log_tanh(
+        r_in=r_in,
+        r_out=r_out,
+        r_ws=r_ws,
+        theta_out=theta_out,
+        r=r
+    )
+    # Generate coordinates of spiral arms
+    theta_out, x_out, y_out = _spiral_arms(
+        theta=theta,
+        position_angle=position_angle,
+        theta_inc=theta_inc,
+        theta_pa=theta_pa,
+        x=x,
+        y=y,
+        r=r,
+        tilt=tilt
+    )
+    return theta_out, x_out, y_out
+
+
+def spiral_log(
+        r_out: units.Quantity,
+        r_ws: units.Quantity,
+        theta_inc: units.Quantity,
+        theta_pa: units.Quantity,
+        theta_out: units.Quantity,
+        position_angle: units.Quantity,
+        x: units.Quantity,
+        y: units.Quantity,
+        r: units.Quantity,
+        tilt: bool = True,
+):
+    """
+    Calculates theta, x and y (image coordinates) for a pure log spiral, based on equations in Galfit User's Manual
+    (Peng 2010), including tilt.
+    :param r_out: Spiral outer radius, in pixels.
+            Corresponds to item R2) in the GALFIT feedme definition.
+    :param r_ws: winding scale radius, in pixels.
+        Corresponds to item R4) in the GALFIT feedme definition.
+    :param theta_inc: inclination to line-of-sight, in degrees.
+        Corresponds to item R9) in the GALFIT feedme definition.
+    :param theta_pa: Position angle of the axis about which the galaxy is rotated for inclination.
+        Corresponds to item R10) in the GALFIT feedme definition.
+    :param theta_out: Cumulative rotation to outer radius, in degrees.
+        Corresponds to item R3) in the GALFIT feedme definition.
+    :param position_angle: position angle (PA) of model, in degrees, with up=0 and left=90
+        Corresponds to item 10) in the GALFIT feedme definition.
+    :param x: x-position of model centre, in pixels.
+        Corresponds to first component of item 1) in the GALFIT feedme definition.
+    :param y: y-position of model centre, in pixels.
+        Corresponds to second component of item 1) in the GALFIT feedme definition.
+    :param r: r coordinate; distance from the centre of the spiral model, in pixels.
+    :param tilt: If True, the spiral is transformed to account for its inclination angle.
+        If False, the output spiral is equivalent to theta_inc == 0 deg.
+    :return: theta_1, x_1, y_1, theta_2, x_2, y_2, where 1 and 2 refer to each spiral arm.
+    """
+    theta = _spiral_log(
+        theta_out=theta_out,
+        r_out=r_out,
+        r_ws=r_ws,
+        r=r,
+    )
+    # Generate coordinates of spiral arms
+    theta_out, x_out, y_out = _spiral_arms(
+        theta=theta,
+        position_angle=position_angle,
+        theta_inc=theta_inc,
+        theta_pa=theta_pa,
+        x=x,
+        y=y,
+        r=r,
+        tilt=tilt
+    )
+    return theta_out, x_out, y_out
+
+
+def spiral_from_model_dict(
+        model_dict: dict,
+        r: units.Quantity,
+        **kwargs
+):
+    """
+    A wrapper for spiral_log_tanh() that does the work of unpacking the model dict returned by extract_fit_params.
+    :param model_dict: dict containing output model param names as keys; the dictionaries generated by
+        extract_fit_params corresponding to "COMP_N" will work as they are, so long as they have rotation parameters.
+    :param r: r coordinate of point(s); distance from the centre of the spiral model, in pixels.
+    :param kwargs: Any other keywords you wish to pass to the spiral_log_tanh function. Warning: if keys overlap with
+        model_dict, the model_dict entries will be overwritten by the kwargs entries.
+    :return:
+    """
+    rot_type = model_dict["rotation_params"]["rot_type"]
+    if rot_type == "log":
+        return spiral_log_tanh(
+            r=r,
+            r_in=model_dict["rotation_params"]["r_in"],
+            r_out=model_dict["rotation_params"]["r_out"],
+            r_ws=model_dict["rotation_params"]["r_ws"],
+            theta_inc=model_dict["rotation_params"]["theta_inc"],
+            theta_pa=model_dict["rotation_params"]["theta_pa"],
+            theta_out=model_dict["rotation_params"]["theta_out"],
+            position_angle=model_dict["position_angle"],
+            x=model_dict["x"],
+            y=model_dict["y"],
+            **kwargs
+        )
+    elif rot_type == "power":
+        raise ValueError("power law spirals are not yet supported (but hopefully will be soon)")
+    else:
+        raise ValueError(f"Coordinate rotation type {rot_type} not recognised.")

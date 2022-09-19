@@ -4234,6 +4234,8 @@ class ImagingImage(Image):
         if isinstance(model_guesses, dict):
             model_guesses = [model_guesses]
         gf_tbls = {}
+        gf_dicts = {}
+
         for i, model in enumerate(model_guesses):
             if "position" in model:
                 x, y = self.world_to_pixel(
@@ -4255,7 +4257,9 @@ class ImagingImage(Image):
                 model["fit_x"] = model["fit_y"] = model["fit_position"]
 
             gf_tbls[f"COMP_{i + 1}"] = []
+            gf_dicts[f"COMP_{i + 1}"] = []
         gf_tbls[f"COMP_{i + 2}"] = []
+        gf_dicts[f"COMP_{i + 2}"] = []
 
         if output_dir is None:
             output_dir = self.data_path
@@ -4371,9 +4375,13 @@ class ImagingImage(Image):
                 component["dec_err"] = component["y_err"].to(units.deg, self.pixel_scale_y)
                 component["frame"] = frame
                 component["x_min"], component["x_max"], component["y_min"], component["y_max"] = margins
+                component_dict = component.copy()
+                if "rotation_params" in component:
+                    component.update(component.pop("rotation_params"))
 
                 results_table = table.QTable([component])
                 gf_tbls[compname].append(results_table)
+                gf_dicts[compname].append(component_dict)
 
             mask_ones = np.invert(mask_data.astype(bool)).astype(int)
 
@@ -4400,7 +4408,7 @@ class ImagingImage(Image):
 
         shutil.copy(p.path_to_config_galfit(), output_dir)
 
-        return component_tables
+        return component_tables, gf_dicts
 
     def galfit_object(
             self,
@@ -4432,7 +4440,7 @@ class ImagingImage(Image):
         kwargs["output_dir"] = output_dir
         kwargs["output_prefix"] = output_prefix
 
-        model_tbls = self.galfit(
+        model_tbls, model_dicts = self.galfit(
             **kwargs
         )
 
@@ -4443,10 +4451,13 @@ class ImagingImage(Image):
         best_index, best_dict = galfit.sersic_best_row(model_tbls[f"COMP_{pivot_component}"])
         for component in model_tbls:
             if "r_eff_ang" in model_tbls[component].colnames:
-                model_tbls[component]["r_eff_proj"] = obj.projected_distance(model_tbls[component]["r_eff_ang"]).to(
+                r_eff_proj = obj.projected_distance(model_tbls[component]["r_eff_ang"]).to(
                     "kpc")
-                model_tbls[component]["r_eff_proj_err"] = obj.projected_distance(
-                    model_tbls[component]["r_eff_ang_err"]).to("kpc")
+                model_dicts[component]["r_eff_proj"] = r_eff_proj
+                model_tbls[component]["r_eff_proj"] = r_eff_proj
+                r_eff_proj_err = obj.projected_distance(model_tbls[component]["r_eff_ang_err"]).to("kpc")
+                model_dicts[component]["r_eff_proj_err"] = r_eff_proj_err
+                model_tbls[component]["r_eff_proj_err"] = r_eff_proj_err
             model_tbls[component].write(
                 os.path.join(output_dir, f"{output_prefix}_{component}_fits.ecsv"),
                 format="ascii.ecsv",
