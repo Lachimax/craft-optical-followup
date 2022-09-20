@@ -3144,6 +3144,8 @@ class ImagingEpoch(Epoch):
 
         if images is None:
             images = self._get_images("final")
+        elif isinstance(images, str):
+            images = self._get_images(images)
 
         if reference_cat is None:
             reference_cat = self.epoch_gaia_catalogue()
@@ -3151,12 +3153,16 @@ class ImagingEpoch(Epoch):
         for fil in images:
             img = images[fil]
             img.load_source_cat()
-            self.astrometry_stats[fil] = img.astrometry_diagnostics(
-                reference_cat=reference_cat,
-                local_coord=self.field.centre_coords,
-                offset_tolerance=offset_tolerance
-            )
-            self.astrometry_stats[fil]["file_path"] = img.path
+            stats = -99.
+            while not isinstance(stats, dict):
+                stats = img.astrometry_diagnostics(
+                    reference_cat=reference_cat,
+                    local_coord=self.field.centre_coords,
+                    offset_tolerance=offset_tolerance
+                )
+                offset_tolerance += 0.5 * units.arcsec
+            stats["file_path"] = img.path
+            self.astrometry_stats[fil] = stats
 
         self.add_log(
             "Ran astrometry diagnostics.",
@@ -3189,13 +3195,13 @@ class ImagingEpoch(Epoch):
             else:
                 raise ValueError("coadded_final has not been set.")
 
-        if image_type == "coadded_trimmed":
+        if image_type in ["coadded_trimmed", "trimmed"]:
             image_dict = self.coadded_trimmed
         elif image_type == "coadded":
             image_dict = self.coadded
         elif image_type in ["coadded_unprojected", "unprojected"]:
             image_dict = self.coadded_unprojected
-        elif image_type == "coadded_astrometry":
+        elif image_type in ["coadded_astrometry", "astrometry"]:
             image_dict = self.coadded_astrometry
         else:
             raise ValueError(f"Images type '{image_type}' not recognised.")
@@ -3407,16 +3413,15 @@ class ImagingEpoch(Epoch):
             self,
             correct_to_epoch: bool = True
     ):
-        if self.gaia_catalogue is None:
-            if self.date is None:
-                raise ValueError(f"{self}.date not set; needed to correct Gaia cat to epoch.")
-            if correct_to_epoch:
-                self.gaia_catalogue = astm.correct_gaia_to_epoch(
-                    self.field.get_path(f"cat_csv_gaia"),
-                    new_epoch=self.date
-                )
-            else:
-                self.gaia_catalogue = astm.load_catalogue(cat_name="gaia", cat=self.field.get_path(f"cat_csv_gaia"))
+        if self.date is None:
+            raise ValueError(f"{self}.date not set; needed to correct Gaia cat to epoch.")
+        if correct_to_epoch:
+            self.gaia_catalogue = astm.correct_gaia_to_epoch(
+                self.field.get_path(f"cat_csv_gaia"),
+                new_epoch=self.date
+            )
+        else:
+            self.gaia_catalogue = astm.load_catalogue(cat_name="gaia", cat=self.field.get_path(f"cat_csv_gaia"))
         return self.gaia_catalogue
 
     def _check_frame(self, frame: Union[image.ImagingImage, str], frame_type: str):
