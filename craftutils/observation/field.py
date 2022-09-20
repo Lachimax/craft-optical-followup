@@ -2716,10 +2716,14 @@ class ImagingEpoch(Epoch):
                 phot_autoparams=f"{configs['kron_factor']},{configs['kron_radius_min']}"
             )
         if do_astrometry_diagnostics:
-            offset_tolerance = 0.5 * units.arcsec
-            if "correct_astrometry_frames" in self.do_kwargs and not self.do_kwargs["correct_astrometry_frames"]:
-                offset_tolerance = 1.0 * units.arcsec
-            self.astrometry_diagnostics(images=images, offset_tolerance=offset_tolerance)
+            if "offset_tolerance" in kwargs:
+                offset_tolerance = kwargs["offset_tolerance"]
+            else:
+                offset_tolerance = 0.5 * units.arcsec
+            self.astrometry_diagnostics(
+                images=images,
+                offset_tolerance=offset_tolerance
+            )
         if do_psf_diagnostics:
             self.psf_diagnostics(images=images)
 
