@@ -2288,13 +2288,19 @@ class ImagingEpoch(Epoch):
     def proc_correct_astrometry_frames(
             self,
             output_dir: str,
-            correct_to_epoch: bool = True,
             **kwargs
     ):
 
         skip = False
         if "skip_indices" in kwargs:
             skip = kwargs.pop("skip_indices")
+
+        if "correct_to_epoch" in kwargs:
+            print(f"correct_to_epoch 1: {kwargs['correct_to_epoch']}")
+            correct_to_epoch = kwargs.pop("correct_to_epoch")
+            print(f"correct_to_epoch 2: {correct_to_epoch}")
+        else:
+            correct_to_epoch = True
 
         u.debug_print(2, kwargs)
         u.debug_print(1, "skip ==", skip)
@@ -3381,6 +3387,7 @@ class ImagingEpoch(Epoch):
             cat_name="gaia",
             correct_to_epoch: bool = True
     ):
+        print(f"correct_to_epoch 3: {correct_to_epoch}")
         if not isinstance(self.field, Field):
             raise ValueError("field has not been set for this observation.")
         self.field.retrieve_catalogue(cat_name=cat_name)
@@ -3389,7 +3396,7 @@ class ImagingEpoch(Epoch):
         cat_index_path = os.path.join(index_path, cat_name)
         csv_path = self.field.get_path(f"cat_csv_{cat_name}")
 
-        if cat_name == "gaia" and correct_to_epoch:
+        if cat_name == "gaia":
             cat = self.epoch_gaia_catalogue(correct_to_epoch=correct_to_epoch)
         else:
             cat = retrieve.load_catalogue(
@@ -3417,6 +3424,7 @@ class ImagingEpoch(Epoch):
             self,
             correct_to_epoch: bool = True
     ):
+        print(f"correct_to_epoch 4: {correct_to_epoch}")
         if self.date is None:
             raise ValueError(f"{self}.date not set; needed to correct Gaia cat to epoch.")
         if correct_to_epoch:
