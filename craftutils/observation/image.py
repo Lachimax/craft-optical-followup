@@ -3279,7 +3279,7 @@ class ImagingImage(Image):
                 data,
                 interval=MinMaxInterval(),
                 stretch=SqrtStretch(),
-                vmin=np.median(data),
+                vmin=np.nanmedian(data),
             ),
             origin='lower',
         )
