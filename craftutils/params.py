@@ -794,8 +794,10 @@ def path_to_config_sextractor_failed_psfex_param():
 def path_to_config_sextractor_config():
     return os.path.join(path_to_config_psfex(), "psf-fit.sex")
 
+
 def path_to_config_galfit():
     return os.path.join(project_path, "param", "galfit", "galfit.feedme")
+
 
 def path_to_config_sextractor_param_pre_psfex():
     return os.path.join(path_to_config_psfex(), "pre-psfex.param")
@@ -857,6 +859,19 @@ def update_output_file(obj):
 
 
 # def change_param_name(folder):
+
+def status_file(path: str):
+    status = load_params(path)
+    if status is None:
+        status = {
+            "complete": [],
+            "failed": [],
+        }
+    if "failed" not in status or not isinstance(status["failed"], dict):
+        status["failed"] = {}
+    if "complete" not in status or not isinstance(status["complete"], dict):
+        status["complete"] = {}
+    return status
 
 
 if __name__ == '__main__':

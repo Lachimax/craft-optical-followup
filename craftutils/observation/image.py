@@ -284,6 +284,11 @@ def from_path(path: str, cls: type = None, **kwargs):
         return cls(path, **kwargs)
 
 
+def expunge():
+    for img_path in active_images:
+        del active_images[img_path]
+
+
 class Image:
     instrument_name = "dummy"
     num_chips = 1
@@ -2266,7 +2271,8 @@ class ImagingImage(Image):
             local_coord: SkyCoord = None,
             local_radius: units.Quantity = 0.5 * units.arcmin,
             show_plots: bool = False,
-            output_path=None
+            output_path: str = None,
+            min_matches: int = 10
     ):
         """
         Perform diagnostics of astrometric offset of stars in image from catalogue.
@@ -2349,7 +2355,7 @@ class ImagingImage(Image):
                 offset_tolerance=offset_tolerance,
                 # star_tolerance=star_tolerance
             )
-            if len(matches_source_cat) < 1:
+            if len(matches_source_cat) < min_matches:
                 self.astrometry_err = -99 * units.arcsec
                 self.ra_err = -99 * units.arcsec
                 self.dec_err = -99 * units.arcsec
@@ -2479,6 +2485,7 @@ class ImagingImage(Image):
             self.headers[0]["ASTM_RMS"] = self.astrometry_err.value
             self.headers[0]["RA_RMS"] = self.ra_err.value
             self.headers[0]["DEC_RMS"] = self.dec_err.value
+
         self.write_fits_file()
         self.update_output_file()
 
@@ -2764,7 +2771,7 @@ class ImagingImage(Image):
         other_image.load_headers(force=True)
         print(f"Reprojecting {self.filename} into the pixel space of {other_image.filename}")
         if method == 'exact':
-            reprojected, footprint = rp.reproject_exact(self.path, other_image.headers[ext])  # , parallel=True)
+            reprojected, footprint = rp.reproject_exact(self.path, other_image.headers[ext], parallel=True)
         elif method == 'adaptive':
             reprojected, footprint = rp.reproject_adaptive(self.path, other_image.headers[ext])
         elif method in ['interp', 'interpolate', 'interpolation']:
@@ -3277,7 +3284,7 @@ class ImagingImage(Image):
                 data,
                 interval=MinMaxInterval(),
                 stretch=SqrtStretch(),
-                vmin=np.median(data),
+                vmin=np.nanmedian(data),
             ),
             origin='lower',
         )

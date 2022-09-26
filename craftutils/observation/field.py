@@ -48,6 +48,16 @@ active_epochs = {}
 zeropoint_yaml = os.path.join(p.data_path, f"zeropoints.yaml")
 
 
+def expunge_fields():
+    for field_name in active_fields:
+        del active_fields[field_name]
+
+
+def expunge_epochs():
+    for epoch_name in active_epochs:
+        del active_fields[epoch_name]
+
+
 def _output_img_list(lst: list):
     """
     Turns a list of images into a YAML-able list of paths.
@@ -686,7 +696,11 @@ class Field:
         else:
             print("Could not load catalogue; field is outside footprint.")
 
-    def generate_astrometry_indices(self, cat_name: str = "gaia"):
+    def generate_astrometry_indices(
+            self,
+            cat_name: str = "gaia",
+            correct_to_epoch: bool = True
+    ):
         self.retrieve_catalogue(cat_name=cat_name)
         if not self.check_cat(cat_name=cat_name):
             print(f"Field is not in {cat_name}; index file could not be created.")
@@ -1567,6 +1581,8 @@ class Epoch:
 
         # self.load_output_file()
 
+        active_epochs[self.name] = self
+
     def __str__(self):
         return self.name
 
@@ -2280,17 +2296,28 @@ class ImagingEpoch(Epoch):
                             tmp.filename.replace(".fits", "_registered.fits")))
                     self.add_frame_registered(registered)
 
-    def proc_correct_astrometry_frames(self, output_dir: str, **kwargs):
+    def proc_correct_astrometry_frames(
+            self,
+            output_dir: str,
+            **kwargs
+    ):
 
         skip = False
         if "skip_indices" in kwargs:
             skip = kwargs.pop("skip_indices")
 
+        if "correct_to_epoch" in kwargs:
+            print(f"correct_to_epoch 1: {kwargs['correct_to_epoch']}")
+            correct_to_epoch = kwargs.pop("correct_to_epoch")
+            print(f"correct_to_epoch 2: {correct_to_epoch}")
+        else:
+            correct_to_epoch = True
+
         u.debug_print(2, kwargs)
         u.debug_print(1, "skip ==", skip)
 
         if not skip:
-            self.generate_astrometry_indices()
+            self.generate_astrometry_indices(correct_to_epoch=correct_to_epoch)
 
         self.frames_astrometry = {}
 
@@ -2305,7 +2332,13 @@ class ImagingEpoch(Epoch):
                 frames=self.frames_normalised,
                 **kwargs)
 
-    def correct_astrometry_frames(self, output_dir: str, frames: dict = None, am_params: dict = {}, **kwargs):
+    def correct_astrometry_frames(
+            self,
+            output_dir: str,
+            frames: dict = None,
+            am_params: dict = {},
+            **kwargs
+    ):
         self.frames_astrometry = {}
 
         if frames is None:
@@ -2487,7 +2520,8 @@ class ImagingEpoch(Epoch):
                     print(f"Median PSF FWHM {fwhm_median} > upper limit {upper_limit}")
 
     def proc_coadd(self, output_dir: str, **kwargs):
-        kwargs["frames"] = self.frames_final
+        if "frames" not in kwargs:
+            kwargs["frames"] = self.frames_final
         self.coadd(output_dir, **kwargs)
 
     def coadd(self, output_dir: str, frames: str = "astrometry", sigma_clip: float = 1.5):
@@ -2667,14 +2701,14 @@ class ImagingEpoch(Epoch):
             self.add_coadded_trimmed_image(trimmed, key=fil)
 
     def proc_source_extraction(self, output_dir: str, **kwargs):
-        do_diag = True
-        if "do_astrometry_diagnostics" in kwargs:
-            do_diag = kwargs.pop("do_astrometry_diagnostics")
+        if "do_astrometry_diagnostics" not in kwargs:
+            kwargs["do_astrometry_diagnostics"] = True
+        if "do_psf_diagnostics" not in kwargs:
+            kwargs["do_psf_diagnostics"] = True
+        if "image_type" not in kwargs:
+            kwargs["image_type"] = "final"
         self.source_extraction(
             output_dir=output_dir,
-            do_astrometry_diagnostics=do_diag,
-            do_psf_diagnostics=do_diag,
-            image_type="final",
             **kwargs
         )
 
@@ -2699,10 +2733,14 @@ class ImagingEpoch(Epoch):
                 phot_autoparams=f"{configs['kron_factor']},{configs['kron_radius_min']}"
             )
         if do_astrometry_diagnostics:
-            offset_tolerance = 0.5 * units.arcsec
-            if "correct_astrometry_frames" in self.do_kwargs and not self.do_kwargs["correct_astrometry_frames"]:
-                offset_tolerance = 1.0 * units.arcsec
-            self.astrometry_diagnostics(images=images, offset_tolerance=offset_tolerance)
+            if "offset_tolerance" in kwargs:
+                offset_tolerance = kwargs["offset_tolerance"]
+            else:
+                offset_tolerance = 0.5 * units.arcsec
+            self.astrometry_diagnostics(
+                images=images,
+                offset_tolerance=offset_tolerance
+            )
         if do_psf_diagnostics:
             self.psf_diagnostics(images=images)
 
@@ -3127,6 +3165,8 @@ class ImagingEpoch(Epoch):
 
         if images is None:
             images = self._get_images("final")
+        elif isinstance(images, str):
+            images = self._get_images(images)
 
         if reference_cat is None:
             reference_cat = self.epoch_gaia_catalogue()
@@ -3134,11 +3174,16 @@ class ImagingEpoch(Epoch):
         for fil in images:
             img = images[fil]
             img.load_source_cat()
-            self.astrometry_stats[fil] = img.astrometry_diagnostics(
-                reference_cat=reference_cat,
-                local_coord=self.field.centre_coords,
-                offset_tolerance=offset_tolerance
-            )
+            stats = -99.
+            while not isinstance(stats, dict):
+                stats = img.astrometry_diagnostics(
+                    reference_cat=reference_cat,
+                    local_coord=self.field.centre_coords,
+                    offset_tolerance=offset_tolerance
+                )
+                offset_tolerance += 0.5 * units.arcsec
+            stats["file_path"] = img.path
+            self.astrometry_stats[fil] = stats
 
         self.add_log(
             "Ran astrometry diagnostics.",
@@ -3159,6 +3204,7 @@ class ImagingEpoch(Epoch):
             img = images[fil]
             print(f"Performing PSF measurements on {img}...")
             self.psf_stats[fil], _, _, _ = img.psf_diagnostics()
+            self.psf_stats[fil]["file_path"] = img.path
 
         self.update_output_file()
         return self.psf_stats
@@ -3170,19 +3216,24 @@ class ImagingEpoch(Epoch):
             else:
                 raise ValueError("coadded_final has not been set.")
 
-        if image_type == "coadded_trimmed":
+        if image_type in ["coadded_trimmed", "trimmed"]:
             image_dict = self.coadded_trimmed
         elif image_type == "coadded":
             image_dict = self.coadded
         elif image_type in ["coadded_unprojected", "unprojected"]:
             image_dict = self.coadded_unprojected
-        elif image_type == "coadded_astrometry":
+        elif image_type in ["coadded_astrometry", "astrometry"]:
             image_dict = self.coadded_astrometry
         else:
             raise ValueError(f"Images type '{image_type}' not recognised.")
         return image_dict
 
-    def _get_frames(self, frame_type: str):
+    def _get_frames(self, frame_type: str) -> dict:
+        """
+        A helper method for finding the desired frame
+        :param frame_type: "science", "reduced", "trimmed", "normalised", "registered", "astrometry" or "diagnosed"
+        :return:
+        """
         if frame_type == "final":
             if self.frames_final is not None:
                 frame_type = self.frames_final
@@ -3345,7 +3396,9 @@ class ImagingEpoch(Epoch):
     def generate_astrometry_indices(
             self,
             cat_name="gaia",
-            correct_to_epoch: bool = True):
+            correct_to_epoch: bool = True
+    ):
+        print(f"correct_to_epoch 3: {correct_to_epoch}")
         if not isinstance(self.field, Field):
             raise ValueError("field has not been set for this observation.")
         self.field.retrieve_catalogue(cat_name=cat_name)
@@ -3354,8 +3407,8 @@ class ImagingEpoch(Epoch):
         cat_index_path = os.path.join(index_path, cat_name)
         csv_path = self.field.get_path(f"cat_csv_{cat_name}")
 
-        if cat_name == "gaia" and correct_to_epoch:
-            cat = self.epoch_gaia_catalogue()
+        if cat_name == "gaia":
+            cat = self.epoch_gaia_catalogue(correct_to_epoch=correct_to_epoch)
         else:
             cat = retrieve.load_catalogue(
                 cat_name=cat_name,
@@ -3378,14 +3431,20 @@ class ImagingEpoch(Epoch):
 
         return cat
 
-    def epoch_gaia_catalogue(self):
-        if self.gaia_catalogue is None:
-            if self.date is None:
-                raise ValueError(f"{self}.date not set; needed to correct Gaia cat to epoch.")
+    def epoch_gaia_catalogue(
+            self,
+            correct_to_epoch: bool = True
+    ):
+        print(f"correct_to_epoch 4: {correct_to_epoch}")
+        if self.date is None:
+            raise ValueError(f"{self}.date not set; needed to correct Gaia cat to epoch.")
+        if correct_to_epoch:
             self.gaia_catalogue = astm.correct_gaia_to_epoch(
                 self.field.get_path(f"cat_csv_gaia"),
                 new_epoch=self.date
             )
+        else:
+            self.gaia_catalogue = astm.load_catalogue(cat_name="gaia", cat=self.field.get_path(f"cat_csv_gaia"))
         return self.gaia_catalogue
 
     def _check_frame(self, frame: Union[image.ImagingImage, str], frame_type: str):
