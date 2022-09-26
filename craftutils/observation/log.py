@@ -86,8 +86,7 @@ class Log:
             else:
                 log_entry["method"] = method.__name__
 
-        if method_args is not None:
-            log_entry["method_args"] = method_args
+        log_entry["method_args"] = method_args
 
         if ancestor_logs is not None:
             log_entry["ancestor_logs"] = {}

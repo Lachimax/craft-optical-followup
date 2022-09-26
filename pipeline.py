@@ -13,8 +13,7 @@ config = p.config
 def main(
         field_name: str,
         epoch_name: str,
-        imaging: bool,
-        spectroscopy: bool,
+        mode: str,
         instrument: str,
         furby_path: str,
         do: str,
@@ -46,9 +45,6 @@ def main(
 
     # Do automated FURBY process.
     if furby_path is not None:
-
-        new_field = True
-        furby = True
 
         imaging = True
 
@@ -128,14 +124,12 @@ def main(
                     exit(0)
             field = fld.Field.from_params(name=field_name)
 
-    if spectroscopy:
-        mode = "Spectroscopy"
-    elif imaging:
-        mode = "Imaging"
-    else:
-        _, mode = u.select_option(message="Please select a mode.", options=["Imaging", "Spectroscopy"])
+    if mode is None:
+        _, mode = u.select_option(message="Please select a mode.", options=["Imaging", "Spectroscopy", "Objects"])
 
-    if mode == "Spectroscopy":
+    mode = mode.lower()
+
+    if mode == "spectroscopy":
         if epoch_name is None:
             # Build a list of imaging epochs from that field.
             field.gather_epochs_spectroscopy()
@@ -146,7 +140,7 @@ def main(
                 instrument = fld.select_instrument(mode="spectroscopy")
             epoch = fld.SpectroscopyEpoch.from_params(epoch_name, instrument=instrument, field=field)
 
-    else:  # if mode == "Imaging"
+    elif mode == "imaging":
         if epoch_name is None:
             # Build a list of imaging epochs from that field.
             if type(field) is fld.FRBField:
@@ -159,6 +153,19 @@ def main(
                 instrument = fld.select_instrument(mode="imaging")
             epoch = fld.ImagingEpoch.from_params(epoch_name, instrument=instrument, field=field)
             epoch.field = field
+
+    elif mode == "objects":
+
+        if u.select_yn_exit("Update photometry from all epochs?"):
+            epochs = field.gather_epochs_imaging()
+            for epoch_name in epochs:
+                epoch = fld.epoch_from_directory(epoch_name)
+                epoch.do = [-1]
+                # Run only the last stage of each epoch pipeline
+                epoch.pipeline()
+        if u.select_yn_exit("Refine photometry?"):
+            field.object_properties()
+        exit()
 
     u.debug_print(2, "pipeline.py: type(epoch) ==", type(epoch))
     epoch.do = do
@@ -176,19 +183,29 @@ if __name__ == '__main__':
 
     parser = argparse.ArgumentParser(description="General pipeline for optical/infrared data reduction.")
     parser.add_argument(
-        "--field", help='Name of field, eg FRB180924', type=str, default=None)
-    parser.add_argument(
-        "--epoch", help='Name of epoch, eg FRB181112_1', type=str, default=None)
-    parser.add_argument(
-        "--instrument", help="Name of instrument on which epoch was observed, eg 'vlt-fors2'", type=str,
+        "--field",
+        help='Name of field, eg FRB180924',
+        type=str,
         default=None)
     parser.add_argument(
-        "-i", help="Imaging pipeline", action="store_true")
+        "--epoch",
+        help='Name of epoch, eg FRB181112_1',
+        type=str,
+        default=None)
     parser.add_argument(
-        "-s", help="Spectroscopy pipeline. Overrides -i.", action="store_true")
+        "--instrument",
+        help="Name of instrument on which epoch was observed, eg 'vlt-fors2'",
+        type=str,
+        default=None)
     parser.add_argument(
-        "--do", help="Epoch processing stages to perform (overrides manual selection if provided). "
-                     "Numbers separated by space or comma.",
+        "--mode",
+        help="imaging, spectroscopy or objects",
+        default=None,
+    )
+    parser.add_argument(
+        "--do",
+        help="Epoch processing stages to perform (overrides manual selection if provided). "
+             "Numbers separated by space or comma.",
         type=str)
     parser.add_argument(
         "--do_not_reuse_masters",
@@ -254,8 +271,7 @@ if __name__ == '__main__':
     main(
         field_name=args.field,
         epoch_name=args.epoch,
-        imaging=args.i,
-        spectroscopy=args.s,
+        mode=args.mode,
         instrument=args.instrument,
         do=args.do,
         do_not_reuse_masters=args.do_not_reuse_masters,

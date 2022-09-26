@@ -638,10 +638,19 @@ def plot_gal_params(
             plt.plot((x, x), (0.0, n_y), c=colour)
 
 
-def plot_all_params(image: Union[str, fits.hdu.HDUList], cat: Union[str, Table, np.ndarray], show: bool = True,
-                    cutout: bool = False, ra_key: str = "ALPHA_SKY", dec_key: str = "DELTA_SKY", a_key: str = "A_WORLD",
-                    b_key: str = "B_WORLD", theta_key: str = "THETA_WORLD", kron: bool = False,
-                    kron_key: str = "KRON_RADIUS"):
+def plot_all_params(
+        image: Union[str, fits.hdu.HDUList],
+        cat: Union[str, Table, np.ndarray],
+        show: bool = True,
+        cutout: bool = False,
+        ra_key: str = "ALPHA_SKY",
+        dec_key: str = "DELTA_SKY",
+        a_key: str = "A_WORLD",
+        b_key: str = "B_WORLD",
+        theta_key: str = "THETA_WORLD",
+        kron: bool = False,
+        kron_key: str = "KRON_RADIUS"
+):
     """
     Plots
     :param image:

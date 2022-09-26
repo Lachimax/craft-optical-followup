@@ -39,7 +39,7 @@ gain_unit = units.electron / units.ct
 def image_psf_diagnostics(
         hdu: Union[str, fits.HDUList],
         cat: Union[str, table.Table],
-        star_class_tol: float = 0.9,
+        star_class_tol: int = 0.95,
         mag_max: float = 0.0 * units.mag,
         mag_min: float = -50. * units.mag,
         match_to: table.Table = None,
@@ -58,17 +58,15 @@ def image_psf_diagnostics(
     hdu = copy.deepcopy(hdu)
     cat = u.path_or_table(cat)
 
-    if isinstance(cat, str):
-        cat = table.QTable.read(cat, format="ascii.sextractor")
-    print(cat["CLASS_STAR"].max(), cat["CLASS_STAR"].mean(), star_class_tol)
-    stars = cat[cat["CLASS_STAR"] > star_class_tol]
+
+    # stars = u.trim_to_class(cat=cat, modify=True, allowed=np.arange(0, star_class_tol + 1))
+    stars = cat[cat["CLASS_STAR"] >= star_class_tol]
     print(f"Initial num stars:", len(stars))
     stars = stars[stars["MAG_PSF"] < mag_max]
     print(f"Num stars with MAG_PSF < {mag_max}:", len(stars))
     print(stars["MAG_PSF"].max(), stars["MAG_PSF"].mean(), mag_max, mag_min)
     stars = stars[stars["MAG_PSF"] > mag_min]
     print(f"Num stars with MAG_PSF > {mag_min}:", len(stars))
-
 
     if near_radius is not None:
         header = hdu[ext].header
@@ -86,7 +84,6 @@ def image_psf_diagnostics(
         stars_near = stars[near_centre.separation(coords) < near_radius]
         print("len(stars_near):", len(stars_near), "near_radius:", near_radius, "img_width_ang:", img_width_ang)
         while len(stars_near) < min_stars and near_radius < img_width_ang:
-            print(near_centre.separation(coords).max(), near_centre.separation(coords).mean())
             stars_near = stars[near_centre.separation(coords) < near_radius]
             print(f"Num stars within {near_radius} of {near_centre}:", len(stars_near))
             near_radius += 0.5 * units.arcmin
@@ -165,7 +162,7 @@ def image_psf_diagnostics(
     print(f"Num stars after sigma clipping w. Sextractor PSF:", len(stars_clip_sex))
 
     plt.close()
-    print(f"image_psf_diagnostics(): {output=}")
+    u.debug_print(2, f"image_psf_diagnostics(): {output=}")
     if output is not None:
 
         with quantity_support():
@@ -189,47 +186,6 @@ def image_psf_diagnostics(
                 plt.close()
 
     return stars_clip_moffat, stars_clip_gauss, stars_clip_sex
-
-
-def image_depth_diagnostics(hdu: Union[str, fits.HDUList], fil: str, sextractor: str, cat_path: str, cat_name: str,
-                            output_path: str, star_class_tol: float = 0.9):
-    file = ff.path_or_hdu(hdu=hdu)
-    sextractor_cat = table.Table.read(sextractor, format="ascii.sextractor")
-    sextractor_3sigma = sextractor_cat[sextractor_cat["SNR_WIN"] > 3.0]
-    # TODO: Calculate SNR properly
-    exp_time = ff.get_exp_time(file)
-
-    column_names = r.cat_columns(cat=cat_name, f=fil[0])
-    cat_ra_col = column_names['ra']
-    cat_dec_col = column_names['dec']
-    cat_mag_col = column_names['mag_psf']
-
-    zp = determine_zeropoint_sextractor(sextractor_cat=sextractor,
-                                        image=file,
-                                        cat_path=cat_path,
-                                        cat_name=cat_name,
-                                        output_path=output_path,
-                                        show=False,
-                                        cat_ra_col=cat_ra_col,
-                                        cat_dec_col=cat_dec_col,
-                                        cat_mag_col=cat_mag_col,
-                                        sex_ra_col="ALPHAPSF_SKY",
-                                        sex_dec_col="DELTAPSF_SKY",
-                                        sex_x_col='XPSF_IMAGE',
-                                        sex_y_col='YPSF_IMAGE',
-                                        dist_tol=5.0 * units.pixel,
-                                        flux_column="FLUX_PSF",
-                                        stars_only=True,
-                                        star_class_tol=star_class_tol,
-                                        exp_time=exp_time,
-                                        )
-
-    zeropoint = zp["zeropoint"]
-    depth = np.max(sextractor_3sigma["MAG_WIN"]) + zeropoint
-    print("OBJECTS SNR > 3:", len(sextractor_3sigma))
-    print("DEPTH:", depth)
-
-    return depth
 
 
 def get_median_background(image: Union[str, fits.HDUList], ra: float = None, dec: float = None, frame: int = 100,
@@ -298,12 +254,8 @@ def fit_background(data: np.ndarray, model_type='polynomial', deg: int = 2, foot
     else:
         raise ValueError("Unrecognised model; must be in", accepted_models)
     fitter = fitting.LevMarLSQFitter()
-    # print(footprint)
     if weights is not None:
         weights = weights[footprint[0]:footprint[1], footprint[2]:footprint[3]]
-    # print(data[footprint[0]:footprint[1], footprint[2]:footprint[3]].shape)
-    # print(x.shape)
-    # print(y.shape)
     model = fitter(init, x, y, data[footprint[0]:footprint[1], footprint[2]:footprint[3]],
                    weights=weights)
 
@@ -458,7 +410,8 @@ def determine_zeropoint_sextractor(
         mag_range_sex_lower: units.Quantity = -100 * units.mag,
         stars_only: bool = True,
         star_class_tol: float = 0.95,
-        star_class_col: str = 'CLASS_STAR',
+        star_class_type: str = "CLASS_STAR",
+        star_class_kwargs={},
         exp_time: float = None,
         y_lower: units.Quantity = 0 * units.pix,
         y_upper: units.Quantity = 100000 * units.pix,
@@ -467,7 +420,8 @@ def determine_zeropoint_sextractor(
         cat_zeropoint_err: units.Quantity = 0.0 * units.mag,
         snr_cut: float = 10.,
         snr_col: str = 'SNR_WIN',
-        iterate_uncertainty: bool = True
+        iterate_uncertainty: bool = True,
+        do_x_shift: bool = True
 ):
     """
     This function expects your catalogue to be a .csv.
@@ -491,8 +445,6 @@ def determine_zeropoint_sextractor(
     :param mag_range_sex_upper:
     :param mag_range_sex_lower:
     :param stars_only:
-    :param star_class_tol:
-    :param star_class_col:
     :param exp_time:
     :param y_lower:
     :param y_upper:
@@ -510,7 +462,8 @@ def determine_zeropoint_sextractor(
     params['image_path'] = str(path)
 
     print("Running zeropoint determination, with:")
-    print('SExtractor catalogue path:', sextractor_cat)
+    if isinstance(sextractor_cat, str):
+        print('SExtractor catalogue path:', sextractor_cat)
     print('Image path:', path)
     print('Catalogue path:', cat_path)
     print('Output:', output_path)
@@ -523,13 +476,11 @@ def determine_zeropoint_sextractor(
 
     # Extract pixel scales from images.
     _, pix_scale = ff.get_pixel_scale(image, astropy_units=True)
-    print('PIXEL SCALE:', pix_scale)
     # Get tolerance as angle.
     if dist_tol.unit.is_equivalent(units.pix):
         tolerance = dist_tol.to(units.deg, pix_scale)
     else:
         tolerance = dist_tol
-    print('TOLERANCE:', tolerance)
 
     # Import the catalogue of the sky region.
     if cat_type != 'sextractor':
@@ -551,7 +502,6 @@ def determine_zeropoint_sextractor(
     params['time'] = str(time.Time.now())
     params['catalogue'] = str(cat_name)
     params['airmass'] = 0.0
-    print('Airmass:', params['airmass'])
     params['exp_time'] = exp_time = u.check_quantity(exp_time, units.second)
     params['pix_tol'] = dist_tol
     params['ang_tol'] = tolerance = u.check_quantity(tolerance, units.deg)
@@ -571,12 +521,16 @@ def determine_zeropoint_sextractor(
     params['cat_zeropoint'] = u.check_quantity(cat_zeropoint, units.mag)
     params['cat_zeropoint_err'] = u.check_quantity(cat_zeropoint_err, units.mag)
     if stars_only:
-        params['star_class_tol'] = float(star_class_tol)
+        params['star_class_kwargs'] = star_class_kwargs
 
-    if type(sextractor_cat) is str:
+    if isinstance(sextractor_cat, str):
         source_tbl = table.QTable.read(sextractor_cat, format="ascii.sextractor")
     else:
         source_tbl = sextractor_cat
+
+    if flux_column not in sextractor_cat.colnames:
+        print(f"Flux column {flux_column} not in provided SE catalogue.")
+        return None
 
     source_tbl['mag'], source_tbl['mag_err'] = magnitude_complete(flux=source_tbl[flux_column],
                                                                   flux_err=source_tbl[flux_err_column],
@@ -640,6 +594,41 @@ def determine_zeropoint_sextractor(
         cat_dec_col = cat_dec_col + '_' + cat_name
     matches_cat_pix_x, matches_cat_pix_y = wcst.all_world2pix(matches[cat_ra_col], matches[cat_dec_col], 0, quiet=False)
 
+    # Clean undesirable objects from consideration:
+    print(len(matches), 'total matches')
+    n_match = 0
+
+    params[f'matches_{n_match}_total'] = len(matches)
+    n_match += 1
+
+    remove = np.isnan(matches[cat_mag_col])
+    print(sum(np.invert(remove)), 'matches after removing catalogue mag nans')
+    params[f'matches_{n_match}_nans_cat'] = int(sum(np.invert(remove)))
+    n_match += 1
+
+    star_class_col = "CLASS_STAR"
+    if stars_only:
+        if star_class_type == "SPREAD_MODEL":
+            if "class_flag_col" in star_class_kwargs:
+                star_class_col = star_class_kwargs["class_flag_col"]
+            else:
+                star_class_col = "CLASS_FLAG"
+            is_star = u.trim_to_class(
+                matches,
+                classify_kwargs=star_class_kwargs,
+                modify=False,
+                allowed=np.arange(0, star_class_tol + 1)
+            )
+            remove = remove + np.invert(is_star)
+            print(sum(np.invert(remove)), 'matches after removing non-stars (class_flag < ' + str(star_class_tol) + ')')
+        else:
+            if "class_flag_col" in star_class_kwargs:
+                star_class_col = star_class_kwargs["class_flag_col"]
+            remove = remove + (matches[star_class_col] < star_class_tol)
+            print(sum(np.invert(remove)), 'matches after removing non-stars (class_star >= ' + str(star_class_tol) + ')')
+        params[f'matches_{n_match}_non_stars'] = int(sum(np.invert(remove)))
+        n_match += 1
+
     plt.imshow(image[0].data, origin='lower', norm=plotting.nice_norm(image[0].data))
     plt.scatter(matches_cat_pix_x, matches_cat_pix_y, label=cat_name + 'Catalogue', c=matches[star_class_col],
                 cmap="plasma")
@@ -652,18 +641,6 @@ def determine_zeropoint_sextractor(
     plt.close()
 
     matches[cat_mag_col] = matches[cat_mag_col] + cat_zeropoint
-
-    # Clean undesirable objects from consideration:
-    print(len(matches), 'total matches')
-    n_match = 0
-
-    params[f'matches_{n_match}_total'] = len(matches)
-    n_match += 1
-
-    remove = np.isnan(matches[cat_mag_col])
-    print(sum(np.invert(remove)), 'matches after removing catalogue mag nans')
-    params[f'matches_{n_match}_nans_cat'] = int(sum(np.invert(remove)))
-    n_match += 1
 
     remove = remove + np.isnan(matches['mag'])
     print(sum(np.invert(remove)), 'matches after removing SExtractor mag nans')
@@ -705,16 +682,6 @@ def determine_zeropoint_sextractor(
     params[f'matches_{n_match}_snr'] = int(sum(np.invert(remove)))
     n_match += 1
 
-    if stars_only:
-        if star_class_col == 'spread_model':
-            remove = remove + (np.abs(matches[star_class_col]) > star_class_tol)
-            print(sum(np.invert(remove)),
-                  f'matches after removing non-stars (abs({star_class_tol}) > spread_model)')
-        else:
-            remove = remove + (matches[star_class_col] < star_class_tol)
-            print(sum(np.invert(remove)), 'matches after removing non-stars (star_class < ' + str(star_class_tol) + ')')
-        params[f'matches_{n_match}_non_stars'] = int(sum(np.invert(remove)))
-        n_match += 1
     keep_these = np.invert(remove)
     matches_clean = matches[keep_these]
 
@@ -737,6 +704,12 @@ def determine_zeropoint_sextractor(
     # Linear fit of catalogue magnitudes vs sextractor magnitudes
 
     x = matches_clean[cat_mag_col]
+    # Change coordinates to get centred
+    x_shift = 0.
+    if do_x_shift:
+        x_shift = np.nanmean(x)
+    params["x_shift"] = x_shift
+    x -= x_shift
     x_uncertainty = matches_clean[cat_mag_col_err]
     y = matches_clean['mag']
     y_uncertainty = matches_clean['mag_err']
@@ -753,8 +726,8 @@ def determine_zeropoint_sextractor(
 
     fitter = fitting.LinearLSQFitter()
 
-    mag_max = None
-    mag_min = None
+    mag_max = np.inf
+    mag_min = -np.inf
 
     matches = matches_clean
 
@@ -789,34 +762,44 @@ def determine_zeropoint_sextractor(
             matches_prior = matches_iter
 
             keep = x_iter >= mag_min
+            if sum(keep) < 3:
+                break
             x_iter = x_iter[keep]
             y_iter = y_iter[keep]
             y_uncertainty_iter = y_uncertainty_iter[keep]
             y_weights_iter = y_weights_iter[keep]
             x_weights_iter = x_weights_iter[keep]
             matches_iter = matches_iter[keep]
-
-            fitted_iter = fitter(linear_model_fixed, x_iter, y_iter, weights=y_weights_iter)
-            line_iter = fitted_iter(x_iter)
-
-            err_this = u.std_err_intercept(
-                y_model=line_iter,
-                y_obs=y_iter,
-                x_obs=x_iter,
-                y_weights=y_weights_iter,
-                x_weights=x_weights_iter,
+            zps_iter = x_iter - y_iter
+            zp_mean_iter = np.average(zps_iter, weights=y_weights_iter)
+            err_this = u.root_mean_squared_error(
+                model_values=zp_mean_iter * np.ones_like(zps_iter).value,
+                obs_values=zps_iter,
+                weights=y_weights_iter,
                 dof_correction=1
-            )
+            ) / np.sqrt(len(zps_iter))
 
-            plt.scatter(x_iter, y_iter, c='blue')
-            plt.plot(x_iter, line_iter, c='green')
-            plt.suptitle("")
-            plt.xlabel(f"Magnitude in {cat_name}")
-            plt.ylabel("SExtractor Magnitude in " + image_name)
-            plt.savefig(
-                f"{output_path}min_mag_iterations/{n}_{cat_name}vsex_std_err_{err_this}_delta{delta}_magmin_{mag_min}.png")
-            plt.close()
-
+            #         fitted_iter = fitter(linear_model_fixed, x_iter, y_iter, weights=y_weights_iter)
+            #         line_iter = fitted_iter(x_iter)
+            #
+            #         err_this = u.std_err_intercept(
+            #             y_model=line_iter,
+            #             y_obs=y_iter,
+            #             x_obs=x_iter,
+            #             y_weights=y_weights_iter,
+            #             x_weights=x_weights_iter,
+            #             dof_correction=1
+            #         )
+            #
+            #         plt.scatter(x_iter, y_iter, c='blue')
+            #         plt.plot(x_iter, line_iter, c='green')
+            #         plt.suptitle("")
+            #         plt.xlabel(f"Magnitude in {cat_name}")
+            #         plt.ylabel("SExtractor Magnitude in " + image_name)
+            #         plt.savefig(
+            #             f"{output_path}min_mag_iterations/{n}_{cat_name}vsex_std_err_{err_this}_delta{delta}_magmin_{mag_min}.png")
+            #         plt.close()
+            #
             delta = err_this - std_err_prior
 
             mag_min += 0.1 * units.mag
@@ -861,6 +844,8 @@ def determine_zeropoint_sextractor(
             matches_prior = matches_iter
 
             keep = x_iter <= mag_max
+            if sum(keep) < 3:
+                break
             x_iter = x_iter[keep]
             y_iter = y_iter[keep]
             y_uncertainty_iter = y_uncertainty_iter[keep]
@@ -868,25 +853,34 @@ def determine_zeropoint_sextractor(
             x_weights_iter = x_weights_iter[keep]
             matches_iter = matches_iter[keep]
 
-            fitted_iter = fitter(linear_model_fixed, x_iter, y_iter, weights=y_weights_iter)
-            line_iter = fitted_iter(x_iter)
+            zps_iter = x_iter - y_iter
+            zp_mean_iter = np.average(zps_iter, weights=y_weights_iter)
+            err_this = u.root_mean_squared_error(
+                model_values=zp_mean_iter * np.ones_like(zps_iter).value,
+                obs_values=zps_iter,
+                weights=y_weights_iter,
+                dof_correction=1
+            ) / np.sqrt(len(zps_iter))
 
-            err_this = u.std_err_intercept(
-                y_model=line_iter,
-                y_obs=y_iter,
-                x_obs=x_iter,
-                y_weights=y_weights_iter,
-                x_weights=x_weights_iter
-            )
-
-            plt.scatter(x_iter, y_iter, c='blue')
-            plt.plot(x_iter, line_iter, c='green')
-            plt.suptitle("")
-            plt.xlabel(f"Magnitude in {cat_name}")
-            plt.ylabel("SExtractor Magnitude in " + image_name)
-            plt.savefig(f"{output_path}max_mag_iterations/{n}_{cat_name}vsex_std_err_{err_this}_magmax_{mag_max}.png")
-            plt.close()
-
+            #         fitted_iter = fitter(linear_model_fixed, x_iter, y_iter, weights=y_weights_iter)
+            #         line_iter = fitted_iter(x_iter)
+            #
+            #         err_this = u.std_err_intercept(
+            #             y_model=line_iter,
+            #             y_obs=y_iter,
+            #             x_obs=x_iter,
+            #             y_weights=y_weights_iter,
+            #             x_weights=x_weights_iter
+            #         )
+            #
+            #         plt.scatter(x_iter, y_iter, c='blue')
+            #         plt.plot(x_iter, line_iter, c='green')
+            #         plt.suptitle("")
+            #         plt.xlabel(f"Magnitude in {cat_name}")
+            #         plt.ylabel("SExtractor Magnitude in " + image_name)
+            #         plt.savefig(f"{output_path}max_mag_iterations/{n}_{cat_name}vsex_std_err_{err_this}_magmax_{mag_max}.png")
+            #         plt.close()
+            #
             delta = err_this - std_err_prior
 
             mag_max -= 0.1 * units.mag
@@ -914,16 +908,42 @@ def determine_zeropoint_sextractor(
     fitted_free = fitter(linear_model_free, x, y, weights=y_weights)
     fitted_fixed = fitter(linear_model_fixed, x, y, weights=y_weights)
 
-    line_free = fitted_free(x)
-    line_fixed = fitted_fixed(x)
+    zps = x - y
+    zp_mean_shifted = np.average(zps, weights=y_weights)
+    zp_mean = zp_mean_shifted + x_shift
+    zp_mean_err = u.root_mean_squared_error(
+        model_values=zp_mean_shifted * np.ones_like(zps).value,
+        obs_values=zps,
+        weights=y_weights,
+        dof_correction=1
+    ) / np.sqrt(len(zps))
 
-    std_err = u.std_err_intercept(
+    line_free = fitted_free(x)
+    std_err_free = u.std_err_intercept(
+        y_model=line_free,
+        y_obs=y,
+        y_weights=y_weights,
+        x_obs=x,
+        x_weights=x_weights,
+        dof_correction=2
+    )
+    std_err_free_slope = u.std_err_slope(
+        y_model=line_free,
+        y_obs=y,
+        x_obs=x,
+        y_weights=y_weights,
+        x_weights=x_weights,
+        dof_correction=2
+    )
+
+    line_fixed = fitted_fixed(x)
+    std_err_fixed = u.std_err_intercept(
         y_model=line_fixed,
         y_obs=y,
         y_weights=y_weights,
         x_obs=x,
         x_weights=x_weights,
-        dof_correction=1
+        dof_correction=2
     )
 
     plt.plot(x, line_free, c='red', label='Line of best fit')
@@ -939,25 +959,28 @@ def determine_zeropoint_sextractor(
         plt.show()
     plt.close()
 
-    print("FREE:", fitted_free)
-    print("FIXED:", fitted_fixed)
-    print("STD ERR:", std_err)
+    zp_free = -fitted_free.intercept.value * units.mag + x_shift
+    slope_free = fitted_free.slope.value
+    zp_fixed = -fitted_fixed.intercept.value * units.mag + x_shift
+    print("UNCLIPPED")
+    print("Linear fit (slope free):")
+    print(f"\tZeropoint = {zp_free} +/- {std_err_free}")
+    print(f"\tSlope = {slope_free} +/- {std_err_free_slope}")
+    print(f"Linear fit (slope fixed): Zeropoint = {zp_fixed} +/- {std_err_fixed}")
+    print(f"Mean: {zp_mean} +/- {zp_mean_err}")
 
-    params["zeropoint_raw"] = -fitted_fixed.intercept
-    params["std_err_raw"] = std_err
-    params["free_fit"] = [float(fitted_free.intercept.value), float(fitted_free.slope.value)]
+    params["zeropoint_raw"] = zp_mean
+    params["zeropoint_err_raw"] = zp_mean_err
+    params["free_zeropoint"] = zp_free
+    params["free_zeropoint_err"] = std_err_free
+    params["free_slope"] = slope_free
+    params["free_slope_err"] = std_err_free_slope
+    params["fixed_zeropoint"] = zp_fixed
+    params["fixed_zeropoint_err"] = std_err_fixed
 
-    or_fitter = fitting.FittingWithOutlierRemoval(fitter, sigma_clip, niter=1, sigma=2.0)
-
-    # print(type(linear_model_fixed), type(x), type(y), type(weights))
-    fitted_clipped, mask = or_fitter(linear_model_fixed, x.value, y.value, weights=y_weights.value)
-    fitted_free_clipped, free_mask = or_fitter(linear_model_free, x.value, y.value, weights=y_weights.value)
-
-    line_clipped = fitted_clipped(x.value)
-    line_clipped = line_clipped[~mask]
-
-    line_free_clipped = fitted_free_clipped(x.value)
-    line_free_clipped = line_free_clipped[~free_mask]
+    zps_masked = sigma_clip(zps, sigma=2.0, masked=True, copy=True)
+    mask = zps_masked.mask
+    zps_clipped = zps[~mask]
 
     y_clipped = y[~mask]
     x_clipped = x[~mask]
@@ -965,15 +988,50 @@ def determine_zeropoint_sextractor(
     y_weights_clipped = y_weights[~mask]
     x_weights_clipped = x_weights[~mask]
 
-    y_free_clipped = y[~free_mask]
-    x_free_clipped = x[~free_mask]
-    y_weights_free_clipped = y_weights[~free_mask]
-    x_weights_free_clipped = x_weights[~free_mask]
+    zp_mean_clipped_shifted = np.average(zps, weights=y_weights)
+    zp_mean_clipped = zp_mean_clipped_shifted + x_shift
+    zp_mean_clipped_err = u.root_mean_squared_error(
+        model_values=zp_mean_clipped_shifted * np.ones_like(zps_clipped).value,
+        obs_values=zps_clipped,
+        weights=y_weights_clipped,
+        dof_correction=1
+    ) / np.sqrt(len(zps_clipped))
 
-    plt.plot(x_free_clipped, line_free_clipped, c='red', label='Line of best fit')
+    fitted_clipped = fitter(linear_model_fixed, x_clipped, y_clipped, weights=y_weights_clipped)
+    fitted_free_clipped = fitter(linear_model_free, x_clipped, y_clipped, weights=y_weights_clipped)
+
+    line_free_clipped = fitted_free_clipped(x_clipped)
+    std_err_free_clipped = u.std_err_intercept(
+        y_model=line_free_clipped,
+        y_obs=y_clipped,
+        y_weights=y_weights_clipped,
+        x_obs=x_clipped,
+        x_weights=y_weights_clipped,
+        dof_correction=2
+    )
+    std_err_free_slope_clipped = u.std_err_slope(
+        y_model=line_free_clipped,
+        y_obs=y_clipped,
+        x_obs=x_clipped,
+        y_weights=y_weights_clipped,
+        x_weights=x_weights_clipped,
+        dof_correction=2
+    )
+
+    line_fixed_clipped = fitted_clipped(x_clipped)
+    std_err_fixed_clipped = u.std_err_intercept(
+        y_model=line_fixed_clipped,
+        y_obs=y_clipped,
+        y_weights=y_weights_clipped,
+        x_obs=x_clipped,
+        x_weights=y_weights_clipped,
+        dof_correction=2
+    )
+
+    plt.plot(x_clipped, line_free_clipped, c='red', label='Line of best fit')
     plt.scatter(x_clipped, y_clipped, c='blue')
     # plt.errorbar(x_clipped, y_clipped, yerr=y_uncertainty_clipped, linestyle="None")
-    plt.plot(x_clipped, line_clipped, c='green', label='Fixed slope = 1')
+    plt.plot(x_clipped, line_fixed_clipped, c='green', label='Fixed slope = 1')
     plt.legend()
     plt.suptitle("Magnitude Comparisons")
     plt.xlabel("Magnitude in " + cat_name)
@@ -983,30 +1041,33 @@ def determine_zeropoint_sextractor(
         plt.show()
     plt.close()
 
-    print(sum(~mask), 'matches after clipping outliers from linear fit')
+    print(sum(~mask), 'matches after clipping outliers from mean')
     params[f'matches_{n_match}_mag_clipped'] = int(sum(~mask))
     n_match += 1
     if sum(~mask) < 3:
         print('Not enough valid matches to calculate zeropoint.')
         return None
 
-    print("CLIPPED:", fitted_clipped)
-    std_err = u.std_err_intercept(
-        y_model=line_clipped * units.mag,
-        y_obs=y_clipped,
-        y_weights=y_weights_clipped,
-        x_weights=x_weights_clipped,
-        x_obs=x_clipped,
-        dof_correction=1
-    )
-    print("STD ERR:", std_err)
+    zp_free_clipped = -fitted_free_clipped.intercept.value * units.mag + x_shift
+    slope_free = fitted_free.slope.value
+    zp_fixed_clipped = -fitted_fixed.intercept.value * units.mag + x_shift
+    print("CLIPPED:")
+    print("Linear fit:")
+    print(f"\tZeropoint = {zp_free_clipped} +/- {std_err_free_clipped}")
+    print(f"\tSlope = {slope_free} +/- {std_err_free_slope_clipped}")
+    print(f"Linear fit (slope fixed): Zeropoint = {zp_fixed_clipped} +/- {std_err_fixed_clipped}")
+    print(f"Mean: {zp_mean_clipped} +/- {zp_mean_clipped_err}")
 
     matches_final = matches[~mask]
 
-    params["free_fit_clipped"] = [float(fitted_free_clipped.intercept.value), float(fitted_free_clipped.slope.value)]
-    params['std_err_clipped'] = std_err
-    params['zeropoint'] = float(-fitted_clipped.intercept) * units.mag
-    params['zeropoint_err'] = cat_zeropoint_err + params['std_err_clipped']
+    params["zeropoint"] = zp_mean_clipped
+    params["zeropoint_err"] = np.sqrt(zp_mean_clipped_err ** 2 + cat_zeropoint_err ** 2)
+    params["free_zeropoint_clipped"] = zp_free_clipped
+    params["free_zeropoint_clipped_err"] = std_err_free_clipped
+    params["free_slope_clipped"] = slope_free
+    params["free_slope_clipped_err"] = std_err_free_slope_clipped
+    params["fixed_zeropoint_clipped"] = zp_fixed_clipped
+    params["fixed_zeropoint_clipped_err"] = std_err_fixed_clipped
 
     #     if latex_plot:
     #         plot_params = p.plotting_params()
@@ -1050,7 +1111,7 @@ def determine_zeropoint_sextractor(
 
     matches_final["mag_cat"] = matches_final[cat_mag_col]
 
-    matches_final.write(output_path + "matches.csv", format='ascii.csv')
+    matches_final.write(output_path + "matches.csv", format='ascii.csv', overwrite=True)
     u.rm_check(output_path + 'parameters.yaml')
     p.add_params(file=output_path + 'parameters.yaml', params=params, skip_json=True)
 
@@ -1062,201 +1123,6 @@ def determine_zeropoint_sextractor(
         image.close()
 
     return params
-
-
-def zeropoint_science_field(
-        epoch: str,
-        instrument: str,
-        test_name: str = None,
-        sex_x_col: str = 'XPSF_IMAGE',
-        sex_y_col: str = 'YPSF_IMAGE',
-        sex_ra_col: str = 'ALPHAPSF_SKY',
-        sex_dec_col: str = 'DELTAPSF_SKY',
-        sex_flux_col: str = 'FLUX_PSF',
-        stars_only: bool = True,
-        star_class_col: str = 'CLASS_STAR',
-        star_class_tol: float = 0.95,
-        show_plots: bool = False,
-        mag_range_sex_lower: float = -100.,
-        mag_range_sex_upper: float = 100.,
-        pix_tol: float = 5.,
-        separate_chips=False,
-        cat_name: str = "DES"
-):
-    properties = p.object_params_instrument(obj=epoch, instrument=instrument)
-    frb_properties = p.object_params_frb(obj=epoch[:-2])
-    outputs = p.object_output_params(obj=epoch, instrument=instrument)
-    paths = p.object_output_paths(obj=epoch, instrument=instrument)
-
-    output = properties['data_dir'] + '/9-zeropoint/'
-    u.mkdir_check(output)
-    output = output + 'field/'
-    u.mkdir_check(output)
-
-    instrument = instrument.upper()
-
-    if cat_name.lower() != "sextractor":
-        print(f"Looking for photometry data in field of {epoch[:-2]}; catalogue {cat_name} :")
-
-        retrieved = r.update_frb_photometry(frb=epoch[:-2], cat=cat_name)
-
-        if retrieved is None or retrieved == "ERROR":
-            print("\t\tNo data found in archive.")
-            return None, None
-
-    if instrument != "FORS2":
-        separate_chips = False
-
-    for fil in properties['filters']:
-
-        print('Doing filter', fil)
-
-        f_0 = fil[0]
-        # do_zeropoint = properties[f_0 + '_do_zeropoint_field']
-
-        output_path_pre = os.path.join(output, f_0)
-        u.mkdir_check(output_path_pre)
-
-        if f_0 + '_zeropoint_provided' not in outputs:  # and do_zeropoint:
-
-            print('Zeropoint not found, attempting to calculate zeropoint...')
-
-            now = time.Time.now()
-            now.format = 'isot'
-            if test_name is None:
-                test_name = cat_name
-            test_name = str(now) + '_' + test_name
-
-            output_path = os.path.join(output_path_pre, test_name)
-            u.mkdir_check(output_path)
-
-            chip_1_bottom = 740
-            chip_2_top = 600
-
-            cat_zeropoint = 0.
-            cat_zeropoint_err = 0.
-
-            if cat_name.lower() != "sextractor":
-                cat_path = os.path.join(f"{frb_properties['data_dir']}", f"{cat_name}", f"{cat_name}.csv")
-                column_names = r.cat_columns(cat=cat_name, f=f_0)
-                cat_ra_col = column_names['ra']
-                cat_dec_col = column_names['dec']
-                cat_mag_col = column_names['mag_psf']
-                cat_type = "csv"
-
-            else:
-                cat_path = properties[f_0 + '_cat_calib_path']
-                cat_zeropoint = properties[f_0 + '_cat_calib_zeropoint']
-                cat_zeropoint_err = properties[f_0 + '_cat_calib_zeropoint_err']
-                if cat_path is None:
-                    raise ValueError(
-                        'No other epoch catalogue available at the position of ' + epoch + '.')
-                cat_ra_col = 'ra_cat'
-                cat_dec_col = 'dec_cat'
-                cat_mag_col = 'mag_psf_other'
-                cat_type = 'sextractor'
-                star_class_col = star_class_col + '_fors'
-                sex_x_col = sex_x_col + '_fors'
-                sex_y_col = sex_y_col + '_fors'
-                cat_name = 'other'
-
-            image_path = paths[f_0 + '_' + properties['subtraction_image']]
-            sextractor_path = paths[f_0 + '_cat_path']
-
-            exp_time = ff.get_exp_time(image_path)
-
-            # print(cat_zeropoint)
-
-            if separate_chips:
-                # Split based on which CCD chip the object falls upon.
-                u.mkdir_check(os.path.join(output_path, "chip_1"))
-                u.mkdir_check(os.path.join(output_path, "chip_2"))
-
-                print('Chip 1:')
-                up = determine_zeropoint_sextractor(sextractor_cat=sextractor_path,
-                                                    image=image_path,
-                                                    cat_path=cat_path,
-                                                    cat_name=cat_name,
-                                                    output_path=os.path.join(output_path, "chip_1"),
-                                                    show=show_plots,
-                                                    cat_ra_col=cat_ra_col,
-                                                    cat_dec_col=cat_dec_col,
-                                                    cat_mag_col=cat_mag_col,
-                                                    sex_ra_col=sex_ra_col,
-                                                    sex_dec_col=sex_dec_col,
-                                                    sex_x_col=sex_x_col,
-                                                    sex_y_col=sex_y_col,
-                                                    dist_tol=pix_tol,
-                                                    flux_column=sex_flux_col,
-                                                    mag_range_sex_upper=mag_range_sex_upper,
-                                                    mag_range_sex_lower=mag_range_sex_lower,
-                                                    stars_only=stars_only,
-                                                    star_class_tol=star_class_tol,
-                                                    star_class_col=star_class_col,
-                                                    exp_time=exp_time,
-                                                    y_lower=chip_1_bottom,
-                                                    cat_type=cat_type,
-                                                    cat_zeropoint=cat_zeropoint,
-                                                    cat_zeropoint_err=cat_zeropoint_err
-                                                    )
-
-                print('Chip 2:')
-                down = determine_zeropoint_sextractor(sextractor_cat=sextractor_path,
-                                                      image=image_path,
-                                                      cat_path=cat_path,
-                                                      cat_name=cat_name,
-                                                      output_path=os.path.join(output_path, "chip_2"),
-                                                      show=show_plots,
-                                                      cat_ra_col=cat_ra_col,
-                                                      cat_dec_col=cat_dec_col,
-                                                      cat_mag_col=cat_mag_col,
-                                                      sex_ra_col=sex_ra_col,
-                                                      sex_dec_col=sex_dec_col,
-                                                      sex_x_col=sex_x_col,
-                                                      sex_y_col=sex_y_col,
-                                                      dist_tol=pix_tol,
-                                                      flux_column=sex_flux_col,
-                                                      mag_range_sex_upper=mag_range_sex_upper,
-                                                      mag_range_sex_lower=mag_range_sex_lower,
-                                                      stars_only=stars_only,
-                                                      star_class_tol=star_class_tol,
-                                                      star_class_col=star_class_col,
-                                                      exp_time=exp_time,
-                                                      y_upper=chip_2_top,
-                                                      cat_type=cat_type,
-                                                      cat_zeropoint=cat_zeropoint,
-                                                      cat_zeropoint_err=cat_zeropoint_err
-                                                      )
-                return up, down
-
-            else:
-                chip = determine_zeropoint_sextractor(sextractor_cat=sextractor_path,
-                                                      image=image_path,
-                                                      cat_path=cat_path,
-                                                      cat_name=cat_name,
-                                                      output_path=output_path + "/",
-                                                      show=show_plots,
-                                                      cat_ra_col=cat_ra_col,
-                                                      cat_dec_col=cat_dec_col,
-                                                      cat_mag_col=cat_mag_col,
-                                                      sex_ra_col=sex_ra_col,
-                                                      sex_dec_col=sex_dec_col,
-                                                      sex_x_col=sex_x_col,
-                                                      sex_y_col=sex_y_col,
-                                                      dist_tol=pix_tol,
-                                                      flux_column=sex_flux_col,
-                                                      mag_range_sex_upper=mag_range_sex_upper,
-                                                      mag_range_sex_lower=mag_range_sex_lower,
-                                                      stars_only=stars_only,
-                                                      star_class_tol=star_class_tol,
-                                                      star_class_col=star_class_col,
-                                                      exp_time=exp_time,
-                                                      y_lower=0,
-                                                      cat_type=cat_type,
-                                                      cat_zeropoint=cat_zeropoint,
-                                                      cat_zeropoint_err=cat_zeropoint_err
-                                                      )
-                return chip
 
 
 def jy_to_mag(jy: 'float'):
@@ -1275,7 +1141,6 @@ def single_aperture_photometry(data: np.ndarray, aperture: ph.Aperture, annulus:
     mask = annulus.to_mask()
     annulus_data = mask.multiply(data)[mask.data > 0]
     _, median, _ = stats.sigma_clipped_stats(annulus_data)
-    print('BACKGROUND MEDIAN:', median)
     # Get the photometry of the aperture
     cat_photutils = ph.aperture_photometry(data=data, apertures=aperture)
     # Multiply the median by the aperture area, so that we subtract the right amount for the aperture:
@@ -1522,7 +1387,6 @@ def source_table(file: Union[fits.HDUList, str],
 
     if not fwhm_override and algorithm == 'IRAF':
         fwhm = np.mean(sources['fwhm'])
-    print("FWHM:", fwhm)
 
     # Feed locations to our aperture photometry function.
     phot, _, _ = aperture_photometry(data=data, x=x, y=y, fwhm=fwhm, exp_time=exp_time, plot=plot,
@@ -1965,7 +1829,6 @@ def insert_synthetic_point_sources_psfex(
 
     combine = np.zeros(image.shape)
     print('Generating additive image...')
-    print(x, y, type(x), isinstance(x, Iterable))
     for i in range(len(x)):
         flux = mag_to_flux(mag=mag[i], exp_time=exp_time, zeropoint=zeropoint, extinction=extinction,
                            airmass=airmass)
@@ -2038,13 +1901,10 @@ def insert_point_sources_to_file(
 
     if saturate is None and 'SATURATE' in file[0].header:
         saturate = file[0].header['SATURATE']
-        print('SATURATE:', saturate)
     if airmass is None and 'AIRMASS' in file[0].header:
         airmass = file[0].header['AIRMASS']
-        print('AIRMASS:', airmass)
     if exp_time is None and 'EXPTIME' in file[0].header:
         exp_time = file[0].header['EXPTIME']
-        print('EXPTIME:', exp_time)
 
     wcs_info = wcs.WCS(file[0].header)
     if world_coordinates:
@@ -2198,7 +2058,6 @@ def insert_synthetic(obj: Union[dict, str], x, y, test_path, filters: list, magn
         f_0 = f[0]
 
         fwhm = output_properties[f_0 + '_fwhm_pix']
-        print(instrument)
         zeropoint, _, airmass, _, extinction, _ = select_zeropoint(obj, f, instrument=instrument)
 
         base_path = paths[f_0 + '_' + params['subtraction_image']]
@@ -2247,8 +2106,6 @@ def select_zeropoint(obj: str, filt: str, instrument: str, outputs: dict = None)
         zeropoint = zeropoint_dict['zeropoint']
         zeropoint_err = zeropoint_dict['zeropoint_err']
         typ = zeropoint_dict['type']
-
-        print(typ)
 
         if typ == 'science_field':
             airmass = 0.0

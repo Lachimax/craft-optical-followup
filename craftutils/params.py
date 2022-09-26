@@ -23,7 +23,9 @@ instruments_imaging = [
     "hst-wfc3_ir",
     "hst-wfc3_uvis2",
     "mgb-imacs",
-    "panstarrs1"]
+    "panstarrs1",
+    "decam"
+]
 instruments_spectroscopy = ["vlt-fors2", "vlt-xshooter"]
 surveys = ["panstarrs1"]
 
@@ -102,11 +104,22 @@ def load_params(file: str):
     return p
 
 
+def sanitise_yaml_dict(dictionary: dict):
+    for key in dictionary:
+        if isinstance(dictionary[key], np.str_):
+            dictionary[key] = str(dictionary[key])
+    return dictionary
+
+
 def save_params(file: str, dictionary: dict):
     file = u.sanitise_file_ext(filename=file, ext=".yaml")
 
     u.debug_print(1, 'Saving parameter file to ' + str(file))
     u.debug_print(2, "params.save_params: dictionary ==", dictionary)
+
+    if u.debug_level > 2:
+        for key in dictionary:
+            print(key, type(dictionary[key]), dictionary[key])
 
     with open(file, 'w') as f:
         yaml.dump(dictionary, f)
@@ -781,8 +794,10 @@ def path_to_config_sextractor_failed_psfex_param():
 def path_to_config_sextractor_config():
     return os.path.join(path_to_config_psfex(), "psf-fit.sex")
 
+
 def path_to_config_galfit():
     return os.path.join(project_path, "param", "galfit", "galfit.feedme")
+
 
 def path_to_config_sextractor_param_pre_psfex():
     return os.path.join(path_to_config_psfex(), "pre-psfex.param")
@@ -844,6 +859,19 @@ def update_output_file(obj):
 
 
 # def change_param_name(folder):
+
+def status_file(path: str):
+    status = load_params(path)
+    if status is None:
+        status = {
+            "complete": [],
+            "failed": [],
+        }
+    if "failed" not in status or not isinstance(status["failed"], dict):
+        status["failed"] = {}
+    if "complete" not in status or not isinstance(status["complete"], dict):
+        status["complete"] = {}
+    return status
 
 
 if __name__ == '__main__':
