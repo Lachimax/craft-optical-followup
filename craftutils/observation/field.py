@@ -50,6 +50,16 @@ active_epochs = {}
 zeropoint_yaml = os.path.join(p.data_path, f"zeropoints.yaml")
 
 
+def expunge_fields():
+    for field_name in active_fields:
+        del active_fields[field_name]
+
+
+def expunge_epochs():
+    for epoch_name in active_epochs:
+        del active_fields[epoch_name]
+
+
 def _output_img_list(lst: list):
     """
     Turns a list of images into a YAML-able list of paths.
@@ -1572,6 +1582,8 @@ class Epoch:
         self.param_file = kwargs
 
         # self.load_output_file()
+
+        active_epochs[self.name] = self
 
     def __str__(self):
         return self.name
