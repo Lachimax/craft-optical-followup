@@ -4868,7 +4868,7 @@ class HAWKICoaddedImage(ESOImagingImage):
     ):
         return self.add_zeropoint(
             catalogue="2MASS",
-            zeropoint=self.extract_header_item("PHOTZP"),
+            zeropoint=self.extract_header_item("PHOTZP") + self.filter.vega_magnitude_offset(),
             zeropoint_err=self.extract_header_item("PHOTZPER"),
             extinction=0.0 * units.mag,
             extinction_err=0.0 * units.mag,

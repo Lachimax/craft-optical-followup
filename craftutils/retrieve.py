@@ -240,16 +240,23 @@ def update_frb_photometry(frb: str, cat: str):
         raise ValueError("Catalogue name not recognised.")
 
 
-def save_catalogue(ra: float, dec: float, output: str, cat: str, radius: units.Quantity = 0.3 * units.deg):
+def save_catalogue(
+        ra: float,
+        dec: float,
+        output: str,
+        cat: str,
+        radius: units.Quantity = 0.3 * units.deg,
+        data_release: int = None
+):
     cat = cat.lower()
     if cat not in photometry_catalogues:
         raise KeyError(f"catalogue {cat} not recognised.")
 
     func = photometry_catalogues[cat]
     if func is save_mast_photometry:
-        return func(ra=ra, dec=dec, output=output, cat=cat, radius=radius)
+        return func(ra=ra, dec=dec, output=output, cat=cat, radius=radius, data_release=data_release)
     else:
-        return func(ra=ra, dec=dec, output=output, radius=radius)
+        return func(ra=ra, dec=dec, output=output, radius=radius, data_release=data_release)
 
 
 # ESO retrieval code based on the script at
@@ -721,7 +728,9 @@ def save_irsa_photometry(
         ra: float,
         dec: float,
         output: str,
-        radius: units.Quantity = 0.2 * units.deg):
+        radius: units.Quantity = 0.2 * units.deg,
+        **kwargs
+):
     table = retrieve_irsa_photometry(
         catalogue=catalogue,
         ra=ra,
@@ -738,13 +747,20 @@ def save_irsa_photometry(
         return None
 
 
-def save_2mass_photometry(ra: float, dec: float, output: str, radius: units.Quantity = 0.2 * units.deg):
+def save_2mass_photometry(
+        ra: float,
+        dec: float,
+        output: str,
+        radius: units.Quantity = 0.2 * units.deg,
+        **kwargs
+):
     return save_irsa_photometry(
         catalogue="fp_psc",
         ra=ra,
         dec=dec,
         output=output,
-        radius=radius
+        radius=radius,
+        **kwargs
     )
 
 
@@ -769,7 +785,12 @@ def save_ztf_photometry(ra: float, dec: float, output: str, radius: units.Quanti
 sdss_filters = ["u", "g", "r", "i", "z"]
 
 
-def retrieve_sdss_photometry(ra: float, dec: float, radius: units.Quantity = 0.2 * units.deg):
+def retrieve_sdss_photometry(
+        ra: float,
+        dec: float,
+        radius: units.Quantity = 0.2 * units.deg,
+        data_release: int = 16
+):
     """
     Retrieve SDSS photometry for a given field, in a 0.2 x 0.2 degree box centred on the passed coordinates
     coordinates. (Note - the width of the box is in RA degrees, not corrected for spherical distortion)
@@ -788,7 +809,7 @@ def retrieve_sdss_photometry(ra: float, dec: float, radius: units.Quantity = 0.2
               "\nhttp://skyserver.sdss.org/dr16/en/tools/search/sql.aspx")
         return None
 
-    print(f"Querying SDSS DR16 archive for field centring on RA={ra}, DEC={dec}")
+    print(f"Querying SDSS DR{data_release} archive for field centring on RA={ra}, DEC={dec}")
     user = keys['sciserver_user']
     password = keys["sciserver_pwd"]
     Authentication.login(UserName=user, Password=password)
@@ -799,14 +820,20 @@ def retrieve_sdss_photometry(ra: float, dec: float, radius: units.Quantity = 0.2
     query += "FROM PhotoObj "
     query += f"WHERE ra BETWEEN {ra - 0.1} AND {ra + 0.1} "
     query += f"AND dec BETWEEN {dec - 0.1} AND {dec + 0.1} "
-    print(f"Retrieving photometry from SDSS DR16 via SciServer for field at {ra}, {dec}...")
-    df = CasJobs.executeQuery(sql=query, context='DR16')
+    print(f"Retrieving photometry from SDSS DR{data_release} via SciServer for field at {ra}, {dec}...")
+    df = CasJobs.executeQuery(sql=query, context=f'DR{data_release}')
     if len(df.index) == 0:
         df = None
     return df
 
 
-def save_sdss_photometry(ra: float, dec: float, output: str, radius: units.Quantity = 0.2 * units.deg):
+def save_sdss_photometry(
+        ra: float,
+        dec: float,
+        output: str,
+        radius: units.Quantity = 0.2 * units.deg,
+        data_release: int = 16,
+):
     """
     Retrieves and writes to disk the SDSS photometry for a given field, in a 0.2 x 0.2 degree box
     centred on the field coordinates. (Note - the width of the box is in RA degrees, not corrected for spherical
@@ -816,7 +843,7 @@ def save_sdss_photometry(ra: float, dec: float, output: str, radius: units.Quant
     :param output: The location on disk to which to write the file.
     :return: Retrieved photometry table, as a pandas dataframe, if successful; if not, None.
     """
-    df = retrieve_sdss_photometry(ra=ra, dec=dec, radius=radius)
+    df = retrieve_sdss_photometry(ra=ra, dec=dec, radius=radius, data_release=data_release)
     if df is not None:
         u.mkdir_check_nested(path=output)
         print("Saving SDSS photometry to" + output)
@@ -882,11 +909,16 @@ def update_frb_sdss_photometry(frb: str, force: bool = False):
         print("This field is not present in SDSS.")
 
 
-def retrieve_delve_photometry(ra: float, dec: float, radius: units.Quantity = 0.2 * units.deg):
+def retrieve_delve_photometry(
+        ra: float,
+        dec: float,
+        radius: units.Quantity = 0.2 * units.deg,
+        data_release: int = 2
+):
     print(f"\nQuerying DELVE DR2 archive for field centring on RA={ra}, DEC={dec}")
     radius = u.dequantify(radius, unit=units.deg)
     url = f"http://datalab.noirlab.edu/tap/sync?REQUEST=doQuery&lang=ADQL&FORMAT=csv&QUERY=SELECT%20q3c_dist" \
-          f"%28ra%2Cdec%2C%20247.725%2C-0.972%29%2A3600%20AS%20dist%2C%20%2A%20FROM%20delve_dr2.objects%20WHERE%20%27t" \
+          f"%28ra%2Cdec%2C%20247.725%2C-0.972%29%2A3600%20AS%20dist%2C%20%2A%20FROM%20delve_dr{data_release}.objects%20WHERE%20%27t" \
           f"%27%20%3D%20Q3C_RADIAL_QUERY%28ra%2C%20dec%2C{ra}%2C{dec}%2C{radius}%29%20"
     try:
         response = requests.get(url).content
@@ -904,8 +936,19 @@ def retrieve_delve_photometry(ra: float, dec: float, radius: units.Quantity = 0.
         return response
 
 
-def save_delve_photometry(ra: float, dec: float, output: str, radius: units.Quantity = 0.2 * units.deg):
-    response = retrieve_delve_photometry(ra=ra, dec=dec, radius=radius)
+def save_delve_photometry(
+        ra: float,
+        dec: float,
+        output: str,
+        radius: units.Quantity = 0.2 * units.deg,
+        data_release: int = 2
+):
+    response = retrieve_delve_photometry(
+        ra=ra,
+        dec=dec,
+        radius=radius,
+        data_release=data_release
+    )
     if response == "ERROR":
         return response
     elif response is not None:
@@ -1093,7 +1136,12 @@ def retrieve_query_csv_des(job_id: str):
     return None
 
 
-def retrieve_des_photometry(ra: float, dec: float, radius: units.Quantity = 0.2 * units.deg):
+def retrieve_des_photometry(
+        ra: float,
+        dec: float,
+        radius: units.Quantity = 0.2 * units.deg,
+        data_release: int = 2
+):
     """
     Retrieve DES photometry for a given field, in a 2*radius squared degree box centred on the passed coordinates
     coordinates. (Note - the width of the box is in RA degrees, not corrected for spherical distortion)
@@ -1108,7 +1156,7 @@ def retrieve_des_photometry(ra: float, dec: float, radius: units.Quantity = 0.2 
 
     radius = u.dequantify(radius, unit=units.deg)
     query = f"SELECT * " \
-            f"FROM DR2_MAGNITUDE " \
+            f"FROM DR{data_release}_MAGNITUDE " \
             f"WHERE " \
             f"RA BETWEEN {ra - radius} and {ra + radius} and " \
             f"DEC BETWEEN {dec - radius} and {dec + radius} and " \
@@ -1124,7 +1172,13 @@ def retrieve_des_photometry(ra: float, dec: float, radius: units.Quantity = 0.2 
         return retrieve_query_csv_des(job_id=job_id)
 
 
-def save_des_photometry(ra: float, dec: float, output: str, radius: units.Quantity = 0.2 * units.deg):
+def save_des_photometry(
+        ra: float,
+        dec: float,
+        output: str,
+        radius: units.Quantity = 0.2 * units.deg,
+        data_release: int = 2,
+):
     """
     Retrieves and writes to disk the DES photometry for a given field, in a 0.2 x 0.2 degree box
     centred on the field coordinates. (Note - the width of the box is in RA degrees, not corrected for spherical
@@ -1134,7 +1188,12 @@ def save_des_photometry(ra: float, dec: float, output: str, radius: units.Quanti
     :param output: The location on disk to which to write the file.
     :return: Retrieved photometry table, as a Bytes object, if successful; None if not.
     """
-    data = retrieve_des_photometry(ra=ra, dec=dec, radius=radius)
+    data = retrieve_des_photometry(
+        ra=ra,
+        dec=dec,
+        radius=radius,
+        data_release=data_release
+    )
     if data is not None and data != "ERROR":
         u.mkdir_check_nested(path=output)
         print("Saving DES photometry to" + output)
@@ -1330,7 +1389,13 @@ def retrieve_skymapper_photometry(ra: float, dec: float, radius: units.Quantity 
         return response
 
 
-def save_skymapper_photometry(ra: float, dec: float, output: str, radius: units.Quantity = 0.2 * units.deg):
+def save_skymapper_photometry(
+        ra: float,
+        dec: float,
+        output: str,
+        radius: units.Quantity = 0.2 * units.deg,
+        **kwargs
+):
     response = retrieve_skymapper_photometry(ra=ra, dec=dec, radius=radius)
     if response == "ERROR":
         return response
@@ -1451,7 +1516,7 @@ def retrieve_mast_photometry(
         ra: float,
         dec: float,
         cat: str = "panstarrs1",
-        release="dr2",
+        data_release: int = 2,
         table="stack",
         radius: units.Quantity = 0.1 * units.deg
 ):
@@ -1459,7 +1524,7 @@ def retrieve_mast_photometry(
         cat_str = "panstarrs"
     else:
         cat_str = cat.lower()
-
+    release = f"dr{data_release}"
     radius = u.dequantify(radius, unit=units.deg)
     print(f"\nQuerying {cat} {release} archive for field centring on RA={ra}, DEC={dec}, with radius {radius}")
     cat = cat.lower()
@@ -1474,9 +1539,15 @@ def retrieve_mast_photometry(
         return text
 
 
-def save_mast_photometry(ra: float, dec: float, output: str, cat: str = "panstarrs1",
-                         radius: units.Quantity = 0.1 * units.deg):
-    response = retrieve_mast_photometry(ra=ra, dec=dec, cat=cat, radius=radius)
+def save_mast_photometry(
+        ra: float,
+        dec: float,
+        output: str,
+        cat: str = "panstarrs1",
+        radius: units.Quantity = 0.1 * units.deg,
+        data_release: int = 2,
+):
+    response = retrieve_mast_photometry(ra=ra, dec=dec, cat=cat, radius=radius, data_release=data_release)
     if response == "ERROR":
         return response
     elif isinstance(response, str) and "404 Not Found" in response:
@@ -1550,19 +1621,38 @@ def update_frb_mast_photometry(frb: str, cat: str = "panstarrs1", force: bool = 
         print(f"This field is not present in {cat}.")
 
 
-def retrieve_gaia(ra: float, dec: float, radius: units.Quantity = 0.5 * units.deg):
+def retrieve_gaia(
+        ra: float,
+        dec: float,
+        radius: units.Quantity = 0.5 * units.deg,
+        data_release: int = None,
+):
+    if data_release is None:
+        data_release = 3
     from astroquery.gaia import Gaia
+    data_release = int(data_release)
     Gaia.ROW_LIMIT = -1
-    Gaia.MAIN_GAIA_TABLE = "gaiadr3.gaia_source"
-    print(f"\nQuerying Gaia DR3 archive for field centring on RA={ra}, DEC={dec}")
+    Gaia.MAIN_GAIA_TABLE = f"gaiadr{data_release}.gaia_source"
+    print(f"\nQuerying Gaia DR{data_release} archive for field centring on RA={ra}, DEC={dec}")
     coord = SkyCoord(ra=ra, dec=dec, unit=(units.degree, units.degree), frame='icrs')
     j = Gaia.cone_search_async(coordinate=coord, radius=radius)
     r = j.get_results()
     return r
 
 
-def save_gaia(ra: float, dec: float, output: str, radius: units.Quantity = 0.5 * units.deg):
-    table = retrieve_gaia(ra=ra, dec=dec, radius=radius)
+def save_gaia(
+        ra: float,
+        dec: float,
+        output: str,
+        radius: units.Quantity = 0.5 * units.deg,
+        data_release: int = 3
+):
+    table = retrieve_gaia(
+        ra=ra,
+        dec=dec,
+        radius=radius,
+        data_release=data_release
+    )
     if len(table) > 0:
         u.mkdir_check_nested(path=output)
         print(f"Saving GAIA catalogue to {output}")
@@ -1593,9 +1683,11 @@ def update_frb_gaia(frb: str, force: bool = False):
         print(f"This field is not present in Gaia.")
 
 
-def load_catalogue(cat_name: str, cat: str):
+def load_catalogue(cat_name: str, cat: str, data_release: int = None):
     cat = u.path_or_table(cat, fmt="ascii.csv", load_qtable=True)
     cat_column_units = column_units[cat_name]
+    if data_release is not None:
+        cat_column_units = column_units[cat_name][f"dr{data_release}"]
     cat_filters = filters[cat_name]
     for col_name in cat_column_units:
         if "{:s}" in col_name:
@@ -1719,52 +1811,80 @@ filters = {
 column_units = {
     "gaia":  # See https://gea.esac.esa.int/archive/documentation/GDR2/Gaia_archive/chap_datamodel/sec_dm_main_tables/ssec_dm_gaia_source.html
         {
-            "ra": units.deg,
-            "ra_error": units.milliarcsecond,
-            "dec": units.deg,
-            "dec_error": units.milliarcsecond,
-            "parallax": units.milliarcsecond,
-            "parallax_error": units.milliarcsecond,
-            "pmra": units.milliarcsecond / units.year,
-            "pmra_error": units.milliarcsecond / units.year,
-            "pmdec": units.milliarcsecond / units.year,
-            "pmdec_error": units.milliarcsecond / units.year,
-            "astrometric_excess_noise": units.milliarcsecond,
-            "astrometric_weight_al": units.milliarcsecond ** 2,
-            "astrometric_pseudo_colour": units.micrometer ** -1,
-            "astrometric_sigma5d_max": units.milliarcsecond,
-            "phot_{:s}_mean_flux": units.electron / units.second,
-            "phot_{:s}_mean_flux_error": units.electron / units.second,
-            "phot_{:s}_mean_mag": units.mag,
-            "bp_rp": units.mag,
-            "bp_g": units.mag,
-            "g_rp": units.mag,
-            "radial_velocity": units.kilometer / units.second,
-            "radial_velocity_error": units.kilometer / units.second,
-            "rv_template_teff": units.Kelvin,
-            "rv_template_fe_h": units.dex,
-            "l": units.deg,
-            "b": units.deg,
-            "ecl_lon": units.deg,
-            "ecl_lat": units.deg,
-            "teff_val": units.Kelvin,
-            "teff_percentile_lower": units.Kelvin,
-            "teff_percentile_upper": units.Kelvin,
-            "a_g_val": units.mag,
-            "a_g_percentile_lower": units.mag,
-            "a_g_percentile_upper": units.mag,
-            "e_bp_min_rp_val": units.mag,
-            "e_bp_min_rp_percentile_lower": units.mag,
-            "e_bp_min_rp_percentile_upper": units.mag,
-            "radius_val": units.solRad,
-            "radius_percentile_lower": units.solRad,
-            "radius_percentile_upper": units.solRad,
-            "lum_val": units.solLum,
-            "lum_percentile_lower": units.solLum,
-            "lum_percentile_upper": units.solLum,
-        }
-
-}
+            "dr2": {
+                "ra": units.deg,
+                "ra_error": units.milliarcsecond,
+                "dec": units.deg,
+                "dec_error": units.milliarcsecond,
+                "parallax": units.milliarcsecond,
+                "parallax_error": units.milliarcsecond,
+                "pmra": units.milliarcsecond / units.year,
+                "pmra_error": units.milliarcsecond / units.year,
+                "pmdec": units.milliarcsecond / units.year,
+                "pmdec_error": units.milliarcsecond / units.year,
+                "astrometric_excess_noise": units.milliarcsecond,
+                "astrometric_weight_al": units.milliarcsecond ** 2,
+                "astrometric_pseudo_colour": units.micrometer ** -1,
+                "astrometric_sigma5d_max": units.milliarcsecond,
+                "phot_{:s}_mean_flux": units.electron / units.second,
+                "phot_{:s}_mean_flux_error": units.electron / units.second,
+                "phot_{:s}_mean_mag": units.mag,
+                "bp_rp": units.mag,
+                "bp_g": units.mag,
+                "g_rp": units.mag,
+                "radial_velocity": units.kilometer / units.second,
+                "radial_velocity_error": units.kilometer / units.second,
+                "rv_template_teff": units.Kelvin,
+                "rv_template_fe_h": units.dex,
+                "l": units.deg,
+                "b": units.deg,
+                "ecl_lon": units.deg,
+                "ecl_lat": units.deg,
+                "teff_val": units.Kelvin,
+                "teff_percentile_lower": units.Kelvin,
+                "teff_percentile_upper": units.Kelvin,
+                "a_g_val": units.mag,
+                "a_g_percentile_lower": units.mag,
+                "a_g_percentile_upper": units.mag,
+                "e_bp_min_rp_val": units.mag,
+                "e_bp_min_rp_percentile_lower": units.mag,
+                "e_bp_min_rp_percentile_upper": units.mag,
+                "radius_val": units.solRad,
+                "radius_percentile_lower": units.solRad,
+                "radius_percentile_upper": units.solRad,
+                "lum_val": units.solLum,
+                "lum_percentile_lower": units.solLum,
+                "lum_percentile_upper": units.solLum,
+            },
+            "dr3": {
+                "ra": units.deg,
+                "ra_error": units.milliarcsecond,
+                "dec": units.deg,
+                "dec_error": units.milliarcsecond,
+                "parallax": units.milliarcsecond,
+                "parallax_error": units.milliarcsecond,
+                "pmra": units.milliarcsecond / units.year,
+                "pmra_error": units.milliarcsecond / units.year,
+                "pmdec": units.milliarcsecond / units.year,
+                "pmdec_error": units.milliarcsecond / units.year,
+                "astrometric_excess_noise": units.milliarcsecond,
+                "astrometric_sigma5d_max": units.milliarcsecond,
+                "phot_{:s}_mean_flux": units.electron / units.second,
+                "phot_{:s}_mean_flux_error": units.electron / units.second,
+                "phot_{:s}_mean_mag": units.mag,
+                "bp_rp": units.mag,
+                "bp_g": units.mag,
+                "g_rp": units.mag,
+                "radial_velocity": units.kilometer / units.second,
+                "radial_velocity_error": units.kilometer / units.second,
+                "rv_template_teff": units.Kelvin,
+                "rv_template_fe_h": units.dex,
+                "l": units.deg,
+                "b": units.deg,
+                "ecl_lon": units.deg,
+                "ecl_lat": units.deg
+            }
+        }}
 
 keys = p.keys()
 fors2_filters_retrievable = ["I_BESS", "R_SPEC", "b_HIGH", "v_HIGH"]
@@ -1776,4 +1896,5 @@ photometry_catalogues = {
     'sdss': save_sdss_photometry,
     'skymapper': save_skymapper_photometry,
     'panstarrs1': save_mast_photometry,
-    'gaia': save_gaia}
+    'gaia': save_gaia
+}
