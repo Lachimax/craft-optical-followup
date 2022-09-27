@@ -16,8 +16,6 @@ import astropy.io.fits as fits
 from astropy.modeling import models, fitting
 from astropy.visualization import make_lupton_rgb, ImageNormalize
 
-import ccdproc
-
 import craftutils.astrometry as astm
 import craftutils.fits_files as ff
 import craftutils.observation as obs
@@ -661,7 +659,18 @@ class Field:
             u.debug_print(1, f"Checking for photometry in {cat_name}")
             self.retrieve_catalogue(cat_name=cat_name, force_update=force_update)
 
-    def retrieve_catalogue(self, cat_name: str, force_update: bool = False):
+    def retrieve_catalogue(
+            self,
+            cat_name: str,
+            force_update: bool = False,
+            data_release: int = None
+    ):
+        """
+        Retrieves and saves a catalogue of this field.
+        :param cat_name: Name of catalogue; must match one of those available in craftutils.retrieve
+        :param force_update: If True, retrieves the catalogue even if one is already on disk.
+        :return:
+        """
         if isinstance(self.extent, units.Quantity):
             radius = self.extent
         else:
@@ -672,8 +681,13 @@ class Field:
         if force_update or f"in_{cat_name}" not in self.cats:
             u.debug_print(2, "Field.retrieve_catalogue(): radius ==", radius)
             response = retrieve.save_catalogue(
-                ra=ra, dec=dec, output=output, cat=cat_name.lower(),
-                radius=radius)
+                ra=ra,
+                dec=dec,
+                output=output,
+                cat=cat_name.lower(),
+                radius=radius,
+                data_release=data_release
+            )
             # Check if a valid response was received; if not, we don't want to erroneously report that
             # the field doesn't exist in the catalogue.
             if isinstance(response, str) and response == "ERROR":
@@ -692,9 +706,20 @@ class Field:
         else:
             u.debug_print(1, f"This field is not present in {cat_name}.")
 
-    def load_catalogue(self, cat_name: str):
+    def load_catalogue(self, cat_name: str, **kwargs):
         if self.retrieve_catalogue(cat_name):
-            return retrieve.load_catalogue(cat_name=cat_name, cat=self.get_path(f"cat_csv_{cat_name}"))
+            if cat_name == "gaia":
+                if "data_release" in kwargs:
+                    data_release = kwargs["data_release"]
+                else:
+                    data_release = 3
+            else:
+                data_release = None
+            return retrieve.load_catalogue(
+                cat_name=cat_name,
+                cat=self.get_path(f"cat_csv_{cat_name}"),
+                data_release=data_release
+            )
         else:
             print("Could not load catalogue; field is outside footprint.")
 
@@ -1902,7 +1927,8 @@ class Epoch:
             f"sort_frame(); Adding frame {frame.name}, type {frame.frame_type}, to {self}, type {type(self)}")
 
         # chip = frame.extract_chip_number()
-
+        # print(frame.frame_type)
+        u.debug_print(2, f"Epoch.sort_frame(): {type(self.frames_science)=}")
         if frame.frame_type == "bias" and frame not in self.frames_bias:
             self.frames_bias.append(frame)
 
@@ -4781,9 +4807,10 @@ class ESOImagingEpoch(ImagingEpoch):
             # The below will also update the filter list.
             u.debug_print(
                 2,
-                f"_initial_setup(): Adding frame {img.name}, type {img.frame_type}, to {self}, type {type(self)}")
+                f"_initial_setup(): Adding frame {img.name}, type {img.frame_type}/{type(img)}, to {self}, type {type(self)}")
             self.add_frame_raw(img)
 
+        u.debug_print(2, f"ESOImagingEpoch._initial_setup(): {self.frames_science=}")
         # Collect and save some stats on those filters:
         for i, fil in enumerate(self.filters):
             if len(self.frames_science[fil]) == 0:
@@ -4803,8 +4830,6 @@ class ESOImagingEpoch(ImagingEpoch):
                 np.nanmax(airmasses) - self.airmass_mean[fil],
                 self.airmass_mean[fil] - np.nanmin(airmasses)
             )
-
-            print(f'Copying {fil} calibration data to standard folder...')
 
         inst_reflex_dir = {
             "vlt-fors2": "fors",
@@ -4837,7 +4862,11 @@ class ESOImagingEpoch(ImagingEpoch):
                     )
                     print("Done.")
 
-        tmp = self.frames_science[self.filters[0]][0]
+        # This line looks for a non-empty frames_science list
+        i = 0
+        while not self.frames_science[self.filters[i]]:
+            i += 1
+        tmp = self.frames_science[self.filters[i]][0]
         if self.date is None:
             self.set_date(tmp.extract_date_obs())
         if self.target is None:
@@ -5258,7 +5287,9 @@ class ESOImagingEpoch(ImagingEpoch):
 
 class HAWKIImagingEpoch(ESOImagingEpoch):
     instrument_name = "vlt-hawki"
-    # frame_class = imag
+    frame_class = image.HAWKIImage
+    coadded_class = image.HAWKICoaddedImage
+
 
 class FORS2ImagingEpoch(ESOImagingEpoch):
     instrument_name = "vlt-fors2"

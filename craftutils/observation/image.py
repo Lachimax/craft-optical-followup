@@ -4450,7 +4450,7 @@ class ImagingImage(Image):
         elif instrument == "vlt-fors2":
             return FORS2Image
         elif instrument == "vlt-hawki":
-            return HAWKICoaddedImage
+            return HAWKIImage
         elif instrument == "gs-aoi":
             return GSAOIImage
         elif "hst" in instrument:
@@ -4812,10 +4812,13 @@ class ESOImagingImage(ImagingImage, ESOImage):
             self.frame_type = "flat"
         elif obj == "STD":
             self.frame_type = "standard"
+        elif obj == "DARK":
+            self.frame_type = "dark"
         elif category == "SCIENCE":
             self.frame_type = "science"
         elif category == "SCIENCE_REDUCED_IMG":
             self.frame_type = "science_reduced"
+        u.debug_print(2, f"ESOImagingImage.extract_frame_type(): {obj=}, {category=}, {self.frame_type=}")
         return self.frame_type
 
     def extract_airmass(self):
@@ -4840,6 +4843,20 @@ class ESOImagingImage(ImagingImage, ESOImage):
                 n += 1
         return n
 
+    @classmethod
+    def header_keys(cls) -> dict:
+        header_keys = super().header_keys()
+        header_keys.update(ESOImage.header_keys())
+        header_keys.update({
+            "noise_read": "HIERARCH ESO DET OUT1 RON",
+            "filter": "HIERARCH ESO INS FILT1 NAME",
+            "gain": "HIERARCH ESO DET OUT1 GAIN",
+            "program_id": "HIERARCH ESO OBS PROG ID",
+        })
+        return header_keys
+
+class HAWKIImage(ESOImagingImage):
+    instrument_name = "vlt-hawki"
 
 class HAWKICoaddedImage(ESOImagingImage):
     num_chips = 4
@@ -4851,7 +4868,7 @@ class HAWKICoaddedImage(ESOImagingImage):
     ):
         return self.add_zeropoint(
             catalogue="2MASS",
-            zeropoint=self.extract_header_item("PHOTZP"),
+            zeropoint=self.extract_header_item("PHOTZP") + self.filter.vega_magnitude_offset(),
             zeropoint_err=self.extract_header_item("PHOTZPER"),
             extinction=0.0 * units.mag,
             extinction_err=0.0 * units.mag,
@@ -4919,7 +4936,6 @@ class FORS2Image(ESOImagingImage):
             "filter": "HIERARCH ESO INS FILT1 NAME"
         })
         return header_keys
-
 
 class FORS2CoaddedImage(CoaddedImage):
     instrument_name = "vlt-fors2"

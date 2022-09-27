@@ -250,7 +250,7 @@ class Filter:
         zp_ab = 3631 * units.Jy
         zp_vega = self.zeropoint_vega
         delta_mag = 2.6 * np.log10(zp_ab / zp_vega)
-        return delta_mag
+        return delta_mag * units.mag
 
     def compare_transmissions(self, other: 'Filter'):
         tbl_self, tbl_other = self.find_comparable_table(other)
