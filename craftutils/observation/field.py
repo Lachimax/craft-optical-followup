@@ -1634,14 +1634,13 @@ class Epoch:
 
     def pipeline(self, no_query: bool = False, **kwargs):
         """
-        Performs the pipeline methods given in stages()
+        Performs the pipeline methods given in stages() for this Epoch.
         :param no_query: If True, skips the query stage and performs all stages (unless "do" was provided on __init__),
             in which case it will perform only those stages without query no matter what no_query is.
-        :param kwargs:
         :return:
         """
         self._pipeline_init()
-        u.debug_print(2, "Epoch.pipeline(): kwargs ==", kwargs)
+        # u.debug_print(2, "Epoch.pipeline(): kwargs ==", kwargs)
 
         # Loop through stages list specified in self.stages()
         stages = self.stages()
@@ -1725,7 +1724,13 @@ class Epoch:
     def _check_output_file_path(cls, key: str, dictionary: dict):
         return key in dictionary and dictionary[key] is not None and os.path.isfile(dictionary[key])
 
-    def load_output_file(self, **kwargs):
+    def load_output_file(self, **kwargs) -> dict:
+        """
+        Loads the output .yaml file, which contains various values derived from this Epoch, using the object's
+        output_file attribute (which is a path to the file).
+        :param kwargs: keyword arguments to pass to the add_coadded_image() method.
+        :return: output file as a dict.
+        """
         outputs = p.load_output_file(self)
         if type(outputs) is dict:
             if "stages" in outputs:
@@ -3209,7 +3214,12 @@ class ImagingEpoch(Epoch):
         self.update_output_file()
         return self.psf_stats
 
-    def _get_images(self, image_type: str):
+    def _get_images(self, image_type: str) -> Dict[str, image.CoaddedImage]:
+        """
+        A helper method for finding the desired coadded image dictionary.
+        :param image_type: "trimmed", "coadded", "unprojected" or "astrometry"
+        :return: dict with filter names as keys and CoaddedImage objects as values.
+        """
         if image_type == "final":
             if self.coadded_final is not None:
                 image_type = self.coadded_final
@@ -3228,11 +3238,11 @@ class ImagingEpoch(Epoch):
             raise ValueError(f"Images type '{image_type}' not recognised.")
         return image_dict
 
-    def _get_frames(self, frame_type: str) -> dict:
+    def _get_frames(self, frame_type: str) -> Dict[str, List[image.ImagingImage]]:
         """
-        A helper method for finding the desired frame
+        A helper method for finding the desired frame dictionary
         :param frame_type: "science", "reduced", "trimmed", "normalised", "registered", "astrometry" or "diagnosed"
-        :return:
+        :return: dictionary, with filter names as keys, and lists of frame Image objects as keys.
         """
         if frame_type == "final":
             if self.frames_final is not None:
@@ -5252,7 +5262,6 @@ class HAWKIImagingEpoch(ESOImagingEpoch):
     instrument_name = "vlt-hawki"
     frame_class = image.HAWKIImage
     coadded_class = image.HAWKICoaddedImage
-
 
 
 class FORS2ImagingEpoch(ESOImagingEpoch):

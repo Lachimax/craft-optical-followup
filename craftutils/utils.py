@@ -431,8 +431,7 @@ def rmtree_check(path):
 def mkdir_check(*paths: str):
     """
     Checks if a directory exists; if not, creates it.
-    :param paths:
-    :return:
+    :param paths: each argument is a path to check and create.
     """
     for path in paths:
         if not os.path.isdir(path):
@@ -442,13 +441,18 @@ def mkdir_check(*paths: str):
             debug_print(2, f"Directory {path} already exists, doing nothing.")
 
 
-def mkdir_check_nested(path: str, remove_last: bool = True):
+def mkdir_check_nested(
+        path: str,
+        remove_last: bool = True
+):
     """
     Does mkdir_check, but for all parent directories of the given path.
-    :param path:
+    That is, for all of the levels of the given path, a directory will be created if it doesn't exist.
+    :param path: path to check and create
+    :param remove_last: If True, does not create the given path itself, only its parent directories.
+        Useful if the path will in fact be that of a file that you just want to create a directory for.
     :return:
     """
-    path_orig = path
     levels = []
     while len(path) > 1:
         path, end = os.path.split(path)
@@ -459,7 +463,6 @@ def mkdir_check_nested(path: str, remove_last: bool = True):
         levels.pop()
     debug_print(2, "utils.mkdir_check_nested(): levels ==", levels)
     mkdir_check_args(*levels)
-    # mkdir_check(path_orig)
 
 
 def move_check(origin: str, destination: str):

@@ -1507,6 +1507,7 @@ class ImagingImage(Image):
     def select_zeropoint(self, no_user_input: bool = False, preferred: str = None):
 
         if not self.zeropoints:
+            print(f"No zeropoints set ({self}.zeropoints is None); try loading output file.")
             return None, None
 
         ranking, diff = self.rank_photometric_cat(cats=self.zeropoints)
@@ -1866,7 +1867,8 @@ class ImagingImage(Image):
             flux: units.Quantity,
             flux_err: units.Quantity = 0 * units.ct,
             cat_name: str = 'best',
-            img_name: str = 'self'
+            img_name: str = 'self',
+            **kwargs
     ):
 
         zp_dict = self.get_zeropoint(cat_name=cat_name, img_name=img_name)
@@ -1874,19 +1876,25 @@ class ImagingImage(Image):
         if zp_dict is None:
             raise ValueError(f"The {cat_name} zeropoint on {img_name}, for {self.name}, does not appear to exist.")
 
+        if "exp_time" not in kwargs:
+            kwargs["exp_time"] = self.extract_exposure_time()
+        if "exp_time_err" not in kwargs:
+            kwargs["exp_time_err"] = 0.0 * units.second
+        if "colour" not in kwargs:
+            kwargs["colour"] = 0.0 * units.mag
+        if "colour_term" not in kwargs:
+            kwargs["colour_term"] = 0.0
+
         mag, mag_err = ph.magnitude_complete(
             flux=flux,
             flux_err=flux_err,
-            exp_time=self.extract_exposure_time(),
-            exp_time_err=0.0 * units.second,
             zeropoint=zp_dict['zeropoint'],
             zeropoint_err=zp_dict['zeropoint_err'],
             airmass=zp_dict['airmass'],
             airmass_err=zp_dict['airmass_err'],
             ext=zp_dict['extinction'],
             ext_err=zp_dict['extinction_err'],
-            colour_term=0.0,
-            colour=0.0 * units.mag,
+            **kwargs
         )
 
         mag_no_ext_corr, mag_no_ext_corr_err = ph.magnitude_complete(
@@ -2073,8 +2081,13 @@ class ImagingImage(Image):
     ):
         """
         Uses astrometry.net to solve the astrometry of the image. Solved image is output as a separate file.
-        :param output_dir: Directory in which to output
-        :return: Path of corrected file.
+        :param output_dir:
+        :param tweak:
+        :param time_limit:
+        :param am_flags:
+        :param am_params:
+        :param kwargs:
+        :return:
         """
         self.extract_pointing()
         u.debug_print(1, "image.correct_astrometry(): tweak ==", tweak)
@@ -4035,8 +4048,23 @@ class ImagingImage(Image):
             ext: int = 0,
             output: str = None,
             mask_nearby=True,
-            detection_threshold: float = None
+            detection_threshold: float = None,
+            **kwargs
     ):
+        """
+
+        :param centre:
+        :param a_world:
+        :param b_world:
+        :param theta_world:
+        :param kron_radius:
+        :param ext:
+        :param output:
+        :param mask_nearby:
+        :param detection_threshold:
+        :param kwargs: keyword arguments to pass to the magnitude() method; header exp_time etc can be overridden here.
+        :return:
+        """
 
         if detection_threshold is None:
             detection_threshold = self.detection_threshold()
@@ -4060,7 +4088,8 @@ class ImagingImage(Image):
 
         snr = flux / flux_err
         mag, mag_err, _, _ = self.magnitude(
-            flux, flux_err
+            flux, flux_err,
+            **kwargs
         )
         for i, m in enumerate(mag):
             if snr[i] < detection_threshold or np.isnan(m):

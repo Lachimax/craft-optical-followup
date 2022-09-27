@@ -69,6 +69,19 @@ class Instrument:
             name = self.name
         return name
 
+    def new_filter(
+            self,
+            filter_name: str
+    ):
+        """
+        Wraps Filter.new_param()
+        :return:
+        """
+        Filter.new_param(
+            filter_name=filter_name,
+            instrument_name=self.name
+        )
+
     @classmethod
     def default_params(cls):
         default_params = {
@@ -214,6 +227,7 @@ class Filter:
 
         self.lambda_eff = None
         self.lambda_fwhm = None
+        self.zeropoint_vega = None
         self.transmission_table_filter = None
         self.transmission_table_filter_path = None
         self.transmission_table_filter_instrument = None
@@ -231,6 +245,12 @@ class Filter:
 
     def __str__(self):
         return f"{self.instrument}.{self.name}"
+
+    def vega_magnitude_offset(self):
+        zp_ab = 3631 * units.Jy
+        zp_vega = self.zeropoint_vega
+        delta_mag = 2.6 * np.log10(zp_ab / zp_vega)
+        return delta_mag
 
     def compare_transmissions(self, other: 'Filter'):
         tbl_self, tbl_other = self.find_comparable_table(other)
@@ -354,6 +374,8 @@ class Filter:
             self.lambda_eff = lambda_eff_vot.value * lambda_eff_vot.unit
             lambda_fwhm_vot = self.votable.get_field_by_id("FWHM")
             self.lambda_fwhm = lambda_fwhm_vot.value * lambda_fwhm_vot.unit
+            zp_vega = self.votable.get_field_by_id("ZeroPoint")
+            self.zeropoint_vega = zp_vega.value * zp_vega.unit
 
         self.write_transmission_tables()
         self.update_output_file()
@@ -432,6 +454,8 @@ class Filter:
     def _output_dict(self):
         return {
             "lambda_eff": self.lambda_eff,
+            "lambda_fwhm": self.lambda_fwhm,
+            "vega_zeropoint": self.zeropoint_vega,
             "votable_path": self.votable_path,
             "transmission_table_paths": {
                 "filter": self.transmission_table_filter_path,
