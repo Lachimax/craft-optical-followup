@@ -2081,8 +2081,13 @@ class ImagingImage(Image):
     ):
         """
         Uses astrometry.net to solve the astrometry of the image. Solved image is output as a separate file.
-        :param output_dir: Directory in which to output
-        :return: Path of corrected file.
+        :param output_dir:
+        :param tweak:
+        :param time_limit:
+        :param am_flags:
+        :param am_params:
+        :param kwargs:
+        :return:
         """
         self.extract_pointing()
         u.debug_print(1, "image.correct_astrometry(): tweak ==", tweak)
