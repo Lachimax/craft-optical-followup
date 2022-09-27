@@ -2357,3 +2357,5 @@ def signal_to_noise_ccd_equ(
     snr = rate_target * np.sqrt(exp_time * gain) / np.sqrt(
         rate_target + n_pix * (rate_sky + rate_dark / gain + rate_read / (exp_time * gain)))
     return snr
+
+
