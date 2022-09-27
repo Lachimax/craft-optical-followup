@@ -2651,8 +2651,12 @@ class ImagingEpoch(Epoch):
     def correct_astrometry_coadded(self, output_dir: str, images: dict, **kwargs):
         self.coadded_astrometry = {}
 
+        print(images)
+
         if images is None:
             images = self.coadded
+
+        print(images)
 
         if "tweak" in kwargs:
             tweak = kwargs["tweak"]
@@ -5276,8 +5280,8 @@ class HAWKIImagingEpoch(ESOImagingEpoch):
             self,
             **kwargs
     ):
-        super().__init__(**kwargs)
         self.coadded_esoreflex = {}
+        super().__init__(**kwargs)
 
     @classmethod
     def stages(cls):
@@ -5294,8 +5298,6 @@ class HAWKIImagingEpoch(ESOImagingEpoch):
         stages["correct_astrometry_coadded"]["default"] = True
         return stages
 
-
-
     def add_coadded_esoreflex_image(self, img: Union[str, image.Image], key: str, **kwargs):
         return self._add_coadded(img=img, key=key, image_dict=self.coadded_esoreflex)
 
@@ -5304,7 +5306,18 @@ class HAWKIImagingEpoch(ESOImagingEpoch):
         output_dict.update({
             "coadded_esoreflex": _output_img_dict_single(self.coadded_esoreflex)
         })
+            
         return output_dict
+    
+    def load_output_file(self, **kwargs):
+        outputs = super().load_output_file(**kwargs)
+        if isinstance(outputs, dict):
+            if "coadded_esoreflex" in outputs:
+                for fil in outputs["coadded_esoreflex"]:
+                    if outputs["coadded_esoreflex"][fil] is not None:
+                        u.debug_print(1, f"Attempting to load coadded_esoreflex[{fil}]")
+                        self.add_coadded_esoreflex_image(img=outputs["coadded_esoreflex"][fil], key=fil, **kwargs)
+
 
     def sort_after_esoreflex(self, output_dir: str, **kwargs):
         """
@@ -5367,6 +5380,13 @@ class HAWKIImagingEpoch(ESOImagingEpoch):
 
         return good_dir
 
+    def proc_correct_astrometry_coadded(self, output_dir: str, **kwargs):
+        # self.generate_astrometry_indices()
+        self.correct_astrometry_coadded(
+            output_dir=output_dir,
+            images=self.coadded_esoreflex,
+            **kwargs
+        )
 
 
 class FORS2ImagingEpoch(ESOImagingEpoch):
