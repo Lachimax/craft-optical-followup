@@ -5328,7 +5328,7 @@ class HAWKIImagingEpoch(ESOImagingEpoch):
 
     def _pipeline_init(self):
         super()._pipeline_init()
-        self.coadded_final = "coadded_esoreflex"
+        self.coadded_final = "coadded_astrometry"
 
     def sort_after_esoreflex(self, output_dir: str, **kwargs):
         """
