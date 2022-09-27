@@ -4665,7 +4665,7 @@ class PanSTARRS1ImagingEpoch(SurveyImagingEpoch):
 class ESOImagingEpoch(ImagingEpoch):
     instrument_name = "dummy-instrument"
     mode = "imaging"
-
+    eso_name = None
     def __init__(
             self,
             name: str = None,
@@ -4888,9 +4888,16 @@ class ESOImagingEpoch(ImagingEpoch):
             print("Could not open ESO Reflex; may not be installed, or installed to other environment.")
 
     def proc_sort_reduced(self, output_dir: str, **kwargs):
-        self._sort_after_esoreflex(output_dir=output_dir, **kwargs)
+        self.sort_after_esoreflex(output_dir=output_dir, **kwargs)
 
-    def _sort_after_esoreflex(self, output_dir: str, **kwargs):
+
+    def sort_after_esoreflex(self, output_dir: str, **kwargs):
+        """
+        Scans through the ESO Reflex directory for the files matching this epoch, and puts them where we want them.
+        :param output_dir:
+        :param kwargs:
+        :return:
+        """
 
         self.frames_reduced = {}
         self.frames_esoreflex_backgrounds = {}
@@ -4912,8 +4919,6 @@ class ESOImagingEpoch(ImagingEpoch):
             delete_output = False
 
         if os.path.isdir(eso_dir):
-            data_dir = self.data_path
-
             if expect_sorted:
                 print(f"Copying files from {eso_dir} to {output_dir}")
                 shutil.rmtree(output_dir)
@@ -4955,85 +4960,61 @@ class ESOImagingEpoch(ImagingEpoch):
                 # Look for files with the appropriate object and MJD, as recorded in output_values
 
                 # List directories in eso_output_dir; these are dates on which data was reduced using ESOReflex.
-                date_dirs = filter(lambda d: os.path.isdir(os.path.join(eso_dir, d)), os.listdir(eso_dir))
+                date_dirs = filter(
+                    lambda d: os.path.isdir(os.path.join(eso_dir, d)),
+                    os.listdir(eso_dir)
+                )
                 date_dirs = map(lambda d: os.path.join(eso_dir, d), date_dirs)
                 for date_dir in date_dirs:
-                    # List directories within 'reduction date' directories.
-                    # These should represent individual images reduced.
-
                     print(f"Searching {date_dir}")
                     eso_subdirs = filter(
-                        lambda d: os.path.isdir(os.path.join(date_dir, d)),
-                        os.listdir(date_dir))
-                    for subdirectory in eso_subdirs:
-                        subpath = os.path.join(date_dir, subdirectory)
+                        lambda d: os.path.isdir(os.path.join(date_dir, d)) and self.eso_name in d,
+                        os.listdir(date_dir)
+                    )
+                    eso_subdirs = list(map(
+                        lambda d: os.path.join(os.path.join(date_dir, d)),
+                        eso_subdirs
+                    ))
+                    for subpath in eso_subdirs:
                         print(f"\tSearching {subpath}")
-                        # Get the files within the image directory.
-                        files = filter(
-                            lambda d: os.path.isfile(os.path.join(subpath, d)),
-                            os.listdir(subpath)
+                        finished = self._sort_after_esoreflex(
+                            output_dir=output_dir,
+                            date_dir=date_dir,
+                            obj=obj,
+                            mjd=mjd,
+                            delete_output=delete_output,
+                            subpath=subpath,
+                            **kwargs
                         )
-                        for file_name in files:
-                            # Retrieve the target object name from the fits file.
-                            file_path = os.path.join(subpath, file_name)
-                            inst_file = image.detect_instrument(file_path, fail_quietly=True)
-                            if inst_file != "vlt-fors2":
-                                continue
-                            file = image.from_path(
-                                path=file_path,
-                                cls=image.FORS2Image
-                            )
-                            file_obj = file.extract_object().lower()
-                            file_mjd = int(file.extract_header_item('MJD-OBS'))
-                            file_filter = file.extract_filter()
-                            # Check the object name and observation date against those of the epoch we're concerned with.
-                            if file_obj == obj and file_mjd == mjd:
-                                # Check which type of file we have.
-                                if file_name.endswith("PHOT_BACKGROUND_SCI_IMG.fits"):
-                                    file_destination = os.path.join(output_dir, "backgrounds")
-                                    suffix = "PHOT_BACKGROUND_SCI_IMG.fits"
-                                    file_type = "background"
-                                elif file_name.endswith("OBJECT_TABLE_SCI_IMG.fits"):
-                                    file_destination = os.path.join(output_dir, "obj_tbls")
-                                    suffix = "OBJECT_TABLE_SCI_IMG.fits"
-                                    file_type = "object_table"
-                                elif file_name.endswith("SCIENCE_REDUCED_IMG.fits"):
-                                    file_destination = os.path.join(output_dir, "science")
-                                    suffix = "SCIENCE_REDUCED_IMG.fits"
-                                    file_type = "science"
-                                else:
-                                    file_destination = os.path.join(output_dir, "sources")
-                                    suffix = "SOURCES_SCI_IMG.fits"
-                                    file_type = "sources"
-                                # Make this directory, if it doesn't already exist.
-                                u.mkdir_check(file_destination)
-                                # Make a subdirectory by filter.
-                                file_destination = os.path.join(file_destination, file_filter)
-                                u.mkdir_check(file_destination)
-                                # Title new file.
-                                file_destination = os.path.join(
-                                    file_destination,
-                                    f"{self.name}_{subdirectory}_{suffix}")
-                                # Copy file to new location.
-                                print(f"Copying: {file_path} to \n\t {file_destination}")
-                                file.copy(file_destination)
-                                if delete_output and os.path.isfile(file_destination):
-                                    os.remove(file_path)
-                                img = image.from_path(
-                                    path=file_destination,
-                                    cls=image.FORS2Image
-                                )
-                                u.debug_print(2, "ESOImagingEpoch._sort_after_esoreflex(): file_type ==", file_type)
-                                if file_type == "science":
-                                    self.add_frame_reduced(img)
-                                elif file_type == "background":
-                                    self.add_frame_background(img)
+                        if finished:
+                            break
+
         else:
             raise IOError(f"ESO output directory '{eso_dir}' not found.")
 
         if not self.frames_reduced:
             u.debug_print(2, "ESOImagingEpoch._sort_after_esoreflex(): kwargs ==", kwargs)
             print(f"WARNING: No reduced frames were found in the target directory {eso_dir}.")
+
+    def _sort_after_esoreflex(
+            self,
+            output_dir: str,
+            date_dir: str,
+            obj: str,
+            mjd: int,
+            delete_output: bool,
+            subpath: str,
+            **kwargs
+    ):
+        """
+
+        :param output_dir:
+        :param date_dir:
+        :param obj:
+        :param mjd:
+        :param kwargs:
+        :return:
+        """
 
     def proc_trim_reduced(self, output_dir: str, **kwargs):
         self.trim_reduced(
@@ -5289,12 +5270,110 @@ class HAWKIImagingEpoch(ESOImagingEpoch):
     instrument_name = "vlt-hawki"
     frame_class = image.HAWKIImage
     coadded_class = image.HAWKICoaddedImage
+    eso_name = "HAWKI"
+
+    def __init__(
+            self,
+            **kwargs
+    ):
+        super().__init__(**kwargs)
+        self.coadded_esoreflex = {}
+
+    @classmethod
+    def stages(cls):
+        eso_stages = super().stages()
+        ie_stages = ImagingEpoch.stages()
+        stages = {
+            "download": eso_stages["download"],
+            "initial_setup": eso_stages["initial_setup"],
+            "sort_reduced": eso_stages["sort_reduced"],
+            "correct_astrometry_coadded": ie_stages["correct_astrometry_coadded"],
+            "source_extraction": ie_stages["source_extraction"],
+            "get_photometry": ie_stages["get_photometry"]
+        }
+        stages["correct_astrometry_coadded"]["default"] = True
+        return stages
+
+
+
+    def add_coadded_esoreflex_image(self, img: Union[str, image.Image], key: str, **kwargs):
+        return self._add_coadded(img=img, key=key, image_dict=self.coadded_esoreflex)
+
+    def _output_dict(self):
+        output_dict = super()._output_dict()
+        output_dict.update({
+            "coadded_esoreflex": _output_img_dict_single(self.coadded_esoreflex)
+        })
+        return output_dict
+
+    def sort_after_esoreflex(self, output_dir: str, **kwargs):
+        """
+        Scans through the ESO Reflex directory for the files matching this epoch, and puts them where we want them.
+        :param output_dir:
+        :param kwargs:
+        :return:
+        """
+        self.frames_reduced = {}
+        self.coadded_esoreflex = {}
+
+        super().sort_after_esoreflex(
+            output_dir=output_dir,
+            **kwargs
+        )
+
+    def _sort_after_esoreflex(
+            self,
+            output_dir: str,
+            date_dir: str,
+            obj: str,
+            mjd: int,
+            delete_output: bool,
+            subpath: str,
+            **kwargs
+    ):
+        files = filter(
+            lambda f: os.path.isfile(os.path.join(subpath, f)) and f.endswith(".fits"),
+            os.listdir(subpath)
+        )
+        good_dir = False
+        for file_name in files:
+            file_path = os.path.join(subpath, file_name)
+            with fits.open(file_path) as file:
+                if "OBJECT" in file[0].header:
+                    file_obj = file[0].header["OBJECT"].lower()
+                else:
+                    continue
+                if "MJD-OBS" in file[0].header:
+                    file_mjd = int(file[0].header["MJD-OBS"])
+                else:
+                    continue
+                if "FILTER" in file[0].header:
+                    fil = file[0].header["FILTER"]
+            print("\t\t", file_name, file_obj, file_mjd)
+            print("\t\t", obj, mjd)
+            if file_obj == obj and file_mjd == mjd:
+                good_dir = True
+                file_destination = os.path.join(output_dir, file_name)
+                print(f"Copying: {file_path} to \n\t {file_destination}")
+                shutil.copy(file_path, file_destination)
+                if file_name.endswith("TILED_IMAGE.fits"):
+                    self.add_coadded_esoreflex_image(
+                        img=file_destination,
+                        key=fil
+                    )
+
+                if delete_output and os.path.isfile(file_destination):
+                    os.remove(file_path)
+
+        return good_dir
+
 
 
 class FORS2ImagingEpoch(ESOImagingEpoch):
     instrument_name = "vlt-fors2"
     frame_class = image.FORS2Image
     coadded_class = image.FORS2CoaddedImage
+    eso_name = "FORS2"
 
     def n_frames(self, fil: str):
         frame_pairs = self.pair_files(self.frames_reduced[fil])
@@ -5369,6 +5448,86 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
     #                 registered = frame.copy(
     #                     os.path.join(output_dir, frame.filename.replace("_norm.fits", "_registered.fits")))
     #                 self.add_frame_registered(registered)
+
+    def _sort_after_esoreflex(
+            self,
+            output_dir: str,
+            date_dir: str,
+            obj: str,
+            mjd: int,
+            delete_output: bool,
+            subpath: str,
+            **kwargs
+    ):
+        # List directories within 'reduction date' directories.
+        # These should represent individual images reduced.
+
+        subdirectory = os.path.split(subpath)
+
+        # Get the files within the image directory.
+        files = filter(
+            lambda d: os.path.isfile(os.path.join(subpath, d)),
+            os.listdir(subpath)
+        )
+        for file_name in files:
+            # Retrieve the target object name from the fits file.
+            file_path = os.path.join(subpath, file_name)
+            inst_file = image.detect_instrument(file_path, fail_quietly=True)
+            if inst_file != "vlt-fors2":
+                continue
+            file = image.from_path(
+                path=file_path,
+                cls=image.FORS2Image
+            )
+            file_obj = file.extract_object().lower()
+            file_mjd = int(file.extract_header_item('MJD-OBS'))
+            file_filter = file.extract_filter()
+            # Check the object name and observation date against those of the epoch we're concerned with.
+            if file_obj == obj and file_mjd == mjd:
+                # Check which type of file we have.
+                if file_name.endswith("PHOT_BACKGROUND_SCI_IMG.fits"):
+                    file_destination = os.path.join(output_dir, "backgrounds")
+                    suffix = "PHOT_BACKGROUND_SCI_IMG.fits"
+                    file_type = "background"
+                elif file_name.endswith("OBJECT_TABLE_SCI_IMG.fits"):
+                    file_destination = os.path.join(output_dir, "obj_tbls")
+                    suffix = "OBJECT_TABLE_SCI_IMG.fits"
+                    file_type = "object_table"
+                elif file_name.endswith("SCIENCE_REDUCED_IMG.fits"):
+                    file_destination = os.path.join(output_dir, "science")
+                    suffix = "SCIENCE_REDUCED_IMG.fits"
+                    file_type = "science"
+                else:
+                    file_destination = os.path.join(output_dir, "sources")
+                    suffix = "SOURCES_SCI_IMG.fits"
+                    file_type = "sources"
+                # Make this directory, if it doesn't already exist.
+                u.mkdir_check(file_destination)
+                # Make a subdirectory by filter.
+                file_destination = os.path.join(file_destination, file_filter)
+                u.mkdir_check(file_destination)
+                # Title new file.
+                file_destination = os.path.join(
+                    file_destination,
+                    f"{self.name}_{subdirectory}_{suffix}"
+                )
+                # Copy file to new location.
+                print(f"Copying: {file_path} to \n\t {file_destination}")
+                file.copy(file_destination)
+                if delete_output and os.path.isfile(file_destination):
+                    os.remove(file_path)
+                img = image.from_path(
+                    path=file_destination,
+                    cls=image.FORS2Image
+                )
+                u.debug_print(2, "ESOImagingEpoch._sort_after_esoreflex(): file_type ==", file_type)
+                if file_type == "science":
+                    self.add_frame_reduced(img)
+                elif file_type == "background":
+                    self.add_frame_background(img)
+        # With the FORS2 substructure we want to search every subdirectory
+        return False
+
 
     def correct_astrometry_frames(self, output_dir: str, frames: dict = None, **kwargs):
         """
@@ -6439,7 +6598,8 @@ class XShooterSpectroscopyEpoch(ESOSpectroscopyEpoch):
                  program_id: str = None,
                  ):
 
-        super().__init__(param_path=param_path,
+        super().__init__(
+            param_path=param_path,
                          name=name,
                          field=field,
                          data_path=data_path,
