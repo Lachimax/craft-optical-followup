@@ -2187,7 +2187,8 @@ class ImagingEpoch(Epoch):
                 "default": False,
                 "keywords": {
                     "tweak": True,
-                    "astroalign_template": None
+                    "astroalign_template": None,
+                    "skip_indices": False
                 }
             },
             "trim_coadded": {
@@ -2641,22 +2642,29 @@ class ImagingEpoch(Epoch):
             self.add_coadded_image(sigclip_path, key=fil, mode="imaging")
 
     def proc_correct_astrometry_coadded(self, output_dir: str, **kwargs):
-        self.generate_astrometry_indices()
         self.correct_astrometry_coadded(
             output_dir=output_dir,
-            images=self.coadded,
             **kwargs
         )
 
-    def correct_astrometry_coadded(self, output_dir: str, images: dict, **kwargs):
+    def correct_astrometry_coadded(
+            self,
+            output_dir: str,
+            image_type: str = None,
+            **kwargs
+    ):
+        skip_indices = False
+        if "skip_indices" in kwargs:
+            skip_indices = kwargs["skip_indices"]
+        if not skip_indices:
+            self.generate_astrometry_indices()
+
         self.coadded_astrometry = {}
 
-        print(images)
+        if image_type is None:
+            image_type = "coadded"
 
-        if images is None:
-            images = self.coadded
-
-        print(images)
+        images = self._get_images(image_type)
 
         if "tweak" in kwargs:
             tweak = kwargs["tweak"]
@@ -3251,7 +3259,7 @@ class ImagingEpoch(Epoch):
         :param image_type: "trimmed", "coadded", "unprojected" or "astrometry"
         :return: dict with filter names as keys and CoaddedImage objects as values.
         """
-        if image_type == "final":
+        if image_type in ["final", "coadded_final"]:
             if self.coadded_final is not None:
                 image_type = self.coadded_final
             else:
@@ -4670,6 +4678,7 @@ class ESOImagingEpoch(ImagingEpoch):
     instrument_name = "dummy-instrument"
     mode = "imaging"
     eso_name = None
+
     def __init__(
             self,
             name: str = None,
@@ -4893,7 +4902,6 @@ class ESOImagingEpoch(ImagingEpoch):
 
     def proc_sort_reduced(self, output_dir: str, **kwargs):
         self.sort_after_esoreflex(output_dir=output_dir, **kwargs)
-
 
     def sort_after_esoreflex(self, output_dir: str, **kwargs):
         """
@@ -5306,9 +5314,9 @@ class HAWKIImagingEpoch(ESOImagingEpoch):
         output_dict.update({
             "coadded_esoreflex": _output_img_dict_single(self.coadded_esoreflex)
         })
-            
+
         return output_dict
-    
+
     def load_output_file(self, **kwargs):
         outputs = super().load_output_file(**kwargs)
         if isinstance(outputs, dict):
@@ -5318,6 +5326,9 @@ class HAWKIImagingEpoch(ESOImagingEpoch):
                         u.debug_print(1, f"Attempting to load coadded_esoreflex[{fil}]")
                         self.add_coadded_esoreflex_image(img=outputs["coadded_esoreflex"][fil], key=fil, **kwargs)
 
+    def _pipeline_init(self):
+        super()._pipeline_init()
+        self.coadded_final = "coadded_esoreflex"
 
     def sort_after_esoreflex(self, output_dir: str, **kwargs):
         """
@@ -5380,13 +5391,31 @@ class HAWKIImagingEpoch(ESOImagingEpoch):
 
         return good_dir
 
-    def proc_correct_astrometry_coadded(self, output_dir: str, **kwargs):
-        # self.generate_astrometry_indices()
-        self.correct_astrometry_coadded(
+    def correct_astrometry_coadded(
+            self,
+            output_dir: str,
+            image_type: str = None,
+            **kwargs
+    ):
+        if image_type is None:
+            image_type = "coadded_esoreflex"
+        super().correct_astrometry_coadded(
             output_dir=output_dir,
-            images=self.coadded_esoreflex,
+            image_type=image_type,
             **kwargs
         )
+
+    def _get_images(self, image_type: str) -> Dict[str, image.CoaddedImage]:
+        if image_type in ["final", "coadded_final"]:
+            if self.coadded_final is not None:
+                image_type = self.coadded_final
+            else:
+                raise ValueError("coadded_final has not been set.")
+
+        if image_type in ["coadded_esoreflex", "esoreflex"]:
+            return self.coadded_esoreflex
+        else:
+            return super()._get_images(image_type=image_type)
 
 
 class FORS2ImagingEpoch(ESOImagingEpoch):
@@ -5547,7 +5576,6 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
                     self.add_frame_background(img)
         # With the FORS2 substructure we want to search every subdirectory
         return False
-
 
     def correct_astrometry_frames(self, output_dir: str, frames: dict = None, **kwargs):
         """
@@ -6620,13 +6648,13 @@ class XShooterSpectroscopyEpoch(ESOSpectroscopyEpoch):
 
         super().__init__(
             param_path=param_path,
-                         name=name,
-                         field=field,
-                         data_path=data_path,
-                         instrument=instrument,
-                         date=date,
-                         program_id=program_id
-                         )
+            name=name,
+            field=field,
+            data_path=data_path,
+            instrument=instrument,
+            date=date,
+            program_id=program_id
+        )
 
         self.frames_raw = {"uvb": [],
                            "vis": [],
