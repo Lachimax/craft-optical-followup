@@ -1553,7 +1553,8 @@ def update_frb_mast_photometry(frb: str, cat: str = "panstarrs1", force: bool = 
 def retrieve_gaia(ra: float, dec: float, radius: units.Quantity = 0.5 * units.deg):
     from astroquery.gaia import Gaia
     Gaia.ROW_LIMIT = -1
-    print(f"\nQuerying Gaia DR2 archive for field centring on RA={ra}, DEC={dec}")
+    Gaia.MAIN_GAIA_TABLE = "gaiadr3.gaia_source"
+    print(f"\nQuerying Gaia DR3 archive for field centring on RA={ra}, DEC={dec}")
     coord = SkyCoord(ra=ra, dec=dec, unit=(units.degree, units.degree), frame='icrs')
     j = Gaia.cone_search_async(coordinate=coord, radius=radius)
     r = j.get_results()
