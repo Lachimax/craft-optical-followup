@@ -726,7 +726,6 @@ class Field:
     def generate_astrometry_indices(
             self,
             cat_name: str = "gaia",
-            correct_to_epoch: bool = True
     ):
         self.retrieve_catalogue(cat_name=cat_name)
         if not self.check_cat(cat_name=cat_name):
@@ -2768,7 +2767,7 @@ class ImagingEpoch(Epoch):
         print("Extracting sources for", image_type, "with", len(list(images.keys())))
         for fil in images:
             img = images[fil]
-            print(f"Extracting sources from {img}")
+            print(f"Extracting sources from {fil} image: {img}")
             configs = self.source_extractor_config
 
             img.psfex_path = None
@@ -3259,11 +3258,14 @@ class ImagingEpoch(Epoch):
         :param image_type: "trimmed", "coadded", "unprojected" or "astrometry"
         :return: dict with filter names as keys and CoaddedImage objects as values.
         """
+
         if image_type in ["final", "coadded_final"]:
             if self.coadded_final is not None:
                 image_type = self.coadded_final
             else:
                 raise ValueError("coadded_final has not been set.")
+
+        print(f"Retrieving {image_type} images...")
 
         if image_type in ["coadded_trimmed", "trimmed"]:
             image_dict = self.coadded_trimmed
@@ -4791,6 +4793,7 @@ class ESOImagingEpoch(ImagingEpoch):
         self.frames_flat = {}
         self.frames_bias = []
         self.frames_raw = []
+        self.filters = []
 
         # Write tables of fits files to main directory; firstly, science images only:
         tbl = image.fits_table(
@@ -4810,7 +4813,10 @@ class ESOImagingEpoch(ImagingEpoch):
             science_only=False
         )
 
-        for row in tbl_full:
+        not_science = []
+        # We do this in two pieces so that we don't add calibration frames that aren't for relevant filters
+        # (which the ESO archive often associates anyway, especially with HAWK-I)
+        for i, row in enumerate(tbl_full):
             path = os.path.join(raw_dir, row["identifier"])
             cls = image.ImagingImage.select_child_class(instrument=self.instrument_name, mode="imaging")
             img = image.from_path(path, cls=cls)
@@ -4821,7 +4827,14 @@ class ESOImagingEpoch(ImagingEpoch):
             u.debug_print(
                 2,
                 f"_initial_setup(): Adding frame {img.name}, type {img.frame_type}/{type(img)}, to {self}, type {type(self)}")
-            self.add_frame_raw(img)
+            if img.frame_type == "science":
+                self.add_frame_raw(img)
+            else:
+                not_science.append(img)
+
+        for img in not_science:
+            if img.filter_name in self.filters:
+                self.add_frame_raw(img)
 
         u.debug_print(2, f"ESOImagingEpoch._initial_setup(): {self.frames_science=}")
         # Collect and save some stats on those filters:
@@ -5301,6 +5314,7 @@ class HAWKIImagingEpoch(ESOImagingEpoch):
             "sort_reduced": eso_stages["sort_reduced"],
             "correct_astrometry_coadded": ie_stages["correct_astrometry_coadded"],
             "source_extraction": ie_stages["source_extraction"],
+            "photometric_calibration": ie_stages["photometric_calibration"],
             "get_photometry": ie_stages["get_photometry"]
         }
         stages["correct_astrometry_coadded"]["default"] = True
@@ -5373,19 +5387,20 @@ class HAWKIImagingEpoch(ESOImagingEpoch):
                     continue
                 if "FILTER" in file[0].header:
                     fil = file[0].header["FILTER"]
-            print("\t\t", file_name, file_obj, file_mjd)
-            print("\t\t", obj, mjd)
             if file_obj == obj and file_mjd == mjd:
                 good_dir = True
                 file_destination = os.path.join(output_dir, file_name)
                 print(f"Copying: {file_path} to \n\t {file_destination}")
                 shutil.copy(file_path, file_destination)
                 if file_name.endswith("TILED_IMAGE.fits"):
-                    self.add_coadded_esoreflex_image(
+                    img = self.add_coadded_esoreflex_image(
                         img=file_destination,
                         key=fil
                     )
-
+                    img.set_header_items({
+                        "EXPTIME": 1.0,
+                        "INTIME": img.extract_header_item("TEXPTIME"),
+                    })
                 if delete_output and os.path.isfile(file_destination):
                     os.remove(file_path)
 
@@ -5404,6 +5419,7 @@ class HAWKIImagingEpoch(ESOImagingEpoch):
             image_type=image_type,
             **kwargs
         )
+        self.coadded_unprojected = self.coadded_astrometry
 
     def _get_images(self, image_type: str) -> Dict[str, image.CoaddedImage]:
         if image_type in ["final", "coadded_final"]:

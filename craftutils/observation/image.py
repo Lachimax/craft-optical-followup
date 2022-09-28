@@ -4862,19 +4862,32 @@ class HAWKICoaddedImage(ESOImagingImage):
     num_chips = 4
     instrument_name = "vlt-hawki"
 
+    def extract_exposure_time(self):
+        return 1 * units.s
+
     def zeropoint(
             self,
             **kwargs
     ):
-        return self.add_zeropoint(
-            catalogue="2MASS",
-            zeropoint=self.extract_header_item("PHOTZP") + self.filter.vega_magnitude_offset(),
+
+        self.add_zeropoint(
+            catalogue="calib_pipeline",
+            zeropoint=self.extract_header_item("PHOTZP") * units.mag + self.filter.vega_magnitude_offset(),
             zeropoint_err=self.extract_header_item("PHOTZPER"),
             extinction=0.0 * units.mag,
             extinction_err=0.0 * units.mag,
             airmass=0.0,
             airmass_err=0.0
         )
+
+        zp = super().zeropoint(
+            **kwargs
+        )
+
+        return zp
+
+
+
         # self.select_zeropoint(True)
         # return self.zeropoint_best
 
