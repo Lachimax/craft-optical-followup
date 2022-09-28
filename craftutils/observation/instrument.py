@@ -227,7 +227,7 @@ class Filter:
 
         self.lambda_eff = None
         self.lambda_fwhm = None
-        self.zeropoint_vega = None
+        self.vega_zeropoint = None
         self.transmission_table_filter = None
         self.transmission_table_filter_path = None
         self.transmission_table_filter_instrument = None
@@ -248,8 +248,8 @@ class Filter:
 
     def vega_magnitude_offset(self):
         zp_ab = 3631 * units.Jy
-        zp_vega = self.zeropoint_vega
-        delta_mag = 2.6 * np.log10(zp_ab / zp_vega)
+        zp_vega = self.vega_zeropoint
+        delta_mag = 2.5 * np.log10(zp_ab / zp_vega)
         return delta_mag * units.mag
 
     def compare_transmissions(self, other: 'Filter'):
@@ -375,7 +375,7 @@ class Filter:
             lambda_fwhm_vot = self.votable.get_field_by_id("FWHM")
             self.lambda_fwhm = lambda_fwhm_vot.value * lambda_fwhm_vot.unit
             zp_vega = self.votable.get_field_by_id("ZeroPoint")
-            self.zeropoint_vega = zp_vega.value * zp_vega.unit
+            self.vega_zeropoint = zp_vega.value * zp_vega.unit
 
         self.write_transmission_tables()
         self.update_output_file()
@@ -455,7 +455,7 @@ class Filter:
         return {
             "lambda_eff": self.lambda_eff,
             "lambda_fwhm": self.lambda_fwhm,
-            "vega_zeropoint": self.zeropoint_vega,
+            "vega_zeropoint": self.vega_zeropoint,
             "votable_path": self.votable_path,
             "transmission_table_paths": {
                 "filter": self.transmission_table_filter_path,
@@ -473,6 +473,10 @@ class Filter:
             return
         if "lambda_eff" in outputs:
             self.lambda_eff = outputs["lambda_eff"]
+        if "lambda_fwhm" in outputs:
+            self.lambda_fwhm = outputs["lambda_fwhm"]
+        if "lambda_fwhm" in outputs:
+            self.vega_zeropoint = outputs["vega_zeropoint"]
         if "votable_path" in outputs:
             self.votable_path = outputs["votable_path"]
         if "transmission_table_paths" in outputs:
