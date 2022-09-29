@@ -177,7 +177,11 @@ def fits_table(input_path: str, output_path: str = "", science_only: bool = True
     return out_file
 
 
-def fits_table_all(input_path: str, output_path: str = "", science_only: bool = True):
+def fits_table_all(
+        input_path: str,
+        output_path: str = "",
+        science_only: bool = True
+):
     """
     Produces and writes to disk a table of .fits files in the given path, with the vital statistics of each. Intended
     only for use with raw ESO data.
@@ -764,13 +768,13 @@ class Image:
         self.open()
         new_files = {}
 
-        if self.data[0] is None:
-            update_header = self.headers[0]
+        if self.hdu_list[0].data is None:
+            update_header = self.hdu_list[0].header
         else:
             update_header = {}
 
         for hdu in self.hdu_list:
-            if hdu.data is None:
+            if hdu.data is None or isinstance(hdu, fits.BinTableHDU):
                 continue
             new_hdu_list = fits.HDUList(fits.PrimaryHDU(hdu.data, hdu.header))
             new_hdu_list[0].header.update(update_header)
@@ -4518,6 +4522,7 @@ class ImagingImage(Image):
             elif cat == "calib_pipeline":
                 differences[cat] = 0.1 * units.angstrom
 
+        print(differences)
         differences = dict(sorted(differences.items(), key=lambda x: x[1]))
         return list(differences.keys()), list(differences.values())
 
@@ -4868,8 +4873,17 @@ class ESOImagingImage(ImagingImage, ESOImage):
 class HAWKIImage(ESOImagingImage):
     instrument_name = "vlt-hawki"
 
+    @classmethod
+    def header_keys(cls) -> dict:
+        header_keys = super().header_keys()
+        header_keys.update(ESOImage.header_keys())
+        header_keys.update({
+            "gain": "GAIN",
+        })
+        return header_keys
 
-class HAWKICoaddedImage(ESOImagingImage):
+
+class HAWKICoaddedImage(CoaddedImage):
     num_chips = 4
     instrument_name = "vlt-hawki"
 
@@ -4880,6 +4894,17 @@ class HAWKICoaddedImage(ESOImagingImage):
             self,
             **kwargs
     ):
+
+        print(self.filter_name)
+
+        self.set_header_items(
+            {
+                "EXPTIME": 1 * units.s,
+                "INTTIME": self.extract_header_item("TEXPTIME") * units.s
+            }
+        )
+        self.load_data(force=True)
+
         self.add_zeropoint(
             catalogue="calib_pipeline",
             zeropoint=self.extract_header_item("PHOTZP") * units.mag + self.filter.vega_magnitude_offset(),

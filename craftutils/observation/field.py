@@ -55,7 +55,7 @@ def expunge_fields():
 
 def expunge_epochs():
     for epoch_name in active_epochs:
-        del active_fields[epoch_name]
+        del active_epochs[epoch_name]
 
 
 def _output_img_list(lst: list):
@@ -1801,6 +1801,7 @@ class Epoch:
         Helper method for asking the user if we need to do this stage of processing.
         If self.do is True, skips the query and returns True.
         :param message: Message to display.
+        :param stage_name: code-friendly name of stage, eg "coadd" or "initial_setup"
         :param n: Stage number
         :return:
         """
@@ -1811,7 +1812,7 @@ class Epoch:
             if stage_name in self.do:
                 return True
         else:
-            message = f"{n}. {message}"
+            message = f"{self.name} {n}. {message}"
             done = self.check_done(stage=stage_name)
             u.debug_print(2, "Epoch.query_stage(): done ==", done)
             if done is not None:
@@ -2567,11 +2568,9 @@ class ImagingEpoch(Epoch):
         import ccdproc
         u.mkdir_check(output_dir)
         frame_dict = self._get_frames(frame_type=frames)
-        input_frames = self._get_frames(frames)
 
         print(f"Coadding {frames} frames.")
         for fil in self.filters:
-
             frame_list = frame_dict[fil]
             output_directory_fil = os.path.join(output_dir, fil)
             u.rmtree_check(output_directory_fil)
@@ -2602,7 +2601,7 @@ class ImagingEpoch(Epoch):
                 "Co-added image using Montage; see ancestor_logs for images.",
                 input_path=input_directory_fil,
                 output_path=coadded_path,
-                ancestors=input_frames[fil]
+                ancestors=frame_list
             )
             ccds = []
             for proj_img_path in list(map(
@@ -2634,7 +2633,7 @@ class ImagingEpoch(Epoch):
                 "Co-added image using Montage for reprojection & ccdproc for coaddition; see ancestor_logs for input images.",
                 input_path=input_directory_fil,
                 output_path=coadded_path,
-                ancestors=input_frames[fil]
+                ancestors=frame_list
             )
             combined_img.write_fits_file()
             combined_img.update_output_file()
@@ -3156,7 +3155,7 @@ class ImagingEpoch(Epoch):
                         os.chdir(refined_path)
 
                         u.system_command_verbose(
-                            f"furby_archive {self.field.name} {img.filter.band_name} {img.path} --clobber",
+                            f"furby_archive {self.field.name} {img.filter.band_name[0]} {img.path} --clobber",
                             error_on_exit_code=False
                         )
 
@@ -3488,9 +3487,9 @@ class ImagingEpoch(Epoch):
             correct_to_epoch: bool = True
     ):
         print(f"correct_to_epoch 4: {correct_to_epoch}")
-        if self.date is None:
-            raise ValueError(f"{self}.date not set; needed to correct Gaia cat to epoch.")
         if correct_to_epoch:
+            if self.date is None:
+                raise ValueError(f"{self}.date not set; needed to correct Gaia cat to epoch.")
             self.gaia_catalogue = astm.correct_gaia_to_epoch(
                 self.field.get_path(f"cat_csv_gaia"),
                 new_epoch=self.date
@@ -5316,13 +5315,15 @@ class HAWKIImagingEpoch(ESOImagingEpoch):
                 "method": cls.proc_split_frames,
                 "message": "Split ESO Reflex frames into separate files?",
                 "log_message": "Split ESO Reflex frames into separate .fits files",
-                "default": True,
+                "default": False,
             },
+            # "coadd": ie_stages["coadd"],
             "correct_astrometry_coadded": ie_stages["correct_astrometry_coadded"],
             "source_extraction": ie_stages["source_extraction"],
             "photometric_calibration": ie_stages["photometric_calibration"],
             "get_photometry": ie_stages["get_photometry"]
         }
+        # stages["coadd"]["frames"] = "split"
         stages["correct_astrometry_coadded"]["default"] = True
         return stages
 
@@ -5331,6 +5332,16 @@ class HAWKIImagingEpoch(ESOImagingEpoch):
 
     def add_frame_split(self, frame: Union[str, image.ImagingImage]):
         return self._add_frame(frame=frame, frames_dict=self.frames_split, frame_type="reduced")
+
+    def check_filter(self, fil: str):
+        not_none = super().check_filter(fil)
+        if not_none:
+            if fil not in self.frames_split:
+                if isinstance(self.frames_split, dict):
+                    self.frames_split[fil] = []
+            if fil not in self.coadded_esoreflex:
+                self.coadded_esoreflex[fil] = None
+        return not_none
 
     def _output_dict(self):
         output_dict = super()._output_dict()
@@ -5375,8 +5386,13 @@ class HAWKIImagingEpoch(ESOImagingEpoch):
             **kwargs
         )
 
+        esodir = p.config['esoreflex_output_dir']
+        esodir_root, esodir_end = os.path.split(esodir)
+        if esodir_end == "":
+            esodir_root, esodir_end = os.path.split(esodir_root)
+
         eso_tmp_dir = os.path.join(
-            os.path.split(p.config['esoreflex_output_dir'])[1],
+            esodir_root,
             "reflex_tmp_products",
             "hawki",
             "hawki_science_process_1"
@@ -5386,35 +5402,41 @@ class HAWKIImagingEpoch(ESOImagingEpoch):
         mjd = int(self.mjd())
         obj = self.target.lower()
 
+        # Also grab the intermediate, individual chip frames from the reflex temp products directory
         for subdir in tmp_subdirs:
             subpath = os.path.join(eso_tmp_dir, subdir)
-            with fits.open(os.path.join(subpath, "exp_1.fits")) as file:
-                if "OBJECT" in file[0].header:
-                    file_obj = file[0].header["OBJECT"].lower()
-                else:
-                    continue
-                if "MJD-OBS" in file[0].header:
-                    file_mjd = int(file[0].header["MJD-OBS"])
-                else:
-                    continue
-                if "FILTER" in file[0].header:
-                    fil = file[0].header["FILTER"]
-            if file_obj == obj and file_mjd == mjd:
-                i = 1
-                while os.path.isfile(os.path.join(subpath, f"exp_{i}.fits")):
-                    file_path = os.path.join(subpath, f"exp_{i}.fits")
-                    new_file_name = f"{self.name}_{self.date_str()}_{fil}_exp_{i}.fits"
-                    file_destination = os.path.join(
+            if os.path.isfile(os.path.join(subpath, "exp_1.fits")):
+                with fits.open(os.path.join(subpath, "exp_1.fits")) as file:
+                    if "OBJECT" in file[0].header:
+                        file_obj = file[0].header["OBJECT"].lower()
+                    else:
+                        continue
+                    if "MJD-OBS" in file[0].header:
+                        file_mjd = int(file[0].header["MJD-OBS"])
+                    else:
+                        continue
+                    if "FILTER" in file[0].header:
+                        fil = file[0].header["FILTER"]
+                if file_obj == obj and file_mjd == mjd:
+                    fil_destination = os.path.join(
                         output_dir,
                         fil,
                         "frames",
-                        new_file_name
                     )
-                    print(f"Copying: {file_path} \n\tto \n\t {file_destination}")
-                    shutil.copy(file_path, file_destination)
-                    img = image.HAWKIImage(path=file_path, frame_type="science")
-                    self.add_frame_reduced(img)
-                    i += 1
+                    u.mkdir_check(fil_destination)
+                    i = 1
+                    while os.path.isfile(os.path.join(subpath, f"exp_{i}.fits")):
+                        file_path = os.path.join(subpath, f"exp_{i}.fits")
+                        new_file_name = f"{self.name}_{self.date_str()}_{fil}_exp_{i}.fits"
+                        file_destination = os.path.join(
+                            fil_destination,
+                            new_file_name
+                        )
+                        print(f"Copying: {file_path} \n\tto \n\t {file_destination}")
+                        shutil.copy(file_path, file_destination)
+                        img = image.HAWKIImage(path=file_path, frame_type="science")
+                        self.add_frame_reduced(img)
+                        i += 1
 
     def _sort_after_esoreflex(
             self,
@@ -5447,9 +5469,13 @@ class HAWKIImagingEpoch(ESOImagingEpoch):
             if file_obj == obj and file_mjd == mjd:
                 suffix = file_name[file_name.find("_") + 1:-5]
                 new_file_name = f"{self.name}_{self.date_str()}_{fil}_{suffix}.fits"
-                file_destination = os.path.join(
+                fil_destination = os.path.join(
                     output_dir,
-                    fil,
+                    fil
+                )
+                u.mkdir_check(fil_destination)
+                file_destination = os.path.join(
+                    fil_destination,
                     new_file_name
                 )
                 print(f"Copying: {file_path} \n\tto \n\t {file_destination}")
@@ -5476,10 +5502,13 @@ class HAWKIImagingEpoch(ESOImagingEpoch):
     ):
         for fil in self.frames_reduced:
             for frame in self.frames_reduced[fil]:
+
                 results = frame.split_fits(
                     output_dir=output_dir
                 )
+                print(f"Split {frame} into:")
                 for name in results:
+                    print(f"\t{name}")
                     self.add_frame_split(frame=results[name])
 
     def coadd(self, output_dir: str, frames: str = "split", sigma_clip: float = 1.5):
