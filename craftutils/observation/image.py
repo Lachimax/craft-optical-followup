@@ -763,8 +763,17 @@ class Image:
             output_dir = self.data_path
         self.open()
         new_files = {}
+
+        if self.data[0] is None:
+            update_header = self.headers[0]
+        else:
+            update_header = {}
+
         for hdu in self.hdu_list:
+            if hdu.data is None:
+                continue
             new_hdu_list = fits.HDUList(fits.PrimaryHDU(hdu.data, hdu.header))
+            new_hdu_list[0].header.update(update_header)
             new_path = os.path.join(output_dir, self.filename.replace(".fits", f"_{hdu.name}.fits"))
             new_hdu_list.writeto(
                 new_path,
@@ -4855,8 +4864,10 @@ class ESOImagingImage(ImagingImage, ESOImage):
         })
         return header_keys
 
+
 class HAWKIImage(ESOImagingImage):
     instrument_name = "vlt-hawki"
+
 
 class HAWKICoaddedImage(ESOImagingImage):
     num_chips = 4
@@ -4869,7 +4880,6 @@ class HAWKICoaddedImage(ESOImagingImage):
             self,
             **kwargs
     ):
-
         self.add_zeropoint(
             catalogue="calib_pipeline",
             zeropoint=self.extract_header_item("PHOTZP") * units.mag + self.filter.vega_magnitude_offset(),
@@ -4885,8 +4895,6 @@ class HAWKICoaddedImage(ESOImagingImage):
         )
 
         return zp
-
-
 
         # self.select_zeropoint(True)
         # return self.zeropoint_best
@@ -4949,6 +4957,7 @@ class FORS2Image(ESOImagingImage):
             "filter": "HIERARCH ESO INS FILT1 NAME"
         })
         return header_keys
+
 
 class FORS2CoaddedImage(CoaddedImage):
     instrument_name = "vlt-fors2"

@@ -2558,9 +2558,10 @@ class ImagingEpoch(Epoch):
 
     def coadd(self, output_dir: str, frames: str = "astrometry", sigma_clip: float = 1.5):
         """
-        Use Montage to coadd individual frames.
+        Use Montage and ccdproc to coadd individual frames.
         :param output_dir: Directory in which to write data products.
         :param frames: Name of frames list to coadd.
+        :param sigma_clip: Multiple of pixel stack standard deviation to clip when doing sigma-clipped stack.
         :return:
         """
         import ccdproc
@@ -3291,19 +3292,19 @@ class ImagingEpoch(Epoch):
             else:
                 raise ValueError("frames_final has not been set.")
 
-        if frame_type == "science":
+        if frame_type in ("science", "frames_science"):
             image_dict = self.frames_science
-        elif frame_type == "reduced":
+        elif frame_type in ("reduced", "frames_reduced"):
             image_dict = self.frames_reduced
-        elif frame_type == "trimmed":
+        elif frame_type in ("trimmed", "frames_trimmed"):
             image_dict = self.frames_trimmed
-        elif frame_type == "normalised":
+        elif frame_type in ("normalised", "frames_normalised"):
             image_dict = self.frames_normalised
-        elif frame_type == "registered":
+        elif frame_type in ("registered", "frames_registered"):
             image_dict = self.frames_registered
-        elif frame_type == "astrometry":
+        elif frame_type in ("astrometry", "frames_astrometry"):
             image_dict = self.frames_astrometry
-        elif frame_type == "diagnosed":
+        elif frame_type == ("diagnosed", "frames_diagnosed"):
             image_dict = self.frames_diagnosed
         else:
             raise ValueError(f"Frame type '{frame_type}' not recognised.")
@@ -3389,37 +3390,37 @@ class ImagingEpoch(Epoch):
             if "frames_raw" in outputs:
                 for frame in set(outputs["frames_raw"]):
                     if os.path.isfile(frame):
-                        self.add_frame_raw(raw_frame=frame)
+                        self.add_frame_raw(frame=frame)
             if "frames_reduced" in outputs:
                 for fil in outputs["frames_reduced"]:
                     if outputs["frames_reduced"][fil] is not None:
                         for frame in set(outputs["frames_reduced"][fil]):
                             if os.path.isfile(frame):
-                                self.add_frame_reduced(reduced_frame=frame)
+                                self.add_frame_reduced(frame=frame)
             if "frames_normalised" in outputs:
                 for fil in outputs["frames_normalised"]:
                     if outputs["frames_normalised"][fil] is not None:
                         for frame in set(outputs["frames_normalised"][fil]):
                             if os.path.isfile(frame):
-                                self.add_frame_normalised(norm_frame=frame)
+                                self.add_frame_normalised(frame=frame)
             if "frames_registered" in outputs:
                 for fil in outputs["frames_registered"]:
                     if outputs["frames_registered"][fil] is not None:
                         for frame in set(outputs["frames_registered"][fil]):
                             if os.path.isfile(frame):
-                                self.add_frame_registered(registered_frame=frame)
+                                self.add_frame_registered(frame=frame)
             if "frames_astrometry" in outputs:
                 for fil in outputs["frames_astrometry"]:
                     if outputs["frames_astrometry"][fil] is not None:
                         for frame in set(outputs["frames_astrometry"][fil]):
                             if os.path.isfile(frame):
-                                self.add_frame_astrometry(astrometry_frame=frame)
+                                self.add_frame_astrometry(frame=frame)
             if "frames_diagnosed" in outputs:
                 for fil in outputs["frames_diagnosed"]:
                     if outputs["frames_diagnosed"][fil] is not None:
                         for frame in set(outputs["frames_diagnosed"][fil]):
                             if os.path.isfile(frame):
-                                self.add_frame_diagnosed(diagnosed_frame=frame)
+                                self.add_frame_diagnosed(frame=frame)
             if "coadded" in outputs:
                 for fil in outputs["coadded"]:
                     if outputs["coadded"][fil] is not None:
@@ -3524,33 +3525,33 @@ class ImagingEpoch(Epoch):
             frames_dict[fil].append(frame)
         return frame
 
-    def add_frame_raw(self, raw_frame: Union[image.ImagingImage, str]):
-        raw_frame, fil = self._check_frame(frame=raw_frame, frame_type="raw")
+    def add_frame_raw(self, frame: Union[image.ImagingImage, str]):
+        frame, fil = self._check_frame(frame=frame, frame_type="raw")
         self.check_filter(fil)
-        if raw_frame is None:
+        if frame is None:
             return None
-        if raw_frame not in self.frames_raw:
-            self.frames_raw.append(raw_frame)
-        self.sort_frame(raw_frame, sort_key=fil)
-        return raw_frame
+        if frame not in self.frames_raw:
+            self.frames_raw.append(frame)
+        self.sort_frame(frame, sort_key=fil)
+        return frame
 
-    def add_frame_reduced(self, reduced_frame: Union[str, image.ImagingImage]):
-        return self._add_frame(frame=reduced_frame, frames_dict=self.frames_reduced, frame_type="reduced")
+    def add_frame_reduced(self, frame: Union[str, image.ImagingImage]):
+        return self._add_frame(frame=frame, frames_dict=self.frames_reduced, frame_type="reduced")
 
-    def add_frame_trimmed(self, trimmed_frame: image.ImagingImage):
-        self._add_frame(frame=trimmed_frame, frames_dict=self.frames_trimmed, frame_type="reduced")
+    def add_frame_trimmed(self, frame: image.ImagingImage):
+        self._add_frame(frame=frame, frames_dict=self.frames_trimmed, frame_type="reduced")
 
-    def add_frame_registered(self, registered_frame: Union[str, image.ImagingImage]):
-        return self._add_frame(frame=registered_frame, frames_dict=self.frames_registered, frame_type="registered")
+    def add_frame_registered(self, frame: Union[str, image.ImagingImage]):
+        return self._add_frame(frame=frame, frames_dict=self.frames_registered, frame_type="registered")
 
-    def add_frame_astrometry(self, astrometry_frame: Union[str, image.ImagingImage]):
-        return self._add_frame(frame=astrometry_frame, frames_dict=self.frames_astrometry, frame_type="astrometry")
+    def add_frame_astrometry(self, frame: Union[str, image.ImagingImage]):
+        return self._add_frame(frame=frame, frames_dict=self.frames_astrometry, frame_type="astrometry")
 
-    def add_frame_diagnosed(self, diagnosed_frame: Union[str, image.ImagingImage]):
-        return self._add_frame(frame=diagnosed_frame, frames_dict=self.frames_diagnosed, frame_type="diagnosed")
+    def add_frame_diagnosed(self, frame: Union[str, image.ImagingImage]):
+        return self._add_frame(frame=frame, frames_dict=self.frames_diagnosed, frame_type="diagnosed")
 
-    def add_frame_normalised(self, norm_frame: Union[str, image.ImagingImage]):
-        return self._add_frame(frame=norm_frame, frames_dict=self.frames_normalised, frame_type="reduced")
+    def add_frame_normalised(self, frame: Union[str, image.ImagingImage]):
+        return self._add_frame(frame=frame, frames_dict=self.frames_normalised, frame_type="reduced")
 
     def add_coadded_trimmed_image(self, img: Union[str, image.Image], key: str, **kwargs):
         return self._add_coadded(img=img, key=key, image_dict=self.coadded_trimmed)
@@ -5002,7 +5003,7 @@ class ESOImagingEpoch(ImagingEpoch):
                     ))
                     for subpath in eso_subdirs:
                         print(f"\tSearching {subpath}")
-                        finished = self._sort_after_esoreflex(
+                        self._sort_after_esoreflex(
                             output_dir=output_dir,
                             date_dir=date_dir,
                             obj=obj,
@@ -5011,8 +5012,6 @@ class ESOImagingEpoch(ImagingEpoch):
                             subpath=subpath,
                             **kwargs
                         )
-                        if finished:
-                            break
 
         else:
             raise IOError(f"ESO output directory '{eso_dir}' not found.")
@@ -5234,7 +5233,7 @@ class ESOImagingEpoch(ImagingEpoch):
                 for fil in outputs["frames_trimmed"]:
                     if outputs["frames_trimmed"][fil] is not None:
                         for frame in outputs["frames_trimmed"][fil]:
-                            self.add_frame_trimmed(trimmed_frame=frame)
+                            self.add_frame_trimmed(frame=frame)
             if "frames_esoreflex_backgrounds" in outputs:
                 for fil in outputs["frames_esoreflex_backgrounds"]:
                     if outputs["frames_esoreflex_backgrounds"][fil] is not None:
@@ -5302,6 +5301,7 @@ class HAWKIImagingEpoch(ESOImagingEpoch):
             **kwargs
     ):
         self.coadded_esoreflex = {}
+        self.frames_split = {}
         super().__init__(**kwargs)
 
     @classmethod
@@ -5312,6 +5312,12 @@ class HAWKIImagingEpoch(ESOImagingEpoch):
             "download": eso_stages["download"],
             "initial_setup": eso_stages["initial_setup"],
             "sort_reduced": eso_stages["sort_reduced"],
+            "split_frames": {
+                "method": cls.proc_split_frames,
+                "message": "Split ESO Reflex frames into separate files?",
+                "log_message": "Split ESO Reflex frames into separate .fits files",
+                "default": True,
+            },
             "correct_astrometry_coadded": ie_stages["correct_astrometry_coadded"],
             "source_extraction": ie_stages["source_extraction"],
             "photometric_calibration": ie_stages["photometric_calibration"],
@@ -5323,10 +5329,14 @@ class HAWKIImagingEpoch(ESOImagingEpoch):
     def add_coadded_esoreflex_image(self, img: Union[str, image.Image], key: str, **kwargs):
         return self._add_coadded(img=img, key=key, image_dict=self.coadded_esoreflex)
 
+    def add_frame_split(self, frame: Union[str, image.ImagingImage]):
+        return self._add_frame(frame=frame, frames_dict=self.frames_split, frame_type="reduced")
+
     def _output_dict(self):
         output_dict = super()._output_dict()
         output_dict.update({
-            "coadded_esoreflex": _output_img_dict_single(self.coadded_esoreflex)
+            "coadded_esoreflex": _output_img_dict_single(self.coadded_esoreflex),
+            "frames_split": _output_img_dict_list(self.frames_split)
         })
 
         return output_dict
@@ -5339,10 +5349,16 @@ class HAWKIImagingEpoch(ESOImagingEpoch):
                     if outputs["coadded_esoreflex"][fil] is not None:
                         u.debug_print(1, f"Attempting to load coadded_esoreflex[{fil}]")
                         self.add_coadded_esoreflex_image(img=outputs["coadded_esoreflex"][fil], key=fil, **kwargs)
+            if "frames_split" in outputs:
+                for fil in outputs["frames_split"]:
+                    if outputs["frames_split"][fil] is not None:
+                        for frame in outputs["frames_split"][fil]:
+                            self.add_frame_split(frame=frame)
 
     def _pipeline_init(self):
         super()._pipeline_init()
         self.coadded_final = "coadded_astrometry"
+        self.frames_final = "frames_split"
 
     def sort_after_esoreflex(self, output_dir: str, **kwargs):
         """
@@ -5358,6 +5374,47 @@ class HAWKIImagingEpoch(ESOImagingEpoch):
             output_dir=output_dir,
             **kwargs
         )
+
+        eso_tmp_dir = os.path.join(
+            os.path.split(p.config['esoreflex_output_dir'])[1],
+            "reflex_tmp_products",
+            "hawki",
+            "hawki_science_process_1"
+        )
+
+        tmp_subdirs = os.listdir(eso_tmp_dir)
+        mjd = int(self.mjd())
+        obj = self.target.lower()
+
+        for subdir in tmp_subdirs:
+            subpath = os.path.join(eso_tmp_dir, subdir)
+            with fits.open(os.path.join(subpath, "exp_1.fits")) as file:
+                if "OBJECT" in file[0].header:
+                    file_obj = file[0].header["OBJECT"].lower()
+                else:
+                    continue
+                if "MJD-OBS" in file[0].header:
+                    file_mjd = int(file[0].header["MJD-OBS"])
+                else:
+                    continue
+                if "FILTER" in file[0].header:
+                    fil = file[0].header["FILTER"]
+            if file_obj == obj and file_mjd == mjd:
+                i = 1
+                while os.path.isfile(os.path.join(subpath, f"exp_{i}.fits")):
+                    file_path = os.path.join(subpath, f"exp_{i}.fits")
+                    new_file_name = f"{self.name}_{self.date_str()}_{fil}_exp_{i}.fits"
+                    file_destination = os.path.join(
+                        output_dir,
+                        fil,
+                        "frames",
+                        new_file_name
+                    )
+                    print(f"Copying: {file_path} \n\tto \n\t {file_destination}")
+                    shutil.copy(file_path, file_destination)
+                    img = image.HAWKIImage(path=file_path, frame_type="science")
+                    self.add_frame_reduced(img)
+                    i += 1
 
     def _sort_after_esoreflex(
             self,
@@ -5388,9 +5445,14 @@ class HAWKIImagingEpoch(ESOImagingEpoch):
                 if "FILTER" in file[0].header:
                     fil = file[0].header["FILTER"]
             if file_obj == obj and file_mjd == mjd:
-                good_dir = True
-                file_destination = os.path.join(output_dir, file_name)
-                print(f"Copying: {file_path} to \n\t {file_destination}")
+                suffix = file_name[file_name.find("_") + 1:-5]
+                new_file_name = f"{self.name}_{self.date_str()}_{fil}_{suffix}.fits"
+                file_destination = os.path.join(
+                    output_dir,
+                    fil,
+                    new_file_name
+                )
+                print(f"Copying: {file_path} \n\tto \n\t {file_destination}")
                 shutil.copy(file_path, file_destination)
                 if file_name.endswith("TILED_IMAGE.fits"):
                     img = self.add_coadded_esoreflex_image(
@@ -5404,7 +5466,28 @@ class HAWKIImagingEpoch(ESOImagingEpoch):
                 if delete_output and os.path.isfile(file_destination):
                     os.remove(file_path)
 
-        return good_dir
+    def proc_split_frames(self, output_dir: str, **kwargs):
+        self.split_frames(output_dir=output_dir, **kwargs)
+
+    def split_frames(
+            self,
+            output_dir: str,
+            **kwargs
+    ):
+        for fil in self.frames_reduced:
+            for frame in self.frames_reduced[fil]:
+                results = frame.split_fits(
+                    output_dir=output_dir
+                )
+                for name in results:
+                    self.add_frame_split(frame=results[name])
+
+    def coadd(self, output_dir: str, frames: str = "split", sigma_clip: float = 1.5):
+        return super().coadd(
+            output_dir=output_dir,
+            frames=frames,
+            sigma_clip=sigma_clip
+        )
 
     def correct_astrometry_coadded(
             self,
@@ -5422,16 +5505,32 @@ class HAWKIImagingEpoch(ESOImagingEpoch):
         self.coadded_unprojected = self.coadded_astrometry
 
     def _get_images(self, image_type: str) -> Dict[str, image.CoaddedImage]:
-        if image_type in ["final", "coadded_final"]:
+        if image_type in ("final", "coadded_final"):
             if self.coadded_final is not None:
                 image_type = self.coadded_final
             else:
                 raise ValueError("coadded_final has not been set.")
 
-        if image_type in ["coadded_esoreflex", "esoreflex"]:
+        if image_type in ("coadded_esoreflex", "esoreflex"):
             return self.coadded_esoreflex
         else:
             return super()._get_images(image_type=image_type)
+
+    def _get_frames(self, frame_type: str) -> Dict[str, List[image.ImagingImage]]:
+        if frame_type == "final":
+            if self.frames_final is not None:
+                frame_type = self.frames_final
+            else:
+                raise ValueError("frames_final has not been set.")
+
+        if frame_type in ("split", "frames_split"):
+            image_dict = self.frames_split
+        else:
+            image_dict = super()._get_frames(
+                frame_type=frame_type
+            )
+
+        return image_dict
 
 
 class FORS2ImagingEpoch(ESOImagingEpoch):
