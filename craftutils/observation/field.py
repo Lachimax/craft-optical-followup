@@ -5686,7 +5686,7 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
         # List directories within 'reduction date' directories.
         # These should represent individual images reduced.
 
-        subdirectory, file = os.path.split(subpath)
+        _, subdirectory = os.path.split(subpath)
 
         # Get the files within the image directory.
         files = filter(
