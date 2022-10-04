@@ -1609,7 +1609,8 @@ class ImagingImage(Image):
             dist_tol: units.Quantity = None,
             snr_cut=3.,
             iterate_uncertainty: bool = True,
-            do_x_shift: bool = True
+            do_x_shift: bool = True,
+            vega: bool = False
     ):
         print(f"\nEstimating photometric zeropoint for {self.name}, {type(self)}\n")
 
@@ -1637,7 +1638,7 @@ class ImagingImage(Image):
             self.load_headers()
             self.extract_astrometry_err()
             if self.astrometry_err is not None:
-                dist_tol = 2 * self.astrometry_err
+                dist_tol = 10 * self.astrometry_err
             else:
                 dist_tol = 2 * units.arcsec
 
@@ -1675,6 +1676,11 @@ class ImagingImage(Image):
 
         if zp_dict is None:
             return None
+
+        if vega:
+            offset = self.filter.vega_magnitude_offset()
+            zp_dict["zeropoint"] += self.filter.vega_magnitude_offset()
+            zp_dict["ab_correction"] = self.filter.vega_magnitude_offset()
 
         zp_dict = self.add_zeropoint(
             # catalogue=cat_name,
@@ -3080,7 +3086,7 @@ class ImagingImage(Image):
             output_path: str = None,
             mask: np.ndarray = None,
             **kwargs,
-    ):
+    ) -> Tuple[plt.Axes, plt.Figure, dict]:
         self.load_data()
         _, scale = self.extract_pixel_scale()
         data = self.data[ext].value * 1.0
@@ -4672,6 +4678,20 @@ class CoaddedImage(ImagingImage):
             raise ValueError(f"Unrecognised instrument {instrument}")
 
 
+class F4CoaddedImage(CoaddedImage):
+    def zeropoint(self, **kwargs):
+        self.zeropoint_best = self.add_zeropoint(
+            catalogue=self.extract_header_item("ZPTFILE"),
+            zeropoint=self.extract_header_item("ZPTMAG") * units.mag,
+            zeropoint_err=self.extract_header_item("ZPTMUCER") * units.mag,
+            extinction=0.0 * units.mag,
+            extinction_err=0.0 * units.mag,
+            airmass=0.0,
+            airmass_err=0.0
+        )
+        return self.zeropoint_best
+
+
 class SurveyCutout(CoaddedImage):
     def do_subtract_background(self):
         return False
@@ -4903,17 +4923,17 @@ class HAWKICoaddedImage(CoaddedImage):
                 "INTTIME": self.extract_header_item("TEXPTIME") * units.s
             }
         )
-        self.load_data(force=True)
+        # self.load_data(force=True)
 
-        self.add_zeropoint(
-            catalogue="calib_pipeline",
-            zeropoint=self.extract_header_item("PHOTZP") * units.mag + self.filter.vega_magnitude_offset(),
-            zeropoint_err=self.extract_header_item("PHOTZPER"),
-            extinction=0.0 * units.mag,
-            extinction_err=0.0 * units.mag,
-            airmass=0.0,
-            airmass_err=0.0
-        )
+        # self.add_zeropoint(
+        #     catalogue="calib_pipeline",
+        #     zeropoint=self.extract_header_item("PHOTZP") * units.mag + self.filter.vega_magnitude_offset(),
+        #     zeropoint_err=self.extract_header_item("PHOTZPER"),
+        #     extinction=0.0 * units.mag,
+        #     extinction_err=0.0 * units.mag,
+        #     airmass=0.0,
+        #     airmass_err=0.0
+        # )
 
         zp = super().zeropoint(
             **kwargs

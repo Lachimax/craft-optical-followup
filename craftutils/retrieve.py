@@ -1809,9 +1809,33 @@ def save_gemini_files(file_list: Table, output: str, overwrite: bool = False):
 
 
 filters = {
-    "gaia": ["g", "bp", "rp"]}
+    "gaia": ["g", "bp", "rp"],
+    "2mass": ["j", "h", "k"]
+}
 
 column_units = {
+    "2mass": # See http://tdc-www.harvard.edu/software/catalogs/tmc.format.html
+        {
+            "ra": units.deg,
+            "dec": units.deg,
+            "err_maj": units.arcsec,
+            "err_min": units.arcsec,
+            "err_ang": units.deg,
+            "{:s}_m": units.mag,
+            "{:s}_cmsig": units.mag,
+            "{:s}_msigcom": units.mag,
+            "glon": units.deg,
+            "glat": units.deg,
+            "dist_opt": units.arcsec,
+            "phi_opt": units.deg,
+            "b_m_opt": units.mag,
+            "vr_m_opt": units.mag,
+            "dist": units.arcsec,
+            "angle": units.deg,
+            "j_h": units.mag,
+            "h_k": units.mag,
+            "j_k": units.mag
+        },
     "gaia":  # See https://gea.esac.esa.int/archive/documentation/GDR2/Gaia_archive/chap_datamodel/sec_dm_main_tables/ssec_dm_gaia_source.html
         {
             "dr2": {

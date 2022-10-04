@@ -1263,7 +1263,8 @@ class FRBField(Field):
             ext: int = 0,
             colour: str = "white",
             frb_kwargs: dict = {},
-            plot_centre: bool = False
+            plot_centre: bool = False,
+            include_img_err: bool = True,
     ):
         from matplotlib.patches import Ellipse
         img.load_headers()
@@ -1276,12 +1277,16 @@ class FRBField(Field):
         theta = uncertainty.theta.to(units.deg)
         rotation_angle = img.extract_rotation_angle(ext=ext)
         theta = theta - rotation_angle
-        img_err = img.extract_astrometry_err()
         img.extract_pixel_scale()
+        if "include_img_err" in frb_kwargs:
+            include_img_err = frb_kwargs.pop("include_img_err")
         if "edgecolor" not in frb_kwargs:
             frb_kwargs["edgecolor"] = colour
         if "facecolor" not in frb_kwargs:
             frb_kwargs["facecolor"] = "none"
+        img_err = None
+        if include_img_err:
+            img_err = img.extract_astrometry_err()
         if img_err is not None:
             a = np.sqrt(a ** 2 + img_err ** 2)
             b = np.sqrt(b ** 2 + img_err ** 2)
@@ -2215,7 +2220,7 @@ class ImagingEpoch(Epoch):
                     "distance_tolerance": None,
                     "snr_min": 3.,
                     "class_star_tolerance": 0.95,
-                    "image_type": "coadded_trimmed",
+                    "image_type": "final",
                     "preferred_zeropoint": {},
                     "suppress_select": False
                 }
@@ -2855,6 +2860,10 @@ class ImagingEpoch(Epoch):
             for cat_name in retrieve.photometry_catalogues:
                 if cat_name == "gaia":
                     continue
+                if cat_name in retrieve.cat_systems and retrieve.cat_systems[cat_name] == "vega":
+                    vega = True
+                else:
+                    vega = False
                 fil_path = os.path.join(output_path, fil)
                 u.mkdir_check(fil_path)
                 if f"in_{cat_name}" in self.field.cats and self.field.cats[f"in_{cat_name}"]:
@@ -2866,6 +2875,7 @@ class ImagingEpoch(Epoch):
                         show=False,
                         snr_cut=snr_min,
                         star_class_tol=star_class_tolerance,
+                        vega=vega
                     )
 
             if "preferred_zeropoint" in kwargs and fil in kwargs["preferred_zeropoint"]:
@@ -3260,6 +3270,7 @@ class ImagingEpoch(Epoch):
         """
 
         if image_type in ["final", "coadded_final"]:
+            print(f"Retrieving final images...")
             if self.coadded_final is not None:
                 image_type = self.coadded_final
             else:
@@ -3905,6 +3916,10 @@ class FORS2StandardEpoch(StandardEpoch, ImagingEpoch):
                 for cat_name in cats:
                     if cat_name == "gaia":
                         continue
+                    if cat_name in retrieve.cat_systems and retrieve.cat_systems[cat_name] == "vega":
+                        vega = True
+                    else:
+                        vega = False
                     fil_path = os.path.join(output_path, fil)
                     u.mkdir_check_nested(fil_path, remove_last=False)
                     if f"in_{cat_name}" in self.field.cats and self.field.cats[f"in_{cat_name}"]:
@@ -3916,7 +3931,8 @@ class FORS2StandardEpoch(StandardEpoch, ImagingEpoch):
                             show=False,
                             snr_cut=snr_min,
                             star_class_tol=star_class_tolerance,
-                            iterate_uncertainty=True
+                            iterate_uncertainty=True,
+                            vega=vega
                         )
 
                         chip = img.extract_chip_number()
