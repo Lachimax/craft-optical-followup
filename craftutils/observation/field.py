@@ -2939,6 +2939,11 @@ class ImagingEpoch(Epoch):
         print(f"Getting finalised photometry for key objects, in {image_type}.")
         obs.load_master_objects_table()
 
+        staging_dir = os.path.join(
+            p.data_path,
+            "Finalised"
+        )
+
         image_dict = self._get_images(image_type=image_type)
         u.mkdir_check(path)
         # Loop through filters
@@ -3156,6 +3161,13 @@ class ImagingEpoch(Epoch):
                 nice_name)
             )
 
+            img.copy_with_outputs(
+                os.path.join(
+                    staging_dir,
+                    nice_name
+                )
+            )
+
             if isinstance(self.field.survey, survey.Survey):
                 refined_path = self.field.survey.refined_stage_path
 
@@ -3174,11 +3186,11 @@ class ImagingEpoch(Epoch):
                         img.copy_with_outputs(
                             os.path.join(
                                 refined_path,
-                                # self.field.name,
-                                # f"{self.instrument_name}_{fil}",
                                 nice_name
                             )
                         )
+
+
 
         self.push_to_table()
 
@@ -4959,9 +4971,11 @@ class ESOImagingEpoch(ImagingEpoch):
         else:
             delete_output = False
 
+        print(f"Copying files from {eso_dir} to {output_dir}")
+        print(self.date_str())
+
         if os.path.isdir(eso_dir):
             if expect_sorted:
-                print(f"Copying files from {eso_dir} to {output_dir}")
                 shutil.rmtree(output_dir)
                 shutil.copytree(
                     eso_dir,
@@ -4993,6 +5007,7 @@ class ESOImagingEpoch(ImagingEpoch):
                         self.add_frame_background(img)
 
             else:
+
                 # The ESOReflex output directory is structured in a very specific way, which we now traverse.
                 mjd = int(self.mjd())
                 obj = self.target.lower()
@@ -5671,7 +5686,7 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
         # List directories within 'reduction date' directories.
         # These should represent individual images reduced.
 
-        subdirectory = os.path.split(subpath)
+        subdirectory, file = os.path.split(subpath)
 
         # Get the files within the image directory.
         files = filter(
