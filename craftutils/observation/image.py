@@ -36,10 +36,12 @@ import craftutils.fits_files as ff
 import craftutils.photometry as ph
 import craftutils.params as p
 import craftutils.plotting as pl
+
 import craftutils.observation.log as log
 import craftutils.observation.objects as objects
-from craftutils.stats import gaussian_distributed_point
 import craftutils.observation.instrument as inst
+
+from craftutils.stats import gaussian_distributed_point
 import craftutils.wrap.source_extractor as se
 import craftutils.wrap.psfex as psfex
 import craftutils.wrap.galfit as galfit
@@ -3246,6 +3248,7 @@ class ImagingImage(Image):
         u.debug_print(1, "ImagingImage.nice_frame(): this_frame ==", this_frame)
         return this_frame
 
+
     def plot_source_extractor_object(
             self,
             row: table.Row,
@@ -4456,8 +4459,8 @@ class ImagingImage(Image):
         )
 
         best_params = galfit.sersic_best_row(model_tbls[f"COMP_{pivot_component}"])
-        best_params["r_eff_proj"] = obj.projected_distance(best_params["r_eff_ang"]).to("kpc")
-        best_params["r_eff_proj_err"] = obj.projected_distance(best_params["r_eff_ang_err"]).to("kpc")
+        best_params["r_eff_proj"] = obj.projected_size(best_params["r_eff_ang"]).to("kpc")
+        best_params["r_eff_proj_err"] = obj.projected_size(best_params["r_eff_ang_err"]).to("kpc")
         return best_params
 
     @classmethod

@@ -1272,11 +1272,25 @@ class Galaxy(Object):
                     self.photometry[instrument][fil][epoch]["abs_mag"] = abs_mag
         self.update_output_file()
 
-    def projected_distance(self, angle: units.Quantity):
-        angle = angle.to(units.rad).value
+    def projected_size(self, angle: Union[units.Quantity, float]) -> units.Quantity:
+        """
+        When given an angular size, calculates the projected physical size at the redshift of the galaxy.
+        :param angle: Angular size. If not provided as a quantity, must be in arcseconds.
+        :return: Projected physical size, with units kpc
+        """
+        angle = u.check_quantity(angle, unit=units.arcsec).to(units.rad).value
         dist = angle * self.D_A
-        return dist
+        return dist.to(units.kpc)
 
+    def angular_size(self, distance: Union[units.Quantity, float]):
+        """
+        Given a physical projected size at the redshift of the galaxy, calculates the angular size as seen from Earth.
+        :param distance: Physical projected size. If not provided as a quantity, must be in kiloparsecs.
+        :return: Angular size, in arcseconds.
+        """
+        distance = u.check_quantity(distance, unit=units.kpc)
+        theta = (distance * units.rad / self.D_A).to(units.arcsec)
+        return theta
 
     def _output_dict(self):
         output = super()._output_dict()
@@ -1414,6 +1428,26 @@ class Galaxy(Object):
             "DM": dm * dm_units / (1 + self.z),
         })
         return tbl
+
+    def distance_bar(
+            self,
+            size: units.Quantity,
+            img: 'ImagingImage',
+            ax: plt.Axes,
+            fig: plt.Figure,
+            spread_factor: float = 1.,
+            x: float = 0.,
+            y: float = 0.,
+            line_kwargs: dict = {},
+            text_kwargs: dict = {},
+            ext: int = 0,
+    ):
+        if not isinstance(size, units.Quantity):
+            size *= units.pix
+        elif size.decompose().unit == units.meter:
+            theta = self.angular_size(distance=size)
+            # size = theta.to(units.)
+
 
     @classmethod
     def default_params(cls):
@@ -1771,8 +1805,8 @@ class FRB(Transient):
             halo_info["distance_luminosity"] = obj.luminosity_distance()
             halo_info["distance_comoving"] = obj.comoving_distance()
             halo_info["offset_angle_err"] = offset_angle_err = np.sqrt(fg_pos_err ** 2 + frb_err_dec ** 2)
-            halo_info["r_perp"] = offset = obj.projected_distance(offset_angle).to(units.kpc)
-            halo_info["r_perp_err"] = obj.projected_distance(offset_angle_err).to(units.kpc)
+            halo_info["r_perp"] = offset = obj.projected_size(offset_angle).to(units.kpc)
+            halo_info["r_perp_err"] = obj.projected_size(offset_angle_err).to(units.kpc)
             halo_info["mass_stellar"] = fg_m_star = obj.mass_stellar
             halo_info["mass_stellar_err"] = fg_m_star_err = obj.mass_stellar_err
             halo_info["log_mass_stellar"] = np.log10(fg_m_star / units.solMass)
