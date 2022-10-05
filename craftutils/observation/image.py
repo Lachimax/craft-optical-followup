@@ -3184,6 +3184,7 @@ class ImagingImage(Image):
 
         return ax, fig, other_args
 
+
     def prep_for_colour(
             self,
             output_path: str,
@@ -4920,7 +4921,7 @@ class HAWKICoaddedImage(CoaddedImage):
         self.set_header_items(
             {
                 "EXPTIME": 1 * units.s,
-                "INTTIME": self.extract_header_item("TEXPTIME") * units.s
+                "INTTIME": self.extract_header_item("TEXPTIME") * units.s,
             }
         )
         # self.load_data(force=True)

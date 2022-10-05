@@ -5334,6 +5334,9 @@ class HAWKIImagingEpoch(ESOImagingEpoch):
         self.frames_split = {}
         super().__init__(**kwargs)
 
+    def n_frames(self, fil: str):
+        return self.coadded_astrometry[fil].extract_ncombine()
+
     @classmethod
     def stages(cls):
         eso_stages = super().stages()
@@ -6033,132 +6036,133 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
         # Split up bias images by chip
         bias_sets = self.sort_by_chip(self.frames_bias)
 
-        bias_sets = (bias_sets[1], bias_sets[2])
-        flat_sets = {}
-        std_sets = {}
-        # Split up the flats and standards by filter and chip
-        for fil in self.filters:
-            flat_chips = self.sort_by_chip(self.frames_flat[fil])
-            if flat_chips:
-                flat_sets[fil] = flat_chips[1], flat_chips[2]
-            std_chips = self.sort_by_chip(self.frames_standard[fil])
-            if std_chips:
-                std_sets[fil] = std_chips[1], std_chips[2]
+        if 1 in bias_sets and 2 in bias_sets:
+            bias_sets = (bias_sets[1], bias_sets[2])
+            flat_sets = {}
+            std_sets = {}
+            # Split up the flats and standards by filter and chip
+            for fil in self.filters:
+                flat_chips = self.sort_by_chip(self.frames_flat[fil])
+                if flat_chips:
+                    flat_sets[fil] = flat_chips[1], flat_chips[2]
+                std_chips = self.sort_by_chip(self.frames_standard[fil])
+                if std_chips:
+                    std_sets[fil] = std_chips[1], std_chips[2]
 
-        chips = ("up", "down")
-        for i, chip in enumerate(chips):
-            bias_set = bias_sets[i]
-            # For each chip, generate a master bias image
-            try:
-                master_bias = esorex.fors_bias(
-                    bias_frames=list(map(lambda b: b.path, bias_set)),
-                    output_dir=output_path,
-                    output_filename=f"master_bias_{chip}.fits",
-                    sof_name=f"bias_{chip}.sof"
-                )
-            except SystemError:
-                continue
-
-            for fil in image_dict:
-                # Generate master flat per-filter, per-chip
-                if fil not in flat_sets or fil in inst.FORS2Filter.qc1_retrievable:  # Time-saver
-                    continue
-                img = image_dict[fil]
-                if "calib_pipeline" in img.zeropoints:
-                    img.zeropoints.pop("calib_pipeline")
-                flat_set = list(map(lambda b: b.path, flat_sets[fil][i]))
-                fil_dir = os.path.join(output_path, fil)
-                u.mkdir_check(fil_dir)
+            chips = ("up", "down")
+            for i, chip in enumerate(chips):
+                bias_set = bias_sets[i]
+                # For each chip, generate a master bias image
                 try:
-                    master_sky_flat_img = esorex.fors_img_sky_flat(
-                        flat_frames=flat_set,
-                        master_bias=master_bias,
-                        output_dir=fil_dir,
-                        output_filename=f"master_sky_flat_img_{chip}.fits",
-                        sof_name=f"flat_{chip}"
+                    master_bias = esorex.fors_bias(
+                        bias_frames=list(map(lambda b: b.path, bias_set)),
+                        output_dir=output_path,
+                        output_filename=f"master_bias_{chip}.fits",
+                        sof_name=f"bias_{chip}.sof"
                     )
                 except SystemError:
                     continue
 
-                aligned_phots = []
-                if fil in std_sets:
-                    for std in std_sets[fil][i]:
-                        # generate or load an appropriate StandardEpoch
-                        # (and StandardField in the background)
-                        pointing = std.extract_pointing()
-                        jname = astm.jname(pointing, 0, 0)
-                        if pointing not in self.std_pointings:
-                            self.std_pointings.append(pointing)
-                        if jname not in self.std_epochs:
-                            std_epoch = FORS2StandardEpoch(
-                                centre_coords=pointing,
-                                instrument=self.instrument,
-                                frames_flat=self.frames_flat,
-                                frames_bias=self.frames_bias,
-                                date=self.date
-                            )
-                            self.std_epochs[jname] = std_epoch
-                        else:
-                            std_epoch = self.std_epochs[jname]
-                        std_epoch.add_frame_raw(std)
-                        # For each raw standard, reduce
-                        std_dir = os.path.join(fil_dir, std.name)
-                        u.mkdir_check(std_dir)
-                        aligned_phot, std_reduced = esorex.fors_zeropoint(
-                            standard_img=std.path,
+                for fil in image_dict:
+                    # Generate master flat per-filter, per-chip
+                    if fil not in flat_sets or fil in inst.FORS2Filter.qc1_retrievable:  # Time-saver
+                        continue
+                    img = image_dict[fil]
+                    if "calib_pipeline" in img.zeropoints:
+                        img.zeropoints.pop("calib_pipeline")
+                    flat_set = list(map(lambda b: b.path, flat_sets[fil][i]))
+                    fil_dir = os.path.join(output_path, fil)
+                    u.mkdir_check(fil_dir)
+                    try:
+                        master_sky_flat_img = esorex.fors_img_sky_flat(
+                            flat_frames=flat_set,
                             master_bias=master_bias,
-                            master_sky_flat_img=master_sky_flat_img,
-                            output_dir=std_dir,
-                            chip_num=i + 1
+                            output_dir=fil_dir,
+                            output_filename=f"master_sky_flat_img_{chip}.fits",
+                            sof_name=f"flat_{chip}"
                         )
-                        aligned_phots.append(aligned_phot)
-                        std_epoch.add_frame_reduced(std_reduced)
+                    except SystemError:
+                        continue
 
-                    if len(aligned_phots) > 1:
-                        try:
-                            phot_coeff_table = esorex.fors_photometry(
-                                aligned_phot=aligned_phots,
+                    aligned_phots = []
+                    if fil in std_sets:
+                        for std in std_sets[fil][i]:
+                            # generate or load an appropriate StandardEpoch
+                            # (and StandardField in the background)
+                            pointing = std.extract_pointing()
+                            jname = astm.jname(pointing, 0, 0)
+                            if pointing not in self.std_pointings:
+                                self.std_pointings.append(pointing)
+                            if jname not in self.std_epochs:
+                                std_epoch = FORS2StandardEpoch(
+                                    centre_coords=pointing,
+                                    instrument=self.instrument,
+                                    frames_flat=self.frames_flat,
+                                    frames_bias=self.frames_bias,
+                                    date=self.date
+                                )
+                                self.std_epochs[jname] = std_epoch
+                            else:
+                                std_epoch = self.std_epochs[jname]
+                            std_epoch.add_frame_raw(std)
+                            # For each raw standard, reduce
+                            std_dir = os.path.join(fil_dir, std.name)
+                            u.mkdir_check(std_dir)
+                            aligned_phot, std_reduced = esorex.fors_zeropoint(
+                                standard_img=std.path,
+                                master_bias=master_bias,
                                 master_sky_flat_img=master_sky_flat_img,
-                                output_dir=fil_dir,
-                                chip_num=i + 1,
+                                output_dir=std_dir,
+                                chip_num=i + 1
                             )
+                            aligned_phots.append(aligned_phot)
+                            std_epoch.add_frame_reduced(std_reduced)
 
-                            phot_coeff_table = fits.open(phot_coeff_table)[1].data
-
-                            u.debug_print(1, f"Chip {chip}, zeropoint {phot_coeff_table['ZPOINT'][0] * units.mag}")
-
-                            # The intention here is that a chip 1 zeropoint override a chip 2 zeropoint, but
-                            # if chip 1 doesn't work a chip 2 one will do.
-                            if chip == 1 or "calib_pipeline" not in img.zeropoints:
-                                img.add_zeropoint(
-                                    zeropoint=phot_coeff_table["ZPOINT"][0] * units.mag,
-                                    zeropoint_err=phot_coeff_table["DZPOINT"][0] * units.mag,
-                                    airmass=img.extract_airmass(),
-                                    airmass_err=self.airmass_err[fil],
-                                    extinction=phot_coeff_table["EXT"][0] * units.mag,
-                                    extinction_err=phot_coeff_table["DEXT"][0] * units.mag,
-                                    catalogue="calib_pipeline",
-                                    n_matches=None,
+                        if len(aligned_phots) > 1:
+                            try:
+                                phot_coeff_table = esorex.fors_photometry(
+                                    aligned_phot=aligned_phots,
+                                    master_sky_flat_img=master_sky_flat_img,
+                                    output_dir=fil_dir,
+                                    chip_num=i + 1,
                                 )
 
-                            # img.update_output_file()
-                        except SystemError:
-                            print(
-                                "System error encountered while doing esorex processing; possibly impossible value encountered. Skipping.")
+                                phot_coeff_table = fits.open(phot_coeff_table)[1].data
 
-                    else:
-                        print(f"Insufficient standard observations to calculate esorex zeropoint for {img}")
+                                u.debug_print(1, f"Chip {chip}, zeropoint {phot_coeff_table['ZPOINT'][0] * units.mag}")
 
-        print("Estimating zeropoints from standard observations...")
-        for jname in self.std_epochs:
-            std_epoch = self.std_epochs[jname]
-            std_epoch.photometric_calibration()
-            for fil in image_dict:
-                img = image_dict[fil]
-                # We save time by only bothering with non-qc1-obtainable zeropoints.
-                if fil in std_epoch.frames_reduced and fil not in inst.FORS2Filter.qc1_retrievable:
-                    for std in std_epoch.frames_reduced[fil]:
-                        img.add_zeropoint_from_other(std)
+                                # The intention here is that a chip 1 zeropoint override a chip 2 zeropoint, but
+                                # if chip 1 doesn't work a chip 2 one will do.
+                                if chip == 1 or "calib_pipeline" not in img.zeropoints:
+                                    img.add_zeropoint(
+                                        zeropoint=phot_coeff_table["ZPOINT"][0] * units.mag,
+                                        zeropoint_err=phot_coeff_table["DZPOINT"][0] * units.mag,
+                                        airmass=img.extract_airmass(),
+                                        airmass_err=self.airmass_err[fil],
+                                        extinction=phot_coeff_table["EXT"][0] * units.mag,
+                                        extinction_err=phot_coeff_table["DEXT"][0] * units.mag,
+                                        catalogue="calib_pipeline",
+                                        n_matches=None,
+                                    )
+
+                                # img.update_output_file()
+                            except SystemError:
+                                print(
+                                    "System error encountered while doing esorex processing; possibly impossible value encountered. Skipping.")
+
+                        else:
+                            print(f"Insufficient standard observations to calculate esorex zeropoint for {img}")
+
+            print("Estimating zeropoints from standard observations...")
+            for jname in self.std_epochs:
+                std_epoch = self.std_epochs[jname]
+                std_epoch.photometric_calibration()
+                for fil in image_dict:
+                    img = image_dict[fil]
+                    # We save time by only bothering with non-qc1-obtainable zeropoints.
+                    if fil in std_epoch.frames_reduced and fil not in inst.FORS2Filter.qc1_retrievable:
+                        for std in std_epoch.frames_reduced[fil]:
+                            img.add_zeropoint_from_other(std)
 
         zeropoints = p.load_params(zeropoint_yaml)
         if zeropoints is None:
