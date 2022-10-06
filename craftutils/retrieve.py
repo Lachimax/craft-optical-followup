@@ -390,6 +390,7 @@ def save_eso_raw_data_and_calibs(
     query = query_eso_raw(
         program_id=program_id, date_obs=date_obs, obj=obj, instrument=instrument, mode=mode, coord_tol=coord_tol
     )
+    print(query)
     raw_frames = get_eso_raw_frame_list(query=query)
     calib_urls = get_eso_calib_associations_all(raw_frames=raw_frames)
     urls = list(raw_frames['url']) + calib_urls
@@ -462,7 +463,7 @@ WHERE dp_cat='SCIENCE'
 AND instrument='{instrument}'
 AND {mode_str}
 """
-    if program_id is not None:
+    if program_id not in [None, "None"]:
         query += f"AND prog_id='{program_id}'"
     if date_obs is not None:
         query += f"AND date_obs>='{(date_obs - 0.5).to_datetime().date()}'\n" \
@@ -1684,6 +1685,8 @@ def update_frb_gaia(frb: str, force: bool = False):
 
 
 def load_catalogue(cat_name: str, cat: str, data_release: int = None):
+    if cat_name == "gaia" and data_release is None:
+        data_release = 3
     cat = u.path_or_table(cat, fmt="ascii.csv", load_qtable=True)
     cat_column_units = column_units[cat_name]
     if data_release is not None:
@@ -1806,9 +1809,33 @@ def save_gemini_files(file_list: Table, output: str, overwrite: bool = False):
 
 
 filters = {
-    "gaia": ["g", "bp", "rp"]}
+    "gaia": ["g", "bp", "rp"],
+    "2mass": ["j", "h", "k"]
+}
 
 column_units = {
+    "2mass": # See http://tdc-www.harvard.edu/software/catalogs/tmc.format.html
+        {
+            "ra": units.deg,
+            "dec": units.deg,
+            "err_maj": units.arcsec,
+            "err_min": units.arcsec,
+            "err_ang": units.deg,
+            "{:s}_m": units.mag,
+            "{:s}_cmsig": units.mag,
+            "{:s}_msigcom": units.mag,
+            "glon": units.deg,
+            "glat": units.deg,
+            "dist_opt": units.arcsec,
+            "phi_opt": units.deg,
+            "b_m_opt": units.mag,
+            "vr_m_opt": units.mag,
+            "dist": units.arcsec,
+            "angle": units.deg,
+            "j_h": units.mag,
+            "h_k": units.mag,
+            "j_k": units.mag
+        },
     "gaia":  # See https://gea.esac.esa.int/archive/documentation/GDR2/Gaia_archive/chap_datamodel/sec_dm_main_tables/ssec_dm_gaia_source.html
         {
             "dr2": {
