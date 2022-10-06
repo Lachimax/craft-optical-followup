@@ -487,6 +487,7 @@ def determine_zeropoint_sextractor(
         cat = table.QTable.read(cat_path, format='ascii.csv')
         if cat_mag_col not in cat.colnames:
             print(f"{cat_mag_col} not found in {cat_name}; is this band included?")
+            p.save_params(file=output_path + 'parameters.yaml', dictionary=params)
             return None
         cat = cat.filled(fill_value=-999.)
         cat[cat_ra_col] *= units.deg
@@ -530,6 +531,7 @@ def determine_zeropoint_sextractor(
 
     if flux_column not in sextractor_cat.colnames:
         print(f"Flux column {flux_column} not in provided SE catalogue.")
+        p.save_params(file=output_path + 'parameters.yaml', dictionary=params)
         return None
 
     source_tbl['mag'], source_tbl['mag_err'] = magnitude_complete(flux=source_tbl[flux_column],
@@ -687,6 +689,7 @@ def determine_zeropoint_sextractor(
 
     if len(matches_clean) < 3:
         print('Not enough valid matches to calculate zeropoint.')
+        p.save_params(file=output_path + 'parameters.yaml', dictionary=params)
         return None
 
     # Plot remaining matches
@@ -1046,6 +1049,7 @@ def determine_zeropoint_sextractor(
     n_match += 1
     if sum(~mask) < 3:
         print('Not enough valid matches to calculate zeropoint.')
+        p.save_params(file=output_path + 'parameters.yaml', dictionary=params)
         return None
 
     zp_free_clipped = -fitted_free_clipped.intercept.value * units.mag + x_shift
@@ -1112,8 +1116,8 @@ def determine_zeropoint_sextractor(
     matches_final["mag_cat"] = matches_final[cat_mag_col]
 
     matches_final.write(output_path + "matches.csv", format='ascii.csv', overwrite=True)
-    u.rm_check(output_path + 'parameters.yaml')
-    p.add_params(file=output_path + 'parameters.yaml', params=params, skip_json=True)
+    # u.rm_check(output_path + 'parameters.yaml')
+    p.save_params(file=output_path + 'parameters.yaml', dictionary=params)
 
     print('Zeropoint - kx: ' + str(params['zeropoint']) + ' +/- ' + str(
         params['zeropoint_err']))
@@ -2357,3 +2361,5 @@ def signal_to_noise_ccd_equ(
     snr = rate_target * np.sqrt(exp_time * gain) / np.sqrt(
         rate_target + n_pix * (rate_sky + rate_dark / gain + rate_read / (exp_time * gain)))
     return snr
+
+

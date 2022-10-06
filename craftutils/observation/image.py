@@ -36,10 +36,12 @@ import craftutils.fits_files as ff
 import craftutils.photometry as ph
 import craftutils.params as p
 import craftutils.plotting as pl
+
 import craftutils.observation.log as log
 import craftutils.observation.objects as objects
-from craftutils.stats import gaussian_distributed_point
 import craftutils.observation.instrument as inst
+
+from craftutils.stats import gaussian_distributed_point
 import craftutils.wrap.source_extractor as se
 import craftutils.wrap.psfex as psfex
 import craftutils.wrap.galfit as galfit
@@ -177,7 +179,11 @@ def fits_table(input_path: str, output_path: str = "", science_only: bool = True
     return out_file
 
 
-def fits_table_all(input_path: str, output_path: str = "", science_only: bool = True):
+def fits_table_all(
+        input_path: str,
+        output_path: str = "",
+        science_only: bool = True
+):
     """
     Produces and writes to disk a table of .fits files in the given path, with the vital statistics of each. Intended
     only for use with raw ESO data.
@@ -763,8 +769,17 @@ class Image:
             output_dir = self.data_path
         self.open()
         new_files = {}
+
+        if self.hdu_list[0].data is None:
+            update_header = self.hdu_list[0].header
+        else:
+            update_header = {}
+
         for hdu in self.hdu_list:
+            if hdu.data is None or isinstance(hdu, fits.BinTableHDU):
+                continue
             new_hdu_list = fits.HDUList(fits.PrimaryHDU(hdu.data, hdu.header))
+            new_hdu_list[0].header.update(update_header)
             new_path = os.path.join(output_dir, self.filename.replace(".fits", f"_{hdu.name}.fits"))
             new_hdu_list.writeto(
                 new_path,
@@ -1507,6 +1522,7 @@ class ImagingImage(Image):
     def select_zeropoint(self, no_user_input: bool = False, preferred: str = None):
 
         if not self.zeropoints:
+            print(f"No zeropoints set ({self}.zeropoints is None); try loading output file.")
             return None, None
 
         ranking, diff = self.rank_photometric_cat(cats=self.zeropoints)
@@ -1595,7 +1611,8 @@ class ImagingImage(Image):
             dist_tol: units.Quantity = None,
             snr_cut=3.,
             iterate_uncertainty: bool = True,
-            do_x_shift: bool = True
+            do_x_shift: bool = True,
+            vega: bool = False
     ):
         print(f"\nEstimating photometric zeropoint for {self.name}, {type(self)}\n")
 
@@ -1623,7 +1640,7 @@ class ImagingImage(Image):
             self.load_headers()
             self.extract_astrometry_err()
             if self.astrometry_err is not None:
-                dist_tol = 2 * self.astrometry_err
+                dist_tol = 10 * self.astrometry_err
             else:
                 dist_tol = 2 * units.arcsec
 
@@ -1661,6 +1678,11 @@ class ImagingImage(Image):
 
         if zp_dict is None:
             return None
+
+        if vega:
+            offset = self.filter.vega_magnitude_offset()
+            zp_dict["zeropoint"] += self.filter.vega_magnitude_offset()
+            zp_dict["ab_correction"] = self.filter.vega_magnitude_offset()
 
         zp_dict = self.add_zeropoint(
             # catalogue=cat_name,
@@ -1866,7 +1888,8 @@ class ImagingImage(Image):
             flux: units.Quantity,
             flux_err: units.Quantity = 0 * units.ct,
             cat_name: str = 'best',
-            img_name: str = 'self'
+            img_name: str = 'self',
+            **kwargs
     ):
 
         zp_dict = self.get_zeropoint(cat_name=cat_name, img_name=img_name)
@@ -1874,19 +1897,25 @@ class ImagingImage(Image):
         if zp_dict is None:
             raise ValueError(f"The {cat_name} zeropoint on {img_name}, for {self.name}, does not appear to exist.")
 
+        if "exp_time" not in kwargs:
+            kwargs["exp_time"] = self.extract_exposure_time()
+        if "exp_time_err" not in kwargs:
+            kwargs["exp_time_err"] = 0.0 * units.second
+        if "colour" not in kwargs:
+            kwargs["colour"] = 0.0 * units.mag
+        if "colour_term" not in kwargs:
+            kwargs["colour_term"] = 0.0
+
         mag, mag_err = ph.magnitude_complete(
             flux=flux,
             flux_err=flux_err,
-            exp_time=self.extract_exposure_time(),
-            exp_time_err=0.0 * units.second,
             zeropoint=zp_dict['zeropoint'],
             zeropoint_err=zp_dict['zeropoint_err'],
             airmass=zp_dict['airmass'],
             airmass_err=zp_dict['airmass_err'],
             ext=zp_dict['extinction'],
             ext_err=zp_dict['extinction_err'],
-            colour_term=0.0,
-            colour=0.0 * units.mag,
+            **kwargs
         )
 
         mag_no_ext_corr, mag_no_ext_corr_err = ph.magnitude_complete(
@@ -2073,8 +2102,13 @@ class ImagingImage(Image):
     ):
         """
         Uses astrometry.net to solve the astrometry of the image. Solved image is output as a separate file.
-        :param output_dir: Directory in which to output
-        :return: Path of corrected file.
+        :param output_dir:
+        :param tweak:
+        :param time_limit:
+        :param am_flags:
+        :param am_params:
+        :param kwargs:
+        :return:
         """
         self.extract_pointing()
         u.debug_print(1, "image.correct_astrometry(): tweak ==", tweak)
@@ -3053,8 +3087,10 @@ class ImagingImage(Image):
             normalize_kwargs: dict = None,  # Can include vmin, vmax
             output_path: str = None,
             mask: np.ndarray = None,
+            scale_bar_object: objects.Extragalactic = None,
+            scale_bar_kwargs: dict = None,
             **kwargs,
-    ):
+    ) -> Tuple[plt.Axes, plt.Figure, dict]:
         self.load_data()
         _, scale = self.extract_pixel_scale()
         data = self.data[ext].value * 1.0
@@ -3147,10 +3183,140 @@ class ImagingImage(Image):
 
         # plt.tight_layout()
 
+        if scale_bar_object is not None:
+            if scale_bar_kwargs is None:
+                scale_bar_kwargs = {}
+            print(scale_bar_kwargs)
+            self.scale_bar(
+                obj=scale_bar_object,
+                ax=ax,
+                fig=fig,
+                **scale_bar_kwargs
+            )
+
         if output_path is not None:
             fig.savefig(output_path)
 
         return ax, fig, other_args
+
+    def scale_bar(
+            self,
+            obj: objects.Extragalactic,
+            ax: plt.Axes,
+            fig: plt.Figure,
+            size: units.Quantity = 1 * units.arcsec,
+            spread_factor: float = 0.5,
+            x_ax: float = 0.1,
+            y_ax: float = 0.1,
+            line_kwargs: dict = None,
+            text_kwargs: dict = None,
+            ext: int = 0,
+            extra_height_top_factor: float = 2.
+    ):
+        self.extract_pixel_scale(ext=ext)
+        if line_kwargs is None:
+            line_kwargs = {}
+        if text_kwargs is None:
+            text_kwargs = {}
+
+        if "fontsize" not in text_kwargs:
+            text_kwargs["fontsize"] = 12
+        if "color" not in text_kwargs:
+            text_kwargs["color"] = "white"
+
+        if "color" not in line_kwargs:
+            line_kwargs["color"] = "white"
+        if "lw" not in line_kwargs:
+            line_kwargs["lw"] = 3
+
+        # if isinstance(x, units.Quantity):
+        #     if x.decompose().unit == units.rad:
+        #         x = x.to(units.pix, self.pixel_scale_x)
+        # if isinstance(x, units.Quantity):
+        #     if x.decompose().unit == units.rad:
+        #         x = x.to(units.pix, self.pixel_scale_x)
+
+        if not isinstance(size, units.Quantity):
+            size = size * units.pix
+        if size.decompose().unit == units.pix:
+            size_pix = size
+            size_ang = size_pix.to(units.arcsec, self.pixel_scale_x)
+            size_proj = obj.projected_size(size_ang)
+        elif size.decompose().unit == units.meter:
+            size_proj = size
+            size_ang = obj.angular_size(distance=size)
+            size_pix = size_ang.to(units.pix, self.pixel_scale_x)
+        elif size.decompose().unit == units.rad:
+            size_ang = size
+            size_pix = size_ang.to(units.pix, self.pixel_scale_x)
+            size_proj = obj.projected_size(size_ang)
+        else:
+            raise ValueError(f"The units of provided size, {size.unit}, cannot be parsed as a pixel, angular or "
+                             f"physical distance.")
+
+        if "solid_capstyle" not in line_kwargs:
+            line_kwargs["solid_capstyle"] = "butt"
+
+        # Draw angular size text in axes coordinates
+        text_ang = ax.text(
+            x_ax,
+            y_ax,
+            size_ang.round(1),
+            transform=ax.transAxes,
+            **text_kwargs
+        )
+        # The below seems complicated, but is made necessary by the fact that you only seem to be able to get the text
+        # width out of matplotlib in Display coordinates (ie, rendered pixels), and the zero point (0, 0) of this
+        # differs from both the Axes coordinates (0, 0) and the Data coordinates (0, 0), but in different ways.
+
+        # Get the size of the text on the canvas
+        r = fig.canvas.get_renderer()
+        bb = text_ang.get_window_extent(r)
+        # Transform the x and y axis coordinates to Display coordinates
+        x_disp, y_ang_disp = ax.transAxes.transform((x_ax, y_ax))
+        # Get the rightmost point of the text by adding the bounding box width (we don't actually use this right now,
+        # but I'm leaving it here in case I make changes later and forget how this works)
+        x_ang_disp_right = x_disp + bb.width
+        # Get the topmost point of the text by adding bounding box height
+        y_ang_disp_up = y_ang_disp + bb.height
+        # Space the bar upwards by half the height of the text.
+        y_bar_disp = y_ang_disp_up + bb.height * spread_factor
+        # Transform the left bar coordinates back to Axes coordinates.
+        x_ax, y_bar_ax = ax.transAxes.inverted().transform((x_disp, y_bar_disp))
+        # Now, to get the bar's right points, we need to work in Data coordinates, because that's what the size is in
+        # (that is, in DATA pixels).
+        # Transform our left point from Display coordinates to Data coordinates.
+        x_data, y_bar_data = ax.transData.inverted().transform((x_disp, y_bar_disp))
+        # Add the width of the bar.
+        x_bar_data_right = x_data + size_pix.value
+        # Transform right point back to Display coordinates.
+        x_bar_disp_right, y_bar_disp = ax.transData.transform((x_bar_data_right, y_bar_data))
+        # Transform right point to Axes coordinates.
+        x_bar_ax_right, y_bar_ax = ax.transAxes.inverted().transform((x_bar_disp_right, y_bar_disp))
+        # Draw the bar.
+        ax.plot(
+            (x_ax, x_bar_ax_right),
+            (y_bar_ax, y_bar_ax),
+            transform=ax.transAxes,
+            **line_kwargs
+        )
+        # Add a text height to get where we draw the projected distance text (since the font size is the same, no
+        # need to do any more nasty conversions)
+        y_proj_disp = y_bar_disp + extra_height_top_factor * bb.height * spread_factor
+        # Except for this one, where we transform the final text coordinates back to Axes coordinates
+        x_ax, y_proj_ax = ax.transAxes.inverted().transform((x_disp, y_proj_disp))
+        # Draw the projected size text.
+        ax.text(
+            x_ax,
+            y_proj_ax,
+            size_proj.round(1),
+            transform=ax.transAxes,
+            **text_kwargs
+        )
+
+        # I am a matplotlib god.
+
+        return ax
 
     def prep_for_colour(
             self,
@@ -4035,8 +4201,23 @@ class ImagingImage(Image):
             ext: int = 0,
             output: str = None,
             mask_nearby=True,
-            detection_threshold: float = None
+            detection_threshold: float = None,
+            **kwargs
     ):
+        """
+
+        :param centre:
+        :param a_world:
+        :param b_world:
+        :param theta_world:
+        :param kron_radius:
+        :param ext:
+        :param output:
+        :param mask_nearby:
+        :param detection_threshold:
+        :param kwargs: keyword arguments to pass to the magnitude() method; header exp_time etc can be overridden here.
+        :return:
+        """
 
         if detection_threshold is None:
             detection_threshold = self.detection_threshold()
@@ -4060,7 +4241,8 @@ class ImagingImage(Image):
 
         snr = flux / flux_err
         mag, mag_err, _, _ = self.magnitude(
-            flux, flux_err
+            flux, flux_err,
+            **kwargs
         )
         for i, m in enumerate(mag):
             if snr[i] < detection_threshold or np.isnan(m):
@@ -4407,8 +4589,8 @@ class ImagingImage(Image):
         )
 
         best_params = galfit.sersic_best_row(model_tbls[f"COMP_{pivot_component}"])
-        best_params["r_eff_proj"] = obj.projected_distance(best_params["r_eff_ang"]).to("kpc")
-        best_params["r_eff_proj_err"] = obj.projected_distance(best_params["r_eff_ang_err"]).to("kpc")
+        best_params["r_eff_proj"] = obj.projected_size(best_params["r_eff_ang"]).to("kpc")
+        best_params["r_eff_proj_err"] = obj.projected_size(best_params["r_eff_ang_err"]).to("kpc")
         return best_params
 
     @classmethod
@@ -4421,7 +4603,7 @@ class ImagingImage(Image):
         elif instrument == "vlt-fors2":
             return FORS2Image
         elif instrument == "vlt-hawki":
-            return HAWKICoaddedImage
+            return HAWKIImage
         elif instrument == "gs-aoi":
             return GSAOIImage
         elif "hst" in instrument:
@@ -4480,6 +4662,7 @@ class ImagingImage(Image):
             elif cat == "calib_pipeline":
                 differences[cat] = 0.1 * units.angstrom
 
+        print(differences)
         differences = dict(sorted(differences.items(), key=lambda x: x[1]))
         return list(differences.keys()), list(differences.values())
 
@@ -4627,6 +4810,20 @@ class CoaddedImage(ImagingImage):
             return DESCutout
         else:
             raise ValueError(f"Unrecognised instrument {instrument}")
+
+
+class F4CoaddedImage(CoaddedImage):
+    def zeropoint(self, **kwargs):
+        self.zeropoint_best = self.add_zeropoint(
+            catalogue=self.extract_header_item("ZPTFILE"),
+            zeropoint=self.extract_header_item("ZPTMAG") * units.mag,
+            zeropoint_err=self.extract_header_item("ZPTMUCER") * units.mag,
+            extinction=0.0 * units.mag,
+            extinction_err=0.0 * units.mag,
+            airmass=0.0,
+            airmass_err=0.0
+        )
+        return self.zeropoint_best
 
 
 class SurveyCutout(CoaddedImage):
@@ -4783,10 +4980,13 @@ class ESOImagingImage(ImagingImage, ESOImage):
             self.frame_type = "flat"
         elif obj == "STD":
             self.frame_type = "standard"
+        elif obj == "DARK":
+            self.frame_type = "dark"
         elif category == "SCIENCE":
             self.frame_type = "science"
         elif category == "SCIENCE_REDUCED_IMG":
             self.frame_type = "science_reduced"
+        u.debug_print(2, f"ESOImagingImage.extract_frame_type(): {obj=}, {category=}, {self.frame_type=}")
         return self.frame_type
 
     def extract_airmass(self):
@@ -4811,24 +5011,69 @@ class ESOImagingImage(ImagingImage, ESOImage):
                 n += 1
         return n
 
+    @classmethod
+    def header_keys(cls) -> dict:
+        header_keys = super().header_keys()
+        header_keys.update(ESOImage.header_keys())
+        header_keys.update({
+            "noise_read": "HIERARCH ESO DET OUT1 RON",
+            "filter": "HIERARCH ESO INS FILT1 NAME",
+            "gain": "HIERARCH ESO DET OUT1 GAIN",
+            "program_id": "HIERARCH ESO OBS PROG ID",
+        })
+        return header_keys
 
-class HAWKICoaddedImage(ESOImagingImage):
+
+class HAWKIImage(ESOImagingImage):
+    instrument_name = "vlt-hawki"
+
+    @classmethod
+    def header_keys(cls) -> dict:
+        header_keys = super().header_keys()
+        header_keys.update(ESOImage.header_keys())
+        header_keys.update({
+            "gain": "GAIN",
+        })
+        return header_keys
+
+
+class HAWKICoaddedImage(CoaddedImage):
     num_chips = 4
     instrument_name = "vlt-hawki"
+
+    def extract_exposure_time(self):
+        return 1 * units.s
 
     def zeropoint(
             self,
             **kwargs
     ):
-        return self.add_zeropoint(
-            catalogue="2MASS",
-            zeropoint=self.extract_header_item("PHOTZP"),
-            zeropoint_err=self.extract_header_item("PHOTZPER"),
-            extinction=0.0 * units.mag,
-            extinction_err=0.0 * units.mag,
-            airmass=0.0,
-            airmass_err=0.0
+        print(self.filter_name)
+
+        self.set_header_items(
+            {
+                "EXPTIME": 1 * units.s,
+                "INTTIME": self.extract_header_item("TEXPTIME") * units.s,
+            }
         )
+        # self.load_data(force=True)
+
+        # self.add_zeropoint(
+        #     catalogue="calib_pipeline",
+        #     zeropoint=self.extract_header_item("PHOTZP") * units.mag + self.filter.vega_magnitude_offset(),
+        #     zeropoint_err=self.extract_header_item("PHOTZPER"),
+        #     extinction=0.0 * units.mag,
+        #     extinction_err=0.0 * units.mag,
+        #     airmass=0.0,
+        #     airmass_err=0.0
+        # )
+
+        zp = super().zeropoint(
+            **kwargs
+        )
+
+        return zp
+
         # self.select_zeropoint(True)
         # return self.zeropoint_best
 
