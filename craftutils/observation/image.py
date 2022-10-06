@@ -3087,6 +3087,8 @@ class ImagingImage(Image):
             normalize_kwargs: dict = None,  # Can include vmin, vmax
             output_path: str = None,
             mask: np.ndarray = None,
+            scale_bar_object: objects.Extragalactic = None,
+            scale_bar_kwargs: dict = None,
             **kwargs,
     ) -> Tuple[plt.Axes, plt.Figure, dict]:
         self.load_data()
@@ -3181,11 +3183,140 @@ class ImagingImage(Image):
 
         # plt.tight_layout()
 
+        if scale_bar_object is not None:
+            if scale_bar_kwargs is None:
+                scale_bar_kwargs = {}
+            print(scale_bar_kwargs)
+            self.scale_bar(
+                obj=scale_bar_object,
+                ax=ax,
+                fig=fig,
+                **scale_bar_kwargs
+            )
+
         if output_path is not None:
             fig.savefig(output_path)
 
         return ax, fig, other_args
 
+    def scale_bar(
+            self,
+            obj: objects.Extragalactic,
+            ax: plt.Axes,
+            fig: plt.Figure,
+            size: units.Quantity = 1 * units.arcsec,
+            spread_factor: float = 0.5,
+            x_ax: float = 0.1,
+            y_ax: float = 0.1,
+            line_kwargs: dict = None,
+            text_kwargs: dict = None,
+            ext: int = 0,
+            extra_height_top_factor: float = 2.
+    ):
+        self.extract_pixel_scale(ext=ext)
+        if line_kwargs is None:
+            line_kwargs = {}
+        if text_kwargs is None:
+            text_kwargs = {}
+
+        if "fontsize" not in text_kwargs:
+            text_kwargs["fontsize"] = 12
+        if "color" not in text_kwargs:
+            text_kwargs["color"] = "white"
+
+        if "color" not in line_kwargs:
+            line_kwargs["color"] = "white"
+        if "lw" not in line_kwargs:
+            line_kwargs["lw"] = 3
+
+        # if isinstance(x, units.Quantity):
+        #     if x.decompose().unit == units.rad:
+        #         x = x.to(units.pix, self.pixel_scale_x)
+        # if isinstance(x, units.Quantity):
+        #     if x.decompose().unit == units.rad:
+        #         x = x.to(units.pix, self.pixel_scale_x)
+
+        if not isinstance(size, units.Quantity):
+            size = size * units.pix
+        if size.decompose().unit == units.pix:
+            size_pix = size
+            size_ang = size_pix.to(units.arcsec, self.pixel_scale_x)
+            size_proj = obj.projected_size(size_ang)
+        elif size.decompose().unit == units.meter:
+            size_proj = size
+            size_ang = obj.angular_size(distance=size)
+            size_pix = size_ang.to(units.pix, self.pixel_scale_x)
+        elif size.decompose().unit == units.rad:
+            size_ang = size
+            size_pix = size_ang.to(units.pix, self.pixel_scale_x)
+            size_proj = obj.projected_size(size_ang)
+        else:
+            raise ValueError(f"The units of provided size, {size.unit}, cannot be parsed as a pixel, angular or "
+                             f"physical distance.")
+
+        if "solid_capstyle" not in line_kwargs:
+            line_kwargs["solid_capstyle"] = "butt"
+
+        # Draw angular size text in axes coordinates
+        text_ang = ax.text(
+            x_ax,
+            y_ax,
+            size_ang.round(1),
+            transform=ax.transAxes,
+            **text_kwargs
+        )
+        # The below seems complicated, but is made necessary by the fact that you only seem to be able to get the text
+        # width out of matplotlib in Display coordinates (ie, rendered pixels), and the zero point (0, 0) of this
+        # differs from both the Axes coordinates (0, 0) and the Data coordinates (0, 0), but in different ways.
+
+        # Get the size of the text on the canvas
+        r = fig.canvas.get_renderer()
+        bb = text_ang.get_window_extent(r)
+        # Transform the x and y axis coordinates to Display coordinates
+        x_disp, y_ang_disp = ax.transAxes.transform((x_ax, y_ax))
+        # Get the rightmost point of the text by adding the bounding box width (we don't actually use this right now,
+        # but I'm leaving it here in case I make changes later and forget how this works)
+        x_ang_disp_right = x_disp + bb.width
+        # Get the topmost point of the text by adding bounding box height
+        y_ang_disp_up = y_ang_disp + bb.height
+        # Space the bar upwards by half the height of the text.
+        y_bar_disp = y_ang_disp_up + bb.height * spread_factor
+        # Transform the left bar coordinates back to Axes coordinates.
+        x_ax, y_bar_ax = ax.transAxes.inverted().transform((x_disp, y_bar_disp))
+        # Now, to get the bar's right points, we need to work in Data coordinates, because that's what the size is in
+        # (that is, in DATA pixels).
+        # Transform our left point from Display coordinates to Data coordinates.
+        x_data, y_bar_data = ax.transData.inverted().transform((x_disp, y_bar_disp))
+        # Add the width of the bar.
+        x_bar_data_right = x_data + size_pix.value
+        # Transform right point back to Display coordinates.
+        x_bar_disp_right, y_bar_disp = ax.transData.transform((x_bar_data_right, y_bar_data))
+        # Transform right point to Axes coordinates.
+        x_bar_ax_right, y_bar_ax = ax.transAxes.inverted().transform((x_bar_disp_right, y_bar_disp))
+        # Draw the bar.
+        ax.plot(
+            (x_ax, x_bar_ax_right),
+            (y_bar_ax, y_bar_ax),
+            transform=ax.transAxes,
+            **line_kwargs
+        )
+        # Add a text height to get where we draw the projected distance text (since the font size is the same, no
+        # need to do any more nasty conversions)
+        y_proj_disp = y_bar_disp + extra_height_top_factor * bb.height * spread_factor
+        # Except for this one, where we transform the final text coordinates back to Axes coordinates
+        x_ax, y_proj_ax = ax.transAxes.inverted().transform((x_disp, y_proj_disp))
+        # Draw the projected size text.
+        ax.text(
+            x_ax,
+            y_proj_ax,
+            size_proj.round(1),
+            transform=ax.transAxes,
+            **text_kwargs
+        )
+
+        # I am a matplotlib god.
+
+        return ax
 
     def prep_for_colour(
             self,
@@ -3247,7 +3378,6 @@ class ImagingImage(Image):
             kron_a.to(units.pixel, pix_scale), frame)  # + 5 * units.pix,
         u.debug_print(1, "ImagingImage.nice_frame(): this_frame ==", this_frame)
         return this_frame
-
 
     def plot_source_extractor_object(
             self,
@@ -4918,7 +5048,6 @@ class HAWKICoaddedImage(CoaddedImage):
             self,
             **kwargs
     ):
-
         print(self.filter_name)
 
         self.set_header_items(

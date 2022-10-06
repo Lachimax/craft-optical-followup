@@ -1163,7 +1163,7 @@ class Star(Object):
     pass
 
 
-class Galaxy(Object):
+class Extragalactic(Object):
     def __init__(
             self,
             z: float = 0.0,
@@ -1178,61 +1178,6 @@ class Galaxy(Object):
         self.D_A = self.angular_size_distance()
         self.D_L = self.luminosity_distance()
         self.mu = self.distance_modulus()
-
-        self.mass = None
-        if "mass" in kwargs:
-            self.mass = kwargs["mass"]
-
-        self.mass_stellar = None
-        if "mass_stellar" in kwargs:
-            self.mass_stellar = u.check_quantity(kwargs["mass_stellar"], units.solMass)
-
-        self.mass_stellar_err = None
-        if "mass_stellar_err" in kwargs:
-            self.mass_stellar_err = u.check_quantity(kwargs["mass_stellar_err"], units.solMass)
-
-        self.sfr = None
-        if "sfr" in kwargs:
-            self.sfr = kwargs["sfr"] * units.solMass
-
-        self.sfr_err = None
-        if "sfr_err" in kwargs:
-            self.sfr_err = kwargs["sfr_err"] * units.solMass
-
-        self.mass_halo = None
-        self.log_mass_halo = None
-        self.log_mass_halo_upper = None
-        self.log_mass_halo_lower = None
-        if "mass_halo" in kwargs:
-            self.mass_halo = u.check_quantity(kwargs["mass_halo"], units.solMass)
-            self.log_mass_halo = np.log10(self.mass_halo / units.solMass)
-
-        self.halo_mnfw = None
-        self.halo_yf17 = None
-        self.halo_mb15 = None
-        self.halo_mb04 = None
-
-        self.cigale_model_path = None
-        self.cigale_model = None
-
-        self.cigale_sfh_path = None
-        self.cigale_sfh = None
-
-        self.cigale_results_path = None
-        self.cigale_results = None
-
-    def load_cigale_model(self, force: bool = False):
-        if self.cigale_model_path is None:
-            print(f"Cannot load CIGALE model; {self}.cigale_model_path has not been set.")
-        elif force or self.cigale_model is None:
-            self.cigale_model = fits.open(self.cigale_model_path)
-
-        if self.cigale_sfh_path is None:
-            print(f"Cannot load CIGALE SFH; {self}.cigale_sfh_path has not been set.")
-        elif force or self.cigale_sfh is None:
-            self.cigale_sfh = fits.open(self.cigale_sfh_path)
-
-        return self.cigale_model, self.cigale_sfh  # , self.cigale_results
 
     def angular_size_distance(self):
         if self.z is not None:
@@ -1291,6 +1236,73 @@ class Galaxy(Object):
         distance = u.check_quantity(distance, unit=units.kpc)
         theta = (distance * units.rad / self.D_A).to(units.arcsec)
         return theta
+
+
+class Galaxy(Extragalactic):
+    def __init__(
+            self,
+            z: float = 0.0,
+            **kwargs
+    ):
+        super().__init__(
+            z=z,
+            **kwargs
+        )
+
+        self.mass = None
+        if "mass" in kwargs:
+            self.mass = kwargs["mass"]
+
+        self.mass_stellar = None
+        if "mass_stellar" in kwargs:
+            self.mass_stellar = u.check_quantity(kwargs["mass_stellar"], units.solMass)
+
+        self.mass_stellar_err = None
+        if "mass_stellar_err" in kwargs:
+            self.mass_stellar_err = u.check_quantity(kwargs["mass_stellar_err"], units.solMass)
+
+        self.sfr = None
+        if "sfr" in kwargs:
+            self.sfr = kwargs["sfr"] * units.solMass
+
+        self.sfr_err = None
+        if "sfr_err" in kwargs:
+            self.sfr_err = kwargs["sfr_err"] * units.solMass
+
+        self.mass_halo = None
+        self.log_mass_halo = None
+        self.log_mass_halo_upper = None
+        self.log_mass_halo_lower = None
+        if "mass_halo" in kwargs:
+            self.mass_halo = u.check_quantity(kwargs["mass_halo"], units.solMass)
+            self.log_mass_halo = np.log10(self.mass_halo / units.solMass)
+
+        self.halo_mnfw = None
+        self.halo_yf17 = None
+        self.halo_mb15 = None
+        self.halo_mb04 = None
+
+        self.cigale_model_path = None
+        self.cigale_model = None
+
+        self.cigale_sfh_path = None
+        self.cigale_sfh = None
+
+        self.cigale_results_path = None
+        self.cigale_results = None
+
+    def load_cigale_model(self, force: bool = False):
+        if self.cigale_model_path is None:
+            print(f"Cannot load CIGALE model; {self}.cigale_model_path has not been set.")
+        elif force or self.cigale_model is None:
+            self.cigale_model = fits.open(self.cigale_model_path)
+
+        if self.cigale_sfh_path is None:
+            print(f"Cannot load CIGALE SFH; {self}.cigale_sfh_path has not been set.")
+        elif force or self.cigale_sfh is None:
+            self.cigale_sfh = fits.open(self.cigale_sfh_path)
+
+        return self.cigale_model, self.cigale_sfh  # , self.cigale_results
 
     def _output_dict(self):
         output = super()._output_dict()
@@ -1428,26 +1440,6 @@ class Galaxy(Object):
             "DM": dm * dm_units / (1 + self.z),
         })
         return tbl
-
-    def scale_bar(
-            self,
-            size: units.Quantity,
-            img: 'ImagingImage',
-            ax: plt.Axes,
-            fig: plt.Figure,
-            spread_factor: float = 1.,
-            x: float = 0.,
-            y: float = 0.,
-            line_kwargs: dict = {},
-            text_kwargs: dict = {},
-            ext: int = 0,
-    ):
-        if not isinstance(size, units.Quantity):
-            size *= units.pix
-        elif size.decompose().unit == units.meter:
-            theta = self.angular_size(distance=size)
-            # size = theta.to(units.)
-
 
     @classmethod
     def default_params(cls):

@@ -1271,9 +1271,10 @@ class FRBField(Field):
             normalize_kwargs: dict = {},
             output_path: str = None,
             show_legend: bool = False,
+            latex_kwargs: dict = {},
             **kwargs
     ):
-        pl.latex_setup()
+        pl.latex_setup(**latex_kwargs)
         if not isinstance(self.frb, objects.FRB):
             raise TypeError("self.frb has not been set properly for this FRBField.")
         if centre is None:
@@ -1657,6 +1658,7 @@ class Epoch:
 
         self.combined_from = []
 
+        self.combined_epoch = False
         if "combined_epoch" in kwargs:
             self.combined_epoch = kwargs["combined_epoch"]
 
@@ -3202,7 +3204,7 @@ class ImagingEpoch(Epoch):
                 inst_name = self.instrument.nice_name().replace('/', '-')
             else:
                 inst_name = self.instrument_name
-            
+
             if self.combined_epoch:
                 date = "combined"
             else:
