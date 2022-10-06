@@ -547,15 +547,15 @@ def log_norm(image: np.ndarray, a=2000):
     return ImageNormalize(image, interval=ZScaleInterval(), stretch=LogStretch(a))
 
 
-def latex_setup():
+def latex_setup(
+        **kwargs
+):
     # Matplotlib and pyplot settings
-    plt.rc('font', family='serif')
-
+    plt.rc('font', family='sans-serif')
     plt.rc('font', weight='bold')
     plt.rc('text', usetex=True)
     plt.rc('xtick', labelsize=8)
     plt.rcParams['text.latex.preamble'] = r'\usepackage{amsmath} '  # \usepackage{sfmath} \boldmath
-
     plt.rcParams['font.serif'] = ['Times']
     plt.rcParams['axes.linewidth'] = 2.
 

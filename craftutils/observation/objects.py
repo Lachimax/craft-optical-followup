@@ -1429,7 +1429,7 @@ class Galaxy(Object):
         })
         return tbl
 
-    def distance_bar(
+    def scale_bar(
             self,
             size: units.Quantity,
             img: 'ImagingImage',
