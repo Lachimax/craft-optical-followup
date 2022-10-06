@@ -11,6 +11,7 @@ import craftutils.utils as u
 from craftutils.photometry import gain_median_combine, gain_mean_combine
 import craftutils.observation.image as image
 
+
 def image_table(input_directory: str, output_path: str = "images.tbl"):
     """
     Executes the Montage task mImgtbl <input_directory> <output_path>
@@ -35,7 +36,11 @@ def make_header(table_path: str, output_path: str):
 
 def check_input_images(input_directory: str,
                        **kwargs):
-    table = image.fits_table_all(input_directory, science_only=True)
+    table = image.fits_table_all(
+        input_directory, science_only=False)
+    if len(table) == 0:
+        raise FileNotFoundError(f"There appear to be no files in the input directory {input_directory}")
+
     table.sort("FILENAME")
 
     template = table[0]
@@ -173,9 +178,12 @@ def project_execute(input_directory: str, table_path: str, header_path: str, pro
     table_path = u.sanitise_file_ext(filename=table_path, ext=".tbl")
     header_path = u.sanitise_file_ext(filename=header_path, ext=".hdr")
     stats_table_path = u.sanitise_file_ext(filename=stats_table_path, ext=".tbl")
-    return u.system_command(command="mProjExec",
-                            arguments=[table_path, header_path, proj_dir, stats_table_path],
-                            p=input_directory)
+    return u.system_command(
+        command="mProjExec",
+        arguments=[table_path, header_path, proj_dir, stats_table_path],
+        p=input_directory,
+        s="mProjExec_status.txt"
+    )
 
 
 def overlaps(table_path: str, difference_table_path: str):

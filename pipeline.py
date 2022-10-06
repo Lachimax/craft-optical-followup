@@ -29,6 +29,23 @@ def main(
     new_field = False
 
     directory = fld.load_epoch_directory()
+
+    if epoch_name is None and instrument is not None:
+        print(f"Looking for epochs with instrument {instrument}")
+        epochs = []
+        for epoch_name in directory:
+            epoch_dict = directory[epoch_name]
+            if epoch_dict["instrument"] == instrument:
+                if field_name is not None:
+                    if field_name == epoch_dict["field_name"]:
+                        epochs.append(epoch_name)
+                else:
+                    epochs.append(epoch_name)
+        i, epoch_name = u.select_option(
+            f"The following epochs used instrument {instrument}. Which one would you like to use?",
+            options=epochs
+        )
+
     if epoch_name is not None:
         print(f"Looking for {epoch_name} in directory...")
         if epoch_name in directory:
@@ -36,10 +53,6 @@ def main(
             field_name = epoch_dict["field_name"]
             instrument = epoch_dict["instrument"]
             mode = epoch_dict["mode"]
-            if mode == "imaging":
-                imaging = True
-            elif mode == "spectroscopy":
-                spectroscopy = True
         else:
             print(f"{epoch_name} not found.")
 

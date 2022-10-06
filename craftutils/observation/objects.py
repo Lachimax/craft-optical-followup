@@ -1163,7 +1163,7 @@ class Star(Object):
     pass
 
 
-class Galaxy(Object):
+class Extragalactic(Object):
     def __init__(
             self,
             z: float = 0.0,
@@ -1178,6 +1178,76 @@ class Galaxy(Object):
         self.D_A = self.angular_size_distance()
         self.D_L = self.luminosity_distance()
         self.mu = self.distance_modulus()
+
+    def angular_size_distance(self):
+        if self.z is not None:
+            return cosmology.angular_diameter_distance(z=self.z)
+
+    def luminosity_distance(self):
+        if self.z is not None:
+            return cosmology.luminosity_distance(z=self.z)
+
+    def comoving_distance(self):
+        if self.z is not None:
+            return cosmology.comoving_distance(z=self.z)
+
+    def distance_modulus(self):
+        d = self.luminosity_distance()
+        if d is not None:
+            mu = (5 * np.log10(d / units.pc) - 5) * units.mag
+            return mu
+
+    def absolute_magnitude(
+            self,
+            apparent_magnitude: units.Quantity,
+            internal_extinction: units.Quantity = 0 * units.mag,
+            galactic_extinction: units.Quantity = 0 * units.mag
+    ):
+        mu = self.distance_modulus()
+        return apparent_magnitude - mu - internal_extinction - galactic_extinction
+
+    def absolute_photometry(self, internal_extinction: units.Quantity = 0.0 * units.mag):
+        for instrument in self.photometry:
+            for fil in self.photometry[instrument]:
+                for epoch in self.photometry[instrument][fil]:
+                    abs_mag = self.absolute_magnitude(
+                        apparent_magnitude=self.photometry[instrument][fil][epoch]["mag"],
+                        internal_extinction=internal_extinction
+                    )
+                    self.photometry[instrument][fil][epoch]["abs_mag"] = abs_mag
+        self.update_output_file()
+
+    def projected_size(self, angle: Union[units.Quantity, float]) -> units.Quantity:
+        """
+        When given an angular size, calculates the projected physical size at the redshift of the galaxy.
+        :param angle: Angular size. If not provided as a quantity, must be in arcseconds.
+        :return: Projected physical size, with units kpc
+        """
+        angle = u.check_quantity(angle, unit=units.arcsec).to(units.rad).value
+        dist = angle * self.D_A
+        return dist.to(units.kpc)
+
+    def angular_size(self, distance: Union[units.Quantity, float]):
+        """
+        Given a physical projected size at the redshift of the galaxy, calculates the angular size as seen from Earth.
+        :param distance: Physical projected size. If not provided as a quantity, must be in kiloparsecs.
+        :return: Angular size, in arcseconds.
+        """
+        distance = u.check_quantity(distance, unit=units.kpc)
+        theta = (distance * units.rad / self.D_A).to(units.arcsec)
+        return theta
+
+
+class Galaxy(Extragalactic):
+    def __init__(
+            self,
+            z: float = 0.0,
+            **kwargs
+    ):
+        super().__init__(
+            z=z,
+            **kwargs
+        )
 
         self.mass = None
         if "mass" in kwargs:
@@ -1233,50 +1303,6 @@ class Galaxy(Object):
             self.cigale_sfh = fits.open(self.cigale_sfh_path)
 
         return self.cigale_model, self.cigale_sfh  # , self.cigale_results
-
-    def angular_size_distance(self):
-        if self.z is not None:
-            return cosmology.angular_diameter_distance(z=self.z)
-
-    def luminosity_distance(self):
-        if self.z is not None:
-            return cosmology.luminosity_distance(z=self.z)
-
-    def comoving_distance(self):
-        if self.z is not None:
-            return cosmology.comoving_distance(z=self.z)
-
-    def distance_modulus(self):
-        d = self.luminosity_distance()
-        if d is not None:
-            mu = (5 * np.log10(d / units.pc) - 5) * units.mag
-            return mu
-
-    def absolute_magnitude(
-            self,
-            apparent_magnitude: units.Quantity,
-            internal_extinction: units.Quantity = 0 * units.mag,
-            galactic_extinction: units.Quantity = 0 * units.mag
-    ):
-        mu = self.distance_modulus()
-        return apparent_magnitude - mu - internal_extinction - galactic_extinction
-
-    def absolute_photometry(self, internal_extinction: units.Quantity = 0.0 * units.mag):
-        for instrument in self.photometry:
-            for fil in self.photometry[instrument]:
-                for epoch in self.photometry[instrument][fil]:
-                    abs_mag = self.absolute_magnitude(
-                        apparent_magnitude=self.photometry[instrument][fil][epoch]["mag"],
-                        internal_extinction=internal_extinction
-                    )
-                    self.photometry[instrument][fil][epoch]["abs_mag"] = abs_mag
-        self.update_output_file()
-
-    def projected_distance(self, angle: units.Quantity):
-        angle = angle.to(units.rad).value
-        dist = angle * self.D_A
-        return dist
-
 
     def _output_dict(self):
         output = super()._output_dict()
@@ -1771,8 +1797,8 @@ class FRB(Transient):
             halo_info["distance_luminosity"] = obj.luminosity_distance()
             halo_info["distance_comoving"] = obj.comoving_distance()
             halo_info["offset_angle_err"] = offset_angle_err = np.sqrt(fg_pos_err ** 2 + frb_err_dec ** 2)
-            halo_info["r_perp"] = offset = obj.projected_distance(offset_angle).to(units.kpc)
-            halo_info["r_perp_err"] = obj.projected_distance(offset_angle_err).to(units.kpc)
+            halo_info["r_perp"] = offset = obj.projected_size(offset_angle).to(units.kpc)
+            halo_info["r_perp_err"] = obj.projected_size(offset_angle_err).to(units.kpc)
             halo_info["mass_stellar"] = fg_m_star = obj.mass_stellar
             halo_info["mass_stellar_err"] = fg_m_star_err = obj.mass_stellar_err
             halo_info["log_mass_stellar"] = np.log10(fg_m_star / units.solMass)

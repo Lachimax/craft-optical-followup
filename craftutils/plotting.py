@@ -547,16 +547,41 @@ def log_norm(image: np.ndarray, a=2000):
     return ImageNormalize(image, interval=ZScaleInterval(), stretch=LogStretch(a))
 
 
-def latex_setup():
+def latex_setup(
+        font_family: str = 'serif',
+        math_fontset: str = None,
+        packages: list = ["amsmath"],
+        use_tex: bool = True,
+        **kwargs
+):
+    if "font.serif" not in kwargs:
+        kwargs["font.serif"] = 'Times'
+    if "font.sans-serif" not in kwargs:
+        kwargs["font.sans-serif"] = 'DejaVu Sans'
+
+    if math_fontset is None:
+        if font_family == 'sans-serif':
+            math_fontset = "dejavusans"
+        elif font_family == 'serif':
+            math_fontset = "stix"
+
+    plt.rc('text', usetex=use_tex)
+    print(f"Setting mathtext.fontset to {math_fontset}.")
+    plt.rc("mathtext", fontset=math_fontset)
     # Matplotlib and pyplot settings
-    plt.rc('font', family='serif')
-
-    plt.rc('font', weight='bold')
-    plt.rc('text', usetex=True)
+    # print(f"Setting font.family to {font_family}")
+    # plt.rc('font', family=font_family)
+    # plt.rc('font', weight='bold')
     plt.rc('xtick', labelsize=8)
-    plt.rcParams['text.latex.preamble'] = r'\usepackage{amsmath} '  # \usepackage{sfmath} \boldmath
+    # plt.rcParams['text.latex.preamble'] = ""
+    for package in packages:
+        line = r'\usepackage{' + package + '}  '
+        print(f"Adding line '{line}' to latex preamble.")
+        plt.rcParams['text.latex.preamble'] += line + "\n"
+    # plt.rcParams['text.latex.preamble'] = r'\usepackage{amsmath} '  # \usepackage{sfmath} \boldmath
 
-    plt.rcParams['font.serif'] = ['Times']
+    kwargs["font.family"] = font_family
+    plt.rcParams.update(kwargs)
     plt.rcParams['axes.linewidth'] = 2.
 
 
