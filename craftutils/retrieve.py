@@ -285,7 +285,12 @@ def login_eso():
     return keys["eso_auth_token"]
 
 
-def save_eso_asset(file_url: str, output: str, filename: str = None):
+def save_eso_asset(
+        file_url: str,
+        output: str,
+        filename: str = None,
+        overwrite: bool = False
+):
     print("Downloading asset from:")
     print(file_url)
     headers = None
@@ -307,8 +312,10 @@ def save_eso_asset(file_url: str, output: str, filename: str = None):
             # last chance: get anything after the last '/'
             filename = file_url[file_url.rindex('/') + 1:]
 
-    if response.status_code == 200:
-        path = os.path.join(output, filename)
+    path = os.path.join(output, filename)
+    if os.path.exists(path) and not overwrite:
+        print(f"{path} already exists. Skipping.")
+    elif response.status_code == 200:
         print(f"Writing asset to {path}...")
         with open(path, 'wb') as f:
             for chunk in response.iter_content(chunk_size=50000):
