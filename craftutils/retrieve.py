@@ -38,6 +38,15 @@ except ModuleNotFoundError:
 import craftutils.params as p
 import craftutils.utils as u
 
+default_data_release = {
+    "gaia": 3,
+    "sdss": 16,
+    "delve": 2,
+    "des": 2,
+    "panstarrs1": 2,
+    "panstarrs": 2,
+
+}
 
 # import craftutils.observation.instrument as inst
 
@@ -253,6 +262,12 @@ def save_catalogue(
         raise KeyError(f"catalogue {cat} not recognised.")
 
     func = photometry_catalogues[cat]
+    if data_release is None:
+        if cat in default_data_release:
+            data_release = default_data_release[cat]
+        else:
+            data_release = 1
+
     if func is save_mast_photometry:
         return func(ra=ra, dec=dec, output=output, cat=cat, radius=radius, data_release=data_release)
     else:
@@ -797,7 +812,7 @@ def retrieve_sdss_photometry(
         ra: float,
         dec: float,
         radius: units.Quantity = 0.2 * units.deg,
-        data_release: int = 16
+        data_release: int = None
 ):
     """
     Retrieve SDSS photometry for a given field, in a 0.2 x 0.2 degree box centred on the passed coordinates
@@ -806,6 +821,8 @@ def retrieve_sdss_photometry(
     :param dec: Declination of the centre of the desired field, in degrees.
     :return: Retrieved photometry table, as a pandas dataframe, if successful; if not, None.
     """
+    if data_release is None:
+        data_release = default_data_release["sdss"]
     radius = u.dequantify(radius, unit=units.deg)
     try:
         from SciServer import Authentication, CasJobs
@@ -826,8 +843,8 @@ def retrieve_sdss_photometry(
     for f in sdss_filters:
         query += f",psfMag_{f},psfMagErr_{f},fiberMag_{f},fiberMagErr_{f},fiber2Mag_{f},fiber2MagErr_{f},petroMag_{f},petroMagErr_{f} "
     query += "FROM PhotoObj "
-    query += f"WHERE ra BETWEEN {ra - 0.1} AND {ra + 0.1} "
-    query += f"AND dec BETWEEN {dec - 0.1} AND {dec + 0.1} "
+    query += f"WHERE ra BETWEEN {ra - radius} AND {ra + radius} "
+    query += f"AND dec BETWEEN {dec - radius} AND {dec + radius} "
     print(f"Retrieving photometry from SDSS DR{data_release} via SciServer for field at {ra}, {dec}...")
     df = CasJobs.executeQuery(sql=query, context=f'DR{data_release}')
     if len(df.index) == 0:
@@ -840,7 +857,7 @@ def save_sdss_photometry(
         dec: float,
         output: str,
         radius: units.Quantity = 0.2 * units.deg,
-        data_release: int = 16,
+        data_release: int = None,
 ):
     """
     Retrieves and writes to disk the SDSS photometry for a given field, in a 0.2 x 0.2 degree box
@@ -851,8 +868,6 @@ def save_sdss_photometry(
     :param output: The location on disk to which to write the file.
     :return: Retrieved photometry table, as a pandas dataframe, if successful; if not, None.
     """
-    if data_release is None:
-        data_release = 16
     df = retrieve_sdss_photometry(ra=ra, dec=dec, radius=radius, data_release=data_release)
     if df is not None:
         u.mkdir_check_nested(path=output)
@@ -923,9 +938,11 @@ def retrieve_delve_photometry(
         ra: float,
         dec: float,
         radius: units.Quantity = 0.2 * units.deg,
-        data_release: int = 2
+        data_release: int = None
 ):
-    print(f"\nQuerying DELVE DR2 archive for field centring on RA={ra}, DEC={dec}")
+    if data_release is None:
+        data_release = default_data_release["delve"]
+    print(f"\nQuerying DELVE DR{data_release} archive for field centring on RA={ra}, DEC={dec}")
     radius = u.dequantify(radius, unit=units.deg)
     url = f"http://datalab.noirlab.edu/tap/sync?REQUEST=doQuery&lang=ADQL&FORMAT=csv&QUERY=SELECT%20q3c_dist" \
           f"%28ra%2Cdec%2C%20247.725%2C-0.972%29%2A3600%20AS%20dist%2C%20%2A%20FROM%20delve_dr{data_release}.objects%20WHERE%20%27t" \
@@ -951,7 +968,7 @@ def save_delve_photometry(
         dec: float,
         output: str,
         radius: units.Quantity = 0.2 * units.deg,
-        data_release: int = 2
+        data_release: int = None
 ):
     response = retrieve_delve_photometry(
         ra=ra,
@@ -1150,7 +1167,7 @@ def retrieve_des_photometry(
         ra: float,
         dec: float,
         radius: units.Quantity = 0.2 * units.deg,
-        data_release: int = 2
+        data_release: int = None
 ):
     """
     Retrieve DES photometry for a given field, in a 2*radius squared degree box centred on the passed coordinates
@@ -1159,7 +1176,9 @@ def retrieve_des_photometry(
     :param dec: Declination of the centre of the desired field, in degrees.
     :return: Retrieved photometry table, as a Bytes object, if successful; None if not.
     """
-    print(f"Querying DES DR2 archive for field centring on RA={ra}, DEC={dec}")
+    if data_release is None:
+        data_release = default_data_release["des"]
+    print(f"Querying DES DR{data_release} archive for field centring on RA={ra}, DEC={dec}")
     error = login_des()
     if error == "ERROR":
         return error
@@ -1187,7 +1206,7 @@ def save_des_photometry(
         dec: float,
         output: str,
         radius: units.Quantity = 0.2 * units.deg,
-        data_release: int = 2,
+        data_release: int = None,
 ):
     """
     Retrieves and writes to disk the DES photometry for a given field, in a 0.2 x 0.2 degree box
@@ -1526,10 +1545,12 @@ def retrieve_mast_photometry(
         ra: float,
         dec: float,
         cat: str = "panstarrs1",
-        data_release: int = 2,
+        data_release: int = None,
         table="stack",
         radius: units.Quantity = 0.1 * units.deg
 ):
+    if data_release is None:
+        data_release = default_data_release[cat]
     if cat.lower() == "panstarrs1":
         cat_str = "panstarrs"
     else:
@@ -1555,10 +1576,8 @@ def save_mast_photometry(
         output: str,
         cat: str = "panstarrs1",
         radius: units.Quantity = 0.1 * units.deg,
-        data_release: int = 2,
+        data_release: int = None,
 ):
-    if data_release is None:
-        data_release = 2
     response = retrieve_mast_photometry(ra=ra, dec=dec, cat=cat, radius=radius, data_release=data_release)
     if response == "ERROR":
         return response
@@ -1657,7 +1676,7 @@ def save_gaia(
         dec: float,
         output: str,
         radius: units.Quantity = 0.5 * units.deg,
-        data_release: int = 3
+        data_release: int = None
 ):
     table = retrieve_gaia(
         ra=ra,
@@ -1695,9 +1714,10 @@ def update_frb_gaia(frb: str, force: bool = False):
         print(f"This field is not present in Gaia.")
 
 
-def load_catalogue(cat_name: str, cat: str, data_release: int = None):
-    if cat_name == "gaia" and data_release is None:
-        data_release = 3
+def load_catalogue(
+        cat_name: str, cat: str, data_release: int = None):
+    if data_release is None:
+        data_release = default_data_release[cat]
     cat = u.path_or_table(cat, fmt="ascii.csv", load_qtable=True)
     cat_column_units = column_units[cat_name]
     if data_release is not None:
