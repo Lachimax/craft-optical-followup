@@ -844,6 +844,8 @@ def save_sdss_photometry(
     :param output: The location on disk to which to write the file.
     :return: Retrieved photometry table, as a pandas dataframe, if successful; if not, None.
     """
+    if data_release is None:
+        data_release = 16
     df = retrieve_sdss_photometry(ra=ra, dec=dec, radius=radius, data_release=data_release)
     if df is not None:
         u.mkdir_check_nested(path=output)
@@ -1548,6 +1550,8 @@ def save_mast_photometry(
         radius: units.Quantity = 0.1 * units.deg,
         data_release: int = 2,
 ):
+    if data_release is None:
+        data_release = 2
     response = retrieve_mast_photometry(ra=ra, dec=dec, cat=cat, radius=radius, data_release=data_release)
     if response == "ERROR":
         return response
