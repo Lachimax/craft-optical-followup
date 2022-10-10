@@ -3173,7 +3173,7 @@ class ImagingEpoch(Epoch):
                             f_name = fil
                         else:
                             f_name = img.filter.nice_name()
-                        plot.set_title(u.latex_sanitise(f"{name}, {f_name}"))
+                        plot.set_title(f"{name}, {f_name}")
                         fig.savefig(output_path)
                         fig.savefig(output_path.replace(".pdf", ".png"))
                         plt.close(fig)
@@ -3246,23 +3246,12 @@ class ImagingEpoch(Epoch):
                 refined_path = self.field.survey.refined_stage_path
 
                 if refined_path is not None:
-                    if self.field.survey.name == "FURBY":
-                        cwd = os.getcwd()
-                        os.chdir(refined_path)
-
-                        u.system_command_verbose(
-                            f"furby_archive {self.field.name} {img.filter.band_name[0]} {img.path} --clobber",
-                            error_on_exit_code=False
+                    img.copy_with_outputs(
+                        os.path.join(
+                            refined_path,
+                            nice_name
                         )
-
-                        os.chdir(cwd)
-                    else:
-                        img.copy_with_outputs(
-                            os.path.join(
-                                refined_path,
-                                nice_name
-                            )
-                        )
+                    )
 
 
 
