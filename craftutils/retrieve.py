@@ -1715,9 +1715,12 @@ def update_frb_gaia(frb: str, force: bool = False):
 
 
 def load_catalogue(
-        cat_name: str, cat: str, data_release: int = None):
+        cat_name: str,
+        cat: str,
+        data_release: int = None
+):
     if data_release is None:
-        data_release = default_data_release[cat]
+        data_release = default_data_release[cat_name]
     cat = u.path_or_table(cat, fmt="ascii.csv", load_qtable=True)
     cat_column_units = column_units[cat_name]
     if data_release is not None:
