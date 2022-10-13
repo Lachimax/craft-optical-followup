@@ -3035,7 +3035,7 @@ class ImagingImage(Image):
             print("Sky background already estimated.")
         return self.sky_background
 
-    def plot_apertures(self, dual=True, output: str = None, show: bool = False):
+    def plot_apertures(self, dual=False, output: str = None, show: bool = False):
         cat = self.get_source_cat(dual=dual)
 
         if cat is not None:
