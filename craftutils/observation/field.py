@@ -716,10 +716,11 @@ class Field:
         :param force_update: If True, retrieves the catalogue even if one is already on disk.
         :return:
         """
-        if isinstance(self.extent, units.Quantity):
+
+        if isinstance(self.extent, units.Quantity) and self.extent > 0.5 * units.deg:
             radius = self.extent
         else:
-            radius = 0.2 * units.deg
+            radius = 0.5 * units.deg
         output = self._cat_data_path(cat=cat_name)
         ra = self.centre_coords.ra.value
         dec = self.centre_coords.dec.value
@@ -924,7 +925,7 @@ class Field:
             "type": "Field",
             "centre": objects.position_dictionary.copy(),
             "objects": [objects.Object.default_params()],
-            "extent": 0.1 * units.deg,
+            "extent": 0.3 * units.deg,
             "survey": None
         }
         return default_params
@@ -2964,7 +2965,8 @@ class ImagingEpoch(Epoch):
                         show=False,
                         snr_cut=snr_min,
                         star_class_tol=star_class_tolerance,
-                        vega=vega
+                        vega=vega,
+                        **kwargs
                     )
 
             if "preferred_zeropoint" in kwargs and fil in kwargs["preferred_zeropoint"]:
@@ -5730,6 +5732,8 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
             # "get_photometry_all": ie_stages["get_photometry_all"]
         }
 
+        stages["photometric_calibration"]["skip_retrievable"] = True
+
         u.debug_print(2, f"FORS2ImagingEpoch.stages(): stages ==", stages)
         return stages
 
@@ -6270,10 +6274,15 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
         if "suppress_select" in kwargs and kwargs["suppress_select"] is not None:
             suppress_select = kwargs.pop("suppress_select")
 
+        # skip_retrievable = True
+        # if "skip_retrievable" in kwargs and kwargs["skip_retrievable"] is not None:
+        #     skip_retrievable = kwargs.pop("skip_retrievable")
+
         if not self.combined_epoch:
             self.photometric_calibration_from_standards(
                 image_dict=image_dict,
-                output_path=output_path
+                output_path=output_path,
+                # skip_retrievable=skip_retrievable
             )
 
         zeropoints = p.load_params(zeropoint_yaml)

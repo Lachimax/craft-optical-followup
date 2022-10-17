@@ -1612,7 +1612,8 @@ class ImagingImage(Image):
             snr_cut=3.,
             iterate_uncertainty: bool = True,
             do_x_shift: bool = True,
-            vega: bool = False
+            vega: bool = False,
+            **kwargs
     ):
         print(f"\nEstimating photometric zeropoint for {self.name}, {type(self)}\n")
 
@@ -5156,9 +5157,20 @@ class FORS2CoaddedImage(CoaddedImage):
             self,
             **kwargs
     ):
+
+        skip_zp = False
+        zp = {}
         if self.filter.calib_retrievable():
             zp = self.calibration_from_qc1()
-        else:
+            skip_retrievable = True
+            if "skip_retrievable" in kwargs:
+                skip_retrievable = kwargs.pop("skip_retrievable")
+            print("skip_retrievable:", skip_retrievable)
+            if skip_retrievable:
+                skip_zp = True
+            print("skip_zp:", skip_zp)
+        print("skip_zp:", skip_zp)
+        if not skip_zp:
             zp = super().zeropoint(
                 **kwargs
             )
