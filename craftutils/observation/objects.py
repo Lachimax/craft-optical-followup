@@ -175,6 +175,9 @@ class PositionUncertainty:
         self.ra_stat = ra_err_stat
         self.dec_stat = dec_err_stat
 
+    def __str__(self):
+        return f"PositionUncertainty: a_stat={self.a_stat}, b_stat={self.b_stat}; a_sys={self.a_sys}, b_sys={self.b_sys}"
+
     def uncertainty_quadrature(self):
         return np.sqrt(self.a_sys ** 2 + self.a_stat ** 2), np.sqrt(self.b_sys ** 2 + self.b_stat ** 2)
 
