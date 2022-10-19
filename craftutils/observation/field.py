@@ -5450,15 +5450,16 @@ class HAWKIImagingEpoch(ESOImagingEpoch):
                 "method": cls.proc_split_frames,
                 "message": "Split ESO Reflex frames into separate files?",
                 "log_message": "Split ESO Reflex frames into separate .fits files",
-                "default": False,
+                "default": True,
             },
-            # "coadd": ie_stages["coadd"],
+            "coadd": ie_stages["coadd"],
             "correct_astrometry_coadded": ie_stages["correct_astrometry_coadded"],
             "source_extraction": ie_stages["source_extraction"],
             "photometric_calibration": ie_stages["photometric_calibration"],
             "get_photometry": ie_stages["get_photometry"]
         }
-        # stages["coadd"]["frames"] = "split"
+        stages["coadd"]["default"] = False
+        stages["coadd"]["frames"] = "split"
         stages["correct_astrometry_coadded"]["default"] = True
         return stages
 
