@@ -2,6 +2,7 @@ from typing import Union, Tuple, List
 import os
 import copy
 
+import frb.frb
 import matplotlib.pyplot as plt
 import numpy as np
 
@@ -174,6 +175,9 @@ class PositionUncertainty:
         self.dec_sys = dec_err_sys
         self.ra_stat = ra_err_stat
         self.dec_stat = dec_err_stat
+
+    def __str__(self):
+        return f"PositionUncertainty: a_stat={self.a_stat}, b_stat={self.b_stat}; a_sys={self.a_sys}, b_sys={self.b_sys}"
 
     def uncertainty_quadrature(self):
         return np.sqrt(self.a_sys ** 2 + self.a_stat ** 2), np.sqrt(self.b_sys ** 2 + self.b_stat ** 2)
@@ -1512,6 +1516,12 @@ class FRB(Transient):
         self.dm = dm
         if self.dm is not None:
             self.dm = u.check_quantity(self.dm, unit=dm_units)
+
+        self.x_frb = frb.frb.FRB(
+            frb_name=self.name,
+            coord=self.position,
+            DM=self.dm
+        )
 
     @classmethod
     def _date_from_name(cls, name):
