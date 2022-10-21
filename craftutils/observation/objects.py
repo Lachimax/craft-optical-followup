@@ -2,6 +2,7 @@ from typing import Union, Tuple, List
 import os
 import copy
 
+import frb.frb
 import matplotlib.pyplot as plt
 import numpy as np
 
@@ -1515,6 +1516,12 @@ class FRB(Transient):
         self.dm = dm
         if self.dm is not None:
             self.dm = u.check_quantity(self.dm, unit=dm_units)
+
+        self.x_frb = frb.frb.FRB(
+            frb_name=self.name,
+            coord=self.position,
+            DM=self.dm
+        )
 
     @classmethod
     def _date_from_name(cls, name):
