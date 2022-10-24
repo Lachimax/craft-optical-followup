@@ -3438,11 +3438,18 @@ class ImagingImage(Image):
         plt.close(fig)
         return
 
-    def plot(self, fig: plt.Figure = None, ext: int = 0, **kwargs):
+    def plot(
+            self,
+            ax: plt.Axes,
+            fig: plt.Figure = None,
+            ext: int = 0,
+            **kwargs
+    ):
 
         if fig is None:
             fig = plt.figure(figsize=(12, 12), dpi=1000)
-        ax, fig = self.wcs_axes(fig=fig)
+        if ax is None:
+            ax, fig = self.wcs_axes(fig=fig)
         self.load_data()
         data = u.dequantify(self.data[ext])
         ax.imshow(
@@ -5165,11 +5172,11 @@ class FORS2CoaddedImage(CoaddedImage):
             skip_retrievable = True
             if "skip_retrievable" in kwargs:
                 skip_retrievable = kwargs.pop("skip_retrievable")
-            print("skip_retrievable:", skip_retrievable)
+            u.debug_print(1, "skip_retrievable:", skip_retrievable)
             if skip_retrievable:
                 skip_zp = True
-            print("skip_zp:", skip_zp)
-        print("skip_zp:", skip_zp)
+            u.debug_print(2, "skip_zp:", skip_zp)
+        u.debug_print(2, "skip_zp:", skip_zp)
         if not skip_zp:
             zp = super().zeropoint(
                 **kwargs

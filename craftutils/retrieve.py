@@ -841,12 +841,16 @@ def retrieve_sdss_photometry(
     # Construct an SQL query to send to SciServer
     query = "SELECT objid,ra,dec"
     for f in sdss_filters:
-        query += f",psfMag_{f},psfMagErr_{f},fiberMag_{f},fiberMagErr_{f},fiber2Mag_{f},fiber2MagErr_{f},petroMag_{f},petroMagErr_{f} "
-    query += "FROM PhotoObj "
+        query += f",psfMag_{f},psfMagErr_{f},fiberMag_{f},fiberMagErr_{f},fiber2Mag_{f},fiber2MagErr_{f},petroMag_{f},petroMagErr_{f}"
+    query += " FROM PhotoObj "
     query += f"WHERE ra BETWEEN {ra - radius} AND {ra + radius} "
     query += f"AND dec BETWEEN {dec - radius} AND {dec + radius} "
     print(f"Retrieving photometry from SDSS DR{data_release} via SciServer for field at {ra}, {dec}...")
-    df = CasJobs.executeQuery(sql=query, context=f'DR{data_release}')
+    print(query)
+    try:
+        df = CasJobs.executeQuery(sql=query, context=f'DR{data_release}')
+    except requests.exceptions.ChunkedEncodingError:
+        df = None
     if len(df.index) == 0:
         df = None
     return df

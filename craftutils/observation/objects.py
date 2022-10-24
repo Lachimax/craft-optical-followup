@@ -1617,7 +1617,7 @@ class FRB(Transient):
         mw_halo_yf17 = halos.YF17()
         mw_halo_x = halos.MilkyWay()
         mw_halo_mb15 = halos.MB15()
-        sun_orbit = 2.7e17 * units.km
+        sun_orbit = 0 * units.m #2.7e17 * units.km
         outputs["dm_halo_mw_yf17"] = mw_halo_yf17.Ne_Rperp(sun_orbit, rmax=rmax) / 2
         outputs["dm_halo_mw_pz19_rough"] = mw_halo_x.Ne_Rperp(sun_orbit, rmax=rmax) / 2
         outputs["dm_halo_mw_mb15"] = mw_halo_mb15.Ne_Rperp(sun_orbit, rmax=rmax) / 2
