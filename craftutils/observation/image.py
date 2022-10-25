@@ -3090,11 +3090,23 @@ class ImagingImage(Image):
             mask: np.ndarray = None,
             scale_bar_object: objects.Extragalactic = None,
             scale_bar_kwargs: dict = None,
+            data_type: str = "image",
             **kwargs,
     ) -> Tuple[plt.Axes, plt.Figure, dict]:
-        self.load_data()
+
+        if data_type == "image":
+            self.load_data()
+            data = self.data[ext].value * 1.0
+        elif data_type == "background":
+            _, data = self.calculate_background(**kwargs)
+        elif data_type == "background_subtracted_image":
+            self.calculate_background(**kwargs)
+            data = self.data_sub_bkg[ext]
+        else:
+            raise ValueError(f"data_type {data_type} not recognised; this can be 'image', 'background', or 'background_subtracted_image'")
+
         _, scale = self.extract_pixel_scale()
-        data = self.data[ext].value * 1.0
+
         other_args = {}
         if centre is not None and frame is not None:
             x, y = self.world_to_pixel(centre, 0)
@@ -3440,7 +3452,7 @@ class ImagingImage(Image):
 
     def plot(
             self,
-            ax: plt.Axes,
+            ax: plt.Axes = None,
             fig: plt.Figure = None,
             ext: int = 0,
             **kwargs
@@ -3878,7 +3890,7 @@ class ImagingImage(Image):
             back_file.data[ext] = back
             back_file.write_fits_file()
 
-        return bkg
+        return bkg, back
 
     def generate_segmap(
             self,

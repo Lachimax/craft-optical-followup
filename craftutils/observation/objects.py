@@ -240,8 +240,8 @@ class Object:
             if isinstance(self.position, SkyCoord):
                 self.position_galactic = self.position.transform_to("galactic")
 
-        self.position_photometry = self.position.copy()
-        self.position_photometry_err = self.position_err
+        self.position_photometry = copy.deepcopy(self.position.copy)
+        self.position_photometry_err = copy.deepcopy(self.position_err)
 
         if self.name is None:
             self.jname()
@@ -1176,6 +1176,14 @@ class Extragalactic(Object):
         super().__init__(
             **kwargs
         )
+        self.z = None
+        self.z_err = None
+        self.D_A = None
+        self.D_L = None
+        self.mu = None
+        self.set_z(z, **kwargs)
+
+    def set_z(self, z, **kwargs):
         self.z = z
         if "z_err" in kwargs:
             self.z_err = kwargs["z_err"]
@@ -1674,13 +1682,13 @@ class FRB(Transient):
 
     def dm_cosmic(self, **kwargs):
         from frb.dm.igm import average_DM
-        return average_DM(self.host_galaxy.z, cosmo=cosmo.Planck18, **kwargs)
+        return average_DM(self.host_galaxy.z, cosmo=cosmology, **kwargs)
 
     def dm_halos_avg(self, **kwargs):
         import frb.halos.hmf as hmf
         from frb.dm.igm import average_DMhalos
         hmf.init_hmf()
-        return average_DMhalos(self.host_galaxy.z, cosmo=cosmo.Planck18, **kwargs)
+        return average_DMhalos(self.host_galaxy.z, cosmo=cosmology, **kwargs)
 
     # def estimate_dm_excess(self):
     #     dm_ism = self.estimate_dm_mw_ism()
