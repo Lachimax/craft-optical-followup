@@ -850,7 +850,7 @@ def retrieve_sdss_photometry(
     try:
         df = CasJobs.executeQuery(sql=query, context=f'DR{data_release}')
     except requests.exceptions.ChunkedEncodingError:
-        df = None
+        return None
     if len(df.index) == 0:
         df = None
     return df
