@@ -2463,6 +2463,7 @@ class ImagingEpoch(Epoch):
             **kwargs
     ):
         self.frames_astrometry = {}
+        self.astrometry_successful = {}
 
         if frames is None:
             frames = self.frames_reduced
@@ -2674,7 +2675,7 @@ class ImagingEpoch(Epoch):
                 input_directory=input_directory_fil,
                 output_directory=output_directory_fil,
                 output_file_name=f"{self.name}_{self.date_str()}_{fil}_coadded.fits",
-                coadd_types=["median"],
+                coadd_types=["median", "mean"],
                 add_with_ccdproc=False,
                 sigma_clip=True,
                 # unit="electron / second"
