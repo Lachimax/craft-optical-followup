@@ -240,7 +240,7 @@ class Object:
             if isinstance(self.position, SkyCoord):
                 self.position_galactic = self.position.transform_to("galactic")
 
-        self.position_photometry = copy.deepcopy(self.position.copy)
+        self.position_photometry = copy.deepcopy(self.position)
         self.position_photometry_err = copy.deepcopy(self.position_err)
 
         if self.name is None:

@@ -2953,7 +2953,7 @@ class ImagingImage(Image):
         # _, scale = self.extract_pixel_scale()
         # mask = self.generate_mask(method='sep')
         # mask = mask.astype(bool)
-        # bkg = self.calculate_background(method='sep', mask=mask)
+        # bkg, bkg_data = self.calculate_background(method='sep', mask=mask)
         # rms = bkg.rms()
         #
         # gain = self.extract_gain() / units.electron
@@ -3861,10 +3861,10 @@ class ImagingImage(Image):
                 **back_kwargs
             )
             if isinstance(data, units.Quantity):
-                back = bkg.back() * data.unit
+                bkg_data = bkg.back() * data.unit
             else:
-                back = bkg.back()
-            self.data_sub_bkg[ext] = (data - back)
+                bkg_data = bkg.back()
+            self.data_sub_bkg[ext] = (data - bkg_data)
 
         elif method == "photutils":
             data = self.data[ext]
@@ -3877,8 +3877,8 @@ class ImagingImage(Image):
                 bkg_estimator=bkg_estimator,
                 **back_kwargs
             )
-            back = bkg.background
-            self.data_sub_bkg[ext] = (data - back)
+            bkg_data = bkg.background
+            self.data_sub_bkg[ext] = (data - bkg_data)
 
         else:
             raise ValueError(f"Unrecognised method {method}.")
@@ -3887,10 +3887,10 @@ class ImagingImage(Image):
             back_file = self.copy(write)
             back_file.load_data()
             back_file.load_headers()
-            back_file.data[ext] = back
+            back_file.data[ext] = bkg_data
             back_file.write_fits_file()
 
-        return bkg, back
+        return bkg, bkg_data
 
     def generate_segmap(
             self,
@@ -3914,7 +3914,7 @@ class ImagingImage(Image):
         data = self.data[ext]
         left, right, bottom, top = u.check_margins(data=data, margins=margins)
 
-        bkg = self.calculate_background(method=method, ext=ext, **background_kwargs)
+        bkg, bkg_data = self.calculate_background(method=method, ext=ext, **background_kwargs)
 
         if method == "photutils":
             data_trim = u.trim_image(
