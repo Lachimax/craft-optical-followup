@@ -1479,6 +1479,30 @@ class Galaxy(Extragalactic):
                    **dictionary)
 
 
+class TransientHostCandidate(Galaxy):
+    def __init__(
+            self,
+            transient: 'Transient',
+            z: float = 0.0,
+            **kwargs
+    ):
+        super().__init__(
+            z=z,
+            **kwargs
+        )
+        self.transient = transient
+
+        self.P_O = None
+        if "P_O" in kwargs:
+            self.P_O = kwargs["P_O"]
+        self.P_xO = None
+        if "P_xO" in kwargs:
+            self.P_xO = kwargs["P_xO"]
+        self.P_Ox = None
+        if "P_Ox" in kwargs:
+            self.P_Ox = kwargs["P_Ox"]
+
+
 dm_units = units.parsec * units.cm ** -3
 
 dm_host_median = {
