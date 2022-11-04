@@ -1348,7 +1348,7 @@ class FRBField(Field):
         img.extract_pixel_scale()
         if "include_img_err" in frb_kwargs:
             include_img_err = frb_kwargs.pop("include_img_err")
-        if "edgecolor" not in frb_kwargs:
+        if colour is not None: # "edgecolor" not in frb_kwargs:
             frb_kwargs["edgecolor"] = colour
         if "facecolor" not in frb_kwargs:
             frb_kwargs["facecolor"] = "none"
