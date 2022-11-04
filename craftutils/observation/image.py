@@ -53,7 +53,8 @@ quantity_support()
 # This contains the names as in the header as keys and the names as used in this project as values.
 instrument_header = {
     "FORS2": "vlt-fors2",
-    "HAWKI": "vlt-hawki"
+    "HAWKI": "vlt-hawki",
+    "PS1": "panstarrs1"
 }
 
 active_images = {}
@@ -731,8 +732,8 @@ class Image:
             header = hdu_list[i].header
             if "INSTRUME" in header:
                 instrument = header["INSTRUME"]
-            elif "FPA.INSTRUMENT" in header:
-                instrument = "panstarrs1"
+            elif "FPA.TELESCOPE" in header:
+                instrument = header["FPA.TELESCOPE"]
             i += 1
 
         if instrument is None:
