@@ -6,7 +6,7 @@ import frb.frb
 import matplotlib.pyplot as plt
 import numpy as np
 
-from astropy.coordinates import SkyCoord
+from astropy.coordinates import SkyCoord, Longitude
 import astropy.units as units
 import astropy.table as table
 import astropy.cosmology as cosmo
@@ -30,10 +30,10 @@ except AttributeError:
 quantity_support()
 
 position_dictionary = {
-    "ra": {
+    "alpha": {
         "decimal": 0.0,
         "hms": None},
-    "dec": {
+    "delta": {
         "decimal": 0.0,
         "dms": None
     },
@@ -73,7 +73,8 @@ class PositionUncertainty:
             b_stat: Union[float, units.Quantity] = None,
             b_sys: Union[float, units.Quantity] = None,
             theta: Union[float, units.Quantity] = None,
-            sigma: float = None
+            sigma: float = None,
+            **kwargs
     ):
         """
         If a single value is provided for uncertainty, the uncertainty ellipse will be assumed to be circular.
@@ -97,16 +98,36 @@ class PositionUncertainty:
         self.sigma = sigma
         # Assign values from dictionary, if provided.
         if type(uncertainty) is dict:
+            ra_key = None
             if "ra" in uncertainty and uncertainty["ra"] is not None:
-                if "sys" in uncertainty["ra"] and uncertainty["ra"]["sys"] is not None:
-                    ra_err_sys = uncertainty["ra"]["sys"]
-                if "stat" in uncertainty["ra"] and uncertainty["ra"]["stat"] is not None:
-                    ra_err_stat = uncertainty["ra"]["stat"]
+                ra_key = "ra"
+            elif "alpha" in uncertainty and uncertainty["alpha"] is not None:
+                ra_key = "alpha"
+
+            if ra_key is not None:
+                if "sys" in uncertainty[ra_key] and uncertainty[ra_key]["sys"] is not None:
+                    ra_err_sys = uncertainty[ra_key]["sys"]
+                    if isinstance(ra_err_sys, str):
+                        print(ra_err_sys)
+                        ra_err_sys = (Longitude(ra_err_sys) * np.cos(position.dec)).to("arcsec")
+                if "stat" in uncertainty[ra_key] and uncertainty[ra_key]["stat"] is not None:
+                    ra_err_stat = uncertainty[ra_key]["stat"]
+                    if isinstance(ra_err_stat, str):
+                        print(ra_err_stat)
+                        ra_err_stat = Longitude(ra_err_stat)
+
+            dec_key = None
             if "dec" in uncertainty and uncertainty["dec"] is not None:
-                if "sys" in uncertainty["dec"] and uncertainty["dec"]["sys"] is not None:
-                    dec_err_sys = uncertainty["dec"]["sys"]
-                if "stat" in uncertainty["dec"] and uncertainty["dec"]["stat"] is not None:
-                    dec_err_stat = uncertainty["dec"]["stat"]
+                dec_key = "dec"
+            if "delta" in uncertainty and uncertainty["delta"] is not None:
+                dec_key = "delta"
+
+            if dec_key is not None:
+                if "sys" in uncertainty[dec_key] and uncertainty[dec_key]["sys"] is not None:
+                    dec_err_sys = uncertainty[dec_key]["sys"]
+                if "stat" in uncertainty[dec_key] and uncertainty[dec_key]["stat"] is not None:
+                    dec_err_stat = uncertainty[dec_key]["stat"]
+
             if "a" in uncertainty and uncertainty["a"] is not None:
                 if "sys" in uncertainty["a"] and uncertainty["a"]["sys"] is not None:
                     a_sys = uncertainty["a"]["sys"]
@@ -134,28 +155,32 @@ class PositionUncertainty:
                       a_sys, b_stat, b_sys, theta, position)
         u.debug_print(2, "PositionUncertainty.__init__(): ra_err_sys, ra_err_stat, dec_err_sys, dec_err_stat ==",
                       ra_err_sys, ra_err_stat, dec_err_sys, dec_err_stat)
-        if a_stat is not None and a_sys is not None and b_stat is not None and b_sys is not None and theta is not None and position is not None:
+        if a_stat is not None and a_sys is not None and b_stat is not None and b_sys is not None and theta is not None:
             ellipse = True
-        elif ra_err_sys is not None and ra_err_stat is not None and dec_err_sys is not None and dec_err_stat is not None:
+        elif ra_err_sys is not None and ra_err_stat is not None and dec_err_sys is not None and dec_err_stat is not None and position is not None:
             ellipse = False
         else:
             raise ValueError(
                 "Either all ellipse values (a, b, theta) or all equatorial values (ra, dec, position) must be provided.")
 
-        ra_err_sys = u.check_quantity(number=ra_err_sys, unit=units.hourangle / 3600)
-        ra_err_stat = u.check_quantity(number=ra_err_stat, unit=units.hourangle / 3600)
+        ra_err_sys = u.check_quantity(number=ra_err_sys, unit=units.arcsec)
+        ra_err_stat = u.check_quantity(number=ra_err_stat, unit=units.arcsec)
         dec_err_sys = u.check_quantity(number=dec_err_sys, unit=units.arcsec)
         dec_err_stat = u.check_quantity(number=dec_err_stat, unit=units.arcsec)
         # Convert equatorial uncertainty to ellipse with theta=0
         if not ellipse:
             ra = position.ra
             dec = position.dec
-            a_sys = SkyCoord(0.0 * units.degree, dec).separation(SkyCoord(ra_err_sys, dec))
-            a_stat = SkyCoord(0.0 * units.degree, dec).separation(SkyCoord(ra_err_stat, dec))
-            b_sys = SkyCoord(ra, dec).separation(SkyCoord(ra, dec + dec_err_sys))
-            b_stat = SkyCoord(ra, dec).separation(SkyCoord(ra, dec + dec_err_stat))
-            a_sys, b_sys = max(a_sys, b_sys), min(a_sys, b_sys)
-            a_stat, b_stat = max(a_stat, b_stat), min(a_stat, b_stat)
+            a_sys = ra_err_sys
+            # SkyCoord(0.0 * units.degree, dec).separation(SkyCoord(ra_err_sys, dec))
+            a_stat = ra_err_stat
+            # SkyCoord(0.0 * units.degree, dec).separation(SkyCoord(ra_err_stat, dec))
+            b_sys = dec_err_sys
+            # SkyCoord(ra, dec).separation(SkyCoord(ra, dec + dec_err_sys))
+            b_stat = dec_err_stat
+            # SkyCoord(ra, dec).separation(SkyCoord(ra, dec + dec_err_stat))
+            # a_sys, b_sys = max(a_sys, b_sys), min(a_sys, b_sys)
+            # a_stat, b_stat = max(a_stat, b_stat), min(a_stat, b_stat)
             theta = 0.0 * units.degree
         # Or use ellipse parameters as given.
         else:
@@ -183,7 +208,8 @@ class PositionUncertainty:
         return np.sqrt(self.a_sys ** 2 + self.a_stat ** 2), np.sqrt(self.b_sys ** 2 + self.b_stat ** 2)
 
     def uncertainty_quadrature_equ(self):
-        return np.sqrt(self.ra_sys ** 2 + self.ra_stat ** 2), np.sqrt(self.dec_stat ** 2 + self.dec_stat ** 2)
+        print(self.ra_sys, self.ra_stat, self.dec_sys, self.dec_stat)
+        return np.sqrt(self.ra_sys ** 2 + self.ra_stat ** 2), np.sqrt(self.dec_sys ** 2 + self.dec_stat ** 2)
 
     # TODO: Finish this
 
@@ -194,17 +220,17 @@ class PositionUncertainty:
             "b_sys": self.b_sys,
             "b_stat": self.b_stat,
             "theta": self.theta,
-            "ra_err_sys": self.ra_sys,
-            "dec_err_sys": self.dec_sys,
-            "ra_err_stat": self.ra_stat,
-            "dec_err_stat": self.dec_stat
+            "alpha_err_sys": self.ra_sys,
+            "delta_err_sys": self.dec_sys,
+            "alpha_err_stat": self.ra_stat,
+            "delta_err_stat": self.dec_stat
         }
 
     @classmethod
     def default_params(cls):
         return {
-            "ra": copy.deepcopy(uncertainty_dict),
-            "dec": copy.deepcopy(uncertainty_dict),
+            "alpha": copy.deepcopy(uncertainty_dict),
+            "delta": copy.deepcopy(uncertainty_dict),
             "a": copy.deepcopy(uncertainty_dict),
             "b": copy.deepcopy(uncertainty_dict),
             "theta": 0.0,
@@ -1649,7 +1675,7 @@ class FRB(Transient):
         mw_halo_yf17 = halos.YF17()
         mw_halo_x = halos.MilkyWay()
         mw_halo_mb15 = halos.MB15()
-        sun_orbit = 0 * units.m #2.7e17 * units.km
+        sun_orbit = 0 * units.m  # 2.7e17 * units.km
         outputs["dm_halo_mw_yf17"] = mw_halo_yf17.Ne_Rperp(sun_orbit, rmax=rmax) / 2
         outputs["dm_halo_mw_pz19_rough"] = mw_halo_x.Ne_Rperp(sun_orbit, rmax=rmax) / 2
         outputs["dm_halo_mw_mb15"] = mw_halo_mb15.Ne_Rperp(sun_orbit, rmax=rmax) / 2
