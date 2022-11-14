@@ -140,15 +140,23 @@ class PositionUncertainty:
                     b_stat = uncertainty["b"]["stat"]
             if "theta" in uncertainty and uncertainty["theta"] is not None:
                 theta = uncertainty["theta"]
-
         # If uncertainty is a single value, assume a circular uncertainty region without distinction between systematic
         # and statistical.
         elif uncertainty is not None:
             a_stat = uncertainty
-            a_sys = 0.0
+            a_sys = 0.0 * units.arcsec
             b_stat = uncertainty
-            b_sys = 0.0
-            theta = 0.0
+            b_sys = 0.0 * units.arcsec
+            theta = 0.0 * units.deg
+
+        if ra_err_stat is None and "alpha_err_stat" in kwargs:
+            ra_err_stat = kwargs["alpha_err_stat"]
+        if ra_err_sys is None and "alpha_err_sys" in kwargs:
+            ra_err_sys = kwargs["alpha_err_sys"]
+        if dec_err_stat is None and "delta_err_stat" in kwargs:
+            dec_err_stat = kwargs["delta_err_stat"]
+        if dec_err_sys is None and "delta_err_sys" in kwargs:
+            dec_err_sys = kwargs["delta_err_sys"]
 
         # Check whether we're specifying uncertainty using equatorial coordinates or ellipse parameters.
         u.debug_print(2, "PositionUncertainty.__init__(): a_stat, a_sys, b_stat, b_sys, theta, position ==", a_stat,
