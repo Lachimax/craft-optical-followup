@@ -108,12 +108,10 @@ class PositionUncertainty:
                 if "sys" in uncertainty[ra_key] and uncertainty[ra_key]["sys"] is not None:
                     ra_err_sys = uncertainty[ra_key]["sys"]
                     if isinstance(ra_err_sys, str):
-                        print(ra_err_sys)
                         ra_err_sys = (Longitude(ra_err_sys) * np.cos(position.dec)).to("arcsec")
                 if "stat" in uncertainty[ra_key] and uncertainty[ra_key]["stat"] is not None:
                     ra_err_stat = uncertainty[ra_key]["stat"]
                     if isinstance(ra_err_stat, str):
-                        print(ra_err_stat)
                         ra_err_stat = Longitude(ra_err_stat)
 
             dec_key = None
@@ -372,6 +370,7 @@ class Object:
             deepest_dict["back_sep"] = mag_results["back"][0]
             deepest_dict["flux_sep"] = mag_results["flux"][0]
             deepest_dict["flux_sep_err"] = mag_results["flux_err"][0]
+            deepest_dict["limit_threshold"] = mag_results["threshold"][0]
         else:
             deepest_dict["mag_sep"] = -999. * units.mag
             deepest_dict["mag_sep_err"] = -999. * units.mag
@@ -380,6 +379,7 @@ class Object:
             deepest_dict["flux_sep"] = -999.
             deepest_dict["flux_sep_err"] = -999.
             deepest_dict["threshold_sep"] = -999.
+            deepest_dict["limit_threshold"] = -999.
         deepest_dict["zeropoint_sep"] = deepest_img.zeropoint_best["zeropoint_img"]
 
         for instrument in self.photometry:
@@ -418,6 +418,7 @@ class Object:
                         phot_dict["back_sep"] = mag_results["back"][0]
                         phot_dict["flux_sep"] = mag_results["flux"][0]
                         phot_dict["flux_sep_err"] = mag_results["flux_err"][0]
+                        phot_dict["limit_threshold"] = mag_results["threshold"][0]
                     else:
                         phot_dict["mag_sep"] = -999. * units.mag
                         phot_dict["mag_sep_err"] = -999. * units.mag
@@ -426,6 +427,7 @@ class Object:
                         phot_dict["flux_sep"] = -999.
                         phot_dict["flux_sep_err"] = -999.
                         phot_dict["threshold_sep"] = -999.
+                        phot_dict["limit_threshold"] = -999.
                     phot_dict["zeropoint_sep"] = img.zeropoint_best["zeropoint_img"]
                     mag_results = img.sep_elliptical_magnitude(
                         centre=self.position_photometry,
@@ -442,12 +444,14 @@ class Object:
                         phot_dict["snr_sep_unmasked"] = mag_results["snr"][0]
                         phot_dict["flux_sep_unmasked"] = mag_results["flux"][0]
                         phot_dict["flux_sep_unmasked_err"] = mag_results["flux_err"][0]
+                        phot_dict["limit_threshold"] = mag_results["threshold"][0]
                     else:
                         phot_dict["mag_sep_unmasked"] = -999. * units.mag
                         phot_dict["mag_sep_unmasked_err"] = -999. * units.mag
                         phot_dict["snr_sep"] = -999.
                         phot_dict["flux_sep_unmasked"] = -999.
                         phot_dict["flux_sep_unmasked_err"] = -999.
+                        phot_dict["limit_threshold"] = -999.
 
         self.update_output_file()
 
