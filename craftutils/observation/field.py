@@ -1273,6 +1273,8 @@ class FRBField(Field):
             output_path: str = None,
             show_legend: bool = False,
             latex_kwargs: dict = {},
+            draw_scale_bar: bool = False,
+            scale_bar_kwargs: dict = {},
             **kwargs
     ) -> Tuple[plt.Axes, plt.Figure]:
         """
@@ -1302,6 +1304,9 @@ class FRBField(Field):
         if centre is None:
             centre = self.frb.host_galaxy.position
 
+        if draw_scale_bar:
+            kwargs["scale_bar_object"] = self.frb.host_galaxy
+
         ax, fig, other_args = img.plot_subimage(
             centre=centre,
             frame=frame,
@@ -1311,6 +1316,7 @@ class FRBField(Field):
             n=n, n_x=n_x, n_y=n_y,
             imshow_kwargs=imshow_kwargs,
             normalize_kwargs=normalize_kwargs,
+            scale_bar_kwargs=scale_bar_kwargs,
             **kwargs
         )
 
@@ -1348,7 +1354,7 @@ class FRBField(Field):
         img.extract_pixel_scale()
         if "include_img_err" in frb_kwargs:
             include_img_err = frb_kwargs.pop("include_img_err")
-        if colour is not None: # "edgecolor" not in frb_kwargs:
+        if colour is not None:  # "edgecolor" not in frb_kwargs:
             frb_kwargs["edgecolor"] = colour
         if "facecolor" not in frb_kwargs:
             frb_kwargs["facecolor"] = "none"

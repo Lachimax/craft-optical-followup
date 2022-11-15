@@ -18,7 +18,7 @@ import astropy.units as units
 from astropy.stats import SigmaClip
 
 from astropy.visualization import (
-    ImageNormalize, LogStretch, SqrtStretch, MinMaxInterval)
+    ImageNormalize, LogStretch, SqrtStretch, MinMaxInterval, ZScaleInterval)
 from astropy.coordinates import SkyCoord
 from astropy.time import Time
 from astropy.visualization import quantity_support
@@ -3160,6 +3160,10 @@ class ImagingImage(Image):
 
         if "interval" not in normalize_kwargs:
             normalize_kwargs["interval"] = MinMaxInterval()
+        elif normalize_kwargs["interval"] == "minmax":
+            normalize_kwargs["interval"] = MinMaxInterval()
+        elif normalize_kwargs["interval"] == "zscale":
+            normalize_kwargs["interval"] = ZScaleInterval()
 
         if "origin" not in imshow_kwargs:
             imshow_kwargs["origin"] = "lower"
@@ -3188,12 +3192,13 @@ class ImagingImage(Image):
         )
         ax.set_xlim(left, right)
         ax.set_ylim(bottom, top)
+
         ax.set_xlabel(" ")
         ax.set_ylabel(" ")
-        # ax.set_xlabel("Right Ascension (J2000)", size=16)
-        # ax.set_ylabel("Declination (J2000)", size=16, rotation=-90)
-        ax.tick_params(labelsize=14)
-        ax.yaxis.set_label_position("right")
+        ax.set_xlabel("Right Ascension (J2000)", size=16)
+        ax.set_ylabel("Declination (J2000)", size=16, rotation=-90)
+        # ax.tick_params(labelsize=14)
+        # ax.yaxis.set_label_position("right")
 
         # plt.tight_layout()
 
