@@ -38,6 +38,8 @@ except ModuleNotFoundError:
 import craftutils.params as p
 import craftutils.utils as u
 
+irsa.Irsa.ROW_LIMIT = -1
+
 default_data_release = {
     "gaia": 3,
     "sdss": 16,
@@ -763,7 +765,7 @@ def save_irsa_photometry(
     if len(table) > 0:
         u.mkdir_check_nested(path=output)
         print(f"Saving {catalogue} catalogue to {output}")
-        table.write(output, format="ascii.csv")
+        table.write(output, format="ascii.csv", overwrite=True)
         return str(table)
     else:
         print(f"No data retrieved from {catalogue}")
