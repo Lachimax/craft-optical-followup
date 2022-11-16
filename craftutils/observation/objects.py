@@ -370,7 +370,7 @@ class Object:
             deepest_dict["back_sep"] = mag_results["back"][0]
             deepest_dict["flux_sep"] = mag_results["flux"][0]
             deepest_dict["flux_sep_err"] = mag_results["flux_err"][0]
-            deepest_dict["limit_threshold"] = mag_results["threshold"][0]
+            deepest_dict["limit_threshold"] = mag_results["threshold"]
         else:
             deepest_dict["mag_sep"] = -999. * units.mag
             deepest_dict["mag_sep_err"] = -999. * units.mag
@@ -418,7 +418,7 @@ class Object:
                         phot_dict["back_sep"] = mag_results["back"][0]
                         phot_dict["flux_sep"] = mag_results["flux"][0]
                         phot_dict["flux_sep_err"] = mag_results["flux_err"][0]
-                        phot_dict["limit_threshold"] = mag_results["threshold"][0]
+                        phot_dict["limit_threshold"] = mag_results["threshold"]
                     else:
                         phot_dict["mag_sep"] = -999. * units.mag
                         phot_dict["mag_sep_err"] = -999. * units.mag
@@ -444,7 +444,7 @@ class Object:
                         phot_dict["snr_sep_unmasked"] = mag_results["snr"][0]
                         phot_dict["flux_sep_unmasked"] = mag_results["flux"][0]
                         phot_dict["flux_sep_unmasked_err"] = mag_results["flux_err"][0]
-                        phot_dict["limit_threshold"] = mag_results["threshold"][0]
+                        phot_dict["limit_threshold"] = mag_results["threshold"]
                     else:
                         phot_dict["mag_sep_unmasked"] = -999. * units.mag
                         phot_dict["mag_sep_unmasked_err"] = -999. * units.mag
