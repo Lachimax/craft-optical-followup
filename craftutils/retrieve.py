@@ -735,7 +735,7 @@ def retrieve_irsa_photometry(
         dec: float,
         radius: units.Quantity = 0.2 * units.deg,
 ):
-    print(f"Querying IRSA archive for {catalogue} sources centred on RA={ra}, DEC={dec}.")
+    print(f"Querying IRSA archive for {catalogue} sources within {radius} of RA={ra}, DEC={dec}.")
     table = irsa.Irsa.query_region(
         SkyCoord(
             ra,
