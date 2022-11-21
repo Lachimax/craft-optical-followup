@@ -1040,6 +1040,9 @@ class Object:
             row["d_L"] = self.D_L
             row["mu"] = self.mu
 
+        if isinstance(self, TransientHostCandidate):
+            row["transient_tns_name"] = self.transient.tns_name
+
         for instrument in self.photometry:
             for fil in self.photometry[instrument]:
 
@@ -1552,7 +1555,7 @@ dm_host_median = {
 class Transient(Object):
     def __init__(
             self,
-            host_galaxy: Galaxy = None,
+            host_galaxy: TransientHostCandidate = None,
             date: time.Time = None,
             **kwargs
     ):
@@ -1563,6 +1566,9 @@ class Transient(Object):
         if not isinstance(date, time.Time) and date is not None:
             date = time.Time(date)
         self.date = date
+        self.tns_name = None
+        if "tns_name" in kwargs:
+            self.tns_name = kwargs["tns_name"]
 
     @classmethod
     def default_params(cls):
@@ -1570,6 +1576,7 @@ class Transient(Object):
         default_params.update({
             "host_galaxy": Galaxy.default_params(),
             "date": "0000-01-01",
+            "tns_name": None
         })
         return default_params
 
@@ -2070,7 +2077,8 @@ class FRB(Transient):
         frb = super().from_dict(dictionary=dictionary)
         # if "dm" in dictionary:
         #     frb.dm = u.check_quantity(dictionary["dm"], dm_units)
-        host_galaxy = Galaxy.from_dict(dictionary=dictionary["host_galaxy"], field=field)
+        dictionary["host_galaxy"]["transient"] = frb
+        host_galaxy = TransientHostCandidate.from_dict(dictionary=dictionary["host_galaxy"], field=field)
         frb.host_galaxy = host_galaxy
         return frb
 

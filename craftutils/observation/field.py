@@ -3833,6 +3833,9 @@ class ImagingEpoch(Epoch):
                 "depth": depth
             }
 
+            if isinstance(self.field, FRBField):
+                entry["frb_tns_name"] = self.field.frb.tns_name
+
             obs.add_epoch(
                 epoch_name=self.name,
                 fil=fil,
