@@ -1224,7 +1224,7 @@ class FRBField(Field):
             imshow_kwargs["origin"] = "lower"
 
         if show_coords:
-            projection = red_trimmed.wcs
+            projection = red_trimmed.wcs[ext[0]]
         else:
             projection = None
         ax = fig.add_subplot(n_x, n_y, n, projection=projection)

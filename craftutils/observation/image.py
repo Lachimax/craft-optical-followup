@@ -3373,7 +3373,7 @@ class ImagingImage(Image):
             top=top,
             output_path=output_path
         )
-        trimmed.load_wcs(ext)
+        trimmed.load_wcs()
 
         if scale_to_jansky:
             data, vs = trimmed.scale_to_jansky(ext, vmax, vmin)
