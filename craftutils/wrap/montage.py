@@ -182,7 +182,7 @@ def project_execute(input_directory: str, table_path: str, header_path: str, pro
         command="mProjExec",
         arguments=[table_path, header_path, proj_dir, stats_table_path],
         p=input_directory,
-        s="mProjExec_status.txt"
+        # s="mProjExec_status.txt"
     )
 
 

@@ -12,6 +12,7 @@ import astropy.wcs as wcs
 from astropy.coordinates import SkyCoord
 import astropy.units as units
 import astropy.time as time
+from astropy import cosmology as cosmo
 from astropy.visualization import ImageNormalize, ZScaleInterval, SqrtStretch
 
 import craftutils.fits_files as ff

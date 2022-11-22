@@ -2,10 +2,11 @@ from typing import Union, Tuple, List
 import os
 import copy
 
+import frb.frb
 import matplotlib.pyplot as plt
 import numpy as np
 
-from astropy.coordinates import SkyCoord
+from astropy.coordinates import SkyCoord, Longitude
 import astropy.units as units
 import astropy.table as table
 import astropy.cosmology as cosmo
@@ -29,10 +30,10 @@ except AttributeError:
 quantity_support()
 
 position_dictionary = {
-    "ra": {
+    "alpha": {
         "decimal": 0.0,
         "hms": None},
-    "dec": {
+    "delta": {
         "decimal": 0.0,
         "dms": None
     },
@@ -72,7 +73,8 @@ class PositionUncertainty:
             b_stat: Union[float, units.Quantity] = None,
             b_sys: Union[float, units.Quantity] = None,
             theta: Union[float, units.Quantity] = None,
-            sigma: float = None
+            sigma: float = None,
+            **kwargs
     ):
         """
         If a single value is provided for uncertainty, the uncertainty ellipse will be assumed to be circular.
@@ -96,16 +98,34 @@ class PositionUncertainty:
         self.sigma = sigma
         # Assign values from dictionary, if provided.
         if type(uncertainty) is dict:
+            ra_key = None
             if "ra" in uncertainty and uncertainty["ra"] is not None:
-                if "sys" in uncertainty["ra"] and uncertainty["ra"]["sys"] is not None:
-                    ra_err_sys = uncertainty["ra"]["sys"]
-                if "stat" in uncertainty["ra"] and uncertainty["ra"]["stat"] is not None:
-                    ra_err_stat = uncertainty["ra"]["stat"]
+                ra_key = "ra"
+            elif "alpha" in uncertainty and uncertainty["alpha"] is not None:
+                ra_key = "alpha"
+
+            if ra_key is not None:
+                if "sys" in uncertainty[ra_key] and uncertainty[ra_key]["sys"] is not None:
+                    ra_err_sys = uncertainty[ra_key]["sys"]
+                    if isinstance(ra_err_sys, str):
+                        ra_err_sys = (Longitude(ra_err_sys) * np.cos(position.dec)).to("arcsec")
+                if "stat" in uncertainty[ra_key] and uncertainty[ra_key]["stat"] is not None:
+                    ra_err_stat = uncertainty[ra_key]["stat"]
+                    if isinstance(ra_err_stat, str):
+                        ra_err_stat = Longitude(ra_err_stat)
+
+            dec_key = None
             if "dec" in uncertainty and uncertainty["dec"] is not None:
-                if "sys" in uncertainty["dec"] and uncertainty["dec"]["sys"] is not None:
-                    dec_err_sys = uncertainty["dec"]["sys"]
-                if "stat" in uncertainty["dec"] and uncertainty["dec"]["stat"] is not None:
-                    dec_err_stat = uncertainty["dec"]["stat"]
+                dec_key = "dec"
+            if "delta" in uncertainty and uncertainty["delta"] is not None:
+                dec_key = "delta"
+
+            if dec_key is not None:
+                if "sys" in uncertainty[dec_key] and uncertainty[dec_key]["sys"] is not None:
+                    dec_err_sys = uncertainty[dec_key]["sys"]
+                if "stat" in uncertainty[dec_key] and uncertainty[dec_key]["stat"] is not None:
+                    dec_err_stat = uncertainty[dec_key]["stat"]
+
             if "a" in uncertainty and uncertainty["a"] is not None:
                 if "sys" in uncertainty["a"] and uncertainty["a"]["sys"] is not None:
                     a_sys = uncertainty["a"]["sys"]
@@ -118,43 +138,55 @@ class PositionUncertainty:
                     b_stat = uncertainty["b"]["stat"]
             if "theta" in uncertainty and uncertainty["theta"] is not None:
                 theta = uncertainty["theta"]
-
         # If uncertainty is a single value, assume a circular uncertainty region without distinction between systematic
         # and statistical.
         elif uncertainty is not None:
             a_stat = uncertainty
-            a_sys = 0.0
+            a_sys = 0.0 * units.arcsec
             b_stat = uncertainty
-            b_sys = 0.0
-            theta = 0.0
+            b_sys = 0.0 * units.arcsec
+            theta = 0.0 * units.deg
+
+        if ra_err_stat is None and "alpha_err_stat" in kwargs:
+            ra_err_stat = kwargs["alpha_err_stat"]
+        if ra_err_sys is None and "alpha_err_sys" in kwargs:
+            ra_err_sys = kwargs["alpha_err_sys"]
+        if dec_err_stat is None and "delta_err_stat" in kwargs:
+            dec_err_stat = kwargs["delta_err_stat"]
+        if dec_err_sys is None and "delta_err_sys" in kwargs:
+            dec_err_sys = kwargs["delta_err_sys"]
 
         # Check whether we're specifying uncertainty using equatorial coordinates or ellipse parameters.
         u.debug_print(2, "PositionUncertainty.__init__(): a_stat, a_sys, b_stat, b_sys, theta, position ==", a_stat,
                       a_sys, b_stat, b_sys, theta, position)
         u.debug_print(2, "PositionUncertainty.__init__(): ra_err_sys, ra_err_stat, dec_err_sys, dec_err_stat ==",
                       ra_err_sys, ra_err_stat, dec_err_sys, dec_err_stat)
-        if a_stat is not None and a_sys is not None and b_stat is not None and b_sys is not None and theta is not None and position is not None:
+        if a_stat is not None and a_sys is not None and b_stat is not None and b_sys is not None and theta is not None:
             ellipse = True
-        elif ra_err_sys is not None and ra_err_stat is not None and dec_err_sys is not None and dec_err_stat is not None:
+        elif ra_err_sys is not None and ra_err_stat is not None and dec_err_sys is not None and dec_err_stat is not None and position is not None:
             ellipse = False
         else:
             raise ValueError(
                 "Either all ellipse values (a, b, theta) or all equatorial values (ra, dec, position) must be provided.")
 
-        ra_err_sys = u.check_quantity(number=ra_err_sys, unit=units.hourangle / 3600)
-        ra_err_stat = u.check_quantity(number=ra_err_stat, unit=units.hourangle / 3600)
+        ra_err_sys = u.check_quantity(number=ra_err_sys, unit=units.arcsec)
+        ra_err_stat = u.check_quantity(number=ra_err_stat, unit=units.arcsec)
         dec_err_sys = u.check_quantity(number=dec_err_sys, unit=units.arcsec)
         dec_err_stat = u.check_quantity(number=dec_err_stat, unit=units.arcsec)
         # Convert equatorial uncertainty to ellipse with theta=0
         if not ellipse:
             ra = position.ra
             dec = position.dec
-            a_sys = SkyCoord(0.0 * units.degree, dec).separation(SkyCoord(ra_err_sys, dec))
-            a_stat = SkyCoord(0.0 * units.degree, dec).separation(SkyCoord(ra_err_stat, dec))
-            b_sys = SkyCoord(ra, dec).separation(SkyCoord(ra, dec + dec_err_sys))
-            b_stat = SkyCoord(ra, dec).separation(SkyCoord(ra, dec + dec_err_stat))
-            a_sys, b_sys = max(a_sys, b_sys), min(a_sys, b_sys)
-            a_stat, b_stat = max(a_stat, b_stat), min(a_stat, b_stat)
+            a_sys = ra_err_sys
+            # SkyCoord(0.0 * units.degree, dec).separation(SkyCoord(ra_err_sys, dec))
+            a_stat = ra_err_stat
+            # SkyCoord(0.0 * units.degree, dec).separation(SkyCoord(ra_err_stat, dec))
+            b_sys = dec_err_sys
+            # SkyCoord(ra, dec).separation(SkyCoord(ra, dec + dec_err_sys))
+            b_stat = dec_err_stat
+            # SkyCoord(ra, dec).separation(SkyCoord(ra, dec + dec_err_stat))
+            # a_sys, b_sys = max(a_sys, b_sys), min(a_sys, b_sys)
+            # a_stat, b_stat = max(a_stat, b_stat), min(a_stat, b_stat)
             theta = 0.0 * units.degree
         # Or use ellipse parameters as given.
         else:
@@ -175,11 +207,15 @@ class PositionUncertainty:
         self.ra_stat = ra_err_stat
         self.dec_stat = dec_err_stat
 
+    def __str__(self):
+        return f"PositionUncertainty: a_stat={self.a_stat}, b_stat={self.b_stat}; a_sys={self.a_sys}, b_sys={self.b_sys}"
+
     def uncertainty_quadrature(self):
         return np.sqrt(self.a_sys ** 2 + self.a_stat ** 2), np.sqrt(self.b_sys ** 2 + self.b_stat ** 2)
 
     def uncertainty_quadrature_equ(self):
-        return np.sqrt(self.ra_sys ** 2 + self.ra_stat ** 2), np.sqrt(self.dec_stat ** 2 + self.dec_stat ** 2)
+        print(self.ra_sys, self.ra_stat, self.dec_sys, self.dec_stat)
+        return np.sqrt(self.ra_sys ** 2 + self.ra_stat ** 2), np.sqrt(self.dec_sys ** 2 + self.dec_stat ** 2)
 
     # TODO: Finish this
 
@@ -190,17 +226,17 @@ class PositionUncertainty:
             "b_sys": self.b_sys,
             "b_stat": self.b_stat,
             "theta": self.theta,
-            "ra_err_sys": self.ra_sys,
-            "dec_err_sys": self.dec_sys,
-            "ra_err_stat": self.ra_stat,
-            "dec_err_stat": self.dec_stat
+            "alpha_err_sys": self.ra_sys,
+            "delta_err_sys": self.dec_sys,
+            "alpha_err_stat": self.ra_stat,
+            "delta_err_stat": self.dec_stat
         }
 
     @classmethod
     def default_params(cls):
         return {
-            "ra": copy.deepcopy(uncertainty_dict),
-            "dec": copy.deepcopy(uncertainty_dict),
+            "alpha": copy.deepcopy(uncertainty_dict),
+            "delta": copy.deepcopy(uncertainty_dict),
             "a": copy.deepcopy(uncertainty_dict),
             "b": copy.deepcopy(uncertainty_dict),
             "theta": 0.0,
@@ -236,8 +272,8 @@ class Object:
             if isinstance(self.position, SkyCoord):
                 self.position_galactic = self.position.transform_to("galactic")
 
-        self.position_photometry = self.position.copy()
-        self.position_photometry_err = self.position_err
+        self.position_photometry = copy.deepcopy(self.position)
+        self.position_photometry_err = copy.deepcopy(self.position_err)
 
         if self.name is None:
             self.jname()
@@ -334,6 +370,7 @@ class Object:
             deepest_dict["back_sep"] = mag_results["back"][0]
             deepest_dict["flux_sep"] = mag_results["flux"][0]
             deepest_dict["flux_sep_err"] = mag_results["flux_err"][0]
+            deepest_dict["limit_threshold"] = mag_results["threshold"]
         else:
             deepest_dict["mag_sep"] = -999. * units.mag
             deepest_dict["mag_sep_err"] = -999. * units.mag
@@ -342,6 +379,7 @@ class Object:
             deepest_dict["flux_sep"] = -999.
             deepest_dict["flux_sep_err"] = -999.
             deepest_dict["threshold_sep"] = -999.
+            deepest_dict["limit_threshold"] = -999.
         deepest_dict["zeropoint_sep"] = deepest_img.zeropoint_best["zeropoint_img"]
 
         for instrument in self.photometry:
@@ -380,6 +418,7 @@ class Object:
                         phot_dict["back_sep"] = mag_results["back"][0]
                         phot_dict["flux_sep"] = mag_results["flux"][0]
                         phot_dict["flux_sep_err"] = mag_results["flux_err"][0]
+                        phot_dict["limit_threshold"] = mag_results["threshold"]
                     else:
                         phot_dict["mag_sep"] = -999. * units.mag
                         phot_dict["mag_sep_err"] = -999. * units.mag
@@ -388,6 +427,7 @@ class Object:
                         phot_dict["flux_sep"] = -999.
                         phot_dict["flux_sep_err"] = -999.
                         phot_dict["threshold_sep"] = -999.
+                        phot_dict["limit_threshold"] = -999.
                     phot_dict["zeropoint_sep"] = img.zeropoint_best["zeropoint_img"]
                     mag_results = img.sep_elliptical_magnitude(
                         centre=self.position_photometry,
@@ -404,12 +444,14 @@ class Object:
                         phot_dict["snr_sep_unmasked"] = mag_results["snr"][0]
                         phot_dict["flux_sep_unmasked"] = mag_results["flux"][0]
                         phot_dict["flux_sep_unmasked_err"] = mag_results["flux_err"][0]
+                        phot_dict["limit_threshold"] = mag_results["threshold"]
                     else:
                         phot_dict["mag_sep_unmasked"] = -999. * units.mag
                         phot_dict["mag_sep_unmasked_err"] = -999. * units.mag
                         phot_dict["snr_sep"] = -999.
                         phot_dict["flux_sep_unmasked"] = -999.
                         phot_dict["flux_sep_unmasked_err"] = -999.
+                        phot_dict["limit_threshold"] = -999.
 
         self.update_output_file()
 
@@ -998,6 +1040,9 @@ class Object:
             row["d_L"] = self.D_L
             row["mu"] = self.mu
 
+        if isinstance(self, TransientHostCandidate):
+            row["transient_tns_name"] = self.transient.tns_name
+
         for instrument in self.photometry:
             for fil in self.photometry[instrument]:
 
@@ -1172,6 +1217,14 @@ class Extragalactic(Object):
         super().__init__(
             **kwargs
         )
+        self.z = None
+        self.z_err = None
+        self.D_A = None
+        self.D_L = None
+        self.mu = None
+        self.set_z(z, **kwargs)
+
+    def set_z(self, z, **kwargs):
         self.z = z
         if "z_err" in kwargs:
             self.z_err = kwargs["z_err"]
@@ -1467,6 +1520,30 @@ class Galaxy(Extragalactic):
                    **dictionary)
 
 
+class TransientHostCandidate(Galaxy):
+    def __init__(
+            self,
+            transient: 'Transient',
+            z: float = 0.0,
+            **kwargs
+    ):
+        super().__init__(
+            z=z,
+            **kwargs
+        )
+        self.transient = transient
+
+        self.P_O = None
+        if "P_O" in kwargs:
+            self.P_O = kwargs["P_O"]
+        self.P_xO = None
+        if "P_xO" in kwargs:
+            self.P_xO = kwargs["P_xO"]
+        self.P_Ox = None
+        if "P_Ox" in kwargs:
+            self.P_Ox = kwargs["P_Ox"]
+
+
 dm_units = units.parsec * units.cm ** -3
 
 dm_host_median = {
@@ -1478,7 +1555,7 @@ dm_host_median = {
 class Transient(Object):
     def __init__(
             self,
-            host_galaxy: Galaxy = None,
+            host_galaxy: TransientHostCandidate = None,
             date: time.Time = None,
             **kwargs
     ):
@@ -1489,6 +1566,9 @@ class Transient(Object):
         if not isinstance(date, time.Time) and date is not None:
             date = time.Time(date)
         self.date = date
+        self.tns_name = None
+        if "tns_name" in kwargs:
+            self.tns_name = kwargs["tns_name"]
 
     @classmethod
     def default_params(cls):
@@ -1496,6 +1576,7 @@ class Transient(Object):
         default_params.update({
             "host_galaxy": Galaxy.default_params(),
             "date": "0000-01-01",
+            "tns_name": None
         })
         return default_params
 
@@ -1512,6 +1593,12 @@ class FRB(Transient):
         self.dm = dm
         if self.dm is not None:
             self.dm = u.check_quantity(self.dm, unit=dm_units)
+
+        self.x_frb = frb.frb.FRB(
+            frb_name=self.name,
+            coord=self.position,
+            DM=self.dm
+        )
 
     @classmethod
     def _date_from_name(cls, name):
@@ -1607,7 +1694,7 @@ class FRB(Transient):
         mw_halo_yf17 = halos.YF17()
         mw_halo_x = halos.MilkyWay()
         mw_halo_mb15 = halos.MB15()
-        sun_orbit = 2.7e17 * units.km
+        sun_orbit = 0 * units.m  # 2.7e17 * units.km
         outputs["dm_halo_mw_yf17"] = mw_halo_yf17.Ne_Rperp(sun_orbit, rmax=rmax) / 2
         outputs["dm_halo_mw_pz19_rough"] = mw_halo_x.Ne_Rperp(sun_orbit, rmax=rmax) / 2
         outputs["dm_halo_mw_mb15"] = mw_halo_mb15.Ne_Rperp(sun_orbit, rmax=rmax) / 2
@@ -1664,13 +1751,13 @@ class FRB(Transient):
 
     def dm_cosmic(self, **kwargs):
         from frb.dm.igm import average_DM
-        return average_DM(self.host_galaxy.z, cosmo=cosmo.Planck18, **kwargs)
+        return average_DM(self.host_galaxy.z, cosmo=cosmology, **kwargs)
 
     def dm_halos_avg(self, **kwargs):
         import frb.halos.hmf as hmf
         from frb.dm.igm import average_DMhalos
         hmf.init_hmf()
-        return average_DMhalos(self.host_galaxy.z, cosmo=cosmo.Planck18, **kwargs)
+        return average_DMhalos(self.host_galaxy.z, cosmo=cosmology, **kwargs)
 
     # def estimate_dm_excess(self):
     #     dm_ism = self.estimate_dm_mw_ism()
@@ -1990,7 +2077,8 @@ class FRB(Transient):
         frb = super().from_dict(dictionary=dictionary)
         # if "dm" in dictionary:
         #     frb.dm = u.check_quantity(dictionary["dm"], dm_units)
-        host_galaxy = Galaxy.from_dict(dictionary=dictionary["host_galaxy"], field=field)
+        dictionary["host_galaxy"]["transient"] = frb
+        host_galaxy = TransientHostCandidate.from_dict(dictionary=dictionary["host_galaxy"], field=field)
         frb.host_galaxy = host_galaxy
         return frb
 
