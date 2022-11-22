@@ -566,7 +566,7 @@ def latex_setup(
             math_fontset = "stix"
 
     plt.rc('text', usetex=use_tex)
-    print(f"Setting mathtext.fontset to {math_fontset}.")
+    u.debug_print(1, f"Setting mathtext.fontset to {math_fontset}.")
     plt.rc("mathtext", fontset=math_fontset)
     # Matplotlib and pyplot settings
     # print(f"Setting font.family to {font_family}")
@@ -576,7 +576,7 @@ def latex_setup(
     # plt.rcParams['text.latex.preamble'] = ""
     for package in packages:
         line = r'\usepackage{' + package + '}  '
-        print(f"Adding line '{line}' to latex preamble.")
+        u.debug_print(1, f"Adding line '{line}' to latex preamble.")
         plt.rcParams['text.latex.preamble'] += line + "\n"
     # plt.rcParams['text.latex.preamble'] = r'\usepackage{amsmath} '  # \usepackage{sfmath} \boldmath
 

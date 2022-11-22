@@ -18,7 +18,7 @@ import astropy.units as units
 from astropy.stats import SigmaClip
 
 from astropy.visualization import (
-    ImageNormalize, LogStretch, SqrtStretch, MinMaxInterval)
+    ImageNormalize, LogStretch, SqrtStretch, MinMaxInterval, ZScaleInterval)
 from astropy.coordinates import SkyCoord
 from astropy.time import Time
 from astropy.visualization import quantity_support
@@ -53,7 +53,8 @@ quantity_support()
 # This contains the names as in the header as keys and the names as used in this project as values.
 instrument_header = {
     "FORS2": "vlt-fors2",
-    "HAWKI": "vlt-hawki"
+    "HAWKI": "vlt-hawki",
+    "PS1": "panstarrs1"
 }
 
 active_images = {}
@@ -583,7 +584,7 @@ class Image:
         else:
             return value
 
-    def extract_chip_number(self):
+    def extract_chip_number(self, ext: int = 0):
         chip = 1
         self.chip_number = chip
         return chip
@@ -731,8 +732,8 @@ class Image:
             header = hdu_list[i].header
             if "INSTRUME" in header:
                 instrument = header["INSTRUME"]
-            elif "FPA.INSTRUMENT" in header:
-                instrument = "panstarrs1"
+            elif "FPA.TELESCOPE" in header:
+                instrument = header["FPA.TELESCOPE"]
             i += 1
 
         if instrument is None:
@@ -826,6 +827,8 @@ class ImagingImage(Image):
         self.psfex_path = None
         self.psfex_output = None
         self.psfex_successful = None
+        # TODO: The source_cat attributes should be lists with each entry corresponding to a single FITS extension. This
+        # is the last piece, I believe, that has not been updated to this standard.
         self.source_cat_sextractor_path = None
         self.source_cat_sextractor_dual_path = None
         self.source_cat_path = None
@@ -1135,13 +1138,13 @@ class ImagingImage(Image):
         print()
         self.update_output_file()
 
-    def _load_source_cat_sextractor(self, path: str):
+    def _load_source_cat_sextractor(self, path: str, wcs_ext: int = 0):
         self.load_wcs()
         print("Loading source catalogue from", path)
         source_cat = table.QTable.read(path, format="ascii.sextractor")
         if "SPREAD_MODEL" in source_cat.colnames:
             source_cat = u.classify_spread_model(source_cat)
-        source_cat["RA"], source_cat["DEC"] = self.wcs.all_pix2world(
+        source_cat["RA"], source_cat["DEC"] = self.wcs[wcs_ext].all_pix2world(
             source_cat["X_IMAGE"],
             source_cat["Y_IMAGE"],
             1
@@ -1162,7 +1165,7 @@ class ImagingImage(Image):
 
         return source_cat
 
-    def world_to_pixel(self, coord: SkyCoord, origin: int = 0) -> np.ndarray:
+    def world_to_pixel(self, coord: SkyCoord, origin: int = 0, ext: int = 0) -> np.ndarray:
         """
         Turns a sky coordinate into image pixel coordinates;
         :param coord: SkyCoord object to convert to pixel coordinates; essentially a wrapper for SkyCoord.to_pixel()
@@ -1170,13 +1173,14 @@ class ImagingImage(Image):
         :return: xp, yp: numpy.ndarray, the pixel coordinates.
         """
         self.load_wcs()
-        return coord.to_pixel(self.wcs, origin=origin)
+        return coord.to_pixel(self.wcs[ext], origin=origin)
 
     def pixel_to_world(
             self,
             x: Union[float, np.ndarray, units.Quantity],
             y: Union[float, np.ndarray, units.Quantity],
-            origin: int = 0
+            origin: int = 0,
+            ext: int = 0
     ) -> SkyCoord:
         """
         Uses the image's wcs to turn pixel coordinates into sky; essentially a wrapper for SkyCoord.from_pixel().
@@ -1188,7 +1192,7 @@ class ImagingImage(Image):
         self.load_wcs()
         x = u.dequantify(x, unit=units.pix)
         y = u.dequantify(y, unit=units.pix)
-        return SkyCoord.from_pixel(x, y, wcs=self.wcs, origin=origin)
+        return SkyCoord.from_pixel(x, y, wcs=self.wcs[ext], origin=origin)
 
     def load_data(self, force: bool = False):
         super().load_data()
@@ -1341,9 +1345,11 @@ class ImagingImage(Image):
             u.debug_print(1, "Writing source catalogue to", self.synth_cat_path)
             self.synth_cat.write(self.synth_cat_path, format="ascii.ecsv", overwrite=True)
 
-    def load_wcs(self, ext: int = 0) -> wcs.WCS:
+    def load_wcs(self) -> List[wcs.WCS]:
         self.load_headers()
-        self.wcs = wcs.WCS(header=self.headers[ext])
+        self.wcs = []
+        for ext in range(len(self.headers)):
+            self.wcs.append(wcs.WCS(header=self.headers[ext]))
         return self.wcs
 
     def extract_astrometry_err(self):
@@ -1365,18 +1371,18 @@ class ImagingImage(Image):
         self.load_headers()
         return ff.get_rotation_angle(header=self.headers[ext], astropy_units=True)
 
-    def extract_wcs_footprint(self):
+    def extract_wcs_footprint(self, ext: int = 0):
         """
         Returns the RA & Dec of the corners of the image.
         :return: tuple of SkyCoords, (top_left, top_right, bottom_left, bottom_right)
         """
         self.load_wcs()
-        return self.wcs.calc_footprint()
+        return self.wcs[ext].calc_footprint()
 
     def _pixel_scale(self, ext: int = 0):
-        self.load_wcs(ext=ext)
+        self.load_wcs()
         return wcs.utils.proj_plane_pixel_scales(
-            self.wcs
+            self.wcs[ext]
         ) * units.deg
 
     def extract_pixel_scale(self, ext: int = 0, force: bool = False):
@@ -1427,7 +1433,7 @@ class ImagingImage(Image):
         self.pointing = SkyCoord(ra, dec, unit=units.deg)
         return self.pointing
 
-    def extract_ref_pixel(self) -> Tuple[float]:
+    def extract_ref_pixel(self) -> Tuple[float, float]:
         """
         Retrieve the coordinates of the "reference pixel" from the header.
         :return: Tuple containing the reference pixel coordinates as (x, y).
@@ -1612,7 +1618,8 @@ class ImagingImage(Image):
             snr_cut=3.,
             iterate_uncertainty: bool = True,
             do_x_shift: bool = True,
-            vega: bool = False
+            vega: bool = False,
+            **kwargs
     ):
         print(f"\nEstimating photometric zeropoint for {self.name}, {type(self)}\n")
 
@@ -2306,7 +2313,8 @@ class ImagingImage(Image):
             local_radius: units.Quantity = 0.5 * units.arcmin,
             show_plots: bool = False,
             output_path: str = None,
-            min_matches: int = 10
+            min_matches: int = 10,
+            ext: int = 0
     ):
         """
         Perform diagnostics of astrometric offset of stars in image from catalogue.
@@ -2362,7 +2370,7 @@ class ImagingImage(Image):
 
             self.load_wcs()
             ref_cat_coords = SkyCoord(reference_cat[ra_col], reference_cat[dec_col])
-            in_footprint = self.wcs.footprint_contains(ref_cat_coords)
+            in_footprint = self.wcs[ext].footprint_contains(ref_cat_coords)
 
             plt.scatter(
                 self.source_cat["RA"],
@@ -2847,7 +2855,12 @@ class ImagingImage(Image):
 
         return reprojected_image
 
-    def trim_to_wcs(self, bottom_left: SkyCoord, top_right: SkyCoord, output_path: str = None) -> 'ImagingImage':
+    def trim_to_wcs(
+            self,
+            bottom_left: SkyCoord,
+            top_right: SkyCoord,
+            output_path: str = None, ext: int = 0
+    ) -> 'ImagingImage':
         """
         Trims the image to a footprint defined by two RA/DEC coordinates
         :param bottom_left:
@@ -2856,9 +2869,9 @@ class ImagingImage(Image):
         :return:
         """
         self.load_wcs()
-        left, bottom = bottom_left.to_pixel(wcs=self.wcs, origin=0)
-        right, top = top_right.to_pixel(wcs=self.wcs, origin=0)
-        return self.trim(left=left, right=right, bottom=bottom, top=top, output_path=output_path)
+        left, bottom = bottom_left.to_pixel(wcs=self.wcs[ext], origin=0)
+        right, top = top_right.to_pixel(wcs=self.wcs[ext], origin=0)
+        return self.trim(left=left, right=right, bottom=bottom, top=top, output_path=output_path, ext=ext)
 
     def match_to_cat(
             self,
@@ -2867,7 +2880,8 @@ class ImagingImage(Image):
             dec_col: str = "dec",
             offset_tolerance: units.Quantity = 1 * units.arcsec,
             star_tolerance: float = None,
-            dual: bool = False
+            dual: bool = False,
+            ext: int = 0
     ):
 
         source_cat = self.get_source_cat(dual=dual)
@@ -2892,7 +2906,7 @@ class ImagingImage(Image):
             tolerance=offset_tolerance)
 
         self.load_wcs()
-        x_cat, y_cat = self.wcs.all_world2pix(matches_ext_cat[ra_col], matches_ext_cat[dec_col], 0)
+        x_cat, y_cat = self.wcs[ext].all_world2pix(matches_ext_cat[ra_col], matches_ext_cat[dec_col], 0)
         matches_ext_cat["x_image"] = x_cat
         matches_ext_cat["y_image"] = y_cat
 
@@ -2952,7 +2966,7 @@ class ImagingImage(Image):
         # _, scale = self.extract_pixel_scale()
         # mask = self.generate_mask(method='sep')
         # mask = mask.astype(bool)
-        # bkg = self.calculate_background(method='sep', mask=mask)
+        # bkg, bkg_data = self.calculate_background(method='sep', mask=mask)
         # rms = bkg.rms()
         #
         # gain = self.extract_gain() / units.electron
@@ -3035,7 +3049,7 @@ class ImagingImage(Image):
             print("Sky background already estimated.")
         return self.sky_background
 
-    def plot_apertures(self, dual=True, output: str = None, show: bool = False):
+    def plot_apertures(self, dual=False, output: str = None, show: bool = False):
         cat = self.get_source_cat(dual=dual)
 
         if cat is not None:
@@ -3089,11 +3103,24 @@ class ImagingImage(Image):
             mask: np.ndarray = None,
             scale_bar_object: objects.Extragalactic = None,
             scale_bar_kwargs: dict = None,
+            data_type: str = "image",
             **kwargs,
     ) -> Tuple[plt.Axes, plt.Figure, dict]:
-        self.load_data()
+
+        if data_type == "image":
+            self.load_data()
+            data = self.data[ext].value * 1.0
+        elif data_type == "background":
+            _, data = self.calculate_background(**kwargs)
+        elif data_type == "background_subtracted_image":
+            self.calculate_background(**kwargs)
+            data = self.data_sub_bkg[ext]
+        else:
+            raise ValueError(
+                f"data_type {data_type} not recognised; this can be 'image', 'background', or 'background_subtracted_image'")
+
         _, scale = self.extract_pixel_scale()
-        data = self.data[ext].value * 1.0
+
         other_args = {}
         if centre is not None and frame is not None:
             x, y = self.world_to_pixel(centre, 0)
@@ -3146,13 +3173,17 @@ class ImagingImage(Image):
 
         if "interval" not in normalize_kwargs:
             normalize_kwargs["interval"] = MinMaxInterval()
+        elif normalize_kwargs["interval"] == "minmax":
+            normalize_kwargs["interval"] = MinMaxInterval()
+        elif normalize_kwargs["interval"] == "zscale":
+            normalize_kwargs["interval"] = ZScaleInterval()
 
         if "origin" not in imshow_kwargs:
             imshow_kwargs["origin"] = "lower"
 
         if ax is None:
             if show_coords:
-                projection = self.wcs
+                projection = self.wcs[ext]
             else:
                 projection = None
 
@@ -3174,12 +3205,13 @@ class ImagingImage(Image):
         )
         ax.set_xlim(left, right)
         ax.set_ylim(bottom, top)
+
         ax.set_xlabel(" ")
         ax.set_ylabel(" ")
-        # ax.set_xlabel("Right Ascension (J2000)", size=16)
-        # ax.set_ylabel("Declination (J2000)", size=16, rotation=-90)
-        ax.tick_params(labelsize=14)
-        ax.yaxis.set_label_position("right")
+        ax.set_xlabel("Right Ascension (J2000)", size=16)
+        ax.set_ylabel("Declination (J2000)", size=16, rotation=-90)
+        # ax.tick_params(labelsize=14)
+        # ax.yaxis.set_label_position("right")
 
         # plt.tight_layout()
 
@@ -3437,11 +3469,18 @@ class ImagingImage(Image):
         plt.close(fig)
         return
 
-    def plot(self, fig: plt.Figure = None, ext: int = 0, **kwargs):
+    def plot(
+            self,
+            ax: plt.Axes = None,
+            fig: plt.Figure = None,
+            ext: int = 0,
+            **kwargs
+    ):
 
         if fig is None:
             fig = plt.figure(figsize=(12, 12), dpi=1000)
-        ax, fig = self.wcs_axes(fig=fig)
+        if ax is None:
+            ax, fig = self.wcs_axes(fig=fig, ext=ext)
         self.load_data()
         data = u.dequantify(self.data[ext])
         ax.imshow(
@@ -3456,11 +3495,11 @@ class ImagingImage(Image):
         )
         return ax, fig
 
-    def wcs_axes(self, fig: plt.Figure = None):
+    def wcs_axes(self, fig: plt.Figure = None, ext: int = 0):
         if fig is None:
             fig = plt.figure(figsize=(12, 12), dpi=1000)
         ax = fig.add_subplot(
-            projection=self.load_wcs()
+            projection=self.load_wcs()[ext]
         )
         return ax, fig
 
@@ -3483,7 +3522,7 @@ class ImagingImage(Image):
             c = "red"
 
         ax, fig = self.plot(fig=fig, ext=ext, zorder=0, **kwargs)
-        x, y = self.wcs.all_world2pix(cat[ra_col], cat[dec_col], 0)
+        x, y = self.wcs[ext].all_world2pix(cat[ra_col], cat[dec_col], 0)
         pcm = plt.scatter(x, y, c=c, cmap="plasma", marker="x", zorder=10)
         if colour_column is not None:
             fig.colorbar(pcm, ax=ax, label=cbar_label)
@@ -3688,7 +3727,7 @@ class ImagingImage(Image):
 
         self.load_wcs()
         _, pix_scale = self.extract_pixel_scale()
-        x, y = self.wcs.all_world2pix(coord.ra, coord.dec, 0)
+        x, y = self.wcs[ext].all_world2pix(coord.ra, coord.dec, 0)
         ap_radius_pix = ap_radius.to(units.pix, pix_scale).value
 
         mask = self.generate_mask(method='sep')
@@ -3722,6 +3761,7 @@ class ImagingImage(Image):
             mag_min: units.Quantity = 20.0 * units.mag,
             mag_max: units.Quantity = 30.0 * units.mag,
             interval: units.Quantity = 0.1 * units.mag,
+            ext: int = 0
     ):
 
         if output_dir is None:
@@ -3730,7 +3770,7 @@ class ImagingImage(Image):
         if SkyCoord is None:
             coord = self.extract_pointing()
         self.load_wcs()
-        x, y = self.wcs.all_world2pix(coord.ra, coord.dec, 0)
+        x, y = self.wcs[ext].all_world2pix(coord.ra, coord.dec, 0)
         sources = self.insert_synthetic_range(
             x=x, y=y,
             mag_min=mag_min,
@@ -3841,10 +3881,10 @@ class ImagingImage(Image):
                 **back_kwargs
             )
             if isinstance(data, units.Quantity):
-                back = bkg.back() * data.unit
+                bkg_data = bkg.back() * data.unit
             else:
-                back = bkg.back()
-            self.data_sub_bkg[ext] = (data - back)
+                bkg_data = bkg.back()
+            self.data_sub_bkg[ext] = (data - bkg_data)
 
         elif method == "photutils":
             data = self.data[ext]
@@ -3857,8 +3897,8 @@ class ImagingImage(Image):
                 bkg_estimator=bkg_estimator,
                 **back_kwargs
             )
-            back = bkg.background
-            self.data_sub_bkg[ext] = (data - back)
+            bkg_data = bkg.background
+            self.data_sub_bkg[ext] = (data - bkg_data)
 
         else:
             raise ValueError(f"Unrecognised method {method}.")
@@ -3867,10 +3907,10 @@ class ImagingImage(Image):
             back_file = self.copy(write)
             back_file.load_data()
             back_file.load_headers()
-            back_file.data[ext] = back
+            back_file.data[ext] = bkg_data
             back_file.write_fits_file()
 
-        return bkg
+        return bkg, bkg_data
 
     def generate_segmap(
             self,
@@ -3894,7 +3934,7 @@ class ImagingImage(Image):
         data = self.data[ext]
         left, right, bottom, top = u.check_margins(data=data, margins=margins)
 
-        bkg = self.calculate_background(method=method, ext=ext, **background_kwargs)
+        bkg, bkg_data = self.calculate_background(method=method, ext=ext, **background_kwargs)
 
         if method == "photutils":
             data_trim = u.trim_image(
@@ -3977,7 +4017,7 @@ class ImagingImage(Image):
             # This sets all the background pixels to False
             mask[segmap == 0] = False
             for coord in unmasked:
-                x_unmasked, y_unmasked = self.wcs.all_world2pix(coord.ra, coord.dec, 0)
+                x_unmasked, y_unmasked = self.wcs[ext].all_world2pix(coord.ra, coord.dec, 0)
                 # obj_id is the integer representing that object in the segmap
                 obj_id = segmap[int(np.round(y_unmasked)), int(np.round(x_unmasked))]
                 # If obj_id is zero, then our work here is already done (ie, the segmap routine read it as background anyway)
@@ -4083,11 +4123,11 @@ class ImagingImage(Image):
             segmap_output = None
 
         self.calculate_background(ext=ext, write=back_output)
-        self.load_wcs(ext=ext)
+        self.load_wcs()
         self.extract_pixel_scale()
-        if not self.wcs.footprint_contains(centre):
+        if not self.wcs[ext].footprint_contains(centre):
             return None, None, None, None
-        x, y = self.wcs.all_world2pix(centre.ra.value, centre.dec.value, 0)
+        x, y = self.wcs[ext].all_world2pix(centre.ra.value, centre.dec.value, 0)
         x = u.check_iterable(x)
         y = u.check_iterable(y)
         a = u.check_iterable((a_world.to(units.pix, self.pixel_scale_y)).value)
@@ -5036,10 +5076,16 @@ class HAWKIImage(ESOImagingImage):
         })
         return header_keys
 
+    def extract_chip_number(self, ext: int = 0):
+        return int(self.extract_header_item("HIERARCH ESO DET CHIP NO", ext=ext))
+
 
 class HAWKICoaddedImage(CoaddedImage):
     num_chips = 4
     instrument_name = "vlt-hawki"
+
+    def extract_chip_number(self, ext: int = 0):
+        return 0
 
     def extract_exposure_time(self):
         return 1 * units.s
@@ -5096,8 +5142,8 @@ class FORS2Image(ESOImagingImage):
         self.other_chip = None
         self.chip_number = None
 
-    def extract_chip_number(self):
-        chip_string = self.extract_header_item(key='HIERARCH ESO DET CHIP1 ID')
+    def extract_chip_number(self, ext: int = 0):
+        chip_string = self.extract_header_item(key='HIERARCH ESO DET CHIP1 ID', ext=ext)
         chip = 0
         if chip_string == 'CCID20-14-5-3':
             chip = 1
@@ -5156,9 +5202,20 @@ class FORS2CoaddedImage(CoaddedImage):
             self,
             **kwargs
     ):
+
+        skip_zp = False
+        zp = {}
         if self.filter.calib_retrievable():
             zp = self.calibration_from_qc1()
-        else:
+            skip_retrievable = True
+            if "skip_retrievable" in kwargs:
+                skip_retrievable = kwargs.pop("skip_retrievable")
+            u.debug_print(1, "skip_retrievable:", skip_retrievable)
+            if skip_retrievable:
+                skip_zp = True
+            u.debug_print(2, "skip_zp:", skip_zp)
+        u.debug_print(2, "skip_zp:", skip_zp)
+        if not skip_zp:
             zp = super().zeropoint(
                 **kwargs
             )

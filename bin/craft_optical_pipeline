@@ -1,3 +1,9 @@
+#!/usr/bin/env python
+#
+# See top-level LICENSE file for Copyright information
+#
+# -*- coding: utf-8 -*-
+
 # Code by Lachlan Marnoch, 2021
 import json
 import os
@@ -138,11 +144,15 @@ def main(
             field = fld.Field.from_params(name=field_name)
 
     if mode is None:
-        _, mode = u.select_option(message="Please select a mode.", options=["Imaging", "Spectroscopy", "Objects"])
+        _, mode = u.select_option(message="Please select a mode.",
+                                  options=["Imaging", "Spectroscopy", "Objects", "Exit"])
 
     mode = mode.lower()
 
-    if mode == "spectroscopy":
+    if mode == "exit":
+        exit()
+
+    elif mode == "spectroscopy":
         if epoch_name is None:
             # Build a list of imaging epochs from that field.
             field.gather_epochs_spectroscopy()
@@ -274,12 +284,9 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     furby = args.furby
-    furby_path = args.furby_path
+    fp = args.furby_path
     if furby is not None and furby_path is None:
-        furby_path = os.path.join(p.config["furby_dir"], "craco_fu", "data", furby, f"{furby}.json")
-
-    print(furby)
-    print(furby_path)
+        fp = os.path.join(p.config["furby_dir"], "craco_fu", "data", furby, f"{furby}.json")
 
     main(
         field_name=args.field,
@@ -293,5 +300,5 @@ if __name__ == '__main__':
         snr_min=args.snr_min,
         class_star_tolerance=args.class_star_tolerance,
         debug_level=args.d,
-        furby_path=furby_path,
+        furby_path=fp,
     )

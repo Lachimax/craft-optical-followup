@@ -24,7 +24,8 @@ setuptools.setup(
         "numpy",
         "PyYAML"
     ],
-    license='Attribution-NonCommercial-ShareAlike 4.0 International'
+    license='Attribution-NonCommercial-ShareAlike 4.0 International',
+    scripts=["bin/craft_optical_pipeline"]
 )
 
 param_path = os.path.join(os.getcwd(), "param")

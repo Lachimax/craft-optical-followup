@@ -126,23 +126,33 @@ def save_params(file: str, dictionary: dict):
 
 
 def select_coords(dictionary):
-    ra = None
     if "ra" in dictionary:
-        if "hms" in dictionary["ra"] and dictionary["ra"]["hms"] not in [None, 0]:
-            ra = dictionary["ra"]["hms"]
-        elif "decimal" in dictionary["ra"] and dictionary["ra"]["decimal"] not in [None, 0]:
-            ra = f"{dictionary['ra']['decimal']}d"
-        else:
-            raise ValueError("No valid Right Ascension found in dictionary.")
+        ra_key = "ra"
+    elif "alpha" in dictionary:
+        ra_key = "alpha"
+    else:
+        raise ValueError("No valid Right Ascension found in dictionary.")
 
-    dec = None
+    if "hms" in dictionary[ra_key] and dictionary[ra_key]["hms"] not in [None, 0]:
+        ra = dictionary[ra_key]["hms"]
+    elif "decimal" in dictionary[ra_key] and dictionary[ra_key]["decimal"] not in [None, 0]:
+        ra = f"{dictionary[ra_key]['decimal']}d"
+    else:
+        raise ValueError("No valid Right Ascension found in dictionary.")
+
     if "dec" in dictionary:
-        if "dms" in dictionary["dec"] and dictionary["dec"]["dms"] not in [None, 0]:
-            dec = dictionary["dec"]["dms"]
-        elif "decimal" in dictionary["dec"] and dictionary["dec"]["decimal"] not in [None, 0]:
-            dec = f"{dictionary['dec']['decimal']}d"
-        else:
-            raise ValueError("No valid Declination found in dictionary.")
+        dec_key = "dec"
+    elif "delta" in dictionary:
+        dec_key = "delta"
+    else:
+        raise ValueError("No valid Declination found in dictionary.")
+
+    if "dms" in dictionary[dec_key] and dictionary[dec_key]["dms"] not in [None, 0]:
+        dec = dictionary[dec_key]["dms"]
+    elif "decimal" in dictionary[dec_key] and dictionary[dec_key]["decimal"] not in [None, 0]:
+        dec = f"{dictionary[dec_key]['decimal']}d"
+    else:
+        raise ValueError("No valid Declination found in dictionary.")
 
     return ra, dec
 

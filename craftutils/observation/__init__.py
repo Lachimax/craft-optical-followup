@@ -110,6 +110,7 @@ master_imaging = None
 master_imaging_path = os.path.join(config["table_dir"], "master_imaging_table.yaml")
 master_imaging_columns = {
     "field_name": str,
+    "frb_tns_name": str,
     "epoch_name": str,
     "filter_name": str,
     "instrument": str,
@@ -139,6 +140,7 @@ master_objects_all = None
 master_objects_all_path = os.path.join(config["table_dir"], "master_all_objects_table.yaml")
 master_objects_columns = {
     "field_name": str,
+    "transient_tns_name": str,
     "object_name": str,
     "jname": str,
     "ra": units.deg,
