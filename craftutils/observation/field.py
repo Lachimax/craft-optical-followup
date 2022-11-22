@@ -3833,7 +3833,7 @@ class ImagingEpoch(Epoch):
                 "depth": depth
             }
 
-            if isinstance(self.field, FRBField):
+            if isinstance(self.field, FRBField) and self.field.frb.tns_name is not None:
                 entry["frb_tns_name"] = self.field.frb.tns_name
 
             obs.add_epoch(
