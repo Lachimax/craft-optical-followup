@@ -110,7 +110,7 @@ master_imaging = None
 master_imaging_path = os.path.join(config["table_dir"], "master_imaging_table.yaml")
 master_imaging_columns = {
     "field_name": str,
-    "frb_tns_name": str,
+    # "transient_tns_name": str,
     "epoch_name": str,
     "filter_name": str,
     "instrument": str,
@@ -140,7 +140,7 @@ master_objects_all = None
 master_objects_all_path = os.path.join(config["table_dir"], "master_all_objects_table.yaml")
 master_objects_columns = {
     "field_name": str,
-    "transient_tns_name": str,
+    # "transient_tns_name": str,
     "object_name": str,
     "jname": str,
     "ra": units.deg,
@@ -282,7 +282,7 @@ def add_entry(
 ):
     for item in required:
         if item not in entry:
-            raise ValueError(f"Required key {required} not found in entry.")
+            raise ValueError(f"Required key {item} not found in entry.")
 
     for colname in entry:
         if colname not in tbl["template"]:
@@ -346,6 +346,14 @@ def write_master_table(
         tbl.pop("template")
     tbl_list = list(map(lambda e: tbl[e], tbl))
     tbl_astropy = table.QTable(tbl_list)
+
+    if "transient_tns_name" in tbl_astropy.colnames:
+        for row in tbl_astropy:
+            if row["transient_tns_name"] != "N/A" \
+                    and row["field_name"].startswith("FRB") \
+                    and row["transient_tns_name"].startswith("FRB"):
+                row["field_name"] = row["transient_tns_name"]
+
     tbl_names = tbl_astropy.colnames
     names = sort_by.copy()
     names.reverse()

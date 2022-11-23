@@ -3834,7 +3834,7 @@ class ImagingEpoch(Epoch):
             }
 
             if isinstance(self.field, FRBField) and self.field.frb.tns_name is not None:
-                entry["frb_tns_name"] = self.field.frb.tns_name
+                entry["transient_tns_name"] = self.field.frb.tns_name
 
             obs.add_epoch(
                 epoch_name=self.name,
