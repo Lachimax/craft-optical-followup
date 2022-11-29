@@ -23,7 +23,10 @@ from astropy.coordinates import SkyCoord
 from astropy.time import Time
 from astropy.visualization import quantity_support
 
-import photutils
+try:
+    import photutils
+except ModuleNotFoundError:
+    print("photutils not installed; some photometry-related functionality will be unavailable.")
 
 try:
     import sep

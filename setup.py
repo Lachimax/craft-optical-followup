@@ -19,10 +19,12 @@ setuptools.setup(
     python_requires='>=3.5',
     install_requires=[
         "astropy",
+        "astroquery",
         "matplotlib",
         "requests",
         "numpy",
-        "PyYAML"
+        "PyYAML",
+        "sep",
     ],
     license='Attribution-NonCommercial-ShareAlike 4.0 International',
     scripts=["bin/craft_optical_pipeline"]
