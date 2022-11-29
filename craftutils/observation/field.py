@@ -1046,6 +1046,18 @@ class Field:
             survey=survey_name
         )
         if field_class is FRBField:
+            tns_name = None
+            if field_name[-1].isalpha():
+                if u.select_yn(
+                        message=f"Is '{field_name}' the TNS name of the FRB?",
+                ):
+                    tns_name = field_name
+                else:
+                    tns_name = u.user_input(
+                        message=f"Please enter the FRB TNS name, if it has one. Otherwise, leave blank.",
+                    )
+                    if tns_name in ["", " ", 'None']:
+                        tns_name = None
             if ra_err is None:
                 ra_err = 0.
             if dec_err is None:
@@ -1060,6 +1072,7 @@ class Field:
             yaml_dict["frb"]["position_err"]["a"]["stat"] = float(ra_err)
             yaml_dict["frb"]["position_err"]["b"]["stat"] = float(dec_err)
             yaml_dict["frb"]["host_galaxy"]["position"] = position
+            yaml_dict["frb"]["tns_name"] = tns_name
 
             p.save_params(field_param_path_yaml, yaml_dict)
 
