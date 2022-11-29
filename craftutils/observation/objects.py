@@ -281,6 +281,7 @@ class Object:
         self.set_name_filesys()
 
         self.photometry = {}
+        self.photometry_tbl_best = None
         self.photometry_tbl = None
         self.data_path = None
         self.output_file = None
@@ -607,13 +608,21 @@ class Object:
             output = os.path.join(self.data_path, f"{self.name_filesys}_photometry.pdf")
 
         plt.close()
-        ax = self.plot_photometry(**kwargs)
-        ax.legend()
-        plt.savefig(output)
-        plt.close()
-        return ax
+        axes = []
+        for best in (True, False):
+            ax = self.plot_photometry(**kwargs, best=best)
+            ax.legend()
+            plt.savefig(output)
+            axes.append(ax)
+            plt.close()
+        return axes
 
-    def plot_photometry(self, ax=None, **kwargs):
+    def plot_photometry(
+            self,
+            ax=None,
+            best: bool = False,
+            **kwargs
+    ):
         """
         Plots available photometry (mag v lambda_eff).
         :param ax: matplotlib ax object to plot with. A new object is generated if none is provided.
@@ -630,14 +639,15 @@ class Object:
             kwargs["ecolor"] = "black"
 
         self.estimate_galactic_extinction()
-        self.photometry_to_table(fmts=["ascii.ecsv", "ascii.csv"], best=False)
-        self.photometry_to_table(
-            output=self.build_photometry_table_path().replace(".ecsv", "_best.ecsv"),
-            fmts=["ascii.ecsv", "ascii.csv"], best=True)
+        photometry_tbl = self.photometry_to_table(
+            output=self.build_photometry_table_path(best=best),
+            fmts=["ascii.ecsv", "ascii.csv"],
+            best=best,
+        )
 
         with quantity_support():
 
-            valid = self.photometry_tbl[self.photometry_tbl["mag_sep"] > -990 * units.mag]
+            valid = photometry_tbl[photometry_tbl["mag_sep"] > -990 * units.mag]
             plot_limit = (-999 * units.mag == valid["mag_sep_err"])
             limits = valid[plot_limit]
             mags = valid[np.invert(plot_limit)]
@@ -672,9 +682,12 @@ class Object:
             ax.invert_yaxis()
         return ax
 
-    def build_photometry_table_path(self):
+    def build_photometry_table_path(self, best: bool = False):
         self.check_data_path()
-        return os.path.join(self.data_path, f"{self.name_filesys}_photometry.ecsv")
+        if best:
+            return os.path.join(self.data_path, f"{self.name_filesys}_photometry_best.ecsv")
+        else:
+            return os.path.join(self.data_path, f"{self.name_filesys}_photometry.ecsv")
 
     # def update_position_from_photometry(self):
     #     self.photometry_to_table()
@@ -699,8 +712,6 @@ class Object:
 
         if output is None:
             output = self.build_photometry_table_path()
-
-        # if self.photometry_tbl is None:
 
         tbls = []
         for instrument_name in self.photometry:
@@ -732,15 +743,17 @@ class Object:
                         tbls.append(phot_dict)
 
         if best:
-            self.photometry_tbl = table.vstack(tbls)
+            photometry_tbl = table.vstack(tbls)
+            self.photometry_tbl_best = photometry_tbl.copy()
         else:
-            self.photometry_tbl = table.QTable(tbls)
+            photometry_tbl = table.QTable(tbls)
+            self.photometry_tbl = photometry_tbl.copy()
 
         if output is not False:
             for fmt in fmts:
-                u.detect_problem_table(self.photometry_tbl, fmt="csv")
-                self.photometry_tbl.write(output.replace(".ecsv", fmt[fmt.find("."):]), format=fmt, overwrite=True)
-        return self.photometry_tbl
+                u.detect_problem_table(photometry_tbl, fmt="csv")
+                photometry_tbl.write(output.replace(".ecsv", fmt[fmt.find("."):]), format=fmt, overwrite=True)
+        return photometry_tbl
 
     def estimate_galactic_extinction(self, ax=None, r_v: float = 3.1, **kwargs):
         import extinction
@@ -886,12 +899,12 @@ class Object:
             self.load_output_file()
         if output is True:
             output = None
-        if self.photometry_tbl is None or len(self.photometry_tbl) == 0:
+        if self.photometry_tbl_best is None or len(self.photometry_tbl_best) == 0:
             self.photometry_to_table(output=output)
 
     def select_photometry(self, fil: str, instrument: str, local_output: bool = True):
         self.get_photometry_table(output=local_output)
-        fil_photom = self.photometry_tbl[self.photometry_tbl["band"] == fil]
+        fil_photom = self.photometry_tbl_best[self.photometry_tbl_best["band"] == fil]
         fil_photom = fil_photom[fil_photom["instrument"] == instrument]
         row = fil_photom[np.argmax(fil_photom["snr"])]
         photom_dict = self.photometry[instrument][fil][row["epoch_name"]]
@@ -920,7 +933,7 @@ class Object:
             local_output: bool = True
     ):
         self.get_photometry_table(output=local_output)
-        fil_photom = self.photometry_tbl[self.photometry_tbl["band"] == fil]
+        fil_photom = self.photometry_tbl_best[self.photometry_tbl_best["band"] == fil]
         fil_photom = fil_photom[fil_photom["instrument"] == instrument]
         row = fil_photom[np.argmax(fil_photom["snr_sep"])]
         photom_dict = self.photometry[instrument][fil][row["epoch_name"]]
@@ -944,20 +957,20 @@ class Object:
 
     def select_psf_photometry(self, local_output: bool = True):
         self.get_photometry_table(output=local_output)
-        idx = np.argmax(self.photometry_tbl["snr_psf"])
-        row = self.photometry_tbl[idx]
+        idx = np.argmax(self.photometry_tbl_best["snr_psf"])
+        row = self.photometry_tbl_best[idx]
         return self.photometry[row["instrument"]][row["band"]][row["epoch_name"]]
 
     def select_best_position(self, local_output: bool = True):
         self.get_photometry_table(output=local_output)
-        idx = np.argmin(self.photometry_tbl["ra_err"] * self.photometry_tbl["dec_err"])
-        row = self.photometry_tbl[idx]
+        idx = np.argmin(self.photometry_tbl_best["ra_err"] * self.photometry_tbl_best["dec_err"])
+        row = self.photometry_tbl_best[idx]
         return self.photometry[row["instrument"]][row["band"]][row["epoch_name"]]
 
     def select_deepest(self, local_output: bool = True):
         self.get_photometry_table(output=local_output)
-        idx = np.argmax(self.photometry_tbl["snr"])
-        row = self.photometry_tbl[idx]
+        idx = np.argmax(self.photometry_tbl_best["snr"])
+        row = self.photometry_tbl_best[idx]
         deepest = self.photometry[row["instrument"]][row["band"]][row["epoch_name"]]
         # if self.photometry_args is None:
         self.a = deepest["a"]
@@ -987,10 +1000,10 @@ class Object:
 
     def select_deepest_sep(self, local_output: bool = True):
         self.get_photometry_table(output=local_output)
-        if "snr_sep" not in self.photometry_tbl.colnames:
+        if "snr_sep" not in self.photometry_tbl_best.colnames:
             return None
-        idx = np.argmax(self.photometry_tbl["snr_sep"])
-        row = self.photometry_tbl[idx]
+        idx = np.argmax(self.photometry_tbl_best["snr_sep"])
+        row = self.photometry_tbl_best[idx]
         return self.photometry[row["instrument"]][row["band"]][row["epoch_name"]]
 
     def push_to_table(self, select: bool = False, local_output: bool = True):

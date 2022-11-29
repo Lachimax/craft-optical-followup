@@ -3206,6 +3206,9 @@ class ImagingEpoch(Epoch):
                                     imshow_kwargs={
                                         "cmap": "plasma"
                                     },
+                                    frb_kwargs={
+                                        "edgecolor": "black"
+                                    },
                                     normalize_kwargs=normalize_kwargs
                                 )
                                 output_path = os.path.join(fil_output_path,
