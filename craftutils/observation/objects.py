@@ -609,7 +609,7 @@ class Object:
 
         plt.close()
         axes = []
-        for best in (True, False):
+        for best in (False, True):
             ax = self.plot_photometry(**kwargs, best=best)
             ax.legend()
             plt.savefig(output)
@@ -900,7 +900,9 @@ class Object:
         if output is True:
             output = None
         if self.photometry_tbl_best is None or len(self.photometry_tbl_best) == 0:
-            self.photometry_to_table(output=output)
+            self.photometry_to_table(output=output, best=True)
+        if self.photometry_tbl is None or len(self.photometry_tbl) == 0:
+            self.photometry_to_table(output=output, best=False)
 
     def select_photometry(self, fil: str, instrument: str, local_output: bool = True):
         self.get_photometry_table(output=local_output)
@@ -932,8 +934,8 @@ class Object:
             instrument: str,
             local_output: bool = True
     ):
-        self.get_photometry_table(output=local_output)
-        fil_photom = self.photometry_tbl_best[self.photometry_tbl_best["band"] == fil]
+        # self.get_photometry_table(output=local_output)
+        fil_photom = self.photometry_tbl[self.photometry_tbl["band"] == fil]
         fil_photom = fil_photom[fil_photom["instrument"] == instrument]
         row = fil_photom[np.argmax(fil_photom["snr_sep"])]
         photom_dict = self.photometry[instrument][fil][row["epoch_name"]]
