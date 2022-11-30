@@ -1580,22 +1580,13 @@ class Transient(Object):
             **kwargs
         )
         self.host_galaxy = host_galaxy
+        self.host_candidates = []
         if not isinstance(date, time.Time) and date is not None:
             date = time.Time(date)
         self.date = date
         self.tns_name = None
         if "tns_name" in kwargs:
             self.tns_name = kwargs["tns_name"]
-
-    @classmethod
-    def default_params(cls):
-        default_params = super().default_params()
-        default_params.update({
-            "host_galaxy": Galaxy.default_params(),
-            "date": "0000-01-01",
-            "tns_name": None
-        })
-        return default_params
 
 
 class FRB(Transient):
@@ -1616,6 +1607,79 @@ class FRB(Transient):
             coord=self.position,
             DM=self.dm
         )
+
+    def probabilistic_association(
+            self,
+            img
+    ):
+        astm_rms = img.extract_astrometry_err()
+        a, b = self.position_err.uncertainty_quadrature()
+        a_img = np.sqrt(a ** 2 + astm_rms ** 2)
+        b_img = np.sqrt(b ** 2 + astm_rms ** 2)
+
+        self.x_frb.set_ee(
+            a=a_img.value,
+            b=b_img.value,
+            theta=0.,
+            cl=0.68,
+        )
+        img.load_output_file()
+        img.extract_pixel_scale()
+        filname = f'VLT_FORS2_{img.filter.band_name}'
+        config = dict(
+            max_radius=radius,
+            skip_bayesian=False,
+            npixels=9,
+            image_file=img.path,
+            cut_size=30.,
+            filter=filname,
+            ZP=img.zeropoint_best["zeropoint_img"].value,
+            deblend=True,
+            cand_bright=17.,
+            cand_separation=radius * units.arcsec,
+            plate_scale=(1 * units.pix).to(units.arcsec, img.pixel_scale_y),
+        )
+        print("P(U) ==", p_U)
+        priors = path.priors.load_std_priors()["adopted"]
+        priors["U"] = p_U
+        ass = associate.run_individual(
+            config=config,
+            #         show=True,
+            #         verbose=True,
+            FRB=x_frb,
+            prior=priors
+            #     skip_bayesian=True
+        )
+
+        p_ux = ass.P_Ux
+        print("P(U|x) ==", p_ux)
+        cand_tbl = table.QTable.from_pandas(ass.candidates)
+        p_ox = cand_tbl[0]["P_Ox"]
+        print("Max P(O|x_i) ==", p_ox)
+        print("\n\n")
+        cand_tbl["ra"] *= units.deg
+        cand_tbl["dec"] *= units.deg
+        cand_tbl["separation"] *= units.arcsec
+        cand_tbl[filname] *= units.mag
+
+        self.x_frb.set_ee(
+            a=a.value,
+            b=b.value,
+            theta=0.,
+            cl=0.68,
+        )
+
+        return cand_tbl, p_ox, p_ux
+
+    @classmethod
+    def default_params(cls):
+        default_params = super().default_params()
+        default_params.update({
+            "host_galaxy": Galaxy.default_params(),
+            "date": "0000-01-01",
+            "tns_name": None
+        })
+        return default_params
 
     @classmethod
     def _date_from_name(cls, name):
