@@ -896,18 +896,20 @@ class Object:
                 self.name = name
             return name
 
-    def get_photometry_table(self, output: bool = False):
+    def get_photometry_table(self, output: bool = False, best: bool = False, force: bool = False):
         if not self.photometry:
             self.load_output_file()
         if output is True:
             output = None
-        if self.photometry_tbl_best is None or len(self.photometry_tbl_best) == 0:
-            self.photometry_to_table(output=output, best=True)
-        if self.photometry_tbl is None or len(self.photometry_tbl) == 0:
-            self.photometry_to_table(output=output, best=False)
+        tbl = None
+        if best and (force or self.photometry_tbl_best is None or len(self.photometry_tbl_best) == 0):
+            tbl = self.photometry_to_table(output=output, best=True)
+        elif not best and (force or self.photometry_tbl is None or len(self.photometry_tbl) == 0):
+            tbl = self.photometry_to_table(output=output, best=False)
+        return tbl
 
     def select_photometry(self, fil: str, instrument: str, local_output: bool = True):
-        self.get_photometry_table(output=local_output)
+        self.get_photometry_table(output=local_output, best=True)
         fil_photom = self.photometry_tbl_best[self.photometry_tbl_best["band"] == fil]
         fil_photom = fil_photom[fil_photom["instrument"] == instrument]
         row = fil_photom[np.argmax(fil_photom["snr"])]
@@ -936,7 +938,7 @@ class Object:
             instrument: str,
             local_output: bool = True
     ):
-        # self.get_photometry_table(output=local_output)
+        self.get_photometry_table(output=local_output, best=False)
         fil_photom = self.photometry_tbl[self.photometry_tbl["band"] == fil]
         fil_photom = fil_photom[fil_photom["instrument"] == instrument]
         row = fil_photom[np.argmax(fil_photom["snr_sep"])]
@@ -960,7 +962,7 @@ class Object:
         return photom_dict, mean
 
     def select_psf_photometry(self, local_output: bool = True):
-        self.get_photometry_table(output=local_output)
+        self.get_photometry_table(output=local_output, best=True)
         idx = np.argmax(self.photometry_tbl_best["snr_psf"])
         row = self.photometry_tbl_best[idx]
         return self.photometry[row["instrument"]][row["band"]][row["epoch_name"]]
@@ -972,9 +974,9 @@ class Object:
         return self.photometry[row["instrument"]][row["band"]][row["epoch_name"]]
 
     def select_deepest(self, local_output: bool = True):
-        self.get_photometry_table(output=local_output)
-        idx = np.argmax(self.photometry_tbl_best["snr"])
-        row = self.photometry_tbl_best[idx]
+        self.get_photometry_table(output=local_output, best=False)
+        idx = np.argmax(self.photometry_tbl["snr"])
+        row = self.photometry_tbl[idx]
         deepest = self.photometry[row["instrument"]][row["band"]][row["epoch_name"]]
         # if self.photometry_args is None:
         self.a = deepest["a"]
@@ -1003,7 +1005,7 @@ class Object:
         return deepest
 
     def select_deepest_sep(self, local_output: bool = True):
-        self.get_photometry_table(output=local_output)
+        self.get_photometry_table(output=local_output, best=True)
         if "snr_sep" not in self.photometry_tbl_best.colnames:
             return None
         idx = np.argmax(self.photometry_tbl_best["snr_sep"])
