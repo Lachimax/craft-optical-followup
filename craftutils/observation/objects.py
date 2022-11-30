@@ -612,6 +612,8 @@ class Object:
         for best in (False, True):
             ax = self.plot_photometry(**kwargs, best=best)
             ax.legend()
+            if best:
+                output = output.replace(".pdf", "_best.pdf")
             plt.savefig(output)
             axes.append(ax)
             plt.close()
