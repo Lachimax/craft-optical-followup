@@ -347,12 +347,19 @@ def write_master_table(
     tbl_list = list(map(lambda e: tbl[e], tbl))
     tbl_astropy = table.QTable(tbl_list)
 
+    # For FRB fields, try to make the field names match the TNS name (if it exists)
     if "transient_tns_name" in tbl_astropy.colnames:
+        change_dict = {}
         for row in tbl_astropy:
             if row["transient_tns_name"] != "N/A" \
                     and row["field_name"].startswith("FRB") \
                     and row["transient_tns_name"].startswith("FRB"):
-                row["field_name"] = row["transient_tns_name"]
+                change_dict[row["field_name"]] = row["transient_tns_name"]
+        # Some objects in an FRB field will not have an associated TNS name (non-host objects of interest) so we loop again
+        for row in tbl_astropy:
+            if row["field_name"] in change_dict:
+                row["field_name"] = change_dict[row["field_name"]]
+
 
     tbl_names = tbl_astropy.colnames
     names = sort_by.copy()
