@@ -53,8 +53,10 @@ def skycoord_to_position_dict(skycoord: SkyCoord):
     ra = s[:s.find(" ")]
     dec = s[s.find(" ") + 1:]
 
-    position = {"dec": {"decimal": dec_float, "dms": dec},
-                "ra": {"decimal": ra_float, "hms": ra}}
+    position = {
+        "alpha": {"decimal": ra_float, "hms": ra},
+        "delta": {"decimal": dec_float, "dms": dec},
+    }
 
     return position
 
