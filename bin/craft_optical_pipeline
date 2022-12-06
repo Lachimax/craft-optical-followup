@@ -285,7 +285,7 @@ if __name__ == '__main__':
 
     furby = args.furby
     fp = args.furby_path
-    if furby is not None and furby_path is None:
+    if furby is not None and fp is None:
         fp = os.path.join(p.config["furby_dir"], "craco_fu", "data", furby, f"{furby}.json")
 
     main(

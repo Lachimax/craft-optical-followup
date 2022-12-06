@@ -67,8 +67,13 @@ def check_for_config():
             __name__,
             os.path.join("..", f"param", "config_template.yaml")).decode()
         print(type(config_text))
-        config_text = config_text.replace("proj_dir: <some_directory>/craft-optical-followup/",
-                                          f"proj_dir: {os.getcwd()}/")
+        config_text = config_text.replace(
+            "proj_dir: <some_directory>/craft-optical-followup/",
+            f"proj_dir: {os.getcwd()}/")
+        config_text = config_text.replace(
+            "top_data_dir: <data_directory>",
+            f"top_data_dir: {os.path.expanduser('~')}/Data/"
+        )
 
         with open(config_file, "w") as cfg:
             cfg.write(config_text)
@@ -84,7 +89,8 @@ def check_for_config():
         p = load_params(config_file)
     else:
         for param in p:
-            p[param] = u.check_trailing_slash(p[param])
+            if p[param] is not None:
+                p[param] = u.check_trailing_slash(p[param])
         save_params(config_file, p)
         yaml_to_json(config_file)
     return p
