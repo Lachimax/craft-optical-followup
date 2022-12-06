@@ -74,6 +74,10 @@ def check_for_config():
             "top_data_dir: <data_directory>",
             f"top_data_dir: {os.path.expanduser('~')}/Data/"
         )
+        config_text = config_text.replace(
+            "table_dir: null",
+            f"table_dir: {os.path.expanduser('~')}/Data/tables/"
+        )
 
         with open(config_file, "w") as cfg:
             cfg.write(config_text)

@@ -9,8 +9,8 @@ import craftutils.params as p
 import craftutils.utils as u
 
 config = p.config
-
-u.mkdir_check_nested(config["table_dir"])
+if config["table_dir"] is not None:
+    u.mkdir_check_nested(config["table_dir"])
 
 
 def _construct_column_lists(columns: dict, replace_str: bool = True):
