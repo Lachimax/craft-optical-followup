@@ -1603,6 +1603,7 @@ class Transient(Object):
 
 
 class FRB(Transient):
+    ism_models = {}
     def __init__(
             self,
             dm: Union[float, units.Quantity] = None,
@@ -1677,6 +1678,21 @@ class FRB(Transient):
         )
         return dm
 
+    def dm_mw_ism(
+            self,
+            ism_model: str = "ne2001",
+            distance: Union[units.Quantity, float] = 100. * units.kpc,
+    ):
+        ism_model = ism_model.lower()
+        if ism_model == "ne2001":
+            func = self.dm_mw_ism_ne2001
+        elif ism_model == "ymw16":
+            func = self.dm_mw_ism_ymw16
+        else:
+            raise ValueError(f"Model {ism_model} not recognised.")
+        dm_ism = func(distance=distance)
+        return dm_ism
+
     def dm_mw_ism_cum(
             self,
             max_distance: units.Quantity = 20. * units.kpc,
@@ -1708,37 +1724,67 @@ class FRB(Transient):
             "d": d
         })
 
-    def dm_mw_halo(self, rmax: float = 1.):
+    def dm_mw_halo(
+            self,
+            model: Union[str, frb.halos.models.ModifiedNFW] = "all",
+            **kwargs,
+    ):
         import frb.halos.models as halos
         # from frb.mw import haloDM
-        outputs = {}
-        mw_halo_yf17 = halos.YF17()
-        mw_halo_x = halos.MilkyWay()
-        mw_halo_mb15 = halos.MB15()
-        sun_orbit = 0 * units.m  # 2.7e17 * units.km
-        outputs["dm_halo_mw_yf17"] = mw_halo_yf17.Ne_Rperp(sun_orbit, rmax=rmax) / 2
-        outputs["dm_halo_mw_pz19_rough"] = mw_halo_x.Ne_Rperp(sun_orbit, rmax=rmax) / 2
-        outputs["dm_halo_mw_mb15"] = mw_halo_mb15.Ne_Rperp(sun_orbit, rmax=rmax) / 2
-        # outputs["dm_halo_mw_pz19"] = haloDM(self.position)
-        outputs["dm_halo_mw_pz19"] = self.dm_mw_halo_pz19()
-        return outputs
 
-    def dm_mw_halo_pz19(
+        if isinstance(model, str):
+            model = model.lower()
+            halo_models = {
+                "yf17": halos.YF17,
+                "pz19": halos.MilkyWay,
+                "mb15": halos.MB15
+            }
+            if model == "all":
+                outputs = {}
+                for halo_model in halo_models:
+                    outputs[f"dm_halo_mw_{halo_model}"] = self._dm_mw_halo(
+                        halo_model=halo_models[halo_model](),
+                        **kwargs
+                    )
+                return outputs
+            elif model not in halo_models:
+                raise ValueError(f"Supported halo models are {list(halo_models.keys())}, not {model}")
+            else:
+                return self._dm_mw_halo(
+                    halo_model=halo_models[model](),
+                    **kwargs
+                )
+        else:
+            return self._dm_mw_halo(
+                    halo_model=model,
+                    **kwargs
+                )
+
+    def _dm_mw_halo(
             self,
-            distance: units.Quantity = None,
-            zero: bool = True,
-            halo_model=None
+            halo_model=None,
+            distance: Union[units.Quantity, float] = 1.,
+            zero_distance: units.Quantity = 10 * units.kpc,
     ):
-        from frb.halos.models import MilkyWay
+        """
+
+        :param distance: Distance from MW centre to which to evaluate DM. If a non-Quantity number is passed, it will be
+            interpreted as a multiple of the model's virial radius (R200).
+        :param zero_distance: The distance to which to zero the inner volume of the halo
+        :param halo_model: Halo model to evaluate.
+        :return:
+        """
+
         from ne2001 import density
         if halo_model is None:
+            from frb.halos.models import MilkyWay
             halo_model = MilkyWay()
-        if distance is None:
-            distance = halo_model.r200
+        if not isinstance(distance, units.Quantity):
+            distance = halo_model.r200 * distance
         u.dequantify(distance, units.kpc)
-        # Zero out inner 10kpc?
-        if zero:
-            halo_model.zero_inner_ne = 10.  # kpc
+        # Zero out inner volume
+        zero_distance = zero_distance.to(units.kpc)
+        halo_model.zero_inner_ne = zero_distance.value  # kpc
         params = dict(F=1., e_density=1.)
         model_ne = density.NEobject(halo_model.ne, **params)
         dm_halo = model_ne.DM(
@@ -1752,16 +1798,19 @@ class FRB(Transient):
             self,
             rmax: float = 1.,
             step_size: units.Quantity = 1 * units.kpc,
+            halo_model: frb.halos.models.ModifiedNFW = None,
+            **kwargs
     ):
-        from frb.halos.models import MilkyWay
-        halo_model = MilkyWay()
+        if halo_model is None:
+            from frb.halos.models import MilkyWay
+            halo_model = MilkyWay()
         max_distance = rmax * halo_model.r200
         i = 0 * units.kpc
         dm = []
         d = []
         while i < max_distance:
             d.append(i * 1.)
-            dm_this = self.dm_mw_halo_pz19(distance=i)
+            dm_this = self._dm_mw_halo(halo_model=halo_model, distance=i, **kwargs)
             dm.append(dm_this)
             i += step_size
 
@@ -1769,6 +1818,16 @@ class FRB(Transient):
             "DM": dm,
             "d": d
         })
+
+    def dm_exgal(
+            self,
+            ism_model: str = "ne2001",
+            halo_model: str = "pz19"
+    ):
+        if halo_model == "all":
+            raise ValueError("Please specify a single halo model.")
+        dm_mw = self.dm_mw_halo(model=halo_model) + self.dm_mw_ism(ism_model=ism_model)
+        return self.dm - dm_mw
 
     def dm_cosmic(self, **kwargs):
         from frb.dm.igm import average_DM
@@ -1785,6 +1844,20 @@ class FRB(Transient):
     #     dm_cosmic = self.estimate_dm_cosmic()
     #     dm_halo = 60 * dm_units
     #     return self.dm - dm_ism - dm_cosmic - dm_halo
+
+    def z_from_dm(
+            self,
+            dm_host: units.Quantity = 0,
+            **kwargs
+    ):
+        from frb.dm.igm import z_from_DM
+        dm = self.dm_exgal(**kwargs) - dm_host
+        return z_from_DM(
+            DM=dm,
+            coord=None,
+            cosmo=cosmology,
+            corr_nuisance=False
+        )
 
     def foreground_accounting(
             self,
