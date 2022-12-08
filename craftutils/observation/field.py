@@ -1354,7 +1354,7 @@ class FRBField(Field):
             plot,
             img: image.ImagingImage,
             ext: int = 0,
-            colour: str = "white",
+            colour: str = None,
             frb_kwargs: dict = {},
             plot_centre: bool = False,
             include_img_err: bool = True,
@@ -1373,6 +1373,8 @@ class FRBField(Field):
         img.extract_pixel_scale()
         if "include_img_err" in frb_kwargs:
             include_img_err = frb_kwargs.pop("include_img_err")
+        if "edgecolor" not in frb_kwargs:
+            frb_kwargs["edgecolor"] = colour
         if colour is not None:  # "edgecolor" not in frb_kwargs:
             frb_kwargs["edgecolor"] = colour
         if "facecolor" not in frb_kwargs:
@@ -3912,8 +3914,9 @@ class ImagingEpoch(Epoch):
         else:
             instrument = param_dict.pop("instrument").lower()
 
+        fld_from_dict = param_dict.pop("field")
         if field is None:
-            field = param_dict.pop("field")
+            field = fld_from_dict
         # else:
         #     param_dict.pop("field")
 
