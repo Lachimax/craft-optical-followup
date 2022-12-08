@@ -1,0 +1,17 @@
+name: craft-optical-followup
+channels:
+  - defaults
+  - astropy
+  - conda-forge
+dependencies:
+  - python>=3.5
+  - setuptools>=65.0
+  - astropy>=5.0
+  - astroquery>=0.4
+  - matplotlib>=3.0
+  - sep>=1.0
+  - photutils>=1.5
+  - requests
+  - numpy=1.23
+  - PyYAML>=5.3
+  - reproject>=0.9.1
