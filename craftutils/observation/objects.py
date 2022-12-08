@@ -114,7 +114,7 @@ class PositionUncertainty:
                 if "stat" in uncertainty[ra_key] and uncertainty[ra_key]["stat"] is not None:
                     ra_err_stat = uncertainty[ra_key]["stat"]
                     if isinstance(ra_err_stat, str):
-                        ra_err_stat = Longitude(ra_err_stat)
+                        ra_err_stat = (Longitude(ra_err_stat) * np.cos(position.dec)).to("arcsec")
 
             dec_key = None
             if "dec" in uncertainty and uncertainty["dec"] is not None:

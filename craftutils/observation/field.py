@@ -409,23 +409,24 @@ class Field:
         self.cat_gaia = None
         self.irsa_extinction = None
 
-        for obj in objs:
-            if type(objs) is dict:
-                if obj != "<name>":
-                    obj_dict = objs[obj]
-                    if "name" not in obj_dict or obj_dict["name"] is None:
-                        obj_dict["name"] = name
+        if objs is not None:
+            for obj in objs:
+                if type(objs) is dict:
+                    if obj != "<name>":
+                        obj_dict = objs[obj]
+                        if "name" not in obj_dict or obj_dict["name"] is None:
+                            obj_dict["name"] = name
+                    else:
+                        continue
+                elif type(objs) is list:
+                    obj_dict = obj
                 else:
+                    break
+                if "position" not in obj_dict:
+                    obj_dict = {"position": obj_dict}
+                if obj_dict["name"] is None:
                     continue
-            elif type(objs) is list:
-                obj_dict = obj
-            else:
-                break
-            if "position" not in obj_dict:
-                obj_dict = {"position": obj_dict}
-            if obj_dict["name"] is None:
-                continue
-            self.add_object_from_dict(obj_dict)
+                self.add_object_from_dict(obj_dict)
 
         self.load_output_file()
 
