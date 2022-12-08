@@ -413,6 +413,8 @@ class Field:
             if type(objs) is dict:
                 if obj != "<name>":
                     obj_dict = objs[obj]
+                    if "name" not in obj_dict or obj_dict["name"] is None:
+                        obj_dict["name"] = name
                 else:
                     continue
             elif type(objs) is list:
@@ -421,8 +423,8 @@ class Field:
                 break
             if "position" not in obj_dict:
                 obj_dict = {"position": obj_dict}
-            if "name" not in obj_dict or obj_dict["name"] is None:
-                obj_dict["name"] = obj
+            if obj_dict["name"] is None:
+                continue
             self.add_object_from_dict(obj_dict)
 
         self.load_output_file()
