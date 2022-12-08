@@ -3912,8 +3912,9 @@ class ImagingEpoch(Epoch):
         else:
             instrument = param_dict.pop("instrument").lower()
 
+        fld_from_dict = param_dict.pop("field")
         if field is None:
-            field = param_dict.pop("field")
+            field = fld_from_dict
         # else:
         #     param_dict.pop("field")
 
