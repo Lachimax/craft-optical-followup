@@ -1,0 +1,10 @@
+astropy>=5.0
+astroquery>=0.4
+matplotlib>=3.0
+numpy>=1.23
+photutils>=1.5
+PyYAML>=5.3
+reproject>=0.9.1
+requests
+sep>=1.0
+setuptools>=65.0
