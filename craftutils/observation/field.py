@@ -2230,6 +2230,7 @@ class ImagingEpoch(Epoch):
         self.frames_science = {}
         self.frames_reduced = {}
         self.frames_trimmed = {}
+        self.frames_subtracted = {}
         self.frames_normalised = {}
         self.frames_registered = {}
         self.frames_astrometry = {}
@@ -2266,6 +2267,12 @@ class ImagingEpoch(Epoch):
                 "keywords": {
                     "alternate_dir": None
                 }
+            },
+            "subtract_background_frames": {
+                "method": cls.proc_subtract_background_frames,
+                "message": "Subtract background from frames using sep?",
+                "default": False,
+                "keywords": {}
             },
             "register_frames": {
                 "method": cls.proc_register,
@@ -2364,6 +2371,34 @@ class ImagingEpoch(Epoch):
 
     def proc_download(self, output_dir: str, **kwargs):
         pass
+
+    def proc_subtract_background_frames(self, output_dir: str, **kwargs):
+        self.frames_subtracted = {}
+        self.subtract_background_frames(
+            output_dir=output_dir,
+            **kwargs
+        )
+
+    def subtract_background_frames(
+            self,
+            output_dir: str,
+            frames: dict = None,
+            **kwargs
+    ):
+        if frames is None:
+            frames = self.frames_normalised
+
+        for fil in frames:
+            frame_list = frames[fil]
+            for frame in frame_list:
+                subbed_path = os.path.join(output_dir, fil, frame.name + ".fits")
+                frame.model_background_photometry(
+                    write_subbed=subbed_path,
+                    do_mask=True,
+                    **kwargs
+                )
+                new_frame = type(frame)(subbed_path)
+                self.add_frame_subtracted(new_frame)
 
     def proc_register(self, output_dir: str, **kwargs):
         self.frames_registered = {}
@@ -2474,16 +2509,18 @@ class ImagingEpoch(Epoch):
 
         self.frames_astrometry = {}
 
-        if "register_frames" in self.do_kwargs and self.do_kwargs["register_frames"]:
-            self.correct_astrometry_frames(
-                output_dir=output_dir,
-                frames=self.frames_registered,
-                **kwargs)
+        if "frames" in kwargs:
+            frames = self._get_frames(frame_type=kwargs.pop("frames"))
+        elif "register_frames" in self.do_kwargs and self.do_kwargs["register_frames"]:
+            frames = self._get_frames(frame_type="registered")
         else:
-            self.correct_astrometry_frames(
-                output_dir=output_dir,
-                frames=self.frames_normalised,
-                **kwargs)
+            frames = self._get_frames(frame_type="normalised")
+
+        self.correct_astrometry_frames(
+            output_dir=output_dir,
+            frames=frames,
+            **kwargs
+        )
 
     def correct_astrometry_frames(
             self,
@@ -3453,6 +3490,8 @@ class ImagingEpoch(Epoch):
             image_dict = self.frames_trimmed
         elif frame_type in ("normalised", "frames_normalised"):
             image_dict = self.frames_normalised
+        elif frame_type in ("subtracted", "frames_substracted"):
+            image_dict = self.frames_subtracted
         elif frame_type in ("registered", "frames_registered"):
             image_dict = self.frames_registered
         elif frame_type in ("astrometry", "frames_astrometry"):
@@ -3496,6 +3535,7 @@ class ImagingEpoch(Epoch):
             "frames_raw": _output_img_list(self.frames_raw),
             "frames_reduced": _output_img_dict_list(self.frames_reduced),
             "frames_normalised": _output_img_dict_list(self.frames_normalised),
+            "frames_subtracted": _output_img_dict_list(self.frames_subtracted),
             "frames_registered": _output_img_dict_list(self.frames_registered),
             "frames_astrometry": _output_img_dict_list(self.frames_astrometry),
             "frames_diagnosed": _output_img_dict_list(self.frames_diagnosed),
@@ -3556,6 +3596,13 @@ class ImagingEpoch(Epoch):
                         for frame in set(outputs["frames_normalised"][fil]):
                             if os.path.isfile(frame):
                                 self.add_frame_normalised(frame=frame)
+            if "frames_subtracted" in outputs:
+                for fil in outputs["frames_subtracted"]:
+                    if outputs["frames_subtracted"][fil] is not None:
+                        for frame in set(outputs["frames_subtracted"][fil]):
+                            if os.path.isfile(frame):
+                                self.add_frame_subtracted(frame=frame)
+
             if "frames_registered" in outputs:
                 for fil in outputs["frames_registered"]:
                     if outputs["frames_registered"][fil] is not None:
@@ -3694,6 +3741,9 @@ class ImagingEpoch(Epoch):
     def add_frame_trimmed(self, frame: image.ImagingImage):
         self._add_frame(frame=frame, frames_dict=self.frames_trimmed, frame_type="reduced")
 
+    def add_frame_subtracted(self, frame: Union[str, image.ImagingImage]):
+        return self._add_frame(frame=frame, frames_dict=self.frames_subtracted, frame_type="subtracted")
+
     def add_frame_registered(self, frame: Union[str, image.ImagingImage]):
         return self._add_frame(frame=frame, frames_dict=self.frames_registered, frame_type="registered")
 
@@ -3742,6 +3792,9 @@ class ImagingEpoch(Epoch):
             if fil not in self.frames_normalised:
                 if isinstance(self.frames_normalised, dict):
                     self.frames_normalised[fil] = []
+            if fil not in self.frames_subtracted:
+                if isinstance(self.frames_subtracted, dict):
+                    self.frames_subtracted[fil] = []
             if fil not in self.frames_registered:
                 if isinstance(self.frames_registered, dict):
                     self.frames_registered[fil] = []
@@ -5758,6 +5811,7 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
             "sort_reduced": eso_stages["sort_reduced"],
             "trim_reduced": eso_stages["trim_reduced"],
             "convert_to_cs": eso_stages["convert_to_cs"],
+            "subtract_background_frames": ie_stages["subtract_background_frames"],
             "register_frames": ie_stages["register_frames"],
             "correct_astrometry_frames": ie_stages["correct_astrometry_frames"],
             "frame_diagnostics": ie_stages["frame_diagnostics"],

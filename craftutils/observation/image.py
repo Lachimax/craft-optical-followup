@@ -2103,6 +2103,9 @@ class ImagingImage(Image):
         self.close()
         return left, right, bottom, top
 
+    # TODO: Add option to run Astrometry.net via API / astroquery:
+    # https://astroquery.readthedocs.io/en/latest/astrometry_net/astrometry_net.html
+
     def correct_astrometry(
             self,
             output_dir: str = None,
@@ -3737,7 +3740,7 @@ class ImagingImage(Image):
         x, y = self.wcs[ext].all_world2pix(coord.ra, coord.dec, 0)
         ap_radius_pix = ap_radius.to(units.pix, pix_scale).value
 
-        self.model_background_photometry(method="sep", mask=True, ext=ext, **kwargs)
+        self.model_background_photometry(method="sep", do_mask=True, ext=ext, **kwargs)
         rms = self.sep_background[ext].rms()
 
         # plt.imshow(rms)
@@ -3872,13 +3875,14 @@ class ImagingImage(Image):
             filter_size: int = 3,
             method: str = "sep",
             write: str = None,
-            mask: bool = True,
+            write_subbed: str = None,
+            do_mask: bool = False,
             **back_kwargs
     ):
         self.load_data()
 
         mask = None
-        if mask:
+        if do_mask:
             mask = self.generate_mask(method=method)
             mask = mask.astype(bool)
 
@@ -3921,6 +3925,13 @@ class ImagingImage(Image):
             back_file.load_headers()
             back_file.data[ext] = bkg_data
             back_file.write_fits_file()
+
+        if isinstance(write_subbed, str):
+            subbed_file = self.copy(write_subbed)
+            subbed_file.load_data()
+            subbed_file.load_headers()
+            subbed_file.data[ext] = self.data[ext] - bkg_data
+            subbed_file.write_fits_file()
 
         return bkg, bkg_data
 
@@ -4101,7 +4112,7 @@ class ImagingImage(Image):
     ):
         self.extract_pixel_scale()
         pixel_radius = aperture_radius.to(units.pix, self.pixel_scale_y)
-        self.model_background_photometry(ext=ext)
+        self.model_background_photometry(ext=ext, do_mask=True)
         if sub_background:
             data = self.data_sub_bkg[ext]
         else:
