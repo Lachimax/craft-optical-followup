@@ -551,9 +551,15 @@ def latex_setup(
         font_family: str = 'serif',
         math_fontset: str = None,
         packages: list = ["amsmath"],
-        use_tex: bool = True,
         **kwargs
 ):
+    from distutils.spawn import find_executable
+
+    if find_executable("latex"):
+        use_tex = True
+    else:
+        use_tex = False
+
     if "font.serif" not in kwargs:
         kwargs["font.serif"] = 'Times'
     if "font.sans-serif" not in kwargs:

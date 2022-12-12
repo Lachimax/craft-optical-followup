@@ -1,4 +1,5 @@
 # Code by Lachlan Marnoch, 2021
+import copy
 import math
 import string
 import os
@@ -514,11 +515,11 @@ class Image:
         return self.data
 
     def to_ccddata(self, unit: Union[str, units.Unit]):
-        import ccdproc
+        from ccdproc import CCDData
         if unit is None:
-            return ccdproc.CCDData.read(self.path)
+            return CCDData.read(self.path)
         else:
-            return ccdproc.CCDData.read(self.path, unit=unit)
+            return CCDData.read(self.path, unit=unit)
 
     # @classmethod
     # def from_ccddata(self, ccddata: 'ccdproc.CCDData', path: str):
@@ -2692,15 +2693,15 @@ class ImagingImage(Image):
 
         return image
 
-    def convert_from_cs(self, output_path: str, ext: int = 0):
-        """
-        NOT IMPLEMENTED.
-        Assuming units of counts / second, converts the image back to total counts.
-        :param output_path: Path to write converted file to.
-        :param ext: FITS extension to modify.
-        :return new: ImagingImage object representing the modified file.
-        """
-        pass
+    # def convert_from_cs(self, output_path: str, ext: int = 0):
+    #     """
+    #     NOT IMPLEMENTED.
+    #     Assuming units of counts / second, converts the image back to total counts.
+    #     :param output_path: Path to write converted file to.
+    #     :param ext: FITS extension to modify.
+    #     :return new: ImagingImage object representing the modified file.
+    #     """
+    #     pass
 
     def convert_to_cs(self, output_path: str, ext: int = 0):
         """
@@ -3107,21 +3108,23 @@ class ImagingImage(Image):
             mask: np.ndarray = None,
             scale_bar_object: objects.Extragalactic = None,
             scale_bar_kwargs: dict = None,
-            data_type: str = "image",
+            data: str = "image",
             **kwargs,
     ) -> Tuple[plt.Axes, plt.Figure, dict]:
 
-        if data_type == "image":
+        if data == "image":
             self.load_data()
             data = self.data[ext].value * 1.0
-        elif data_type == "background":
-            _, data = self.calculate_background(**kwargs)
-        elif data_type == "background_subtracted_image":
-            self.calculate_background(**kwargs)
+        elif data == "background":
+            _, data = self.model_background_photometry(**kwargs)
+        elif data == "background_subtracted_image":
+            self.model_background_photometry(**kwargs)
             data = self.data_sub_bkg[ext]
+        elif isinstance(data, np.ndarray):
+            data = data
         else:
             raise ValueError(
-                f"data_type {data_type} not recognised; this can be 'image', 'background', or 'background_subtracted_image'")
+                f"data_type {data} not recognised; this can be 'image', 'background', or 'background_subtracted_image'")
 
         _, scale = self.extract_pixel_scale()
 
@@ -3734,10 +3737,7 @@ class ImagingImage(Image):
         x, y = self.wcs[ext].all_world2pix(coord.ra, coord.dec, 0)
         ap_radius_pix = ap_radius.to(units.pix, pix_scale).value
 
-        mask = self.generate_mask(method='sep')
-        mask = mask.astype(bool)
-
-        self.calculate_background(method="sep", mask=mask, ext=ext, **kwargs)
+        self.model_background_photometry(method="sep", mask=True, ext=ext, **kwargs)
         rms = self.sep_background[ext].rms()
 
         # plt.imshow(rms)
@@ -3866,15 +3866,21 @@ class ImagingImage(Image):
 
         return sources
 
-    def calculate_background(
+    def model_background_photometry(
             self, ext: int = 0,
             box_size: int = 64,
             filter_size: int = 3,
             method: str = "sep",
             write: str = None,
+            mask: bool = True,
             **back_kwargs
     ):
         self.load_data()
+
+        mask = None
+        if mask:
+            mask = self.generate_mask(method=method)
+            mask = mask.astype(bool)
 
         if method == "sep":
             data = u.sanitise_endianness(self.data[ext])
@@ -3882,6 +3888,7 @@ class ImagingImage(Image):
                 data,
                 bw=box_size, bh=box_size,
                 fw=filter_size, fh=filter_size,
+                mask=mask,
                 **back_kwargs
             )
             if isinstance(data, units.Quantity):
@@ -3899,6 +3906,7 @@ class ImagingImage(Image):
                 filter_size=filter_size,
                 sigma_clip=sigma_clip,
                 bkg_estimator=bkg_estimator,
+                mask=mask,
                 **back_kwargs
             )
             bkg_data = bkg.background
@@ -3938,7 +3946,7 @@ class ImagingImage(Image):
         data = self.data[ext]
         left, right, bottom, top = u.check_margins(data=data, margins=margins)
 
-        bkg, bkg_data = self.calculate_background(method=method, ext=ext, **background_kwargs)
+        bkg, bkg_data = self.model_background_photometry(method=method, ext=ext, **background_kwargs)
 
         if method == "photutils":
             data_trim = u.trim_image(
@@ -3991,7 +3999,7 @@ class ImagingImage(Image):
             margins: tuple = (None, None, None, None),
     ):
         """
-        Uses a segmentation map to produce a
+        Uses a segmentation map to produce a mask covering field objects.
         :param unmasked: SkyCoord list of objects to keep unmasked; if any
         :param ext:
         :param threshold:
@@ -4093,7 +4101,7 @@ class ImagingImage(Image):
     ):
         self.extract_pixel_scale()
         pixel_radius = aperture_radius.to(units.pix, self.pixel_scale_y)
-        self.calculate_background(ext=ext)
+        self.model_background_photometry(ext=ext)
         if sub_background:
             data = self.data_sub_bkg[ext]
         else:
@@ -4126,7 +4134,7 @@ class ImagingImage(Image):
             back_output = None
             segmap_output = None
 
-        self.calculate_background(ext=ext, write=back_output)
+        self.model_background_photometry(ext=ext, write=back_output, mask=True)
         self.load_wcs()
         self.extract_pixel_scale()
         if not self.wcs[ext].footprint_contains(centre):
@@ -4189,12 +4197,26 @@ class ImagingImage(Image):
 
             plt.close()
             with quantity_support():
-                ax, fig, _ = self.plot_subimage(
-                    centre=centre,
-                    frame=this_frame,
-                    ext=ext,
-                    mask=mask
+
+                theta_plot = (theta[0] * units.rad).to(units.deg).value
+
+                e_kron = Ellipse(
+                    xy=(x[0], y[0]),
+                    width=2 * kron_radius[0] * a[0],
+                    height=2 * kron_radius[0] * b[0],
+                    angle=theta_plot
                 )
+                e_kron.set_facecolor('none')
+                e_kron.set_edgecolor('white')
+
+                e = Ellipse(
+                    xy=(x[0], y[0]),
+                    width=2 * a[0],
+                    height=2 * b[0],
+                    angle=theta_plot
+                )
+                e.set_facecolor('none')
+                e.set_edgecolor('white')
 
                 # for i in range(len(objects)):
                 #     e = Ellipse(
@@ -4207,31 +4229,38 @@ class ImagingImage(Image):
                 #     ax.add_artist(e)
                 #     ax.text(objects["x"][i], objects["y"][i], objects["theta"][i] * 180. / np.pi)
 
-                theta_plot = (theta[0] * units.rad).to(units.deg).value
-
-                e = Ellipse(
-                    xy=(x[0], y[0]),
-                    width=2 * kron_radius[0] * a[0],
-                    height=2 * kron_radius[0] * b[0],
-                    angle=theta_plot
+                ax, fig, _ = self.plot_subimage(
+                    centre=centre,
+                    frame=this_frame,
+                    ext=ext,
+                    mask=mask
                 )
-                e.set_facecolor('none')
-                e.set_edgecolor('white')
-                ax.add_artist(e)
 
-                e = Ellipse(
-                    xy=(x[0], y[0]),
-                    width=2 * a[0],
-                    height=2 * b[0],
-                    angle=theta_plot
-                )
-                e.set_facecolor('none')
-                e.set_edgecolor('white')
+                e_next = copy.deepcopy(e)
+                e_kron_next = copy.deepcopy(e_kron)
+
                 ax.add_artist(e)
+                ax.add_artist(e_kron)
 
                 ax.set_title(f"{a[0], b[0], kron_radius[0], theta_plot}")
 
                 fig.savefig(output + ".png")
+
+                if subtract_background:
+                    ax, fig, _ = self.plot_subimage(
+                        centre=centre,
+                        frame=this_frame,
+                        ext=ext,
+                        mask=mask,
+                        data=data
+                    )
+
+                    ax.add_artist(e_next)
+                    ax.add_artist(e_kron_next)
+
+                    ax.set_title(f"{a[0], b[0], kron_radius[0], theta_plot}")
+
+                    fig.savefig(output + "_back_sub.png")
 
         return flux, flux_err, flag, back
 
