@@ -23,6 +23,8 @@ from astropy.coordinates import SkyCoord
 from astropy.time import Time
 from astropy.visualization import quantity_support
 
+from astroalign import register
+
 try:
     import photutils
 except ModuleNotFoundError:
@@ -2054,7 +2056,6 @@ class ImagingImage(Image):
             trim: bool = True,
             **kwargs
     ):
-        from astroalign import register
         self.load_data()
         target.load_data()
 
