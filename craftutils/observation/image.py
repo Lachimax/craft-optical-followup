@@ -3869,6 +3869,11 @@ class ImagingImage(Image):
 
         return sources
 
+    def model_background_local(
+            self,
+    ):
+        pass
+
     def model_background_photometry(
             self, ext: int = 0,
             box_size: int = 64,

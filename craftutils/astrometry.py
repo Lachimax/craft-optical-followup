@@ -63,6 +63,7 @@ def generate_astrometry_indices(
         fits_cat_output: str = None,
         p_lower: int = -1, p_upper: int = 2):
     u.mkdir_check(index_output_dir)
+    astrometry_net.add_index_directory(index_output_dir)
     cat_name = cat_name.lower()
     if fits_cat_output is None and isinstance(cat, str):
         if cat.endswith(".csv"):
