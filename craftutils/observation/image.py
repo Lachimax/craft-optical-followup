@@ -3360,6 +3360,14 @@ class ImagingImage(Image):
 
         return ax
 
+    def pixel(self, value: Union[float, int, units.Quantity], ext: int=0):
+        if not isinstance(value, units.Quantity):
+            value *= units.pix
+        else:
+            self.extract_pixel_scale(ext)
+            value = value.to(units.pix, self.pixel_scale_y).value
+        return value
+
     def prep_for_colour(
             self,
             output_path: str,
@@ -3370,8 +3378,7 @@ class ImagingImage(Image):
             ext: int = 0,
             scale_to_jansky: bool = False
     ):
-        self.extract_pixel_scale(ext)
-        frame = frame.to(units.pix, self.pixel_scale_y).value
+        frame = self.pixel(frame, ext=ext)
 
         self.load_data()
         x, y = self.world_to_pixel(centre, 0)
@@ -3871,8 +3878,31 @@ class ImagingImage(Image):
 
     def model_background_local(
             self,
+            centre: SkyCoord,
+            frame: units.Quantity,
+            ext: int = 0,
+            write: str = None,
+            write_subbed: str = None,
+            do_mask: bool = False,
+            mask_kwargs: dict = {},
     ):
-        pass
+        self.load_data()
+        frame = self.pixel(frame).value
+        mask = None
+
+        x_centre, y_centre = self.world_to_pixel(centre, ext=ext)
+        margins = bottom, top, left, right = u.frame_from_centre(frame=frame, x=x_centre, y=y, data=self.data[ext])
+
+        if do_mask:
+            mask = self.generate_mask(
+                margins=margins
+                **mask_kwargs,
+            )
+            mask = mask.astype(bool)
+
+
+
+
 
     def model_background_photometry(
             self, ext: int = 0,
