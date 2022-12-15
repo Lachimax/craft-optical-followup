@@ -16,6 +16,8 @@ import astropy.io.fits as fits
 from astropy.modeling import models, fitting
 from astropy.visualization import make_lupton_rgb, ImageNormalize
 
+import ccdproc
+
 import craftutils.astrometry as astm
 import craftutils.fits_files as ff
 import craftutils.observation as obs
@@ -2245,6 +2247,7 @@ class ImagingEpoch(Epoch):
         self.coadded_trimmed = {}
         self.coadded_unprojected = {}
         self.coadded_astrometry = {}
+        self.coadded_subtracted = {}
         self.coadded_final = None
 
         self.gaia_catalogue = None
@@ -2267,12 +2270,6 @@ class ImagingEpoch(Epoch):
                 "keywords": {
                     "alternate_dir": None
                 }
-            },
-            "subtract_background_frames": {
-                "method": cls.proc_subtract_background_frames,
-                "message": "Subtract background from frames using sep?",
-                "default": False,
-                "keywords": {}
             },
             "register_frames": {
                 "method": cls.proc_register,
@@ -2298,6 +2295,12 @@ class ImagingEpoch(Epoch):
                 "method": cls.proc_frame_diagnostics,
                 "message": "Run diagnostics on individual frames?",
                 "default": False,
+            },
+            "subtract_background_frames": {
+                "method": cls.proc_subtract_background_frames,
+                "message": "Subtract local background from frames?",
+                "default": False,
+                "keywords": {}
             },
             "coadd": {
                 "method": cls.proc_coadd,
@@ -2383,20 +2386,40 @@ class ImagingEpoch(Epoch):
             self,
             output_dir: str,
             frames: dict = None,
+            method: str = "local",
             **kwargs
     ):
         if frames is None:
-            frames = self.frames_normalised
+            frames = self.frames_astrometry
 
         for fil in frames:
             frame_list = frames[fil]
             for frame in frame_list:
-                subbed_path = os.path.join(output_dir, fil, frame.name + ".fits")
-                frame.model_background_photometry(
-                    write_subbed=subbed_path,
-                    do_mask=True,
-                    **kwargs
-                )
+                subbed_path = os.path.join(output_dir, fil, frame.name + "_backsub.fits")
+                back_path = os.path.join(output_dir, fil, frame.name + "_background.fits")
+                if method in ("sep", "photutils"):
+                    frame.model_background_photometry(
+                        write_subbed=subbed_path,
+                        write=back_path,
+                        do_mask=True,
+                        method=method,
+                        **kwargs
+                    )
+                elif method == "local":
+                    if "centre" not in kwargs:
+                        if isinstance(self.field, FRBField):
+                            kwargs["centre"] = self.field.frb.position
+                        else:
+                            kwargs["centre"] = frame.extract_pointing()
+                    if "frame" not in kwargs:
+                        kwargs["frame"] = 15 * units.arcsec
+                    frame.model_background_local(
+                        write_subbed=subbed_path,
+                        write=back_path,
+                        do_mask=True,
+                        **kwargs
+                    )
+
                 new_frame = type(frame)(subbed_path)
                 self.add_frame_subtracted(new_frame)
 
@@ -2714,8 +2737,21 @@ class ImagingEpoch(Epoch):
         if "frames" not in kwargs:
             kwargs["frames"] = self.frames_final
         self.coadd(output_dir, **kwargs)
+        if np.any(list(map(lambda k: len(self.frames_subtracted[k]) > 0, self.frames_subtracted))):
+            kwargs["frames"] = "subtracted"
+            self.coadd(
+                output_dir + "_background_subtracted",
+                out_dict=self.coadded_subtracted,
+                **kwargs
+            )
 
-    def coadd(self, output_dir: str, frames: str = "astrometry", sigma_clip: float = 1.5):
+    def coadd(
+            self,
+            output_dir: str,
+            frames: str = "astrometry",
+            out_dict: dict = None,
+            sigma_clip: float = 1.5
+    ):
         """
         Use Montage and ccdproc to coadd individual frames.
         :param output_dir: Directory in which to write data products.
@@ -2723,7 +2759,8 @@ class ImagingEpoch(Epoch):
         :param sigma_clip: Multiple of pixel stack standard deviation to clip when doing sigma-clipped stack.
         :return:
         """
-        import ccdproc
+        if out_dict is None:
+            out_dict = self.coadded
         u.mkdir_check(output_dir)
         frame_dict = self._get_frames(frame_type=frames)
 
@@ -2801,7 +2838,7 @@ class ImagingEpoch(Epoch):
             combined_img.write_fits_file()
             combined_img.update_output_file()
 
-            self.add_coadded_image(sigclip_path, key=fil, mode="imaging")
+            self._add_coadded(img=sigclip_path, key=fil, image_dict=out_dict)
 
     def proc_correct_astrometry_coadded(self, output_dir: str, **kwargs):
         self.correct_astrometry_coadded(
@@ -2992,6 +3029,11 @@ class ImagingEpoch(Epoch):
         for fil in image_dict:
             if self.coadded_unprojected[fil] is not None and self.coadded_unprojected[fil] is not image_dict[fil]:
                 img = self.coadded_unprojected[fil]
+                img.zeropoints = image_dict[fil].zeropoints
+                img.zeropoint_best = image_dict[fil].zeropoint_best
+                img.update_output_file()
+            if self.coadded_subtracted[fil] is not None:
+                img = self.coadded_subtracted[fil]
                 img.zeropoints = image_dict[fil].zeropoints
                 img.zeropoint_best = image_dict[fil].zeropoint_best
                 img.update_output_file()
@@ -3336,6 +3378,20 @@ class ImagingEpoch(Epoch):
                     },
                     write=True,
                 )
+            if self.coadded_subtracted[fil] is not None:
+                img.set_header_items(
+                    items={
+                        # 'ASTM_RMS': astm_rms,
+                        # 'RA_RMS': img_projected.extract_header_item(key="RA_RMS"),
+                        # 'DEC_RMS': img_projected.extract_header_item(key="DEC_RMS"),
+                        # 'PSF_FWHM': psf_fwhm,
+                        # 'PSF_FWHM_ERR': psf_fwhm_err,
+                        'ZP': img_projected.extract_header_item(key="ZP"),
+                        'ZP_ERR': img_projected.extract_header_item(key="ZP_ERR"),
+                        'ZPCAT': str(img_projected.extract_header_item(key="ZPCAT"))
+                    },
+                    write=True,
+                )
 
             img.copy_with_outputs(os.path.join(
                 self.data_path,
@@ -3530,6 +3586,7 @@ class ImagingEpoch(Epoch):
             "coadded_trimmed": _output_img_dict_single(self.coadded_trimmed),
             "coadded_unprojected": _output_img_dict_single(self.coadded_unprojected),
             "coadded_astrometry": _output_img_dict_single(self.coadded_astrometry),
+            "coadded_subtracted": _output_img_dict_single(self.coadded_subtracted),
             "std_pointings": self.std_pointings,
             "frames_final": self.frames_final,
             "frames_raw": _output_img_list(self.frames_raw),
@@ -3625,6 +3682,10 @@ class ImagingEpoch(Epoch):
                 for fil in outputs["coadded"]:
                     if outputs["coadded"][fil] is not None:
                         self.add_coadded_image(img=outputs["coadded"][fil], key=fil, **kwargs)
+            if "coadded_subtracted" in outputs:
+                for fil in outputs["coadded_subtracted"]:
+                    if outputs["coadded_subtracted"][fil] is not None:
+                        self.add_coadded_image(img=outputs["coadded_subtracted"][fil], key=fil, **kwargs)
             if "coadded_trimmed" in outputs:
                 for fil in outputs["coadded_trimmed"]:
                     if outputs["coadded_trimmed"][fil] is not None:
@@ -3809,6 +3870,8 @@ class ImagingEpoch(Epoch):
                 self.coadded_trimmed[fil] = None
             if fil not in self.coadded_unprojected:
                 self.coadded_unprojected[fil] = None
+            if fil not in self.coadded_subtracted:
+                self.coadded_subtracted[fil] = None
             if fil not in self.coadded_astrometry:
                 self.coadded_astrometry[fil] = None
             if fil not in self.exp_time_mean:
@@ -5758,7 +5821,7 @@ class HAWKIImagingEpoch(ESOImagingEpoch):
             image_type=image_type,
             **kwargs
         )
-        self.coadded_unprojected = self.coadded_astrometry
+        self.coadded_unprojected = self.coadded_astrometry.copy()
 
     def _get_images(self, image_type: str) -> Dict[str, image.CoaddedImage]:
         if image_type in ("final", "coadded_final"):
@@ -5811,10 +5874,10 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
             "sort_reduced": eso_stages["sort_reduced"],
             "trim_reduced": eso_stages["trim_reduced"],
             "convert_to_cs": eso_stages["convert_to_cs"],
-            "subtract_background_frames": ie_stages["subtract_background_frames"],
             "register_frames": ie_stages["register_frames"],
             "correct_astrometry_frames": ie_stages["correct_astrometry_frames"],
             "frame_diagnostics": ie_stages["frame_diagnostics"],
+            "subtract_background_frames": ie_stages["subtract_background_frames"],
             "coadd": ie_stages["coadd"],
             "correct_astrometry_coadded": ie_stages["correct_astrometry_coadded"],
             "trim_coadded": ie_stages["trim_coadded"],
@@ -6410,6 +6473,10 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
                 self.coadded_unprojected[fil].zeropoints = img.zeropoints
                 self.coadded_unprojected[fil].zeropoint_best = img.zeropoint_best
                 self.coadded_unprojected[fil].update_output_file()
+            if self.coadded_subtracted[fil] is not None:
+                self.coadded_subtracted[fil].zeropoints = img.zeropoints
+                self.coadded_subtracted[fil].zeropoint_best = img.zeropoint_best
+                self.coadded_subtracted[fil].update_output_file()
 
         p.save_params(zeropoint_yaml, zeropoints)
 

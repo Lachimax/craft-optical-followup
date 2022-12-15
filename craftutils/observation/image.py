@@ -3367,7 +3367,7 @@ class ImagingImage(Image):
             value *= units.pix
         else:
             self.extract_pixel_scale(ext)
-            value = value.to(units.pix, self.pixel_scale_y).value
+            value = value.to(units.pix, self.pixel_scale_y)
         return value
 
     def prep_for_colour(
@@ -3885,70 +3885,83 @@ class ImagingImage(Image):
             ext: int = 0,
             model_type: models = models.Polynomial2D,
             fitter_type: fitting.Fitter = fitting.LevMarLSQFitter,
-            init_params: dict = {"degree": 2},
+            init_params: dict = {"degree": 3},
             write: str = None,
             write_subbed: str = None,
             do_mask: bool = True,
             mask_kwargs: dict = {},
+            saturate_factor: float = 0.1
     ):
         self.load_data()
         frame = self.pixel(frame).value
 
         x_centre, y_centre = self.world_to_pixel(centre, ext=ext)
-        margins = bottom, top, left, right = u.frame_from_centre(
+        margins = left, right, bottom, top = u.frame_from_centre(
             frame=frame,
             x=x_centre, y=y_centre,
             data=self.data[ext]
         )
 
-        data = self.data[ext][bottom:top, left:right] * 1
+        print(margins)
+
+        data = self.data[ext] * 1 #[bottom:top, left:right]
 
         if do_mask:
             mask = self.generate_mask(
                 margins=margins,
+                method="sep",
                 **mask_kwargs,
             )
-            mask = mask[bottom:top, left:right]
+            mask = mask# [bottom:top, left:right]
             mask = mask.astype(bool)
             mask += data < 0
-            mask += data > self.extract_saturate()
+            mask += data > self.extract_saturate() * saturate_factor
         else:
             mask = np.zeros(data.shape, dtype=bool)
 
         data -= np.median(self.data[ext])
 
-        # mask[:, :left] = True
-        # mask[:, right:] = True
-        # mask[:bottom, :] = True
-        # mask[top:, :] = True
+        mask[:, :left] = True
+        mask[:, right:] = True
+        mask[:bottom, :] = True
+        mask[top:, :] = True
+
+        weights = 1. / self.sep_background[ext].rms()
+
+        where_mask = np.where(mask)
+        for n, i in enumerate(where_mask[0]):
+            j = where_mask[1][n]
+            weights[i, j] = 0. #np.invert(mask).astype(float)
 
         model_init = model_type(**init_params)
-        fitter = fitter_type()
+        fitter = fitter_type(True)
         y, x = np.mgrid[:data.shape[0], :data.shape[1]]
         model = fitter(
             model_init,
             x, y,
             data.value,
-            weights=np.invert(mask).astype(float)
+            weights=weights
         )
         model_eval = model(x, y)
-        subbed = data.value - model_eval
+        subbed_all = data.value - model_eval
+        subbed_window = data
+        subbed_window[bottom:top, left:right] = subbed_all[bottom:top, left:right] * data.unit
 
         if isinstance(write, str):
             back_file = self.copy(write)
             back_file.load_data()
             back_file.load_headers()
-            back_file.data[ext] = model_eval
+            back_file.data[ext] = model_eval * data.unit
             back_file.write_fits_file()
 
         if isinstance(write_subbed, str):
             subbed_file = self.copy(write_subbed)
             subbed_file.load_data()
             subbed_file.load_headers()
-            subbed_file.data[ext] = self.data[ext][bottom:top, left:right] - model_eval
+            subbed_file.data[ext] = subbed_window
             subbed_file.write_fits_file()
 
-        return model, model_eval, subbed, mask
+        return model, model_eval, data, subbed_window, mask, weights
 
     def model_background_photometry(
             self, ext: int = 0,
@@ -4062,15 +4075,20 @@ class ImagingImage(Image):
             ).copy()
             err = u.trim_image(bkg.rms(), margins=margins).copy()
             u.debug_print(2, f"{self}.generate_segmap(): type(err) ==", type(err), "err.shape ==", err.shape)
-            objects, segmap = sep.extract(
-                data_trim,
-                err=err,
-                thresh=threshold,
-                # deblend_cont=True,
-                clean=False,
-                segmentation_map=True,
-                minarea=min_area
-            )
+            if 0 in data_trim.shape:
+                # If we've trimmed the array down to nothing, we should just return something empty and avoid sep errors
+                segmap = np.zeros(data_trim.shape, dtype=int)
+            else:
+                print(data_trim.shape)
+                objs, segmap = sep.extract(
+                    data_trim,
+                    err=err,
+                    thresh=threshold,
+                    # deblend_cont=True,
+                    clean=False,
+                    segmentation_map=True,
+                    minarea=min_area
+                )
 
         else:
             raise ValueError(f"Unrecognised method {method}.")
