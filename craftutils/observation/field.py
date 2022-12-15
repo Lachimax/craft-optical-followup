@@ -2251,6 +2251,7 @@ class ImagingEpoch(Epoch):
         self.coadded_final = None
 
         self.gaia_catalogue = None
+        self.astrometry_indices = []
 
         self.frame_stats = {}
         self.astrometry_stats = {}
@@ -2288,7 +2289,7 @@ class ImagingEpoch(Epoch):
                     "tweak": True,
                     "upper_only": False,
                     "method": "individual",
-                    "skip_indices": False
+                    "back_subbed": False,
                 }
             },
             "frame_diagnostics": {
@@ -2318,7 +2319,6 @@ class ImagingEpoch(Epoch):
                 "keywords": {
                     "tweak": True,
                     "astroalign_template": None,
-                    "skip_indices": False
                 }
             },
             "trim_coadded": {
@@ -2513,10 +2513,6 @@ class ImagingEpoch(Epoch):
             **kwargs
     ):
 
-        skip = False
-        if "skip_indices" in kwargs:
-            skip = kwargs.pop("skip_indices")
-
         if "correct_to_epoch" in kwargs:
             print(f"correct_to_epoch 1: {kwargs['correct_to_epoch']}")
             correct_to_epoch = kwargs.pop("correct_to_epoch")
@@ -2525,10 +2521,8 @@ class ImagingEpoch(Epoch):
             correct_to_epoch = True
 
         u.debug_print(2, kwargs)
-        u.debug_print(1, "skip ==", skip)
 
-        if not skip:
-            self.generate_astrometry_indices(correct_to_epoch=correct_to_epoch)
+        self.generate_astrometry_indices(correct_to_epoch=correct_to_epoch)
 
         self.frames_astrometry = {}
 
@@ -2555,6 +2549,11 @@ class ImagingEpoch(Epoch):
         self.frames_astrometry = {}
         self.astrometry_successful = {}
 
+        if "back_subbed" in kwargs:
+            back_subbed = True
+        else:
+            back_subbed = False
+
         if frames is None:
             frames = self.frames_reduced
 
@@ -2567,6 +2566,20 @@ class ImagingEpoch(Epoch):
                 first_success = None
                 astrometry_fil_path = os.path.join(output_dir, fil)
                 for frame in frames_by_chip[chip]:
+                    frame_alt = None
+                    if back_subbed:
+                        frame_alt = frame
+                        subbed_path = os.path.join(output_dir, fil, frame.name + "_backsub.fits")
+                        back_path = os.path.join(output_dir, fil, frame.name + "_background.fits")
+                        frame.model_background_photometry(
+                            write_subbed=subbed_path,
+                            write=back_path,
+                            do_mask=True,
+                            method="sep",
+                            **kwargs
+                        )
+                        frame = type(frame)(subbed_path)
+
                     new_frame = frame.correct_astrometry(
                         output_dir=astrometry_fil_path,
                         am_params=am_params,
@@ -2575,6 +2588,11 @@ class ImagingEpoch(Epoch):
 
                     if new_frame is not None:
                         print(f"{frame} astrometry successful.")
+                        if back_subbed:
+                            new_frame = frame_alt.correct_astrometry_from_other(
+                                frame,
+                                output_dir=astrometry_fil_path
+                            )
                         self.add_frame_astrometry(new_frame)
                         self.astrometry_successful[fil][frame.name] = "astrometry.net"
                         if first_success is None:
@@ -3600,6 +3618,7 @@ class ImagingEpoch(Epoch):
             "exp_time_err": self.exp_time_err,
             "airmass_mean": self.airmass_mean,
             "airmass_err": self.airmass_err,
+            "astrometry_indices": self.astrometry_indices,
             "astrometry_successful": self.astrometry_successful,
             "astrometry_stats": self.astrometry_stats,
             "psf_stats": self.psf_stats
@@ -3637,6 +3656,8 @@ class ImagingEpoch(Epoch):
                 self.astrometry_stats = outputs["astrometry_stats"]
             if "astrometry_successful" in outputs:
                 self.astrometry_successful = outputs["astrometry_successful"]
+            if "astrometry_indices" in outputs:
+                self.astrometry_indices = outputs["astrometry_indices"]
             if "frames_raw" in outputs:
                 for frame in set(outputs["frames_raw"]):
                     if os.path.isfile(frame):
@@ -3709,40 +3730,56 @@ class ImagingEpoch(Epoch):
     def generate_astrometry_indices(
             self,
             cat_name="gaia",
-            correct_to_epoch: bool = True
+            correct_to_epoch: bool = True,
+            force: bool = False
     ):
+        """
+        Generates astrometry indices using astrometry.net and the specified catalogue, unless they have been generated
+        before; in which case it simply copies them to the main index directory (overwriting those of other epochs there).
+        :param cat_name:
+        :param correct_to_epoch:
+        :param force:
+        :return:
+        """
         print(f"correct_to_epoch 3: {correct_to_epoch}")
         if not isinstance(self.field, Field):
             raise ValueError("field has not been set for this observation.")
-        self.field.retrieve_catalogue(cat_name=cat_name)
+
+        if force or not self.astrometry_indices:
+            epoch_index_path = os.path.join(self.data_path, "astrometry_indices")
+            self.field.retrieve_catalogue(cat_name=cat_name)
+
+            csv_path = self.field.get_path(f"cat_csv_{cat_name}")
+
+            if cat_name == "gaia":
+                cat = self.epoch_gaia_catalogue(correct_to_epoch=correct_to_epoch)
+            else:
+                cat = retrieve.load_catalogue(
+                    cat_name=cat_name,
+                    cat=csv_path
+                )
+
+            unique_id_prefix = int(
+                f"{abs(int(self.field.centre_coords.ra.value))}{abs(int(self.field.centre_coords.dec.value))}")
+
+            self.astrometry_indices = astm.generate_astrometry_indices(
+                cat_name=cat_name,
+                cat=cat,
+                output_file_prefix=f"{cat_name}_index_{self.field.name}",
+                index_output_dir=epoch_index_path,
+                fits_cat_output=csv_path.replace(".csv", ".fits"),
+                p_lower=-1,
+                p_upper=2,
+                unique_id_prefix=unique_id_prefix,
+                add_path=False
+            )
         index_path = os.path.join(config["top_data_dir"], "astrometry_index_files")
         u.mkdir_check(index_path)
         cat_index_path = os.path.join(index_path, cat_name)
-        csv_path = self.field.get_path(f"cat_csv_{cat_name}")
-
-        if cat_name == "gaia":
-            cat = self.epoch_gaia_catalogue(correct_to_epoch=correct_to_epoch)
-        else:
-            cat = retrieve.load_catalogue(
-                cat_name=cat_name,
-                cat=csv_path
-            )
-
-        unique_id_prefix = int(
-            f"{abs(int(self.field.centre_coords.ra.value))}{abs(int(self.field.centre_coords.dec.value))}")
-
-        astm.generate_astrometry_indices(
-            cat_name=cat_name,
-            cat=cat,
-            output_file_prefix=f"{cat_name}_index_{self.field.name}",
-            index_output_dir=cat_index_path,
-            fits_cat_output=csv_path.replace(".csv", ".fits"),
-            p_lower=-1,
-            p_upper=2,
-            unique_id_prefix=unique_id_prefix,
-        )
-
-        return cat
+        astm.astrometry_net.add_index_directory(cat_index_path)
+        for index_path in self.astrometry_indices:
+            shutil.copy(index_path, cat_index_path)
+        return self.astrometry_indices
 
     def epoch_gaia_catalogue(
             self,

@@ -356,6 +356,8 @@ class Image:
         self.airmass = None
         self.airmass_err = 0.0
 
+        self.derived_from = None
+
         if logg is None:
             self.log = log.Log()
         u.debug_print(2, f"Image.__init__(): {self}.log.log.keys() ==", self.log.log.keys())
@@ -3950,6 +3952,14 @@ class ImagingImage(Image):
             back_file.load_data()
             back_file.load_headers()
             back_file.data[ext] = model_eval * data.unit
+            back_file.add_log(
+                action=f"Background modelled using model {model_type} and fitter {fitter_type}, with initial parameters"
+                       f"\n{init_params}",
+                method=self.model_background_photometry,
+                input_path=self.path,
+                output_path=write,
+                ext=ext,
+            )
             back_file.write_fits_file()
 
         if isinstance(write_subbed, str):
@@ -3957,6 +3967,14 @@ class ImagingImage(Image):
             subbed_file.load_data()
             subbed_file.load_headers()
             subbed_file.data[ext] = subbed_window
+            subbed_file.add_log(
+                action=f"Background modelled and subtracted using model {model_type} and fitter {fitter_type}, with initial parameters"
+                       f"\n{init_params}",
+                method=self.model_background_photometry,
+                input_path=self.path,
+                output_path=write_subbed,
+                ext=ext,
+            )
             subbed_file.write_fits_file()
 
         return model, model_eval, data, subbed_window, mask, weights
