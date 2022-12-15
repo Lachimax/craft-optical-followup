@@ -2544,13 +2544,14 @@ class ImagingEpoch(Epoch):
             output_dir: str,
             frames: dict = None,
             am_params: dict = {},
+            background_kwargs: dict = {},
             **kwargs
     ):
         self.frames_astrometry = {}
         self.astrometry_successful = {}
 
         if "back_subbed" in kwargs:
-            back_subbed = True
+            back_subbed = kwargs.pop("back_subbed")
         else:
             back_subbed = False
 
@@ -2568,16 +2569,21 @@ class ImagingEpoch(Epoch):
                 for frame in frames_by_chip[chip]:
                     frame_alt = None
                     if back_subbed:
+                        # For some fields, we want to subtract the background before attempting to solve, because of
+                        # bright stars or the like.
                         frame_alt = frame
+                        # Store the original frame for later.
                         subbed_path = os.path.join(output_dir, fil, frame.name + "_backsub.fits")
                         back_path = os.path.join(output_dir, fil, frame.name + "_background.fits")
+                        # Use sep to subtract a background model.
                         frame.model_background_photometry(
                             write_subbed=subbed_path,
                             write=back_path,
                             do_mask=True,
                             method="sep",
-                            **kwargs
+                            **background_kwargs
                         )
+                        # Assign frame to the subtracted file
                         frame = type(frame)(subbed_path)
 
                     new_frame = frame.correct_astrometry(
@@ -2590,9 +2596,10 @@ class ImagingEpoch(Epoch):
                         print(f"{frame} astrometry successful.")
                         if back_subbed:
                             new_frame = frame_alt.correct_astrometry_from_other(
-                                frame,
+                                new_frame,
                                 output_dir=astrometry_fil_path
                             )
+                            frame = frame_alt
                         self.add_frame_astrometry(new_frame)
                         self.astrometry_successful[fil][frame.name] = "astrometry.net"
                         if first_success is None:

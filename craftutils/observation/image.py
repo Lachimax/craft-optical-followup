@@ -2154,7 +2154,7 @@ class ImagingImage(Image):
         new_new_path = os.path.join(self.data_path, f"{base_filename}.fits")
         os.rename(new_path, new_new_path)
 
-        if output_dir is not None:
+        if output_dir is not None and not os.path.samefile(self.data_path, output_dir):
             if not os.path.isdir(output_dir):
                 raise ValueError(f"Invalid output directory {output_dir}")
             for astrometry_product in filter(lambda f: f.startswith(base_filename), os.listdir(self.data_path)):
@@ -3953,8 +3953,7 @@ class ImagingImage(Image):
             back_file.load_headers()
             back_file.data[ext] = model_eval * data.unit
             back_file.add_log(
-                action=f"Background modelled using model {model_type} and fitter {fitter_type}, with initial parameters"
-                       f"\n{init_params}",
+                action=f"Background modelled.",
                 method=self.model_background_photometry,
                 input_path=self.path,
                 output_path=write,
@@ -3968,8 +3967,7 @@ class ImagingImage(Image):
             subbed_file.load_headers()
             subbed_file.data[ext] = subbed_window
             subbed_file.add_log(
-                action=f"Background modelled and subtracted using model {model_type} and fitter {fitter_type}, with initial parameters"
-                       f"\n{init_params}",
+                action=f"Background modelled and subtracted.",
                 method=self.model_background_photometry,
                 input_path=self.path,
                 output_path=write_subbed,
