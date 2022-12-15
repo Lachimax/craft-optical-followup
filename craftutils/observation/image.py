@@ -3902,8 +3902,6 @@ class ImagingImage(Image):
             data=self.data[ext]
         )
 
-        print(margins)
-
         data = self.data[ext] * 1 #[bottom:top, left:right]
 
         if do_mask:
@@ -4079,7 +4077,6 @@ class ImagingImage(Image):
                 # If we've trimmed the array down to nothing, we should just return something empty and avoid sep errors
                 segmap = np.zeros(data_trim.shape, dtype=int)
             else:
-                print(data_trim.shape)
                 objs, segmap = sep.extract(
                     data_trim,
                     err=err,
