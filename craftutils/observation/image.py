@@ -17,6 +17,7 @@ import astropy.table as table
 import astropy.wcs as wcs
 import astropy.units as units
 from astropy.stats import SigmaClip
+from astropy.modeling import models, fitting
 
 from astropy.visualization import (
     ImageNormalize, LogStretch, SqrtStretch, MinMaxInterval, ZScaleInterval)
@@ -667,12 +668,13 @@ class Image:
         self.extract_n_pix()
         return 1, self.n_x, 1, self.n_y
 
-    def extract_saturate(self):
+    def extract_saturate(self, data_ext: int = 0):
         key = self.header_keys()["saturate"]
         saturate = self.extract_header_item(key)
         if saturate is None:
             saturate = 65535
-        self.saturate = saturate * units.ct
+        unit = self.extract_unit(astropy=True)
+        self.saturate = saturate * unit
         return self.saturate
 
     def remove_extra_extensions(self, ext: int = 0):
@@ -3360,7 +3362,7 @@ class ImagingImage(Image):
 
         return ax
 
-    def pixel(self, value: Union[float, int, units.Quantity], ext: int=0):
+    def pixel(self, value: Union[float, int, units.Quantity], ext: int = 0):
         if not isinstance(value, units.Quantity):
             value *= units.pix
         else:
@@ -3881,28 +3883,72 @@ class ImagingImage(Image):
             centre: SkyCoord,
             frame: units.Quantity,
             ext: int = 0,
+            model_type: models = models.Polynomial2D,
+            fitter_type: fitting.Fitter = fitting.LevMarLSQFitter,
+            init_params: dict = {"degree": 2},
             write: str = None,
             write_subbed: str = None,
-            do_mask: bool = False,
+            do_mask: bool = True,
             mask_kwargs: dict = {},
     ):
         self.load_data()
         frame = self.pixel(frame).value
-        mask = None
 
         x_centre, y_centre = self.world_to_pixel(centre, ext=ext)
-        margins = bottom, top, left, right = u.frame_from_centre(frame=frame, x=x_centre, y=y, data=self.data[ext])
+        margins = bottom, top, left, right = u.frame_from_centre(
+            frame=frame,
+            x=x_centre, y=y_centre,
+            data=self.data[ext]
+        )
+
+        data = self.data[ext][bottom:top, left:right] * 1
 
         if do_mask:
             mask = self.generate_mask(
-                margins=margins
+                margins=margins,
                 **mask_kwargs,
             )
+            mask = mask[bottom:top, left:right]
             mask = mask.astype(bool)
+            mask += data < 0
+            mask += data > self.extract_saturate()
+        else:
+            mask = np.zeros(data.shape, dtype=bool)
 
+        data -= np.median(self.data[ext])
 
+        # mask[:, :left] = True
+        # mask[:, right:] = True
+        # mask[:bottom, :] = True
+        # mask[top:, :] = True
 
+        model_init = model_type(**init_params)
+        fitter = fitter_type()
+        y, x = np.mgrid[:data.shape[0], :data.shape[1]]
+        model = fitter(
+            model_init,
+            x, y,
+            data.value,
+            weights=np.invert(mask).astype(float)
+        )
+        model_eval = model(x, y)
+        subbed = data.value - model_eval
 
+        if isinstance(write, str):
+            back_file = self.copy(write)
+            back_file.load_data()
+            back_file.load_headers()
+            back_file.data[ext] = model_eval
+            back_file.write_fits_file()
+
+        if isinstance(write_subbed, str):
+            subbed_file = self.copy(write_subbed)
+            subbed_file.load_data()
+            subbed_file.load_headers()
+            subbed_file.data[ext] = self.data[ext][bottom:top, left:right] - model_eval
+            subbed_file.write_fits_file()
+
+        return model, model_eval, subbed, mask
 
     def model_background_photometry(
             self, ext: int = 0,
