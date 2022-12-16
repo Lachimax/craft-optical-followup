@@ -3202,7 +3202,7 @@ class ImagingImage(Image):
             else:
                 projection = None
 
-            ax = fig.add_subplot(n_y, n_x, n, projection=projection)
+            ax = fig.add_subplot(n_x, n_y, n, projection=projection)
 
         if not show_coords:
             frame1 = plt.gca()
@@ -3387,7 +3387,7 @@ class ImagingImage(Image):
 
         self.load_data()
         x, y = self.world_to_pixel(centre, 0)
-        left, right, bottom, top = u.frame_from_centre(frame=frame, x=x, y=y, data=self.data[ext])
+        left, right, bottom, top = u.frame_from_centre(frame=frame.value, x=x, y=y, data=self.data[ext])
         trimmed = self.trim(
             left=left,
             right=right,
