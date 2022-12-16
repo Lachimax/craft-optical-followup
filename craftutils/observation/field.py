@@ -1801,11 +1801,17 @@ class Epoch:
 
             u.debug_print(2, f"Epoch.pipeline(): {self}.stages_complete ==", self.stages_complete)
 
+            if name in self.param_file:
+                stage_kwargs = self.param_file[name]
+            else:
+                stage_kwargs = {}
+
             # Check if we should do this stage
             if do_this and (no_query or self.query_stage(
                     message=message,
                     n=n,
-                    stage_name=name
+                    stage_name=name,
+                    stage_kwargs=stage_kwargs
             )):
                 print(f"Performing processing step {n}: {name}")
                 # Construct path; if dir_name is None then the step is pathless.
@@ -1817,10 +1823,7 @@ class Epoch:
                 u.mkdir_check_nested(output_dir, remove_last=False)
                 self.set_path(name, output_dir)
 
-                if name in self.param_file:
-                    stage_kwargs = self.param_file[name]
-                else:
-                    stage_kwargs = {}
+
 
                 if stage["method"](self, output_dir=output_dir, **stage_kwargs) is not False:
                     self.stages_complete[name] = Time.now()
@@ -1908,7 +1911,7 @@ class Epoch:
         else:
             return None
 
-    def query_stage(self, message: str, stage_name: str, n: float):
+    def query_stage(self, message: str, stage_name: str, n: float, stage_kwargs: dict = None):
         """
         Helper method for asking the user if we need to do this stage of processing.
         If self.do is True, skips the query and returns True.
@@ -1931,6 +1934,8 @@ class Epoch:
                 time_since = (Time.now() - done).sec * units.second
                 time_since = u.relevant_timescale(time_since)
                 message += f" (last performed at {done.isot}, {time_since.round(1)} ago)"
+                if stage_kwargs:
+                    message += f"\nSpecified config keywords:\n{stage_kwargs}"
             return u.select_yn_exit(message=message)
 
     # def set_survey(self):
@@ -2377,6 +2382,11 @@ class ImagingEpoch(Epoch):
 
     def proc_subtract_background_frames(self, output_dir: str, **kwargs):
         self.frames_subtracted = {}
+        if "frames" not in kwargs:
+            if "correct_astrometry_frames" in self.do_kwargs and self.do_kwargs["correct_astrometry_frames"]:
+                kwargs["frames"] = "astrometry"
+            else:
+                kwargs["frames"] = "normalised"
         self.subtract_background_frames(
             output_dir=output_dir,
             **kwargs
@@ -2385,12 +2395,12 @@ class ImagingEpoch(Epoch):
     def subtract_background_frames(
             self,
             output_dir: str,
-            frames: dict = None,
+            frames: Union[dict, str] = None,
             method: str = "local",
             **kwargs
     ):
-        if frames is None:
-            frames = self.frames_astrometry
+        if isinstance(frames, str):
+            frames = self._get_frames(frames)
 
         for fil in frames:
             frame_list = frames[fil]
@@ -2931,6 +2941,14 @@ class ImagingEpoch(Epoch):
                     )
                 )
                 self.add_coadded_astrometry_image(new_img, key=fil)
+
+        for fil in images:
+            if fil in self.coadded_subtracted and self.coadded_subtracted[fil] is not None:
+                self.coadded_subtracted[fil] = self.coadded_subtracted[fil].correct_astrometry_from_other(
+                    other_image=self.coadded_astrometry[fil],
+                    output_dir=output_dir
+                )
+
 
     def proc_trim_coadded(self, output_dir: str, **kwargs):
         if "correct_astrometry_coadded" in self.do_kwargs and self.do_kwargs["correct_astrometry_coadded"]:
