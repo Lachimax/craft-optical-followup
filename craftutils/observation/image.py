@@ -2259,6 +2259,7 @@ class ImagingImage(Image):
             raise ValueError("other_image is not a valid ImagingImage")
         other_header = other_image.load_headers()[0]
 
+        u.mkdir_check_nested(output_dir, remove_last=False)
         output_path = os.path.join(output_dir, f"{self.name}_astrometry.fits")
         shutil.copyfile(self.path, output_path)
 
@@ -3892,17 +3893,26 @@ class ImagingImage(Image):
             write_subbed: str = None,
             do_mask: bool = True,
             mask_kwargs: dict = {},
-            saturate_factor: float = 0.1
+            saturate_factor: float = 0.5
     ):
         self.load_data()
         frame = self.pixel(frame).value
 
         x_centre, y_centre = self.world_to_pixel(centre, ext=ext)
+
+        print("")
+        print(self.filename)
+        print("Centre:", centre)
+        print(f"\t{x_centre}, {y_centre}")
+        print("Frame:", frame)
+        print("Image size:", self.data[ext].shape[1], self.data[ext].shape[0])
+
         margins = left, right, bottom, top = u.frame_from_centre(
             frame=frame,
             x=x_centre, y=y_centre,
             data=self.data[ext]
         )
+        print("Margins:", margins)
 
         data = self.data[ext] * 1 #[bottom:top, left:right]
 
@@ -3921,17 +3931,28 @@ class ImagingImage(Image):
 
         data -= np.median(self.data[ext])
 
+        print("Mask 1:", np.sum(mask), "/", np.size(mask))
+
         mask[:, :left] = True
         mask[:, right:] = True
         mask[:bottom, :] = True
         mask[top:, :] = True
 
+        print("Mask 2:", np.sum(mask), "/", np.size(mask))
+
         weights = 1. / self.sep_background[ext].rms()
 
+        print("Weights 1:", np.sum(weights))
+
         where_mask = np.where(mask)
+
+        print("Where mask:", np.sum(where_mask), "/", np.size(where_mask))
+
         for n, i in enumerate(where_mask[0]):
             j = where_mask[1][n]
             weights[i, j] = 0. #np.invert(mask).astype(float)
+
+        print("Weights 2:", np.sum(weights))
 
         model_init = model_type(**init_params)
         fitter = fitter_type(True)
@@ -3947,6 +3968,8 @@ class ImagingImage(Image):
         subbed_window = data
         subbed_window[bottom:top, left:right] = subbed_all[bottom:top, left:right] * data.unit
 
+        print(model)
+
         if isinstance(write, str):
             back_file = self.copy(write)
             back_file.load_data()
@@ -3960,6 +3983,32 @@ class ImagingImage(Image):
                 ext=ext,
             )
             back_file.write_fits_file()
+
+            weights_file = self.copy(write.replace(".fits", "_weights.fits"))
+            weights_file.load_data()
+            weights_file.load_headers()
+            weights_file.data[ext] = weights * units.ct
+            weights_file.add_log(
+                action=f"Background modelled.",
+                method=self.model_background_photometry,
+                input_path=self.path,
+                output_path=write,
+                ext=ext,
+            )
+            weights_file.write_fits_file()
+
+            mask_file = self.copy(write.replace(".fits", "_mask.fits"))
+            mask_file.load_data()
+            mask_file.load_headers()
+            mask_file.data[ext] = mask.astype(float) * units.ct
+            mask_file.add_log(
+                action=f"Background modelled.",
+                method=self.model_background_photometry,
+                input_path=self.path,
+                output_path=write,
+                ext=ext,
+            )
+            mask_file.write_fits_file()
 
         if isinstance(write_subbed, str):
             subbed_file = self.copy(write_subbed)

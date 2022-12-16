@@ -1271,7 +1271,7 @@ class FRBField(Field):
         # plt.tight_layout()
 
         if show_frb:
-            self.frb_ellipse_to_plot(ext=ext[0], frb_kwargs=frb_kwargs, img=red_trimmed, plot=ax)
+            self.frb_ellipse_to_plot(ext=ext[0], frb_kwargs=frb_kwargs, img=red_trimmed, ax=ax)
 
         fig.savefig(output_path)
         return ax, fig, colour
@@ -1345,7 +1345,7 @@ class FRBField(Field):
         )
 
         if show_frb:
-            self.frb_ellipse_to_plot(ext=ext, frb_kwargs=frb_kwargs, img=img, plot=ax)
+            self.frb_ellipse_to_plot(ext=ext, frb_kwargs=frb_kwargs, img=img, ax=ax)
             if show_legend:
                 ax.legend()
 
@@ -1356,7 +1356,7 @@ class FRBField(Field):
 
     def frb_ellipse_to_plot(
             self,
-            plot,
+            ax,
             img: image.ImagingImage,
             ext: int = 0,
             colour: str = None,
@@ -1398,9 +1398,10 @@ class FRBField(Field):
             **frb_kwargs
         )
         # e.set_edgecolor(color)
-        plot.add_artist(e)
+        ax.add_artist(e)
         if plot_centre:
-            plot.scatter(x, y, c=frb_kwargs["edgecolor"], marker="x")
+            ax.scatter(x, y, c=frb_kwargs["edgecolor"], marker="x")
+        return ax
 
     @classmethod
     def default_params(cls):
@@ -2776,7 +2777,7 @@ class ImagingEpoch(Epoch):
             kwargs["frames"] = "subtracted"
             self.coadd(
                 output_dir + "_background_subtracted",
-                out_dict=self.coadded_subtracted,
+                out_dict="subtracted",
                 **kwargs
             )
 
@@ -2784,7 +2785,7 @@ class ImagingEpoch(Epoch):
             self,
             output_dir: str,
             frames: str = "astrometry",
-            out_dict: dict = None,
+            out_dict: Union[dict, str] = "coadded",
             sigma_clip: float = 1.5
     ):
         """
@@ -2794,8 +2795,10 @@ class ImagingEpoch(Epoch):
         :param sigma_clip: Multiple of pixel stack standard deviation to clip when doing sigma-clipped stack.
         :return:
         """
-        if out_dict is None:
-            out_dict = self.coadded
+        if isinstance(out_dict, str):
+            print("out_dict:", out_dict)
+            out_dict = self._get_images(image_type=out_dict)
+
         u.mkdir_check(output_dir)
         frame_dict = self._get_frames(frame_type=frames)
 
@@ -2946,7 +2949,7 @@ class ImagingEpoch(Epoch):
             if fil in self.coadded_subtracted and self.coadded_subtracted[fil] is not None:
                 self.coadded_subtracted[fil] = self.coadded_subtracted[fil].correct_astrometry_from_other(
                     other_image=self.coadded_astrometry[fil],
-                    output_dir=output_dir
+                    output_dir=output_dir + "_background_subtracted"
                 )
 
 
@@ -2985,6 +2988,9 @@ class ImagingEpoch(Epoch):
                         output_path=output_path.replace(".fits", "_reprojected.fits")
                     )
             self.add_coadded_trimmed_image(trimmed, key=fil)
+            if fil in self.coadded_subtracted and self.coadded_subtracted[fil] is not None:
+                trimmed = self.coadded_subtracted[fil].trim_from_area(output_path=output_path)
+                self.add_coadded_trimmed_image(trimmed, key=fil)
 
     def proc_source_extraction(self, output_dir: str, **kwargs):
         if "do_astrometry_diagnostics" not in kwargs:
@@ -3027,6 +3033,7 @@ class ImagingEpoch(Epoch):
                 images=images,
                 offset_tolerance=offset_tolerance
             )
+
         if do_psf_diagnostics:
             self.psf_diagnostics(images=images)
 
@@ -3424,11 +3431,11 @@ class ImagingEpoch(Epoch):
             if self.coadded_subtracted[fil] is not None:
                 img.set_header_items(
                     items={
-                        # 'ASTM_RMS': astm_rms,
-                        # 'RA_RMS': img_projected.extract_header_item(key="RA_RMS"),
-                        # 'DEC_RMS': img_projected.extract_header_item(key="DEC_RMS"),
-                        # 'PSF_FWHM': psf_fwhm,
-                        # 'PSF_FWHM_ERR': psf_fwhm_err,
+                        'ASTM_RMS': astm_rms,
+                        'RA_RMS': img_projected.extract_header_item(key="RA_RMS"),
+                        'DEC_RMS': img_projected.extract_header_item(key="DEC_RMS"),
+                        'PSF_FWHM': psf_fwhm,
+                        'PSF_FWHM_ERR': psf_fwhm_err,
                         'ZP': img_projected.extract_header_item(key="ZP"),
                         'ZP_ERR': img_projected.extract_header_item(key="ZP_ERR"),
                         'ZPCAT': str(img_projected.extract_header_item(key="ZPCAT"))
@@ -3517,6 +3524,9 @@ class ImagingEpoch(Epoch):
             stats["file_path"] = img.path
             self.astrometry_stats[fil] = stats
 
+            # if fil in self.coadded_subtracted and self.coadded_subtracted[fil] is not None:
+            #     self.coadded_subtracted[fil].astrometry_stats
+
         self.add_log(
             "Ran astrometry diagnostics.",
             method=self.astrometry_diagnostics,
@@ -3563,6 +3573,8 @@ class ImagingEpoch(Epoch):
             image_dict = self.coadded
         elif image_type in ["coadded_unprojected", "unprojected"]:
             image_dict = self.coadded_unprojected
+        elif image_type in ["coadded_subtracted", "subtracted"]:
+            image_dict = self.coadded_subtracted
         elif image_type in ["coadded_astrometry", "astrometry"]:
             image_dict = self.coadded_astrometry
         else:
@@ -4145,12 +4157,6 @@ class ImagingEpoch(Epoch):
             #            }]
             #
             #      },
-            "skip":
-                {"esoreflex_copy": False,
-                 "sextractor_individual": False,
-                 "sextractor": False,
-                 "esorex": False,
-                 },
         })
 
         return default_params
