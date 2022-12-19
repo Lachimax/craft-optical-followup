@@ -3210,17 +3210,17 @@ class ImagingImage(Image):
             frame1.axes.set_yticks([])
             frame1.axes.invert_yaxis()
 
-        scaling_data = data[bottom:top, left:right]
-        sigma_clip = SigmaClip(sigma=3.)
-        data_clipped = sigma_clip(scaling_data, masked=False)
+        # scaling_data = data[bottom:top, left:right]
+        # sigma_clip = SigmaClip(sigma=3.)
+        # data_clipped = sigma_clip(scaling_data, masked=False)
 
         if "vmin" not in normalize_kwargs:
-            normalize_kwargs["vmin"] = np.median(scaling_data)
+            normalize_kwargs["vmin"] = np.median(data) #np.median(scaling_data)
 
         ax.imshow(
             data,
             norm=ImageNormalize(
-                data_clipped,
+                data,
                 **normalize_kwargs
             ),
             **imshow_kwargs
