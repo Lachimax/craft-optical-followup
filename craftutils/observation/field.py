@@ -578,6 +578,10 @@ class Field:
         :return:
         """
         # User selects instrument from those available in param directory, and we set up the relevant Epoch object
+
+        current_epochs = self.gather_epochs_imaging()
+        current_epochs.update(self.gather_epochs_spectroscopy())
+
         instrument = select_instrument(mode=mode)
         is_combined = False
         if mode == "imaging":
@@ -597,7 +601,26 @@ class Field:
             is_survey = True
         else:
             is_survey = False
-            new_params["name"] = u.user_input("Please enter a name for the epoch.")
+            default_prefix = f"{self.name}_{instrument.upper()[instrument.find('-')+1:]}"
+            others_like = list(filter(
+                lambda string: string.startswith(default_prefix) and string[-1].isnumeric(),
+                current_epochs
+            ))
+            next_n = 1
+            if others_like:
+                others_like.sort()
+                next_n = int(others_like[-1][-1]) + 1
+                print("Other epochs for this instrument are:")
+                for st in others_like:
+                    print(f"\t", st)
+            default = f"{default_prefix}_{next_n}"
+            name = None
+            while name is None:
+                name = u.user_input("Please enter a name for the epoch.", default=default)
+                if name in current_epochs:
+                    print(f"The epoch {name} already exists.")
+                    name = None
+            new_params["name"] = name
             # new_params["date"] = u.enter_time(message="Enter UTC observation date, in iso or isot format:").strftime(
             #     '%Y-%m-%d')
             # new_params["program_id"] = input("Enter the programmme ID for the observation:\n")
