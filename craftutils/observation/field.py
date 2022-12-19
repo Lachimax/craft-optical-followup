@@ -2914,11 +2914,7 @@ class ImagingEpoch(Epoch):
             image_type: str = None,
             **kwargs
     ):
-        skip_indices = False
-        if "skip_indices" in kwargs:
-            skip_indices = kwargs["skip_indices"]
-        if not skip_indices:
-            self.generate_astrometry_indices()
+        self.generate_astrometry_indices()
 
         self.coadded_astrometry = {}
 
@@ -3840,6 +3836,7 @@ class ImagingEpoch(Epoch):
         astm.astrometry_net.add_index_directory(cat_index_path)
         for index_path in self.astrometry_indices:
             shutil.copy(index_path, cat_index_path)
+        self.update_output_file()
         return self.astrometry_indices
 
     def epoch_gaia_catalogue(
