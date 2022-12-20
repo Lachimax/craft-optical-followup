@@ -3104,12 +3104,8 @@ class ImagingImage(Image):
             fig: plt.Figure = None,
             ax: plt.Axes = None,
             n: int = 1, n_x: int = 1, n_y: int = 1,
-            show_cbar: bool = False,
             show_grid: bool = False,
-            ticks: int = None,
             show_coords: bool = True,
-            ylabel: str = None,
-            reverse_y=False,
             imshow_kwargs: dict = None,  # Can include cmap
             normalize_kwargs: dict = None,  # Can include vmin, vmax
             output_path: str = None,
@@ -3202,7 +3198,7 @@ class ImagingImage(Image):
             else:
                 projection = None
 
-            ax = fig.add_subplot(n_x, n_y, n, projection=projection)
+            ax = fig.add_subplot(n_y, n_x, n, projection=projection)
 
         if not show_coords:
             frame1 = plt.gca()
@@ -3214,13 +3210,13 @@ class ImagingImage(Image):
         # sigma_clip = SigmaClip(sigma=3.)
         # data_clipped = sigma_clip(scaling_data, masked=False)
 
-        if "vmin" not in normalize_kwargs:
-            normalize_kwargs["vmin"] = np.median(data) #np.median(scaling_data)
+        # if "vmin" not in normalize_kwargs:
+        #     normalize_kwargs["vmin"] = np.median(data[bottom:top, left:right]) #np.median(scaling_data)
 
-        ax.imshow(
+        other_args["mapping"] = ax.imshow(
             data,
             norm=ImageNormalize(
-                data,
+                data[bottom:top, left:right],
                 **normalize_kwargs
             ),
             **imshow_kwargs

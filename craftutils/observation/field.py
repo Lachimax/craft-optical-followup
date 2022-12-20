@@ -1309,8 +1309,6 @@ class FRBField(Field):
             show_frb: bool = True,
             frame: units.Quantity = 30 * units.pix,
             n: int = 1, n_x: int = 1, n_y: int = 1,
-            # show_cbar: bool = False,
-            # show_grid: bool = False,
             # ticks: int = None, interval: str = 'minmax',
             # font_size: int = 12,
             # reverse_y=False,
@@ -1375,7 +1373,7 @@ class FRBField(Field):
         if output_path is not None:
             fig.savefig(output_path)
 
-        return ax, fig
+        return ax, fig, other_args
 
     def frb_ellipse_to_plot(
             self,
@@ -3370,7 +3368,7 @@ class ImagingEpoch(Epoch):
                                 normalize_kwargs["stretch"] = stretch
                                 centre = obj.position_from_cat_row()
                                 fig = plt.figure(figsize=(6, 5))
-                                plot, fig = self.field.plot_host(
+                                ax, fig, _ = self.field.plot_host(
                                     img=img,
                                     fig=fig,
                                     centre=centre,
@@ -3392,7 +3390,7 @@ class ImagingEpoch(Epoch):
                                     f_name = fil
                                 else:
                                     f_name = img.filter.nice_name()
-                                plot.set_title(f"{name}, {f_name}")
+                                ax.set_title(f"{name}, {f_name}")
                                 fig.savefig(output_path + ".pdf")
                                 fig.savefig(output_path + ".png")
                                 plt.close(fig)

@@ -551,13 +551,12 @@ def latex_setup(
         font_family: str = 'serif',
         math_fontset: str = None,
         packages: list = ["amsmath"],
+        use_tex: bool = True,
         **kwargs
 ):
     from distutils.spawn import find_executable
 
-    if find_executable("latex"):
-        use_tex = True
-    else:
+    if not find_executable("latex"):
         use_tex = False
 
     if "font.serif" not in kwargs:
