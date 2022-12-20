@@ -6,9 +6,11 @@ channels:
 dependencies:
   - python>=3.5
   - astroalign>=2.4
+  - astrometry>=0.92
   - astropy>=5.0
   - astroquery>=0.4
   - ccdproc>=2.3
+  - libgsl>=2.7
   - matplotlib>=3.0
   - numpy=1.23
   - photutils>=1.5

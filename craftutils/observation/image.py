@@ -17,6 +17,7 @@ import astropy.table as table
 import astropy.wcs as wcs
 import astropy.units as units
 from astropy.stats import SigmaClip
+from astropy.modeling import models, fitting
 
 from astropy.visualization import (
     ImageNormalize, LogStretch, SqrtStretch, MinMaxInterval, ZScaleInterval)
@@ -355,6 +356,8 @@ class Image:
         self.airmass = None
         self.airmass_err = 0.0
 
+        self.derived_from = None
+
         if logg is None:
             self.log = log.Log()
         u.debug_print(2, f"Image.__init__(): {self}.log.log.keys() ==", self.log.log.keys())
@@ -667,12 +670,13 @@ class Image:
         self.extract_n_pix()
         return 1, self.n_x, 1, self.n_y
 
-    def extract_saturate(self):
+    def extract_saturate(self, data_ext: int = 0):
         key = self.header_keys()["saturate"]
         saturate = self.extract_header_item(key)
         if saturate is None:
             saturate = 65535
-        self.saturate = saturate * units.ct
+        unit = self.extract_unit(astropy=True)
+        self.saturate = saturate * unit
         return self.saturate
 
     def remove_extra_extensions(self, ext: int = 0):
@@ -2103,6 +2107,9 @@ class ImagingImage(Image):
         self.close()
         return left, right, bottom, top
 
+    # TODO: Add option to run Astrometry.net via API / astroquery:
+    # https://astroquery.readthedocs.io/en/latest/astrometry_net/astrometry_net.html
+
     def correct_astrometry(
             self,
             output_dir: str = None,
@@ -2147,7 +2154,7 @@ class ImagingImage(Image):
         new_new_path = os.path.join(self.data_path, f"{base_filename}.fits")
         os.rename(new_path, new_new_path)
 
-        if output_dir is not None:
+        if output_dir is not None and not os.path.samefile(self.data_path, output_dir):
             if not os.path.isdir(output_dir):
                 raise ValueError(f"Invalid output directory {output_dir}")
             for astrometry_product in filter(lambda f: f.startswith(base_filename), os.listdir(self.data_path)):
@@ -2252,6 +2259,7 @@ class ImagingImage(Image):
             raise ValueError("other_image is not a valid ImagingImage")
         other_header = other_image.load_headers()[0]
 
+        u.mkdir_check_nested(output_dir, remove_last=False)
         output_path = os.path.join(output_dir, f"{self.name}_astrometry.fits")
         shutil.copyfile(self.path, output_path)
 
@@ -3194,7 +3202,7 @@ class ImagingImage(Image):
             else:
                 projection = None
 
-            ax = fig.add_subplot(n_y, n_x, n, projection=projection)
+            ax = fig.add_subplot(n_x, n_y, n, projection=projection)
 
         if not show_coords:
             frame1 = plt.gca()
@@ -3202,10 +3210,17 @@ class ImagingImage(Image):
             frame1.axes.set_yticks([])
             frame1.axes.invert_yaxis()
 
+        # scaling_data = data[bottom:top, left:right]
+        # sigma_clip = SigmaClip(sigma=3.)
+        # data_clipped = sigma_clip(scaling_data, masked=False)
+
+        if "vmin" not in normalize_kwargs:
+            normalize_kwargs["vmin"] = np.median(data) #np.median(scaling_data)
+
         ax.imshow(
             data,
             norm=ImageNormalize(
-                data[bottom:top, left:right],
+                data,
                 **normalize_kwargs
             ),
             **imshow_kwargs
@@ -3357,6 +3372,14 @@ class ImagingImage(Image):
 
         return ax
 
+    def pixel(self, value: Union[float, int, units.Quantity], ext: int = 0):
+        if not isinstance(value, units.Quantity):
+            value *= units.pix
+        else:
+            self.extract_pixel_scale(ext)
+            value = value.to(units.pix, self.pixel_scale_y)
+        return value
+
     def prep_for_colour(
             self,
             output_path: str,
@@ -3367,12 +3390,11 @@ class ImagingImage(Image):
             ext: int = 0,
             scale_to_jansky: bool = False
     ):
-        self.extract_pixel_scale(ext)
-        frame = frame.to(units.pix, self.pixel_scale_y).value
+        frame = self.pixel(frame, ext=ext)
 
         self.load_data()
         x, y = self.world_to_pixel(centre, 0)
-        left, right, bottom, top = u.frame_from_centre(frame=frame, x=x, y=y, data=self.data[ext])
+        left, right, bottom, top = u.frame_from_centre(frame=frame.value, x=x, y=y, data=self.data[ext])
         trimmed = self.trim(
             left=left,
             right=right,
@@ -3737,7 +3759,7 @@ class ImagingImage(Image):
         x, y = self.wcs[ext].all_world2pix(coord.ra, coord.dec, 0)
         ap_radius_pix = ap_radius.to(units.pix, pix_scale).value
 
-        self.model_background_photometry(method="sep", mask=True, ext=ext, **kwargs)
+        self.model_background_photometry(method="sep", do_mask=True, ext=ext, **kwargs)
         rms = self.sep_background[ext].rms()
 
         # plt.imshow(rms)
@@ -3866,19 +3888,165 @@ class ImagingImage(Image):
 
         return sources
 
+    def model_background_local(
+            self,
+            centre: SkyCoord,
+            frame: units.Quantity,
+            ext: int = 0,
+            model_type: models = models.Polynomial2D,
+            fitter_type: fitting.Fitter = fitting.LevMarLSQFitter,
+            init_params: dict = {"degree": 3},
+            write: str = None,
+            write_subbed: str = None,
+            do_mask: bool = True,
+            mask_kwargs: dict = {},
+            saturate_factor: float = 0.5
+    ):
+        self.load_data()
+        frame = self.pixel(frame).value
+
+        x_centre, y_centre = self.world_to_pixel(centre, ext=ext)
+
+        print("")
+        print(self.filename)
+        print("Centre:", centre)
+        print(f"\t{x_centre}, {y_centre}")
+        print("Frame:", frame)
+        print("Image size:", self.data[ext].shape[1], self.data[ext].shape[0])
+
+        margins = left, right, bottom, top = u.frame_from_centre(
+            frame=frame,
+            x=x_centre, y=y_centre,
+            data=self.data[ext]
+        )
+        print("Margins:", margins)
+
+        data = self.data[ext] * 1 #[bottom:top, left:right]
+
+        if do_mask:
+            mask = self.generate_mask(
+                margins=margins,
+                method="sep",
+                **mask_kwargs,
+            )
+            mask = mask# [bottom:top, left:right]
+            mask = mask.astype(bool)
+            mask += data < 0
+            mask += data > self.extract_saturate() * saturate_factor
+        else:
+            mask = np.zeros(data.shape, dtype=bool)
+
+        data -= np.median(self.data[ext])
+
+        print("Mask 1:", np.sum(mask), "/", np.size(mask))
+
+        mask[:, :left] = True
+        mask[:, right:] = True
+        mask[:bottom, :] = True
+        mask[top:, :] = True
+
+        print("Mask 2:", np.sum(mask), "/", np.size(mask))
+
+        weights = 1. / self.sep_background[ext].rms()
+
+        print("Weights 1:", np.sum(weights))
+
+        where_mask = np.where(mask)
+
+        print("Where mask:", np.sum(where_mask), "/", np.size(where_mask))
+
+        for n, i in enumerate(where_mask[0]):
+            j = where_mask[1][n]
+            weights[i, j] = 0. #np.invert(mask).astype(float)
+
+        print("Weights 2:", np.sum(weights))
+
+        model_init = model_type(**init_params)
+        fitter = fitter_type(True)
+        y, x = np.mgrid[:data.shape[0], :data.shape[1]]
+        model = fitter(
+            model_init,
+            x, y,
+            data.value,
+            weights=weights
+        )
+        model_eval = model(x, y)
+        subbed_all = data.value - model_eval
+        subbed_window = data
+        subbed_window[bottom:top, left:right] = subbed_all[bottom:top, left:right] * data.unit
+
+        print(model)
+
+        if isinstance(write, str):
+            back_file = self.copy(write)
+            back_file.load_data()
+            back_file.load_headers()
+            back_file.data[ext] = model_eval * data.unit
+            back_file.add_log(
+                action=f"Background modelled.",
+                method=self.model_background_photometry,
+                input_path=self.path,
+                output_path=write,
+                ext=ext,
+            )
+            back_file.write_fits_file()
+
+            weights_file = self.copy(write.replace(".fits", "_weights.fits"))
+            weights_file.load_data()
+            weights_file.load_headers()
+            weights_file.data[ext] = weights * units.ct
+            weights_file.add_log(
+                action=f"Background modelled.",
+                method=self.model_background_photometry,
+                input_path=self.path,
+                output_path=write,
+                ext=ext,
+            )
+            weights_file.write_fits_file()
+
+            mask_file = self.copy(write.replace(".fits", "_mask.fits"))
+            mask_file.load_data()
+            mask_file.load_headers()
+            mask_file.data[ext] = mask.astype(float) * units.ct
+            mask_file.add_log(
+                action=f"Background modelled.",
+                method=self.model_background_photometry,
+                input_path=self.path,
+                output_path=write,
+                ext=ext,
+            )
+            mask_file.write_fits_file()
+
+        if isinstance(write_subbed, str):
+            subbed_file = self.copy(write_subbed)
+            subbed_file.load_data()
+            subbed_file.load_headers()
+            subbed_file.data[ext] = subbed_window
+            subbed_file.add_log(
+                action=f"Background modelled and subtracted.",
+                method=self.model_background_photometry,
+                input_path=self.path,
+                output_path=write_subbed,
+                ext=ext,
+            )
+            subbed_file.write_fits_file()
+
+        return model, model_eval, data, subbed_window, mask, weights
+
     def model_background_photometry(
             self, ext: int = 0,
             box_size: int = 64,
             filter_size: int = 3,
             method: str = "sep",
             write: str = None,
-            mask: bool = True,
+            write_subbed: str = None,
+            do_mask: bool = False,
             **back_kwargs
     ):
         self.load_data()
 
         mask = None
-        if mask:
+        if do_mask:
             mask = self.generate_mask(method=method)
             mask = mask.astype(bool)
 
@@ -3921,6 +4089,13 @@ class ImagingImage(Image):
             back_file.load_headers()
             back_file.data[ext] = bkg_data
             back_file.write_fits_file()
+
+        if isinstance(write_subbed, str):
+            subbed_file = self.copy(write_subbed)
+            subbed_file.load_data()
+            subbed_file.load_headers()
+            subbed_file.data[ext] = self.data[ext] - bkg_data
+            subbed_file.write_fits_file()
 
         return bkg, bkg_data
 
@@ -3970,15 +4145,19 @@ class ImagingImage(Image):
             ).copy()
             err = u.trim_image(bkg.rms(), margins=margins).copy()
             u.debug_print(2, f"{self}.generate_segmap(): type(err) ==", type(err), "err.shape ==", err.shape)
-            objects, segmap = sep.extract(
-                data_trim,
-                err=err,
-                thresh=threshold,
-                # deblend_cont=True,
-                clean=False,
-                segmentation_map=True,
-                minarea=min_area
-            )
+            if 0 in data_trim.shape:
+                # If we've trimmed the array down to nothing, we should just return something empty and avoid sep errors
+                segmap = np.zeros(data_trim.shape, dtype=int)
+            else:
+                objs, segmap = sep.extract(
+                    data_trim,
+                    err=err,
+                    thresh=threshold,
+                    # deblend_cont=True,
+                    clean=False,
+                    segmentation_map=True,
+                    minarea=min_area
+                )
 
         else:
             raise ValueError(f"Unrecognised method {method}.")
@@ -4101,7 +4280,7 @@ class ImagingImage(Image):
     ):
         self.extract_pixel_scale()
         pixel_radius = aperture_radius.to(units.pix, self.pixel_scale_y)
-        self.model_background_photometry(ext=ext)
+        self.model_background_photometry(ext=ext, do_mask=True)
         if sub_background:
             data = self.data_sub_bkg[ext]
         else:
