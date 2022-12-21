@@ -3894,7 +3894,8 @@ class ImagingImage(Image):
             init_params: dict = {"degree": 3},
             write: str = None,
             write_subbed: str = None,
-            do_mask: bool = True,
+            generate_mask: bool = True,
+            mask_ellipses: List[dict] = None,
             mask_kwargs: dict = {},
             saturate_factor: float = 0.5
     ):
@@ -3905,21 +3906,16 @@ class ImagingImage(Image):
 
         print("")
         print(self.filename)
-        print("Centre:", centre)
-        print(f"\t{x_centre}, {y_centre}")
-        print("Frame:", frame)
-        print("Image size:", self.data[ext].shape[1], self.data[ext].shape[0])
 
         margins = left, right, bottom, top = u.frame_from_centre(
             frame=frame,
             x=x_centre, y=y_centre,
             data=self.data[ext]
         )
-        print("Margins:", margins)
 
         data = self.data[ext] * 1 #[bottom:top, left:right]
 
-        if do_mask:
+        if generate_mask:
             mask = self.generate_mask(
                 margins=margins,
                 method="sep",
@@ -3932,30 +3928,37 @@ class ImagingImage(Image):
         else:
             mask = np.zeros(data.shape, dtype=bool)
 
-        data -= np.median(self.data[ext])
+        if mask_ellipses:
+            for ellipse_dict in mask_ellipses:
+                j, i = np.mgrid[:data.shape[0], :data.shape[1]]
+                x, y = self.world_to_pixel(ellipse_dict["centre"])
+                a = self.pixel(ellipse_dict["a"]).value * 2
+                b = self.pixel(ellipse_dict["b"]).value * 2
+                cos_angle = np.cos(180. * units.deg - ellipse_dict["theta"])
+                sin_angle = np.sin(180. * units.deg - ellipse_dict["theta"])
 
-        print("Mask 1:", np.sum(mask), "/", np.size(mask))
+                xc = i - x
+                yc = j - y
+
+                xct = xc * cos_angle - yc * sin_angle
+                yct = xc * sin_angle + yc * cos_angle
+
+                rad_cc = (xct ** 2 / (a / 2.) ** 2) + (yct ** 2 / (b / 2.) ** 2)
+                mask += rad_cc <= 1
+
+        data -= np.median(self.data[ext])
 
         mask[:, :left] = True
         mask[:, right:] = True
         mask[:bottom, :] = True
         mask[top:, :] = True
 
-        print("Mask 2:", np.sum(mask), "/", np.size(mask))
-
         weights = 1. / self.sep_background[ext].rms()
-
-        print("Weights 1:", np.sum(weights))
-
         where_mask = np.where(mask)
-
-        print("Where mask:", np.sum(where_mask), "/", np.size(where_mask))
 
         for n, i in enumerate(where_mask[0]):
             j = where_mask[1][n]
             weights[i, j] = 0. #np.invert(mask).astype(float)
-
-        print("Weights 2:", np.sum(weights))
 
         model_init = model_type(**init_params)
         fitter = fitter_type(True)
@@ -3970,8 +3973,6 @@ class ImagingImage(Image):
         subbed_all = data.value - model_eval
         subbed_window = data
         subbed_window[bottom:top, left:right] = subbed_all[bottom:top, left:right] * data.unit
-
-        print(model)
 
         if isinstance(write, str):
             back_file = self.copy(write)

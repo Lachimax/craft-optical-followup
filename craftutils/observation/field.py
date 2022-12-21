@@ -2446,10 +2446,20 @@ class ImagingEpoch(Epoch):
                             kwargs["centre"] = frame.extract_pointing()
                     if "frame" not in kwargs:
                         kwargs["frame"] = 15 * units.arcsec
+                    if isinstance(self.field, FRBField):
+                        a, b = self.field.frb.position_err.uncertainty_quadrature_equ()
+                        mask_ellipses = [{
+                            "a": a, "b": b,
+                            "theta": self.field.frb.position_err.theta,
+                            "centre": self.field.frb.position
+                        }]
+                    else:
+                        mask_ellipses = None
                     frame.model_background_local(
                         write_subbed=subbed_path,
                         write=back_path,
-                        do_mask=True,
+                        generate_mask=True,
+                        mask_ellipses=mask_ellipses,
                         **kwargs
                     )
 
