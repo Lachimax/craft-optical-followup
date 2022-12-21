@@ -3767,15 +3767,16 @@ class ImagingImage(Image):
         flux, _, _ = sep.sum_circle(rms, [x], [y], ap_radius_pix)
         sigma_flux = np.sqrt(flux)
 
-        limits = {}
+        limits = []
         for i in range(sigma_min, sigma_max + 1):
             n_sigma_flux = sigma_flux * i
             limit, _, _, _ = self.magnitude(flux=n_sigma_flux)
-            limits[f"{i}-sigma"] = {
-                "flux": n_sigma_flux,
-                "mag": limit
-            }
-        return limits
+            limits.append({
+                "sigma": i,
+                "flux": n_sigma_flux[0],
+                "mag": limit[0]
+            })
+        return table.QTable(limits)
 
     def test_limit_synthetic(
             self,

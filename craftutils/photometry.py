@@ -340,7 +340,7 @@ def magnitude_complete(
     :return:
     """
 
-    print('Calculating magnitudes...')
+    # print('Calculating magnitudes...')
 
     if colour is None:
         colour = 0.0
