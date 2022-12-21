@@ -2267,8 +2267,10 @@ class ImagingImage(Image):
         # In fact, it makes rather a mess of them. Work out how to do this properly.
 
         # Take old astrometry info from other header
-        start_index = other_header.index("_RVAL1") - 1
-        end_index = other_header.index("_D2_2") + 1
+        end_index = start_index = other_header.index("_RVAL1") - 1
+        keys = list(other_header.keys())
+        while keys[end_index].startswith("_") or keys[end_index] == "COMMENT":
+            end_index += 1
         insert = other_header[start_index:end_index]
 
         # Take new astrometry info from other header
