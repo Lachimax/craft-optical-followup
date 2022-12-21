@@ -5285,6 +5285,7 @@ class HAWKIImage(ESOImagingImage):
         header_keys.update(ESOImage.header_keys())
         header_keys.update({
             "gain": "GAIN",
+            "noise_read": "READNOIS"
         })
         return header_keys
 

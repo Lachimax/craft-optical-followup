@@ -288,6 +288,8 @@ class Filter:
         self_transmission = tbl_self["Transmission"]
         other_transmission = tbl_other["Transmission"]
 
+        print(min(self_wavelength[self_transmission > 0]), min(other_wavelength[other_transmission > 0]))
+
         difference = np.abs(
             min(self_wavelength[self_transmission > 0]) - min(other_wavelength[other_transmission > 0])) + np.abs(
             max(self_wavelength[self_transmission > 0]) - max(other_wavelength[other_transmission > 0]))
