@@ -3378,6 +3378,18 @@ class ImagingImage(Image):
             value = value.to(units.pix, self.pixel_scale_y)
         return value
 
+    def frame_from_coord(
+            self,
+            frame: units.Quantity,
+            centre: SkyCoord,
+            ext: int = 0,
+
+    ):
+        frame = self.pixel(frame, ext=ext)
+        self.load_data()
+        x, y = self.world_to_pixel(centre, 0)
+        return u.frame_from_centre(frame=frame.value, x=x, y=y, data=self.data[ext])
+
     def prep_for_colour(
             self,
             output_path: str,
@@ -3388,11 +3400,11 @@ class ImagingImage(Image):
             ext: int = 0,
             scale_to_jansky: bool = False
     ):
-        frame = self.pixel(frame, ext=ext)
-
-        self.load_data()
-        x, y = self.world_to_pixel(centre, 0)
-        left, right, bottom, top = u.frame_from_centre(frame=frame.value, x=x, y=y, data=self.data[ext])
+        left, right, bottom, top = self.frame_from_coord(
+            frame=frame,
+            centre=centre,
+            ext=ext
+        )
         trimmed = self.trim(
             left=left,
             right=right,
@@ -3760,10 +3772,6 @@ class ImagingImage(Image):
         self.model_background_photometry(method="sep", do_mask=True, ext=ext, **kwargs)
         rms = self.sep_background[ext].rms()
 
-        # plt.imshow(rms)
-        # plt.colorbar()
-        # plt.show()
-
         flux, _, _ = sep.sum_circle(rms, [x], [y], ap_radius_pix)
         sigma_flux = np.sqrt(flux)
 
@@ -3902,19 +3910,14 @@ class ImagingImage(Image):
             mask_kwargs: dict = {},
             saturate_factor: float = 0.5
     ):
-        self.load_data()
-        frame = self.pixel(frame).value
-
-        x_centre, y_centre = self.world_to_pixel(centre, ext=ext)
+        margins = left, right, bottom, top = self.frame_from_coord(
+            frame=frame,
+            centre=centre,
+            ext=ext
+        )
 
         print("")
         print(self.filename)
-
-        margins = left, right, bottom, top = u.frame_from_centre(
-            frame=frame,
-            x=x_centre, y=y_centre,
-            data=self.data[ext]
-        )
 
         data = self.data[ext] * 1 #[bottom:top, left:right]
 
@@ -5302,6 +5305,19 @@ class HAWKICoaddedImage(CoaddedImage):
 
     def extract_exposure_time(self):
         return 1 * units.s
+
+    def extract_filter(self):
+        key = self.header_keys()["filter"]
+        self.filter_name = self.extract_header_item(key)
+        if self.filter_name is None:
+            key = super().header_keys()["filter"]
+            self.filter_name = self.extract_header_item(key)
+        if self.filter_name is not None:
+            self.filter_short = self.filter_name[0]
+
+        self._filter_from_name()
+
+        return self.filter_name
 
     def zeropoint(
             self,

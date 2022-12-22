@@ -112,6 +112,8 @@ def inject_header(
 
     insert_dict["NCOMBINE"] = n_frames
 
+    if "TEXPTIME" in table.colnames:
+        insert_dict["TEXPTIME"] = np.sum(table["TEXPTIME"])
     if important_keys['saturate'] in table.colnames:
         insert_dict[f"SATURATE"] = np.nanmean(np.float64(table[important_keys['saturate']])),
     if "OLD_EXPTIME" in table.colnames:
