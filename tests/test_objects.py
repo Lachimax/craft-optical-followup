@@ -11,6 +11,7 @@ test_frb = objects.FRB(
     position=SkyCoord("23h23m10.424s -30d24m19.55s")
 )
 
+# I have commented tests that require the FRB repo pending a reasonable way to include this in the Travis build.
 
 # def test_frb_dm_mw_halo():
 #     dm_mws = test_frb.dm_mw_halo(
