@@ -4,6 +4,7 @@ import json
 import os
 from datetime import date
 from typing import Union
+from shutil import copy
 
 import astropy.io.misc.yaml as yaml
 import astropy.units as units
@@ -187,7 +188,6 @@ def yaml_to_json(yaml_file: str, output: str = None):
 
     return p
 
-
 config = check_for_config()
 param_dir = u.check_trailing_slash(config['param_dir'])
 project_path = u.check_trailing_slash(config['proj_dir'])
@@ -195,6 +195,16 @@ data_path = u.check_trailing_slash(config["top_data_dir"])
 furby_path = None
 if "furby_dir" in config and config["furby_dir"] is not None:
     furby_path = u.check_trailing_slash(config["furby_dir"])
+
+param_path = os.path.join(os.getcwd(), "param")
+
+data_dir = config["top_data_dir"]
+u.mkdir_check_nested(data_dir)
+u.mkdir_check(os.path.join(param_path, "fields"))
+u.mkdir_check(os.path.join(param_path), "instruments")
+key_path = os.path.join(config["param_dir"], 'keys.json')
+if not os.path.isfile(key_path):
+    copy(os.path.join(param_path, "keys.json"), key_path)
 
 
 def get_project_git_hash(short: bool = False):
