@@ -11,6 +11,7 @@ This documentation is under construction.
 .. toctree::
    :maxdepth: 2
    :caption: Contents:
+   api
 
 
 
