@@ -61,8 +61,11 @@ def generate_astrometry_indices(
         unique_id_prefix: int,
         index_output_dir: str,
         fits_cat_output: str = None,
+        add_path: bool = True,
         p_lower: int = -1, p_upper: int = 2):
     u.mkdir_check(index_output_dir)
+    if add_path:
+        astrometry_net.add_index_directory(index_output_dir)
     cat_name = cat_name.lower()
     if fits_cat_output is None and isinstance(cat, str):
         if cat.endswith(".csv"):
@@ -75,21 +78,25 @@ def generate_astrometry_indices(
     cols = cat_columns(cat=cat_name, f="rank")
     cat.write(fits_cat_output, format='fits', overwrite=True)
     unique_id_prefix = str(unique_id_prefix)
+    index_paths = []
     for scale in range(p_lower, p_upper + 1):
         unique_id = unique_id_prefix + str(scale).replace("-", "0")
         unique_id = int(unique_id)
         output_file_name_scale = f"{output_file_prefix}_{scale}"
         try:
+            index_path = os.path.join(index_output_dir, output_file_name_scale)
             astrometry_net.build_astrometry_index(
                 input_fits_catalog=fits_cat_output,
                 unique_id=unique_id,
-                output_index=os.path.join(index_output_dir, output_file_name_scale),
+                output_index=index_path,
                 scale_number=scale,
                 sort_column=cols["mag_auto"],
                 scan_through_catalog=True
             )
+            index_paths.append(index_path)
         except SystemError:
             print(f"Building index for scale {scale} failed.")
+    return index_paths
 
 
 def attempt_skycoord(coord: Union[SkyCoord, str, tuple, list, np.ndarray]):
@@ -262,11 +269,12 @@ def match_catalogs(
         cat_1: table.Table, cat_2: table.Table,
         ra_col_1: str = "RA", dec_col_1: str = "DEC",
         ra_col_2: str = "ra", dec_col_2: str = "dec",
-        tolerance: units.Quantity = 1 * units.arcsec
+        tolerance: units.Quantity = 1 * units.arcsec,
+        keep_non_matches: bool = False,
 ):
     # Clean out any invalid declinations
     u.debug_print(2, "match_catalogs(): type(cat_1) ==", type(cat_1), "type(cat_2) ==", type(cat_2))
-    print("len(cat_1) match_catalogs:", len(cat_1))
+    u.debug_print(2, "match_catalogs(): len(cat_1) ==", len(cat_1))
     cat_1 = sanitise_coord(cat_1, dec_col_1)
     cat_2 = sanitise_coord(cat_2, dec_col_2)
 
@@ -277,8 +285,18 @@ def match_catalogs(
     keep = distance < tolerance
     idx = idx[keep]
     matches_2 = cat_2[keep]
+    if keep_non_matches:
+        n_matches = len(matches_2)
+        matches_2 = table.vstack([matches_2, cat_2[np.invert(keep)]])
+        matches_2["matched"] = np.zeros(len(matches_2), dtype=bool)
+        matches_2["matched"][:n_matches] = True
     distance = distance[keep]
 
     matches_1 = cat_1[idx]
+    if keep_non_matches:
+        n_matches = len(matches_1)
+        matches_1 = table.vstack([matches_1, cat_1[[i for i in range(len(cat_1)) if i not in idx]]])
+        matches_1["matched"] = np.zeros(len(matches_1), dtype=bool)
+        matches_1["matched"][:n_matches] = True
 
     return matches_1, matches_2, distance

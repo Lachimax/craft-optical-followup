@@ -554,6 +554,11 @@ def latex_setup(
         use_tex: bool = True,
         **kwargs
 ):
+    from distutils.spawn import find_executable
+
+    if not find_executable("latex"):
+        use_tex = False
+
     if "font.serif" not in kwargs:
         kwargs["font.serif"] = 'Times'
     if "font.sans-serif" not in kwargs:

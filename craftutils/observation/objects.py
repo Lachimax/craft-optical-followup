@@ -53,8 +53,10 @@ def skycoord_to_position_dict(skycoord: SkyCoord):
     ra = s[:s.find(" ")]
     dec = s[s.find(" ") + 1:]
 
-    position = {"dec": {"decimal": dec_float, "dms": dec},
-                "ra": {"decimal": ra_float, "hms": ra}}
+    position = {
+        "alpha": {"decimal": ra_float, "hms": ra},
+        "delta": {"decimal": dec_float, "dms": dec},
+    }
 
     return position
 
@@ -112,7 +114,7 @@ class PositionUncertainty:
                 if "stat" in uncertainty[ra_key] and uncertainty[ra_key]["stat"] is not None:
                     ra_err_stat = uncertainty[ra_key]["stat"]
                     if isinstance(ra_err_stat, str):
-                        ra_err_stat = Longitude(ra_err_stat)
+                        ra_err_stat = (Longitude(ra_err_stat) * np.cos(position.dec)).to("arcsec")
 
             dec_key = None
             if "dec" in uncertainty and uncertainty["dec"] is not None:
@@ -281,6 +283,7 @@ class Object:
         self.set_name_filesys()
 
         self.photometry = {}
+        self.photometry_tbl_best = None
         self.photometry_tbl = None
         self.data_path = None
         self.output_file = None
@@ -607,13 +610,23 @@ class Object:
             output = os.path.join(self.data_path, f"{self.name_filesys}_photometry.pdf")
 
         plt.close()
-        ax = self.plot_photometry(**kwargs)
-        ax.legend()
-        plt.savefig(output)
-        plt.close()
-        return ax
+        axes = []
+        for best in (False, True):
+            ax = self.plot_photometry(**kwargs, best=best)
+            ax.legend()
+            if best:
+                output = output.replace(".pdf", "_best.pdf")
+            plt.savefig(output)
+            axes.append(ax)
+            plt.close()
+        return axes
 
-    def plot_photometry(self, ax=None, **kwargs):
+    def plot_photometry(
+            self,
+            ax=None,
+            best: bool = False,
+            **kwargs
+    ):
         """
         Plots available photometry (mag v lambda_eff).
         :param ax: matplotlib ax object to plot with. A new object is generated if none is provided.
@@ -630,14 +643,15 @@ class Object:
             kwargs["ecolor"] = "black"
 
         self.estimate_galactic_extinction()
-        self.photometry_to_table(fmts=["ascii.ecsv", "ascii.csv"], best=False)
-        self.photometry_to_table(
-            output=self.build_photometry_table_path().replace(".ecsv", "_best.ecsv"),
-            fmts=["ascii.ecsv", "ascii.csv"], best=True)
+        photometry_tbl = self.photometry_to_table(
+            output=self.build_photometry_table_path(best=best),
+            fmts=["ascii.ecsv", "ascii.csv"],
+            best=best,
+        )
 
         with quantity_support():
 
-            valid = self.photometry_tbl[self.photometry_tbl["mag_sep"] > -990 * units.mag]
+            valid = photometry_tbl[photometry_tbl["mag_sep"] > -990 * units.mag]
             plot_limit = (-999 * units.mag == valid["mag_sep_err"])
             limits = valid[plot_limit]
             mags = valid[np.invert(plot_limit)]
@@ -672,9 +686,12 @@ class Object:
             ax.invert_yaxis()
         return ax
 
-    def build_photometry_table_path(self):
+    def build_photometry_table_path(self, best: bool = False):
         self.check_data_path()
-        return os.path.join(self.data_path, f"{self.name_filesys}_photometry.ecsv")
+        if best:
+            return os.path.join(self.data_path, f"{self.name_filesys}_photometry_best.ecsv")
+        else:
+            return os.path.join(self.data_path, f"{self.name_filesys}_photometry.ecsv")
 
     # def update_position_from_photometry(self):
     #     self.photometry_to_table()
@@ -699,8 +716,6 @@ class Object:
 
         if output is None:
             output = self.build_photometry_table_path()
-
-        # if self.photometry_tbl is None:
 
         tbls = []
         for instrument_name in self.photometry:
@@ -732,15 +747,17 @@ class Object:
                         tbls.append(phot_dict)
 
         if best:
-            self.photometry_tbl = table.vstack(tbls)
+            photometry_tbl = table.vstack(tbls)
+            self.photometry_tbl_best = photometry_tbl.copy()
         else:
-            self.photometry_tbl = table.QTable(tbls)
+            photometry_tbl = table.QTable(tbls)
+            self.photometry_tbl = photometry_tbl.copy()
 
         if output is not False:
             for fmt in fmts:
-                u.detect_problem_table(self.photometry_tbl, fmt="csv")
-                self.photometry_tbl.write(output.replace(".ecsv", fmt[fmt.find("."):]), format=fmt, overwrite=True)
-        return self.photometry_tbl
+                u.detect_problem_table(photometry_tbl, fmt="csv")
+                photometry_tbl.write(output.replace(".ecsv", fmt[fmt.find("."):]), format=fmt, overwrite=True)
+        return photometry_tbl
 
     def estimate_galactic_extinction(self, ax=None, r_v: float = 3.1, **kwargs):
         import extinction
@@ -881,17 +898,21 @@ class Object:
                 self.name = name
             return name
 
-    def get_photometry_table(self, output: bool = False):
+    def get_photometry_table(self, output: bool = False, best: bool = False, force: bool = False):
         if not self.photometry:
             self.load_output_file()
         if output is True:
             output = None
-        if self.photometry_tbl is None or len(self.photometry_tbl) == 0:
-            self.photometry_to_table(output=output)
+        tbl = None
+        if best and (force or self.photometry_tbl_best is None or len(self.photometry_tbl_best) == 0):
+            tbl = self.photometry_to_table(output=output, best=True)
+        elif not best and (force or self.photometry_tbl is None or len(self.photometry_tbl) == 0):
+            tbl = self.photometry_to_table(output=output, best=False)
+        return tbl
 
     def select_photometry(self, fil: str, instrument: str, local_output: bool = True):
-        self.get_photometry_table(output=local_output)
-        fil_photom = self.photometry_tbl[self.photometry_tbl["band"] == fil]
+        self.get_photometry_table(output=local_output, best=True)
+        fil_photom = self.photometry_tbl_best[self.photometry_tbl_best["band"] == fil]
         fil_photom = fil_photom[fil_photom["instrument"] == instrument]
         row = fil_photom[np.argmax(fil_photom["snr"])]
         photom_dict = self.photometry[instrument][fil][row["epoch_name"]]
@@ -919,7 +940,7 @@ class Object:
             instrument: str,
             local_output: bool = True
     ):
-        self.get_photometry_table(output=local_output)
+        self.get_photometry_table(output=local_output, best=False)
         fil_photom = self.photometry_tbl[self.photometry_tbl["band"] == fil]
         fil_photom = fil_photom[fil_photom["instrument"] == instrument]
         row = fil_photom[np.argmax(fil_photom["snr_sep"])]
@@ -943,19 +964,19 @@ class Object:
         return photom_dict, mean
 
     def select_psf_photometry(self, local_output: bool = True):
-        self.get_photometry_table(output=local_output)
-        idx = np.argmax(self.photometry_tbl["snr_psf"])
-        row = self.photometry_tbl[idx]
+        self.get_photometry_table(output=local_output, best=True)
+        idx = np.argmax(self.photometry_tbl_best["snr_psf"])
+        row = self.photometry_tbl_best[idx]
         return self.photometry[row["instrument"]][row["band"]][row["epoch_name"]]
 
     def select_best_position(self, local_output: bool = True):
         self.get_photometry_table(output=local_output)
-        idx = np.argmin(self.photometry_tbl["ra_err"] * self.photometry_tbl["dec_err"])
-        row = self.photometry_tbl[idx]
+        idx = np.argmin(self.photometry_tbl_best["ra_err"] * self.photometry_tbl_best["dec_err"])
+        row = self.photometry_tbl_best[idx]
         return self.photometry[row["instrument"]][row["band"]][row["epoch_name"]]
 
     def select_deepest(self, local_output: bool = True):
-        self.get_photometry_table(output=local_output)
+        self.get_photometry_table(output=local_output, best=False)
         idx = np.argmax(self.photometry_tbl["snr"])
         row = self.photometry_tbl[idx]
         deepest = self.photometry[row["instrument"]][row["band"]][row["epoch_name"]]
@@ -986,11 +1007,11 @@ class Object:
         return deepest
 
     def select_deepest_sep(self, local_output: bool = True):
-        self.get_photometry_table(output=local_output)
-        if "snr_sep" not in self.photometry_tbl.colnames:
+        self.get_photometry_table(output=local_output, best=True)
+        if "snr_sep" not in self.photometry_tbl_best.colnames:
             return None
-        idx = np.argmax(self.photometry_tbl["snr_sep"])
-        row = self.photometry_tbl[idx]
+        idx = np.argmax(self.photometry_tbl_best["snr_sep"])
+        row = self.photometry_tbl_best[idx]
         return self.photometry[row["instrument"]][row["band"]][row["epoch_name"]]
 
     def push_to_table(self, select: bool = False, local_output: bool = True):
@@ -1582,6 +1603,7 @@ class Transient(Object):
 
 
 class FRB(Transient):
+    ism_models = {}
     def __init__(
             self,
             dm: Union[float, units.Quantity] = None,
@@ -1656,6 +1678,21 @@ class FRB(Transient):
         )
         return dm
 
+    def dm_mw_ism(
+            self,
+            ism_model: str = "ne2001",
+            distance: Union[units.Quantity, float] = 100. * units.kpc,
+    ):
+        ism_model = ism_model.lower()
+        if ism_model == "ne2001":
+            func = self.dm_mw_ism_ne2001
+        elif ism_model == "ymw16":
+            func = self.dm_mw_ism_ymw16
+        else:
+            raise ValueError(f"Model {ism_model} not recognised.")
+        dm_ism = func(distance=distance)
+        return dm_ism
+
     def dm_mw_ism_cum(
             self,
             max_distance: units.Quantity = 20. * units.kpc,
@@ -1687,37 +1724,67 @@ class FRB(Transient):
             "d": d
         })
 
-    def dm_mw_halo(self, rmax: float = 1.):
+    def dm_mw_halo(
+            self,
+            model: Union[str, frb.halos.models.ModifiedNFW] = "all",
+            **kwargs,
+    ):
         import frb.halos.models as halos
         # from frb.mw import haloDM
-        outputs = {}
-        mw_halo_yf17 = halos.YF17()
-        mw_halo_x = halos.MilkyWay()
-        mw_halo_mb15 = halos.MB15()
-        sun_orbit = 0 * units.m  # 2.7e17 * units.km
-        outputs["dm_halo_mw_yf17"] = mw_halo_yf17.Ne_Rperp(sun_orbit, rmax=rmax) / 2
-        outputs["dm_halo_mw_pz19_rough"] = mw_halo_x.Ne_Rperp(sun_orbit, rmax=rmax) / 2
-        outputs["dm_halo_mw_mb15"] = mw_halo_mb15.Ne_Rperp(sun_orbit, rmax=rmax) / 2
-        # outputs["dm_halo_mw_pz19"] = haloDM(self.position)
-        outputs["dm_halo_mw_pz19"] = self.dm_mw_halo_pz19()
-        return outputs
 
-    def dm_mw_halo_pz19(
+        if isinstance(model, str):
+            model = model.lower()
+            halo_models = {
+                "yf17": halos.YF17,
+                "pz19": halos.MilkyWay,
+                "mb15": halos.MB15
+            }
+            if model == "all":
+                outputs = {}
+                for halo_model in halo_models:
+                    outputs[f"dm_halo_mw_{halo_model}"] = self._dm_mw_halo(
+                        halo_model=halo_models[halo_model](),
+                        **kwargs
+                    )
+                return outputs
+            elif model not in halo_models:
+                raise ValueError(f"Supported halo models are {list(halo_models.keys())}, not {model}")
+            else:
+                return self._dm_mw_halo(
+                    halo_model=halo_models[model](),
+                    **kwargs
+                )
+        else:
+            return self._dm_mw_halo(
+                    halo_model=model,
+                    **kwargs
+                )
+
+    def _dm_mw_halo(
             self,
-            distance: units.Quantity = None,
-            zero: bool = True,
-            halo_model=None
+            halo_model=None,
+            distance: Union[units.Quantity, float] = 1.,
+            zero_distance: units.Quantity = 10 * units.kpc,
     ):
-        from frb.halos.models import MilkyWay
+        """
+
+        :param distance: Distance from MW centre to which to evaluate DM. If a non-Quantity number is passed, it will be
+            interpreted as a multiple of the model's virial radius (R200).
+        :param zero_distance: The distance to which to zero the inner volume of the halo
+        :param halo_model: Halo model to evaluate.
+        :return:
+        """
+
         from ne2001 import density
         if halo_model is None:
+            from frb.halos.models import MilkyWay
             halo_model = MilkyWay()
-        if distance is None:
-            distance = halo_model.r200
+        if not isinstance(distance, units.Quantity):
+            distance = halo_model.r200 * distance
         u.dequantify(distance, units.kpc)
-        # Zero out inner 10kpc?
-        if zero:
-            halo_model.zero_inner_ne = 10.  # kpc
+        # Zero out inner volume
+        zero_distance = zero_distance.to(units.kpc)
+        halo_model.zero_inner_ne = zero_distance.value  # kpc
         params = dict(F=1., e_density=1.)
         model_ne = density.NEobject(halo_model.ne, **params)
         dm_halo = model_ne.DM(
@@ -1731,16 +1798,19 @@ class FRB(Transient):
             self,
             rmax: float = 1.,
             step_size: units.Quantity = 1 * units.kpc,
+            halo_model: frb.halos.models.ModifiedNFW = None,
+            **kwargs
     ):
-        from frb.halos.models import MilkyWay
-        halo_model = MilkyWay()
+        if halo_model is None:
+            from frb.halos.models import MilkyWay
+            halo_model = MilkyWay()
         max_distance = rmax * halo_model.r200
         i = 0 * units.kpc
         dm = []
         d = []
         while i < max_distance:
             d.append(i * 1.)
-            dm_this = self.dm_mw_halo_pz19(distance=i)
+            dm_this = self._dm_mw_halo(halo_model=halo_model, distance=i, **kwargs)
             dm.append(dm_this)
             i += step_size
 
@@ -1748,6 +1818,16 @@ class FRB(Transient):
             "DM": dm,
             "d": d
         })
+
+    def dm_exgal(
+            self,
+            ism_model: str = "ne2001",
+            halo_model: str = "pz19"
+    ):
+        if halo_model == "all":
+            raise ValueError("Please specify a single halo model.")
+        dm_mw = self.dm_mw_halo(model=halo_model) + self.dm_mw_ism(ism_model=ism_model)
+        return self.dm - dm_mw
 
     def dm_cosmic(self, **kwargs):
         from frb.dm.igm import average_DM
@@ -1764,6 +1844,20 @@ class FRB(Transient):
     #     dm_cosmic = self.estimate_dm_cosmic()
     #     dm_halo = 60 * dm_units
     #     return self.dm - dm_ism - dm_cosmic - dm_halo
+
+    def z_from_dm(
+            self,
+            dm_host: units.Quantity = 0,
+            **kwargs
+    ):
+        from frb.dm.igm import z_from_DM
+        dm = self.dm_exgal(**kwargs) - dm_host
+        return z_from_DM(
+            DM=dm,
+            coord=None,
+            cosmo=cosmology,
+            corr_nuisance=False
+        )
 
     def foreground_accounting(
             self,

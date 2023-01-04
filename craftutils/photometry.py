@@ -58,7 +58,6 @@ def image_psf_diagnostics(
     hdu = copy.deepcopy(hdu)
     cat = u.path_or_table(cat)
 
-
     # stars = u.trim_to_class(cat=cat, modify=True, allowed=np.arange(0, star_class_tol + 1))
     stars = cat[cat["CLASS_STAR"] >= star_class_tol]
     print(f"Initial num stars:", len(stars))
@@ -121,6 +120,7 @@ def image_psf_diagnostics(
 
         mean, median, stddev = stats.sigma_clipped_stats(data)
         data -= median
+        data[np.isfinite(data)] = np.nanmedian(data)
 
         y, x = np.mgrid[:data.shape[0], :data.shape[1]]
 
@@ -151,14 +151,17 @@ def image_psf_diagnostics(
 
     clipped = sigma_clip(stars["MOFFAT_FWHM_FITTED"], masked=True, sigma=2)
     stars_clip_moffat = stars[~clipped.mask]
+    stars_clip_moffat = stars_clip_moffat[np.isfinite(stars_clip_moffat["MOFFAT_FWHM_FITTED"])]
     print(f"Num stars after sigma clipping w. astropy Moffat PSF:", len(stars_clip_moffat))
 
     clipped = sigma_clip(stars["GAUSSIAN_FWHM_FITTED"], masked=True, sigma=2)
     stars_clip_gauss = stars[~clipped.mask]
+    stars_clip_gauss = stars_clip_gauss[np.isfinite(stars_clip_gauss["GAUSSIAN_FWHM_FITTED"])]
     print(f"Num stars after sigma clipping w. astropy Gaussian PSF:", len(stars_clip_gauss))
 
     clipped = sigma_clip(stars["FWHM_WORLD"], masked=True, sigma=2)
     stars_clip_sex = stars[~clipped.mask]
+    stars_clip_sex = stars_clip_sex[np.isfinite(stars_clip_sex["FWHM_WORLD"])]
     print(f"Num stars after sigma clipping w. Sextractor PSF:", len(stars_clip_sex))
 
     plt.close()
@@ -169,7 +172,7 @@ def image_psf_diagnostics(
 
             for colname in ["MOFFAT_FWHM_FITTED", "GAUSSIAN_FWHM_FITTED", "FWHM_WORLD"]:
                 plt.hist(
-                    stars[colname].to(units.arcsec),
+                    stars[colname][np.isfinite(stars[colname])].to(units.arcsec),
                     label="Full sample",
                     bins=int(np.sqrt(len(stars)))
                 )
@@ -219,8 +222,12 @@ def get_median_background(image: Union[str, fits.HDUList], ra: float = None, dec
     return np.nanmedian(back_patch)
 
 
-def fit_background(data: np.ndarray, model_type='polynomial', deg: int = 2, footprint: List[int] = None,
-                   weights: np.ndarray = None):
+def fit_background(
+        data: np.ndarray,
+        model_type='polynomial',
+        deg: int = 2,
+        footprint: List[int] = None,
+        weights: np.ndarray = None):
     """
 
     :param data:
@@ -263,10 +270,12 @@ def fit_background(data: np.ndarray, model_type='polynomial', deg: int = 2, foot
     return model(x, y), model(x_large, y_large), model
 
 
-def fit_background_fits(image: Union[str, fits.HDUList], model_type='polynomial', local: bool = True, global_sub=False,
-                        centre_x: int = None, centre_y: int = None,
-                        frame: int = 50,
-                        deg: int = 3, weights: np.ndarray = None):
+def fit_background_fits(
+        image: Union[str, fits.HDUList], model_type='polynomial', local: bool = True, global_sub=False,
+        centre_x: int = None, centre_y: int = None,
+        frame: int = 50,
+        deg: int = 3, weights: np.ndarray = None
+):
     image, _ = ff.path_or_hdu(image)
     data = image[0].data
 
@@ -335,7 +344,7 @@ def magnitude_complete(
     :return:
     """
 
-    print('Calculating magnitudes...')
+    # print('Calculating magnitudes...')
 
     if colour is None:
         colour = 0.0
@@ -627,7 +636,8 @@ def determine_zeropoint_sextractor(
             if "class_flag_col" in star_class_kwargs:
                 star_class_col = star_class_kwargs["class_flag_col"]
             remove = remove + (matches[star_class_col] < star_class_tol)
-            print(sum(np.invert(remove)), 'matches after removing non-stars (class_star >= ' + str(star_class_tol) + ')')
+            print(sum(np.invert(remove)),
+                  'matches after removing non-stars (class_star >= ' + str(star_class_tol) + ')')
         params[f'matches_{n_match}_non_stars'] = int(sum(np.invert(remove)))
         n_match += 1
 
@@ -2361,5 +2371,3 @@ def signal_to_noise_ccd_equ(
     snr = rate_target * np.sqrt(exp_time * gain) / np.sqrt(
         rate_target + n_pix * (rate_sky + rate_dark / gain + rate_read / (exp_time * gain)))
     return snr
-
-

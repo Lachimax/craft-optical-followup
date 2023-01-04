@@ -18,11 +18,16 @@ setuptools.setup(
     packages=setuptools.find_packages(),
     python_requires='>=3.5',
     install_requires=[
+        "astroalign",
         "astropy",
+        "astroquery",
+        "ccdproc",
         "matplotlib",
+        "photutils",
         "requests",
         "numpy",
-        "PyYAML"
+        "PyYAML",
+        "sep",
     ],
     license='Attribution-NonCommercial-ShareAlike 4.0 International',
     scripts=["bin/craft_optical_pipeline"]

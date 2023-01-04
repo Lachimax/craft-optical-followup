@@ -49,6 +49,15 @@ def get_git_hash(directory: str, short: bool = False):
 
 
 def frame_from_centre(frame, x, y, data):
+    """
+    Given the coordinates for a centre and the padding around that centre, generates the x coordinate for the left and
+    right and the y coordinate for the bottom and top of the described rectangular cutout of the data.
+    :param frame:
+    :param x:
+    :param y:
+    :param data:
+    :return: (x_left, x_right, y_bottom, y_top)
+    """
     left = x - frame
     right = x + frame
     bottom = y - frame
@@ -64,8 +73,8 @@ def check_margins(data, left=None, right=None, bottom=None, top=None, margins: t
     :param right:
     :param bottom:
     :param top:
-    :param margins: In the order left, right, bottom, top
-    :return:
+    :param margins: In the order x_left, x_right, y_bottom, y_top
+    :return: (x_left, x_right, y_bottom, y_top)
     """
     shape = data.shape
 
