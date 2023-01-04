@@ -89,8 +89,6 @@ def check_for_config():
             "In this file, please set 'top_data_dir' to a valid path in which to store all "
             "data products of this package (This may require a large amount of space.).")
         print("You may also like to specify an alternate param_dir")
-
-        input("\nOnce you have edited this file, press any key to proceed.")
         p = load_params(config_file)
     else:
         for param in p:
