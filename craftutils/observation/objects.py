@@ -2,7 +2,6 @@ from typing import Union, Tuple, List
 import os
 import copy
 
-import frb.frb
 import matplotlib.pyplot as plt
 import numpy as np
 
@@ -1616,7 +1615,11 @@ class FRB(Transient):
         if self.dm is not None:
             self.dm = u.check_quantity(self.dm, unit=dm_units)
 
-        self.x_frb = frb.frb.FRB(
+        self.x_frb = None
+
+    def generate_x_frb(self):
+        from frb.frb import FRB
+        self.x_frb = FRB(
             frb_name=self.name,
             coord=self.position,
             DM=self.dm
@@ -1726,7 +1729,7 @@ class FRB(Transient):
 
     def dm_mw_halo(
             self,
-            model: Union[str, frb.halos.models.ModifiedNFW] = "all",
+            model: Union[str, "frb.halos.models.ModifiedNFW"] = "all",
             **kwargs,
     ):
         import frb.halos.models as halos
@@ -1798,7 +1801,7 @@ class FRB(Transient):
             self,
             rmax: float = 1.,
             step_size: units.Quantity = 1 * units.kpc,
-            halo_model: frb.halos.models.ModifiedNFW = None,
+            halo_model: "frb.halos.models.ModifiedNFW" = None,
             **kwargs
     ):
         if halo_model is None:
