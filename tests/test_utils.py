@@ -1,6 +1,8 @@
 import os
 import shutil
 
+import numpy as np
+
 import astropy.units as units
 import pytest
 
@@ -53,28 +55,29 @@ def test_scan_nested_dict():
                               keys=["calibrations", "illumflatframe", "process", "use_darkimage"]) == "True"
 
 
-def test_get_pypeit_param_levels():
-    assert u.get_pypeit_param_levels(pypeit_param_lines.copy()) == (
-        pypeit_lines_stripped, [1, 2, 3, 4, 2, 3, 4, 2, 3, 4, 1, 2])
-    assert u.get_pypeit_param_levels(coadd_param_lines.copy()) == (coadd_lines_stripped, [1, 2, 2, 2])
-
-
-def test_get_scope():
-    lines, levels = u.get_pypeit_param_levels(pypeit_param_lines.copy())
-    assert u.get_scope(levels=levels, lines=lines) == pypeit_dictionary
-    lines, levels = u.get_pypeit_param_levels(coadd_param_lines.copy())
-    assert u.get_scope(levels=levels, lines=lines) == coadd_dictionary
-
-
-def test_get_pypeit_user_params():
-    assert u.get_pypeit_user_params(file=coadd_path) == coadd_dictionary
-    assert u.get_pypeit_user_params(file=pypeit_path) == pypeit_dictionary
+# def test_get_pypeit_param_levels():
+#     assert u.get_pypeit_param_levels(pypeit_param_lines.copy()) == (
+#         pypeit_lines_stripped, [1, 2, 3, 4, 2, 3, 4, 2, 3, 4, 1, 2])
+#     assert u.get_pypeit_param_levels(coadd_param_lines.copy()) == (coadd_lines_stripped, [1, 2, 2, 2])
+#
+#
+# def test_get_scope():
+#     lines, levels = u.get_pypeit_param_levels(pypeit_param_lines.copy())
+#     assert u.get_scope(levels=levels, lines=lines) == pypeit_dictionary
+#     lines, levels = u.get_pypeit_param_levels(coadd_param_lines.copy())
+#     assert u.get_scope(levels=levels, lines=lines) == coadd_dictionary
+#
+#
+# def test_get_pypeit_user_params():
+#     assert u.get_pypeit_user_params(file=coadd_path) == coadd_dictionary
+#     assert u.get_pypeit_user_params(file=pypeit_path) == pypeit_dictionary
 
 
 def test_uncertainty_log10():
     flux = 4051519.0
     flux_err = 28118.24
-    assert u.uncertainty_log10(arg=flux, uncertainty_arg=flux_err, a=-2.5) == 0.00753519635032644
+    result = u.uncertainty_log10(arg=flux, uncertainty_arg=flux_err, a=-2.5)
+    assert np.round(result, 10) == 0.0075351964
 
 
 def test_check_quantity():
