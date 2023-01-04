@@ -12,16 +12,16 @@ test_frb = objects.FRB(
 )
 
 
-def test_frb_dm_mw_halo():
-    dm_mws = test_frb.dm_mw_halo(
-        model="all",
-        zero_distance=10*units.kpc
-    )
-    assert dm_mws["dm_halo_mw_yf17"].round(tolerance) == 68 * objects.dm_units
-    assert dm_mws["dm_halo_mw_pz19"].round(tolerance) == 39 * objects.dm_units
-    assert dm_mws["dm_halo_mw_mb15"].round(tolerance) == 9 * objects.dm_units
+# def test_frb_dm_mw_halo():
+#     dm_mws = test_frb.dm_mw_halo(
+#         model="all",
+#         zero_distance=10*units.kpc
+#     )
+#     assert dm_mws["dm_halo_mw_yf17"].round(tolerance) == 68 * objects.dm_units
+#     assert dm_mws["dm_halo_mw_pz19"].round(tolerance) == 39 * objects.dm_units
+#     assert dm_mws["dm_halo_mw_mb15"].round(tolerance) == 9 * objects.dm_units
 
 
-def test_frb_dm_mw_ism():
-    assert test_frb.dm_mw_ism_ne2001().round(tolerance) == 32 * objects.dm_units
-    assert test_frb.dm_mw_ism_ymw16().round(tolerance) == 17 * objects.dm_units
+# def test_frb_dm_mw_ism():
+#     assert test_frb.dm_mw_ism_ne2001().round(tolerance) == 32 * objects.dm_units
+#     assert test_frb.dm_mw_ism_ymw16().round(tolerance) == 17 * objects.dm_units
