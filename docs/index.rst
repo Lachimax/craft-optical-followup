@@ -6,6 +6,8 @@
 Welcome to craft-optical-followup's documentation!
 ==================================================
 
+This documentation is under construction.
+
 .. toctree::
    :maxdepth: 2
    :caption: Contents:
