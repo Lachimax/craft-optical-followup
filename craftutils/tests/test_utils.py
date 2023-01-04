@@ -9,7 +9,7 @@ import pytest
 import craftutils.utils as u
 import craftutils.params as p
 
-test_file_path = os.path.join(p.project_path, "tests", "files")
+test_file_path = os.path.join(p.project_path, "craftutils", "tests", "files")
 coadd_path = os.path.join(test_file_path, "test.coadd1d")
 coadd_dictionary = {"coadd1d": {"coaddfile": "foreground_coadded.fits",
                                 "sensfuncfile": "YOUR_SENSFUNC_FILE",
@@ -23,7 +23,7 @@ with open(coadd_path) as file:
     coadd_lines = file.readlines()
     coadd_param_lines = coadd_lines[4:8]
 
-pypeit_path = os.path.join(p.project_path, "tests", "files", "test.pypeit")
+pypeit_path = os.path.join(p.project_path, "craftutils", "tests", "files", "test.pypeit")
 pypeit_dictionary = {"calibrations": {"traceframe": {"process": {"use_darkimage": "True"},
                                                      },
                                       "illumflatframe": {"process": {"use_darkimage": "True"},
