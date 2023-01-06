@@ -5,4 +5,4 @@ build-backend = "flit_core.buildapi"
 [project]
 name = "craft-optical-followup"
 authors = [{name = "Lachlan Marnoch", email = "lachlan.marnoch@gmail.com"}]
-dynamic = ["version", "description", "license"]
+dynamic = ["version", "description"]
