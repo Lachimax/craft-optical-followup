@@ -66,6 +66,7 @@ def check_for_config():
     u.mkdir_check(config_dir)
     config_dict = load_params(config_file)
     if config_dict is None:
+        # Copy template config file from project directory.
         shutil.copy(
             pkg_resources.resource_filename(
                 __name__,
@@ -73,7 +74,6 @@ def check_for_config():
             ),
             config_file
         )
-
         print(f"No config file was detected at {config_file}.")
         print(f"A fresh config file has been created at '{config_file}'")
         print(
