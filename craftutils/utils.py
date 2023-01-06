@@ -1197,28 +1197,28 @@ def select_yn_exit(message: str):
         exit(0)
 
 
-def user_input(message: str, typ: type = str, default=None):
+def user_input(message: str, input_type: type = str, default=None):
     inp = None
     if default is not None:
-        if type(default) is not typ:
+        if type(default) is not input_type:
             try:
-                default = typ(default)
+                default = input_type(default)
 
             except ValueError:
-                print(f"Default ({default}) could not be cast to {typ}. Proceeding without default value.")
+                print(f"Default ({default}) could not be cast to {input_type}. Proceeding without default value.")
 
         message += f" [default: {default}]"
 
     print(message)
-    while type(inp) is not typ:
+    while type(inp) is not input_type:
         inp = input()
         if inp == "":
             inp = default
-        if type(inp) is not typ:
+        if type(inp) is not input_type:
             try:
-                inp = typ(inp)
+                inp = input_type(inp)
             except ValueError:
-                print(f"Could not cast {inp} to {typ}. Try again:")
+                print(f"Could not cast {inp} to {input_type}. Try again:")
     print(f"You have entered {inp}.")
     return inp
 

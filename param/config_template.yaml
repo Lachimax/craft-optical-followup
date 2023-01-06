@@ -1,8 +1,7 @@
-eso_install_dir: <esoreflex>/install/
-esoreflex_input_dir: <esoreflex>/data_wkf/reflex_input/
-esoreflex_output_dir: <esoreflex>/reflex_data/reflex_end_products/
+eso_install_dir: null
+esoreflex_input_dir: null
+esoreflex_output_dir: null
 furby_dir: null
-param_dir: param/
-proj_dir: <some_directory>/craft-optical-followup/
-top_data_dir: <data_directory>
+param_dir: null
+top_data_dir: null
 table_dir: null

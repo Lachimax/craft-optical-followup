@@ -8,7 +8,6 @@
 import json
 import os
 
-import craftutils.observation.objects as obj
 import craftutils.observation.field as fld
 import craftutils.params as p
 import craftutils.utils as u
@@ -30,6 +29,34 @@ def main(
         class_star_tolerance: float,
         debug_level: int,
 ):
+
+    if not p.param_dir:
+        param_dir = u.user_input(
+            message="Please enter a path to use as the param directory. This will be created if it does not exist.",
+            input_type=str,
+            default=p.param_dir_project
+        )
+        p.set_param_dir(param_dir, write=True)
+
+    if not p.data_dir:
+
+        param_dir = u.user_input(
+            message="Please enter a path to use as the top-level data directory. This will be created if it does "
+                    "not exist. It should be on a drive with plenty of space!",
+            input_type=str,
+            default=f"{os.path.expanduser('~')}/data"
+        )
+        p.set_data_dir(param_dir, write=True)
+
+    if not config["table_dir"]:
+        param_dir = u.user_input(
+            message="Please enter a directory in which to write tables describing observations etc. This will be created if it does "
+                    "not exist.",
+            input_type=str,
+            default=os.path.join(p.data_dir, "tables")
+        )
+        p.set_data_dir(param_dir, write=True)
+
     u.debug_level = debug_level
 
     new_field = False

@@ -2,6 +2,8 @@
 
 import json
 import os
+import shutil
+import warnings
 from datetime import date
 from typing import Union
 from shutil import copy
@@ -62,26 +64,15 @@ config_file = os.path.join(config_dir, "config.yaml")
 
 def check_for_config():
     u.mkdir_check(config_dir)
-    p = load_params(config_file)
-    if p is None:
-        config_text = pkg_resources.resource_string(
-            __name__,
-            os.path.join("..", f"param", "config_template.yaml")).decode()
-        print(type(config_text))
-        config_text = config_text.replace(
-            "proj_dir: <some_directory>/craft-optical-followup/",
-            f"proj_dir: {os.getcwd()}/")
-        config_text = config_text.replace(
-            "top_data_dir: <data_directory>",
-            f"top_data_dir: {os.path.expanduser('~')}/Data/"
+    config_dict = load_params(config_file)
+    if config_dict is None:
+        shutil.copy(
+            pkg_resources.resource_filename(
+                __name__,
+                os.path.join("..", f"param", "config_template.yaml")
+            ),
+            config_file
         )
-        config_text = config_text.replace(
-            "table_dir: null",
-            f"table_dir: {os.path.expanduser('~')}/Data/tables/"
-        )
-
-        with open(config_file, "w") as cfg:
-            cfg.write(config_text)
 
         print(f"No config file was detected at {config_file}.")
         print(f"A fresh config file has been created at '{config_file}'")
@@ -89,14 +80,14 @@ def check_for_config():
             "In this file, please set 'top_data_dir' to a valid path in which to store all "
             "data products of this package (This may require a large amount of space.).")
         print("You may also like to specify an alternate param_dir")
-        p = load_params(config_file)
+        config_dict = load_params(config_file)
     else:
-        for param in p:
-            if p[param] is not None:
-                p[param] = u.check_trailing_slash(p[param])
-        save_params(config_file, p)
+        for param in config_dict:
+            if config_dict[param] is not None:
+                config_dict[param] = u.check_trailing_slash(config_dict[param])
+        save_params(config_file, config_dict)
         yaml_to_json(config_file)
-    return p
+    return config_dict
 
 
 def load_params(file: str):
@@ -186,27 +177,116 @@ def yaml_to_json(yaml_file: str, output: str = None):
 
     return p
 
-config = check_for_config()
-param_dir = u.check_trailing_slash(config['param_dir'])
-project_path = u.check_trailing_slash(config['proj_dir'])
-data_path = u.check_trailing_slash(config["top_data_dir"])
-furby_path = None
-if "furby_dir" in config and config["furby_dir"] is not None:
-    furby_path = u.check_trailing_slash(config["furby_dir"])
 
-param_path = os.path.join(os.getcwd(), "param")
+def get_project_path():
+    return os.path.realpath(os.path.join(os.path.dirname(__file__), ".."))
+
+
+# Here we set up the various directories used by the pipeline.
+config = check_for_config()
+project_dir = get_project_path()
+param_dir_project = os.path.join(project_dir, "param")
+param_dir = config['param_dir']
+
+
+def write_config():
+    for param in config:
+        if config[param] is not None:
+            config[param] = u.check_trailing_slash(config[param])
+    save_params(config_file, config)
+    yaml_to_json(config_file)
+
+
+def set_param_dir(path: str, write: bool = True):
+    config["param_dir"] = path
+    global param_dir
+    param_dir = path
+    u.mkdir_check_nested(path, remove_last=False)
+    u.mkdir_check(os.path.join(path, "fields"))
+    u.mkdir_check(os.path.join(path), "instruments")
+    u.mkdir_check(os.path.join(path), "surveys")
+    key_path = os.path.join(path, 'keys.json')
+    if not os.path.isfile(key_path):
+        copy(os.path.join(param_dir_project, "keys.json"), key_path)
+    if write:
+        write_config()
+
+
+if param_dir is None:
+    set_param_dir(param_dir_project, write=False)
+
+furby_path = None
+if "furby_dir" in config:
+    furby_path = config["furby_dir"]
 
 data_dir = config["top_data_dir"]
-u.mkdir_check_nested(data_dir)
-u.mkdir_check(os.path.join(param_path, "fields"))
-u.mkdir_check(os.path.join(param_path), "instruments")
-key_path = os.path.join(config["param_dir"], 'keys.json')
-if not os.path.isfile(key_path):
-    copy(os.path.join(param_path, "keys.json"), key_path)
+if data_dir is None:
+    warnings.warn(
+        f"data_dir has not been set in config file. Set with craftutils.params.set_data_dir() or by editing "
+        f"{config_file}"
+    )
+
+
+def set_eso_user():
+    if not config["eso_install_dir"]:
+        eso_install = u.user_input(
+            message="Please enter the directory in which esoreflex is installed.",
+            input_type=str
+        )
+        if eso_install.endswith("/"):
+            eso_install = eso_install[:-1]
+        if not os.path.basename(eso_install) == "install":
+            eso_install = os.path.join(eso_install, "install")
+        set_eso_install_dir(eso_install, write=False)
+    eso_root = config["eso_install_dir"]
+    if not config["esoreflex_input_dir"]:
+        set_esoreflex_input_dir(
+            path=u.user_input(
+                message="Please enter the directory in which esoreflex looks for input.",
+                input_type=str,
+                default=os.path.join(eso_root, "data_wkf", "reflex_input")
+            ),
+            write=False
+        )
+    if not config["esoreflex_output_dir"]:
+        set_esoreflex_output_dir(
+            path=u.user_input(
+                message="Please enter the directory in which esoreflex writes output. It is named 'reflex_data' by default",
+                input_type=str,
+                default=os.path.join(os.path.expanduser("~"), "reflex_data")
+            ),
+            write=False
+        )
+    write_config()
+
+
+def set_eso_install_dir(path: str, write: bool = True):
+    set_config_path(key="eso_install_dir", path=path, write=write)
+
+
+def set_esoreflex_output_dir(path: str, write: bool = True):
+    set_config_path(key="esoreflex_output_dir", path=path, write=write)
+
+
+def set_esoreflex_input_dir(path: str, write: bool = True):
+    set_config_path(key="esoreflex_input_dir", path=path, write=write)
+
+
+def set_data_dir(path: str, write: bool = True):
+    set_config_path(key="top_data_dir", path=path, write=write)
+    global data_dir
+    data_dir = path
+    u.mkdir_check_nested(path, remove_last=False)
+
+
+def set_config_path(key: str, path: str, write: bool = True):
+    config[key] = path
+    if write:
+        write_config()
 
 
 def get_project_git_hash(short: bool = False):
-    return u.get_git_hash(directory=project_path, short=short)
+    return u.get_git_hash(directory=project_dir, short=short)
 
 
 def path_or_params_obj(obj: Union[dict, str], instrument: str = 'FORS2', quiet: bool = False):
@@ -472,7 +552,7 @@ def ingest_filter_set(path: str, instrument: str,
 
 def new_filter_params(quiet: bool = False):
     return load_params(
-        os.path.join(project_path, 'param', 'filters', 'filter_template.yaml'),
+        os.path.join(project_dir, 'param', 'filters', 'filter_template.yaml'),
         quiet=quiet)
 
 
@@ -798,7 +878,7 @@ def keys():
     else:
         raise FileNotFoundError(
             f"keys.json does not exist at param_path={param_dir}. "
-            f"Please make a copy from {os.path.join(config['proj_dir'], 'param', 'keys.json')}")
+            f"Please make a copy from {os.path.join(get_project_path(), 'param', 'keys.json')}")
 
 
 def load_json(path: str):
@@ -824,7 +904,7 @@ def path_to_config_sextractor_config():
 
 
 def path_to_config_galfit():
-    return os.path.join(project_path, "param", "galfit", "galfit.feedme")
+    return os.path.join(project_dir, "param", "galfit", "galfit.feedme")
 
 
 def path_to_config_sextractor_param_pre_psfex():
@@ -836,11 +916,11 @@ def path_to_config_sextractor_param():
 
 
 def path_to_config_psfex():
-    return os.path.join(project_path, "param", "psfex")
+    return os.path.join(project_dir, "param", "psfex")
 
 
 def path_to_source_extractor():
-    return os.path.join(project_path, "param", "sextractor")
+    return os.path.join(project_dir, "param", "sextractor")
 
 
 def params_init(param_file: Union[str, dict]):

@@ -7,9 +7,9 @@ import astropy.io.fits as fits
 import craftutils.wrap.montage as montage
 import craftutils.params as p
 
-good_input = os.path.join(p.project_path, "tests", "files", "images", "divided_by_exp_time")
-bad_input = os.path.join(p.project_path, "tests", "files", "images", "divided_by_exp_time_bad")
-coadded_file = os.path.join(p.project_path, "tests", "files", "images", "coadded", "FRB20180924_1_2018-11-09.fits")
+good_input = os.path.join(p.project_dir, "tests", "files", "images", "divided_by_exp_time")
+bad_input = os.path.join(p.project_dir, "tests", "files", "images", "divided_by_exp_time_bad")
+coadded_file = os.path.join(p.project_dir, "tests", "files", "images", "coadded", "FRB20180924_1_2018-11-09.fits")
 
 
 # def test_check_input_images():

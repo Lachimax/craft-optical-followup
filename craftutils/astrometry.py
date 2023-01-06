@@ -1,19 +1,15 @@
-# Code by Lachlan Marnoch, 2019 - 2021
+# Code by Lachlan Marnoch, 2019 - 2023
 import copy
-from typing import Union, Iterable
+from typing import Union
 import os
 
-import matplotlib.pyplot as plt
 import numpy as np
 
 import astropy.table as table
 import astropy.io.fits as fits
-import astropy.wcs as wcs
 from astropy.coordinates import SkyCoord
 import astropy.units as units
 import astropy.time as time
-from astropy import cosmology as cosmo
-from astropy.visualization import ImageNormalize, ZScaleInterval, SqrtStretch
 
 import craftutils.fits_files as ff
 import craftutils.params as p

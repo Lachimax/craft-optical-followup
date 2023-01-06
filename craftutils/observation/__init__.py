@@ -75,6 +75,10 @@ def split_dtype(val, replace_str: bool = True):
 #     add_columns_by_fil(tbl=master_objects_all_table, coldict=master_objects_columns, fil=fil)
 #     write_master_all_objects_table()
 
+if config["table_dir"] is not None:
+    master_imaging_path = os.path.join(config["table_dir"], "master_imaging_table.yaml")
+    master_objects_path = os.path.join(config["table_dir"], "master_select_objects_table.yaml")
+    master_objects_all_path = os.path.join(config["table_dir"], "master_all_objects_table.yaml")
 
 furby_table = None
 furby_table_columns = {
@@ -107,7 +111,6 @@ furby_table_columns = {
 }
 
 master_imaging = None
-master_imaging_path = os.path.join(config["table_dir"], "master_imaging_table.yaml")
 master_imaging_columns = {
     "field_name": str,
     # "transient_tns_name": str,
@@ -134,10 +137,8 @@ master_imaging_columns = {
 }
 
 master_objects = None
-master_objects_path = os.path.join(config["table_dir"], "master_select_objects_table.yaml")
 
 master_objects_all = None
-master_objects_all_path = os.path.join(config["table_dir"], "master_all_objects_table.yaml")
 master_objects_columns = {
     "field_name": str,
     # "transient_tns_name": str,

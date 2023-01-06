@@ -20,11 +20,11 @@ class Survey:
         self.raw_stage_path = None
 
         if "raw_stage_path" in kwargs and isinstance(kwargs["raw_stage_path"], str):
-            self.raw_stage_path = u.make_absolute_path(p.data_path, kwargs["raw_stage_path"])
+            self.raw_stage_path = u.make_absolute_path(p.data_dir, kwargs["raw_stage_path"])
 
         self.refined_stage_path = None
         if "refined_stage_path" in kwargs and isinstance(kwargs["refined_stage_path"], str):
-            self.refined_stage_path = u.make_absolute_path(p.data_path, kwargs["refined_stage_path"])
+            self.refined_stage_path = u.make_absolute_path(p.data_dir, kwargs["refined_stage_path"])
 
         self.program_ids = {}
         if "program_ids" in kwargs:
