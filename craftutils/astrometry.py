@@ -7,7 +7,7 @@ import numpy as np
 
 import astropy.table as table
 import astropy.io.fits as fits
-from astropy.coordinates import SkyCoord
+import astropy.coordinates as coord
 import astropy.units as units
 import astropy.time as time
 
@@ -18,7 +18,7 @@ import craftutils.wrap.astrometry_net as astrometry_net
 from craftutils.retrieve import cat_columns, load_catalogue
 
 
-def jname(coord: SkyCoord, ra_precision: int = 2, dec_precision: int = 1):
+def jname(coord: coord.SkyCoord, ra_precision: int = 2, dec_precision: int = 1):
     s_ra, s_dec = coord_string(coord)
     ra_second = np.round(float(s_ra[s_ra.find("m") + 1:s_ra.find("s")]), ra_precision)
     if ra_precision <= 0:
@@ -37,7 +37,7 @@ def jname(coord: SkyCoord, ra_precision: int = 2, dec_precision: int = 1):
 def correct_gaia_to_epoch(gaia_cat: Union[str, table.QTable], new_epoch: time.Time):
     gaia_cat = load_catalogue(cat_name="gaia", cat=gaia_cat)
     epochs = list(map(lambda y: f"J{y}", gaia_cat['ref_epoch']))
-    gaia_coords = SkyCoord(
+    gaia_coords = coord.SkyCoord(
         ra=gaia_cat["ra"], dec=gaia_cat["dec"],
         pm_ra_cosdec=gaia_cat["pmra"], pm_dec=gaia_cat["pmdec"],
         obstime=epochs)
@@ -95,23 +95,23 @@ def generate_astrometry_indices(
     return index_paths
 
 
-def attempt_skycoord(coord: Union[SkyCoord, str, tuple, list, np.ndarray]):
-    if type(coord) is SkyCoord:
+def attempt_skycoord(coord: Union[coord.SkyCoord, str, tuple, list, np.ndarray]):
+    if type(coord) is coord.SkyCoord:
         return coord
     elif type(coord) is str:
-        return SkyCoord(coord)
+        return coord.SkyCoord(coord)
     elif type(coord) in [tuple, list, np.ndarray]:
         if isinstance(coord[0], float):
             coord = (coord[0] * units.deg, coord[1] * units.deg)
         elif isinstance(coord[0], str):
             if coord[0][-1].isnumeric():
                 coord = (coord[0] + "d", coord[1] + "d")
-        return SkyCoord(coord[0], coord[1])
+        return coord.SkyCoord(coord[0], coord[1])
     else:
-        raise TypeError(f"coord is {type(coord)}; must be of type SkyCoord, str, tuple, list, or numpy array")
+        raise TypeError(f"coord is {type(coord)}; must be of type coord.SkyCoord, str, tuple, list, or numpy array")
 
 
-def coord_string(coord: SkyCoord):
+def coord_string(coord: coord.SkyCoord):
     s = coord.to_string("hmsdms")
     ra = s[:s.find(" ")]
     dec = s[s.find(" ") + 1:]
@@ -121,6 +121,7 @@ def coord_string(coord: SkyCoord):
 def calculate_error_ellipse(frb: Union[str, dict], error: str = 'quadrature'):
     """
     Calculates the parameters of the uncertainty ellipse of an FRB, for use in plotting.
+
     :param frb: Either a string specifying the FRB, which must have a corresponding .yaml file in /param/FRBs, or a
         dictionary containing the same information.
     :param error: String specifying the type of error calculation to use. Available options are 'quadrature', which
@@ -141,12 +142,12 @@ def calculate_error_ellipse(frb: Union[str, dict], error: str = 'quadrature'):
             ra_sys = frb['burst_err_sys_ra']
             ra = np.sqrt(ra_stat ** 2 + ra_sys ** 2)
 
-            a = SkyCoord(f'0h0m0s {dec_frb}d').separation(SkyCoord(f'0h0m{ra}s {dec_frb}d')).value
+            a = coord.SkyCoord(f'0h0m0s {dec_frb}d').separation(coord.SkyCoord(f'0h0m{ra}s {dec_frb}d')).value
 
             dec_stat = frb['burst_err_stat_dec'] / 3600
             dec_sys = frb['burst_err_sys_dec'] / 3600
             dec = np.sqrt(dec_stat ** 2 + dec_sys ** 2)
-            b = SkyCoord(f'{ra_frb}d {dec_frb}d').separation(SkyCoord(f'{ra_frb}d {dec_frb + dec}d')).value
+            b = coord.SkyCoord(f'{ra_frb}d {dec_frb}d').separation(coord.SkyCoord(f'{ra_frb}d {dec_frb + dec}d')).value
 
             theta = 0.0
 
@@ -171,10 +172,10 @@ def calculate_error_ellipse(frb: Union[str, dict], error: str = 'quadrature'):
 
             ra_sys = frb['burst_err_sys_ra']
 
-            a = SkyCoord(f'0h0m0s {dec_frb}d').separation(SkyCoord(f'0h0m{ra_sys}s {dec_frb}d')).value
+            a = coord.SkyCoord(f'0h0m0s {dec_frb}d').separation(coord.SkyCoord(f'0h0m{ra_sys}s {dec_frb}d')).value
 
             dec_sys = frb['burst_err_sys_dec'] / 3600
-            b = SkyCoord(f'{ra_frb}d {dec_frb}d').separation(SkyCoord(f'{ra_frb}d {dec_frb + dec_sys}d')).value
+            b = coord.SkyCoord(f'{ra_frb}d {dec_frb}d').separation(coord.SkyCoord(f'{ra_frb}d {dec_frb + dec_sys}d')).value
 
             theta = 0.0
 
@@ -192,10 +193,10 @@ def calculate_error_ellipse(frb: Union[str, dict], error: str = 'quadrature'):
 
             ra_stat = frb['burst_err_stat_ra']
 
-            a = SkyCoord(f'0h0m0s {dec_frb}d').separation(SkyCoord(f'0h0m{ra_stat}s {dec_frb}d')).value
+            a = coord.SkyCoord(f'0h0m0s {dec_frb}d').separation(coord.SkyCoord(f'0h0m{ra_stat}s {dec_frb}d')).value
 
             dec_stat = frb['burst_err_stat_dec'] / 3600
-            b = SkyCoord(f'{ra_frb}d {dec_frb}d').separation(SkyCoord(f'{ra_frb}d {dec_frb + dec_stat}d')).value
+            b = coord.SkyCoord(f'{ra_frb}d {dec_frb}d').separation(coord.SkyCoord(f'{ra_frb}d {dec_frb + dec_stat}d')).value
 
             theta = 0.0
 
@@ -239,7 +240,7 @@ def offset_astrometry(hdu: fits.hdu, offset_ra: float, offset_dec: float, output
     return hdu
 
 
-def find_nearest(coord: SkyCoord, search_coords: SkyCoord):
+def find_nearest(coord: coord.SkyCoord, search_coords: coord.SkyCoord):
     separations = coord.separation(search_coords)
     match_id = np.argmin(separations)
     return match_id, separations[match_id]
@@ -274,8 +275,8 @@ def match_catalogs(
     cat_1 = sanitise_coord(cat_1, dec_col_1)
     cat_2 = sanitise_coord(cat_2, dec_col_2)
 
-    coords_1 = SkyCoord(cat_1[ra_col_1], cat_1[dec_col_1])
-    coords_2 = SkyCoord(cat_2[ra_col_2], cat_2[dec_col_2])
+    coords_1 = coord.SkyCoord(cat_1[ra_col_1], cat_1[dec_col_1])
+    coords_2 = coord.SkyCoord(cat_2[ra_col_2], cat_2[dec_col_2])
 
     idx, distance, _ = coords_2.match_to_catalog_sky(coords_1)
     keep = distance < tolerance
