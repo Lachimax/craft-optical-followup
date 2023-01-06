@@ -222,8 +222,8 @@ if "furby_dir" in config:
 data_dir = config["top_data_dir"]
 if data_dir is None:
     warnings.warn(
-        f"data_dir has not been set in config file. Set with craftutils.params.set_data_dir() or by editing "
-        f"{config_file}"
+        f"data_dir has not been set in config file. Set it with craftutils.params.set_data_dir() or "
+        f"by editing the config file at {config_file}"
     )
 
 
