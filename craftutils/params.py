@@ -205,7 +205,7 @@ def set_param_dir(path: str, write: bool = True):
     u.mkdir_check(os.path.join(path, "fields"))
     u.mkdir_check(os.path.join(path, "instruments"))
     u.mkdir_check(os.path.join(path, "surveys"))
-    key_path = os.path.join(path, 'keys.json'))
+    key_path = os.path.join(path, 'keys.json')
     if not os.path.isfile(key_path):
         copy(os.path.join(param_dir_project, "keys.json"), key_path)
     if write:
