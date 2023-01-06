@@ -1,8 +1,15 @@
 API
-===
+==================================================
 
-.. autosummary::
-   :toctree: generated
 
-    craftutils
-    astrometry
+Classes
+-------
+.. python-apigen-group:: classes
+
+Functions
+-------
+.. python-apigen-group:: functions
+
+Astrometry
+----------
+.. python-apigen-group:: Astrometry

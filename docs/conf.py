@@ -20,15 +20,39 @@ extensions = [
     "sphinx.ext.autodoc",
     "sphinx.ext.autosummary",
     "sphinx.ext.intersphinx",
+    "sphinx_immaterial",
+    "sphinx_immaterial.apidoc.python.apigen"
 ]
+
+python_apigen_modules = {
+    "craftutils.wrap": "api/wrap.",
+    "craftutils.astrometry": "api/astrometry/",
+    "craftutils.observation": "api/observation/",
+    "craftutils.observation.field": "api/observation/field/",
+}
+
+python_apigen_default_groups = [
+    ("class:.*", "Classes"),
+    ("data:.*", "Variables"),
+    ("function:.*", "Functions"),
+    ("method:.*", "Methods"),
+    ("classmethod:.*", "Class methods"),
+    ("property:.*", "Properties"),
+    ("function:craftutils.astrometry.*", "Astrometry")
+]
+
+# Create hyperlinks to other documentation
+intersphinx_mapping = {
+    "astropy": ("https://docs.astropy.org/en/stable/", None),
+    "python": ("https://docs.python.org/3", None),
+    "numpy": ("https://numpy.org/doc/stable/", None),
+}
 
 templates_path = ['_templates']
 exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store']
 
-
-
 # -- Options for HTML output -------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#options-for-html-output
 
-html_theme = 'alabaster'
+html_theme = 'sphinx_immaterial'
 html_static_path = ['_static']
