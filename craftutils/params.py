@@ -67,23 +67,23 @@ def check_for_config():
     config_dict = load_params(config_file)
     if config_dict is None:
         # Copy template config file from project directory.
-        try:
-            shutil.copy(
-                pkg_resources.resource_filename(
-                    __name__,
-                    os.path.join("param", "config_template.yaml")
-                ),
-                config_file
-            )
-            print(f"No config file was detected at {config_file}.")
-            print(f"A fresh config file has been created at '{config_file}'")
-            print(
-                "In this file, please set 'top_data_dir' to a valid path in which to store all "
-                "data products of this package (This may require a large amount of space.).")
-            print("You may also like to specify an alternate param_dir")
-            config_dict = load_params(config_file)
-        except FileNotFoundError:
-            warnings.warn("config file was not created properly; most likely you are running something other than Linux.")
+        # try:
+        shutil.copy(
+            pkg_resources.resource_filename(
+                __name__,
+                os.path.join("param", "config_template.yaml")
+            ),
+            config_file
+        )
+        print(f"No config file was detected at {config_file}.")
+        print(f"A fresh config file has been created at '{config_file}'")
+        print(
+            "In this file, please set 'top_data_dir' to a valid path in which to store all "
+            "data products of this package (This may require a large amount of space.).")
+        print("You may also like to specify an alternate param_dir")
+        config_dict = load_params(config_file)
+        # except FileNotFoundError:
+        #     warnings.warn("config file was not created properly; most likely you are running something other than Linux.")
     else:
         for param in config_dict:
             if config_dict[param] is not None:
