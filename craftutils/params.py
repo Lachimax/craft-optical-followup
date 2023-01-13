@@ -71,7 +71,7 @@ def check_for_config():
             shutil.copy(
                 pkg_resources.resource_filename(
                     __name__,
-                    os.path.join("..", f"param", "config_template.yaml")
+                    os.path.join("param", "config_template.yaml")
                 ),
                 config_file
             )
