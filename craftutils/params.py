@@ -188,7 +188,7 @@ def get_project_path():
 # Here we set up the various directories used by the pipeline.
 config = check_for_config()
 project_dir = get_project_path()
-param_dir_project = os.path.join(project_dir, "param")
+param_dir_project = os.path.join(project_dir, "craftutils", "param")
 param_dir = config['param_dir']
 
 
@@ -907,7 +907,7 @@ def path_to_config_sextractor_config():
 
 
 def path_to_config_galfit():
-    return os.path.join(project_dir, "param", "galfit", "galfit.feedme")
+    return os.path.join(project_dir, "craftutils", "param", "galfit", "galfit.feedme")
 
 
 def path_to_config_sextractor_param_pre_psfex():
@@ -919,11 +919,11 @@ def path_to_config_sextractor_param():
 
 
 def path_to_config_psfex():
-    return os.path.join(project_dir, "param", "psfex")
+    return os.path.join(project_dir, "craftutils", "param", "psfex")
 
 
 def path_to_source_extractor():
-    return os.path.join(project_dir, "param", "sextractor")
+    return os.path.join(project_dir, "craftutils", "param", "sextractor")
 
 
 def params_init(param_file: Union[str, dict]):
