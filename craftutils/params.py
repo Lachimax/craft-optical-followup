@@ -67,10 +67,11 @@ def check_for_config():
     config_dict = load_params(config_file)
     if config_dict is None:
         # Copy template config file from project directory.
+        # try:
         shutil.copy(
             pkg_resources.resource_filename(
                 __name__,
-                os.path.join("..", f"param", "config_template.yaml")
+                os.path.join("param", "config_template.yaml")
             ),
             config_file
         )
@@ -81,6 +82,8 @@ def check_for_config():
             "data products of this package (This may require a large amount of space.).")
         print("You may also like to specify an alternate param_dir")
         config_dict = load_params(config_file)
+        # except FileNotFoundError:
+        #     warnings.warn("config file was not created properly; most likely you are running something other than Linux.")
     else:
         for param in config_dict:
             if config_dict[param] is not None:
@@ -185,7 +188,7 @@ def get_project_path():
 # Here we set up the various directories used by the pipeline.
 config = check_for_config()
 project_dir = get_project_path()
-param_dir_project = os.path.join(project_dir, "param")
+param_dir_project = os.path.join(project_dir, "craftutils", "param")
 param_dir = config['param_dir']
 
 
@@ -904,7 +907,7 @@ def path_to_config_sextractor_config():
 
 
 def path_to_config_galfit():
-    return os.path.join(project_dir, "param", "galfit", "galfit.feedme")
+    return os.path.join(project_dir, "craftutils", "param", "galfit", "galfit.feedme")
 
 
 def path_to_config_sextractor_param_pre_psfex():
@@ -916,11 +919,11 @@ def path_to_config_sextractor_param():
 
 
 def path_to_config_psfex():
-    return os.path.join(project_dir, "param", "psfex")
+    return os.path.join(project_dir, "craftutils", "param", "psfex")
 
 
 def path_to_source_extractor():
-    return os.path.join(project_dir, "param", "sextractor")
+    return os.path.join(project_dir, "craftutils", "param", "sextractor")
 
 
 def params_init(param_file: Union[str, dict]):

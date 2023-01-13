@@ -6,7 +6,7 @@
 Welcome to craft-optical-followup's documentation!
 ==================================================
 
-This documentation is under construction.
+This documentation is under construction; the author is coming to grips with sphinx and readthedocs.
 
 .. toctree::
    :maxdepth: 2
