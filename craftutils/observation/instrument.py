@@ -133,7 +133,7 @@ class Instrument:
 
     @classmethod
     def _build_data_path(cls, instrument_name: str):
-        # path = os.path.join(p.data_path, "instruments")
+        # path = os.path.join(p.data_dir, "instruments")
         # u.mkdir_check(path)
         path = os.path.join("instruments", instrument_name)
         # u.mkdir_check(path)
@@ -215,7 +215,7 @@ class Filter:
             if u.is_path_absolute(kwargs["data_path"]):
                 self.data_path = kwargs["data_path"]
             else:
-                self.data_path = os.path.join(p.data_path, kwargs["data_path"])
+                self.data_path = os.path.join(p.data_dir, kwargs["data_path"])
         # print(self.data_path)
         u.mkdir_check_nested(self.data_path, remove_last=False)
         self.votable = None

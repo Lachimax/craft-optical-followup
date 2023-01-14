@@ -47,7 +47,8 @@ surveys = p.surveys
 active_fields = {}
 active_epochs = {}
 
-zeropoint_yaml = os.path.join(p.data_path, f"zeropoints.yaml")
+if p.data_dir:
+    zeropoint_yaml = os.path.join(p.data_dir, f"zeropoints.yaml")
 
 
 def expunge_fields():
@@ -392,7 +393,7 @@ class Field:
         if self.param_path is not None:
             self.param_dir = os.path.split(self.param_path)[0]
         self.mkdir_params()
-        self.data_path = os.path.join(p.data_path, data_path)
+        self.data_path = os.path.join(p.data_dir, data_path)
         u.debug_print(2, f"Field.__init__(): {self.name}.data_path", self.data_path)
         self.data_path_relative = data_path
         self.mkdir()
@@ -1139,7 +1140,7 @@ class StandardField(Field):
         super().__init__(
             name=name,
             centre_coords=centre_coords,
-            data_path=os.path.join(p.data_path, name),
+            data_path=os.path.join(p.data_dir, name),
             param_path=param_path
         )
 
@@ -1671,7 +1672,7 @@ class Epoch:
         self.data_path = None
         self.data_path_relative = None
         if data_path is not None:
-            self.data_path = os.path.join(p.data_path, data_path)
+            self.data_path = os.path.join(p.data_dir, data_path)
             self.data_path_relative = data_path
         if data_path is not None:
             u.mkdir_check_nested(self.data_path)
@@ -3219,7 +3220,7 @@ class ImagingEpoch(Epoch):
         obs.load_master_objects_table()
 
         staging_dir = os.path.join(
-            p.data_path,
+            p.data_dir,
             "Finalised"
         )
 
@@ -5169,6 +5170,8 @@ class ESOImagingEpoch(ImagingEpoch):
         data_dir = self.data_path
         data_title = self.name
 
+        p.set_eso_user()
+
         self.frames_science = {}
         self.frames_flat = {}
         self.frames_bias = []
@@ -5241,6 +5244,7 @@ class ESOImagingEpoch(ImagingEpoch):
             "vlt-fors2": "fors",
             "vlt-hawki": "hawki"
         }[self.instrument_name]
+
         inst_reflex_dir = os.path.join(config["esoreflex_input_dir"], inst_reflex_dir)
         u.mkdir_check_nested(inst_reflex_dir, remove_last=False)
 
@@ -5313,9 +5317,8 @@ class ESOImagingEpoch(ImagingEpoch):
             expect_sorted = True
             if "expect_sorted" in kwargs and isinstance(kwargs["expect_sorted"], bool):
                 expect_sorted = kwargs["expect_sorted"]
-
         else:
-            eso_dir = p.config['esoreflex_output_dir']
+            eso_dir = os.path.join(p.config['esoreflex_output_dir'], "reflex_end_products")
             expect_sorted = False
 
         if "delete_eso_output" in kwargs:
@@ -5773,10 +5776,7 @@ class HAWKIImagingEpoch(ESOImagingEpoch):
             **kwargs
         )
 
-        esodir = p.config['esoreflex_output_dir']
-        esodir_root, esodir_end = os.path.split(esodir)
-        if esodir_end == "":
-            esodir_root, esodir_end = os.path.split(esodir_root)
+        esodir_root = p.config['esoreflex_output_dir']
 
         eso_tmp_dir = os.path.join(
             esodir_root,

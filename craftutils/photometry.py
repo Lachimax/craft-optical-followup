@@ -27,7 +27,6 @@ import craftutils.fits_files as ff
 import craftutils.params as p
 import craftutils.utils as u
 import craftutils.plotting as plotting
-import craftutils.retrieve as r
 import craftutils.astrometry as a
 
 # TODO: End-to-end pipeline script?
