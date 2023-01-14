@@ -8,10 +8,11 @@ import astropy.units as units
 import craftutils.params as p
 import craftutils.utils as u
 
+__all__ = []
+
 config = p.config
 if config["table_dir"] is not None:
     u.mkdir_check_nested(config["table_dir"])
-
 
 def _construct_column_lists(columns: dict, replace_str: bool = True):
     dtypes = []
@@ -39,7 +40,7 @@ def _construct_column_lists(columns: dict, replace_str: bool = True):
 
     return colnames, dtypes, un
 
-
+@u.export
 def split_dtype(val, replace_str: bool = True):
     if isinstance(val, units.Unit) or isinstance(val, units.IrreducibleUnit):
         dtype = units.Quantity

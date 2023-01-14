@@ -38,6 +38,8 @@ except ModuleNotFoundError:
 import craftutils.params as p
 import craftutils.utils as u
 
+__all__ = []
+
 irsa.Irsa.ROW_LIMIT = -1
 
 default_data_release = {
@@ -52,8 +54,14 @@ default_data_release = {
 
 # import craftutils.observation.instrument as inst
 
-
+@u.export
 def cat_columns(cat, f: str = None):
+    """
+
+    :param cat:
+    :param f:
+    :return:
+    """
     cat = cat.lower()
     if f == "rank":
         f = {

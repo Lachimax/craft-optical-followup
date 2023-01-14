@@ -43,7 +43,9 @@ uncertainty_dict = {
     "stat": 0.0
 }
 
+__all__ = []
 
+@u.export
 def skycoord_to_position_dict(skycoord: SkyCoord):
     ra_float = skycoord.ra.value
     dec_float = skycoord.dec.value
@@ -59,7 +61,7 @@ def skycoord_to_position_dict(skycoord: SkyCoord):
 
     return position
 
-
+@u.export
 class PositionUncertainty:
     def __init__(
             self,
@@ -245,7 +247,7 @@ class PositionUncertainty:
             "healpix_path": None
         }
 
-
+@u.export
 class Object:
     def __init__(
             self,

@@ -21,13 +21,36 @@ import craftutils.params as p
 import craftutils.astrometry as am
 import craftutils.utils as u
 
+__all__ = []
+
 quantity_support()
 
-
+@u.export
 def plot_kron(fig: plt.Figure, data_title: str, instrument: str, f: str, index: Union[int, list], catalogue: str,
               n: int, n_x: int, n_y: int,
               image_name: str, frame: Union[int, float], cmap: str = 'viridis', vmin: float = None, vmax: float = None,
               des: bool = False, offset_ra: int = 0, offset_dec: int = 0):
+    """
+
+    :param fig:
+    :param data_title:
+    :param instrument:
+    :param f:
+    :param index:
+    :param catalogue:
+    :param n:
+    :param n_x:
+    :param n_y:
+    :param image_name:
+    :param frame:
+    :param cmap:
+    :param vmin:
+    :param vmax:
+    :param des:
+    :param offset_ra:
+    :param offset_dec:
+    :return:
+    """
     table = Table().read(catalogue, format='ascii.csv')
 
     if type(index) is int:

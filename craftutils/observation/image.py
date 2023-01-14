@@ -55,6 +55,8 @@ import craftutils.wrap.galfit as galfit
 from craftutils.wrap.astrometry_net import solve_field
 from craftutils.retrieve import cat_columns, cat_instruments
 
+__all__ = []
+
 quantity_support()
 
 # This contains the names as in the header as keys and the names as used in this project as values.
@@ -68,6 +70,7 @@ active_images = {}
 
 
 # TODO: Make this list all fits files, then write wrapper that eliminates non-science images and use that in scripts.
+@u.export
 def fits_table(input_path: str, output_path: str = "", science_only: bool = True):
     """
     Produces and writes to disk a table of .fits files in the given path, with the vital statistics of each. Intended
@@ -302,7 +305,7 @@ def expunge():
     for img_path in active_images:
         del active_images[img_path]
 
-
+@u.export
 class Image:
     instrument_name = "dummy"
     num_chips = 1

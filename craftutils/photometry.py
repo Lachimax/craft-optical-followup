@@ -34,7 +34,9 @@ import craftutils.astrometry as a
 
 gain_unit = units.electron / units.ct
 
+__all__ = []
 
+@u.export
 def image_psf_diagnostics(
         hdu: Union[str, fits.HDUList],
         cat: Union[str, table.Table],
@@ -53,6 +55,26 @@ def image_psf_diagnostics(
         min_stars: int = 30,
         plot_file_prefix: str = ""
 ):
+    """
+
+    :param hdu:
+    :param cat:
+    :param star_class_tol:
+    :param mag_max:
+    :param mag_min:
+    :param match_to:
+    :param match_tolerance:
+    :param frame:
+    :param ext:
+    :param near_centre:
+    :param near_radius:
+    :param ra_col:
+    :param dec_col:
+    :param output:
+    :param min_stars:
+    :param plot_file_prefix:
+    :return:
+    """
     hdu, path = ff.path_or_hdu(hdu=hdu)
     hdu = copy.deepcopy(hdu)
     cat = u.path_or_table(cat)

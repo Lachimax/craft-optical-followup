@@ -2,8 +2,7 @@
 
 import os
 import shutil as sh
-import string
-from copy import deepcopy
+import copy
 from datetime import datetime as dt
 from typing import Union
 
@@ -19,12 +18,14 @@ from astropy.visualization import ImageNormalize, ZScaleInterval, SqrtStretch
 
 import craftutils.utils as u
 
+__all__ = []
 
 # TODO: Fill in docstrings.
 
+@u.export
 def get_rotation_angle(header: fits.header, astropy_units=False):
     """
-    Special thanks to https://math.stackexchange.com/questions/301319/derive-a-rotation-from-a-2d-rotation-matrix
+    Special thanks to `this StackExchange solution <https://math.stackexchange.com/questions/301319/derive-a-rotation-from-a-2d-rotation-matrix>`
     :param header:
     :return theta: rotation angle, in degrees.
     """
@@ -201,7 +202,7 @@ def subtract_file(file: Union[str, fits.HDUList], sub_file: Union[str, fits.HDUL
     if in_place:
         subbed = hdu
     else:
-        subbed = deepcopy(hdu)
+        subbed = copy.deepcopy(hdu)
     print(f"Subtracting:")
     print(f"\t {sub_path} from")
     print(f"\t {path}")
@@ -539,7 +540,7 @@ def trim(hdu: fits.hdu.hdulist.HDUList,
     if in_place:
         new_hdu = hdu
     else:
-        new_hdu = deepcopy(hdu)
+        new_hdu = copy.deepcopy(hdu)
 
     if update_wcs:
         new_hdu[ext].header['CRPIX1'] = hdu[ext].header['CRPIX1'] - u.dequantify(left, units.pix)

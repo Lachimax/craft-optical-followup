@@ -1,6 +1,19 @@
 API
 ==================================================
 
+.. toctree::
+   :maxdepth: 1
+   :caption: Contents:
+
+   api/astrometry
+   api/fits_files
+   api/params
+   api/photometry
+   api/plotting
+   api/retrieve
+   api/sne
+   api/stats
+   api/utils
 
 Classes
 -------
@@ -10,6 +23,3 @@ Functions
 -------
 .. python-apigen-group:: functions
 
-Astrometry
-----------
-.. python-apigen-group:: Astrometry

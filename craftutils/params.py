@@ -16,6 +16,8 @@ from astropy.table import Table, QTable
 
 from craftutils import utils as u
 
+__all__ = []
+
 yaml.AstropyDumper.ignore_aliases = lambda *args: True
 
 instruments_imaging = [
@@ -61,7 +63,7 @@ home_path = os.path.expanduser("~")
 config_dir = os.path.join(home_path, ".craftutils")
 config_file = os.path.join(config_dir, "config.yaml")
 
-
+@u.export
 def check_for_config():
     u.mkdir_check(config_dir)
     config_dict = load_params(config_file)

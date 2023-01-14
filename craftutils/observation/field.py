@@ -34,6 +34,8 @@ import craftutils.utils as u
 import craftutils.wrap.montage as montage
 import craftutils.wrap.dragons as dragons
 
+__all__ = []
+
 # pl.latex_setup()
 
 config = p.config
@@ -50,7 +52,7 @@ active_epochs = {}
 if p.data_dir:
     zeropoint_yaml = os.path.join(p.data_dir, f"zeropoints.yaml")
 
-
+@u.export
 def expunge_fields():
     for field_name in active_fields:
         del active_fields[field_name]
@@ -354,7 +356,7 @@ def _check_do_list(
 
     return do
 
-
+@u.export
 class Field:
     def __init__(
             self,
