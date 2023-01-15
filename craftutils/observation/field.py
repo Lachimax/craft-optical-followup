@@ -1324,7 +1324,7 @@ class FRBField(Field):
             draw_scale_bar: bool = False,
             scale_bar_kwargs: dict = {},
             **kwargs
-    ) -> Tuple[plt.Axes, plt.Figure]:
+    ) -> Tuple[plt.Axes, plt.Figure, dict]:
         """
 
         :param img:
