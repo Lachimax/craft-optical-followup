@@ -1,9 +1,20 @@
+env:
+  global:
+    # This environment variable is used by Code Climate for test coverage checking
+    - CC_TEST_REPORTER_ID=e15de81355dc53073e59e48557fe8e15338b0ea73851d8e3ab8e93e00b3b0d07
 language: python
 python:
   - "3.8"
   - "3.9"
 install:
   - pip install -r requirements.txt
-#  - python setup.py install
+# The actions below are for Code Climate test coverage checking
+before_script:
+  - curl -L https://codeclimate.com/downloads/test-reporter/test-reporter-latest-linux-amd64 > ./cc-test-reporter
+  - chmod +x ./cc-test-reporter
+  - ./cc-test-reporter before-build
 script:
   - pytest
+# Send the coverage results off to Code Climate
+after_script:
+  - ./cc-test-reporter after-build --exit-code $TRAVIS_TEST_RESULT
