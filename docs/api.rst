@@ -5,6 +5,7 @@ API
    :maxdepth: 1
    :caption: Contents:
 
+   api/observation
    api/astrometry
    api/fits_files
    api/params

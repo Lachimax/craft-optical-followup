@@ -75,6 +75,7 @@ def fits_table(input_path: str, output_path: str = "", science_only: bool = True
     """
     Produces and writes to disk a table of .fits files in the given path, with the vital statistics of each. Intended
     only for use with raw ESO data.
+
     :param input_path:
     :param output_path:
     :param science_only: If True, we are writing a list for a folder that also contains calibration files, which we want
