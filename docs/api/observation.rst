@@ -9,11 +9,14 @@ epochs, images, objects and various other concepts of importance for astronomica
 backbone of the pipeline. In the observation module itself are a number of functions for tabulating a number of the
 aforementioned concepts.
 
+
+
 .. toctree::
    :maxdepth: 1
    :caption: Contents:
 
    observation/field
+   observation/epoch
    observation/image
    observation/instrument
    observation/log

@@ -1,11 +1,11 @@
 .. currentmodule:: craftutils.observation.field
 .. py:module:: craftutils.observation.field
 
-Fields and Epochs (craftutils.observation.field)
+Fields (craftutils.observation.field)
 ================================================
 
-Contains classes representing sky fields and epochs of observation,
-as well as functions for managing them. The :cls:`Epoch` class is the primary means by which a pipeline is actuated.
+Contains classes representing sky fields (descendants of :class:`craftutils.observation.field.Field`),
+as well as functions for managing them.
 
 Functions
 ---------

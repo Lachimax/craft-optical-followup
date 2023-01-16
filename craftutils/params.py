@@ -63,6 +63,7 @@ home_path = os.path.expanduser("~")
 config_dir = os.path.join(home_path, ".craftutils")
 config_file = os.path.join(config_dir, "config.yaml")
 
+
 @u.export
 def check_for_config():
     u.mkdir_check(config_dir)
@@ -202,6 +203,7 @@ def write_config():
     yaml_to_json(config_file)
 
 
+@u.export
 def set_param_dir(path: str, write: bool = True):
     config["param_dir"] = path
     global param_dir
@@ -277,6 +279,7 @@ def set_esoreflex_input_dir(path: str, write: bool = True):
     set_config_path(key="esoreflex_input_dir", path=path, write=write)
 
 
+@u.export
 def set_data_dir(path: str, write: bool = True):
     set_config_path(key="top_data_dir", path=path, write=write)
     global data_dir
