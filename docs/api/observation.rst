@@ -2,7 +2,7 @@
 .. py:module:: craftutils.observation
 
 Observations (craftutils.observation)
-==========
+=====================================
 
 The :mod:`craftutils.observation` module contains interoperable submodules defining classes that represent fields,
 epochs, images, objects and various other concepts of importance for astronomical observations, together making up the

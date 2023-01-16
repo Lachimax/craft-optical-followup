@@ -42,6 +42,7 @@ python_apigen_modules = {
     "craftutils.observation.log": "apigen/observation/log/",
     "craftutils.observation.objects": "apigen/observation/objects/",
     "craftutils.observation.survey": "apigen/observation/survey/",
+    "craftutils.wrap.astrometry_net": "apigen/wrap/astrometry_net/",
 }
 
 python_apigen_default_groups = [
@@ -73,6 +74,7 @@ python_apigen_default_groups = [
     ("function:craftutils.observation.objects.*", "Object functions"),
     ("class:craftutils.observation.survey.*", "Survey classes"),
     ("function:craftutils.observation.survey.*", "Survey functions"),
+    ("function:craftutils.wrap.astrometry_net.*", "Astrometry.net functions"),
 ]
 
 # Create hyperlinks to other documentation
