@@ -85,6 +85,8 @@ intersphinx_mapping = {
     "sncosmo": ("https://sncosmo.readthedocs.io/en/stable/", None)
 }
 
+highlight_language = "python3"
+
 templates_path = ['_templates']
 exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store']
 
