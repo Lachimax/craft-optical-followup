@@ -6,5 +6,7 @@ Fits files (craftutils.fits_files)
 
 Convenience functions for managing FITS files, using :mod:`astropy.io.fits`
 
+Functions
+---------
 
 .. python-apigen-group:: Fits files

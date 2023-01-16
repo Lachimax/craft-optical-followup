@@ -6,4 +6,7 @@ Utilities (craftutils.utils)
 
 Various miscellaneous convenience functions.
 
+Functions
+---------
+
 .. python-apigen-group:: Utils

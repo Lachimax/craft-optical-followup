@@ -6,6 +6,7 @@ Astrometry (craftutils.astrometry)
 
 Convenience functions for astrometric purposes.
 
-
+Functions
+---------
 
 .. python-apigen-group:: Astrometry
