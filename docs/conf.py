@@ -79,6 +79,7 @@ python_apigen_default_groups = [
 
 # Create hyperlinks to other documentation
 intersphinx_mapping = {
+    "astrometry_net": ("http://astrometry.net/doc/", None),
     "astropy": ("https://docs.astropy.org/en/stable/", None),
     "astroquery": ("https://astroquery.readthedocs.io/en/latest/", None),
     "python": ("https://docs.python.org/3", None),

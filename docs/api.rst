@@ -1,7 +1,8 @@
 API
 ==================================================
 
-The pages
+Only a small subset of classes and functions are currently listed on these pages; this will improve
+as I document them more thoroughly.
 
 .. toctree::
    :maxdepth: 2
