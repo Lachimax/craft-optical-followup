@@ -64,8 +64,15 @@ python_apigen_default_groups = [
     ("class:craftutils.observation.field.*", "Field classes"),
     ("function:craftutils.observation.field.*", "Field functions"),
     ("class:craftutils.observation.image.*", "Image classes"),
-    ("function:craftutils.observation.image.*", "Image functions")
-
+    ("function:craftutils.observation.image.*", "Image functions"),
+    ("class:craftutils.observation.instrument.*", "Instrument classes"),
+    ("function:craftutils.observation.instrument.*", "Instrument functions"),
+    ("class:craftutils.observation.log.*", "Log classes"),
+    ("function:craftutils.observation.log.*", "Log functions"),
+    ("class:craftutils.observation.objects.*", "Object classes"),
+    ("function:craftutils.observation.objects.*", "Object functions"),
+    ("class:craftutils.observation.survey.*", "Survey classes"),
+    ("function:craftutils.observation.survey.*", "Survey functions"),
 ]
 
 # Create hyperlinks to other documentation
