@@ -13,7 +13,6 @@ import astropy.units as units
 import astropy.table as table
 import astropy.io.fits as fits
 from astropy.modeling import models, fitting
-from astropy.visualization import make_lupton_rgb, ImageNormalize
 
 import ccdproc
 

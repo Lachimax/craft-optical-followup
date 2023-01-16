@@ -4,6 +4,10 @@ Installation
 Prequisites
 -----------
 
+Some packages are not required for primary functionality but are necessary for certain features.
+
+* `FRB <https://github.com/FRBs/FRB>`_ is used by :class:`craftutils.observation.objects.FRB` for some modelling to do with FRB propagation.
+
 Installing
 ----------
 

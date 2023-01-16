@@ -15,6 +15,7 @@ API
    api/sne
    api/stats
    api/utils
+   api/wrap
 
 Classes
 -------

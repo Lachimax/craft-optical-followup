@@ -11,7 +11,7 @@ This documentation is under construction; the author is coming to grips with sph
 Code and documentation written by `Lachlan Marnoch <https://orcid.org/0000-0003-1483-0147>`_.
 
 .. toctree::
-   :maxdepth: 2
+   :maxdepth: 3
    :caption: Contents:
 
    README

@@ -33,8 +33,8 @@ def export(obj):
     module = sys.modules[obj.__module__]
 
     # Set the object's module to the package name. This way the REPL will display the object
-    # as galois.obj and not galois._private_module.obj
-    obj.__module__ = "galois"
+    # as craftutils.obj and not craftutils._private_module.obj
+    obj.__module__ = "craftutils"
 
     # Append this object to the private module's "all" list
     public_members = getattr(module, "__all__", [])
