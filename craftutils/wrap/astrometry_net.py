@@ -7,10 +7,18 @@ from astropy.coordinates import SkyCoord
 
 from typing import Union
 
-from craftutils.utils import system_command, debug_print, check_quantity
+from craftutils.utils import system_command, debug_print, check_quantity, export
+
+__all__ = []
 
 
+@export
 def add_index_directory(path: str):
+    """
+
+    :param path:
+    :return:
+    """
     bin_path = os.path.dirname(find_executable("astrometry-engine"))
     cfg_path = os.path.abspath(os.path.join(bin_path, "..", "etc", "astrometry.cfg"))
     line = f"add_path {path}\n"

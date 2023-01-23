@@ -21,8 +21,36 @@ from astropy.time import Time
 
 debug_level = 0
 
+def export(obj):
+    """
+    A function used for decorating those objects which may be exported from a file.
+    Taken from `a solution posted by mhostetter <https://github.com/jbms/sphinx-immaterial/issues/152>`_
 
+    :param obj: The object to be added to __all__
+    :return:
+    """
+    # Determine the private module that defined the object
+    module = sys.modules[obj.__module__]
+
+    # Set the object's module to the package name. This way the REPL will display the object
+    # as craftutils.obj and not craftutils._private_module.obj
+    obj.__module__ = "craftutils"
+
+    # Append this object to the private module's "all" list
+    public_members = getattr(module, "__all__", [])
+    public_members.append(obj.__name__)
+    setattr(module, "__all__", public_members)
+
+    return obj
+
+@export
 def pad_zeroes(n: int, length: int = 2):
+    """
+
+    :param n:
+    :param length:
+    :return:
+    """
     n_str = str(n)
     while len(n_str) < length:
         n_str = "0" + n_str

@@ -15,10 +15,19 @@ import craftutils.stats as st
 import craftutils.params as p
 import craftutils.fits_files as ff
 
+__all__ = []
+
 sn_types = ['ia', 'ib', 'ic', 'iil', 'iip', 'iin']
 
 
+@u.export
 def delta_m15(mags, days):
+    """
+
+    :param mags:
+    :param days:
+    :return:
+    """
     day_peak = days[np.nanargmin(mags)]
     day_15 = day_peak + 15.
     arg_day_15, _ = u.find_nearest(days, day_15)

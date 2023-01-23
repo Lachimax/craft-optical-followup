@@ -1,4 +1,5 @@
 astroalign>=2.4
+astrometry>=0.92
 astropy>=5.0
 astroquery>=0.4
 ccdproc>=2.3

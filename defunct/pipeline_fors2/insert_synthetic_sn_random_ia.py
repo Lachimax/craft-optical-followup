@@ -6,7 +6,7 @@ import astropy.time as time
 from craftutils import params as p
 from craftutils import utils as u
 from craftutils import photometry as ph
-from craftutils import sn
+from craftutils import sne
 
 
 def main(obj, test, n, filter_dist, instrument, limit):

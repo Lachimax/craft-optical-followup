@@ -14,6 +14,10 @@ from craftutils.retrieve import save_svo_filter, save_fors2_calib
 active_instruments = {}
 active_filters = {}
 
+__all__ = []
+
+
+@u.export
 class Instrument:
     def __init__(self, **kwargs):
         self.name = None
