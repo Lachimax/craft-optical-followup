@@ -2253,8 +2253,7 @@ class ImagingImage(Image):
         """
         Uses the header information from an image that has already been corrected by the Astrometry.net code to apply
         the same tweak to this image.
-        This assumes that both images had the same astrometry to begin with, and is only really valid for use with an
-        image that represents the same exposure but on a different CCD chip.
+        This assumes that both images had the same astrometry to begin with, eg if one is a derived version of the other.
         :param other_image: Header must contain both _RVAL and CRVAL keywords.
         :param output_dir: Path to write new fits file to.
         :return:
@@ -2310,7 +2309,7 @@ class ImagingImage(Image):
             # Insert all other astrometry info as previously extracted.
             file[0].header.update(insert)
 
-        cls = ImagingImage.select_child_class(instrument=self.instrument_name)
+        cls = type(self)  # ImagingImage.select_child_class(instrument=self.instrument_name)
         new_image = cls(path=output_path)
 
         new_image.add_log(
@@ -2975,7 +2974,7 @@ class ImagingImage(Image):
 
     def signal_to_noise_measure(self, dual: bool = False):
         print("Measuring signal-to-noise of sources...")
-
+        print(self.path)
         source_cat = self.get_source_cat(dual=dual)
         source_cat["SNR_AUTO"] = source_cat["FLUX_AUTO"] / source_cat["FLUXERR_AUTO"]
         if "FLUX_PSF" in source_cat.colnames:
