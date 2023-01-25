@@ -1573,6 +1573,7 @@ class ImagingEpoch(Epoch):
                     other_image=self.coadded_astrometry[fil],
                     output_dir=output_dir + "_background_subtracted"
                 )
+                self.coadded_subtracted[fil].area_file = self.coadded_astrometry[fil].area_file
 
     def proc_trim_coadded(self, output_dir: str, **kwargs):
         if "correct_astrometry_coadded" in self.do_kwargs and self.do_kwargs["correct_astrometry_coadded"]:
@@ -1589,10 +1590,15 @@ class ImagingEpoch(Epoch):
     def trim_coadded(self, output_dir: str, images: dict = None, reproject: bool = False):
         if images is None:
             images = self.coadded
+
         u.mkdir_check(output_dir)
         template = None
         for fil in images:
             img = images[fil]
+            print()
+
+            print("Coadded Image Path:")
+            print(img.path)
             output_path = os.path.join(output_dir, img.filename.replace(".fits", "_trimmed.fits"))
             u.debug_print(2, "trim_coadded img.path:", img.path)
             u.debug_print(2, "trim_coadded img.area_file:", img.area_file)
@@ -1610,8 +1616,10 @@ class ImagingEpoch(Epoch):
                     )
             self.add_coadded_trimmed_image(trimmed, key=fil)
             if fil in self.coadded_subtracted and self.coadded_subtracted[fil] is not None:
-                trimmed = self.coadded_subtracted[fil].trim_from_area(output_path=output_path)
-                self.add_coadded_trimmed_image(trimmed, key=fil)
+                img_sub = self.coadded_subtracted[fil]
+                output_path_sub = os.path.join(output_dir, img_sub.filename.replace(".fits", "_bgsub_trimmed.fits"))
+                trimmed_sub = img_sub.trim_from_area(output_path=output_path_sub)
+                self.coadded_subtracted[fil] = trimmed_sub
 
     def proc_source_extraction(self, output_dir: str, **kwargs):
         if "do_astrometry_diagnostics" not in kwargs:
@@ -2364,7 +2372,7 @@ class ImagingEpoch(Epoch):
             if "coadded_subtracted" in outputs:
                 for fil in outputs["coadded_subtracted"]:
                     if outputs["coadded_subtracted"][fil] is not None:
-                        self.add_coadded_image(img=outputs["coadded_subtracted"][fil], key=fil, **kwargs)
+                        self.add_coadded_subtracted_image(img=outputs["coadded_subtracted"][fil], key=fil, **kwargs)
             if "coadded_trimmed" in outputs:
                 for fil in outputs["coadded_trimmed"]:
                     if outputs["coadded_trimmed"][fil] is not None:
@@ -2518,6 +2526,9 @@ class ImagingEpoch(Epoch):
 
     def add_coadded_unprojected_image(self, img: Union[str, image.Image], key: str, **kwargs):
         return self._add_coadded(img=img, key=key, image_dict=self.coadded_unprojected)
+
+    def add_coadded_subtracted_image(self, img: Union[str, image.Image], key: str, **kwargs):
+        return self._add_coadded(img=img, key=key, image_dict=self.coadded_subtracted)
 
     def add_coadded_astrometry_image(self, img: Union[str, image.Image], key: str, **kwargs):
         return self._add_coadded(img=img, key=key, image_dict=self.coadded_astrometry)
