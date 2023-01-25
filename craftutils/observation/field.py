@@ -39,6 +39,7 @@ surveys = p.surveys
 
 active_fields = {}
 
+
 @u.export
 def expunge_fields():
     for field_name in active_fields:
@@ -54,6 +55,7 @@ def select_instrument(mode: str):
         raise ValueError("Mode must be 'imaging' or 'spectroscopy'.")
     _, instrument = u.select_option("Select an instrument:", options=options)
     return instrument
+
 
 def list_fields(include_std: bool = False):
     print("Searching for field param files...")
@@ -78,6 +80,7 @@ def list_fields_old():
         fields = []
     fields.sort()
     return fields
+
 
 @u.export
 class Field:
@@ -327,7 +330,7 @@ class Field:
             is_survey = True
         else:
             is_survey = False
-            default_prefix = f"{self.name}_{instrument.upper()[instrument.find('-')+1:]}"
+            default_prefix = f"{self.name}_{instrument.upper()[instrument.find('-') + 1:]}"
             others_like = list(filter(
                 lambda string: string.startswith(default_prefix) and string[-1].isnumeric(),
                 current_epochs

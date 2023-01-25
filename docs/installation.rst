@@ -26,6 +26,7 @@ Currently, the best way to install this package is to clone it from GitHub and t
         $ pip install .
 
     Or, if you want to edit the code while installed, e.g. to contribute:
+
     .. code-block:: bash
 
         $ pip install -e .

@@ -5,10 +5,10 @@ from typing import Union
 import craftutils.params as p
 import craftutils.utils as u
 
-
 # TODO: Parent class for all param loading etc, with children Instrument, Survey etc.
 
 __all__ = []
+
 
 @u.export
 class Survey:
@@ -89,7 +89,7 @@ class Survey:
             "raw_stage_path": None,
             "refined_stage_path": None,
             "program_ids": {},  # Dict should have instrument names as keys and a list of strings for each value.
-            "extra_commands": [] # Commands to be executed by shell at completion of last step (NOT YET IMPLEMENTED)
+            "extra_commands": []  # Commands to be executed by shell at completion of last step (NOT YET IMPLEMENTED)
         }
         return default_params
 
@@ -140,7 +140,6 @@ class Survey:
 
         return surveys
 
-
     @classmethod
     def new_param_from_input(cls):
         survey_name = u.user_input(
@@ -148,4 +147,3 @@ class Survey:
         )
         cls.new_param(survey_name)
         return survey_name
-

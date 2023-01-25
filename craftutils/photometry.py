@@ -29,9 +29,6 @@ import craftutils.utils as u
 import craftutils.plotting as plotting
 import craftutils.astrometry as a
 
-# TODO: End-to-end pipeline script?
-# TODO: Change expected types to Union
-
 gain_unit = units.electron / units.ct
 
 __all__ = []

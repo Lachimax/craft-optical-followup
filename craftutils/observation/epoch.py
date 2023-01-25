@@ -1,7 +1,7 @@
 import datetime
 import os
 import warnings
-from typing import Union, List, Dict, Tuple
+from typing import Union, List, Dict
 import shutil
 
 import matplotlib.pyplot as plt
@@ -23,6 +23,7 @@ import craftutils.observation.field as fld
 import craftutils.observation.objects as objects
 import craftutils.observation.image as image
 import craftutils.observation.instrument as inst
+import craftutils.observation.filters as filters
 import craftutils.observation.log as log
 import craftutils.observation.survey as survey
 import craftutils.params as p
@@ -4976,7 +4977,7 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
         fils_find = []
 
         for fil_name in inst.FORS2Filter.qc1_retrievable:
-            fil = inst.Filter.from_params(fil_name, instrument_name="vlt-fors2")
+            fil = filters.Filter.from_params(fil_name, instrument_name="vlt-fors2")
             fil.retrieve_calibration_table()
             fils_known.append(fil)
             tbls_known[fil_name] = fil.get_nearest_calib_rows(mjd=mjd, n=n)
@@ -4992,7 +4993,7 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
 
         for fil_name in self.filters:
             if fil_name not in inst.FORS2Filter.qc1_retrievable:
-                fil = inst.Filter.from_params(fil_name, instrument_name="vlt-fors2")
+                fil = filters.Filter.from_params(fil_name, instrument_name="vlt-fors2")
                 fils_find.append(fil)
                 results_tbl[f"ext_{fil_name}"] = []
                 # results_tbl[f"ext_err_{fil_name}"] = []

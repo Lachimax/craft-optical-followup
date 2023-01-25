@@ -2,10 +2,11 @@
 .. py:module:: craftutils.observation.instrument
 
 Instruments (craftutils.observation.instrument)
-===========================================
+===============================================
 
-Contains classes representing astronomical instruments and
-their bandpasses.
+Contains classes representing astronomical instruments.
+
+Instrument bandpasses are represented in the module :mod:`craftutils.observation.filters`.
 
 Functions
 ---------
