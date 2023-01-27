@@ -133,13 +133,13 @@ class Instrument:
     def _build_data_path(cls, instrument_name: str):
         # path = os.path.join(p.data_dir, "instruments")
         # u.mkdir_check(path)
-        path = os.path.join("gemini", instrument_name)
+        path = os.path.join("instruments", instrument_name)
         # u.mkdir_check(path)
         return path
 
     @classmethod
     def _build_param_dir(cls, instrument_name: str):
-        path = os.path.join(p.param_dir, "gemini")
+        path = os.path.join(p.param_dir, "instruments")
         u.mkdir_check(path)
         u.debug_print(2, "Instrument._build_param_dir(): instrument_name ==", instrument_name)
         path = os.path.join(path, instrument_name)
