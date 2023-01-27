@@ -45,6 +45,7 @@ active_epochs = {}
 if p.data_dir:
     zeropoint_yaml = os.path.join(p.data_dir, f"zeropoints.yaml")
 
+
 def _epoch_directory_path():
     path = os.path.join(p.param_dir, "fields", "directory.yaml")
     u.debug_print(2, "_epoch_directory_path(): path ==", path)
@@ -189,9 +190,11 @@ def _check_do_list(
 
     return do
 
+
 def expunge_epochs():
     for epoch_name in active_epochs:
         del active_epochs[epoch_name]
+
 
 def _output_img_list(lst: list):
     """
@@ -241,6 +244,7 @@ def _output_img_dict_list(dictionary: dict):
         else:
             out_dict[fil] = []
     return out_dict
+
 
 class Epoch:
     instrument_name = "dummy-instrument"
@@ -3691,6 +3695,7 @@ class PanSTARRS1ImagingEpoch(SurveyImagingEpoch):
         :return:
         """
         pass
+
 
 def _retrieve_eso_epoch(epoch: Union['ESOImagingEpoch', 'ESOSpectroscopyEpoch'], path: str):
     epoch_date = None
