@@ -110,6 +110,12 @@ def load_params(file: str):
     return p
 
 
+def check_abs_path(path: str, root: str = "top_data_dir"):
+    if not os.path.isabs(path):
+        path = os.path.join(config[root], str(path))
+    return path
+
+
 def sanitise_yaml_dict(dictionary: dict):
     for key in dictionary:
         if isinstance(dictionary[key], np.str_):

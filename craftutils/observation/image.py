@@ -47,6 +47,7 @@ import craftutils.plotting as pl
 import craftutils.observation.log as log
 import craftutils.observation.objects as objects
 import craftutils.observation.instrument as inst
+import craftutils.observation.catalogue as catalog
 
 from craftutils.stats import gaussian_distributed_point
 import craftutils.wrap.source_extractor as se
@@ -842,13 +843,9 @@ class ImagingImage(Image):
         self.psfex_output = None
         self.psfex_successful = None
         # TODO: The source_cat attributes should be lists with each entry corresponding to a single FITS extension. This
-        # is the last piece, I believe, that has not been updated to this standard.
-        self.source_cat_sextractor_path = None
-        self.source_cat_sextractor_dual_path = None
-        self.source_cat_path = None
-        self.source_cat_dual_path = None
-        self.source_cat = None
-        self.source_cat_dual = None
+        #   is the last piece, I believe, that has not been updated to this standard.
+        self.source_cat: catalog.ImageCatalogue = None
+        self.source_cat_dual: catalog.ImageCatalogue = None
         self.dual_mode_template = None
 
         self.sep_background = None
@@ -1108,10 +1105,10 @@ class ImagingImage(Image):
         if template is not None:
             dual = True
         if dual:
-            self.source_cat_sextractor_dual_path = cat_path
+            self.source_cat_dual.set_se_path(path=cat_path)
             cat = self.load_source_cat_sextractor_dual(force=True)
         else:
-            self.source_cat_sextractor_path = cat_path
+            self.source_cat.set_se_path(path=cat_path)
             cat = self.load_source_cat_sextractor(force=True)
 
         if len(cat) == 0:
@@ -1130,10 +1127,10 @@ class ImagingImage(Image):
             )
             if dual:
                 self.source_cat_sextractor_dual_path = cat_path
-                cat = self.load_source_cat_sextractor_dual(force=True)
+                self.load_source_cat_sextractor_dual(force=True)
             else:
                 self.source_cat_sextractor_path = cat_path
-                cat = self.load_source_cat_sextractor(force=True)
+                self.load_source_cat_sextractor(force=True)
         else:
             self.psfex_successful = True
 
@@ -1151,33 +1148,6 @@ class ImagingImage(Image):
         self.signal_to_noise_measure(dual=dual)
         print()
         self.update_output_file()
-
-    def _load_source_cat_sextractor(self, path: str, wcs_ext: int = 0):
-        self.load_wcs()
-        print("Loading source catalogue from", path)
-        source_cat = table.QTable.read(path, format="ascii.sextractor")
-        if "SPREAD_MODEL" in source_cat.colnames:
-            source_cat = u.classify_spread_model(source_cat)
-        source_cat["RA"], source_cat["DEC"] = self.wcs[wcs_ext].all_pix2world(
-            source_cat["X_IMAGE"],
-            source_cat["Y_IMAGE"],
-            1
-        ) * units.deg
-        self.extract_astrometry_err()
-        if self.ra_err is not None:
-            source_cat["RA_ERR"] = np.sqrt(
-                source_cat["ERRX2_WORLD"].to(units.arcsec ** 2) + self.ra_err ** 2)
-        else:
-            source_cat["RA_ERR"] = np.sqrt(
-                source_cat["ERRX2_WORLD"].to(units.arcsec ** 2))
-        if self.dec_err is not None:
-            source_cat["DEC_ERR"] = np.sqrt(
-                source_cat["ERRY2_WORLD"].to(units.arcsec ** 2) + self.dec_err ** 2)
-        else:
-            source_cat["DEC_ERR"] = np.sqrt(
-                source_cat["ERRY2_WORLD"].to(units.arcsec ** 2))
-
-        return source_cat
 
     def world_to_pixel(self, coord: SkyCoord, origin: int = 0, ext: int = 0) -> np.ndarray:
         """
@@ -1214,49 +1184,6 @@ class ImagingImage(Image):
         self.sep_background = [None] * len(self.data)
         self.pu_background = [None] * len(self.data)
         return self.data
-
-    def load_source_cat_sextractor(self, force: bool = False):
-        if self.source_cat_sextractor_path is not None:
-            if force:
-                self.source_cat = None
-            if self.source_cat is None:
-                self.source_cat = self._load_source_cat_sextractor(path=self.source_cat_sextractor_path)
-        else:
-            print("source_cat could not be loaded from SE file because source_cat_sextractor_path has not been set.")
-
-        return self.source_cat
-
-    def load_source_cat_sextractor_dual(self, force: bool = False):
-        if self.source_cat_sextractor_dual_path is not None:
-            if force:
-                self.source_cat_dual = None
-            if self.source_cat_dual is None:
-                self.source_cat_dual = self._load_source_cat_sextractor(path=self.source_cat_sextractor_dual_path)
-        else:
-            print(
-                "source_cat_dual could not be loaded from SE file because source_cat_sextractor_dual_path has not been set.")
-
-        return self.source_cat_dual
-
-    def load_source_cat(self, force: bool = False):
-        u.debug_print(2, f"ImagingImage.load_source_cat(): {self}.name ==", self.name)
-        u.debug_print(2, f"ImagingImage.load_source_cat(): {self}.source_cat_path ==", self.source_cat_path)
-        if force or self.source_cat is None or self.source_cat_dual is None:
-            if self.source_cat_path is not None:
-                u.debug_print(1, "Loading source_table from", self.source_cat_path)
-                self.source_cat = table.QTable.read(self.source_cat_path, format="ascii.ecsv")
-            elif self.source_cat_sextractor_path is not None:
-                self.load_source_cat_sextractor(force=force)
-            else:
-                u.debug_print(1, "No valid source_cat_path found. Could not load source_table.")
-
-            if self.source_cat_dual_path is not None:
-                u.debug_print(1, "Loading source_table from", self.source_cat_dual_path)
-                self.source_cat_dual = table.QTable.read(self.source_cat_dual_path, format="ascii.ecsv")
-            elif self.source_cat_sextractor_dual_path is not None:
-                self.load_source_cat_sextractor_dual(force=force)
-            else:
-                u.debug_print(1, "No valid source_cat_dual_path found. Could not load source_table.")
 
     def get_source_cat(self, dual: bool, force: bool = False):
         self.load_source_cat(force=force)

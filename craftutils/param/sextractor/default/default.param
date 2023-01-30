@@ -1,5 +1,5 @@
 NUMBER                   #Running object number                                    
-#EXT_NUMBER               #FITS extension number                                    
+EXT_NUMBER               #FITS extension number
 FLUX_BEST                #Best of FLUX_AUTO and FLUX_ISOCOR                         [count]
 FLUXERR_BEST             #RMS error for BEST flux                                   [count]
 FLUX_AUTO
