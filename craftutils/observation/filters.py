@@ -148,9 +148,9 @@ class Filter:
 
         tbls = []
         for name in tbl_names:
-            tbls.append(self.transmission_tables[name])
+            if name in self.transmission_tables:
+                tbls.append(self.transmission_tables[name])
         return tbls
-
 
     def find_comparable_table(self, other: 'Filter'):
 
@@ -207,7 +207,7 @@ class Filter:
             components = self.votable.get_field_by_id("components").value
 
             key = components.replace(" ", "").lower()
-            self.transmission_tables[key] = self.votable.get_first_table().to_table()
+            self.transmission_tables[key] = table.QTable(self.votable.get_first_table().to_table())
 
             lambda_eff_vot = self.votable.get_field_by_id("WavelengthEff")
             self.lambda_eff = lambda_eff_vot.value * lambda_eff_vot.unit
@@ -224,20 +224,23 @@ class Filter:
         for table_name in self.transmission_tables:
             if self.transmission_tables[table_name] is not None:
                 tbl = self.transmission_tables[table_name]
-                if table_name in self.transmission_table_paths and self.transmission_table_paths is not None:
+                if table_name not in self.transmission_table_paths or self.transmission_table_paths[table_name] is None:
                     self.transmission_table_paths[table_name] = os.path.join(
                         self.data_path,
                         f"{self.instrument}_{self.name}_transmission_{table_name}.ecsv"
                     )
-                tbl.write(self.transmission_table_paths[table_name])
+                tbl.write(self.transmission_table_paths[table_name], overwrite=True)
 
     def load_transmission_tables(self, force: bool = False):
 
         for table_name in self.transmission_table_paths:
             path = self.transmission_table_paths[table_name]
+            if path is None:
+                continue
             if force:
                 self.transmission_tables[table_name] = None
-            if self.transmission_tables[table_name] is None:
+            if table_name not in self.transmission_tables or self.transmission_tables[table_name] is None:
+                print(self.name, table_name)
                 self.transmission_tables[table_name] = table.QTable.read(path)
         return self.transmission_tables
 
@@ -341,7 +344,8 @@ class Filter:
 
     @classmethod
     def _build_data_path(cls, instrument_name: str, filter_name: str):
-        return os.path.join(instrument.Instrument._build_data_path(instrument_name=instrument_name), "filters", filter_name)
+        return os.path.join(instrument.Instrument._build_data_path(instrument_name=instrument_name), "filters",
+                            filter_name)
 
     @classmethod
     def _build_param_path(cls, instrument_name: str, filter_name: str):
