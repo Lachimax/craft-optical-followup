@@ -69,14 +69,8 @@ class Filter:
         self.lambda_eff = None
         self.lambda_fwhm = None
         self.vega_zeropoint = None
-        self.transmission_table_filter = None
-        self.transmission_table_filter_path = None
-        self.transmission_table_filter_instrument = None
-        self.transmission_table_filter_instrument_path = None
-        self.transmission_table_filter_instrument_atmosphere = None
-        self.transmission_table_filter_instrument_atmosphere_path = None
-        self.transmission_table_filter_atmosphere = None
-        self.transmission_table_filter_atmosphere_path = None
+        self.transmission_tables = {}
+        self.transmission_table_paths = {}
 
         self.photometry_table = None
 
@@ -137,24 +131,31 @@ class Filter:
 
         return difference
 
-    def find_comparable_table(self, other: 'Filter'):
-        self.load_transmission_tables()
-        other.load_transmission_tables()
+    def transmission_by_usefulness(self):
 
-        tbls_self = [
-            self.transmission_table_filter,
-            self.transmission_table_filter_atmosphere,
-            self.transmission_table_filter_instrument,
-            self.transmission_table_filter_instrument_atmosphere,
+        self.load_transmission_tables()
+        tbl_names = [
+            "filter",
+            "filter+atmosphere",
+            "filter+instrument",
+            "filter+ccd+instrument",
+            "filter+instrument+atmosphere"
         ]
-        tbls_self.reverse()
-        tbls_other = [
-            other.transmission_table_filter,
-            other.transmission_table_filter_atmosphere,
-            other.transmission_table_filter_instrument,
-            other.transmission_table_filter_instrument_atmosphere,
-        ]
-        tbls_other.reverse()
+        tbl_names.reverse()
+        for name in self.transmission_tables:
+            if name not in tbl_names:
+                tbl_names.append(name)
+
+        tbls = []
+        for name in tbl_names:
+            tbls.append(self.transmission_tables[name])
+        return tbls
+
+
+    def find_comparable_table(self, other: 'Filter'):
+
+        tbls_self = self.transmission_by_usefulness()
+        tbls_other = other.transmission_by_usefulness()
 
         for i, tbl in enumerate(tbls_self):
             if tbl is not None and tbls_other[i] is not None:
@@ -188,15 +189,15 @@ class Filter:
         """
         self.load_instrument()
         if self.svo_instrument is None:
-            instrument = self.instrument.svo_instrument
+            inst = self.instrument.svo_instrument
         else:
-            instrument = self.svo_instrument
+            inst = self.svo_instrument
 
         for svo_id in self.svo_id:
             path = os.path.join(self.data_path, f"{self.instrument}_{svo_id}_SVOTable.xml")
             save_svo_filter(
                 facility_name=self.instrument.svo_facility,
-                instrument_name=instrument,
+                instrument_name=inst,
                 filter_name=svo_id,
                 output=path
             )
@@ -204,14 +205,9 @@ class Filter:
             self.votable_path = path
 
             components = self.votable.get_field_by_id("components").value
-            if components == "Filter":
-                self.transmission_table_filter = self.votable.get_first_table().to_table()
-            elif components == "Filter + Instrument":
-                self.transmission_table_filter_instrument = self.votable.get_first_table().to_table()
-            elif components == "Filter + Instrument + Atmosphere":
-                self.transmission_table_filter_instrument_atmosphere = self.votable.get_first_table().to_table()
-            elif components == "Filter + Atmosphere":
-                self.transmission_table_filter_atmosphere = self.votable.get_first_table().to_table()
+
+            key = components.replace(" ", "").lower()
+            self.transmission_tables[key] = self.votable.get_first_table().to_table()
 
             lambda_eff_vot = self.votable.get_field_by_id("WavelengthEff")
             self.lambda_eff = lambda_eff_vot.value * lambda_eff_vot.unit
@@ -225,70 +221,28 @@ class Filter:
 
     def write_transmission_tables(self):
 
-        if self.transmission_table_filter is not None:
-            if self.transmission_table_filter_path is None:
-                self.transmission_table_filter_path = os.path.join(
-                    self.data_path,
-                    f"{self.instrument}_{self.name}_transmission_filter.ecsv")
-            self.transmission_table_filter.write(
-                self.transmission_table_filter_path, format="ascii.ecsv", overwrite=True)
-
-        if self.transmission_table_filter_instrument is not None:
-            if self.transmission_table_filter_instrument_path is None:
-                self.transmission_table_filter_instrument_path = os.path.join(
-                    self.data_path,
-                    f"{self.instrument}_{self.name}_transmission_filter_instrument.ecsv")
-            self.transmission_table_filter_instrument.write(
-                self.transmission_table_filter_instrument_path, format="ascii.ecsv", overwrite=True)
-
-        if self.transmission_table_filter_instrument_atmosphere is not None:
-            if self.transmission_table_filter_instrument_atmosphere_path is None:
-                self.transmission_table_filter_instrument_atmosphere_path = os.path.join(
-                    self.data_path,
-                    f"{self.instrument}_{self.name}_transmission_filter_instrument_atmosphere.ecsv")
-            self.transmission_table_filter_instrument_atmosphere.write(
-                self.transmission_table_filter_instrument_atmosphere_path, format="ascii.ecsv", overwrite=True)
-
-        if self.transmission_table_filter_atmosphere is not None:
-            if self.transmission_table_filter_atmosphere_path is None:
-                self.transmission_table_filter_atmosphere_path = os.path.join(
-                    self.data_path,
-                    f"{self.instrument}_{self.name}_transmission_filter_atmosphere.ecsv")
-            self.transmission_table_filter_atmosphere.write(
-                self.transmission_table_filter_atmosphere_path, format="ascii.ecsv", overwrite=True)
+        for table_name in self.transmission_tables:
+            if self.transmission_tables[table_name] is not None:
+                tbl = self.transmission_tables[table_name]
+                if table_name in self.transmission_table_paths and self.transmission_table_paths is not None:
+                    self.transmission_table_paths[table_name] = os.path.join(
+                        self.data_path,
+                        f"{self.instrument}_{self.name}_transmission_{table_name}.ecsv"
+                    )
+                tbl.write(self.transmission_table_paths[table_name])
 
     def load_transmission_tables(self, force: bool = False):
-        if self.transmission_table_filter_path is not None:
+
+        for table_name in self.transmission_table_paths:
+            path = self.transmission_table_paths[table_name]
             if force:
-                self.transmission_table_filter = None
-            if self.transmission_table_filter is None:
-                self.transmission_table_filter = table.QTable.read(self.transmission_table_filter_path)
-        if self.transmission_table_filter_instrument_path is not None:
-            if force:
-                self.transmission_table_filter_instrument = None
-            if self.transmission_table_filter_instrument is None:
-                self.transmission_table_filter_instrument = table.QTable.read(
-                    self.transmission_table_filter_instrument_path)
-        if self.transmission_table_filter_instrument_atmosphere_path is not None:
-            if force:
-                self.transmission_table_filter_instrument_atmosphere = None
-            if self.transmission_table_filter_instrument_atmosphere is None:
-                self.transmission_table_filter_instrument_atmosphere = table.QTable.read(
-                    self.transmission_table_filter_instrument_atmosphere_path)
-        if self.transmission_table_filter_atmosphere_path is not None:
-            if force:
-                self.transmission_table_filter_atmosphere = None
-            if self.transmission_table_filter_atmosphere is None:
-                self.transmission_table_filter_atmosphere = table.QTable.read(
-                    self.transmission_table_filter_atmosphere_path)
+                self.transmission_tables[table_name] = None
+            if self.transmission_tables[table_name] is None:
+                self.transmission_tables[table_name] = table.QTable.read(path)
+        return self.transmission_tables
 
     def select_transmission_table(self):
-        filter_tables = [
-            self.transmission_table_filter_instrument_atmosphere,
-            self.transmission_table_filter_instrument,
-            self.transmission_table_filter_atmosphere,
-            self.transmission_table_filter
-        ]
+        filter_tables = self.transmission_by_usefulness()
         for tbl in filter_tables:
             if tbl is not None:
                 return tbl
@@ -300,11 +254,7 @@ class Filter:
             "lambda_fwhm": self.lambda_fwhm,
             "vega_zeropoint": self.vega_zeropoint,
             "votable_path": self.votable_path,
-            "transmission_table_paths": {
-                "filter": self.transmission_table_filter_path,
-                "filter_instrument": self.transmission_table_filter_instrument_path,
-                "filter_instrument_atmosphere": self.transmission_table_filter_instrument_atmosphere_path,
-                "filter_atmosphere": self.transmission_table_filter_atmosphere_path},
+            "transmission_table_paths": self.transmission_table_paths
         }
 
     def update_output_file(self):
@@ -323,17 +273,7 @@ class Filter:
         if "votable_path" in outputs:
             self.votable_path = outputs["votable_path"]
         if "transmission_table_paths" in outputs:
-            transmission_table_paths = outputs["transmission_table_paths"]
-            if "filter" in transmission_table_paths:
-                self.transmission_table_filter_path = transmission_table_paths["filter"]
-            if "filter_instrument" in transmission_table_paths:
-                self.transmission_table_filter_instrument_path = transmission_table_paths["filter_instrument"]
-            if "filter_instrument_atmosphere" in transmission_table_paths:
-                self.transmission_table_filter_instrument_atmosphere_path = transmission_table_paths[
-                    "filter_instrument_atmosphere"]
-            if "filter_atmosphere" in transmission_table_paths:
-                self.transmission_table_filter_atmosphere_path = transmission_table_paths[
-                    "filter_instrument_atmosphere"]
+            self.transmission_table_paths = outputs["transmission_table_paths"]
         return outputs
 
     @classmethod
