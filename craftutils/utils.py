@@ -947,7 +947,7 @@ def find_nearest(array, value, sorted: bool = False):
         return len(array) - 1, array[-1]
 
     idx = np.searchsorted(array, value, side="left")
-    if idx == len(array) or math.fabs(value - array[idx - 1]) < math.fabs(value - array[idx]):
+    if idx == len(array) or np.abs(value - array[idx - 1]) < np.abs(value - array[idx]):
         return idx - 1, array[idx - 1]
     else:
         return idx, array[idx]

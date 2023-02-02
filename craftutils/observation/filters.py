@@ -123,7 +123,7 @@ class Filter:
         self_transmission = tbl_self["Transmission"]
         other_transmission = tbl_other["Transmission"]
 
-        print(min(self_wavelength[self_transmission > 0]), min(other_wavelength[other_transmission > 0]))
+        u.debug_print(2, min(self_wavelength[self_transmission > 0]), min(other_wavelength[other_transmission > 0]))
 
         difference = np.abs(
             min(self_wavelength[self_transmission > 0]) - min(other_wavelength[other_transmission > 0])) + np.abs(
@@ -131,31 +131,10 @@ class Filter:
 
         return difference
 
-    def transmission_by_usefulness(self):
-
-        self.load_transmission_tables()
-        tbl_names = [
-            "filter",
-            "filter+atmosphere",
-            "filter+instrument",
-            "filter+ccd+instrument",
-            "filter+instrument+atmosphere"
-        ]
-        tbl_names.reverse()
-        for name in self.transmission_tables:
-            if name not in tbl_names:
-                tbl_names.append(name)
-
-        tbls = []
-        for name in tbl_names:
-            if name in self.transmission_tables:
-                tbls.append(self.transmission_tables[name])
-        return tbls
-
     def find_comparable_table(self, other: 'Filter'):
 
-        tbls_self = self.transmission_by_usefulness()
-        tbls_other = other.transmission_by_usefulness()
+        tbls_self, _ = self.transmission_by_usefulness()
+        tbls_other, _ = other.transmission_by_usefulness()
 
         for i, tbl in enumerate(tbls_self):
             if tbl is not None and tbls_other[i] is not None:
@@ -237,18 +216,43 @@ class Filter:
             path = self.transmission_table_paths[table_name]
             if path is None:
                 continue
+            elif not os.path.isfile(path):
+                path = self.transmission_table_paths[table_name] = None
+                continue
             if force:
                 self.transmission_tables[table_name] = None
             if table_name not in self.transmission_tables or self.transmission_tables[table_name] is None:
-                print(self.name, table_name)
                 self.transmission_tables[table_name] = table.QTable.read(path)
         return self.transmission_tables
 
+    def transmission_by_usefulness(self):
+
+        self.load_transmission_tables()
+        tbl_names = [
+            "filter",
+            "filter+atmosphere",
+            "filter+instrument",
+            "filter+ccd+instrument",
+            "filter+instrument+atmosphere"
+        ]
+        tbl_names.reverse()
+        for name in self.transmission_tables:
+            if name not in tbl_names:
+                tbl_names.append(name)
+
+        tbls = []
+        names = []
+        for name in tbl_names:
+            if name in self.transmission_tables:
+                tbls.append(self.transmission_tables[name])
+                names.append(name)
+        return tbls, names
+
     def select_transmission_table(self):
-        filter_tables = self.transmission_by_usefulness()
-        for tbl in filter_tables:
+        filter_tables, table_names = self.transmission_by_usefulness()
+        for i, tbl in enumerate(filter_tables):
             if tbl is not None:
-                return tbl
+                return tbl, table_names[i]
         return None
 
     def _output_dict(self):
