@@ -1748,55 +1748,27 @@ class ImagingImage(Image):
         )
         self.update_output_file()
 
-    def calibrate_magnitudes(self, zeropoint_name: str = "best", force: bool = True, dual: bool = False):
+    def calibrate_magnitudes(
+            self,
+            zeropoint_name: str = "best",
+            force: bool = True,
+            dual: bool = False
+    ):
         cat = self.get_source_cat(dual=dual, force=True)
         if cat is None:
             raise ValueError(f"Catalogue ({dual=}) could not be loaded.")
 
         self.extract_exposure_time()
-
         zp_dict = self.get_zeropoint(cat_name=zeropoint_name)
-
-        if force or f"MAG_AUTO_ZP_{zeropoint_name}" not in cat.colnames:
-            mags = self.magnitude(
-                flux=cat["FLUX_AUTO"],
-                flux_err=cat["FLUXERR_AUTO"],
-                cat_name=zeropoint_name
-            )
-            cat[f"ZP_{zeropoint_name}"] = zp_dict["zeropoint"]
-            cat[f"ZPERR_{zeropoint_name}"] = zp_dict["zeropoint_err"]
-            cat[f"AIRMASS_{zeropoint_name}"] = zp_dict["airmass"]
-            cat[f"AIRMASSERR_{zeropoint_name}"] = zp_dict["airmass_err"]
-            cat["EXT_ATM"] = zp_dict["extinction"]
-            cat["EXT_ATMERR"] = zp_dict["extinction_err"]
-            cat[f"ZP_{zeropoint_name}_ATM_CORR"] = zp_dict["zeropoint_img"]
-            cat[f"ZP_{zeropoint_name}_ATM_CORRERR"] = zp_dict["zeropoint_img_err"]
-
-            cat[f"MAG_AUTO_ZP_{zeropoint_name}"] = mags[0]
-            cat[f"MAGERR_AUTO_ZP_{zeropoint_name}"] = mags[1]
-            cat[f"MAG_AUTO_ZP_{zeropoint_name}_no_ext"] = mags[2]
-            cat[f"MAGERR_AUTO_ZP_{zeropoint_name}_no_ext"] = mags[3]
-
-            if "FLUX_PSF" in cat.colnames:
-                mags = self.magnitude(
-                    flux=cat["FLUX_PSF"],
-                    flux_err=cat["FLUXERR_PSF"],
-                    cat_name=zeropoint_name
-                )
-
-                cat[f"MAG_PSF_ZP_{zeropoint_name}"] = mags[0]
-                cat[f"MAGERR_PSF_ZP_{zeropoint_name}"] = mags[1]
-                cat[f"MAG_PSF_ZP_{zeropoint_name}_no_ext"] = mags[2]
-                cat[f"MAGERR_PSF_ZP_{zeropoint_name}_no_ext"] = mags[3]
-
-            self.add_log(
-                action=f"Calibrated source catalogue magnitudes using zeropoint {zeropoint_name}.",
-                method=self.calibrate_magnitudes,
-            )
-            self.update_output_file()
-
-        else:
-            print(f"Magnitudes already calibrated for {zeropoint_name}")
+        cat.calibrate_magnitudes(
+            zeropoint_dict=zp_dict,
+            mag_name=f"ZP_{zeropoint_name}",
+            force=force
+        )
+        self.add_log(
+            action=f"Calibrated source self.tablealogue magnitudes using zeropoint {zeropoint_name}.",
+            method=self.calibrate_magnitudes,
+        )
 
     def magnitude(
             self,
@@ -1931,24 +1903,30 @@ class ImagingImage(Image):
 
         return self.depth
 
-    def send_column_to_source_cat(self, colname: str, sample: table.Table):
+    def send_column_to_source_cat(
+            self,
+            column_name: str,
+            subset_table: table.Table,
+            dual: bool = False
+    ):
         """
-        Takes values from an extra column added to a subset of source_cat.
+        Takes a column from a table that is a subset of source_cat, and adds the column values to the appropriate
+        entries in source_cat using the `NUMBER` column. Rows not in the subset table will be assigned `-99.` in that
+        column.
         Trust me, it comes in handy.
-        Assumes that NO entries have been removed from the main source_cat since being produced by Source Extractor,
+        Assumes that NO entries have been removed from or added to the main source_cat since being produced by Source Extractor,
         as it requires that the relationship source_cat["NUMBER"] = i - 1 holds true.
-        (The commented line is for use when that assumption is no longer valid, but is slower).
-        :param colname: Name of column to send.
-        :param sample:
+
+        :param column_name: Name of column to send.
+        :param subset_table: Subset table
+        :param dual:
         :return:
         """
-        if colname not in self.source_cat.colnames:
-            self.source_cat.add_column(-99 * sample[colname].unit, name=colname)
-        self.source_cat.sort("NUMBER")
-        for star in sample:
-            index = star["NUMBER"]
-            # i = self.find_object_index(index, dual=False)
-            self.source_cat[index - 1][colname] = star[colname]
+        cat = self.get_source_cat(dual=dual)
+        cat.add_partial_column(
+            column_name=column_name,
+            subset_table=subset_table,
+        )
 
     def register(
             self,
@@ -2081,7 +2059,7 @@ class ImagingImage(Image):
             cat_name: str = None
     ):
         self.load_source_cat()
-        if self.source_cat is None:
+        if self.source_cat.table is None:
             self.source_extraction_psf(output_dir=output_dir)
 
         if cat is None:
@@ -2257,7 +2235,6 @@ class ImagingImage(Image):
             reference_cat = table.QTable.read(reference_cat)
 
         u.debug_print(2, "ImagingImage.astrometry_diagnostics(): reference_cat ==", reference_cat)
-        u.debug_print(2, f"ImagingImage.astrometry_diagnostics(): {self}.source_cat ==", self.source_cat)
 
         plt.close()
 
@@ -2414,12 +2391,12 @@ class ImagingImage(Image):
         # self.astrometry_stats["star_tolerance"] = star_tolerance
         self.astrometry_stats["offset_tolerance"] = offset_tolerance
 
-        self.send_column_to_source_cat(colname="OFFSET_FROM_REF", sample=matches_source_cat)
-        self.send_column_to_source_cat(colname="RA_OFFSET_FROM_REF", sample=matches_source_cat)
-        self.send_column_to_source_cat(colname="DEC_OFFSET_FROM_REF", sample=matches_source_cat)
-        self.send_column_to_source_cat(colname="PIX_OFFSET_FROM_REF", sample=matches_source_cat)
-        self.send_column_to_source_cat(colname="X_OFFSET_FROM_REF", sample=matches_source_cat)
-        self.send_column_to_source_cat(colname="Y_OFFSET_FROM_REF", sample=matches_source_cat)
+        self.send_column_to_source_cat(column_name="OFFSET_FROM_REF", sample=matches_source_cat)
+        self.send_column_to_source_cat(column_name="RA_OFFSET_FROM_REF", sample=matches_source_cat)
+        self.send_column_to_source_cat(column_name="DEC_OFFSET_FROM_REF", sample=matches_source_cat)
+        self.send_column_to_source_cat(column_name="PIX_OFFSET_FROM_REF", sample=matches_source_cat)
+        self.send_column_to_source_cat(column_name="X_OFFSET_FROM_REF", sample=matches_source_cat)
+        self.send_column_to_source_cat(column_name="Y_OFFSET_FROM_REF", sample=matches_source_cat)
 
         self.add_log(
             action=f"Calculated astrometry offset statistics.",
@@ -2467,7 +2444,7 @@ class ImagingImage(Image):
             output_path = self.data_path
         stars_moffat, stars_gauss, stars_sex = ph.image_psf_diagnostics(
             hdu=self.hdu_list,
-            cat=self.source_cat,
+            cat=self.source_cat.table,
             mag_max=mag_max,
             mag_min=mag_min,
             match_to=match_to,
@@ -2936,11 +2913,8 @@ class ImagingImage(Image):
     def object_axes(self):
         self.load_source_cat()
         self.extract_pixel_scale()
-        self.source_cat["A_IMAGE"] = self.source_cat["A_WORLD"].to(units.pix, self.pixel_scale_y)
-        self.source_cat["B_IMAGE"] = self.source_cat["B_WORLD"].to(units.pix, self.pixel_scale_y)
-        self.source_cat_dual["A_IMAGE"] = self.source_cat_dual["A_WORLD"].to(units.pix, self.pixel_scale_y)
-        self.source_cat_dual["B_IMAGE"] = self.source_cat_dual["B_WORLD"].to(units.pix, self.pixel_scale_y)
-
+        self.source_cat.object_axes(pixel_scale=self.pixel_scale_y)
+        self.source_cat_dual.object_axes(pixel_scale=self.pixel_scale_y)
         self.add_log(
             action=f"Created axis columns A_IMAGE, B_IMAGE in pixel units from A_WORLD, B_WORLD.",
             method=self.object_axes,

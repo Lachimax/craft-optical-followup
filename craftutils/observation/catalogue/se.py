@@ -15,6 +15,7 @@ class SECatalogue(Catalogue):
     """
     Catalogue subclass for handling Source Extractor output.
     """
+
     def __init__(
             self,
             **kwargs
@@ -92,7 +93,78 @@ class SECatalogue(Catalogue):
         self.table["KRON_AREA_IMAGE"] = self.table["A_IMAGE"] * self.table["B_IMAGE"] * np.pi
         self.update_output_file()
 
-    def 
+    def object_axes(self, pixel_scale: units.Equivalency):
+        self.table["A_IMAGE"] = self.table["A_WORLD"].to(units.pix, pixel_scale)
+        self.table["B_IMAGE"] = self.table["B_WORLD"].to(units.pix, pixel_scale)
+        self.update_output_file()
 
+    def add_partial_column(
+            self,
+            column_name: str,
+            subset_table: table.Table,
+    ):
+        """
+        Takes a column from a table that is a subset of this catalogue's table, and adds the column values to the
+        appropriate entries using the `NUMBER` column. Rows not in the subset table will be assigned `-99.` in that
+        column.
+        Trust me, it comes in handy.
+        Assumes that NO entries have been removed from or added to the main source_cat since being produced by Source Extractor,
+        as it requires that the relationship source_cat["NUMBER"] = i - 1 holds true.
+        (The commented line is for use when that assumption is no longer valid, but is slower).
 
+        :param column_name: Name of column to send.
+        :param subset_table:
+        :return:
+        """
+        if column_name not in self.table.colnames:
+            self.table.add_column(-99 * subset_table[column_name].unit, name=column_name)
+        self.table.sort("NUMBER")
+        for star in subset_table:
+            index = star["NUMBER"]
+            # i = self.find_object_index(index, dual=False)
+            self.table[index - 1][column_name] = star[column_name]
 
+    def calibrate_magnitudes(
+            self,
+            zeropoint_dict: dict,
+            mag_name: str,
+            force: bool = True
+    ):
+        zeropoint_name = zeropoint_dict["catalogue"]
+
+        if force or f"MAG_AUTO_{mag_name}" not in self.table.colnames:
+            mags = self.image.magnitude(
+                flux=["FLUX_AUTO"],
+                flux_err=self.table["FLUXERR_AUTO"],
+                cat=zeropoint_name
+            )
+            self.table[mag_name] = zeropoint_dict["zeropoint"]
+            self.table[f"ZPERR_{zeropoint_name}"] = zeropoint_dict["zeropoint_err"]
+            self.table[f"AIRMASS_{zeropoint_name}"] = zeropoint_dict["airmass"]
+            self.table[f"AIRMASSERR_{zeropoint_name}"] = zeropoint_dict["airmass_err"]
+            self.table["EXT_ATM"] = zeropoint_dict["extinction"]
+            self.table["EXT_ATMERR"] = zeropoint_dict["extinction_err"]
+            self.table[f"{mag_name}_ATM_CORR"] = zeropoint_dict["zeropoint_img"]
+            self.table[f"{mag_name}_ATM_CORRERR"] = zeropoint_dict["zeropoint_img_err"]
+
+            self.table[f"MAG_AUTO_{mag_name}"] = mags[0]
+            self.table[f"MAGERR_AUTO_{mag_name}"] = mags[1]
+            self.table[f"MAG_AUTO_{mag_name}_no_ext"] = mags[2]
+            self.table[f"MAGERR_AUTO_{mag_name}_no_ext"] = mags[3]
+
+            if "FLUX_PSF" in self.table.colnames:
+                mags = self.image.magnitude(
+                    flux=self.table["FLUX_PSF"],
+                    flux_err=self.table["FLUXERR_PSF"],
+                    cat=zeropoint_name
+                )
+
+                self.table[f"MAG_PSF_{mag_name}"] = mags[0]
+                self.table[f"MAGERR_PSF_{mag_name}"] = mags[1]
+                self.table[f"MAG_PSF_{mag_name}_no_ext"] = mags[2]
+                self.table[f"MAGERR_PSF_{mag_name}_no_ext"] = mags[3]
+
+            self.update_output_file()
+
+        else:
+            print(f"Magnitudes already calibrated for {zeropoint_name}")
