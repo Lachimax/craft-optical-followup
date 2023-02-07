@@ -166,7 +166,7 @@ class SECatalogue(Catalogue):
                 mags = self.image.magnitude(
                     flux=self.table["FLUX_PSF"],
                     flux_err=self.table["FLUXERR_PSF"],
-                    cat=zeropoint_name
+                    cat_name=zeropoint_name
                 )
 
                 self.table[f"MAG_PSF_{mag_name}"] = mags[0]

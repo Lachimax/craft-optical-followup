@@ -2931,7 +2931,6 @@ class ImagingImage(Image):
     def find_object(self, coord: SkyCoord, dual: bool = True):
         cat = self.get_source_cat(dual=dual)
         u.debug_print(2, f"{self}.find_object(): dual ==", dual)
-        u.debug_print(2, f"{self}.find_object(): cat.colnames ==", cat.colnames)
         coord_cat = cat.to_skycoord()
         separation = coord.separation(coord_cat)
         i = np.argmin(separation)
