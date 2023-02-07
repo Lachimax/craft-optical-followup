@@ -321,11 +321,16 @@ class Image:
             logg: log.Log = None,
     ):
 
-        self.path = path
-        active_images[path] = self
-        if not os.path.isfile(self.path):
+        if not os.path.isfile(path):
             raise FileNotFoundError(f"The image file file {path} does not exist.")
-        self.output_file = path.replace(".fits", "_outputs.yaml")
+        active_images[path] = self
+        if path.endswith("_outputs.yaml"):
+            self.output_file = path
+            self.path = path.replace("_outputs.yaml", ".fits")
+        elif path.endswith(".fits"):
+            self.path = path
+            self.output_file = path.replace(".fits", "_outputs.yaml")
+
         self.data_path, self.filename = os.path.split(self.path)
         self.name = self.get_id()
         self.hdu_list = None
@@ -2420,7 +2425,6 @@ class ImagingImage(Image):
         if frame is None:
             _, scale = self.extract_pixel_scale()
             frame = (4 * units.arcsec).to(units.pix, scale).value
-        u.debug_print(2, f"ImagingImage.psf_diagnostics(): {self}.source_cat_path ==", self.source_cat_path)
         if output_path is None:
             output_path = self.data_path
         stars_moffat, stars_gauss, stars_sex = ph.image_psf_diagnostics(

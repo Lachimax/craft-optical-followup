@@ -11,6 +11,7 @@ __all__ = []
 class Catalogue:
     ra_key = "ra"
     dec_key = "dec"
+
     def __init__(
             self,
             path: str,
@@ -36,6 +37,8 @@ class Catalogue:
         return len(self.table)
 
     def __getitem__(self, *items):
+        print(self.table_path)
+        self.load_table()
         if len(items) == 1:
             return self.table[items[0]]
         else:

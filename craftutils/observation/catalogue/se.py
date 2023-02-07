@@ -19,6 +19,7 @@ class SECatalogue(Catalogue):
     """
     ra_key = "RA"
     dec_key = "DEC"
+
     def __init__(
             self,
             **kwargs

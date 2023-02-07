@@ -20,6 +20,7 @@ import craftutils.astrometry as astm
 import craftutils.fits_files as ff
 import craftutils.observation as obs
 import craftutils.observation.field as fld
+import craftutils.observation.filters.eso.vlt_fors2
 import craftutils.observation.objects as objects
 import craftutils.observation.image as image
 import craftutils.observation.instrument as inst
@@ -4981,7 +4982,7 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
 
         fils_find = []
 
-        for fil_name in inst.FORS2Filter.qc1_retrievable:
+        for fil_name in craftutils.observation.filters.eso.vlt_fors2.FORS2Filter.qc1_retrievable:
             fil = filters.Filter.from_params(fil_name, instrument_name="vlt-fors2")
             fil.retrieve_calibration_table()
             fils_known.append(fil)
@@ -4997,7 +4998,7 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
         }
 
         for fil_name in self.filters:
-            if fil_name not in inst.FORS2Filter.qc1_retrievable:
+            if fil_name not in craftutils.observation.filters.eso.vlt_fors2.FORS2Filter.qc1_retrievable:
                 fil = filters.Filter.from_params(fil_name, instrument_name="vlt-fors2")
                 fils_find.append(fil)
                 results_tbl[f"ext_{fil_name}"] = []
@@ -5120,7 +5121,7 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
 
                 for fil in image_dict:
                     # Generate master flat per-filter, per-chip
-                    if fil not in flat_sets or fil in inst.FORS2Filter.qc1_retrievable:  # Time-saver
+                    if fil not in flat_sets or fil in craftutils.observation.filters.eso.vlt_fors2.FORS2Filter.qc1_retrievable:  # Time-saver
                         continue
                     img = image_dict[fil]
                     if "calib_pipeline" in img.zeropoints:
@@ -5215,7 +5216,7 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
                 for fil in image_dict:
                     img = image_dict[fil]
                     # We save time by only bothering with non-qc1-obtainable zeropoints.
-                    if fil in std_epoch.frames_reduced and fil not in inst.FORS2Filter.qc1_retrievable:
+                    if fil in std_epoch.frames_reduced and fil not in craftutils.observation.filters.eso.vlt_fors2.FORS2Filter.qc1_retrievable:
                         for std in std_epoch.frames_reduced[fil]:
                             img.add_zeropoint_from_other(std)
 

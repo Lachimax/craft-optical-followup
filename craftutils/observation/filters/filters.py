@@ -339,7 +339,6 @@ class Filter:
     @classmethod
     def from_file(cls, param_file: Union[str, dict]):
         name, param_file, param_dict = p.params_init(param_file)
-
         if param_dict is None:
             raise FileNotFoundError("Param file missing!")
 
@@ -373,7 +372,7 @@ class Filter:
     @classmethod
     def select_child_class(cls, instrument_name: str):
         if instrument_name[:3] == "vlt":
-            from craftutils.observation.eso import FORS2Filter
+            from craftutils.observation.filters import FORS2Filter
             return FORS2Filter
         else:
             return Filter
@@ -401,7 +400,7 @@ class Filter:
 
     @classmethod
     def _build_data_path(cls, instrument_name: str, filter_name: str):
-        return os.path.join(instrument.Instrument._build_data_path(instrument_name=instrument_name), "filters", filter_name)
+        return os.path.join(instrument.Instrument._build_data_path(instrument_name=instrument_name), "", filter_name)
 
     @classmethod
     def _build_param_path(cls, instrument_name: str, filter_name: str):
