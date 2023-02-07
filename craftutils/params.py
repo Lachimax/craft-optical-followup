@@ -293,6 +293,11 @@ def set_data_dir(path: str, write: bool = True):
     u.mkdir_check_nested(path, remove_last=False)
 
 
+def set_table_dir(path: str, write: bool = True):
+    set_config_path(key="table_dir", path=path, write=write)
+    u.mkdir_check_nested(path, remove_last=False)
+
+
 def set_config_path(key: str, path: str, write: bool = True):
     config[key] = path
     if write:
