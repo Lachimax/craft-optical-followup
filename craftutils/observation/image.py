@@ -845,8 +845,8 @@ class ImagingImage(Image):
         self.psfex_successful = None
         # TODO: The source_cat attributes should be lists with each entry corresponding to a single FITS extension. This
         #   is the last piece, I believe, that has not been updated to this standard.
-        self.source_cat = catalog.ImageCatalogue(path=self.path.replace(".fits", "_source_cat.yaml"))
-        self.source_cat_dual = catalog.ImageCatalogue(path=self.path.replace(".fits", "_source_cat_dual.yaml"))
+        self.source_cat = catalog.SECatalogue(path=self.path.replace(".fits", "_source_cat.yaml"))
+        self.source_cat_dual = catalog.SECatalogue(path=self.path.replace(".fits", "_source_cat_dual.yaml"))
         self.dual_mode_template = None
 
         self.sep_background = None
@@ -1418,11 +1418,11 @@ class ImagingImage(Image):
             if "psfex_path" in outputs:
                 self.psfex_path = outputs["psfex_path"]
             if "source_cat_path" in outputs:
-                self.source_cat = catalog.ImageCatalogue(path=outputs["source_cat_path"])
+                self.source_cat = catalog.SECatalogue(path=outputs["source_cat_path"])
             if "synth_cat_path" in outputs:
                 self.synth_cat_path = outputs["synth_cat_path"]
             if "source_cat_dual_path" in outputs:
-                self.source_cat_dual = catalog.ImageCatalogue(path=outputs["source_cat_dual_path"])
+                self.source_cat_dual = catalog.SECatalogue(path=outputs["source_cat_dual_path"])
             if "fwhm_psfex" in outputs:
                 self.fwhm_psfex = outputs["fwhm_psfex"]
             if "fwhm_psfex" in outputs:
@@ -1738,18 +1738,9 @@ class ImagingImage(Image):
         self.update_output_file()
 
     def aperture_areas(self):
-        self.load_source_cat()
         self.extract_pixel_scale()
-
-        self.source_cat["A_IMAGE"] = self.source_cat["A_WORLD"].to(units.pix, self.pixel_scale_y)
-        self.source_cat["B_IMAGE"] = self.source_cat["A_WORLD"].to(units.pix, self.pixel_scale_y)
-        self.source_cat["KRON_AREA_IMAGE"] = self.source_cat["A_IMAGE"] * self.source_cat["B_IMAGE"] * np.pi
-
-        if self.source_cat_dual is not None:
-            self.source_cat_dual["A_IMAGE"] = self.source_cat_dual["A_WORLD"].to(units.pix, self.pixel_scale_y)
-            self.source_cat_dual["B_IMAGE"] = self.source_cat_dual["A_WORLD"].to(units.pix, self.pixel_scale_y)
-            self.source_cat_dual["KRON_AREA_IMAGE"] = self.source_cat_dual["A_IMAGE"] * self.source_cat_dual[
-                "B_IMAGE"] * np.pi
+        self.source_cat.aperture_areas(pixel_scale=self.pixel_scale_y)
+        self.source_cat_dual.aperture_areas(pixel_scale=self.pixel_scale_y)
 
         self.add_log(
             action=f"Calculated area of FLUX_AUTO apertures.",

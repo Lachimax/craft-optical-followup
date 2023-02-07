@@ -11,7 +11,10 @@ import craftutils.params as p
 import craftutils.utils as u
 
 
-class ImageCatalogue(Catalogue):
+class SECatalogue(Catalogue):
+    """
+    Catalogue subclass for handling Source Extractor output.
+    """
     def __init__(
             self,
             **kwargs
@@ -82,5 +85,14 @@ class ImageCatalogue(Catalogue):
         if load:
             self.load_se_table(force=True)
         return self.se_path
+
+    def aperture_areas(self, pixel_scale: units.Equivalency):
+        self.table["A_IMAGE"] = self.table["A_WORLD"].to(units.pix, pixel_scale)
+        self.table["B_IMAGE"] = self.table["A_WORLD"].to(units.pix, pixel_scale)
+        self.table["KRON_AREA_IMAGE"] = self.table["A_IMAGE"] * self.table["B_IMAGE"] * np.pi
+        self.update_output_file()
+
+    def 
+
 
 

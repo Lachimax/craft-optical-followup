@@ -1,7 +1,7 @@
 import astropy.table as table
 
 from .survey import *
-from .image import *
+from .se import *
 import craftutils.utils as u
 import craftutils.params as p
 
