@@ -1,4 +1,5 @@
 import astropy.table as table
+from astropy.coordinates import SkyCoord
 
 import craftutils.utils as u
 import craftutils.params as p
@@ -8,14 +9,18 @@ __all__ = []
 
 @u.export
 class Catalogue:
-
+    ra_key = "ra"
+    dec_key = "dec"
     def __init__(
             self,
+            path: str,
             **kwargs
     ):
-        self.path: str = None
-        if "path" in kwargs:
-            self.set_path(kwargs["path"])
+        self.output_file: str = None
+        # if "path" in kwargs and kwargs["path"] is not None:
+        self.set_path(path=path)
+        # elif "output_file" in kwargs and kwargs["output_file"] is not None:
+        #     self.set_path(kwargs["output_file"])
         self.table_path: str = None
         if "table_path" in kwargs:
             self.set_table_path(kwargs["table_path"])
@@ -23,14 +28,18 @@ class Catalogue:
         if "table" in kwargs:
             self.table = table.QTable(kwargs["table"])
 
-        self.load_table()
-        self.load_output_file()
+        if self.table_path is not None:
+            self.load_table()
+            self.load_output_file()
 
     def __len__(self):
         return len(self.table)
 
     def __getitem__(self, *items):
-        return self.table[items]
+        if len(items) == 1:
+            return self.table[items[0]]
+        else:
+            return self.table[items]
 
     def __setitem__(self, key, value):
         self.table[key] = value
@@ -44,14 +53,17 @@ class Catalogue:
                 u.debug_print(1, "Loading source_table from", self.table_path)
                 self.table = table.QTable.read(self.table_path, format="ascii.ecsv")
             else:
-                raise ValueError(f"For {self.path}, table_path has not been set.")
+                raise ValueError(f"For {self.output_file}, table_path has not been set.")
 
     def set_path(self, path: str):
-        self.path = u.sanitise_file_ext(
+        if path.endswith(".ecsv"):
+            self.table_path = path
+            path = path.replace(".ecsv", ".yaml")
+        self.output_file = u.sanitise_file_ext(
             p.check_abs_path(path),
             ".yaml"
         )
-        return self.path
+        return self.output_file
 
     def set_table_path(self, path: str, load: bool = True):
         self.table_path = p.check_abs_path(path)
@@ -66,7 +78,7 @@ class Catalogue:
             u.debug_print(1, "table not yet loaded.")
         else:
             if self.table_path is None:
-                self.table_path = self.path.replace(".yaml", "_source_cat.ecsv")
+                self.table_path = self.output_file.replace(".yaml", "_source_cat.ecsv")
             u.debug_print(1, "Writing source catalogue to", self.table_path)
             self.table.write(self.table_path, format="ascii.ecsv", overwrite=True)
 
@@ -75,6 +87,9 @@ class Catalogue:
         if outputs is not None:
             self.__dict__.update(outputs)
 
+    def to_skycoord(self):
+        return SkyCoord(self.table[self.ra_key], self.table[self.dec_key])
+
     @classmethod
     def _do_not_include_in_output(cls):
         return ["path", "table", "do_not_include_in_output"]
@@ -82,11 +97,14 @@ class Catalogue:
     def _output_dict(self):
         outputs = self.__dict__.copy()
         dni = self._do_not_include_in_output()
-        for key in outputs:
-            if key in dni:
-                outputs[key].pop()
+        for key in dni:
+            if key in outputs:
+                outputs.pop(key)
         return outputs
 
     def update_output_file(self):
         p.update_output_file(self)
         self.write()
+
+    def sort(self, **kwargs):
+        self.table.sort(**kwargs)

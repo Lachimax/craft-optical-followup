@@ -10,12 +10,15 @@ import craftutils.observation.image as image
 import craftutils.params as p
 import craftutils.utils as u
 
+from craftutils.photometry import signal_to_noise_ccd_equ
+
 
 class SECatalogue(Catalogue):
     """
     Catalogue subclass for handling Source Extractor output.
     """
-
+    ra_key = "RA"
+    dec_key = "DEC"
     def __init__(
             self,
             **kwargs
@@ -39,10 +42,11 @@ class SECatalogue(Catalogue):
     @classmethod
     def _do_not_include_in_output(cls):
         do_not_include = super()._do_not_include_in_output()
-        do_not_include += ["se_cat"]
+        do_not_include += ["se_cat", "image"]
         return do_not_include
 
     def _load_source_cat_sextractor(self, path: str, wcs_ext: int = 0):
+        print(self.output_file)
         self.image.load_wcs()
         print("Loading source catalogue from", path)
         source_cat = table.QTable.read(path, format="ascii.sextractor")
@@ -168,3 +172,11 @@ class SECatalogue(Catalogue):
 
         else:
             print(f"Magnitudes already calibrated for {zeropoint_name}")
+
+    def _output_dict(self):
+        outputs = super()._output_dict()
+        if self.image is not None:
+            outputs["image_path"] = self.image.path
+        else:
+            outputs["image_path"] = None
+        return outputs
