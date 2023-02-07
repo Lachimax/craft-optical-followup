@@ -848,10 +848,8 @@ class ImagingImage(Image):
         self.psfex_path = None
         self.psfex_output = None
         self.psfex_successful = None
-        # TODO: The source_cat attributes should be lists with each entry corresponding to a single FITS extension. This
-        #   is the last piece, I believe, that has not been updated to this standard.
-        self.source_cat = catalog.SECatalogue(path=self.path.replace(".fits", "_source_cat.yaml"), image=self)
-        self.source_cat_dual = catalog.SECatalogue(path=self.path.replace(".fits", "_source_cat_dual.yaml"), image=self)
+        self.source_cat = None
+        self.source_cat_dual = None
         self.dual_mode_template = None
 
         self.sep_background = None
@@ -1110,11 +1108,8 @@ class ImagingImage(Image):
         dual = False
         if template is not None:
             dual = True
-        if dual:
-            cat = self.source_cat_dual
-        else:
-            cat = self.source_cat
-        cat.set_se_path(path=cat_path, load=True)
+
+        cat = catalog.SECatalogue(se_path=cat_path, image=self)
 
         if len(cat) == 0:
             print()
@@ -1130,14 +1125,16 @@ class ImagingImage(Image):
                 template=template,
                 **configs
             )
-            if dual:
-                self.source_cat_dual.set_se_path(cat_path, load=True)
-            else:
-                self.source_cat.set_se_path(cat_path, load=True)
+            cat.set_se_path(cat_path, load=True)
         else:
             self.psfex_successful = True
 
         u.debug_print(2, "dual, template:", dual, template)
+
+        if dual:
+            self.source_cat_dual = cat
+        else:
+            self.source_cat = cat
 
         self.plot_apertures()
         self.add_log(
@@ -1370,8 +1367,6 @@ class ImagingImage(Image):
                 "extinction_atmospheric_err": self.extinction_atmospheric_err,
                 "filter": self.filter_name,
                 "psfex_path": self.psfex_path,
-                "source_cat_path": self.source_cat.output_file,
-                "source_cat_dual_path": self.source_cat_dual.output_file,
                 "synth_cat_path": self.synth_cat_path,
                 "psf_stats": self.psf_stats,
                 "fwhm_pix_psfex": self.fwhm_pix_psfex,
@@ -1384,13 +1379,19 @@ class ImagingImage(Image):
                 "dual_mode_template": self.dual_mode_template,
             }
         )
+        if self.source_cat is not None:
+            outputs["source_cat_path"] = self.source_cat.path
+        if self.source_cat_dual is not None:
+            outputs["source_cat_dual_path"] = self.source_cat_dual.path,
         return outputs
 
     def update_output_file(self):
         p.update_output_file(self)
         print(self.name)
-        self.source_cat.update_output_file()
-        self.source_cat_dual.update_output_file()
+        if self.source_cat is not None:
+            self.source_cat.update_output_file()
+        if self.source_cat_dual is not None:
+            self.source_cat_dual.update_output_file()
         self.write_synth_cat()
 
     def load_output_file(self):
@@ -1406,11 +1407,11 @@ class ImagingImage(Image):
                 self.filter_name = outputs["filter"]
             if "psfex_path" in outputs:
                 self.psfex_path = outputs["psfex_path"]
-            if "source_cat_path" in outputs and outputs["source_cat_path"] is not None:
+            if "source_cat_path" in outputs and outputs["source_cat_path"] is not None and os.path.exists(outputs["source_cat_path"]):
                 self.source_cat = catalog.SECatalogue(path=outputs["source_cat_path"], image=self)
             if "synth_cat_path" in outputs:
                 self.synth_cat_path = outputs["synth_cat_path"]
-            if "source_cat_dual_path" in outputs and outputs["source_cat_dual_path"] is not None:
+            if "source_cat_dual_path" in outputs and outputs["source_cat_dual_path"] is not None and os.path.exists(outputs["source_cat_dual_path"]):
                 self.source_cat_dual = catalog.SECatalogue(path=outputs["source_cat_dual_path"], image=self)
             if "fwhm_psfex" in outputs:
                 self.fwhm_psfex = outputs["fwhm_psfex"]

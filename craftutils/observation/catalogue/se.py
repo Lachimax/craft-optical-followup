@@ -22,9 +22,12 @@ class SECatalogue(Catalogue):
 
     def __init__(
             self,
+            path: str = None,
+            se_path: str = None,
             **kwargs
     ):
-        super().__init__(**kwargs)
+        self.path = None
+        self.se_path: str = None
         self.image: Union[image.ImagingImage, str] = None
         if "image" in kwargs:
             img = kwargs["image"]
@@ -32,13 +35,16 @@ class SECatalogue(Catalogue):
                 self.image = img
             elif isinstance(img, str):
                 self.image = image.from_path(path=img)
-        self.se_path: str = None
-        if "se_path" in kwargs:
-            self.set_se_path(kwargs["se_path"])
+        if path is None and se_path is None:
+            raise ValueError("Either path or se_path must be given to initialise an SECatalogue")
+        elif path is None:
+            self.set_se_path(se_path)
+            self.write()
+            path = se_path.replace(".cat", ".ecsv")
+        super().__init__(path=path, **kwargs)
         self.se_cat: table.QTable = None
         if "se_cat" in kwargs:
             self.se_cat = table.QTable(kwargs["se_cat"])
-        self.cat_type: str = None
 
     @classmethod
     def _do_not_include_in_output(cls):
@@ -47,7 +53,6 @@ class SECatalogue(Catalogue):
         return do_not_include
 
     def _load_source_cat_sextractor(self, path: str, wcs_ext: int = 0):
-        print(self.output_file)
         self.image.load_wcs()
         print("Loading source catalogue from", path)
         source_cat = table.QTable.read(path, format="ascii.sextractor")
@@ -82,12 +87,12 @@ class SECatalogue(Catalogue):
                 self.se_cat = self._load_source_cat_sextractor(path=self.se_path)
             if load_as_main:
                 self.table = self.se_cat
-                self.cat_type = "source-extractor"
         else:
             print("source_cat could not be loaded from SE file because source_cat_sextractor_path has not been set.")
 
     def set_se_path(self, path: str, load: bool = True):
         self.se_path = p.check_abs_path(path)
+        self.path = self.se_path.replace(".cat", ".ecsv")
         if load:
             self.load_se_table(force=True)
         return self.se_path
@@ -139,9 +144,9 @@ class SECatalogue(Catalogue):
 
         if force or f"MAG_AUTO_{mag_name}" not in self.table.colnames:
             mags = self.image.magnitude(
-                flux=["FLUX_AUTO"],
+                flux=self.table["FLUX_AUTO"],
                 flux_err=self.table["FLUXERR_AUTO"],
-                cat=zeropoint_name
+                cat_name=zeropoint_name
             )
             self.table[mag_name] = zeropoint_dict["zeropoint"]
             self.table[f"ZPERR_{zeropoint_name}"] = zeropoint_dict["zeropoint_err"]
