@@ -307,6 +307,7 @@ def expunge():
     for img_path in active_images:
         del active_images[img_path]
 
+
 @u.export
 class Image:
     instrument_name = "dummy"
@@ -844,8 +845,8 @@ class ImagingImage(Image):
         self.psfex_successful = None
         # TODO: The source_cat attributes should be lists with each entry corresponding to a single FITS extension. This
         #   is the last piece, I believe, that has not been updated to this standard.
-        self.source_cat: catalog.ImageCatalogue = None
-        self.source_cat_dual: catalog.ImageCatalogue = None
+        self.source_cat = catalog.ImageCatalogue(path=self.path.replace(".fits", "_source_cat.yaml"))
+        self.source_cat_dual = catalog.ImageCatalogue(path=self.path.replace(".fits", "_source_cat_dual.yaml"))
         self.dual_mode_template = None
 
         self.sep_background = None
@@ -1105,11 +1106,10 @@ class ImagingImage(Image):
         if template is not None:
             dual = True
         if dual:
-            self.source_cat_dual.set_se_path(path=cat_path)
-            cat = self.load_source_cat_sextractor_dual(force=True)
+            cat = self.source_cat_dual
         else:
-            self.source_cat.set_se_path(path=cat_path)
-            cat = self.load_source_cat_sextractor(force=True)
+            cat = self.source_cat
+        cat.set_se_path(path=cat_path, load=True)
 
         if len(cat) == 0:
             print()
@@ -1126,11 +1126,9 @@ class ImagingImage(Image):
                 **configs
             )
             if dual:
-                self.source_cat_sextractor_dual_path = cat_path
-                self.load_source_cat_sextractor_dual(force=True)
+                self.source_cat_dual.set_se_path(cat_path, load=True)
             else:
-                self.source_cat_sextractor_path = cat_path
-                self.load_source_cat_sextractor(force=True)
+                self.source_cat.set_se_path(cat_path, load=True)
         else:
             self.psfex_successful = True
 
@@ -1206,23 +1204,6 @@ class ImagingImage(Image):
         else:
             self.source_cat = source_cat
         self.update_output_file()
-
-    def write_source_cat(self):
-        if self.source_cat is None:
-            u.debug_print(1, "source_cat not yet loaded.")
-        else:
-            if self.source_cat_path is None:
-                self.source_cat_path = self.path.replace(".fits", "_source_cat.ecsv")
-            u.debug_print(1, "Writing source catalogue to", self.source_cat_path)
-            self.source_cat.write(self.source_cat_path, format="ascii.ecsv", overwrite=True)
-
-        if self.source_cat_dual is None:
-            u.debug_print(1, "source_cat_dual not yet loaded.")
-        else:
-            if self.source_cat_dual_path is None:
-                self.source_cat_dual_path = self.path.replace(".fits", "_source_cat_dual.ecsv")
-            u.debug_print(1, "Writing dual-mode source catalogue to", self.source_cat_dual_path)
-            self.source_cat_dual.write(self.source_cat_dual_path, format="ascii.ecsv", overwrite=True)
 
     def push_source_cat(self, dual: bool = True):
         source_cat = self.get_source_cat(dual=dual)
@@ -1394,32 +1375,33 @@ class ImagingImage(Image):
 
     def _output_dict(self):
         outputs = super()._output_dict()
-        outputs.update({
-            "astrometry_stats": self.astrometry_stats,
-            "extinction_atmospheric": self.extinction_atmospheric,
-            "extinction_atmospheric_err": self.extinction_atmospheric_err,
-            "filter": self.filter_name,
-            "psfex_path": self.psfex_path,
-            "source_cat_sextractor_path": self.source_cat_sextractor_path,
-            "source_cat_sextractor_dual_path": self.source_cat_sextractor_dual_path,
-            "source_cat_path": self.source_cat_path,
-            "source_cat_dual_path": self.source_cat_dual_path,
-            "synth_cat_path": self.synth_cat_path,
-            "psf_stats": self.psf_stats,
-            "fwhm_pix_psfex": self.fwhm_pix_psfex,
-            "fwhm_psfex": self.fwhm_psfex,
-            "psfex_succesful": self.psfex_successful,
-            "zeropoints": self.zeropoints,
-            "zeropoint_output_paths": self.zeropoint_output_paths,
-            "zeropoint_best": self.zeropoint_best,
-            "depth": self.depth,
-            "dual_mode_template": self.dual_mode_template,
-        })
+        outputs.update(
+            {
+                "astrometry_stats": self.astrometry_stats,
+                "extinction_atmospheric": self.extinction_atmospheric,
+                "extinction_atmospheric_err": self.extinction_atmospheric_err,
+                "filter": self.filter_name,
+                "psfex_path": self.psfex_path,
+                "source_cat_path": self.source_cat.path,
+                "source_cat_dual_path": self.source_cat_dual.path,
+                "synth_cat_path": self.synth_cat_path,
+                "psf_stats": self.psf_stats,
+                "fwhm_pix_psfex": self.fwhm_pix_psfex,
+                "fwhm_psfex": self.fwhm_psfex,
+                "psfex_succesful": self.psfex_successful,
+                "zeropoints": self.zeropoints,
+                "zeropoint_output_paths": self.zeropoint_output_paths,
+                "zeropoint_best": self.zeropoint_best,
+                "depth": self.depth,
+                "dual_mode_template": self.dual_mode_template,
+            }
+        )
         return outputs
 
     def update_output_file(self):
         p.update_output_file(self)
-        self.write_source_cat()
+        self.source_cat.update_output_file()
+        self.source_cat_dual.update_output_file()
         self.write_synth_cat()
 
     def load_output_file(self):
@@ -1435,16 +1417,12 @@ class ImagingImage(Image):
                 self.filter_name = outputs["filter"]
             if "psfex_path" in outputs:
                 self.psfex_path = outputs["psfex_path"]
-            if "source_cat_sextractor_path" in outputs:
-                self.source_cat_sextractor_path = outputs["source_cat_sextractor_path"]
-            if "source_cat_sextractor_dual_path" in outputs:
-                self.source_cat_sextractor_path = outputs["source_cat_sextractor_dual_path"]
             if "source_cat_path" in outputs:
-                self.source_cat_path = outputs["source_cat_path"]
+                self.source_cat = catalog.ImageCatalogue(path=outputs["source_cat_path"])
             if "synth_cat_path" in outputs:
                 self.synth_cat_path = outputs["synth_cat_path"]
             if "source_cat_dual_path" in outputs:
-                self.source_cat_dual_path = outputs["source_cat_dual_path"]
+                self.source_cat_dual = catalog.ImageCatalogue(path=outputs["source_cat_dual_path"])
             if "fwhm_psfex" in outputs:
                 self.fwhm_psfex = outputs["fwhm_psfex"]
             if "fwhm_psfex" in outputs:
@@ -1593,7 +1571,7 @@ class ImagingImage(Image):
                 dist_tol = 2 * units.arcsec
 
         zp_dict = ph.determine_zeropoint_sextractor(
-            sextractor_cat=self.source_cat,
+            sextractor_cat=self.source_cat.table,
             image=self.path,
             cat_path=cat_path,
             cat_name=cat_name,
@@ -1819,8 +1797,6 @@ class ImagingImage(Image):
                 cat[f"MAGERR_PSF_ZP_{zeropoint_name}"] = mags[1]
                 cat[f"MAG_PSF_ZP_{zeropoint_name}_no_ext"] = mags[2]
                 cat[f"MAGERR_PSF_ZP_{zeropoint_name}_no_ext"] = mags[3]
-
-            self._set_source_cat(source_cat=cat, dual=dual)
 
             self.add_log(
                 action=f"Calibrated source catalogue magnitudes using zeropoint {zeropoint_name}.",
@@ -3849,7 +3825,7 @@ class ImagingImage(Image):
         print("")
         print(self.filename)
 
-        data = self.data[ext] * 1 #[bottom:top, left:right]
+        data = self.data[ext] * 1  # [bottom:top, left:right]
 
         if generate_mask:
             mask = self.generate_mask(
@@ -3857,7 +3833,7 @@ class ImagingImage(Image):
                 method="sep",
                 **mask_kwargs,
             )
-            mask = mask# [bottom:top, left:right]
+            mask = mask  # [bottom:top, left:right]
             mask = mask.astype(bool)
             mask += data < 0
             mask += data > self.extract_saturate() * saturate_factor
@@ -3894,7 +3870,7 @@ class ImagingImage(Image):
 
         for n, i in enumerate(where_mask[0]):
             j = where_mask[1][n]
-            weights[i, j] = 0. #np.invert(mask).astype(float)
+            weights[i, j] = 0.  # np.invert(mask).astype(float)
 
         model_init = model_type(**init_params)
         fitter = fitter_type(True)

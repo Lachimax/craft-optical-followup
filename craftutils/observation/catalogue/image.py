@@ -30,6 +30,13 @@ class ImageCatalogue(Catalogue):
         self.se_cat: table.QTable = None
         if "se_cat" in kwargs:
             self.se_cat = table.QTable(kwargs["se_cat"])
+        self.cat_type: str = None
+
+    @classmethod
+    def _do_not_include_in_output(cls):
+        do_not_include = super()._do_not_include_in_output()
+        do_not_include += ["se_cat"]
+        return do_not_include
 
     def _load_source_cat_sextractor(self, path: str, wcs_ext: int = 0):
         self.image.load_wcs()
@@ -64,9 +71,16 @@ class ImageCatalogue(Catalogue):
                 self.se_cat = None
             if self.se_cat is None:
                 self.se_cat = self._load_source_cat_sextractor(path=self.se_path)
+            if load_as_main:
+                self.table = self.se_cat
+                self.cat_type = "source-extractor"
         else:
             print("source_cat could not be loaded from SE file because source_cat_sextractor_path has not been set.")
 
-    def set_se_path(self, path: str):
+    def set_se_path(self, path: str, load: bool = True):
         self.se_path = p.check_abs_path(path)
+        if load:
+            self.load_se_table(force=True)
         return self.se_path
+
+
