@@ -1387,7 +1387,6 @@ class ImagingImage(Image):
 
     def update_output_file(self):
         p.update_output_file(self)
-        print(self.name)
         if self.source_cat is not None:
             self.source_cat.update_output_file()
         if self.source_cat_dual is not None:

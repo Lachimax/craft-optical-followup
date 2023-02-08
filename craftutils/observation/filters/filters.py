@@ -320,7 +320,7 @@ class Filter:
     @classmethod
     def select_child_class(cls, instrument_name: str):
         if instrument_name[:3] == "vlt":
-            from craftutils.observation.eso import FORS2Filter
+            from craftutils.observation.filters import FORS2Filter
             return FORS2Filter
         else:
             return Filter
