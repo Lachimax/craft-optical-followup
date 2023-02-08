@@ -47,6 +47,7 @@ import craftutils.plotting as pl
 import craftutils.observation.log as log
 import craftutils.observation.objects as objects
 import craftutils.observation.instrument as inst
+import craftutils.observation.catalogue as catalog
 
 from craftutils.stats import gaussian_distributed_point
 import craftutils.wrap.source_extractor as se
@@ -306,6 +307,7 @@ def expunge():
     for img_path in active_images:
         del active_images[img_path]
 
+
 @u.export
 class Image:
     instrument_name = "dummy"
@@ -319,11 +321,16 @@ class Image:
             logg: log.Log = None,
     ):
 
-        self.path = path
-        active_images[path] = self
-        if not os.path.isfile(self.path):
+        if not os.path.isfile(path):
             raise FileNotFoundError(f"The image file file {path} does not exist.")
-        self.output_file = path.replace(".fits", "_outputs.yaml")
+        active_images[path] = self
+        if path.endswith("_outputs.yaml"):
+            self.output_file = path
+            self.path = path.replace("_outputs.yaml", ".fits")
+        elif path.endswith(".fits"):
+            self.path = path
+            self.output_file = path.replace(".fits", "_outputs.yaml")
+
         self.data_path, self.filename = os.path.split(self.path)
         self.name = self.get_id()
         self.hdu_list = None
@@ -841,12 +848,6 @@ class ImagingImage(Image):
         self.psfex_path = None
         self.psfex_output = None
         self.psfex_successful = None
-        # TODO: The source_cat attributes should be lists with each entry corresponding to a single FITS extension. This
-        # is the last piece, I believe, that has not been updated to this standard.
-        self.source_cat_sextractor_path = None
-        self.source_cat_sextractor_dual_path = None
-        self.source_cat_path = None
-        self.source_cat_dual_path = None
         self.source_cat = None
         self.source_cat_dual = None
         self.dual_mode_template = None
@@ -1107,12 +1108,8 @@ class ImagingImage(Image):
         dual = False
         if template is not None:
             dual = True
-        if dual:
-            self.source_cat_sextractor_dual_path = cat_path
-            cat = self.load_source_cat_sextractor_dual(force=True)
-        else:
-            self.source_cat_sextractor_path = cat_path
-            cat = self.load_source_cat_sextractor(force=True)
+
+        cat = catalog.SECatalogue(se_path=cat_path, image=self)
 
         if len(cat) == 0:
             print()
@@ -1128,18 +1125,16 @@ class ImagingImage(Image):
                 template=template,
                 **configs
             )
-            if dual:
-                self.source_cat_sextractor_dual_path = cat_path
-                cat = self.load_source_cat_sextractor_dual(force=True)
-            else:
-                self.source_cat_sextractor_path = cat_path
-                cat = self.load_source_cat_sextractor(force=True)
+            cat.set_se_path(cat_path, load=True)
         else:
             self.psfex_successful = True
 
         u.debug_print(2, "dual, template:", dual, template)
 
-        self.write_source_cat()
+        if dual:
+            self.source_cat_dual = cat
+        else:
+            self.source_cat = cat
 
         self.plot_apertures()
         self.add_log(
@@ -1151,33 +1146,6 @@ class ImagingImage(Image):
         self.signal_to_noise_measure(dual=dual)
         print()
         self.update_output_file()
-
-    def _load_source_cat_sextractor(self, path: str, wcs_ext: int = 0):
-        self.load_wcs()
-        print("Loading source catalogue from", path)
-        source_cat = table.QTable.read(path, format="ascii.sextractor")
-        if "SPREAD_MODEL" in source_cat.colnames:
-            source_cat = u.classify_spread_model(source_cat)
-        source_cat["RA"], source_cat["DEC"] = self.wcs[wcs_ext].all_pix2world(
-            source_cat["X_IMAGE"],
-            source_cat["Y_IMAGE"],
-            1
-        ) * units.deg
-        self.extract_astrometry_err()
-        if self.ra_err is not None:
-            source_cat["RA_ERR"] = np.sqrt(
-                source_cat["ERRX2_WORLD"].to(units.arcsec ** 2) + self.ra_err ** 2)
-        else:
-            source_cat["RA_ERR"] = np.sqrt(
-                source_cat["ERRX2_WORLD"].to(units.arcsec ** 2))
-        if self.dec_err is not None:
-            source_cat["DEC_ERR"] = np.sqrt(
-                source_cat["ERRY2_WORLD"].to(units.arcsec ** 2) + self.dec_err ** 2)
-        else:
-            source_cat["DEC_ERR"] = np.sqrt(
-                source_cat["ERRY2_WORLD"].to(units.arcsec ** 2))
-
-        return source_cat
 
     def world_to_pixel(self, coord: SkyCoord, origin: int = 0, ext: int = 0) -> np.ndarray:
         """
@@ -1215,87 +1183,12 @@ class ImagingImage(Image):
         self.pu_background = [None] * len(self.data)
         return self.data
 
-    def load_source_cat_sextractor(self, force: bool = False):
-        if self.source_cat_sextractor_path is not None:
-            if force:
-                self.source_cat = None
-            if self.source_cat is None:
-                self.source_cat = self._load_source_cat_sextractor(path=self.source_cat_sextractor_path)
-        else:
-            print("source_cat could not be loaded from SE file because source_cat_sextractor_path has not been set.")
-
-        return self.source_cat
-
-    def load_source_cat_sextractor_dual(self, force: bool = False):
-        if self.source_cat_sextractor_dual_path is not None:
-            if force:
-                self.source_cat_dual = None
-            if self.source_cat_dual is None:
-                self.source_cat_dual = self._load_source_cat_sextractor(path=self.source_cat_sextractor_dual_path)
-        else:
-            print(
-                "source_cat_dual could not be loaded from SE file because source_cat_sextractor_dual_path has not been set.")
-
-        return self.source_cat_dual
-
-    def load_source_cat(self, force: bool = False):
-        u.debug_print(2, f"ImagingImage.load_source_cat(): {self}.name ==", self.name)
-        u.debug_print(2, f"ImagingImage.load_source_cat(): {self}.source_cat_path ==", self.source_cat_path)
-        if force or self.source_cat is None or self.source_cat_dual is None:
-            if self.source_cat_path is not None:
-                u.debug_print(1, "Loading source_table from", self.source_cat_path)
-                self.source_cat = table.QTable.read(self.source_cat_path, format="ascii.ecsv")
-            elif self.source_cat_sextractor_path is not None:
-                self.load_source_cat_sextractor(force=force)
-            else:
-                u.debug_print(1, "No valid source_cat_path found. Could not load source_table.")
-
-            if self.source_cat_dual_path is not None:
-                u.debug_print(1, "Loading source_table from", self.source_cat_dual_path)
-                self.source_cat_dual = table.QTable.read(self.source_cat_dual_path, format="ascii.ecsv")
-            elif self.source_cat_sextractor_dual_path is not None:
-                self.load_source_cat_sextractor_dual(force=force)
-            else:
-                u.debug_print(1, "No valid source_cat_dual_path found. Could not load source_table.")
-
     def get_source_cat(self, dual: bool, force: bool = False):
-        self.load_source_cat(force=force)
         if dual:
             source_cat = self.source_cat_dual
         else:
             source_cat = self.source_cat
         return source_cat
-
-    def _set_source_cat(self, source_cat: table.QTable, dual: bool):
-        """
-        CAUTION. This will overwrite any saved source_cat both on disk and in memory. Recommended that this only be used when columns
-        have been added to the existing source_cat.
-        :param source_cat: QTable to make this object's
-        :param dual:
-        :return:
-        """
-        if dual:
-            self.source_cat_dual = source_cat
-        else:
-            self.source_cat = source_cat
-        self.update_output_file()
-
-    def write_source_cat(self):
-        if self.source_cat is None:
-            u.debug_print(1, "source_cat not yet loaded.")
-        else:
-            if self.source_cat_path is None:
-                self.source_cat_path = self.path.replace(".fits", "_source_cat.ecsv")
-            u.debug_print(1, "Writing source catalogue to", self.source_cat_path)
-            self.source_cat.write(self.source_cat_path, format="ascii.ecsv", overwrite=True)
-
-        if self.source_cat_dual is None:
-            u.debug_print(1, "source_cat_dual not yet loaded.")
-        else:
-            if self.source_cat_dual_path is None:
-                self.source_cat_dual_path = self.path.replace(".fits", "_source_cat_dual.ecsv")
-            u.debug_print(1, "Writing dual-mode source catalogue to", self.source_cat_dual_path)
-            self.source_cat_dual.write(self.source_cat_dual_path, format="ascii.ecsv", overwrite=True)
 
     def push_source_cat(self, dual: bool = True):
         source_cat = self.get_source_cat(dual=dual)
@@ -1467,32 +1360,38 @@ class ImagingImage(Image):
 
     def _output_dict(self):
         outputs = super()._output_dict()
-        outputs.update({
-            "astrometry_stats": self.astrometry_stats,
-            "extinction_atmospheric": self.extinction_atmospheric,
-            "extinction_atmospheric_err": self.extinction_atmospheric_err,
-            "filter": self.filter_name,
-            "psfex_path": self.psfex_path,
-            "source_cat_sextractor_path": self.source_cat_sextractor_path,
-            "source_cat_sextractor_dual_path": self.source_cat_sextractor_dual_path,
-            "source_cat_path": self.source_cat_path,
-            "source_cat_dual_path": self.source_cat_dual_path,
-            "synth_cat_path": self.synth_cat_path,
-            "psf_stats": self.psf_stats,
-            "fwhm_pix_psfex": self.fwhm_pix_psfex,
-            "fwhm_psfex": self.fwhm_psfex,
-            "psfex_succesful": self.psfex_successful,
-            "zeropoints": self.zeropoints,
-            "zeropoint_output_paths": self.zeropoint_output_paths,
-            "zeropoint_best": self.zeropoint_best,
-            "depth": self.depth,
-            "dual_mode_template": self.dual_mode_template,
-        })
+        outputs.update(
+            {
+                "astrometry_stats": self.astrometry_stats,
+                "extinction_atmospheric": self.extinction_atmospheric,
+                "extinction_atmospheric_err": self.extinction_atmospheric_err,
+                "filter": self.filter_name,
+                "psfex_path": self.psfex_path,
+                "synth_cat_path": self.synth_cat_path,
+                "psf_stats": self.psf_stats,
+                "fwhm_pix_psfex": self.fwhm_pix_psfex,
+                "fwhm_psfex": self.fwhm_psfex,
+                "psfex_succesful": self.psfex_successful,
+                "zeropoints": self.zeropoints,
+                "zeropoint_output_paths": self.zeropoint_output_paths,
+                "zeropoint_best": self.zeropoint_best,
+                "depth": self.depth,
+                "dual_mode_template": self.dual_mode_template,
+            }
+        )
+        if self.source_cat is not None:
+            outputs["source_cat_path"] = self.source_cat.path
+        if self.source_cat_dual is not None:
+            outputs["source_cat_dual_path"] = self.source_cat_dual.path,
         return outputs
 
     def update_output_file(self):
         p.update_output_file(self)
-        self.write_source_cat()
+        print(self.name)
+        if self.source_cat is not None:
+            self.source_cat.update_output_file()
+        if self.source_cat_dual is not None:
+            self.source_cat_dual.update_output_file()
         self.write_synth_cat()
 
     def load_output_file(self):
@@ -1508,16 +1407,12 @@ class ImagingImage(Image):
                 self.filter_name = outputs["filter"]
             if "psfex_path" in outputs:
                 self.psfex_path = outputs["psfex_path"]
-            if "source_cat_sextractor_path" in outputs:
-                self.source_cat_sextractor_path = outputs["source_cat_sextractor_path"]
-            if "source_cat_sextractor_dual_path" in outputs:
-                self.source_cat_sextractor_path = outputs["source_cat_sextractor_dual_path"]
-            if "source_cat_path" in outputs:
-                self.source_cat_path = outputs["source_cat_path"]
+            if "source_cat_path" in outputs and outputs["source_cat_path"] is not None and os.path.exists(outputs["source_cat_path"]):
+                self.source_cat = catalog.SECatalogue(path=outputs["source_cat_path"], image=self)
             if "synth_cat_path" in outputs:
                 self.synth_cat_path = outputs["synth_cat_path"]
-            if "source_cat_dual_path" in outputs:
-                self.source_cat_dual_path = outputs["source_cat_dual_path"]
+            if "source_cat_dual_path" in outputs and outputs["source_cat_dual_path"] is not None and os.path.exists(outputs["source_cat_dual_path"]):
+                self.source_cat_dual = catalog.SECatalogue(path=outputs["source_cat_dual_path"], image=self)
             if "fwhm_psfex" in outputs:
                 self.fwhm_psfex = outputs["fwhm_psfex"]
             if "fwhm_psfex" in outputs:
@@ -1536,7 +1431,6 @@ class ImagingImage(Image):
                 self.depth = outputs["depth"]
             if "dual_mode_template" in outputs and outputs["dual_mode_template"] is not None:
                 self.dual_mode_template = outputs["dual_mode_template"]
-        u.debug_print(2, f"ImagingImage.load_output_file(): {self}.source_cat_path ==", self.source_cat_path)
         return outputs
 
     def select_zeropoint(self, no_user_input: bool = False, preferred: str = None):
@@ -1666,7 +1560,7 @@ class ImagingImage(Image):
                 dist_tol = 2 * units.arcsec
 
         zp_dict = ph.determine_zeropoint_sextractor(
-            sextractor_cat=self.source_cat,
+            sextractor_cat=self.source_cat.table,
             image=self.path,
             cat_path=cat_path,
             cat_name=cat_name,
@@ -1833,18 +1727,9 @@ class ImagingImage(Image):
         self.update_output_file()
 
     def aperture_areas(self):
-        self.load_source_cat()
         self.extract_pixel_scale()
-
-        self.source_cat["A_IMAGE"] = self.source_cat["A_WORLD"].to(units.pix, self.pixel_scale_y)
-        self.source_cat["B_IMAGE"] = self.source_cat["A_WORLD"].to(units.pix, self.pixel_scale_y)
-        self.source_cat["KRON_AREA_IMAGE"] = self.source_cat["A_IMAGE"] * self.source_cat["B_IMAGE"] * np.pi
-
-        if self.source_cat_dual is not None:
-            self.source_cat_dual["A_IMAGE"] = self.source_cat_dual["A_WORLD"].to(units.pix, self.pixel_scale_y)
-            self.source_cat_dual["B_IMAGE"] = self.source_cat_dual["A_WORLD"].to(units.pix, self.pixel_scale_y)
-            self.source_cat_dual["KRON_AREA_IMAGE"] = self.source_cat_dual["A_IMAGE"] * self.source_cat_dual[
-                "B_IMAGE"] * np.pi
+        self.source_cat.aperture_areas(pixel_scale=self.pixel_scale_y)
+        self.source_cat_dual.aperture_areas(pixel_scale=self.pixel_scale_y)
 
         self.add_log(
             action=f"Calculated area of FLUX_AUTO apertures.",
@@ -1852,57 +1737,27 @@ class ImagingImage(Image):
         )
         self.update_output_file()
 
-    def calibrate_magnitudes(self, zeropoint_name: str = "best", force: bool = True, dual: bool = False):
+    def calibrate_magnitudes(
+            self,
+            zeropoint_name: str = "best",
+            force: bool = True,
+            dual: bool = False
+    ):
         cat = self.get_source_cat(dual=dual, force=True)
         if cat is None:
             raise ValueError(f"Catalogue ({dual=}) could not be loaded.")
 
         self.extract_exposure_time()
-
         zp_dict = self.get_zeropoint(cat_name=zeropoint_name)
-
-        if force or f"MAG_AUTO_ZP_{zeropoint_name}" not in cat.colnames:
-            mags = self.magnitude(
-                flux=cat["FLUX_AUTO"],
-                flux_err=cat["FLUXERR_AUTO"],
-                cat_name=zeropoint_name
-            )
-            cat[f"ZP_{zeropoint_name}"] = zp_dict["zeropoint"]
-            cat[f"ZPERR_{zeropoint_name}"] = zp_dict["zeropoint_err"]
-            cat[f"AIRMASS_{zeropoint_name}"] = zp_dict["airmass"]
-            cat[f"AIRMASSERR_{zeropoint_name}"] = zp_dict["airmass_err"]
-            cat["EXT_ATM"] = zp_dict["extinction"]
-            cat["EXT_ATMERR"] = zp_dict["extinction_err"]
-            cat[f"ZP_{zeropoint_name}_ATM_CORR"] = zp_dict["zeropoint_img"]
-            cat[f"ZP_{zeropoint_name}_ATM_CORRERR"] = zp_dict["zeropoint_img_err"]
-
-            cat[f"MAG_AUTO_ZP_{zeropoint_name}"] = mags[0]
-            cat[f"MAGERR_AUTO_ZP_{zeropoint_name}"] = mags[1]
-            cat[f"MAG_AUTO_ZP_{zeropoint_name}_no_ext"] = mags[2]
-            cat[f"MAGERR_AUTO_ZP_{zeropoint_name}_no_ext"] = mags[3]
-
-            if "FLUX_PSF" in cat.colnames:
-                mags = self.magnitude(
-                    flux=cat["FLUX_PSF"],
-                    flux_err=cat["FLUXERR_PSF"],
-                    cat_name=zeropoint_name
-                )
-
-                cat[f"MAG_PSF_ZP_{zeropoint_name}"] = mags[0]
-                cat[f"MAGERR_PSF_ZP_{zeropoint_name}"] = mags[1]
-                cat[f"MAG_PSF_ZP_{zeropoint_name}_no_ext"] = mags[2]
-                cat[f"MAGERR_PSF_ZP_{zeropoint_name}_no_ext"] = mags[3]
-
-            self._set_source_cat(source_cat=cat, dual=dual)
-
-            self.add_log(
-                action=f"Calibrated source catalogue magnitudes using zeropoint {zeropoint_name}.",
-                method=self.calibrate_magnitudes,
-            )
-            self.update_output_file()
-
-        else:
-            print(f"Magnitudes already calibrated for {zeropoint_name}")
+        cat.calibrate_magnitudes(
+            zeropoint_dict=zp_dict,
+            mag_name=f"ZP_{zeropoint_name}",
+            force=force
+        )
+        self.add_log(
+            action=f"Calibrated source self.tablealogue magnitudes using zeropoint {zeropoint_name}.",
+            method=self.calibrate_magnitudes,
+        )
 
     def magnitude(
             self,
@@ -1976,7 +1831,7 @@ class ImagingImage(Image):
         if do_magnitude_calibration:
             self.calibrate_magnitudes(zeropoint_name=zeropoint_name, dual=dual)
 
-        source_cat = self.get_source_cat(dual=dual)
+        source_cat = self.get_source_cat(dual=dual).table
 
         # "max" stores the magnitude of the faintest object with S/N > x sigma
         self.depth = {"max": {}, "secure": {}}
@@ -2037,24 +1892,30 @@ class ImagingImage(Image):
 
         return self.depth
 
-    def send_column_to_source_cat(self, colname: str, sample: table.Table):
+    def send_column_to_source_cat(
+            self,
+            column_name: str,
+            subset_table: table.Table,
+            dual: bool = False
+    ):
         """
-        Takes values from an extra column added to a subset of source_cat.
+        Takes a column from a table that is a subset of source_cat, and adds the column values to the appropriate
+        entries in source_cat using the `NUMBER` column. Rows not in the subset table will be assigned `-99.` in that
+        column.
         Trust me, it comes in handy.
-        Assumes that NO entries have been removed from the main source_cat since being produced by Source Extractor,
+        Assumes that NO entries have been removed from or added to the main source_cat since being produced by Source Extractor,
         as it requires that the relationship source_cat["NUMBER"] = i - 1 holds true.
-        (The commented line is for use when that assumption is no longer valid, but is slower).
-        :param colname: Name of column to send.
-        :param sample:
+
+        :param column_name: Name of column to send.
+        :param subset_table: Subset table
+        :param dual:
         :return:
         """
-        if colname not in self.source_cat.colnames:
-            self.source_cat.add_column(-99 * sample[colname].unit, name=colname)
-        self.source_cat.sort("NUMBER")
-        for star in sample:
-            index = star["NUMBER"]
-            # i = self.find_object_index(index, dual=False)
-            self.source_cat[index - 1][colname] = star[colname]
+        cat = self.get_source_cat(dual=dual)
+        cat.add_partial_column(
+            column_name=column_name,
+            subset_table=subset_table,
+        )
 
     def register(
             self,
@@ -2186,8 +2047,7 @@ class ImagingImage(Image):
             ext: int = 0,
             cat_name: str = None
     ):
-        self.load_source_cat()
-        if self.source_cat is None:
+        if self.source_cat.table is None:
             self.source_extraction_psf(output_dir=output_dir)
 
         if cat is None:
@@ -2357,13 +2217,12 @@ class ImagingImage(Image):
         if output_path is None:
             output_path = self.data_path
 
-        self.load_source_cat()
+        self.source_cat.load_table()
 
         if isinstance(reference_cat, str):
             reference_cat = table.QTable.read(reference_cat)
 
         u.debug_print(2, "ImagingImage.astrometry_diagnostics(): reference_cat ==", reference_cat)
-        u.debug_print(2, f"ImagingImage.astrometry_diagnostics(): {self}.source_cat ==", self.source_cat)
 
         plt.close()
 
@@ -2520,12 +2379,12 @@ class ImagingImage(Image):
         # self.astrometry_stats["star_tolerance"] = star_tolerance
         self.astrometry_stats["offset_tolerance"] = offset_tolerance
 
-        self.send_column_to_source_cat(colname="OFFSET_FROM_REF", sample=matches_source_cat)
-        self.send_column_to_source_cat(colname="RA_OFFSET_FROM_REF", sample=matches_source_cat)
-        self.send_column_to_source_cat(colname="DEC_OFFSET_FROM_REF", sample=matches_source_cat)
-        self.send_column_to_source_cat(colname="PIX_OFFSET_FROM_REF", sample=matches_source_cat)
-        self.send_column_to_source_cat(colname="X_OFFSET_FROM_REF", sample=matches_source_cat)
-        self.send_column_to_source_cat(colname="Y_OFFSET_FROM_REF", sample=matches_source_cat)
+        self.send_column_to_source_cat(column_name="OFFSET_FROM_REF", subset_table=matches_source_cat)
+        self.send_column_to_source_cat(column_name="RA_OFFSET_FROM_REF", subset_table=matches_source_cat)
+        self.send_column_to_source_cat(column_name="DEC_OFFSET_FROM_REF", subset_table=matches_source_cat)
+        self.send_column_to_source_cat(column_name="PIX_OFFSET_FROM_REF", subset_table=matches_source_cat)
+        self.send_column_to_source_cat(column_name="X_OFFSET_FROM_REF", subset_table=matches_source_cat)
+        self.send_column_to_source_cat(column_name="Y_OFFSET_FROM_REF", subset_table=matches_source_cat)
 
         self.add_log(
             action=f"Calculated astrometry offset statistics.",
@@ -2564,16 +2423,14 @@ class ImagingImage(Image):
             output_path: str = None
     ):
         self.open()
-        self.load_source_cat()
         if frame is None:
             _, scale = self.extract_pixel_scale()
             frame = (4 * units.arcsec).to(units.pix, scale).value
-        u.debug_print(2, f"ImagingImage.psf_diagnostics(): {self}.source_cat_path ==", self.source_cat_path)
         if output_path is None:
             output_path = self.data_path
         stars_moffat, stars_gauss, stars_sex = ph.image_psf_diagnostics(
             hdu=self.hdu_list,
-            cat=self.source_cat,
+            cat=self.source_cat.table,
             mag_max=mag_max,
             mag_min=mag_min,
             match_to=match_to,
@@ -2902,7 +2759,7 @@ class ImagingImage(Image):
             ext: int = 0
     ):
 
-        source_cat = self.get_source_cat(dual=dual)
+        source_cat = self.get_source_cat(dual=dual).table
 
         _, scale = self.extract_pixel_scale()
 
@@ -2960,8 +2817,6 @@ class ImagingImage(Image):
             n_pix=n_pix
         ).value
 
-        self._set_source_cat(source_cat, dual)
-
         self.update_output_file()
 
         self.add_log(
@@ -2977,7 +2832,7 @@ class ImagingImage(Image):
         print(self.path)
         source_cat = self.get_source_cat(dual=dual)
         source_cat["SNR_AUTO"] = source_cat["FLUX_AUTO"] / source_cat["FLUXERR_AUTO"]
-        if "FLUX_PSF" in source_cat.colnames:
+        if "FLUX_PSF" in source_cat.table.colnames:
             source_cat["SNR_PSF"] = source_cat["FLUX_PSF"] / source_cat["FLUXERR_PSF"]
 
         # self.load_data()
@@ -3030,8 +2885,6 @@ class ImagingImage(Image):
         # source_cat["NOISE_MEASURED"] = sigma_fluxes
         # source_cat["SNR_PSF"] = snrs_se
 
-        self._set_source_cat(source_cat=source_cat, dual=dual)
-
         self.add_log(
             action=f"Estimated SNR using SEP RMS map and Source Extractor uncertainty.",
             method=self.signal_to_noise_measure,
@@ -3040,13 +2893,9 @@ class ImagingImage(Image):
         self.update_output_file()
 
     def object_axes(self):
-        self.load_source_cat()
         self.extract_pixel_scale()
-        self.source_cat["A_IMAGE"] = self.source_cat["A_WORLD"].to(units.pix, self.pixel_scale_y)
-        self.source_cat["B_IMAGE"] = self.source_cat["B_WORLD"].to(units.pix, self.pixel_scale_y)
-        self.source_cat_dual["A_IMAGE"] = self.source_cat_dual["A_WORLD"].to(units.pix, self.pixel_scale_y)
-        self.source_cat_dual["B_IMAGE"] = self.source_cat_dual["B_WORLD"].to(units.pix, self.pixel_scale_y)
-
+        self.source_cat.object_axes(pixel_scale=self.pixel_scale_y)
+        self.source_cat_dual.object_axes(pixel_scale=self.pixel_scale_y)
         self.add_log(
             action=f"Created axis columns A_IMAGE, B_IMAGE in pixel units from A_WORLD, B_WORLD.",
             method=self.object_axes,
@@ -3068,7 +2917,7 @@ class ImagingImage(Image):
         return self.sky_background
 
     def plot_apertures(self, dual=False, output: str = None, show: bool = False):
-        cat = self.get_source_cat(dual=dual)
+        cat = self.get_source_cat(dual=dual).table
 
         if cat is not None:
             pl.plot_all_params(image=self.path, cat=cat, kron=True, show=False)
@@ -3082,8 +2931,7 @@ class ImagingImage(Image):
     def find_object(self, coord: SkyCoord, dual: bool = True):
         cat = self.get_source_cat(dual=dual)
         u.debug_print(2, f"{self}.find_object(): dual ==", dual)
-        u.debug_print(2, f"{self}.find_object(): cat.colnames ==", cat.colnames)
-        coord_cat = SkyCoord(cat["RA"], cat["DEC"])
+        coord_cat = cat.to_skycoord()
         separation = coord.separation(coord_cat)
         i = np.argmin(separation)
         nearest = cat[i]
@@ -3091,7 +2939,7 @@ class ImagingImage(Image):
 
     def find_object_index(self, index: int, dual: bool = True):
         """
-        Using NUMBER column
+        Using NUMBER column, finds the row referred to.
         :param index:
         :param dual:
         :return:
@@ -3922,7 +3770,7 @@ class ImagingImage(Image):
         print("")
         print(self.filename)
 
-        data = self.data[ext] * 1 #[bottom:top, left:right]
+        data = self.data[ext] * 1  # [bottom:top, left:right]
 
         if generate_mask:
             mask = self.generate_mask(
@@ -3930,7 +3778,7 @@ class ImagingImage(Image):
                 method="sep",
                 **mask_kwargs,
             )
-            mask = mask# [bottom:top, left:right]
+            mask = mask  # [bottom:top, left:right]
             mask = mask.astype(bool)
             mask += data < 0
             mask += data > self.extract_saturate() * saturate_factor
@@ -3967,7 +3815,7 @@ class ImagingImage(Image):
 
         for n, i in enumerate(where_mask[0]):
             j = where_mask[1][n]
-            weights[i, j] = 0. #np.invert(mask).astype(float)
+            weights[i, j] = 0.  # np.invert(mask).astype(float)
 
         model_init = model_type(**init_params)
         fitter = fitter_type(True)
@@ -5387,7 +5235,7 @@ class FORS2Image(ESOImagingImage):
     def _output_dict(self):
         outputs = super()._output_dict()
         if self.other_chip is not None:
-            other_chip = self.other_chip.path
+            other_chip = self.other_chip.output_file
         else:
             other_chip = None
         outputs.update({

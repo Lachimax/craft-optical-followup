@@ -1,25 +1,11 @@
 import os
-
 from datetime import date
 
-import astropy.units as units
-import astropy.table as table
+from astropy import table as table, units as units
 
-import craftutils.utils as u
+from craftutils import utils as u
+from craftutils.observation import filters as filters
 from craftutils.retrieve import save_fors2_calib
-import craftutils.observation.instrument as instrument
-import craftutils.observation.filters as filters
-
-__all__ = []
-
-
-@u.export
-class ESOInstrument(instrument.Instrument):
-    def filter_class(self):
-        if self.name == "vlt-fors2":
-            return FORS2Filter
-        else:
-            return filters.Filter
 
 
 class FORS2Filter(filters.Filter):
