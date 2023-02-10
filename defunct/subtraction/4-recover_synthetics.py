@@ -83,7 +83,7 @@ def main(field, subtraction_path, epoch, instrument):
             plt.scatter(obj['x_0'], obj['y_0'], c='white')
         plt.show()
 
-        matches_sextractor['mag_sextractor'], _, _ = ph.magnitude_complete(flux=matches_sextractor['flux_aper'],
+        matches_sextractor['mag_sextractor'], _, _ = ph.magnitude_instrumental(flux=matches_sextractor['flux_aper'],
                                                                            exp_time=exp_time, airmass=airmass,
                                                                            zeropoint=comparison_zeropoint,
                                                                            ext=comparison_extinction)

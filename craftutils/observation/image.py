@@ -1781,7 +1781,7 @@ class ImagingImage(Image):
         if "colour_term" not in kwargs:
             kwargs["colour_term"] = 0.0
 
-        mag, mag_err = ph.magnitude_complete(
+        mag, mag_err = ph.magnitude_instrumental(
             flux=flux,
             flux_err=flux_err,
             zeropoint=zp_dict['zeropoint'],
@@ -1793,7 +1793,7 @@ class ImagingImage(Image):
             **kwargs
         )
 
-        mag_no_ext_corr, mag_no_ext_corr_err = ph.magnitude_complete(
+        mag_no_ext_corr, mag_no_ext_corr_err = ph.magnitude_instrumental(
             flux=flux,
             flux_err=flux_err,
             exp_time=self.extract_exposure_time(),
