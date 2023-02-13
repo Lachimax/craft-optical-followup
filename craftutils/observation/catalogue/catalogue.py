@@ -37,7 +37,6 @@ class Catalogue:
         return len(self.table)
 
     def __getitem__(self, *items):
-        print(self.path)
         self.load_table()
         if len(items) == 1:
             return self.table[items[0]]

@@ -17,18 +17,16 @@ class CIGALEModel(SEDModel):
 
     def load_data(self):
         self.hdu_list = fits.open(self.path)
-        self.data_table = table.QTable(self.hdu_list[1].data)
+        self.table = table.QTable(self.hdu_list[1].data)
         hdr = self.hdu_list[1].header.copy()
 
-        for col_name in filter(lambda k: k.startswith("TTYPE"), hdr):
-            col_n = int(col_name[5:])
+        for key in filter(lambda k: k.startswith("TTYPE"), hdr):
+            col_name = hdr[key]
+            col_n = int(key[5:])
             col_unit = units.Unit(hdr[f"TUNIT{col_n}"])
-            self.data_table[col_name] *= col_unit
+            self.table[col_name] *= col_unit
 
-        self.sanitise_columns()
-        self.frequency_from_wavelength()
-        self.luminosity_per_frequency()
-        self.flux_per_wavelength()
+        self.prep_columns()
 
     @classmethod
     def columns(cls):
