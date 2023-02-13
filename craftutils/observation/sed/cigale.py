@@ -2,11 +2,14 @@ import astropy.io.fits as fits
 import astropy.table as table
 import astropy.units as units
 import astropy.constants as constants
+import astropy.cosmology as cosmology
 
 from .sed import SEDModel
 
 
 class CIGALEModel(SEDModel):
+    default_cosmology = cosmology.WMAP7
+
     def __init__(
             self,
             **kwargs
@@ -17,14 +20,14 @@ class CIGALEModel(SEDModel):
 
     def load_data(self):
         self.hdu_list = fits.open(self.path)
-        self.table = table.QTable(self.hdu_list[1].data)
+        self.model_table = table.QTable(self.hdu_list[1].data)
         hdr = self.hdu_list[1].header.copy()
 
         for key in filter(lambda k: k.startswith("TTYPE"), hdr):
             col_name = hdr[key]
             col_n = int(key[5:])
             col_unit = units.Unit(hdr[f"TUNIT{col_n}"])
-            self.table[col_name] *= col_unit
+            self.model_table[col_name] *= col_unit
 
         self.prep_columns()
 
