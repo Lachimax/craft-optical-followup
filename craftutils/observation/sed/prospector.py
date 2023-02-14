@@ -2,11 +2,15 @@ import os
 
 import astropy.table as table
 
+import craftutils.utils as u
+
 from .sed import *
 
-
+@u.export
 class GordonProspectorModel(SEDModel):
-
+    """
+    The `GordonProspectorModel` uses the data model established by [GordonProspector]_.
+    """
     def load_data(self):
         flux = np.loadtxt(self.path + '_spectrum.txt') * units.microjansky
         wave = np.loadtxt(self.path + '_wavelengths.txt') * units.Angstrom

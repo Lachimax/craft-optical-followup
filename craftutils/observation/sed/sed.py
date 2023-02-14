@@ -6,8 +6,10 @@ import astropy.constants as constants
 import astropy.cosmology as cosmology
 
 import craftutils.observation.filters as filters
+from craftutils.photometry import magnitude_AB
+import craftutils.utils as u
 
-
+@u.export
 class SEDModel:
     default_cosmology = cosmology.Planck18
 
@@ -171,9 +173,16 @@ class SEDModel:
 
     def magnitude_AB(
             self,
-            fil: filters.Filter
+            fil: filters.Filter,
+            z: float = None
     ):
-        pass
+        if z is None:
+            tbl = self.model_table
+        elif z in self.shifted_tables:
+            tbl = shifted
+        magnitude_AB(
+            flux=self.model_table["flux"]
+        )
 
     @classmethod
     def columns(cls):
