@@ -19,6 +19,7 @@ aforementioned concepts.
    observation/epoch
    observation/image
    observation/instrument
+   observation/filter
    observation/log
    observation/objects
    observation/survey

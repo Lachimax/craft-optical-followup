@@ -17,9 +17,11 @@ import astropy.io.fits as fits
 import craftutils.params as p
 import craftutils.astrometry as astm
 import craftutils.utils as u
-import craftutils.observation.instrument as inst
 import craftutils.retrieve as r
 import craftutils.observation as obs
+import craftutils.observation.instrument as inst
+import craftutils.observation.filters as filters
+
 
 cosmology = cosmo.Planck18
 
@@ -462,7 +464,7 @@ class Object:
     def add_photometry(
             self,
             instrument: Union[str, inst.Instrument],
-            fil: Union[str, inst.Filter],
+            fil: Union[str, filters.Filter],
             epoch_name: str,
             mag: units.Quantity, mag_err: units.Quantity,
             snr: float,

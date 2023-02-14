@@ -47,13 +47,13 @@ def main(
         p.set_data_dir(param_dir, write=True)
 
     if not config["table_dir"]:
-        param_dir = u.user_input(
+        table_dir = u.user_input(
             message="Please enter a directory in which to write tables describing observations etc. This will be created if it does "
                     "not exist.",
             input_type=str,
             default=os.path.join(p.data_dir, "tables")
         )
-        p.set_data_dir(param_dir, write=True)
+        p.set_table_dir(table_dir, write=True)
 
     u.debug_level = debug_level
 

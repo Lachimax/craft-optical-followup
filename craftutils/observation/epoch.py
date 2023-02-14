@@ -1,7 +1,7 @@
 import datetime
 import os
 import warnings
-from typing import Union, List, Dict, Tuple
+from typing import Union, List, Dict
 import shutil
 
 import matplotlib.pyplot as plt
@@ -20,9 +20,11 @@ import craftutils.astrometry as astm
 import craftutils.fits_files as ff
 import craftutils.observation as obs
 import craftutils.observation.field as fld
+import craftutils.observation.filters.eso.vlt_fors2
 import craftutils.observation.objects as objects
 import craftutils.observation.image as image
 import craftutils.observation.instrument as inst
+import craftutils.observation.filters as filters
 import craftutils.observation.log as log
 import craftutils.observation.survey as survey
 import craftutils.params as p
@@ -43,6 +45,7 @@ active_epochs = {}
 
 if p.data_dir:
     zeropoint_yaml = os.path.join(p.data_dir, f"zeropoints.yaml")
+
 
 def _epoch_directory_path():
     path = os.path.join(p.param_dir, "fields", "directory.yaml")
@@ -188,9 +191,11 @@ def _check_do_list(
 
     return do
 
+
 def expunge_epochs():
     for epoch_name in active_epochs:
         del active_epochs[epoch_name]
+
 
 def _output_img_list(lst: list):
     """
@@ -200,7 +205,7 @@ def _output_img_list(lst: list):
     """
     out_list = []
     for img in lst:
-        out_list.append(img.path)
+        out_list.append(img.output_file)
     out_list.sort()
     return out_list
 
@@ -233,13 +238,14 @@ def _output_img_dict_list(dictionary: dict):
             out_dict[fil] = None
         elif len(dictionary[fil]) > 0:
             if isinstance(dictionary[fil][0], image.Image):
-                out_dict[fil] = list(set(map(lambda f: f.path, dictionary[fil])))
+                out_dict[fil] = list(set(map(lambda f: f.output_file, dictionary[fil])))
                 out_dict[fil].sort()
             elif isinstance(dictionary[fil][0], str):
                 out_dict[fil] = dictionary[fil]
         else:
             out_dict[fil] = []
     return out_dict
+
 
 class Epoch:
     instrument_name = "dummy-instrument"
@@ -1598,9 +1604,9 @@ class ImagingEpoch(Epoch):
             print()
 
             print("Coadded Image Path:")
-            print(img.path)
+            print(img.output_file)
             output_path = os.path.join(output_dir, img.filename.replace(".fits", "_trimmed.fits"))
-            u.debug_print(2, "trim_coadded img.path:", img.path)
+            u.debug_print(2, "trim_coadded img.path:", img.output_file)
             u.debug_print(2, "trim_coadded img.area_file:", img.area_file)
             trimmed = img.trim_from_area(output_path=output_path)
             # trimmed.write_fits_file()
@@ -1888,7 +1894,7 @@ class ImagingEpoch(Epoch):
                         snr_psf=-999.,
                         image_depth=depth,
                         image_path=img.path,
-                        good_image_path=self.coadded_unprojected[fil].path,
+                        good_image_path=self.coadded_unprojected[fil].output_file,
                         do_mask=img.mask_nearby()
                     )
                 else:
@@ -1950,7 +1956,7 @@ class ImagingEpoch(Epoch):
                         snr_psf=snr_psf,
                         image_depth=depth,
                         image_path=img.path,
-                        good_image_path=self.coadded_unprojected[fil].path,
+                        good_image_path=self.coadded_unprojected[fil].output_file,
                         do_mask=img.mask_nearby()
                     )
 
@@ -2141,7 +2147,7 @@ class ImagingEpoch(Epoch):
 
         for fil in images:
             img = images[fil]
-            img.load_source_cat()
+            img.source_cat.load_table()
             stats = -99.
             while not isinstance(stats, dict):
                 stats = img.astrometry_diagnostics(
@@ -2257,7 +2263,7 @@ class ImagingEpoch(Epoch):
     def _output_dict(self):
         output_dict = super()._output_dict()
         if self.deepest is not None:
-            deepest = self.deepest.path
+            deepest = self.deepest.output_file
         else:
             deepest = None
 
@@ -3691,6 +3697,7 @@ class PanSTARRS1ImagingEpoch(SurveyImagingEpoch):
         """
         pass
 
+
 def _retrieve_eso_epoch(epoch: Union['ESOImagingEpoch', 'ESOSpectroscopyEpoch'], path: str):
     epoch_date = None
     if epoch.date is not None:
@@ -4172,14 +4179,14 @@ class ESOImagingEpoch(ImagingEpoch):
                     u.debug_print(1, i, img.extract_chip_number())
                     i += 1
                     img = self.frames_esoreflex_backgrounds[fil][i]
-                up_left, up_right, up_bottom, up_top = ff.detect_edges(img.path)
+                up_left, up_right, up_bottom, up_top = ff.detect_edges(img.output_file)
                 # Ditto for the bottom chip.
                 i = 0
                 img = self.frames_esoreflex_backgrounds[fil][i]
                 while img.extract_chip_number() != 2:
                     i += 1
                     img = self.frames_esoreflex_backgrounds[fil][i]
-                dn_left, dn_right, dn_bottom, dn_top = ff.detect_edges(img.path)
+                dn_left, dn_right, dn_bottom, dn_top = ff.detect_edges(img.output_file)
                 up_left = up_left + 5
                 up_right = up_right - 5
                 up_top = up_top - 5
@@ -4975,8 +4982,8 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
 
         fils_find = []
 
-        for fil_name in inst.FORS2Filter.qc1_retrievable:
-            fil = inst.Filter.from_params(fil_name, instrument_name="vlt-fors2")
+        for fil_name in craftutils.observation.filters.eso.vlt_fors2.FORS2Filter.qc1_retrievable:
+            fil = filters.Filter.from_params(fil_name, instrument_name="vlt-fors2")
             fil.retrieve_calibration_table()
             fils_known.append(fil)
             tbls_known[fil_name] = fil.get_nearest_calib_rows(mjd=mjd, n=n)
@@ -4991,8 +4998,8 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
         }
 
         for fil_name in self.filters:
-            if fil_name not in inst.FORS2Filter.qc1_retrievable:
-                fil = inst.Filter.from_params(fil_name, instrument_name="vlt-fors2")
+            if fil_name not in craftutils.observation.filters.eso.vlt_fors2.FORS2Filter.qc1_retrievable:
+                fil = filters.Filter.from_params(fil_name, instrument_name="vlt-fors2")
                 fils_find.append(fil)
                 results_tbl[f"ext_{fil_name}"] = []
                 # results_tbl[f"ext_err_{fil_name}"] = []
@@ -5104,7 +5111,7 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
                 # For each chip, generate a master bias image
                 try:
                     master_bias = esorex.fors_bias(
-                        bias_frames=list(map(lambda b: b.path, bias_set)),
+                        bias_frames=list(map(lambda b: b.output_file, bias_set)),
                         output_dir=output_path,
                         output_filename=f"master_bias_{chip}.fits",
                         sof_name=f"bias_{chip}.sof"
@@ -5114,12 +5121,12 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
 
                 for fil in image_dict:
                     # Generate master flat per-filter, per-chip
-                    if fil not in flat_sets or fil in inst.FORS2Filter.qc1_retrievable:  # Time-saver
+                    if fil not in flat_sets or fil in craftutils.observation.filters.eso.vlt_fors2.FORS2Filter.qc1_retrievable:  # Time-saver
                         continue
                     img = image_dict[fil]
                     if "calib_pipeline" in img.zeropoints:
                         img.zeropoints.pop("calib_pipeline")
-                    flat_set = list(map(lambda b: b.path, flat_sets[fil][i]))
+                    flat_set = list(map(lambda b: b.output_file, flat_sets[fil][i]))
                     fil_dir = os.path.join(output_path, fil)
                     u.mkdir_check(fil_dir)
                     try:
@@ -5158,7 +5165,7 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
                             std_dir = os.path.join(fil_dir, std.name)
                             u.mkdir_check(std_dir)
                             aligned_phot, std_reduced = esorex.fors_zeropoint(
-                                standard_img=std.path,
+                                standard_img=std.output_file,
                                 master_bias=master_bias,
                                 master_sky_flat_img=master_sky_flat_img,
                                 output_dir=std_dir,
@@ -5209,7 +5216,7 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
                 for fil in image_dict:
                     img = image_dict[fil]
                     # We save time by only bothering with non-qc1-obtainable zeropoints.
-                    if fil in std_epoch.frames_reduced and fil not in inst.FORS2Filter.qc1_retrievable:
+                    if fil in std_epoch.frames_reduced and fil not in craftutils.observation.filters.eso.vlt_fors2.FORS2Filter.qc1_retrievable:
                         for std in std_epoch.frames_reduced[fil]:
                             img.add_zeropoint_from_other(std)
 

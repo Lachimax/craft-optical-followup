@@ -110,6 +110,12 @@ def load_params(file: str):
     return p
 
 
+def check_abs_path(path: str, root: str = "top_data_dir"):
+    if not os.path.isabs(path):
+        path = os.path.join(config[root], str(path))
+    return path
+
+
 def sanitise_yaml_dict(dictionary: dict):
     for key in dictionary:
         if isinstance(dictionary[key], np.str_):
@@ -284,6 +290,11 @@ def set_data_dir(path: str, write: bool = True):
     set_config_path(key="top_data_dir", path=path, write=write)
     global data_dir
     data_dir = path
+    u.mkdir_check_nested(path, remove_last=False)
+
+
+def set_table_dir(path: str, write: bool = True):
+    set_config_path(key="table_dir", path=path, write=write)
     u.mkdir_check_nested(path, remove_last=False)
 
 
@@ -949,6 +960,7 @@ def params_init(param_file: Union[str, dict]):
 
 
 def load_output_file(obj):
+    print(obj.data_path, obj.name)
     if obj.data_path is not None and obj.name is not None:
         obj.output_file = os.path.join(obj.data_path, f"{obj.name}_outputs.yaml")
         outputs = load_params(file=obj.output_file)

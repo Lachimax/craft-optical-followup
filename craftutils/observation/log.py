@@ -9,6 +9,7 @@ import craftutils.utils as u
 
 __all__ = []
 
+
 @u.export
 class Log:
 

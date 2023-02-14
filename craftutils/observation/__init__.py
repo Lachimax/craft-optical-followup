@@ -14,6 +14,7 @@ config = p.config
 if config["table_dir"] is not None:
     u.mkdir_check_nested(config["table_dir"])
 
+
 def _construct_column_lists(columns: dict, replace_str: bool = True):
     dtypes = []
     un = []
@@ -39,6 +40,7 @@ def _construct_column_lists(columns: dict, replace_str: bool = True):
         un.append(unit)
 
     return colnames, dtypes, un
+
 
 @u.export
 def split_dtype(val, replace_str: bool = True):
@@ -361,7 +363,6 @@ def write_master_table(
         for row in tbl_astropy:
             if row["field_name"] in change_dict:
                 row["field_name"] = change_dict[row["field_name"]]
-
 
     tbl_names = tbl_astropy.colnames
     names = sort_by.copy()

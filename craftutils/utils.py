@@ -43,6 +43,7 @@ def export(obj):
 
     return obj
 
+
 @export
 def pad_zeroes(n: int, length: int = 2):
     """
@@ -311,8 +312,12 @@ def check_quantity(
 
     :param number: Quantity (or not) to check.
     :param unit: Unit to check for.
-    :param allow_mismatch: If False, even compatible units will not be allowed.
-    :param convert: If True, convert compatible Quantity to units unit.
+    :param allow_mismatch: If `False`, even compatible units will not be allowed.
+    :param enforce_equivalency: If `True`, and if `allow_mismatch` is True, a `units.UnitsError` will be raised if the
+        `number` has units that are not equivalent to `unit`.
+        That is, set this (and `allow_mismatch`) to `True` if you want to ensure `number` has the same
+        dimensionality as `unit`, but not necessarily the same units. Savvy?
+    :param convert: If `True`, convert compatible `Quantity` to units `unit`.
     :return:
     """
     if number is None:
@@ -943,7 +948,7 @@ def find_nearest(array, value, sorted: bool = False):
         return len(array) - 1, array[-1]
 
     idx = np.searchsorted(array, value, side="left")
-    if idx == len(array) or math.fabs(value - array[idx - 1]) < math.fabs(value - array[idx]):
+    if idx == len(array) or np.abs(value - array[idx - 1]) < np.abs(value - array[idx]):
         return idx - 1, array[idx - 1]
     else:
         return idx, array[idx]
