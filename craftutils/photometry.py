@@ -339,6 +339,14 @@ def gain_mean_combine(old_gain: float = 0.8, n_frames: int = 1):
 AB_zeropoint = 3631 * units.Jy
 
 
+def redshift_frequency(nu: units.Quantity, z: float, z_new: float):
+    return nu * (1 + z) / (1 + z_new)
+
+
+def redshift_wavelength(wavelength: units.Quantity, z: float, z_new: float):
+    return wavelength * (1 + z_new) / (1 + z)
+
+
 def magnitude_AB(
         flux: units.Quantity,
         band_transmission: Union[np.ndarray, units.Quantity],

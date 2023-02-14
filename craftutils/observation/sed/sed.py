@@ -6,7 +6,7 @@ import astropy.constants as constants
 import astropy.cosmology as cosmology
 
 import craftutils.observation.filters as filters
-from craftutils.photometry import magnitude_AB
+import craftutils.photometry as ph
 import craftutils.utils as u
 
 
@@ -46,11 +46,11 @@ class SEDModel:
         self.model_table = table.QTable.read(self.path)
         self.prep_columns()
 
-    def prep_columns(self):
-        self.sanitise_columns()
-        self.frequency_from_wavelength()
-        self.luminosity_per_frequency()
-        self.flux_per_wavelength()
+    def prep_columns(self, z: float = None):
+        self.sanitise_columns(z=z)
+        self.frequency_from_wavelength(z=z)
+        self.luminosity_per_frequency(z=z)
+        self.flux_per_wavelength(z=z)
 
     def distances(
             self,
@@ -58,21 +58,27 @@ class SEDModel:
         if self.z is not None:
             self.luminosity_distance = self.cosmology.luminosity_distance(z=self.z)
 
-    def sanitise_columns(self):
+    def sanitise_columns(
+            self,
+            z: float = None
+    ):
+        tbl = self.get_table(z=z)
         columns_change = self.columns()
         for col_name in columns_change:
             old_col_name = columns_change[col_name]
-            if old_col_name in self.model_table.colnames:
-                self.model_table[col_name] = self.model_table[old_col_name]
-                self.model_table.remove_column(old_col_name)
+            if old_col_name in tbl.colnames:
+                tbl[col_name] = tbl[old_col_name]
+                tbl.remove_column(old_col_name)
 
-        self.model_table["flux_nu"] = self.model_table["flux_nu"].to("Jy")
-        self.model_table["wavelength"] = self.model_table["wavelength"].to("AA")
+        tbl["flux_nu"] = tbl["flux_nu"].to("Jy")
+        tbl["wavelength"] = tbl["wavelength"].to("AA")
 
     def frequency_from_wavelength(
-            self
+            self,
+            z: float = None
     ):
-        self.model_table["frequency"] = (constants.c / self.model_table["wavelength"]).to("Hz")
+        tbl = self.get_table(z=z)
+        tbl["frequency"] = (constants.c / tbl["wavelength"]).to("Hz")
 
     def luminosity_per_frequency(
             self,
@@ -121,10 +127,10 @@ class SEDModel:
         return tbl
 
     def redshift_wavelength(self, z_shift: float):
-        return self.model_table["wavelength"] / ((1 + self.z) / (1 + z_shift))
+        return ph.redshift_frequency(nu=self.model_table["wavelength"], z=self.z, z_new=z_shift)
 
     def redshift_frequency(self, z_shift: float):
-        return self.model_table["frequency"] / ((1 + z_shift) / (1 + self.z))
+        return ph.redshift_frequency(nu=self.model_table["frequency"], z=self.z, z_new=z_shift)
 
     def redshift_flux_nu(
             self,
@@ -149,30 +155,34 @@ class SEDModel:
     def _d_nu_d_lambda(self, z: float = None):
         tbl = self.get_table(z=z)
         d_lambda = tbl["wavelength"][1:] - tbl["wavelength"][:-1]
-        d_lambda = np.append(0 * units.AA, d_lambda)
+        d_lambda = np.append(d_lambda[d_lambda != 0].min(), d_lambda)
         tbl["d_lambda"] = d_lambda
-
+        print(len(tbl))
+        tbl = tbl[tbl["d_lambda"] != 0]
+        print(len(tbl))
         d_nu = tbl["frequency"][1:] - tbl["frequency"][:-1]
-        d_nu = np.append(d_nu.min(), d_nu)
+        print(len(tbl))
+        d_nu = np.append(d_nu[d_nu != 0].min(), d_nu)
         tbl["d_nu"] = d_nu
-        tbl["flux_nu_d_nu"] = self.model_table["flux_nu"] * d_nu
-        print("Here 2")
+        tbl = tbl[tbl["d_nu"] != 0]
+        tbl["flux_nu_d_nu"] = tbl["flux_nu"] * tbl["d_nu"]
         if "luminosity_lambda" in tbl.colnames:
-            tbl["luminosity_lambda_d_lambda"] = (tbl["luminosity_lambda"] * d_lambda).to(units.W)
+            tbl["luminosity_lambda_d_lambda"] = (tbl["luminosity_lambda"] * tbl["d_lambda"]).to(units.W)
+        return tbl
 
-    def move_to_redshift(self, z: float = 1.):
-        self._d_nu_d_lambda()
-        new_tbl = self.model_table.copy()
-        new_tbl["flux_nu"] = self.redshift_flux_nu(z_shift=z)
-        print("Here 1")
-        self.shifted_tables[z] = new_tbl
-        self._d_nu_d_lambda(z=z)
-        new_tbl["wavelength"] = self.redshift_wavelength(z_shift=z)
-        new_tbl["frequency"] = self.redshift_frequency(z_shift=z)
-        new_tbl["flux_nu"] = new_tbl["flux_nu_d_nu"] / new_tbl["d_nu"]
-
-        self.flux_per_wavelength(z=z)
-
+    def move_to_redshift(self, z_new: float = 1.):
+        if z_new != self.z:
+            self._d_nu_d_lambda()
+            new_tbl = self.model_table["wavelength", "frequency", "flux_nu"].copy()
+            new_tbl["flux_nu"] = self.redshift_flux_nu(z_shift=z_new)
+            self.shifted_tables[z_new] = new_tbl
+            new_tbl = self._d_nu_d_lambda(z=z_new)
+            new_tbl["wavelength"] = ph.redshift_wavelength(wavelength=new_tbl["wavelength"], z=self.z, z_new=z_new)
+            new_tbl["frequency"] = ph.redshift_frequency(nu=new_tbl["frequency"], z=self.z, z_new=z_new)
+            new_tbl["flux_nu"] = new_tbl["flux_nu_d_nu"] / new_tbl["d_nu"]
+            self.shifted_tables[z_new] = new_tbl
+        else:
+            new_tbl = self.model_table
         return new_tbl
 
     # def flux_through_band(
@@ -200,7 +210,7 @@ class SEDModel:
     ):
         tbl = self.get_table(z=z)
         transmission = self.add_band(band=band, z=z)
-        return magnitude_AB(
+        return ph.magnitude_AB(
             flux=tbl["flux_nu"],
             band_transmission=transmission,
             frequency=tbl["frequency"],
