@@ -57,8 +57,8 @@ class Filter:
                 self.data_path = kwargs["data_path"]
             else:
                 self.data_path = os.path.join(p.data_dir, kwargs["data_path"])
-        # print(self.data_path)
-        u.mkdir_check_nested(self.data_path, remove_last=False)
+            # print(self.data_path)
+            u.mkdir_check_nested(self.data_path, remove_last=False)
         self.votable = None
         self.votable_path = None
 
@@ -253,7 +253,7 @@ class Filter:
         for i, tbl in enumerate(filter_tables):
             if tbl is not None:
                 return tbl, table_names[i]
-        return None
+        return None, None
 
     def _output_dict(self):
         return {

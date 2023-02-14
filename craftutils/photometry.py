@@ -342,7 +342,8 @@ AB_zeropoint = 3631 * units.Jy
 def magnitude_AB(
         flux: units.Quantity,
         band_transmission: Union[np.ndarray, units.Quantity],
-        frequency: units.Quantity
+        frequency: units.Quantity,
+        use_quantum_factor: bool = True
 ):
     """
     All three arguments must be of the same length, with entries corresponding 1-to-1.
@@ -360,12 +361,17 @@ def magnitude_AB(
     )
     flux_tbl.sort("nu")
 
+    if use_quantum_factor:
+        quantum_factor = (constants.h * flux_tbl["nu"]) ** -1
+    else:
+        quantum_factor = 1
+
     numerator = np.trapz(
-        y=flux_tbl["f"] * (constants.h * flux_tbl["nu"]) ** -1 * flux_tbl["e"],
+        y=flux_tbl["f"] * quantum_factor * flux_tbl["e"],
         x=flux_tbl["nu"]
     )
     denominator = np.trapz(
-        y=AB_zeropoint * (constants.h * flux_tbl["nu"]) ** -1 * flux_tbl["e"],
+        y=AB_zeropoint * quantum_factor * flux_tbl["e"],
         x=flux_tbl["nu"]
     )
 

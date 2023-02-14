@@ -1,16 +1,23 @@
 import os
 
+import numpy as np
+
 import astropy.table as table
+import astropy.units as units
 
 import craftutils.utils as u
 
 from .sed import *
+
+__all__ = []
+
 
 @u.export
 class GordonProspectorModel(SEDModel):
     """
     The `GordonProspectorModel` uses the data model established by [GordonProspector]_.
     """
+
     def load_data(self):
         flux = np.loadtxt(self.path + '_spectrum.txt') * units.microjansky
         wave = np.loadtxt(self.path + '_wavelengths.txt') * units.Angstrom
@@ -36,7 +43,5 @@ class GordonProspectorModel(SEDModel):
                 "flux_nu": obs_flux,
             }
         )
-        self.luminosity_per_wavelength()
         self.prep_columns()
-
-
+        self.luminosity_per_wavelength()
