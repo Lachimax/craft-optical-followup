@@ -29,8 +29,6 @@ class CIGALEModel(SEDModel):
             col_unit = units.Unit(hdr[f"TUNIT{col_n}"])
             self.model_table[col_name] *= col_unit
 
-        self.prep_columns()
-
     @classmethod
     def columns(cls):
         return {

@@ -7,7 +7,7 @@ import astropy.units as units
 
 import craftutils.utils as u
 
-from .sed import *
+from .sed import SEDModel
 
 __all__ = []
 
@@ -17,6 +17,10 @@ class GordonProspectorModel(SEDModel):
     """
     The `GordonProspectorModel` uses the data model established by [GordonProspector]_.
     """
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.luminosity_per_wavelength()
 
     def load_data(self):
         flux = np.loadtxt(self.path + '_spectrum.txt') * units.microjansky
@@ -43,5 +47,3 @@ class GordonProspectorModel(SEDModel):
                 "flux_nu": obs_flux,
             }
         )
-        self.prep_columns()
-        self.luminosity_per_wavelength()

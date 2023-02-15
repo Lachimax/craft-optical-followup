@@ -23,6 +23,7 @@ from astropy.modeling import models, fitting
 from astropy.modeling.functional_models import Sersic1D
 from astropy.stats import sigma_clip
 from astropy.visualization import quantity_support
+import astropy.cosmology as cosmology
 
 import craftutils.fits_files as ff
 import craftutils.params as p
@@ -345,6 +346,30 @@ def redshift_frequency(nu: units.Quantity, z: float, z_new: float):
 
 def redshift_wavelength(wavelength: units.Quantity, z: float, z_new: float):
     return wavelength * (1 + z_new) / (1 + z)
+
+
+def redshift_flux_nu(
+        flux,
+        z: float,
+        z_new: float,
+        cosmo: cosmology.LambdaCDM = cosmology.Planck18,
+):
+    d_l = cosmo.luminosity_distance(z)
+    d_l_shift = cosmo.luminosity_distance(z_new)
+
+    return flux * ((1 + z_new) * d_l ** 2) / ((1 + z) * d_l_shift ** 2)
+
+
+def redshift_flux_lambda(
+        flux,
+        z: float,
+        z_new: float,
+        cosmo: cosmology.LambdaCDM = cosmology.Planck18,
+):
+    d_l = cosmo.luminosity_distance(z)
+    d_l_shift = cosmo.luminosity_distance(z_new)
+
+    return flux * ((1 + z) * d_l ** 2) / ((1 + z_new) * d_l_shift ** 2)
 
 
 def magnitude_AB(
