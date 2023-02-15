@@ -2145,12 +2145,16 @@ def select_zeropoint(obj: str, filt: str, instrument: str, outputs: dict = None)
     return zeropoint, zeropoint_err, airmass, airmass_err, extinction, extinction_err
 
 
-def subtract(template_origin: str, comparison_origin: str,
-             template_fwhm: float,
-             comparison_fwhm: float, output: str, comparison_title: str, template_title: str, comparison_epoch: int,
-             template_epoch: int,
-             field: str,
-             force_subtract_better_seeing: bool = True, sextractor_threshold: float = None):
+def subtract(
+        template_origin: str, comparison_origin: str,
+        template_fwhm: float, comparison_fwhm: float,
+        output: str,
+        template_title: str, comparison_title: str,
+        template_epoch: int, comparison_epoch: int,
+        field: str,
+        force_subtract_better_seeing: bool = True,
+        sextractor_threshold: float = None
+):
     """
 
     :param template_origin:
@@ -2199,12 +2203,14 @@ def subtract(template_origin: str, comparison_origin: str,
 
             sigma_match = math.sqrt(sigma_template ** 2 - sigma_comparison ** 2)
 
-            os.system(f'hotpants -inim {template_file}'
-                      f' -tmplim {comparison_file}'
-                      f' -outim {difference_file}'
-                      f' -ng 3 6 {0.5 * sigma_match} 4 {sigma_match} 2 {2 * sigma_match}'
-                      f' -oki {output}kernel.fits'
-                      f' -n i')
+            os.system(
+                f'hotpants -inim {template_file}'
+                f' -tmplim {comparison_file}'
+                f' -outim {difference_file}'
+                f' -ng 3 6 {0.5 * sigma_match} 4 {sigma_match} 2 {2 * sigma_match}'
+                f' -oki {output}kernel.fits'
+                f' -n i'
+            )
 
             # We then reverse the pixels of the difference image, giving transients positive flux (so that SExtractor
             # can see them)

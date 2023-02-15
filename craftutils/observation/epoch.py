@@ -93,7 +93,13 @@ def write_epoch_directory(directory: dict):
     p.save_params(_epoch_directory_path(), directory)
 
 
-def add_to_epoch_directory(field_name: str, instrument: str, mode: str, epoch_name: str):
+def add_to_epoch_directory(
+        field_name: str,
+        instrument: str,
+        mode: str,
+        epoch_name: str,
+        **other
+):
     """
     Adds a single epoch to the epoch directory.
     :param field_name:
@@ -109,6 +115,7 @@ def add_to_epoch_directory(field_name: str, instrument: str, mode: str, epoch_na
         "mode": mode,
         "epoch_name": epoch_name,
     }
+    directory[epoch_name].update(other)
     write_epoch_directory(directory=directory)
 
 
@@ -327,11 +334,17 @@ class Epoch:
 
         u.debug_print(2, f"Epoch.__init__(): {self}.do_kwargs ==", self.do_kwargs)
 
+        dkwargs = {}
+        if "filters" in self.__dict__:
+            dkwargs["bands"] = self.__dict__["filters"]
+
         add_to_epoch_directory(
             field_name=self.field.name,
             instrument=self.instrument_name,
             mode=self.mode,
-            epoch_name=self.name)
+            epoch_name=self.name,
+            **dkwargs
+        )
 
         self.param_file = kwargs
 
