@@ -21,8 +21,37 @@ from astropy.time import Time
 
 debug_level = 0
 
+def export(obj):
+    """
+    A function used for decorating those objects which may be exported from a file.
+    Taken from `a solution posted by mhostetter <https://github.com/jbms/sphinx-immaterial/issues/152>`_
 
+    :param obj: The object to be added to __all__
+    :return:
+    """
+    # Determine the private module that defined the object
+    module = sys.modules[obj.__module__]
+
+    # Set the object's module to the package name. This way the REPL will display the object
+    # as craftutils.obj and not craftutils._private_module.obj
+    obj.__module__ = "craftutils"
+
+    # Append this object to the private module's "all" list
+    public_members = getattr(module, "__all__", [])
+    public_members.append(obj.__name__)
+    setattr(module, "__all__", public_members)
+
+    return obj
+
+
+@export
 def pad_zeroes(n: int, length: int = 2):
+    """
+
+    :param n:
+    :param length:
+    :return:
+    """
     n_str = str(n)
     while len(n_str) < length:
         n_str = "0" + n_str
@@ -283,8 +312,12 @@ def check_quantity(
 
     :param number: Quantity (or not) to check.
     :param unit: Unit to check for.
-    :param allow_mismatch: If False, even compatible units will not be allowed.
-    :param convert: If True, convert compatible Quantity to units unit.
+    :param allow_mismatch: If `False`, even compatible units will not be allowed.
+    :param enforce_equivalency: If `True`, and if `allow_mismatch` is True, a `units.UnitsError` will be raised if the
+        `number` has units that are not equivalent to `unit`.
+        That is, set this (and `allow_mismatch`) to `True` if you want to ensure `number` has the same
+        dimensionality as `unit`, but not necessarily the same units. Savvy?
+    :param convert: If `True`, convert compatible `Quantity` to units `unit`.
     :return:
     """
     if number is None:
@@ -915,7 +948,7 @@ def find_nearest(array, value, sorted: bool = False):
         return len(array) - 1, array[-1]
 
     idx = np.searchsorted(array, value, side="left")
-    if idx == len(array) or math.fabs(value - array[idx - 1]) < math.fabs(value - array[idx]):
+    if idx == len(array) or np.abs(value - array[idx - 1]) < np.abs(value - array[idx]):
         return idx - 1, array[idx - 1]
     else:
         return idx, array[idx]

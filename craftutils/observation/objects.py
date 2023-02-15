@@ -1,4 +1,4 @@
-from typing import Union, Tuple, List
+from typing import Union, List
 import os
 import copy
 
@@ -17,14 +17,13 @@ import astropy.io.fits as fits
 import craftutils.params as p
 import craftutils.astrometry as astm
 import craftutils.utils as u
-import craftutils.observation.instrument as inst
 import craftutils.retrieve as r
 import craftutils.observation as obs
+import craftutils.observation.instrument as inst
+import craftutils.observation.filters as filters
 
-try:
-    cosmology = cosmo.Planck18
-except AttributeError:
-    cosmology = cosmo.Planck15
+
+cosmology = cosmo.Planck18
 
 quantity_support()
 
@@ -43,7 +42,10 @@ uncertainty_dict = {
     "stat": 0.0
 }
 
+__all__ = []
 
+
+@u.export
 def skycoord_to_position_dict(skycoord: SkyCoord):
     ra_float = skycoord.ra.value
     dec_float = skycoord.dec.value
@@ -60,6 +62,7 @@ def skycoord_to_position_dict(skycoord: SkyCoord):
     return position
 
 
+@u.export
 class PositionUncertainty:
     def __init__(
             self,
@@ -246,6 +249,7 @@ class PositionUncertainty:
         }
 
 
+@u.export
 class Object:
     def __init__(
             self,
@@ -460,7 +464,7 @@ class Object:
     def add_photometry(
             self,
             instrument: Union[str, inst.Instrument],
-            fil: Union[str, inst.Filter],
+            fil: Union[str, filters.Filter],
             epoch_name: str,
             mag: units.Quantity, mag_err: units.Quantity,
             snr: float,
@@ -1223,11 +1227,11 @@ class Object:
         obj.cat_row = row
         return obj
 
-
+@u.export
 class Star(Object):
     pass
 
-
+@u.export
 class Extragalactic(Object):
     def __init__(
             self,
@@ -1310,7 +1314,7 @@ class Extragalactic(Object):
         theta = (distance * units.rad / self.D_A).to(units.arcsec)
         return theta
 
-
+@u.export
 class Galaxy(Extragalactic):
     def __init__(
             self,
@@ -1539,7 +1543,7 @@ class Galaxy(Extragalactic):
                    field=field,
                    **dictionary)
 
-
+@u.export
 class TransientHostCandidate(Galaxy):
     def __init__(
             self,
@@ -1571,7 +1575,7 @@ dm_host_median = {
     "james_22B": 186 * dm_units
 }
 
-
+@u.export
 class Transient(Object):
     def __init__(
             self,
@@ -1601,13 +1605,19 @@ class Transient(Object):
         return default_params
 
 
+@u.export
 class FRB(Transient):
-    ism_models = {}
     def __init__(
             self,
             dm: Union[float, units.Quantity] = None,
             **kwargs
     ):
+        """
+        Initialise.
+
+        :param dm: The dispersion measure of the FRB. If provided without units, pc cm^-3 will be assumed.
+        :param kwargs:
+        """
         super().__init__(
             **kwargs
         )
@@ -1759,9 +1769,9 @@ class FRB(Transient):
                 )
         else:
             return self._dm_mw_halo(
-                    halo_model=model,
-                    **kwargs
-                )
+                halo_model=model,
+                **kwargs
+            )
 
     def _dm_mw_halo(
             self,

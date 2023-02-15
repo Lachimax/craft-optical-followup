@@ -16,6 +16,8 @@ from astropy.table import Table, QTable
 
 from craftutils import utils as u
 
+__all__ = []
+
 yaml.AstropyDumper.ignore_aliases = lambda *args: True
 
 instruments_imaging = [
@@ -62,6 +64,7 @@ config_dir = os.path.join(home_path, ".craftutils")
 config_file = os.path.join(config_dir, "config.yaml")
 
 
+@u.export
 def check_for_config():
     u.mkdir_check(config_dir)
     config_dict = load_params(config_file)
@@ -105,6 +108,12 @@ def load_params(file: str):
         p = None
         u.debug_print(1, 'No parameter file found at', str(file) + ', returning None.')
     return p
+
+
+def check_abs_path(path: str, root: str = "top_data_dir"):
+    if not os.path.isabs(path):
+        path = os.path.join(config[root], str(path))
+    return path
 
 
 def sanitise_yaml_dict(dictionary: dict):
@@ -200,6 +209,7 @@ def write_config():
     yaml_to_json(config_file)
 
 
+@u.export
 def set_param_dir(path: str, write: bool = True):
     config["param_dir"] = path
     global param_dir
@@ -275,10 +285,16 @@ def set_esoreflex_input_dir(path: str, write: bool = True):
     set_config_path(key="esoreflex_input_dir", path=path, write=write)
 
 
+@u.export
 def set_data_dir(path: str, write: bool = True):
     set_config_path(key="top_data_dir", path=path, write=write)
     global data_dir
     data_dir = path
+    u.mkdir_check_nested(path, remove_last=False)
+
+
+def set_table_dir(path: str, write: bool = True):
+    set_config_path(key="table_dir", path=path, write=write)
     u.mkdir_check_nested(path, remove_last=False)
 
 
@@ -944,6 +960,7 @@ def params_init(param_file: Union[str, dict]):
 
 
 def load_output_file(obj):
+    print(obj.data_path, obj.name)
     if obj.data_path is not None and obj.name is not None:
         obj.output_file = os.path.join(obj.data_path, f"{obj.name}_outputs.yaml")
         outputs = load_params(file=obj.output_file)

@@ -5,10 +5,10 @@
 # -*- coding: utf-8 -*-
 
 # Code by Lachlan Marnoch, 2021
-import json
 import os
 
 import craftutils.observation.field as fld
+import craftutils.observation.epoch as ep
 import craftutils.params as p
 import craftutils.utils as u
 
@@ -29,7 +29,6 @@ def main(
         class_star_tolerance: float,
         debug_level: int,
 ):
-
     if not p.param_dir:
         param_dir = u.user_input(
             message="Please enter a path to use as the param directory. This will be created if it does not exist.",
@@ -39,7 +38,6 @@ def main(
         p.set_param_dir(param_dir, write=True)
 
     if not p.data_dir:
-
         param_dir = u.user_input(
             message="Please enter a path to use as the top-level data directory. This will be created if it does "
                     "not exist. It should be on a drive with plenty of space!",
@@ -49,19 +47,19 @@ def main(
         p.set_data_dir(param_dir, write=True)
 
     if not config["table_dir"]:
-        param_dir = u.user_input(
+        table_dir = u.user_input(
             message="Please enter a directory in which to write tables describing observations etc. This will be created if it does "
                     "not exist.",
             input_type=str,
             default=os.path.join(p.data_dir, "tables")
         )
-        p.set_data_dir(param_dir, write=True)
+        p.set_table_dir(table_dir, write=True)
 
     u.debug_level = debug_level
 
     new_field = False
 
-    directory = fld.load_epoch_directory()
+    directory = ep.load_epoch_directory()
 
     if epoch_name is None and instrument is not None:
         print(f"Looking for epochs with instrument {instrument}")
@@ -108,9 +106,9 @@ def main(
         instrument = "vlt-fors2"
 
         epoch_name = f"{field_name}_FORS2_1"
-        fld.FORS2ImagingEpoch.new_yaml(
+        ep.FORS2ImagingEpoch.new_yaml(
             name=epoch_name,
-            path=fld.FORS2ImagingEpoch.build_param_path(
+            path=ep.FORS2ImagingEpoch.build_param_path(
                 instrument_name=instrument,
                 field_name=field_name,
                 epoch_name=epoch_name
@@ -175,6 +173,7 @@ def main(
                                   options=["Imaging", "Spectroscopy", "Objects", "Exit"])
 
     mode = mode.lower()
+    epoch = None
 
     if mode == "exit":
         exit()
@@ -188,7 +187,7 @@ def main(
         else:
             if instrument is None:
                 instrument = fld.select_instrument(mode="spectroscopy")
-            epoch = fld.SpectroscopyEpoch.from_params(epoch_name, instrument=instrument, field=field)
+            epoch = ep.SpectroscopyEpoch.from_params(epoch_name, instrument=instrument, field=field)
 
     elif mode == "imaging":
         if epoch_name is None:
@@ -201,7 +200,7 @@ def main(
         else:
             if instrument is None:
                 instrument = fld.select_instrument(mode="imaging")
-            epoch = fld.ImagingEpoch.from_params(epoch_name, instrument=instrument, field=field)
+            epoch = ep.ImagingEpoch.from_params(epoch_name, instrument=instrument, field=field)
             epoch.field = field
 
     elif mode == "objects":
@@ -209,7 +208,7 @@ def main(
         if u.select_yn_exit("Update photometry from all epochs?"):
             epochs = field.gather_epochs_imaging()
             for epoch_name in epochs:
-                epoch = fld.epoch_from_directory(epoch_name)
+                epoch = ep.epoch_from_directory(epoch_name)
                 epoch.do = [-1]
                 # Run only the last stage of each epoch pipeline
                 epoch.pipeline()

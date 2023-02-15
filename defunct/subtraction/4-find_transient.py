@@ -60,12 +60,12 @@ def main(field, subtraction_path, epoch, instrument):
 
         comparison_zeropoint, _, airmass, _, comparison_extinction, _ = ph.select_zeropoint(comparison_name, f, instrument=instrument)
 
-        cat_sextractor['mag'], _, _ = ph.magnitude_complete(flux=cat_sextractor['flux_aper'],
+        cat_sextractor['mag'], _, _ = ph.magnitude_instrumental(flux=cat_sextractor['flux_aper'],
                                                             exp_time=exp_time, airmass=airmass,
                                                             zeropoint=comparison_zeropoint,
                                                             ext=comparison_extinction)
 
-        cat_sextractor['mag_auto'], _, _ = ph.magnitude_complete(flux=cat_sextractor['flux_auto'],
+        cat_sextractor['mag_auto'], _, _ = ph.magnitude_instrumental(flux=cat_sextractor['flux_auto'],
                                                                  exp_time=exp_time, airmass=airmass,
                                                                  zeropoint=comparison_zeropoint,
                                                                  ext=comparison_extinction)

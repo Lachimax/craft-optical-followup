@@ -21,13 +21,36 @@ import craftutils.params as p
 import craftutils.astrometry as am
 import craftutils.utils as u
 
+__all__ = []
+
 quantity_support()
 
-
+@u.export
 def plot_kron(fig: plt.Figure, data_title: str, instrument: str, f: str, index: Union[int, list], catalogue: str,
               n: int, n_x: int, n_y: int,
               image_name: str, frame: Union[int, float], cmap: str = 'viridis', vmin: float = None, vmax: float = None,
               des: bool = False, offset_ra: int = 0, offset_dec: int = 0):
+    """
+
+    :param fig:
+    :param data_title:
+    :param instrument:
+    :param f:
+    :param index:
+    :param catalogue:
+    :param n:
+    :param n_x:
+    :param n_y:
+    :param image_name:
+    :param frame:
+    :param cmap:
+    :param vmin:
+    :param vmax:
+    :param des:
+    :param offset_ra:
+    :param offset_dec:
+    :return:
+    """
     table = Table().read(catalogue, format='ascii.csv')
 
     if type(index) is int:
@@ -614,11 +637,19 @@ def plot_file(path: str, label: str = None, colour: str = None, show: bool = Fal
 
 
 def plot_gal_params(
-        hdu: fits.HDUList, ras: Union[list, np.ndarray, float], decs: Union[list, np.ndarray, float],
-        a: Union[list, np.ndarray, float], b: Union[list, np.ndarray, float],
-        theta: Union[list, np.ndarray, float], colour: str = 'white',
+        hdu: fits.HDUList,
+        ras: Union[list, np.ndarray, float],
+        decs: Union[list, np.ndarray, float],
+        a: Union[list, np.ndarray, float],
+        b: Union[list, np.ndarray, float],
+        theta: Union[list, np.ndarray, float],
+        colour: str = 'white',
         show_centre: bool = False,
-        label: str = None, world: bool = True, world_axes: bool = True, **kwargs):
+        label: str = None,
+        world: bool = True,
+        world_axes: bool = True,
+        **kwargs
+):
     """
 
     :param hdu:
@@ -628,7 +659,6 @@ def plot_gal_params(
     :param b: In degrees.
     :param theta: In degrees, apparently.
     :param colour:
-    :param offset:
     :param show_centre:
     :return:
     """
@@ -704,9 +734,15 @@ def plot_all_params(
     plt.subplot(projection=wcs_image)
     norm = ImageNormalize(data, interval=ZScaleInterval(), stretch=SqrtStretch())
     plt.imshow(data, origin='lower', norm=norm, )
-    plot_gal_params(hdu=image, ras=cat[ra_key], decs=cat[dec_key], a=cat[a_key],
-                    b=cat[b_key],
-                    theta=cat[theta_key], colour='red')
+    plot_gal_params(
+        hdu=image,
+        ras=cat[ra_key],
+        decs=cat[dec_key],
+        a=cat[a_key],
+        b=cat[b_key],
+        theta=cat[theta_key],
+        colour='red'
+    )
     if kron:
         plot_gal_params(hdu=image, ras=cat[ra_key], decs=cat[dec_key], a=cat[kron_key] * cat[a_key],
                         b=cat[kron_key] * cat[b_key],
