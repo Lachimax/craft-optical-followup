@@ -158,13 +158,13 @@ class SEDModel:
 
     def move_to_redshift(self, z_new: float = 1.):
         if z_new != self.z:
-            self.model_table = _d_nu_d_lambda(self.model_table)
-            new_tbl = self.model_table["wavelength", "frequency", "flux_nu", "d_nu"].copy()
-            new_tbl["flux_nu_d_nu"] = new_tbl["flux_nu"] * new_tbl["d_nu"]
+            # self.model_table = _d_nu_d_lambda(self.model_table)
+            new_tbl = self.model_table["wavelength", "frequency", "flux_nu"].copy()
+            # new_tbl["flux_nu_d_nu"] = new_tbl["flux_nu"] * new_tbl["d_nu"]
             new_tbl["wavelength"] = ph.redshift_wavelength(wavelength=new_tbl["wavelength"], z=self.z, z_new=z_new)
             new_tbl["frequency"] = ph.redshift_frequency(nu=new_tbl["frequency"], z=self.z, z_new=z_new)
-            new_tbl = _d_nu_d_lambda(new_tbl)
-            new_tbl["flux_nu"] = new_tbl["flux_nu_d_nu"] / new_tbl["d_nu"]
+            # new_tbl = _d_nu_d_lambda(new_tbl)
+            # new_tbl["flux_nu"] = new_tbl["flux_nu_d_nu"] / new_tbl["d_nu"]
             new_tbl["flux_nu"] = ph.redshift_flux_nu(
                 flux=new_tbl["flux_nu"],
                 z=self.z,
