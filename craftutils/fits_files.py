@@ -456,7 +456,11 @@ def sort_by_filter(path: 'str'):
             sh.move(path + file, filter_path)
 
 
-def get_pixel_scale(file: Union['fits.hdu_list.hdulist.HDUList', 'str'], ext: int = 0, astropy_units: bool = False):
+def get_pixel_scale(
+        file: Union['fits.hdu_list.hdulist.HDUList', 'str'],
+        ext: int = 0,
+        astropy_units: bool = False
+):
     """
     Using the FITS file header, obtains the pixel scale of the file (in degrees).
     Declination scale is the true angular size of the pixel.
