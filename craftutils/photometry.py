@@ -127,13 +127,21 @@ def image_psf_diagnostics(
 
     if type(stars) is table.QTable:
         if not isinstance(stars["GAUSSIAN_FWHM_FITTED"], units.Quantity):
-            stars["GAUSSIAN_FWHM_FITTED"] *= units.deg
+            stars["GAUSSIAN_FWHM_FITTED"] *= units.arcsec
         if not isinstance(stars["MOFFAT_FWHM_FITTED"], units.Quantity):
-            stars["MOFFAT_FWHM_FITTED"] *= units.deg
+            stars["MOFFAT_FWHM_FITTED"] *= units.arcsec
+
+    print()
+    print("STARS")
 
     for j, star in enumerate(stars):
         ra = star[ra_col]
         dec = star[dec_col]
+
+        print(star)
+
+        print(ra)
+        print(dec)
 
         window = ff.trim_frame_point(hdu=hdu, ra=ra, dec=dec, frame=frame, ext=ext)
         data = window[ext].data
@@ -151,7 +159,7 @@ def image_psf_diagnostics(
         model_init = models.Moffat2D(x_0=frame, y_0=frame)
         fitter = fitting.LevMarLSQFitter()
         model = fitter(model_init, x, y, data)
-        fwhm = (model.fwhm * units.pixel).to(units.degree, scale)
+        fwhm = (model.fwhm * units.pixel).to(units.arcsec, scale)
         star["MOFFAT_FWHM_FITTED"] = fwhm
         star["MOFFAT_GAMMA_FITTED"] = model.gamma.value
         star["MOFFAT_ALPHA_FITTED"] = model.alpha.value
@@ -164,11 +172,18 @@ def image_psf_diagnostics(
 
         model_init.y_stddev.tied = tie_stddev
 
+        print(fwhm)
         model = fitter(model_init, x, y, data)
         fwhm = (model.x_fwhm * units.pixel).to(units.arcsec, scale)
+        print(star["GAUSSIAN_FWHM_FITTED"])
         star["GAUSSIAN_FWHM_FITTED"] = fwhm
-
+        print(star["GAUSSIAN_FWHM_FITTED"])
         stars[j] = star
+        print(stars[j]["GAUSSIAN_FWHM_FITTED"])
+        print(stars[j])
+        print()
+
+    print()
 
     clipped = sigma_clip(stars["MOFFAT_FWHM_FITTED"], masked=True, sigma=2)
     stars_clip_moffat = stars[~clipped.mask]
@@ -197,16 +212,19 @@ def image_psf_diagnostics(
                     label="Full sample",
                     bins=int(np.sqrt(len(stars)))
                 )
+                plt.legend()
+                plt.savefig(os.path.join(output, f"{plot_file_prefix}_psf_histogram_{colname}_full.png"))
+                plt.close()
                 plt.hist(
-                    stars_clip_moffat[colname].to(units.arcsec),
+                    stars[colname].to(units.arcsec),
                     edgecolor='black',
                     linewidth=1.2,
                     label="Sigma-clipped",
                     fc=(0, 0, 0, 0),
-                    bins=int(np.sqrt(len(stars_clip_moffat)))
+                    bins=int(np.sqrt(len(stars)))
                 )
                 plt.legend()
-                plt.savefig(os.path.join(output, f"{plot_file_prefix}_psf_histogram_{colname}.png"))
+                plt.savefig(os.path.join(output, f"{plot_file_prefix}_psf_histogram_{colname}_clipped.png"))
                 plt.close()
 
     return stars_clip_moffat, stars_clip_gauss, stars_clip_sex

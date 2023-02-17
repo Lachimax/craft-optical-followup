@@ -2442,7 +2442,11 @@ class ImagingImage(Image):
             star_class_tol=star_class_tol,
         )
 
-        fwhm_gauss = stars_gauss["GAUSSIAN_FWHM_FITTED"]
+        stars_moffat.write(os.path.join(output_path, "psf_diag_stars_moffat.ecsv"), overwrite=True)
+        stars_gauss.write(os.path.join(output_path, "psf_diag_stars_gauss.ecsv"), overwrite=True)
+        stars_sex.write(os.path.join(output_path, "psf_diag_stars_sex.ecsv"), overwrite=True)
+
+        fwhm_gauss = stars_gauss["GAUSSIAN_FWHM_FITTED"] # [~np.isnan(stars_gauss["GAUSSIAN_FWHM_FITTED"])]
         self.fwhm_median_gauss = np.nanmedian(fwhm_gauss)
         self.fwhm_max_gauss = np.nanmax(fwhm_gauss)
         self.fwhm_min_gauss = np.nanmin(fwhm_gauss)
@@ -2450,7 +2454,7 @@ class ImagingImage(Image):
         self.fwhm_rms_gauss = np.sqrt(np.mean(fwhm_gauss ** 2))
         self.send_column_to_source_cat("GAUSSIAN_FWHM_FITTED", stars_gauss)
 
-        fwhm_moffat = stars_moffat["MOFFAT_FWHM_FITTED"]
+        fwhm_moffat = stars_moffat["MOFFAT_FWHM_FITTED"] # [~np.isnan(stars_moffat["MOFFAT_FWHM_FITTED"])]
         self.fwhm_median_moffat = np.nanmedian(fwhm_moffat)
         self.fwhm_max_moffat = np.nanmax(fwhm_moffat)
         self.fwhm_min_moffat = np.nanmin(fwhm_moffat)
@@ -2458,7 +2462,7 @@ class ImagingImage(Image):
         self.fwhm_rms_moffat = np.sqrt(np.mean(fwhm_moffat ** 2))
         self.send_column_to_source_cat("MOFFAT_FWHM_FITTED", stars_moffat)
 
-        fwhm_sextractor = stars_sex["FWHM_WORLD"].to(units.arcsec)
+        fwhm_sextractor = stars_sex["FWHM_WORLD"] # [~np.isnan(stars_sex["FWHM_WORLD"])].to(units.arcsec)
         self.fwhm_median_sextractor = np.nanmedian(fwhm_sextractor)
         self.fwhm_max_sextractor = np.nanmax(fwhm_sextractor)
         self.fwhm_min_sextractor = np.nanmin(fwhm_sextractor)
@@ -2478,7 +2482,8 @@ class ImagingImage(Image):
                 "fwhm_max": self.fwhm_max_gauss.to(units.arcsec),
                 "fwhm_min": self.fwhm_min_gauss.to(units.arcsec),
                 "fwhm_sigma": self.fwhm_sigma_gauss.to(units.arcsec),
-                "fwhm_rms": self.fwhm_rms_gauss.to(units.arcsec)
+                "fwhm_rms": self.fwhm_rms_gauss.to(units.arcsec),
+                "n_stars": len(fwhm_gauss)
             },
             "moffat": {
                 "fwhm_median": self.fwhm_median_moffat.to(units.arcsec),
