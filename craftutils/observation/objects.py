@@ -218,7 +218,6 @@ class PositionUncertainty:
         return np.sqrt(self.a_sys ** 2 + self.a_stat ** 2), np.sqrt(self.b_sys ** 2 + self.b_stat ** 2)
 
     def uncertainty_quadrature_equ(self):
-        print(self.ra_sys, self.ra_stat, self.dec_sys, self.dec_stat)
         return np.sqrt(self.ra_sys ** 2 + self.ra_stat ** 2), np.sqrt(self.dec_sys ** 2 + self.dec_stat ** 2)
 
     # TODO: Finish this
@@ -761,6 +760,14 @@ class Object:
                 u.detect_problem_table(photometry_tbl, fmt="csv")
                 photometry_tbl.write(output.replace(".ecsv", fmt[fmt.find("."):]), format=fmt, overwrite=True)
         return photometry_tbl
+
+    # def sandf_galactic_extinction(
+    #     self,
+    #     band: List[filters.Filter]
+    # ):
+    #     import extinction
+    #     extinction.fitzpatrick99(tbl["lambda_eff"], a_v, r_v) * units.mag
+    #     pass
 
     def estimate_galactic_extinction(self, ax=None, r_v: float = 3.1, **kwargs):
         import extinction

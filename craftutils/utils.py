@@ -599,15 +599,12 @@ def uncertainty_func(arg, err, func=lambda x: np.log10(x), absolute=False):
     :return:
     """
     measurement = func(arg)
-    print("\narg", arg)
-    print("\nmeasurement", measurement)
     # One of these should come out negative - that becomes the minus error, and the positive the plus error.
     error_plus = func(arg + err) - measurement
     error_minus = func(arg - err) - measurement
 
     error_plus_actual = []
     error_minus_actual = []
-    print("\nerror_plus", error_plus)
     try:
         for i, _ in enumerate(error_plus):
             error_plus_actual.append(np.max([error_plus[i], error_minus[i]]))
@@ -630,7 +627,6 @@ def uncertainty_func_percent(arg, err, func=lambda x: np.log10(x)):
 def get_column_names(path, delimiter=','):
     with open(path) as f:
         names = f.readline().split(delimiter)
-    print(names)
     return names
 
 
@@ -644,7 +640,6 @@ def get_column_names_sextractor(path):
                 line_list.remove("")
             columns.append(line_list[2])
             line = f.readline()
-    print(columns)
     return columns
 
 

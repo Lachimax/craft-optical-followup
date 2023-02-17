@@ -725,10 +725,11 @@ class Field:
             )
 
     @classmethod
-    def from_params(cls, name):
+    def from_params(cls, name, quiet: bool = False):
         if name in active_fields:
             return active_fields[name]
-        print("Initializing field...")
+        if not quiet:
+            print("Initializing field...")
         path = cls.build_param_path(field_name=name)
         return cls.from_file(param_file=path)
 

@@ -960,7 +960,6 @@ def params_init(param_file: Union[str, dict]):
 
 
 def load_output_file(obj):
-    print(obj.data_path, obj.name)
     if obj.data_path is not None and obj.name is not None:
         obj.output_file = os.path.join(obj.data_path, f"{obj.name}_outputs.yaml")
         outputs = load_params(file=obj.output_file)

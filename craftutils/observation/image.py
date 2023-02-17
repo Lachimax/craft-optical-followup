@@ -3306,7 +3306,10 @@ class ImagingImage(Image):
             ext: int = 0,
             frame: units.Quantity = 10 * units.pix,
             output: str = None,
-            show: bool = False, title: str = None):
+            show: bool = False,
+            title: str = None,
+            find: SkyCoord = None
+    ):
 
         plt.close()
         fig = plt.figure()
@@ -3350,6 +3353,11 @@ class ImagingImage(Image):
         if title is None:
             title = self.name
         title = u.latex_sanitise(title)
+        if find is not None:
+            x_find, y_find = self.world_to_pixel(find)
+            x_find -= left
+            y_find -= bottom
+            ax.scatter(x_find, y_find, c="red", marker="x")
         ax.set_title(title)
         fig.savefig(os.path.join(output))
         if show:
