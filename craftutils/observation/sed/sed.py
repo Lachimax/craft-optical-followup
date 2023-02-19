@@ -16,7 +16,7 @@ class SEDModel:
 
     def __init__(
             self,
-            z: float,
+            z: float = None,
             path: str = None,
             model_table: table.QTable = None,
             **kwargs
@@ -38,6 +38,8 @@ class SEDModel:
             self.load_data()
         elif model_table is not None:
             self.model_table = model_table
+
+    def prep_data(self):
         self.prep_columns()
 
     def __getitem__(self, *items):
@@ -51,6 +53,7 @@ class SEDModel:
 
     def load_data(self):
         self.model_table = table.QTable.read(self.path)
+        self.prep_data()
 
     def prep_columns(self):
         self.sanitise_columns()
