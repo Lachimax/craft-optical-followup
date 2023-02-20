@@ -31,8 +31,8 @@ class GordonProspectorModel(SEDModel):
             self.model_flux_path = kwargs["model_flux_path"]
         elif path is not "" and os.path.isfile(expect):
             self.model_flux_path = expect
-        else:
-            raise ValueError("model_flux_path not given, and no file found at", expect)
+        # else:
+        #     raise ValueError("model_flux_path not given, and no file found at", expect)
 
         self.model_wavelength_path = None
         expect = path + '_wavelengths.txt'
@@ -40,8 +40,8 @@ class GordonProspectorModel(SEDModel):
             self.model_wavelength_path = kwargs["model_wavelength_path"]
         elif path != "" and os.path.isfile(expect):
             self.model_wavelength_path = expect
-        else:
-            raise ValueError("model_wavelength_path not given, and no file found at", expect)
+        # else:
+        #     raise ValueError("model_wavelength_path not given, and no file found at", expect)
 
         self.observed_flux_path = None
         if "observed_flux_path" in kwargs:
@@ -71,20 +71,23 @@ class GordonProspectorModel(SEDModel):
         flux = np.loadtxt(self.model_flux_path) * units.microjansky
         wave = np.loadtxt(self.model_wavelength_path) * units.Angstrom
 
-        if self.observed_flux_path is not None:
+        if self.observed_flux_path is not None and os.path.isfile(self.observed_flux_path):
             obs_flux = np.loadtxt(self.observed_flux_path) * units.microjansky
         else:
             obs_flux = []
+            self.observed_flux_path = None
 
-        if self.observed_wavelength_path is not None:
-            obs_wave = np.loadtxt(self.observed_wavelength_path)
+        if self.observed_wavelength_path is not None and os.path.isfile(self.observed_wavelength_path):
+            obs_wave = np.loadtxt(self.observed_wavelength_path) * units.angstrom
         else:
             obs_wave = []
+            self.observed_wavelength_path = None
 
-        if self.observed_flux_err_path is not None:
-            obs_flux_err = np.loadtxt(self.observed_flux_err_path)
+        if self.observed_flux_err_path is not None and os.path.isfile(self.observed_flux_err_path):
+            obs_flux_err = np.loadtxt(self.observed_flux_err_path) * units.microjansky
         else:
             obs_flux_err = []
+            self.observed_flux_err_path = None
 
         self.model_table = table.QTable(
             {
@@ -102,36 +105,4 @@ class GordonProspectorModel(SEDModel):
             obs_dict
         )
         self.prep_data()
-
-    def alexa_plot(self):
-        flux = self.model_table["flux_nu"]
-        wave = self.model_table["wavelength"]
-
-        obs_flux = self.obs_table["flux_nu"]
-        obs_wave = self.obs_table["wavelength"]
-
-        plt.figure(figsize=[12, 8])
-        plt.plot(wave, flux, color='black', alpha=0.7, zorder=2, label='Model')
-        plt.plot(obs_wave, obs_flux, color='red', alpha=1, zorder=1, label='Observed')
-        # plt.xlim(2e3 * units.Angstrom, 15e3 * units.Angstrom)
-        plt.ylim(flux.min(), flux.max())
-
-        plt.legend(loc='best', fontsize=12)
-        plt.ylabel(r'F$_{\nu}$ [$\mu$Jy]', fontsize=15)
-        plt.xlabel(r'Observed Wavelength [$\AA$]', fontsize=15)
-
-        plt.show()
-
-        plt.figure(figsize=[12, 8])
-        plt.plot(wave, flux, color='black', alpha=0.7, zorder=2, label='Model')
-        plt.plot(obs_wave, obs_flux, color='#39BFD0', alpha=0.6, zorder=1, label='Observed')
-        # plt.xlim(2e3 * units.Angstrom, 15e3 * units.Angstrom)
-
-        plt.legend(loc='best', fontsize=12)
-        plt.ylabel(r'F$_{\nu}$ [$ \mu$Jy]', fontsize=15)
-        plt.xlabel(r'Observed Wavelength [$\AA$]', fontsize=15)
-        plt.ylim(obs_flux.min(), obs_flux.max() / 26)
-
-        plt.show()
-
 

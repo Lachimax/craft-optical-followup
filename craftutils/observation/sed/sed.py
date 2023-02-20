@@ -32,7 +32,6 @@ class SEDModel:
         if "cosmology" in kwargs and isinstance(kwargs["cosmology"], cosmology.LambdaCDM):
             self.cosmology = kwargs["cosmology"]
         self.shifted_models = {}
-        self.distances()
         if path is not None:
             self.path = str(path)
             self.load_data()
@@ -40,6 +39,7 @@ class SEDModel:
             self.model_table = model_table
 
     def prep_data(self):
+        self.distances()
         self.prep_columns()
 
     def __getitem__(self, *items):
@@ -64,6 +64,7 @@ class SEDModel:
     def distances(
             self,
     ):
+        print(self.z)
         if self.z is not None:
             self.luminosity_distance = self.cosmology.luminosity_distance(z=self.z)
 
@@ -95,6 +96,7 @@ class SEDModel:
             tbl["luminosity_nu"] = (tbl["luminosity_lambda"] * tbl["wavelength"] ** 2 / constants.c).to("W Hz-1")
         elif "flux_nu" in tbl.colnames:
             tbl["luminosity_nu"] = (tbl["flux_nu"] * self._flux_area())
+        self.model_table = tbl
         return tbl["luminosity_nu"]
 
     def luminosity_per_wavelength(
