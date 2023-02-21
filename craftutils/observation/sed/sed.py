@@ -136,7 +136,7 @@ class SEDModel:
         return tbl
 
     def redshift_wavelength(self, z_shift: float):
-        return ph.redshift_frequency(nu=self.model_table["wavelength"], z=self.z, z_new=z_shift)
+        return ph.redshift_wavelength(wavelength=self.model_table["wavelength"], z=self.z, z_new=z_shift)
 
     def redshift_frequency(self, z_shift: float):
         return ph.redshift_frequency(nu=self.model_table["frequency"], z=self.z, z_new=z_shift)
