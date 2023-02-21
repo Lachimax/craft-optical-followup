@@ -27,6 +27,7 @@ class SEDModel:
         self.model_table: table.QTable = None
         self.obs_table: table.QTable = None
         self.luminosity_distance: units.Quantity = None
+        self.distance_modulus: units.Quantity = None
         self.rest_luminosity = None
         self.cosmology: cosmology.LambdaCDM = self.default_cosmology
         if "cosmology" in kwargs and isinstance(kwargs["cosmology"], cosmology.LambdaCDM):
@@ -66,6 +67,7 @@ class SEDModel:
     ):
         if self.z is not None:
             self.luminosity_distance = self.cosmology.luminosity_distance(z=self.z)
+            self.distance_modulus = ph.distance_modulus(self.luminosity_distance).value
 
     def sanitise_columns(
             self,
@@ -120,19 +122,20 @@ class SEDModel:
         elif "flux_nu" in self.model_table.colnames:
             tbl["flux_lambda"] = tbl["flux_nu"] * tbl["frequency"] ** 2 / constants.c
 
-    def calculate_rest_luminosity(self):
-        self.model_table = _d_nu_d_lambda(self.model_table)
-        tbl = self.model_table[
-            "wavelength", "frequency", "luminosity_lambda", "luminosity_nu", "d_nu", "d_lambda"].copy()
-        tbl["luminosity_lambda_d_lambda"] = (tbl["luminosity_lambda"] * tbl["d_lambda"]).to(units.W)
-        tbl["luminosity_nu_d_nu"] = (tbl["luminosity_nu"] * tbl["d_nu"]).to(units.W)
-        tbl["wavelength"] = self.redshift_wavelength(z_shift=0)
-        tbl["frequency"] = self.redshift_frequency(z_shift=0)
-        tbl = _d_nu_d_lambda(tbl)
-        tbl["luminosity_lambda"] = tbl["luminosity_lambda_d_lambda"] / tbl["d_lambda"]
-        tbl["luminosity_nu"] = (tbl["luminosity_nu_d_nu"] / tbl["d_nu"]).to("solLum Hz-1")
-        self.rest_luminosity = tbl
-        return tbl
+    def calculate_rest_luminosity(self, force: bool = False):
+        if self.rest_luminosity is None or force:
+            self.model_table = _d_nu_d_lambda(self.model_table)
+            tbl = self.model_table[
+                "wavelength", "frequency", "luminosity_lambda", "luminosity_nu", "d_nu", "d_lambda"].copy()
+            tbl["luminosity_lambda_d_lambda"] = (tbl["luminosity_lambda"] * tbl["d_lambda"]).to(units.W)
+            tbl["luminosity_nu_d_nu"] = (tbl["luminosity_nu"] * tbl["d_nu"]).to(units.W)
+            tbl["wavelength"] = self.redshift_wavelength(z_shift=0)
+            tbl["frequency"] = self.redshift_frequency(z_shift=0)
+            tbl = _d_nu_d_lambda(tbl)
+            tbl["luminosity_lambda"] = tbl["luminosity_lambda_d_lambda"] / tbl["d_lambda"]
+            tbl["luminosity_nu"] = (tbl["luminosity_nu_d_nu"] / tbl["d_nu"]).to("solLum Hz-1")
+            self.rest_luminosity = tbl
+        return self.rest_luminosity
 
     def redshift_wavelength(self, z_shift: float):
         return ph.redshift_wavelength(wavelength=self.model_table["wavelength"], z=self.z, z_new=z_shift)
@@ -221,52 +224,58 @@ class SEDModel:
             band: filters.Filter,
     ):
 
-        self.add_band(band)
+        self.luminosity_per_frequency()
+        transmission_obs = self.add_band(band)
+        transmission_emm = self.add_band_rest(band)
+        tbl_obs = self.model_table
+        tbl_emm = self.rest_luminosity
+        lum_obs = np.trapz(
+            x=tbl_obs["luminosity_nu"] * transmission_obs / tbl_obs["frequency"],
+            y=tbl_obs["frequency"]
+        )
+        lum_emm = np.trapz(
+            x=tbl_emm["luminosity_nu"] * transmission_obs / tbl_obs["frequency"],
+            y=tbl_emm["frequency"]
+        )
 
-        return -2.5 * np.log10(10)
+        return -2.5 * np.log10((1 + self.z) * lum_obs / lum_emm)
 
-    # def luminosity_bolometric(self):
-    #
+    def luminosity_bolometric(self):
+        self.luminosity_per_frequency()
+        return np.trapz(
+            y=self.model_table["luminosity_nu"],
+            x=self.model_table["frequency"]
+        )
 
     def add_band_rest(
             self,
             band: filters.Filter
     ):
-        pass
+        """
+
+        :param band:
+        :return:
+        """
+        bn = band.machine_name()
+        self.calculate_rest_luminosity()
+        self.rest_luminosity[bn] = _add_band(self.rest_luminosity, band)
+        self.model_table[f"luminosity_nu_{bn}"] = self.rest_luminosity["luminosity_nu"] * self.rest_luminosity[bn]
+        return self.rest_luminosity[bn]
 
     def add_band(
             self,
             band: filters.Filter,
     ):
         """
-        Regrids a bandpass to the same wavelength coordinates as the data table.
+        Regrids a bandpass to the same wavelength coordinates as the data table, and adds the transmission as a column
+        in the model table.
         :param band:
         :return:
         """
-        tbl = self.model_table
-        band_name = f"{band.name}_{band.instrument.name}"
-        transmission_tbl, _ = band.select_transmission_table()
-        transmission_tbl = transmission_tbl.copy()
-        if band_name not in tbl.colnames:
-            # Find the difference between wavelength entries in the table
-            avg_delta = np.median(np.diff(transmission_tbl["Wavelength"]))
-            # Pad the transmission table with "0" on either side so that the interpolation goes to zero.
-            transmission_tbl.add_row(transmission_tbl[0])
-            transmission_tbl[-1]["Wavelength"] = transmission_tbl["Wavelength"].min() - avg_delta
-            transmission_tbl[-1]["Transmission"] = 0
-            transmission_tbl.add_row(transmission_tbl[0])
-            transmission_tbl[-1]["Wavelength"] = transmission_tbl["Wavelength"].max() + avg_delta
-            transmission_tbl[-1]["Transmission"] = 0
-            transmission_tbl.sort("Wavelength")
-            # Interpolate the transmission table at the wavelength values given in the model table.
-            tbl[band_name] = np.interp(
-                x=tbl[f"wavelength"].value,
-                xp=transmission_tbl["Wavelength"].value,
-                fp=transmission_tbl["Transmission"].value
-            )
-            # Get the flux as seen through this band.
-            tbl[f"flux_nu_{band_name}"] = tbl[band_name] * tbl["flux_nu"]
-        return tbl[band_name]
+        bn = band.machine_name()
+        self.model_table[bn] = _add_band(self.model_table, band)
+        self.model_table[f"flux_nu_{bn}"] = self.model_table["flux_nu"] * self.model_table[bn]
+        return self.model_table[bn]
 
     @classmethod
     def columns(cls):
@@ -283,3 +292,12 @@ def _d_nu_d_lambda(tbl):
     tbl["d_nu"] = d_nu
     tbl = tbl[tbl["d_nu"] != 0]
     return tbl
+
+
+def _add_band(tbl: table.QTable, band: filters.Filter):
+    band_name = band.machine_name()
+    if band_name not in tbl.colnames:
+        tbl.sort("wavelength")
+        tbl[band_name] = band.interp_to_wavelength(tbl[f"wavelength"])
+        # Get the flux as seen through this band.
+    return tbl[band_name]

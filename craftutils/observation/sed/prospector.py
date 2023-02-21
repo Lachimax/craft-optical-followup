@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 
 import astropy.table as table
 import astropy.units as units
+from astropy.cosmology import WMAP9
 
 import craftutils.utils as u
 
@@ -18,6 +19,7 @@ class GordonProspectorModel(SEDModel):
     """
     The `GordonProspectorModel` uses the data model established by [GordonProspector]_.
     """
+    default_cosmology = WMAP9
 
     def __init__(self, **kwargs):
 
@@ -62,7 +64,7 @@ class GordonProspectorModel(SEDModel):
         super().__init__(**kwargs)
         if self.model_wavelength_path is not None and self.model_flux_path is not None:
             self.load_data()
-        
+
     def prep_data(self):
         super().prep_data()
         self.luminosity_per_wavelength()
@@ -96,13 +98,12 @@ class GordonProspectorModel(SEDModel):
             }
         )
         obs_dict = {
-                "wavelength": obs_wave,
-                "flux_nu": obs_flux,
-            }
+            "wavelength": obs_wave,
+            "flux_nu": obs_flux,
+        }
         if len(obs_flux_err) == len(obs_flux):
             obs_dict["err_flux_nu"] = obs_flux_err
         self.obs_table = table.QTable(
             obs_dict
         )
         self.prep_data()
-
