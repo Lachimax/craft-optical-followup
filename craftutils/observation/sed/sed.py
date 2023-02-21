@@ -64,7 +64,6 @@ class SEDModel:
     def distances(
             self,
     ):
-        print(self.z)
         if self.z is not None:
             self.luminosity_distance = self.cosmology.luminosity_distance(z=self.z)
 
@@ -131,7 +130,7 @@ class SEDModel:
         tbl["frequency"] = self.redshift_frequency(z_shift=0)
         tbl = _d_nu_d_lambda(tbl)
         tbl["luminosity_lambda"] = tbl["luminosity_lambda_d_lambda"] / tbl["d_lambda"]
-        tbl["luminosity_nu"] = (tbl["luminosity_nu_d_nu"] / tbl["d_nu"]).to()
+        tbl["luminosity_nu"] = (tbl["luminosity_nu_d_nu"] / tbl["d_nu"]).to("solLum Hz-1")
         self.rest_luminosity = tbl
         return tbl
 
@@ -217,17 +216,23 @@ class SEDModel:
             use_quantum_factor=use_quantum_factor
         )
 
-    #
-    # def k_correction(
-    #         self,
-    #         band_obs: filters.Filter,
-    #         band_rest: filters.Filter = None,
-    # ):
-    #     if band_rest is None:
-    #         band_rest = band_obs
-    #
+    def k_correction(
+            self,
+            band: filters.Filter,
+    ):
+
+        self.add_band(band)
+
+        return -2.5 * np.log10(10)
+
     # def luminosity_bolometric(self):
     #
+
+    def add_band_rest(
+            self,
+            band: filters.Filter
+    ):
+        pass
 
     def add_band(
             self,

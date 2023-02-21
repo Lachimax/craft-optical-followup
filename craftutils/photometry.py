@@ -450,12 +450,12 @@ def magnitude_absolute_from_luminosity(
         quantum_factor = 1
 
     luminosity_band = np.trapz(
-        y=lum_tbl["L"] * lum_tbl["e"] * quantum_factor,
+        y=lum_tbl["L"] * lum_tbl["e"] * quantum_factor / lum_tbl["nu"],
         x=lum_tbl["nu"]
     )
 
     luminosity_ab = np.trapz(
-        y=AB_zeropoint * lum_tbl["e"] * quantum_factor,
+        y=AB_zeropoint * lum_tbl["e"] * quantum_factor / lum_tbl["nu"],
         x=lum_tbl["nu"]
     )
 
