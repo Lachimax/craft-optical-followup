@@ -81,10 +81,21 @@ class Filter:
     def __str__(self):
         return f"{self.instrument}.{self.name}"
 
-    def vega_magnitude_offset(self):
+    def vega_magnitude_offset(
+            self,
+            transmission: table.QTable = None
+    ):
         zp_ab = 3631 * units.Jy
         zp_vega = self.vega_zeropoint
-        delta_mag = 2.5 * np.log10(zp_ab / zp_vega)
+        delta_mag = 2.5 * np.log10(
+            np.trapz(
+                y=zp_ab * transmission["Transmission"],
+                x=transmission["Wavelength"]
+            ) / np.trapz(
+                y=zp_vega * transmission["Transmission"],
+                x=transmission["Wavelength"]
+            )
+        )
         return delta_mag * units.mag
 
     def compare_transmissions(self, other: 'Filter'):

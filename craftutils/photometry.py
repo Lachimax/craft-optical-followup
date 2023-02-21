@@ -138,7 +138,7 @@ def image_psf_diagnostics(
         ra = star[ra_col]
         dec = star[dec_col]
 
-        print(star)
+        # print(star)
 
         print(ra)
         print(dec)
@@ -172,15 +172,15 @@ def image_psf_diagnostics(
 
         model_init.y_stddev.tied = tie_stddev
 
-        print(fwhm)
         model = fitter(model_init, x, y, data)
         fwhm = (model.x_fwhm * units.pixel).to(units.arcsec, scale)
+        print(fwhm)
         print(star["GAUSSIAN_FWHM_FITTED"])
         star["GAUSSIAN_FWHM_FITTED"] = fwhm
         print(star["GAUSSIAN_FWHM_FITTED"])
         stars[j] = star
         print(stars[j]["GAUSSIAN_FWHM_FITTED"])
-        print(stars[j])
+        # print(stars[j])
         print()
 
     print()
@@ -417,16 +417,49 @@ def magnitude_AB(
     else:
         quantum_factor = 1
 
-    numerator = np.trapz(
+    flux_band = np.trapz(
         y=flux_tbl["f"] * quantum_factor * flux_tbl["e"],
         x=flux_tbl["nu"]
     )
-    denominator = np.trapz(
+    flux_ab = np.trapz(
         y=AB_zeropoint * quantum_factor * flux_tbl["e"],
         x=flux_tbl["nu"]
     )
 
-    return -2.5 * np.log10(numerator / denominator)
+    return -2.5 * np.log10(flux_band / flux_ab)
+
+
+def magnitude_absolute_from_luminosity(
+        luminosity_nu: units.Quantity,
+        band_transmission: Union[np.ndarray, units.Quantity],
+        frequency: units.Quantity,
+        use_quantum_factor: bool = True
+):
+    lum_tbl = table.QTable(
+        data={
+            "nu": frequency,
+            "e": band_transmission,
+            "L": luminosity_nu
+        }
+    )
+    lum_tbl.sort("nu")
+
+    if use_quantum_factor:
+        quantum_factor = (constants.h * lum_tbl["nu"]) ** -1
+    else:
+        quantum_factor = 1
+
+    luminosity_band = np.trapz(
+        y=lum_tbl["L"] * lum_tbl["e"] * quantum_factor,
+        x=lum_tbl["nu"]
+    )
+
+    luminosity_ab = np.trapz(
+        y=AB_zeropoint * lum_tbl["e"] * quantum_factor,
+        x=lum_tbl["nu"]
+    )
+
+    return -2.5 * np.log10(luminosity_band / (luminosity_ab * 4 * np.pi * 100 * units.pc ** 2))
 
 
 def magnitude_instrumental(
