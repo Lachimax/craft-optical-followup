@@ -127,6 +127,37 @@ class Filter:
         difference = np.sum(np.abs(other_transmission - self_transmission))
         return difference
 
+    def interp_to_wavelength(
+            self,
+            wavelengths: units.Quantity,
+            table_name: str = None,
+    ):
+        if table_name is None:
+            tbl, _ = self.select_transmission_table()
+        else:
+            tbl = self.transmission_tables[table_name]
+        tbl = tbl.copy()
+        tbl.sort("Wavelength")
+        # Find the difference between wavelength entries in the table
+        avg_delta = np.median(np.diff(tbl["Wavelength"]))
+        # Pad the transmission table with "0" on either side so that the interpolation goes to zero.
+        tbl.add_row(tbl[0])
+        tbl[-1]["Wavelength"] = tbl["Wavelength"].min() - avg_delta
+        tbl[-1]["Transmission"] = 0
+        tbl.add_row(tbl[0])
+        tbl[-1]["Wavelength"] = tbl["Wavelength"].max() + avg_delta
+        tbl[-1]["Transmission"] = 0
+        tbl.sort("Wavelength")
+        # Interpolate the transmission table at the wavelength values given in the model table.
+        return np.interp(
+            x=wavelengths,
+            xp=tbl["Wavelength"],
+            fp=tbl["Transmission"]
+        )
+
+
+
+
     def compare_wavelength_range(self, other: 'Filter'):
         tbl_self, tbl_other = self.find_comparable_table(other)
         self_wavelength = tbl_self["Wavelength"]
@@ -165,6 +196,9 @@ class Filter:
         else:
             name = self.name
         return name
+
+    def machine_name(self):
+        return f"{self.instrument.name}_{self.name.replace('_', '-')}"
 
     def load_instrument(self):
         if isinstance(self.instrument, str):
