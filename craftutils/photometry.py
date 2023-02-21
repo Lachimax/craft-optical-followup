@@ -542,6 +542,10 @@ def magnitude_uncertainty(
     return mag, error
 
 
+def distance_modulus(distance: units.Quantity):
+    return (5 * np.log10(distance / units.pc) - 5) * units.mag
+
+
 def determine_zeropoint_sextractor(
         sextractor_cat: Union[str, table.QTable],
         cat_path: str,

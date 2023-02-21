@@ -21,6 +21,7 @@ import craftutils.retrieve as r
 import craftutils.observation as obs
 import craftutils.observation.instrument as inst
 import craftutils.observation.filters as filters
+from craftutils.photometry import distance_modulus
 
 
 cosmology = cosmo.Planck18
@@ -1278,7 +1279,7 @@ class Extragalactic(Object):
     def distance_modulus(self):
         d = self.luminosity_distance()
         if d is not None:
-            mu = (5 * np.log10(d / units.pc) - 5) * units.mag
+            mu = distance_modulus(d)
             return mu
 
     def absolute_magnitude(
