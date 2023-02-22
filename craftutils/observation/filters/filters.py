@@ -149,10 +149,13 @@ class Filter:
         tbl[-1]["Transmission"] = 0
         tbl.sort("Wavelength")
         # Interpolate the transmission table at the wavelength values given in the model table.
+        # print(wavelengths, tbl["Wavelength"], tbl["Transmission"])
+        # print(len(wavelengths), len(tbl["Wavelength"]), len(tbl["Transmission"]))
+        wavelengths = wavelengths.to("AA")
         return np.interp(
-            x=wavelengths,
-            xp=tbl["Wavelength"],
-            fp=tbl["Transmission"]
+            x=wavelengths.value,
+            xp=tbl["Wavelength"].value,
+            fp=tbl["Transmission"].value
         )
 
 

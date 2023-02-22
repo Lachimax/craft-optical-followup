@@ -299,5 +299,4 @@ def _add_band(tbl: table.QTable, band: filters.Filter):
     if band_name not in tbl.colnames:
         tbl.sort("wavelength")
         tbl[band_name] = band.interp_to_wavelength(tbl[f"wavelength"])
-        # Get the flux as seen through this band.
     return tbl[band_name]
