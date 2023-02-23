@@ -242,6 +242,7 @@ class SEDModel:
 
     def luminosity_bolometric(self):
         self.luminosity_per_frequency()
+        self.model_table.sort("frequency")
         return np.trapz(
             y=self.model_table["luminosity_nu"],
             x=self.model_table["frequency"]
