@@ -322,7 +322,7 @@ class Image:
     ):
 
         if not os.path.isfile(path):
-            raise FileNotFoundError(f"The image file file {path} does not exist.")
+            raise FileNotFoundError(f"The image file {path} does not exist.")
         active_images[path] = self
         if path.endswith("_outputs.yaml"):
             self.output_file = path

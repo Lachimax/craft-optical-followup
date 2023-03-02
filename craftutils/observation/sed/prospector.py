@@ -31,7 +31,7 @@ class GordonProspectorModel(SEDModel):
         expect = path + '_spectrum.txt'
         if "model_flux_path" in kwargs:
             self.model_flux_path = kwargs["model_flux_path"]
-        elif path is not "" and os.path.isfile(expect):
+        elif path != "" and os.path.isfile(expect):
             self.model_flux_path = expect
         # else:
         #     raise ValueError("model_flux_path not given, and no file found at", expect)
