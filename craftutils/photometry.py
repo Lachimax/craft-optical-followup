@@ -53,7 +53,8 @@ def image_psf_diagnostics(
         dec_col: str = "DEC",
         output: str = None,
         min_stars: int = 30,
-        plot_file_prefix: str = ""
+        plot_file_prefix: str = "",
+        debug_plots: bool = False
 ):
     """
 
