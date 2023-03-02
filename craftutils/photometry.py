@@ -141,16 +141,24 @@ def image_psf_diagnostics(
 
         # print(star)
 
-        print(ra)
-        print(dec)
+        # print(ra)
+        # print(dec)
 
         window = ff.trim_frame_point(hdu=hdu, ra=ra, dec=dec, frame=frame, ext=ext)
+        if debug_plots and output is not None:
+            plot_dir = os.path.join(output, "debug_plots")
+            u.mkdir_check(plot_dir)
+            # window.writeto(os.path.join(plot_dir, f"{star['NUMBER']}.fits", overwrite=True))
         data = window[ext].data
+        if debug_plots and output is not None:
+            fig, ax = plt.subplots()
+            ax.imshow(data)
+            fig.savefig(os.path.join(plot_dir, f"{star['NUMBER']}_data.png"))
         _, scale = ff.get_pixel_scale(hdu, astropy_units=True, ext=ext)
 
         mean, median, stddev = stats.sigma_clipped_stats(data)
         data -= median
-        data[np.isfinite(data)] = np.nanmedian(data)
+        data[~np.isfinite(data)] = np.nanmedian(data)
 
         y, x = np.mgrid[:data.shape[0], :data.shape[1]]
 
@@ -165,6 +173,15 @@ def image_psf_diagnostics(
         star["MOFFAT_GAMMA_FITTED"] = model.gamma.value
         star["MOFFAT_ALPHA_FITTED"] = model.alpha.value
 
+        if debug_plots and output is not None:
+            fig = plt.figure()
+            ax_data_moffat = fig.add_subplot(2, 3, 1)
+            ax_data_moffat.imshow(data)
+            ax_model_moffat = fig.add_subplot(2, 3, 2)
+            ax_model_moffat.imshow(model(x, y))
+            ax_residuals_moffat = fig.add_subplot(2, 3, 3)
+            ax_residuals_moffat.imshow(data - model(x, y))
+
         # Then a good-old-fashioned Gaussian, with the x and y axes tied together.
         model_init = models.Gaussian2D(x_mean=frame, y_mean=frame)
 
@@ -175,25 +192,35 @@ def image_psf_diagnostics(
 
         model = fitter(model_init, x, y, data)
         fwhm = (model.x_fwhm * units.pixel).to(units.arcsec, scale)
-        print(fwhm)
-        print(star["GAUSSIAN_FWHM_FITTED"])
+        # print(fwhm)
+        # print(star["GAUSSIAN_FWHM_FITTED"])
         star["GAUSSIAN_FWHM_FITTED"] = fwhm
-        print(star["GAUSSIAN_FWHM_FITTED"])
+        # print(star["GAUSSIAN_FWHM_FITTED"])
         stars[j] = star
-        print(stars[j]["GAUSSIAN_FWHM_FITTED"])
+        # print(stars[j]["GAUSSIAN_FWHM_FITTED"])
         # print(stars[j])
-        print()
+        # print()
+        if debug_plots and output is not None:
+            ax_data_gauss = fig.add_subplot(2, 3, 4)
+            ax_data_gauss.imshow(data)
+            ax_model_gauss = fig.add_subplot(2, 3, 5)
+            ax_model_gauss.imshow(model(x, y))
+            ax_residuals_gauss = fig.add_subplot(2, 3, 6)
+            ax_residuals_gauss.imshow(data - model(x, y))
+            fig.savefig(os.path.join(plot_dir, str(star["NUMBER"]) + ".png"))
 
-    print()
+    # print()
 
     clipped = sigma_clip(stars["MOFFAT_FWHM_FITTED"], masked=True, sigma=2)
     stars_clip_moffat = stars[~clipped.mask]
     stars_clip_moffat = stars_clip_moffat[np.isfinite(stars_clip_moffat["MOFFAT_FWHM_FITTED"])]
+    stars_clip_moffat = stars_clip_moffat[stars_clip_moffat["MOFFAT_FWHM_FITTED"] > 0.1 * units.arcsec]
     print(f"Num stars after sigma clipping w. astropy Moffat PSF:", len(stars_clip_moffat))
 
     clipped = sigma_clip(stars["GAUSSIAN_FWHM_FITTED"], masked=True, sigma=2)
     stars_clip_gauss = stars[~clipped.mask]
     stars_clip_gauss = stars_clip_gauss[np.isfinite(stars_clip_gauss["GAUSSIAN_FWHM_FITTED"])]
+    stars_clip_gauss = stars_clip_gauss[stars_clip_gauss["GAUSSIAN_FWHM_FITTED"] > 0.1 * units.arcsec]
     print(f"Num stars after sigma clipping w. astropy Gaussian PSF:", len(stars_clip_gauss))
 
     clipped = sigma_clip(stars["FWHM_WORLD"], masked=True, sigma=2)
@@ -206,27 +233,33 @@ def image_psf_diagnostics(
     if output is not None:
 
         with quantity_support():
+            tmp_dict = {
+                "MOFFAT_FWHM_FITTED": stars_clip_moffat,
+                "GAUSSIAN_FWHM_FITTED": stars_clip_gauss,
+                "FWHM_WORLD": stars_clip_sex
+            }
 
             for colname in ["MOFFAT_FWHM_FITTED", "GAUSSIAN_FWHM_FITTED", "FWHM_WORLD"]:
-                plt.hist(
+                fig, ax = plt.subplots()
+                ax.hist(
                     stars[colname][np.isfinite(stars[colname])].to(units.arcsec),
                     label="Full sample",
                     bins=int(np.sqrt(len(stars)))
                 )
-                plt.legend()
-                plt.savefig(os.path.join(output, f"{plot_file_prefix}_psf_histogram_{colname}_full.png"))
-                plt.close()
-                plt.hist(
-                    stars[colname].to(units.arcsec),
+                ax.legend()
+                fig.savefig(os.path.join(output, f"{plot_file_prefix}_psf_histogram_{colname}_full.png"))
+
+                fig, ax = plt.subplots()
+                ax.hist(
+                    tmp_dict[colname][colname].to(units.arcsec),
                     edgecolor='black',
                     linewidth=1.2,
                     label="Sigma-clipped",
                     fc=(0, 0, 0, 0),
                     bins=int(np.sqrt(len(stars)))
                 )
-                plt.legend()
-                plt.savefig(os.path.join(output, f"{plot_file_prefix}_psf_histogram_{colname}_clipped.png"))
-                plt.close()
+                ax.legend()
+                fig.savefig(os.path.join(output, f"{plot_file_prefix}_psf_histogram_{colname}_clipped.png"))
 
     return stars_clip_moffat, stars_clip_gauss, stars_clip_sex
 
