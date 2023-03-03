@@ -4337,6 +4337,9 @@ class ImagingImage(Image):
         :return:
         """
 
+        if a_world < 0. or b_world < 0.:
+            return None
+
         if detection_threshold is None:
             detection_threshold = self.detection_threshold()
 

@@ -1626,7 +1626,12 @@ class ImagingEpoch(Epoch):
             reproject = False
         self.trim_coadded(output_dir, images=images, reproject=reproject)
 
-    def trim_coadded(self, output_dir: str, images: dict = None, reproject: bool = False):
+    def trim_coadded(
+            self,
+            output_dir: str,
+            images: dict = None,
+            reproject: bool = False
+    ):
         if images is None:
             images = self.coadded
 
@@ -1858,6 +1863,9 @@ class ImagingEpoch(Epoch):
         """
         if not self.quiet:
             print(f"Getting finalised photometry for key objects, in {image_type}.")
+
+        match_tolerance = u.check_quantity(match_tolerance, unit=units.arcsec)
+
         obs.load_master_objects_table()
 
         staging_dir = os.path.join(
@@ -1937,6 +1945,8 @@ class ImagingEpoch(Epoch):
                     u.debug_print(2, "ImagingImage.get_photometry(): nearest.colnames ==", nearest.colnames)
                     err = nearest[f'MAGERR_AUTO_ZP_best']
                     if not self.quiet:
+                        print()
+                        print(obj.name)
                         print("FILTER:", fil)
                         print(f"MAG_AUTO = {nearest['MAG_AUTO_ZP_best']} +/- {err}")
                         print(f"A = {nearest['A_WORLD'].to(units.arcsec)}; B = {nearest['B_WORLD'].to(units.arcsec)}")

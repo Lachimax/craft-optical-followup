@@ -357,6 +357,7 @@ class Object:
             method="sep",
             unmasked=self.position_photometry
         )
+
         mag_results = deepest_img.sep_elliptical_magnitude(
             centre=self.position_photometry,
             a_world=self.a,
