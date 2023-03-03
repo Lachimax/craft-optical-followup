@@ -1738,7 +1738,7 @@ class ImagingEpoch(Epoch):
         if "snr_min" not in kwargs or kwargs["snr_min"] is None:
             kwargs["snr_min"] = 3.
         if "suppress_select" not in kwargs:
-            kwargs["suppress_select"] = False
+            kwargs["suppress_select"] = True
 
         deepest = self.zeropoint(
             image_dict=image_dict,

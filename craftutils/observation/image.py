@@ -4179,7 +4179,7 @@ class ImagingImage(Image):
             back_output = None
             segmap_output = None
 
-        self.model_background_photometry(ext=ext, write=back_output, mask=True)
+        self.model_background_photometry(ext=ext, write=back_output, do_mask=True)
         self.load_wcs()
         self.extract_pixel_scale()
         if not self.wcs[ext].footprint_contains(centre):
