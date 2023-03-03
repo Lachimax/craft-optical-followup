@@ -1,7 +1,5 @@
 import os
 
-import astropy.units as units
-
 import craftutils.params as p
 import craftutils.utils as u
 from craftutils.photometry import gain_unit

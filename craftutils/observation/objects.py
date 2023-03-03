@@ -1,8 +1,7 @@
-from typing import Union, Tuple, List
+from typing import Union, List
 import os
 import copy
 
-import frb.frb
 import matplotlib.pyplot as plt
 import numpy as np
 
@@ -18,14 +17,14 @@ import astropy.io.fits as fits
 import craftutils.params as p
 import craftutils.astrometry as astm
 import craftutils.utils as u
-import craftutils.observation.instrument as inst
 import craftutils.retrieve as r
 import craftutils.observation as obs
+import craftutils.observation.instrument as inst
+import craftutils.observation.filters as filters
+from craftutils.photometry import distance_modulus
 
-try:
-    cosmology = cosmo.Planck18
-except AttributeError:
-    cosmology = cosmo.Planck15
+
+cosmology = cosmo.Planck18
 
 quantity_support()
 
@@ -44,7 +43,10 @@ uncertainty_dict = {
     "stat": 0.0
 }
 
+__all__ = []
 
+
+@u.export
 def skycoord_to_position_dict(skycoord: SkyCoord):
     ra_float = skycoord.ra.value
     dec_float = skycoord.dec.value
@@ -53,12 +55,15 @@ def skycoord_to_position_dict(skycoord: SkyCoord):
     ra = s[:s.find(" ")]
     dec = s[s.find(" ") + 1:]
 
-    position = {"dec": {"decimal": dec_float, "dms": dec},
-                "ra": {"decimal": ra_float, "hms": ra}}
+    position = {
+        "alpha": {"decimal": ra_float, "hms": ra},
+        "delta": {"decimal": dec_float, "dms": dec},
+    }
 
     return position
 
 
+@u.export
 class PositionUncertainty:
     def __init__(
             self,
@@ -112,7 +117,7 @@ class PositionUncertainty:
                 if "stat" in uncertainty[ra_key] and uncertainty[ra_key]["stat"] is not None:
                     ra_err_stat = uncertainty[ra_key]["stat"]
                     if isinstance(ra_err_stat, str):
-                        ra_err_stat = Longitude(ra_err_stat)
+                        ra_err_stat = (Longitude(ra_err_stat) * np.cos(position.dec)).to("arcsec")
 
             dec_key = None
             if "dec" in uncertainty and uncertainty["dec"] is not None:
@@ -214,7 +219,6 @@ class PositionUncertainty:
         return np.sqrt(self.a_sys ** 2 + self.a_stat ** 2), np.sqrt(self.b_sys ** 2 + self.b_stat ** 2)
 
     def uncertainty_quadrature_equ(self):
-        print(self.ra_sys, self.ra_stat, self.dec_sys, self.dec_stat)
         return np.sqrt(self.ra_sys ** 2 + self.ra_stat ** 2), np.sqrt(self.dec_sys ** 2 + self.dec_stat ** 2)
 
     # TODO: Finish this
@@ -245,6 +249,7 @@ class PositionUncertainty:
         }
 
 
+@u.export
 class Object:
     def __init__(
             self,
@@ -352,6 +357,7 @@ class Object:
             method="sep",
             unmasked=self.position_photometry
         )
+
         mag_results = deepest_img.sep_elliptical_magnitude(
             centre=self.position_photometry,
             a_world=self.a,
@@ -459,7 +465,7 @@ class Object:
     def add_photometry(
             self,
             instrument: Union[str, inst.Instrument],
-            fil: Union[str, inst.Filter],
+            fil: Union[str, filters.Filter],
             epoch_name: str,
             mag: units.Quantity, mag_err: units.Quantity,
             snr: float,
@@ -756,6 +762,14 @@ class Object:
                 u.detect_problem_table(photometry_tbl, fmt="csv")
                 photometry_tbl.write(output.replace(".ecsv", fmt[fmt.find("."):]), format=fmt, overwrite=True)
         return photometry_tbl
+
+    # def sandf_galactic_extinction(
+    #     self,
+    #     band: List[filters.Filter]
+    # ):
+    #     import extinction
+    #     extinction.fitzpatrick99(tbl["lambda_eff"], a_v, r_v) * units.mag
+    #     pass
 
     def estimate_galactic_extinction(self, ax=None, r_v: float = 3.1, **kwargs):
         import extinction
@@ -1222,11 +1236,11 @@ class Object:
         obj.cat_row = row
         return obj
 
-
+@u.export
 class Star(Object):
     pass
 
-
+@u.export
 class Extragalactic(Object):
     def __init__(
             self,
@@ -1266,7 +1280,7 @@ class Extragalactic(Object):
     def distance_modulus(self):
         d = self.luminosity_distance()
         if d is not None:
-            mu = (5 * np.log10(d / units.pc) - 5) * units.mag
+            mu = distance_modulus(d)
             return mu
 
     def absolute_magnitude(
@@ -1309,7 +1323,7 @@ class Extragalactic(Object):
         theta = (distance * units.rad / self.D_A).to(units.arcsec)
         return theta
 
-
+@u.export
 class Galaxy(Extragalactic):
     def __init__(
             self,
@@ -1538,7 +1552,7 @@ class Galaxy(Extragalactic):
                    field=field,
                    **dictionary)
 
-
+@u.export
 class TransientHostCandidate(Galaxy):
     def __init__(
             self,
@@ -1570,7 +1584,7 @@ dm_host_median = {
     "james_22B": 186 * dm_units
 }
 
-
+@u.export
 class Transient(Object):
     def __init__(
             self,
@@ -1591,12 +1605,19 @@ class Transient(Object):
             self.tns_name = kwargs["tns_name"]
 
 
+@u.export
 class FRB(Transient):
     def __init__(
             self,
             dm: Union[float, units.Quantity] = None,
             **kwargs
     ):
+        """
+        Initialise.
+
+        :param dm: The dispersion measure of the FRB. If provided without units, pc cm^-3 will be assumed.
+        :param kwargs:
+        """
         super().__init__(
             **kwargs
         )
@@ -1604,7 +1625,11 @@ class FRB(Transient):
         if self.dm is not None:
             self.dm = u.check_quantity(self.dm, unit=dm_units)
 
-        self.x_frb = frb.frb.FRB(
+        self.x_frb = None
+
+    def generate_x_frb(self):
+        from frb.frb import FRB
+        self.x_frb = FRB(
             frb_name=self.name,
             coord=self.position,
             DM=self.dm
@@ -1739,6 +1764,21 @@ class FRB(Transient):
         )
         return dm
 
+    def dm_mw_ism(
+            self,
+            ism_model: str = "ne2001",
+            distance: Union[units.Quantity, float] = 100. * units.kpc,
+    ):
+        ism_model = ism_model.lower()
+        if ism_model == "ne2001":
+            func = self.dm_mw_ism_ne2001
+        elif ism_model == "ymw16":
+            func = self.dm_mw_ism_ymw16
+        else:
+            raise ValueError(f"Model {ism_model} not recognised.")
+        dm_ism = func(distance=distance)
+        return dm_ism
+
     def dm_mw_ism_cum(
             self,
             max_distance: units.Quantity = 20. * units.kpc,
@@ -1770,37 +1810,67 @@ class FRB(Transient):
             "d": d
         })
 
-    def dm_mw_halo(self, rmax: float = 1.):
+    def dm_mw_halo(
+            self,
+            model: Union[str, "frb.halos.models.ModifiedNFW"] = "all",
+            **kwargs,
+    ):
         import frb.halos.models as halos
         # from frb.mw import haloDM
-        outputs = {}
-        mw_halo_yf17 = halos.YF17()
-        mw_halo_x = halos.MilkyWay()
-        mw_halo_mb15 = halos.MB15()
-        sun_orbit = 0 * units.m  # 2.7e17 * units.km
-        outputs["dm_halo_mw_yf17"] = mw_halo_yf17.Ne_Rperp(sun_orbit, rmax=rmax) / 2
-        outputs["dm_halo_mw_pz19_rough"] = mw_halo_x.Ne_Rperp(sun_orbit, rmax=rmax) / 2
-        outputs["dm_halo_mw_mb15"] = mw_halo_mb15.Ne_Rperp(sun_orbit, rmax=rmax) / 2
-        # outputs["dm_halo_mw_pz19"] = haloDM(self.position)
-        outputs["dm_halo_mw_pz19"] = self.dm_mw_halo_pz19()
-        return outputs
 
-    def dm_mw_halo_pz19(
+        if isinstance(model, str):
+            model = model.lower()
+            halo_models = {
+                "yf17": halos.YF17,
+                "pz19": halos.MilkyWay,
+                "mb15": halos.MB15
+            }
+            if model == "all":
+                outputs = {}
+                for halo_model in halo_models:
+                    outputs[f"dm_halo_mw_{halo_model}"] = self._dm_mw_halo(
+                        halo_model=halo_models[halo_model](),
+                        **kwargs
+                    )
+                return outputs
+            elif model not in halo_models:
+                raise ValueError(f"Supported halo models are {list(halo_models.keys())}, not {model}")
+            else:
+                return self._dm_mw_halo(
+                    halo_model=halo_models[model](),
+                    **kwargs
+                )
+        else:
+            return self._dm_mw_halo(
+                halo_model=model,
+                **kwargs
+            )
+
+    def _dm_mw_halo(
             self,
-            distance: units.Quantity = None,
-            zero: bool = True,
-            halo_model=None
+            halo_model=None,
+            distance: Union[units.Quantity, float] = 1.,
+            zero_distance: units.Quantity = 10 * units.kpc,
     ):
-        from frb.halos.models import MilkyWay
+        """
+
+        :param distance: Distance from MW centre to which to evaluate DM. If a non-Quantity number is passed, it will be
+            interpreted as a multiple of the model's virial radius (R200).
+        :param zero_distance: The distance to which to zero the inner volume of the halo
+        :param halo_model: Halo model to evaluate.
+        :return:
+        """
+
         from ne2001 import density
         if halo_model is None:
+            from frb.halos.models import MilkyWay
             halo_model = MilkyWay()
-        if distance is None:
-            distance = halo_model.r200
+        if not isinstance(distance, units.Quantity):
+            distance = halo_model.r200 * distance
         u.dequantify(distance, units.kpc)
-        # Zero out inner 10kpc?
-        if zero:
-            halo_model.zero_inner_ne = 10.  # kpc
+        # Zero out inner volume
+        zero_distance = zero_distance.to(units.kpc)
+        halo_model.zero_inner_ne = zero_distance.value  # kpc
         params = dict(F=1., e_density=1.)
         model_ne = density.NEobject(halo_model.ne, **params)
         dm_halo = model_ne.DM(
@@ -1814,16 +1884,19 @@ class FRB(Transient):
             self,
             rmax: float = 1.,
             step_size: units.Quantity = 1 * units.kpc,
+            halo_model: "frb.halos.models.ModifiedNFW" = None,
+            **kwargs
     ):
-        from frb.halos.models import MilkyWay
-        halo_model = MilkyWay()
+        if halo_model is None:
+            from frb.halos.models import MilkyWay
+            halo_model = MilkyWay()
         max_distance = rmax * halo_model.r200
         i = 0 * units.kpc
         dm = []
         d = []
         while i < max_distance:
             d.append(i * 1.)
-            dm_this = self.dm_mw_halo_pz19(distance=i)
+            dm_this = self._dm_mw_halo(halo_model=halo_model, distance=i, **kwargs)
             dm.append(dm_this)
             i += step_size
 
@@ -1831,6 +1904,16 @@ class FRB(Transient):
             "DM": dm,
             "d": d
         })
+
+    def dm_exgal(
+            self,
+            ism_model: str = "ne2001",
+            halo_model: str = "pz19"
+    ):
+        if halo_model == "all":
+            raise ValueError("Please specify a single halo model.")
+        dm_mw = self.dm_mw_halo(model=halo_model) + self.dm_mw_ism(ism_model=ism_model)
+        return self.dm - dm_mw
 
     def dm_cosmic(self, **kwargs):
         from frb.dm.igm import average_DM
@@ -1847,6 +1930,20 @@ class FRB(Transient):
     #     dm_cosmic = self.estimate_dm_cosmic()
     #     dm_halo = 60 * dm_units
     #     return self.dm - dm_ism - dm_cosmic - dm_halo
+
+    def z_from_dm(
+            self,
+            dm_host: units.Quantity = 0,
+            **kwargs
+    ):
+        from frb.dm.igm import z_from_DM
+        dm = self.dm_exgal(**kwargs) - dm_host
+        return z_from_DM(
+            DM=dm,
+            coord=None,
+            cosmo=cosmology,
+            corr_nuisance=False
+        )
 
     def foreground_accounting(
             self,

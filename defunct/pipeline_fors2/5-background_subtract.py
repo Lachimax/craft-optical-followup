@@ -49,7 +49,7 @@ def main(data_dir, data_title, origin, destination, all_synths):
                                  default="polynomial fit")
         degree = None
         if method == "polynomial fit":
-            degree = u.user_input(message=f"Please enter the degree of {method} to use:", typ=int, default=3)
+            degree = u.user_input(message=f"Please enter the degree of {method} to use:", input_type=int, default=3)
         elif method == "ESO backgrounds only":
             eso_back = True
         do_mask = False

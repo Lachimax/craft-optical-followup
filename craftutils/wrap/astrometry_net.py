@@ -1,19 +1,39 @@
 import os
 
+from distutils.spawn import find_executable
+
 import astropy.units as units
 from astropy.coordinates import SkyCoord
 
 from typing import Union
 
-from craftutils.utils import system_command, debug_print, check_quantity
+from craftutils.utils import system_command, debug_print, check_quantity, export
+
+__all__ = []
 
 
-# def add_index_directory(path: str):
-#     cfg_path = "/etc/astrometry.cfg"
-#     line = f"{}"
-#     with open(cfg_path, 'r') as cfg:
-#         cfg_file = cfg.readlines()
-#     cfg_file.index()
+@export
+def add_index_directory(path: str):
+    """
+
+    :param path:
+    :return:
+    """
+    bin_path = os.path.dirname(find_executable("astrometry-engine"))
+    cfg_path = os.path.abspath(os.path.join(bin_path, "..", "etc", "astrometry.cfg"))
+    line = f"add_path {path}\n"
+    with open(cfg_path, 'r') as cfg:
+        cfg_file = cfg.readlines()
+    if line not in cfg_file:
+        path_lines = list(filter(lambda l: l.startswith("add_path"), cfg_file))
+        if path_lines:
+            path_start = cfg_file.index(path_lines[0])
+        else:
+            path_start = 29
+        cfg_file.insert(path_start, line)
+        with open(cfg_path, 'w') as cfg:
+            cfg.writelines(cfg_file)
+
 
 def build_astrometry_index(
         input_fits_catalog: str,

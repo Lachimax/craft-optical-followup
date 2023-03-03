@@ -120,7 +120,8 @@ pyraf/clcache\.v2
 *.fits
 *.par
 
-/param/keys*
-/param/config.yaml
-/param/config.json
+/craftutils/param/keys*
+/craftutils/param/config.yaml
+/craftutils/param/config.json
 /notebooks/
+#/docs/api
