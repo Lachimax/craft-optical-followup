@@ -989,12 +989,24 @@ def update_output_file(obj):
 
 
 def join_data_dir(path: str):
+    """
+    If the path is relative, joins it to data_dir; otherwise returns path unchanged.
+
+    :param path:
+    :return:
+    """
     if not os.path.isabs(path):
         path = os.path.join(data_dir, path)
     return os.path.abspath(path)
 
 
 def split_data_dir(path: str):
+    """
+    If a path is inside data_dir, turns it into a relative path (relative to data_dir); else returns the path unchanged.
+
+    :param path: Must be an absolute path.
+    :return:
+    """
     if not os.path.isabs(path):
         raise ValueError(f"path {path} is not absolute.")
     path = os.path.abspath(path)

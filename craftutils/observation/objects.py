@@ -23,7 +23,6 @@ import craftutils.observation.instrument as inst
 import craftutils.observation.filters as filters
 from craftutils.photometry import distance_modulus
 
-
 cosmology = cosmo.Planck18
 
 quantity_support()
@@ -570,6 +569,7 @@ class Object:
             "photometry": self.photometry,
             "irsa_extinction_path": self.irsa_extinction_path,
             "extinction_law": self.extinction_power_law,
+
         }
 
     def load_output_file(self):
@@ -1236,15 +1236,17 @@ class Object:
         obj.cat_row = row
         return obj
 
+
 @u.export
 class Star(Object):
     pass
+
 
 @u.export
 class Extragalactic(Object):
     def __init__(
             self,
-            z: float = 0.0,
+            z: float = None,
             **kwargs
     ):
         super().__init__(
@@ -1259,11 +1261,12 @@ class Extragalactic(Object):
 
     def set_z(self, z, **kwargs):
         self.z = z
-        if "z_err" in kwargs:
-            self.z_err = kwargs["z_err"]
-        self.D_A = self.angular_size_distance()
-        self.D_L = self.luminosity_distance()
-        self.mu = self.distance_modulus()
+        if z is not None:
+            if "z_err" in kwargs:
+                self.z_err = kwargs["z_err"]
+            self.D_A = self.angular_size_distance()
+            self.D_L = self.luminosity_distance()
+            self.mu = self.distance_modulus()
 
     def angular_size_distance(self):
         if self.z is not None:
@@ -1323,11 +1326,12 @@ class Extragalactic(Object):
         theta = (distance * units.rad / self.D_A).to(units.arcsec)
         return theta
 
+
 @u.export
 class Galaxy(Extragalactic):
     def __init__(
             self,
-            z: float = 0.0,
+            z: float = None,
             **kwargs
     ):
         super().__init__(
@@ -1552,6 +1556,7 @@ class Galaxy(Extragalactic):
                    field=field,
                    **dictionary)
 
+
 @u.export
 class TransientHostCandidate(Galaxy):
     def __init__(
@@ -1584,6 +1589,7 @@ dm_host_median = {
     "james_22B": 186 * dm_units
 }
 
+
 @u.export
 class Transient(Object):
     def __init__(
@@ -1596,6 +1602,7 @@ class Transient(Object):
             **kwargs
         )
         self.host_galaxy = host_galaxy
+        self.host_candidate_tables = {}
         self.host_candidates = []
         if not isinstance(date, time.Time) and date is not None:
             date = time.Time(date)
@@ -1634,25 +1641,40 @@ class FRB(Transient):
             coord=self.position,
             DM=self.dm
         )
+        return self.x_frb
 
     def probabilistic_association(
             self,
-            img
+            p_u: float,
+            img: 'craftutils.observation.image.ImagingImage',
+            radius: float = 10
     ):
+        """
+        Performs a customised PATH run on an image.
+
+        :param p_u: The prior for the probability of the host being unseen in the image.
+        :param img: The image on which to run PATH.
+        :param frb_object: the FRB in question.
+        :param radius: Maximum distance in arcseconds for an object to be considered as a candidate.
+        :return:
+        """
+        import frb.associate.frbassociate as associate
+        import astropath.path as path
         astm_rms = img.extract_astrometry_err()
         a, b = self.position_err.uncertainty_quadrature()
-        a_img = np.sqrt(a ** 2 + astm_rms ** 2)
-        b_img = np.sqrt(b ** 2 + astm_rms ** 2)
-
-        self.x_frb.set_ee(
-            a=a_img.value,
-            b=b_img.value,
+        a = np.sqrt(a ** 2 + astm_rms ** 2)
+        b = np.sqrt(b ** 2 + astm_rms ** 2)
+        x_frb = self.generate_x_frb()
+        x_frb.set_ee(
+            a=a.value,
+            b=b.value,
             theta=0.,
             cl=0.68,
         )
-        img.load_output_file()
+        #     img.load_output_file()
         img.extract_pixel_scale()
-        filname = f'VLT_FORS2_{img.filter.band_name}'
+        instname = img.instrument.name.replace("-", "_").upper()
+        filname = f'{instname}_{img.filter.band_name}'
         config = dict(
             max_radius=radius,
             skip_bayesian=False,
@@ -1666,9 +1688,9 @@ class FRB(Transient):
             cand_separation=radius * units.arcsec,
             plate_scale=(1 * units.pix).to(units.arcsec, img.pixel_scale_y),
         )
-        print("P(U) ==", p_U)
+        print("P(U) ==", p_u)
         priors = path.priors.load_std_priors()["adopted"]
-        priors["U"] = p_U
+        priors["U"] = p_u
         ass = associate.run_individual(
             config=config,
             #         show=True,
@@ -1689,14 +1711,102 @@ class FRB(Transient):
         cand_tbl["separation"] *= units.arcsec
         cand_tbl[filname] *= units.mag
 
-        self.x_frb.set_ee(
-            a=a.value,
-            b=b.value,
-            theta=0.,
-            cl=0.68,
-        )
+        self.host_candidate_tables[img.name] = cand_tbl
+        self.update_output_file()
 
         return cand_tbl, p_ox, p_ux
+
+    def consolidate_candidate_tables(self):
+        # Build a shared catalogue of host candidates.
+        path_cat = None
+        for tbl_name in self.host_candidate_tables:
+            print(tbl_name)
+            cand_tbl = self.host_candidate_tables[tbl_name]
+            if path_cat is None:
+                path_cat = cand_tbl["label", "ra", "dec", "separation"]
+            path_cat, matched, dist = astm.match_catalogs(
+                cat_1=path_cat, cat_2=cand_tbl,
+                ra_col_1="ra", dec_col_1="dec",
+                keep_non_matches=True,
+                tolerance=0.7 * units.arcsec
+            )
+            print(matched["matched"].sum(), len(path_cat))
+
+            for prefix in ["label", "P_Ox", "mag"]:
+
+                matched[f"{prefix}_{f}"] = matched[prefix]
+
+                for col in list(filter(lambda c: c.startswith(prefix + "_"), path_cat.colnames)):
+                    matched[col] = np.ones(len(matched)) * -999.
+
+                path_cat[f"{prefix}_{f}"] = np.ones(len(path_cat)) * -999.
+                path_cat[f"{prefix}_{f}"][path_cat["matched"]] = matched[f"{prefix}_{f}"][matched["matched"]]
+
+            for row in matched[np.invert(matched["matched"])]:
+                print(f'Adding label {row["label"]} from {fil} table. ra={row["ra"]}, dec={row["dec"]}')
+                path_cat.add_row(row[path_cat.colnames])
+
+        # path_cat["coord"] = SkyCoord(path_cat["ra"], path_cat["dec"])
+        path_cat.sort("P_Ox_R", reverse=True)
+        path_cat["id"] = np.zeros(len(path_cat), dtype=str)
+        for i, row in enumerate(path_cat):
+            row["id"] = chr(65 + i)
+        self.host_candidate_tables["consolidated"] = path_cat
+        for row in path_cat:
+            idn = self.name.replace("FRB", "")
+            host_candidate = Galaxy(
+                z=None,
+                position=SkyCoord(row["ra"], row["dec"]),
+                field=self.field,
+                name=f"HC{row['id']}_{idn}"
+            )
+            self.host_candidates.append(host_candidate)
+
+    def write_candidate_tables(self):
+        table_paths = {}
+        for img_name in self.host_candidate_tables:
+            cand_tbl = self.host_candidate_tables[img_name]
+            write_path = os.path.join(self.data_path, f"PATH_table_{img_name}.ecsv")
+            cand_tbl.write(write_path)
+            table_paths[img_name] = p.split_data_dir(write_path)
+        return table_paths
+
+    def _output_dict(self):
+        output = super()._output_dict()
+        cand_list = []
+        for obj in self.host_candidates:
+            cand_list.append(
+                {
+                    "name": obj.name,
+                    "position": obj.position,
+                    "z": obj.z,
+                }
+            )
+
+        output.update({
+            "host_candidate_tables": self.write_candidate_tables(),
+            "host_candidates": cand_list
+        })
+
+    def load_output_file(self):
+        outputs = super().load_output_file()
+        if outputs is not None:
+            if "host_candidate_tables" in outputs:
+                tables = outputs["host_candidate_tables"]
+                for table_name in tables:
+                    tbl_path = tables[table_name]
+                    tbl_path = p.join_data_dir(tbl_path)
+                    self.host_candidate_tables[table_name] = table.QTable.read(tbl_path)
+            if "host_candidates" in outputs:
+                for obj in outputs["host_candidates"]:
+                    self.host_candidates.append(
+                        Galaxy(
+                            z=obj["z"],
+                            position=obj["field"],
+                            name=obj.name,
+                            field=self.field
+                        )
+                    )
 
     @classmethod
     def default_params(cls):
