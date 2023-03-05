@@ -87,6 +87,9 @@ def check_for_config():
         config_dict = load_params(config_file)
         # except FileNotFoundError:
         #     warnings.warn("config file was not created properly; most likely you are running something other than Linux.")
+    for path_name in config_dict:
+        path = config_dict[path_name]
+        config_dict[path_name] = os.path.abspath(path)
     else:
         for param in config_dict:
             if config_dict[param] is not None:
@@ -984,6 +987,21 @@ def update_output_file(obj):
     else:
         raise ValueError("Output could not be saved to file due to lack of valid output path.")
 
+
+def join_data_dir(path: str):
+    if not os.path.isabs(path):
+        path = os.path.join(data_dir, path)
+    return os.path.abspath(path)
+
+
+def split_data_dir(path: str):
+    if not os.path.isabs(path):
+        raise ValueError(f"path {path} is not absolute.")
+    path = os.path.abspath(path)
+    if path.startswith(data_dir):
+        return path.replace(data_dir, "")
+    else:
+        return path
 
 # def change_param_name(folder):
 
