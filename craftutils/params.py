@@ -89,7 +89,8 @@ def check_for_config():
         #     warnings.warn("config file was not created properly; most likely you are running something other than Linux.")
     for path_name in config_dict:
         path = config_dict[path_name]
-        config_dict[path_name] = os.path.abspath(path)
+        if path is not None:
+            config_dict[path_name] = os.path.abspath(path)
     else:
         for param in config_dict:
             if config_dict[param] is not None:
