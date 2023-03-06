@@ -1716,10 +1716,12 @@ class FRB(Transient):
 
         return cand_tbl, p_ox, p_ux
 
-    def consolidate_candidate_tables(self):
+    def consolidate_candidate_tables(self, sort_by="separation"):
         # Build a shared catalogue of host candidates.
         path_cat = None
         for tbl_name in self.host_candidate_tables:
+            if tbl_name == "consolidated":
+                continue
             print(tbl_name)
             cand_tbl = self.host_candidate_tables[tbl_name]
             if path_cat is None:
@@ -1734,20 +1736,25 @@ class FRB(Transient):
 
             for prefix in ["label", "P_Ox", "mag"]:
 
-                matched[f"{prefix}_{f}"] = matched[prefix]
+                print(matched.colnames)
+
+                if f"{prefix}_{tbl_name}" not in matched.colnames:
+                    print(f"{prefix}_{tbl_name}")
+                    matched[f"{prefix}_{tbl_name}"] = matched[prefix]
 
                 for col in list(filter(lambda c: c.startswith(prefix + "_"), path_cat.colnames)):
                     matched[col] = np.ones(len(matched)) * -999.
 
-                path_cat[f"{prefix}_{f}"] = np.ones(len(path_cat)) * -999.
-                path_cat[f"{prefix}_{f}"][path_cat["matched"]] = matched[f"{prefix}_{f}"][matched["matched"]]
+                path_cat[f"{prefix}_{tbl_name}"] = np.ones(len(path_cat)) * -999.
+                path_cat[f"{prefix}_{tbl_name}"][path_cat["matched"]] = matched[f"{prefix}_{tbl_name}"][
+                    matched["matched"]]
 
             for row in matched[np.invert(matched["matched"])]:
-                print(f'Adding label {row["label"]} from {fil} table. ra={row["ra"]}, dec={row["dec"]}')
+                print(f'Adding label {row["label"]} from {tbl_name} table. ra={row["ra"]}, dec={row["dec"]}')
                 path_cat.add_row(row[path_cat.colnames])
 
         # path_cat["coord"] = SkyCoord(path_cat["ra"], path_cat["dec"])
-        path_cat.sort("P_Ox_R", reverse=True)
+        path_cat.sort(sort_by, reverse=True)
         path_cat["id"] = np.zeros(len(path_cat), dtype=str)
         for i, row in enumerate(path_cat):
             row["id"] = chr(65 + i)
@@ -1761,13 +1768,17 @@ class FRB(Transient):
                 name=f"HC{row['id']}_{idn}"
             )
             self.host_candidates.append(host_candidate)
+        self.update_output_file()
+        return path_cat
 
     def write_candidate_tables(self):
         table_paths = {}
         for img_name in self.host_candidate_tables:
             cand_tbl = self.host_candidate_tables[img_name]
             write_path = os.path.join(self.data_path, f"PATH_table_{img_name}.ecsv")
-            cand_tbl.write(write_path)
+            if "coords" in cand_tbl.colnames:
+                cand_tbl.remove_column("coords")
+            cand_tbl.write(write_path, overwrite=True)
             table_paths[img_name] = p.split_data_dir(write_path)
         return table_paths
 
@@ -1775,18 +1786,19 @@ class FRB(Transient):
         output = super()._output_dict()
         cand_list = []
         for obj in self.host_candidates:
-            cand_list.append(
-                {
-                    "name": obj.name,
-                    "position": obj.position,
-                    "z": obj.z,
-                }
-            )
+            new_dict = Galaxy.default_params()
+            new_dict.update({
+                "name": obj.name,
+                "position": obj.position,
+                "z": obj.z,
+            })
+            cand_list.append(new_dict)
 
         output.update({
             "host_candidate_tables": self.write_candidate_tables(),
             "host_candidates": cand_list
         })
+        return output
 
     def load_output_file(self):
         outputs = super().load_output_file()
@@ -1802,8 +1814,8 @@ class FRB(Transient):
                     self.host_candidates.append(
                         Galaxy(
                             z=obj["z"],
-                            position=obj["field"],
-                            name=obj.name,
+                            position=obj["position"],
+                            name=obj["name"],
                             field=self.field
                         )
                     )

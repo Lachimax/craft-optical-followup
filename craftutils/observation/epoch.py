@@ -1847,14 +1847,40 @@ class ImagingEpoch(Epoch):
         else:
             image_type = "final"
         u.debug_print(2, f"{self}.proc_get_photometry(): image_type ==:", image_type)
+        # Run PATH on imaging if we're doing FRB stuff
+        if isinstance(self.field, fld.FRBField):
+            if 'path_kwargs' in kwargs:
+                path_kwargs = kwargs["path_kwargs"]
+            else:
+                path_kwargs = {
+                    "p_u": 0.2,
+                    "radius": 10
+                }
+            self.probabilistic_association(image_type=image_type, **path_kwargs)
         self.get_photometry(output_dir, image_type=image_type)
+
+    def probabilistic_association(
+            self,
+            image_type: str = "final",
+            **path_kwargs
+    ):
+        image_dict = self._get_images(image_type=image_type)
+        self.field.frb.load_output_file()
+        for fil in image_dict:
+            img = image_dict[fil]
+            self.field.frb.probabilistic_association(
+                img=img,
+                **path_kwargs
+            )
+        self.field.frb.consolidate_candidate_tables()
+        self.field.objects.extend(self.field.frb.host_candidates)
 
     def get_photometry(
             self,
             path: str,
             image_type: str = "final",
             dual: bool = False,
-            match_tolerance: units.Quantity = 3 * units.arcsec
+            match_tolerance: units.Quantity = 1 * units.arcsec,
     ):
         """
         Retrieve photometric properties of key objects and write to disk.
@@ -1880,6 +1906,7 @@ class ImagingEpoch(Epoch):
             fil_output_path = os.path.join(path, fil)
             u.mkdir_check(fil_output_path)
             img = image_dict[fil]
+
             if "secure" not in img.depth:
                 img.estimate_depth()
             if not self.quiet:
@@ -1907,6 +1934,10 @@ class ImagingEpoch(Epoch):
                 separations.append(separation.to(units.arcsec))
                 ra_target.append(obj.position.ra)
                 dec_target.append(obj.position.dec)
+
+                print()
+                print(obj.name)
+                print("FILTER:", fil)
 
                 if separation > match_tolerance:
                     obj.add_photometry(
@@ -1941,13 +1972,12 @@ class ImagingEpoch(Epoch):
                         good_image_path=self.coadded_unprojected[fil].output_file,
                         do_mask=img.mask_nearby()
                     )
+                    print(f"No object detected at position.")
+                    print()
                 else:
                     u.debug_print(2, "ImagingImage.get_photometry(): nearest.colnames ==", nearest.colnames)
                     err = nearest[f'MAGERR_AUTO_ZP_best']
                     if not self.quiet:
-                        print()
-                        print(obj.name)
-                        print("FILTER:", fil)
                         print(f"MAG_AUTO = {nearest['MAG_AUTO_ZP_best']} +/- {err}")
                         print(f"A = {nearest['A_WORLD'].to(units.arcsec)}; B = {nearest['B_WORLD'].to(units.arcsec)}")
                     img.plot_source_extractor_object(
@@ -2098,7 +2128,6 @@ class ImagingEpoch(Epoch):
             psf_fwhm_err = img_projected.extract_header_item(key="PSF_FWHM_ERR")
 
             if img != img_projected:
-
                 img.set_header_items(
                     items={
                         # 'ASTM_RMS': astm_rms,
