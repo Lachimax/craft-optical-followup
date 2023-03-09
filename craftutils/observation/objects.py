@@ -1696,6 +1696,7 @@ class FRB(Transient):
             #         show=True,
             #         verbose=True,
             FRB=x_frb,
+
             prior=priors
             #     skip_bayesian=True
         )
@@ -1732,11 +1733,8 @@ class FRB(Transient):
                 keep_non_matches=True,
                 tolerance=0.7 * units.arcsec
             )
-            print(matched["matched"].sum(), len(path_cat))
 
             for prefix in ["label", "P_Ox", "mag"]:
-
-                print(matched.colnames)
 
                 if f"{prefix}_{tbl_name}" not in matched.colnames:
                     print(f"{prefix}_{tbl_name}")

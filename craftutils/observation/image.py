@@ -1432,7 +1432,7 @@ class ImagingImage(Image):
                 self.dual_mode_template = outputs["dual_mode_template"]
         return outputs
 
-    def select_zeropoint(self, no_user_input: bool = False, preferred: str = None):
+    def select_zeropoint(self, no_user_input: bool = True, preferred: str = None):
 
         if not self.zeropoints:
             print(f"No zeropoints set ({self}.zeropoints is None); try loading output file.")
