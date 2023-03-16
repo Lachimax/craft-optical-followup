@@ -22,6 +22,7 @@ If you make use of this code, please cite [Marnoch2020]_.
    config
    outputs
    instruments
+   software
    references
    api
 
