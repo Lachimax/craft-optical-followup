@@ -246,7 +246,7 @@ def _output_img_dict_list(dictionary: dict):
             out_dict[fil] = None
         elif len(dictionary[fil]) > 0:
             if isinstance(dictionary[fil][0], image.Image):
-                out_dict[fil] = list(set(map(lambda f: f.output_file, dictionary[fil])))
+                out_dict[fil] = list(set(map(lambda f: f.path, dictionary[fil])))
                 out_dict[fil].sort()
             elif isinstance(dictionary[fil][0], str):
                 out_dict[fil] = dictionary[fil]
@@ -4271,14 +4271,14 @@ class ESOImagingEpoch(ImagingEpoch):
                     u.debug_print(1, i, img.extract_chip_number())
                     i += 1
                     img = self.frames_esoreflex_backgrounds[fil][i]
-                up_left, up_right, up_bottom, up_top = ff.detect_edges(img.output_file)
+                up_left, up_right, up_bottom, up_top = ff.detect_edges(img.path)
                 # Ditto for the bottom chip.
                 i = 0
                 img = self.frames_esoreflex_backgrounds[fil][i]
                 while img.extract_chip_number() != 2:
                     i += 1
                     img = self.frames_esoreflex_backgrounds[fil][i]
-                dn_left, dn_right, dn_bottom, dn_top = ff.detect_edges(img.output_file)
+                dn_left, dn_right, dn_bottom, dn_top = ff.detect_edges(img.path)
                 up_left = up_left + 5
                 up_right = up_right - 5
                 up_top = up_top - 5
@@ -4386,7 +4386,8 @@ class ESOImagingEpoch(ImagingEpoch):
         self._add_frame(
             frame=background_frame,
             frames_dict=self.frames_esoreflex_backgrounds,
-            frame_type="reduced")
+            frame_type="reduced"
+        )
 
     def check_filter(self, fil: str):
         not_none = super().check_filter(fil)
