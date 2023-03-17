@@ -21,7 +21,7 @@ import craftutils.retrieve as r
 import craftutils.observation as obs
 import craftutils.observation.instrument as inst
 import craftutils.observation.filters as filters
-
+from craftutils.photometry import distance_modulus
 
 cosmology = cosmo.Planck18
 
@@ -218,7 +218,6 @@ class PositionUncertainty:
         return np.sqrt(self.a_sys ** 2 + self.a_stat ** 2), np.sqrt(self.b_sys ** 2 + self.b_stat ** 2)
 
     def uncertainty_quadrature_equ(self):
-        print(self.ra_sys, self.ra_stat, self.dec_sys, self.dec_stat)
         return np.sqrt(self.ra_sys ** 2 + self.ra_stat ** 2), np.sqrt(self.dec_sys ** 2 + self.dec_stat ** 2)
 
     # TODO: Finish this
@@ -357,6 +356,7 @@ class Object:
             method="sep",
             unmasked=self.position_photometry
         )
+
         mag_results = deepest_img.sep_elliptical_magnitude(
             centre=self.position_photometry,
             a_world=self.a,
@@ -569,6 +569,7 @@ class Object:
             "photometry": self.photometry,
             "irsa_extinction_path": self.irsa_extinction_path,
             "extinction_law": self.extinction_power_law,
+
         }
 
     def load_output_file(self):
@@ -761,6 +762,14 @@ class Object:
                 u.detect_problem_table(photometry_tbl, fmt="csv")
                 photometry_tbl.write(output.replace(".ecsv", fmt[fmt.find("."):]), format=fmt, overwrite=True)
         return photometry_tbl
+
+    # def sandf_galactic_extinction(
+    #     self,
+    #     band: List[filters.Filter]
+    # ):
+    #     import extinction
+    #     extinction.fitzpatrick99(tbl["lambda_eff"], a_v, r_v) * units.mag
+    #     pass
 
     def estimate_galactic_extinction(self, ax=None, r_v: float = 3.1, **kwargs):
         import extinction
@@ -1227,15 +1236,17 @@ class Object:
         obj.cat_row = row
         return obj
 
+
 @u.export
 class Star(Object):
     pass
+
 
 @u.export
 class Extragalactic(Object):
     def __init__(
             self,
-            z: float = 0.0,
+            z: float = None,
             **kwargs
     ):
         super().__init__(
@@ -1250,11 +1261,12 @@ class Extragalactic(Object):
 
     def set_z(self, z, **kwargs):
         self.z = z
-        if "z_err" in kwargs:
-            self.z_err = kwargs["z_err"]
-        self.D_A = self.angular_size_distance()
-        self.D_L = self.luminosity_distance()
-        self.mu = self.distance_modulus()
+        if z is not None:
+            if "z_err" in kwargs:
+                self.z_err = kwargs["z_err"]
+            self.D_A = self.angular_size_distance()
+            self.D_L = self.luminosity_distance()
+            self.mu = self.distance_modulus()
 
     def angular_size_distance(self):
         if self.z is not None:
@@ -1271,7 +1283,7 @@ class Extragalactic(Object):
     def distance_modulus(self):
         d = self.luminosity_distance()
         if d is not None:
-            mu = (5 * np.log10(d / units.pc) - 5) * units.mag
+            mu = distance_modulus(d)
             return mu
 
     def absolute_magnitude(
@@ -1314,11 +1326,12 @@ class Extragalactic(Object):
         theta = (distance * units.rad / self.D_A).to(units.arcsec)
         return theta
 
+
 @u.export
 class Galaxy(Extragalactic):
     def __init__(
             self,
-            z: float = 0.0,
+            z: float = None,
             **kwargs
     ):
         super().__init__(
@@ -1543,6 +1556,7 @@ class Galaxy(Extragalactic):
                    field=field,
                    **dictionary)
 
+
 @u.export
 class TransientHostCandidate(Galaxy):
     def __init__(
@@ -1575,6 +1589,7 @@ dm_host_median = {
     "james_22B": 186 * dm_units
 }
 
+
 @u.export
 class Transient(Object):
     def __init__(
@@ -1587,22 +1602,14 @@ class Transient(Object):
             **kwargs
         )
         self.host_galaxy = host_galaxy
+        self.host_candidate_tables = {}
+        self.host_candidates = []
         if not isinstance(date, time.Time) and date is not None:
             date = time.Time(date)
         self.date = date
         self.tns_name = None
         if "tns_name" in kwargs:
             self.tns_name = kwargs["tns_name"]
-
-    @classmethod
-    def default_params(cls):
-        default_params = super().default_params()
-        default_params.update({
-            "host_galaxy": Galaxy.default_params(),
-            "date": "0000-01-01",
-            "tns_name": None
-        })
-        return default_params
 
 
 @u.export
@@ -1634,6 +1641,192 @@ class FRB(Transient):
             coord=self.position,
             DM=self.dm
         )
+        return self.x_frb
+
+    def probabilistic_association(
+            self,
+            p_u: float,
+            img: 'craftutils.observation.image.ImagingImage',
+            radius: float = 10
+    ):
+        """
+        Performs a customised PATH run on an image.
+
+        :param p_u: The prior for the probability of the host being unseen in the image.
+        :param img: The image on which to run PATH.
+        :param frb_object: the FRB in question.
+        :param radius: Maximum distance in arcseconds for an object to be considered as a candidate.
+        :return:
+        """
+        import frb.associate.frbassociate as associate
+        import astropath.path as path
+        astm_rms = img.extract_astrometry_err()
+        a, b = self.position_err.uncertainty_quadrature()
+        a = np.sqrt(a ** 2 + astm_rms ** 2)
+        b = np.sqrt(b ** 2 + astm_rms ** 2)
+        x_frb = self.generate_x_frb()
+        x_frb.set_ee(
+            a=a.value,
+            b=b.value,
+            theta=0.,
+            cl=0.68,
+        )
+        #     img.load_output_file()
+        img.extract_pixel_scale()
+        instname = img.instrument.name.replace("-", "_").upper()
+        filname = f'{instname}_{img.filter.band_name}'
+        config = dict(
+            max_radius=radius,
+            skip_bayesian=False,
+            npixels=9,
+            image_file=img.path,
+            cut_size=30.,
+            filter=filname,
+            ZP=img.zeropoint_best["zeropoint_img"].value,
+            deblend=True,
+            cand_bright=17.,
+            cand_separation=radius * units.arcsec,
+            plate_scale=(1 * units.pix).to(units.arcsec, img.pixel_scale_y),
+        )
+        print("P(U) ==", p_u)
+        priors = path.priors.load_std_priors()["adopted"]
+        priors["U"] = p_u
+        ass = associate.run_individual(
+            config=config,
+            #         show=True,
+            #         verbose=True,
+            FRB=x_frb,
+
+            prior=priors
+            #     skip_bayesian=True
+        )
+
+        p_ux = ass.P_Ux
+        print("P(U|x) ==", p_ux)
+        cand_tbl = table.QTable.from_pandas(ass.candidates)
+        p_ox = cand_tbl[0]["P_Ox"]
+        print("Max P(O|x_i) ==", p_ox)
+        print("\n\n")
+        cand_tbl["ra"] *= units.deg
+        cand_tbl["dec"] *= units.deg
+        cand_tbl["separation"] *= units.arcsec
+        cand_tbl[filname] *= units.mag
+
+        self.host_candidate_tables[img.name] = cand_tbl
+        self.update_output_file()
+
+        return cand_tbl, p_ox, p_ux
+
+    def consolidate_candidate_tables(self, sort_by="separation"):
+        # Build a shared catalogue of host candidates.
+        path_cat = None
+        for tbl_name in self.host_candidate_tables:
+            if tbl_name == "consolidated":
+                continue
+            print(tbl_name)
+            cand_tbl = self.host_candidate_tables[tbl_name]
+            if path_cat is None:
+                path_cat = cand_tbl["label", "ra", "dec", "separation"]
+            path_cat, matched, dist = astm.match_catalogs(
+                cat_1=path_cat, cat_2=cand_tbl,
+                ra_col_1="ra", dec_col_1="dec",
+                keep_non_matches=True,
+                tolerance=0.7 * units.arcsec
+            )
+
+            for prefix in ["label", "P_Ox", "mag"]:
+
+                if f"{prefix}_{tbl_name}" not in matched.colnames:
+                    print(f"{prefix}_{tbl_name}")
+                    matched[f"{prefix}_{tbl_name}"] = matched[prefix]
+
+                for col in list(filter(lambda c: c.startswith(prefix + "_"), path_cat.colnames)):
+                    matched[col] = np.ones(len(matched)) * -999.
+
+                path_cat[f"{prefix}_{tbl_name}"] = np.ones(len(path_cat)) * -999.
+                path_cat[f"{prefix}_{tbl_name}"][path_cat["matched"]] = matched[f"{prefix}_{tbl_name}"][
+                    matched["matched"]]
+
+            for row in matched[np.invert(matched["matched"])]:
+                print(f'Adding label {row["label"]} from {tbl_name} table. ra={row["ra"]}, dec={row["dec"]}')
+                path_cat.add_row(row[path_cat.colnames])
+
+        # path_cat["coord"] = SkyCoord(path_cat["ra"], path_cat["dec"])
+        path_cat.sort(sort_by, reverse=True)
+        path_cat["id"] = np.zeros(len(path_cat), dtype=str)
+        for i, row in enumerate(path_cat):
+            row["id"] = chr(65 + i)
+        self.host_candidate_tables["consolidated"] = path_cat
+        for row in path_cat:
+            idn = self.name.replace("FRB", "")
+            host_candidate = Galaxy(
+                z=None,
+                position=SkyCoord(row["ra"], row["dec"]),
+                field=self.field,
+                name=f"HC{row['id']}_{idn}"
+            )
+            self.host_candidates.append(host_candidate)
+        self.update_output_file()
+        return path_cat
+
+    def write_candidate_tables(self):
+        table_paths = {}
+        for img_name in self.host_candidate_tables:
+            cand_tbl = self.host_candidate_tables[img_name]
+            write_path = os.path.join(self.data_path, f"PATH_table_{img_name}.ecsv")
+            if "coords" in cand_tbl.colnames:
+                cand_tbl.remove_column("coords")
+            cand_tbl.write(write_path, overwrite=True)
+            table_paths[img_name] = p.split_data_dir(write_path)
+        return table_paths
+
+    def _output_dict(self):
+        output = super()._output_dict()
+        cand_list = []
+        for obj in self.host_candidates:
+            new_dict = Galaxy.default_params()
+            new_dict.update({
+                "name": obj.name,
+                "position": obj.position,
+                "z": obj.z,
+            })
+            cand_list.append(new_dict)
+
+        output.update({
+            "host_candidate_tables": self.write_candidate_tables(),
+            "host_candidates": cand_list
+        })
+        return output
+
+    def load_output_file(self):
+        outputs = super().load_output_file()
+        if outputs is not None:
+            if "host_candidate_tables" in outputs:
+                tables = outputs["host_candidate_tables"]
+                for table_name in tables:
+                    tbl_path = tables[table_name]
+                    tbl_path = p.join_data_dir(tbl_path)
+                    self.host_candidate_tables[table_name] = table.QTable.read(tbl_path)
+            if "host_candidates" in outputs:
+                for obj in outputs["host_candidates"]:
+                    self.host_candidates.append(
+                        Galaxy(
+                            z=obj["z"],
+                            position=obj["position"],
+                            name=obj["name"],
+                            field=self.field
+                        )
+                    )
+
+    @classmethod
+    def default_params(cls):
+        default_params = super().default_params()
+        default_params.update({
+            "host_galaxy": Galaxy.default_params(),
+            "date": "0000-01-01",
+            "tns_name": None
+        })
+        return default_params
 
     @classmethod
     def _date_from_name(cls, name):

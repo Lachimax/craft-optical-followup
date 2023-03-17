@@ -29,7 +29,7 @@ class CIGALEModel(SEDModel):
             col_unit = units.Unit(hdr[f"TUNIT{col_n}"])
             self.model_table[col_name] *= col_unit
 
-        self.prep_columns()
+        self.prep_data()
 
     @classmethod
     def columns(cls):

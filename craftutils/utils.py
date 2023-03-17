@@ -21,6 +21,7 @@ from astropy.time import Time
 
 debug_level = 0
 
+
 def export(obj):
     """
     A function used for decorating those objects which may be exported from a file.
@@ -599,15 +600,12 @@ def uncertainty_func(arg, err, func=lambda x: np.log10(x), absolute=False):
     :return:
     """
     measurement = func(arg)
-    print("\narg", arg)
-    print("\nmeasurement", measurement)
     # One of these should come out negative - that becomes the minus error, and the positive the plus error.
     error_plus = func(arg + err) - measurement
     error_minus = func(arg - err) - measurement
 
     error_plus_actual = []
     error_minus_actual = []
-    print("\nerror_plus", error_plus)
     try:
         for i, _ in enumerate(error_plus):
             error_plus_actual.append(np.max([error_plus[i], error_minus[i]]))
@@ -630,7 +628,6 @@ def uncertainty_func_percent(arg, err, func=lambda x: np.log10(x)):
 def get_column_names(path, delimiter=','):
     with open(path) as f:
         names = f.readline().split(delimiter)
-    print(names)
     return names
 
 
@@ -644,7 +641,6 @@ def get_column_names_sextractor(path):
                 line_list.remove("")
             columns.append(line_list[2])
             line = f.readline()
-    print(columns)
     return columns
 
 
@@ -1151,10 +1147,12 @@ def enter_time(message: str):
     return date
 
 
-def select_option(message: str,
-                  options: Union[List[str], dict],
-                  default: Union[str, int] = None,
-                  sort: bool = False) -> tuple:
+def select_option(
+        message: str,
+        options: Union[List[str], dict],
+        default: Union[str, int] = None,
+        sort: bool = False
+) -> tuple:
     """
     Options can be a list of strings, or a dict in which the keys are the options to be printed and the values are the
     represented options. The returned object is a tuple, with the first entry being the number given by the user and
@@ -1162,6 +1160,7 @@ def select_option(message: str,
     dict value.
     :param message: Message to display before options.
     :param options: Options to display.
+
     :param default: Option to return if no user input is given.
     :param sort: Sort options?
     :return: Tuple containing (user input, selection)

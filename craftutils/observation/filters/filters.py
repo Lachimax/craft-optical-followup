@@ -57,8 +57,8 @@ class Filter:
                 self.data_path = kwargs["data_path"]
             else:
                 self.data_path = os.path.join(p.data_dir, kwargs["data_path"])
-        # print(self.data_path)
-        u.mkdir_check_nested(self.data_path, remove_last=False)
+            # print(self.data_path)
+            u.mkdir_check_nested(self.data_path, remove_last=False)
         self.votable = None
         self.votable_path = None
 
@@ -81,10 +81,21 @@ class Filter:
     def __str__(self):
         return f"{self.instrument}.{self.name}"
 
-    def vega_magnitude_offset(self):
+    def vega_magnitude_offset(
+            self,
+            transmission: table.QTable = None
+    ):
         zp_ab = 3631 * units.Jy
         zp_vega = self.vega_zeropoint
-        delta_mag = 2.5 * np.log10(zp_ab / zp_vega)
+        delta_mag = 2.5 * np.log10(
+            np.trapz(
+                y=zp_ab * transmission["Transmission"],
+                x=transmission["Wavelength"]
+            ) / np.trapz(
+                y=zp_vega * transmission["Transmission"],
+                x=transmission["Wavelength"]
+            )
+        )
         return delta_mag * units.mag
 
     def compare_transmissions(self, other: 'Filter'):
@@ -115,6 +126,40 @@ class Filter:
 
         difference = np.sum(np.abs(other_transmission - self_transmission))
         return difference
+
+    def interp_to_wavelength(
+            self,
+            wavelengths: units.Quantity,
+            table_name: str = None,
+    ):
+        if table_name is None:
+            tbl, _ = self.select_transmission_table()
+        else:
+            tbl = self.transmission_tables[table_name]
+        tbl = tbl.copy()
+        tbl.sort("Wavelength")
+        # Find the difference between wavelength entries in the table
+        avg_delta = np.median(np.diff(tbl["Wavelength"]))
+        # Pad the transmission table with "0" on either side so that the interpolation goes to zero.
+        tbl.add_row(tbl[0])
+        tbl[-1]["Wavelength"] = tbl["Wavelength"].min() - avg_delta
+        tbl[-1]["Transmission"] = 0
+        tbl.add_row(tbl[0])
+        tbl[-1]["Wavelength"] = tbl["Wavelength"].max() + avg_delta
+        tbl[-1]["Transmission"] = 0
+        tbl.sort("Wavelength")
+        # Interpolate the transmission table at the wavelength values given in the model table.
+        # print(wavelengths, tbl["Wavelength"], tbl["Transmission"])
+        # print(len(wavelengths), len(tbl["Wavelength"]), len(tbl["Transmission"]))
+        wavelengths = wavelengths.to("AA")
+        return np.interp(
+            x=wavelengths.value,
+            xp=tbl["Wavelength"].value,
+            fp=tbl["Transmission"].value
+        )
+
+
+
 
     def compare_wavelength_range(self, other: 'Filter'):
         tbl_self, tbl_other = self.find_comparable_table(other)
@@ -154,6 +199,9 @@ class Filter:
         else:
             name = self.name
         return name
+
+    def machine_name(self):
+        return f"{self.instrument.name}_{self.name.replace('_', '-')}"
 
     def load_instrument(self):
         if isinstance(self.instrument, str):
@@ -253,7 +301,7 @@ class Filter:
         for i, tbl in enumerate(filter_tables):
             if tbl is not None:
                 return tbl, table_names[i]
-        return None
+        return None, None
 
     def _output_dict(self):
         return {

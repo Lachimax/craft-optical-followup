@@ -23,6 +23,7 @@ from astropy.modeling import models, fitting
 from astropy.modeling.functional_models import Sersic1D
 from astropy.stats import sigma_clip
 from astropy.visualization import quantity_support
+import astropy.cosmology as cosmology
 
 import craftutils.fits_files as ff
 import craftutils.params as p
@@ -52,7 +53,8 @@ def image_psf_diagnostics(
         dec_col: str = "DEC",
         output: str = None,
         min_stars: int = 30,
-        plot_file_prefix: str = ""
+        plot_file_prefix: str = "",
+        debug_plots: bool = False
 ):
     """
 
@@ -126,21 +128,37 @@ def image_psf_diagnostics(
 
     if type(stars) is table.QTable:
         if not isinstance(stars["GAUSSIAN_FWHM_FITTED"], units.Quantity):
-            stars["GAUSSIAN_FWHM_FITTED"] *= units.deg
+            stars["GAUSSIAN_FWHM_FITTED"] *= units.arcsec
         if not isinstance(stars["MOFFAT_FWHM_FITTED"], units.Quantity):
-            stars["MOFFAT_FWHM_FITTED"] *= units.deg
+            stars["MOFFAT_FWHM_FITTED"] *= units.arcsec
+
+    print()
+    print("STARS")
 
     for j, star in enumerate(stars):
         ra = star[ra_col]
         dec = star[dec_col]
 
+        # print(star)
+
+        # print(ra)
+        # print(dec)
+
         window = ff.trim_frame_point(hdu=hdu, ra=ra, dec=dec, frame=frame, ext=ext)
+        if debug_plots and output is not None:
+            plot_dir = os.path.join(output, "debug_plots")
+            u.mkdir_check(plot_dir)
+            # window.writeto(os.path.join(plot_dir, f"{star['NUMBER']}.fits", overwrite=True))
         data = window[ext].data
+        if debug_plots and output is not None:
+            fig, ax = plt.subplots()
+            ax.imshow(data)
+            fig.savefig(os.path.join(plot_dir, f"{star['NUMBER']}_data.png"))
         _, scale = ff.get_pixel_scale(hdu, astropy_units=True, ext=ext)
 
         mean, median, stddev = stats.sigma_clipped_stats(data)
         data -= median
-        data[np.isfinite(data)] = np.nanmedian(data)
+        data[~np.isfinite(data)] = np.nanmedian(data)
 
         y, x = np.mgrid[:data.shape[0], :data.shape[1]]
 
@@ -149,11 +167,23 @@ def image_psf_diagnostics(
         # First, a Moffat function
         model_init = models.Moffat2D(x_0=frame, y_0=frame)
         fitter = fitting.LevMarLSQFitter()
-        model = fitter(model_init, x, y, data)
-        fwhm = (model.fwhm * units.pixel).to(units.degree, scale)
+        try:
+            model = fitter(model_init, x, y, data)
+        except fitting.NonFiniteValueError:
+            continue
+        fwhm = (model.fwhm * units.pixel).to(units.arcsec, scale)
         star["MOFFAT_FWHM_FITTED"] = fwhm
         star["MOFFAT_GAMMA_FITTED"] = model.gamma.value
         star["MOFFAT_ALPHA_FITTED"] = model.alpha.value
+
+        if debug_plots and output is not None:
+            fig = plt.figure()
+            ax_data_moffat = fig.add_subplot(2, 3, 1)
+            ax_data_moffat.imshow(data)
+            ax_model_moffat = fig.add_subplot(2, 3, 2)
+            ax_model_moffat.imshow(model(x, y))
+            ax_residuals_moffat = fig.add_subplot(2, 3, 3)
+            ax_residuals_moffat.imshow(data - model(x, y))
 
         # Then a good-old-fashioned Gaussian, with the x and y axes tied together.
         model_init = models.Gaussian2D(x_mean=frame, y_mean=frame)
@@ -165,18 +195,35 @@ def image_psf_diagnostics(
 
         model = fitter(model_init, x, y, data)
         fwhm = (model.x_fwhm * units.pixel).to(units.arcsec, scale)
+        # print(fwhm)
+        # print(star["GAUSSIAN_FWHM_FITTED"])
         star["GAUSSIAN_FWHM_FITTED"] = fwhm
-
+        # print(star["GAUSSIAN_FWHM_FITTED"])
         stars[j] = star
+        # print(stars[j]["GAUSSIAN_FWHM_FITTED"])
+        # print(stars[j])
+        # print()
+        if debug_plots and output is not None:
+            ax_data_gauss = fig.add_subplot(2, 3, 4)
+            ax_data_gauss.imshow(data)
+            ax_model_gauss = fig.add_subplot(2, 3, 5)
+            ax_model_gauss.imshow(model(x, y))
+            ax_residuals_gauss = fig.add_subplot(2, 3, 6)
+            ax_residuals_gauss.imshow(data - model(x, y))
+            fig.savefig(os.path.join(plot_dir, str(star["NUMBER"]) + ".png"))
+
+    # print()
 
     clipped = sigma_clip(stars["MOFFAT_FWHM_FITTED"], masked=True, sigma=2)
     stars_clip_moffat = stars[~clipped.mask]
     stars_clip_moffat = stars_clip_moffat[np.isfinite(stars_clip_moffat["MOFFAT_FWHM_FITTED"])]
+    stars_clip_moffat = stars_clip_moffat[stars_clip_moffat["MOFFAT_FWHM_FITTED"] > 0.1 * units.arcsec]
     print(f"Num stars after sigma clipping w. astropy Moffat PSF:", len(stars_clip_moffat))
 
     clipped = sigma_clip(stars["GAUSSIAN_FWHM_FITTED"], masked=True, sigma=2)
     stars_clip_gauss = stars[~clipped.mask]
     stars_clip_gauss = stars_clip_gauss[np.isfinite(stars_clip_gauss["GAUSSIAN_FWHM_FITTED"])]
+    stars_clip_gauss = stars_clip_gauss[stars_clip_gauss["GAUSSIAN_FWHM_FITTED"] > 0.1 * units.arcsec]
     print(f"Num stars after sigma clipping w. astropy Gaussian PSF:", len(stars_clip_gauss))
 
     clipped = sigma_clip(stars["FWHM_WORLD"], masked=True, sigma=2)
@@ -189,24 +236,33 @@ def image_psf_diagnostics(
     if output is not None:
 
         with quantity_support():
+            tmp_dict = {
+                "MOFFAT_FWHM_FITTED": stars_clip_moffat,
+                "GAUSSIAN_FWHM_FITTED": stars_clip_gauss,
+                "FWHM_WORLD": stars_clip_sex
+            }
 
             for colname in ["MOFFAT_FWHM_FITTED", "GAUSSIAN_FWHM_FITTED", "FWHM_WORLD"]:
-                plt.hist(
+                fig, ax = plt.subplots()
+                ax.hist(
                     stars[colname][np.isfinite(stars[colname])].to(units.arcsec),
                     label="Full sample",
                     bins=int(np.sqrt(len(stars)))
                 )
-                plt.hist(
-                    stars_clip_moffat[colname].to(units.arcsec),
+                ax.legend()
+                fig.savefig(os.path.join(output, f"{plot_file_prefix}_psf_histogram_{colname}_full.png"))
+
+                fig, ax = plt.subplots()
+                ax.hist(
+                    tmp_dict[colname][colname].to(units.arcsec),
                     edgecolor='black',
                     linewidth=1.2,
                     label="Sigma-clipped",
                     fc=(0, 0, 0, 0),
-                    bins=int(np.sqrt(len(stars_clip_moffat)))
+                    bins=int(np.sqrt(len(stars)))
                 )
-                plt.legend()
-                plt.savefig(os.path.join(output, f"{plot_file_prefix}_psf_histogram_{colname}.png"))
-                plt.close()
+                ax.legend()
+                fig.savefig(os.path.join(output, f"{plot_file_prefix}_psf_histogram_{colname}_clipped.png"))
 
     return stars_clip_moffat, stars_clip_gauss, stars_clip_sex
 
@@ -339,10 +395,43 @@ def gain_mean_combine(old_gain: float = 0.8, n_frames: int = 1):
 AB_zeropoint = 3631 * units.Jy
 
 
+def redshift_frequency(nu: units.Quantity, z: float, z_new: float):
+    return nu * (1 + z) / (1 + z_new)
+
+
+def redshift_wavelength(wavelength: units.Quantity, z: float, z_new: float):
+    return wavelength * (1 + z_new) / (1 + z)
+
+
+def redshift_flux_nu(
+        flux,
+        z: float,
+        z_new: float,
+        cosmo: cosmology.LambdaCDM = cosmology.Planck18,
+):
+    d_l = cosmo.luminosity_distance(z)
+    d_l_shift = cosmo.luminosity_distance(z_new)
+
+    return flux * ((1 + z_new) * d_l ** 2) / ((1 + z) * d_l_shift ** 2)
+
+
+def redshift_flux_lambda(
+        flux,
+        z: float,
+        z_new: float,
+        cosmo: cosmology.LambdaCDM = cosmology.Planck18,
+):
+    d_l = cosmo.luminosity_distance(z)
+    d_l_shift = cosmo.luminosity_distance(z_new)
+
+    return flux * ((1 + z) * d_l ** 2) / ((1 + z_new) * d_l_shift ** 2)
+
+
 def magnitude_AB(
         flux: units.Quantity,
         band_transmission: Union[np.ndarray, units.Quantity],
-        frequency: units.Quantity
+        frequency: units.Quantity,
+        use_quantum_factor: bool = True
 ):
     """
     All three arguments must be of the same length, with entries corresponding 1-to-1.
@@ -360,16 +449,54 @@ def magnitude_AB(
     )
     flux_tbl.sort("nu")
 
-    numerator = np.trapz(
-        y=flux_tbl["f"] * (constants.h * flux_tbl["nu"]) ** -1 * flux_tbl["e"],
+    if use_quantum_factor:
+        quantum_factor = (constants.h * flux_tbl["nu"]) ** -1
+    else:
+        quantum_factor = 1
+
+    flux_band = np.trapz(
+        y=flux_tbl["f"] * quantum_factor * flux_tbl["e"],
         x=flux_tbl["nu"]
     )
-    denominator = np.trapz(
-        y=AB_zeropoint * (constants.h * flux_tbl["nu"]) ** -1 * flux_tbl["e"],
+    flux_ab = np.trapz(
+        y=AB_zeropoint * quantum_factor * flux_tbl["e"],
         x=flux_tbl["nu"]
     )
 
-    return -2.5 * np.log10(numerator / denominator)
+    return -2.5 * np.log10(flux_band / flux_ab)
+
+
+def magnitude_absolute_from_luminosity(
+        luminosity_nu: units.Quantity,
+        band_transmission: Union[np.ndarray, units.Quantity],
+        frequency: units.Quantity,
+        use_quantum_factor: bool = True
+):
+    lum_tbl = table.QTable(
+        data={
+            "nu": frequency,
+            "e": band_transmission,
+            "L": luminosity_nu
+        }
+    )
+    lum_tbl.sort("nu")
+
+    if use_quantum_factor:
+        quantum_factor = (constants.h * lum_tbl["nu"]) ** -1
+    else:
+        quantum_factor = 1
+
+    luminosity_band = np.trapz(
+        y=lum_tbl["L"] * lum_tbl["e"] * quantum_factor / lum_tbl["nu"],
+        x=lum_tbl["nu"]
+    )
+
+    luminosity_ab = np.trapz(
+        y=AB_zeropoint * lum_tbl["e"] * quantum_factor / lum_tbl["nu"],
+        x=lum_tbl["nu"]
+    )
+
+    return -2.5 * np.log10(luminosity_band / (luminosity_ab * 4 * np.pi * 100 * units.pc ** 2))
 
 
 def magnitude_instrumental(
@@ -450,6 +577,10 @@ def magnitude_uncertainty(
     mag = units.Magnitude(flux_per_sec).value * units.mag
     error = u.uncertainty_log10(arg=flux_per_sec, uncertainty_arg=error_fps, a=-2.5) * units.mag
     return mag, error
+
+
+def distance_modulus(distance: units.Quantity):
+    return (5 * np.log10(distance / units.pc) - 5) * units.mag
 
 
 def determine_zeropoint_sextractor(
@@ -2131,12 +2262,16 @@ def select_zeropoint(obj: str, filt: str, instrument: str, outputs: dict = None)
     return zeropoint, zeropoint_err, airmass, airmass_err, extinction, extinction_err
 
 
-def subtract(template_origin: str, comparison_origin: str,
-             template_fwhm: float,
-             comparison_fwhm: float, output: str, comparison_title: str, template_title: str, comparison_epoch: int,
-             template_epoch: int,
-             field: str,
-             force_subtract_better_seeing: bool = True, sextractor_threshold: float = None):
+def subtract(
+        template_origin: str, comparison_origin: str,
+        template_fwhm: float, comparison_fwhm: float,
+        output: str,
+        template_title: str, comparison_title: str,
+        template_epoch: int, comparison_epoch: int,
+        field: str,
+        force_subtract_better_seeing: bool = True,
+        sextractor_threshold: float = None
+):
     """
 
     :param template_origin:
@@ -2185,12 +2320,14 @@ def subtract(template_origin: str, comparison_origin: str,
 
             sigma_match = math.sqrt(sigma_template ** 2 - sigma_comparison ** 2)
 
-            os.system(f'hotpants -inim {template_file}'
-                      f' -tmplim {comparison_file}'
-                      f' -outim {difference_file}'
-                      f' -ng 3 6 {0.5 * sigma_match} 4 {sigma_match} 2 {2 * sigma_match}'
-                      f' -oki {output}kernel.fits'
-                      f' -n i')
+            os.system(
+                f'hotpants -inim {template_file}'
+                f' -tmplim {comparison_file}'
+                f' -outim {difference_file}'
+                f' -ng 3 6 {0.5 * sigma_match} 4 {sigma_match} 2 {2 * sigma_match}'
+                f' -oki {output}kernel.fits'
+                f' -n i'
+            )
 
             # We then reverse the pixels of the difference image, giving transients positive flux (so that SExtractor
             # can see them)

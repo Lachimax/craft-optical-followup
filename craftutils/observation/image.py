@@ -322,7 +322,7 @@ class Image:
     ):
 
         if not os.path.isfile(path):
-            raise FileNotFoundError(f"The image file file {path} does not exist.")
+            raise FileNotFoundError(f"The image file {path} does not exist.")
         active_images[path] = self
         if path.endswith("_outputs.yaml"):
             self.output_file = path
@@ -1432,7 +1432,7 @@ class ImagingImage(Image):
                 self.dual_mode_template = outputs["dual_mode_template"]
         return outputs
 
-    def select_zeropoint(self, no_user_input: bool = False, preferred: str = None):
+    def select_zeropoint(self, no_user_input: bool = True, preferred: str = None):
 
         if not self.zeropoints:
             print(f"No zeropoints set ({self}.zeropoints is None); try loading output file.")
@@ -2442,7 +2442,11 @@ class ImagingImage(Image):
             star_class_tol=star_class_tol,
         )
 
-        fwhm_gauss = stars_gauss["GAUSSIAN_FWHM_FITTED"]
+        stars_moffat.write(os.path.join(output_path, "psf_diag_stars_moffat.ecsv"), overwrite=True)
+        stars_gauss.write(os.path.join(output_path, "psf_diag_stars_gauss.ecsv"), overwrite=True)
+        stars_sex.write(os.path.join(output_path, "psf_diag_stars_sex.ecsv"), overwrite=True)
+
+        fwhm_gauss = stars_gauss["GAUSSIAN_FWHM_FITTED"] # [~np.isnan(stars_gauss["GAUSSIAN_FWHM_FITTED"])]
         self.fwhm_median_gauss = np.nanmedian(fwhm_gauss)
         self.fwhm_max_gauss = np.nanmax(fwhm_gauss)
         self.fwhm_min_gauss = np.nanmin(fwhm_gauss)
@@ -2450,7 +2454,7 @@ class ImagingImage(Image):
         self.fwhm_rms_gauss = np.sqrt(np.mean(fwhm_gauss ** 2))
         self.send_column_to_source_cat("GAUSSIAN_FWHM_FITTED", stars_gauss)
 
-        fwhm_moffat = stars_moffat["MOFFAT_FWHM_FITTED"]
+        fwhm_moffat = stars_moffat["MOFFAT_FWHM_FITTED"] # [~np.isnan(stars_moffat["MOFFAT_FWHM_FITTED"])]
         self.fwhm_median_moffat = np.nanmedian(fwhm_moffat)
         self.fwhm_max_moffat = np.nanmax(fwhm_moffat)
         self.fwhm_min_moffat = np.nanmin(fwhm_moffat)
@@ -2458,7 +2462,7 @@ class ImagingImage(Image):
         self.fwhm_rms_moffat = np.sqrt(np.mean(fwhm_moffat ** 2))
         self.send_column_to_source_cat("MOFFAT_FWHM_FITTED", stars_moffat)
 
-        fwhm_sextractor = stars_sex["FWHM_WORLD"].to(units.arcsec)
+        fwhm_sextractor = stars_sex["FWHM_WORLD"] # [~np.isnan(stars_sex["FWHM_WORLD"])].to(units.arcsec)
         self.fwhm_median_sextractor = np.nanmedian(fwhm_sextractor)
         self.fwhm_max_sextractor = np.nanmax(fwhm_sextractor)
         self.fwhm_min_sextractor = np.nanmin(fwhm_sextractor)
@@ -2478,7 +2482,8 @@ class ImagingImage(Image):
                 "fwhm_max": self.fwhm_max_gauss.to(units.arcsec),
                 "fwhm_min": self.fwhm_min_gauss.to(units.arcsec),
                 "fwhm_sigma": self.fwhm_sigma_gauss.to(units.arcsec),
-                "fwhm_rms": self.fwhm_rms_gauss.to(units.arcsec)
+                "fwhm_rms": self.fwhm_rms_gauss.to(units.arcsec),
+                "n_stars": len(fwhm_gauss)
             },
             "moffat": {
                 "fwhm_median": self.fwhm_median_moffat.to(units.arcsec),
@@ -3306,7 +3311,10 @@ class ImagingImage(Image):
             ext: int = 0,
             frame: units.Quantity = 10 * units.pix,
             output: str = None,
-            show: bool = False, title: str = None):
+            show: bool = False,
+            title: str = None,
+            find: SkyCoord = None
+    ):
 
         plt.close()
         fig = plt.figure()
@@ -3350,6 +3358,11 @@ class ImagingImage(Image):
         if title is None:
             title = self.name
         title = u.latex_sanitise(title)
+        if find is not None:
+            x_find, y_find = self.world_to_pixel(find)
+            x_find -= left
+            y_find -= bottom
+            ax.scatter(x_find, y_find, c="red", marker="x")
         ax.set_title(title)
         fig.savefig(os.path.join(output))
         if show:
@@ -4166,7 +4179,7 @@ class ImagingImage(Image):
             back_output = None
             segmap_output = None
 
-        self.model_background_photometry(ext=ext, write=back_output, mask=True)
+        self.model_background_photometry(ext=ext, write=back_output, do_mask=True)
         self.load_wcs()
         self.extract_pixel_scale()
         if not self.wcs[ext].footprint_contains(centre):
@@ -4323,6 +4336,9 @@ class ImagingImage(Image):
         :param kwargs: keyword arguments to pass to the magnitude() method; header exp_time etc can be overridden here.
         :return:
         """
+
+        if a_world < 0. or b_world < 0.:
+            return None
 
         if detection_threshold is None:
             detection_threshold = self.detection_threshold()
