@@ -1429,7 +1429,7 @@ class ImagingEpoch(Epoch):
                         if not self.quiet:
                             print(f"\tAdding {frame_lists[chip][i]}")
                         self.add_frame_diagnosed(frame_lists[chip][i])
-                elif not quiet:
+                elif not self.quiet:
                     print(f"Median PSF FWHM {fwhm_median} > upper limit {upper_limit}")
 
     def proc_coadd(self, output_dir: str, **kwargs):
@@ -1718,6 +1718,14 @@ class ImagingEpoch(Epoch):
         else:
             image_type = "final"
 
+        if "distance_tolerance" in kwargs and kwargs["distance_tolerance"] is not None:
+            kwargs["distance_tolerance"] = u.check_quantity(kwargs["distance_tolerance"], units.arcsec, convert=True)
+        if "snr_min" not in kwargs or kwargs["snr_min"] is None:
+            kwargs["snr_min"] = 3.
+        if "suppress_select" not in kwargs:
+            kwargs["suppress_select"] = True
+
+
         image_dict = self._get_images(image_type=image_type)
         for fil in image_dict:
             img = image_dict[fil]
@@ -1737,13 +1745,6 @@ class ImagingEpoch(Epoch):
             **kwargs
     ):
         u.mkdir_check(output_path)
-
-        if "distance_tolerance" in kwargs and kwargs["distance_tolerance"] is not None:
-            kwargs["distance_tolerance"] = u.check_quantity(kwargs["distance_tolerance"], units.arcsec, convert=True)
-        if "snr_min" not in kwargs or kwargs["snr_min"] is None:
-            kwargs["snr_min"] = 3.
-        if "suppress_select" not in kwargs:
-            kwargs["suppress_select"] = True
 
         deepest = self.zeropoint(
             image_dict=image_dict,
@@ -5333,13 +5334,13 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
         # else:
         #     image_type = "final"
 
-        suppress_select = False
-        if "suppress_select" in kwargs and kwargs["suppress_select"] is not None:
-            suppress_select = kwargs.pop("suppress_select")
-
         # skip_retrievable = True
         # if "skip_retrievable" in kwargs and kwargs["skip_retrievable"] is not None:
         #     skip_retrievable = kwargs.pop("skip_retrievable")
+
+        suppress_select = False
+        if "suppress_select" in kwargs and kwargs["suppress_select"] is not None:
+            suppress_select = kwargs.pop("suppress_select")
 
         if not self.combined_epoch:
             self.photometric_calibration_from_standards(
