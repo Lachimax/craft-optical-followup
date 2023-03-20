@@ -1691,29 +1691,32 @@ class FRB(Transient):
         print("P(U) ==", p_u)
         priors = path.priors.load_std_priors()["adopted"]
         priors["U"] = p_u
-        ass = associate.run_individual(
-            config=config,
-            #         show=True,
-            #         verbose=True,
-            FRB=x_frb,
+        try:
+            ass = associate.run_individual(
+                config=config,
+                #         show=True,
+                #         verbose=True,
+                FRB=x_frb,
 
-            prior=priors
-            #     skip_bayesian=True
-        )
-
-        p_ux = ass.P_Ux
-        print("P(U|x) ==", p_ux)
-        cand_tbl = table.QTable.from_pandas(ass.candidates)
-        p_ox = cand_tbl[0]["P_Ox"]
-        print("Max P(O|x_i) ==", p_ox)
-        print("\n\n")
-        cand_tbl["ra"] *= units.deg
-        cand_tbl["dec"] *= units.deg
-        cand_tbl["separation"] *= units.arcsec
-        cand_tbl[filname] *= units.mag
-
-        self.host_candidate_tables[img.name] = cand_tbl
-        self.update_output_file()
+                prior=priors
+                #     skip_bayesian=True
+            )
+            p_ux = ass.P_Ux
+            print("P(U|x) ==", p_ux)
+            cand_tbl = table.QTable.from_pandas(ass.candidates)
+            p_ox = cand_tbl[0]["P_Ox"]
+            print("Max P(O|x_i) ==", p_ox)
+            print("\n\n")
+            cand_tbl["ra"] *= units.deg
+            cand_tbl["dec"] *= units.deg
+            cand_tbl["separation"] *= units.arcsec
+            cand_tbl[filname] *= units.mag
+            self.host_candidate_tables[img.name] = cand_tbl
+            self.update_output_file()
+        except IndexError:
+            cand_tbl = None
+            p_ox = None
+            p_ux = None
 
         return cand_tbl, p_ox, p_ux
 
@@ -1806,7 +1809,13 @@ class FRB(Transient):
                 for table_name in tables:
                     tbl_path = tables[table_name]
                     tbl_path = p.join_data_dir(tbl_path)
-                    self.host_candidate_tables[table_name] = table.QTable.read(tbl_path)
+                    if os.path.isfile(tbl_path):
+                        try:
+                            tbl = table.QTable.read(tbl_path)
+                            self.host_candidate_tables[table_name] = tbl
+                        except StopIteration:
+                            continue
+
             if "host_candidates" in outputs:
                 for obj in outputs["host_candidates"]:
                     self.host_candidates.append(
