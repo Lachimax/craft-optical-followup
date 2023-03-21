@@ -989,6 +989,8 @@ class Object:
 
     def select_deepest(self, local_output: bool = True):
         self.get_photometry_table(output=local_output, best=False)
+        if "snr" not in self.photometry_tbl.colnames:
+            return None
         idx = np.argmax(self.photometry_tbl["snr"])
         row = self.photometry_tbl[idx]
         deepest = self.photometry[row["instrument"]][row["band"]][row["epoch_name"]]
@@ -1347,9 +1349,18 @@ class Galaxy(Extragalactic):
         if "mass_stellar" in kwargs:
             self.mass_stellar = u.check_quantity(kwargs["mass_stellar"], units.solMass)
 
-        self.mass_stellar_err = None
-        if "mass_stellar_err" in kwargs:
-            self.mass_stellar_err = u.check_quantity(kwargs["mass_stellar_err"], units.solMass)
+        self.mass_stellar_err_plus = None
+        self.mass_stellar_err_minus = None
+        if "mass_stellar_err_plus" in kwargs:
+            self.mass_stellar_err_plus = u.check_quantity(kwargs["mass_stellar_err_plus"], units.solMass)
+        elif "mass_stellar_err" in kwargs:
+            self.mass_stellar_err_plus = u.check_quantity(kwargs["mass_stellar_err"],
+                                                          units.solMass)
+        if "mass_stellar_err_minus" in kwargs:
+            self.mass_stellar_err_minus = u.check_quantity(kwargs["mass_stellar_err_minus"], units.solMass)
+        elif "mass_stellar_err" in kwargs:
+            self.mass_stellar_err_minus = u.check_quantity(kwargs["mass_stellar_err"],
+                                                           units.solMass)
 
         self.sfr = None
         if "sfr" in kwargs:
@@ -1438,15 +1449,16 @@ class Galaxy(Extragalactic):
             z=self.z
         )
         self.mass_halo = (10 ** self.log_mass_halo) * units.solMass
-        if self.mass_stellar_err is None:
-            self.mass_stellar_err = 0. * units.solMass
+        if self.mass_stellar_err_plus is None:
+            self.mass_stellar_err_plus = 0. * units.solMass
         self.log_mass_halo_upper = halomass_from_stellarmass(
-            log_mstar=np.log10((self.mass_stellar + self.mass_stellar_err) / units.solMass),
+            log_mstar=np.log10((self.mass_stellar + self.mass_stellar_err_plus) / units.solMass),
             z=self.z
         )
-
+        if self.mass_stellar_err_minus is None:
+            self.mass_stellar_err_minus = 0. * units.solMass
         self.log_mass_halo_lower = halomass_from_stellarmass(
-            log_mstar=np.log10((self.mass_stellar - self.mass_stellar_err) / units.solMass),
+            log_mstar=np.log10((self.mass_stellar - self.mass_stellar_err_minus) / units.solMass),
             z=self.z
         )
 
@@ -2044,15 +2056,23 @@ class FRB(Transient):
         dm_mw = self.dm_mw_halo(model=halo_model) + self.dm_mw_ism(ism_model=ism_model)
         return self.dm - dm_mw
 
-    def dm_cosmic(self, **kwargs):
+    def dm_cosmic(
+            self,
+            z_max: float = None,
+            **kwargs
+    ):
         from frb.dm.igm import average_DM
-        return average_DM(self.host_galaxy.z, cosmo=cosmology, **kwargs)
+        if z_max is None:
+            z_max = self.host_galaxy.z
+        return average_DM(z_max, cosmo=cosmology, **kwargs)
 
-    def dm_halos_avg(self, **kwargs):
+    def dm_halos_avg(self, z_max: float = None, **kwargs):
         import frb.halos.hmf as hmf
         from frb.dm.igm import average_DMhalos
         hmf.init_hmf()
-        return average_DMhalos(self.host_galaxy.z, cosmo=cosmology, **kwargs)
+        if z_max is None:
+            z_max = self.host_galaxy.z
+        return average_DMhalos(z_max, cosmo=cosmology, **kwargs)
 
     # def estimate_dm_excess(self):
     #     dm_ism = self.estimate_dm_mw_ism()
@@ -2081,12 +2101,13 @@ class FRB(Transient):
             step_size_halo: units.Quantity = 0.1 * units.kpc,
             neval_cosmic: int = 10000,
             foreground_objects: list = None,
-            load_objects: bool = True
+            load_objects: bool = True,
+            skip_other_models: bool = False
     ):
 
         from frb.halos.hmf import halo_incidence
 
-        outputs = self.dm_mw_halo(rmax=rmax)
+        outputs = self.dm_mw_halo(distance=rmax)
 
         if load_objects:
             self.field.load_all_objects()
@@ -2099,8 +2120,10 @@ class FRB(Transient):
                     self.field.objects
                 )
             )
-        if host not in foreground_objects:
+        if host not in foreground_objects and host.z is not None:
             foreground_objects.append(host)
+
+        foreground_zs = list(map(lambda o: o.z, foreground_objects))
 
         frb_err_ra, frb_err_dec = self.position_err.uncertainty_quadrature_equ()
         frb_err_dec = frb_err_dec.to(units.arcsec)
@@ -2124,11 +2147,12 @@ class FRB(Transient):
         print("\tDM_MWHalo_PZ19:")
         print("\t", outputs["dm_halo_mw_pz19"])
 
-        print("\tDM_MWHalo_YF17:")
-        print("\t", outputs["dm_halo_mw_yf17"])
+        if not skip_other_models:
+            print("\tDM_MWHalo_YF17:")
+            print("\t", outputs["dm_halo_mw_yf17"])
 
-        print("\tDM_MWHalo_MB15:")
-        print("\t", outputs["dm_halo_mw_mb15"])
+            print("\tDM_MWHalo_MB15:")
+            print("\t", outputs["dm_halo_mw_mb15"])
 
         print("\tDM_MW:")
         outputs["dm_mw"] = outputs["dm_halo_mw_pz19"] + outputs["dm_ism_mw_ne2001"]
@@ -2139,14 +2163,18 @@ class FRB(Transient):
         print(outputs["dm_exgal"])
 
         print("Avg DM_cosmic:")
-        dm_cosmic, z = self.dm_cosmic(cumul=True, neval=neval_cosmic)
+        if host.z is not None:
+            z_max = host.z
+        else:
+            z_max = 2.0
+        dm_cosmic, z = self.dm_cosmic(cumul=True, neval=neval_cosmic, z_max=z_max)
         cosmic_tbl["z"] = z
         cosmic_tbl["comoving_distance"] = cosmology.comoving_distance(cosmic_tbl["z"])
         cosmic_tbl["dm_cosmic_avg"] = dm_cosmic
         outputs["dm_cosmic_avg"] = dm_cosmic[-1]
         print(outputs["dm_cosmic_avg"])
         print("\tAvg DM_halos:")
-        dm_halos, _ = self.dm_halos_avg(rmax=rmax, neval=neval_cosmic, cumul=True)
+        dm_halos, _ = self.dm_halos_avg(rmax=rmax, neval=neval_cosmic, cumul=True, z_max=z_max)
         cosmic_tbl["dm_halos_avg"] = dm_halos
         outputs["dm_halos_avg"] = dm_halos[-1]
         print("\t", outputs["dm_halos_avg"])
@@ -2159,19 +2187,26 @@ class FRB(Transient):
         halo_inform = []
         halo_models = {}
         halo_profiles = {}
-        dm_halo_host = None
+        dm_halo_host = 0. * dm_units
         dm_halo_cum = {}
         cosmic_tbl["dm_halos_emp"] = cosmic_tbl["dm_halos_avg"] * 0
         for obj in foreground_objects:
             print(f"\tDM_halo_{obj.name}:")
             # if load_objects:
             #     obj.load_output_file()
+
             obj.select_deepest()
+
+            if obj.position_photometry is not None:
+                pos = obj.position_photometry
+            else:
+                pos = obj.position
+
             halo_info = {
                 "id": obj.name,
                 "z": obj.z,
-                "ra": obj.position_photometry.ra,
-                "dec": obj.position_photometry.dec
+                "ra": pos.ra,
+                "dec": pos.dec
             }
 
             if cat_search is not None:
@@ -2186,9 +2221,12 @@ class FRB(Transient):
 
             halo_info["offset_angle"] = offset_angle = self.position.separation(obj.position_photometry).to(
                 units.arcsec)
-            fg_pos_err = max(
-                obj.position_photometry_err.dec_stat,
-                obj.position_photometry_err.ra_stat)
+            if obj.position_photometry_err.dec_stat is not None:
+                fg_pos_err = max(
+                    obj.position_photometry_err.dec_stat,
+                    obj.position_photometry_err.ra_stat)
+            else:
+                fg_pos_err = 0 * units.arcsec
             halo_info["distance_angular_size"] = obj.angular_size_distance()
             halo_info["distance_luminosity"] = obj.luminosity_distance()
             halo_info["distance_comoving"] = obj.comoving_distance()
@@ -2196,11 +2234,17 @@ class FRB(Transient):
             halo_info["r_perp"] = offset = obj.projected_size(offset_angle).to(units.kpc)
             halo_info["r_perp_err"] = obj.projected_size(offset_angle_err).to(units.kpc)
             halo_info["mass_stellar"] = fg_m_star = obj.mass_stellar
-            halo_info["mass_stellar_err"] = fg_m_star_err = obj.mass_stellar_err
+            halo_info["mass_stellar_err_plus"] = fg_m_star_err_plus = obj.mass_stellar_err_plus
+            halo_info["mass_stellar_err_minus"] = fg_m_star_err_minus = obj.mass_stellar_err_minus
             halo_info["log_mass_stellar"] = np.log10(fg_m_star / units.solMass)
-            halo_info["log_mass_stellar_err"] = u.uncertainty_log10(
+            halo_info["log_mass_stellar_err_plus"] = u.uncertainty_log10(
                 arg=fg_m_star,
-                uncertainty_arg=fg_m_star_err)
+                uncertainty_arg=fg_m_star_err_plus
+            )
+            halo_info["log_mass_stellar_err_minus"] = u.uncertainty_log10(
+                arg=fg_m_star,
+                uncertainty_arg=fg_m_star_err_minus
+            )
             obj.halo_mass()
             halo_info["mass_halo"] = obj.mass_halo
             halo_info["log_mass_halo"] = obj.log_mass_halo
@@ -2268,11 +2312,12 @@ class FRB(Transient):
 
             halo_profiles[obj.name] = halo_nes
 
-            halo_info["n_intersect_greater"] = halo_incidence(
-                Mlow=obj.mass_halo.value,
-                zFRB=self.host_galaxy.z,
-                radius=halo_info["r_perp"]
-            )
+            if host.z is not None:
+                halo_info["n_intersect_greater"] = halo_incidence(
+                    Mlow=obj.mass_halo.value,
+                    zFRB=host.z,
+                    radius=halo_info["r_perp"]
+                )
 
             m_low = 10 ** (np.floor(obj.log_mass_halo))
             m_high = 10 ** (np.ceil(obj.log_mass_halo))
@@ -2286,12 +2331,13 @@ class FRB(Transient):
             halo_info["log_mass_halo_partition_high"] = np.log10(m_high)
             halo_info["log_mass_halo_partition_low"] = np.log10(m_low)
 
-            halo_info["n_intersect_partition"] = halo_incidence(
-                Mlow=m_low,
-                Mhigh=m_high,
-                zFRB=self.host_galaxy.z,
-                radius=halo_info["r_perp"]
-            )
+            if host.z is not None:
+                halo_info["n_intersect_partition"] = halo_incidence(
+                    Mlow=m_low,
+                    Mhigh=m_high,
+                    zFRB=host.z,
+                    radius=halo_info["r_perp"]
+                )
 
             if obj.cigale_results is not None:
                 halo_info["u-r"] = obj.cigale_results["bayes.param.restframe_u_prime-r_prime"] * units.mag
@@ -2307,13 +2353,14 @@ class FRB(Transient):
                     step_size=step_size_halo
                 )
 
-                if obj is not self.host_galaxy:
+                if obj is not host:
                     dm_halo_cum[obj.name] = dm_halo_cum_this
                     cosmic_tbl["dm_halos_emp"] += np.interp(
                         cosmic_tbl["comoving_distance"],
                         dm_halo_cum_this["d_abs"],
                         dm_halo_cum_this["DM"]
                     )
+                # Add a cumulative halo host DM to the cosmic table
                 else:
                     dm_halo_cum[obj.name] = dm_halo_cum_this[:len(dm_halo_cum_this) // 2]
                     cosmic_tbl["dm_halo_host"] = np.interp(
@@ -2340,23 +2387,25 @@ class FRB(Transient):
         outputs["dm_cosmic_emp"] = outputs["dm_igm"] + outputs["dm_halos_emp"]
         print("\t", outputs["dm_cosmic_emp"])
 
-        print("DM_host:")
-        # Obtained using James 2021
-        print("\tMedian DM_host:")
-        outputs["dm_host_median_james22A"] = dm_host_median["james_22A"] / (1 + host.z)
-        outputs["dm_host_median"] = dm_host_median["james_22B"] / (1 + host.z)
-        print("\t", outputs["dm_host_median"])
-        # print("\tMax-probability DM_host:")
-        # outputs["dm_host_max_p_james22A"] = 98 * dm_units / (1 + host.z)
-        # print("\t", outputs["dm_host_max_p"])
+        outputs["dm_host_median"] = 0 * dm_units
+        if host.z is not None:
+            print("DM_host:")
+            # Obtained using James 2021
+            print("\tMedian DM_host:")
+            outputs["dm_host_median_james22A"] = dm_host_median["james_22A"] / (1 + host.z)
+            outputs["dm_host_median"] = dm_host_median["james_22B"] / (1 + host.z)
+            print("\t", outputs["dm_host_median"])
+            # print("\tMax-probability DM_host:")
+            # outputs["dm_host_max_p_james22A"] = 98 * dm_units / (1 + host.z)
+            # print("\t", outputs["dm_host_max_p"])
 
-        print("\tDM_halo_host")
-        outputs["dm_halo_host"] = dm_halo_host
-        print("\t", outputs["dm_halo_host"])
+            print("\tDM_halo_host")
+            outputs["dm_halo_host"] = dm_halo_host
+            print("\t", outputs["dm_halo_host"])
 
-        print("\tDM_host,ism:")
-        outputs["dm_host_ism"] = outputs["dm_host_median"] - outputs["dm_halo_host"]
-        print("\t", outputs["dm_host_ism"])
+            print("\tDM_host,ism:")
+            outputs["dm_host_ism"] = outputs["dm_host_median"] - outputs["dm_halo_host"]
+            print("\t", outputs["dm_host_ism"])
 
         print("Excess DM estimate:")
         outputs["dm_excess_avg"] = self.dm - outputs["dm_cosmic_avg"] - outputs["dm_mw"] - outputs["dm_host_median"]
