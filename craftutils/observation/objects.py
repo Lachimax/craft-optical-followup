@@ -1409,7 +1409,8 @@ class Galaxy(Extragalactic):
         output = super()._output_dict()
         output.update({
             "mass_stellar": self.mass_stellar,
-            "mass_stellar_err": self.mass_stellar_err,
+            "mass_stellar_err_plus": self.mass_stellar_err_plus,
+            "mass_stellar_err_minus": self.mass_stellar_err_minus,
             "sfr": self.sfr,
             "sfr_err": self.sfr_err,
             "cigale_model_path": self.cigale_model_path,
@@ -2191,7 +2192,7 @@ class FRB(Transient):
         dm_halo_cum = {}
         cosmic_tbl["dm_halos_emp"] = cosmic_tbl["dm_halos_avg"] * 0
         for obj in foreground_objects:
-            print(f"\tDM_halo_{obj.name}:")
+            print(f"\tDM_halo_{obj.name}: ({obj.z=})")
             # if load_objects:
             #     obj.load_output_file()
 
@@ -2373,6 +2374,7 @@ class FRB(Transient):
         #         plt.plot([offset.value, offset.value], [0, max(halo_nes)])
 
         halo_tbl = table.QTable(halo_inform)
+        halo_tbl["dm_halo"] = halo_tbl["dm_halo"].to(dm_units)
         cosmic_tbl["dm_cosmic_emp"] = cosmic_tbl["dm_halos_emp"] + cosmic_tbl["dm_igm"]
 
         print("\tEmpirical DM_halos:")
