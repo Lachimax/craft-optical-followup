@@ -1733,7 +1733,11 @@ class FRB(Transient):
 
         return cand_tbl, p_ox, p_ux
 
-    def consolidate_candidate_tables(self, sort_by="separation"):
+    def consolidate_candidate_tables(
+            self,
+            sort_by: str = "separation",
+            reverse_sort: bool = True
+    ):
         # Build a shared catalogue of host candidates.
         path_cat = None
         for tbl_name in self.host_candidate_tables:
@@ -1768,7 +1772,7 @@ class FRB(Transient):
                 path_cat.add_row(row[path_cat.colnames])
 
         # path_cat["coord"] = SkyCoord(path_cat["ra"], path_cat["dec"])
-        path_cat.sort(sort_by, reverse=True)
+        path_cat.sort(sort_by, reverse=reverse_sort)
         path_cat["id"] = np.zeros(len(path_cat), dtype=str)
         for i, row in enumerate(path_cat):
             row["id"] = chr(65 + i)
