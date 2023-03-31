@@ -146,7 +146,7 @@ class Field:
                     if obj != "<name>":
                         obj_dict = objs[obj]
                         if "name" not in obj_dict or obj_dict["name"] is None:
-                            obj_dict["name"] = name
+                            obj_dict["name"] = obj
                     else:
                         continue
                 elif type(objs) is list:
