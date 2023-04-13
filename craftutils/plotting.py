@@ -9,25 +9,55 @@ import numpy as np
 import photutils
 
 import astropy.io.fits as fits
+import astropy.units as units
+import astropy.constants as constants
 import astropy.wcs as wcs
 from astropy.table import Table
-from astropy.visualization import (ImageNormalize, LogStretch, SqrtStretch, ZScaleInterval, MinMaxInterval,
-                                   PowerStretch, wcsaxes)
-
-from astropy.visualization import quantity_support
+from astropy.visualization import (
+    ImageNormalize,
+    LogStretch,
+    SqrtStretch,
+    ZScaleInterval,
+    MinMaxInterval,
+    quantity_support
+)
 
 import craftutils.fits_files as ff
 import craftutils.params as p
 import craftutils.astrometry as am
 import craftutils.utils as u
 
+__all__ = []
+
 quantity_support()
 
 
+@u.export
 def plot_kron(fig: plt.Figure, data_title: str, instrument: str, f: str, index: Union[int, list], catalogue: str,
               n: int, n_x: int, n_y: int,
               image_name: str, frame: Union[int, float], cmap: str = 'viridis', vmin: float = None, vmax: float = None,
               des: bool = False, offset_ra: int = 0, offset_dec: int = 0):
+    """
+
+    :param fig:
+    :param data_title:
+    :param instrument:
+    :param f:
+    :param index:
+    :param catalogue:
+    :param n:
+    :param n_x:
+    :param n_y:
+    :param image_name:
+    :param frame:
+    :param cmap:
+    :param vmin:
+    :param vmax:
+    :param des:
+    :param offset_ra:
+    :param offset_dec:
+    :return:
+    """
     table = Table().read(catalogue, format='ascii.csv')
 
     if type(index) is int:
@@ -547,16 +577,46 @@ def log_norm(image: np.ndarray, a=2000):
     return ImageNormalize(image, interval=ZScaleInterval(), stretch=LogStretch(a))
 
 
-def latex_setup():
+def latex_setup(
+        font_family: str = 'serif',
+        math_fontset: str = None,
+        packages: list = ["amsmath"],
+        use_tex: bool = True,
+        **kwargs
+):
+    from distutils.spawn import find_executable
+
+    if not find_executable("latex"):
+        use_tex = False
+
+    if "font.serif" not in kwargs:
+        kwargs["font.serif"] = 'Times'
+    if "font.sans-serif" not in kwargs:
+        kwargs["font.sans-serif"] = 'DejaVu Sans'
+
+    if math_fontset is None:
+        if font_family == 'sans-serif':
+            math_fontset = "dejavusans"
+        elif font_family == 'serif':
+            math_fontset = "stix"
+
+    plt.rc('text', usetex=use_tex)
+    u.debug_print(1, f"Setting mathtext.fontset to {math_fontset}.")
+    plt.rc("mathtext", fontset=math_fontset)
     # Matplotlib and pyplot settings
-    plt.rc('font', family='serif')
-
-    plt.rc('font', weight='bold')
-    plt.rc('text', usetex=True)
+    # print(f"Setting font.family to {font_family}")
+    # plt.rc('font', family=font_family)
+    # plt.rc('font', weight='bold')
     plt.rc('xtick', labelsize=8)
-    plt.rcParams['text.latex.preamble'] = r'\usepackage{amsmath} '  # \usepackage{sfmath} \boldmath
+    # plt.rcParams['text.latex.preamble'] = ""
+    for package in packages:
+        line = r'\usepackage{' + package + '}  '
+        u.debug_print(1, f"Adding line '{line}' to latex preamble.")
+        plt.rcParams['text.latex.preamble'] += line + "\n"
+    # plt.rcParams['text.latex.preamble'] = r'\usepackage{amsmath} '  # \usepackage{sfmath} \boldmath
 
-    plt.rcParams['font.serif'] = ['Times']
+    kwargs["font.family"] = font_family
+    plt.rcParams.update(kwargs)
     plt.rcParams['axes.linewidth'] = 2.
 
 
@@ -584,11 +644,19 @@ def plot_file(path: str, label: str = None, colour: str = None, show: bool = Fal
 
 
 def plot_gal_params(
-        hdu: fits.HDUList, ras: Union[list, np.ndarray, float], decs: Union[list, np.ndarray, float],
-        a: Union[list, np.ndarray, float], b: Union[list, np.ndarray, float],
-        theta: Union[list, np.ndarray, float], colour: str = 'white',
+        hdu: fits.HDUList,
+        ras: Union[list, np.ndarray, float],
+        decs: Union[list, np.ndarray, float],
+        a: Union[list, np.ndarray, float],
+        b: Union[list, np.ndarray, float],
+        theta: Union[list, np.ndarray, float],
+        colour: str = 'white',
         show_centre: bool = False,
-        label: str = None, world: bool = True, world_axes: bool = True, **kwargs):
+        label: str = None,
+        world: bool = True,
+        world_axes: bool = True,
+        **kwargs
+):
     """
 
     :param hdu:
@@ -598,7 +666,6 @@ def plot_gal_params(
     :param b: In degrees.
     :param theta: In degrees, apparently.
     :param colour:
-    :param offset:
     :param show_centre:
     :return:
     """
@@ -638,10 +705,19 @@ def plot_gal_params(
             plt.plot((x, x), (0.0, n_y), c=colour)
 
 
-def plot_all_params(image: Union[str, fits.hdu.HDUList], cat: Union[str, Table, np.ndarray], show: bool = True,
-                    cutout: bool = False, ra_key: str = "ALPHA_SKY", dec_key: str = "DELTA_SKY", a_key: str = "A_WORLD",
-                    b_key: str = "B_WORLD", theta_key: str = "THETA_WORLD", kron: bool = False,
-                    kron_key: str = "KRON_RADIUS"):
+def plot_all_params(
+        image: Union[str, fits.hdu.HDUList],
+        cat: Union[str, Table, np.ndarray],
+        show: bool = True,
+        cutout: bool = False,
+        ra_key: str = "ALPHA_SKY",
+        dec_key: str = "DELTA_SKY",
+        a_key: str = "A_WORLD",
+        b_key: str = "B_WORLD",
+        theta_key: str = "THETA_WORLD",
+        kron: bool = False,
+        kron_key: str = "KRON_RADIUS"
+):
     """
     Plots
     :param image:
@@ -665,9 +741,15 @@ def plot_all_params(image: Union[str, fits.hdu.HDUList], cat: Union[str, Table, 
     plt.subplot(projection=wcs_image)
     norm = ImageNormalize(data, interval=ZScaleInterval(), stretch=SqrtStretch())
     plt.imshow(data, origin='lower', norm=norm, )
-    plot_gal_params(hdu=image, ras=cat[ra_key], decs=cat[dec_key], a=cat[a_key],
-                    b=cat[b_key],
-                    theta=cat[theta_key], colour='red')
+    plot_gal_params(
+        hdu=image,
+        ras=cat[ra_key],
+        decs=cat[dec_key],
+        a=cat[a_key],
+        b=cat[b_key],
+        theta=cat[theta_key],
+        colour='red'
+    )
     if kron:
         plot_gal_params(hdu=image, ras=cat[ra_key], decs=cat[dec_key], a=cat[kron_key] * cat[a_key],
                         b=cat[kron_key] * cat[b_key],
@@ -703,3 +785,21 @@ def plot_all_params(image: Union[str, fits.hdu.HDUList], cat: Union[str, Table, 
 
     if path:
         image.close()
+
+
+def plot_lines(ax, z_shift, space: str = "wavelength", **kwargs):
+    from linetools.lists.linelist import LineList
+    gal_lines = LineList('Galaxy')
+    lines = gal_lines.wrest
+    ylim = ax.get_ylim()
+    if space == "frequency":
+        lines = constants.c / lines
+        z_factor = 1 / (1 + z_shift)
+    elif space == "wavelength":
+        z_factor = 1 + z_shift
+    if "c" not in kwargs:
+        kwargs["c"] = "black"
+    if "ls" not in kwargs:
+        kwargs["ls"] = ":"
+    for line in lines:
+        ax.plot(units.Quantity([line * z_factor, line * z_factor]), ylim, **kwargs)

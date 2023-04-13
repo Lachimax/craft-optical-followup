@@ -17,29 +17,30 @@ import astropy.table as table
 import astropy.io.fits as fits
 import astropy.time as time
 import astropy.units as units
+import astropy.constants as constants
 from astropy.coordinates import SkyCoord
 from astropy.modeling import models, fitting
 from astropy.modeling.functional_models import Sersic1D
 from astropy.stats import sigma_clip
 from astropy.visualization import quantity_support
+import astropy.cosmology as cosmology
 
 import craftutils.fits_files as ff
 import craftutils.params as p
 import craftutils.utils as u
 import craftutils.plotting as plotting
-import craftutils.retrieve as r
 import craftutils.astrometry as a
-
-# TODO: End-to-end pipeline script?
-# TODO: Change expected types to Union
 
 gain_unit = units.electron / units.ct
 
+__all__ = []
 
+
+@u.export
 def image_psf_diagnostics(
         hdu: Union[str, fits.HDUList],
         cat: Union[str, table.Table],
-        star_class_tol: float = 0.9,
+        star_class_tol: int = 0.95,
         mag_max: float = 0.0 * units.mag,
         mag_min: float = -50. * units.mag,
         match_to: table.Table = None,
@@ -52,23 +53,41 @@ def image_psf_diagnostics(
         dec_col: str = "DEC",
         output: str = None,
         min_stars: int = 30,
-        plot_file_prefix: str = ""
+        plot_file_prefix: str = "",
+        debug_plots: bool = False
 ):
+    """
+
+    :param hdu:
+    :param cat:
+    :param star_class_tol:
+    :param mag_max:
+    :param mag_min:
+    :param match_to:
+    :param match_tolerance:
+    :param frame:
+    :param ext:
+    :param near_centre:
+    :param near_radius:
+    :param ra_col:
+    :param dec_col:
+    :param output:
+    :param min_stars:
+    :param plot_file_prefix:
+    :return:
+    """
     hdu, path = ff.path_or_hdu(hdu=hdu)
     hdu = copy.deepcopy(hdu)
     cat = u.path_or_table(cat)
 
-    if isinstance(cat, str):
-        cat = table.QTable.read(cat, format="ascii.sextractor")
-    print(cat["CLASS_STAR"].max(), cat["CLASS_STAR"].mean(), star_class_tol)
-    stars = cat[cat["CLASS_STAR"] > star_class_tol]
+    # stars = u.trim_to_class(cat=cat, modify=True, allowed=np.arange(0, star_class_tol + 1))
+    stars = cat[cat["CLASS_STAR"] >= star_class_tol]
     print(f"Initial num stars:", len(stars))
     stars = stars[stars["MAG_PSF"] < mag_max]
     print(f"Num stars with MAG_PSF < {mag_max}:", len(stars))
     print(stars["MAG_PSF"].max(), stars["MAG_PSF"].mean(), mag_max, mag_min)
     stars = stars[stars["MAG_PSF"] > mag_min]
     print(f"Num stars with MAG_PSF > {mag_min}:", len(stars))
-
 
     if near_radius is not None:
         header = hdu[ext].header
@@ -86,7 +105,6 @@ def image_psf_diagnostics(
         stars_near = stars[near_centre.separation(coords) < near_radius]
         print("len(stars_near):", len(stars_near), "near_radius:", near_radius, "img_width_ang:", img_width_ang)
         while len(stars_near) < min_stars and near_radius < img_width_ang:
-            print(near_centre.separation(coords).max(), near_centre.separation(coords).mean())
             stars_near = stars[near_centre.separation(coords) < near_radius]
             print(f"Num stars within {near_radius} of {near_centre}:", len(stars_near))
             near_radius += 0.5 * units.arcmin
@@ -110,20 +128,37 @@ def image_psf_diagnostics(
 
     if type(stars) is table.QTable:
         if not isinstance(stars["GAUSSIAN_FWHM_FITTED"], units.Quantity):
-            stars["GAUSSIAN_FWHM_FITTED"] *= units.deg
+            stars["GAUSSIAN_FWHM_FITTED"] *= units.arcsec
         if not isinstance(stars["MOFFAT_FWHM_FITTED"], units.Quantity):
-            stars["MOFFAT_FWHM_FITTED"] *= units.deg
+            stars["MOFFAT_FWHM_FITTED"] *= units.arcsec
+
+    print()
+    print("STARS")
 
     for j, star in enumerate(stars):
         ra = star[ra_col]
         dec = star[dec_col]
 
+        # print(star)
+
+        # print(ra)
+        # print(dec)
+
         window = ff.trim_frame_point(hdu=hdu, ra=ra, dec=dec, frame=frame, ext=ext)
+        if debug_plots and output is not None:
+            plot_dir = os.path.join(output, "debug_plots")
+            u.mkdir_check(plot_dir)
+            # window.writeto(os.path.join(plot_dir, f"{star['NUMBER']}.fits", overwrite=True))
         data = window[ext].data
+        if debug_plots and output is not None:
+            fig, ax = plt.subplots()
+            ax.imshow(data)
+            fig.savefig(os.path.join(plot_dir, f"{star['NUMBER']}_data.png"))
         _, scale = ff.get_pixel_scale(hdu, astropy_units=True, ext=ext)
 
         mean, median, stddev = stats.sigma_clipped_stats(data)
         data -= median
+        data[~np.isfinite(data)] = np.nanmedian(data)
 
         y, x = np.mgrid[:data.shape[0], :data.shape[1]]
 
@@ -132,11 +167,23 @@ def image_psf_diagnostics(
         # First, a Moffat function
         model_init = models.Moffat2D(x_0=frame, y_0=frame)
         fitter = fitting.LevMarLSQFitter()
-        model = fitter(model_init, x, y, data)
-        fwhm = (model.fwhm * units.pixel).to(units.degree, scale)
+        try:
+            model = fitter(model_init, x, y, data)
+        except fitting.NonFiniteValueError:
+            continue
+        fwhm = (model.fwhm * units.pixel).to(units.arcsec, scale)
         star["MOFFAT_FWHM_FITTED"] = fwhm
         star["MOFFAT_GAMMA_FITTED"] = model.gamma.value
         star["MOFFAT_ALPHA_FITTED"] = model.alpha.value
+
+        if debug_plots and output is not None:
+            fig = plt.figure()
+            ax_data_moffat = fig.add_subplot(2, 3, 1)
+            ax_data_moffat.imshow(data)
+            ax_model_moffat = fig.add_subplot(2, 3, 2)
+            ax_model_moffat.imshow(model(x, y))
+            ax_residuals_moffat = fig.add_subplot(2, 3, 3)
+            ax_residuals_moffat.imshow(data - model(x, y))
 
         # Then a good-old-fashioned Gaussian, with the x and y axes tied together.
         model_init = models.Gaussian2D(x_mean=frame, y_mean=frame)
@@ -148,88 +195,76 @@ def image_psf_diagnostics(
 
         model = fitter(model_init, x, y, data)
         fwhm = (model.x_fwhm * units.pixel).to(units.arcsec, scale)
+        # print(fwhm)
+        # print(star["GAUSSIAN_FWHM_FITTED"])
         star["GAUSSIAN_FWHM_FITTED"] = fwhm
-
+        # print(star["GAUSSIAN_FWHM_FITTED"])
         stars[j] = star
+        # print(stars[j]["GAUSSIAN_FWHM_FITTED"])
+        # print(stars[j])
+        # print()
+        if debug_plots and output is not None:
+            ax_data_gauss = fig.add_subplot(2, 3, 4)
+            ax_data_gauss.imshow(data)
+            ax_model_gauss = fig.add_subplot(2, 3, 5)
+            ax_model_gauss.imshow(model(x, y))
+            ax_residuals_gauss = fig.add_subplot(2, 3, 6)
+            ax_residuals_gauss.imshow(data - model(x, y))
+            fig.savefig(os.path.join(plot_dir, str(star["NUMBER"]) + ".png"))
+
+    # print()
 
     clipped = sigma_clip(stars["MOFFAT_FWHM_FITTED"], masked=True, sigma=2)
     stars_clip_moffat = stars[~clipped.mask]
+    stars_clip_moffat = stars_clip_moffat[np.isfinite(stars_clip_moffat["MOFFAT_FWHM_FITTED"])]
+    stars_clip_moffat = stars_clip_moffat[stars_clip_moffat["MOFFAT_FWHM_FITTED"] > 0.1 * units.arcsec]
     print(f"Num stars after sigma clipping w. astropy Moffat PSF:", len(stars_clip_moffat))
 
     clipped = sigma_clip(stars["GAUSSIAN_FWHM_FITTED"], masked=True, sigma=2)
     stars_clip_gauss = stars[~clipped.mask]
+    stars_clip_gauss = stars_clip_gauss[np.isfinite(stars_clip_gauss["GAUSSIAN_FWHM_FITTED"])]
+    stars_clip_gauss = stars_clip_gauss[stars_clip_gauss["GAUSSIAN_FWHM_FITTED"] > 0.1 * units.arcsec]
     print(f"Num stars after sigma clipping w. astropy Gaussian PSF:", len(stars_clip_gauss))
 
     clipped = sigma_clip(stars["FWHM_WORLD"], masked=True, sigma=2)
     stars_clip_sex = stars[~clipped.mask]
+    stars_clip_sex = stars_clip_sex[np.isfinite(stars_clip_sex["FWHM_WORLD"])]
     print(f"Num stars after sigma clipping w. Sextractor PSF:", len(stars_clip_sex))
 
     plt.close()
-    print(f"image_psf_diagnostics(): output={output}")
+    u.debug_print(2, f"image_psf_diagnostics(): {output=}")
     if output is not None:
 
         with quantity_support():
+            tmp_dict = {
+                "MOFFAT_FWHM_FITTED": stars_clip_moffat,
+                "GAUSSIAN_FWHM_FITTED": stars_clip_gauss,
+                "FWHM_WORLD": stars_clip_sex
+            }
 
             for colname in ["MOFFAT_FWHM_FITTED", "GAUSSIAN_FWHM_FITTED", "FWHM_WORLD"]:
-                plt.hist(
-                    stars[colname].to(units.arcsec),
+                fig, ax = plt.subplots()
+                ax.hist(
+                    stars[colname][np.isfinite(stars[colname])].to(units.arcsec),
                     label="Full sample",
                     bins=int(np.sqrt(len(stars)))
                 )
-                plt.hist(
-                    stars_clip_moffat[colname].to(units.arcsec),
+                ax.legend()
+                fig.savefig(os.path.join(output, f"{plot_file_prefix}_psf_histogram_{colname}_full.png"))
+
+                fig, ax = plt.subplots()
+                ax.hist(
+                    tmp_dict[colname][colname].to(units.arcsec),
                     edgecolor='black',
                     linewidth=1.2,
                     label="Sigma-clipped",
                     fc=(0, 0, 0, 0),
-                    bins=int(np.sqrt(len(stars_clip_moffat)))
+                    bins=int(np.sqrt(len(stars)))
                 )
-                plt.legend()
-                plt.savefig(os.path.join(output, f"{plot_file_prefix}_psf_histogram_{colname}.png"))
-                plt.close()
+                ax.legend()
+                fig.savefig(os.path.join(output, f"{plot_file_prefix}_psf_histogram_{colname}_clipped.png"))
 
     return stars_clip_moffat, stars_clip_gauss, stars_clip_sex
-
-
-def image_depth_diagnostics(hdu: Union[str, fits.HDUList], fil: str, sextractor: str, cat_path: str, cat_name: str,
-                            output_path: str, star_class_tol: float = 0.9):
-    file = ff.path_or_hdu(hdu=hdu)
-    sextractor_cat = table.Table.read(sextractor, format="ascii.sextractor")
-    sextractor_3sigma = sextractor_cat[sextractor_cat["SNR_WIN"] > 3.0]
-    # TODO: Calculate SNR properly
-    exp_time = ff.get_exp_time(file)
-
-    column_names = r.cat_columns(cat=cat_name, f=fil[0])
-    cat_ra_col = column_names['ra']
-    cat_dec_col = column_names['dec']
-    cat_mag_col = column_names['mag_psf']
-
-    zp = determine_zeropoint_sextractor(sextractor_cat=sextractor,
-                                        image=file,
-                                        cat_path=cat_path,
-                                        cat_name=cat_name,
-                                        output_path=output_path,
-                                        show=False,
-                                        cat_ra_col=cat_ra_col,
-                                        cat_dec_col=cat_dec_col,
-                                        cat_mag_col=cat_mag_col,
-                                        sex_ra_col="ALPHAPSF_SKY",
-                                        sex_dec_col="DELTAPSF_SKY",
-                                        sex_x_col='XPSF_IMAGE',
-                                        sex_y_col='YPSF_IMAGE',
-                                        dist_tol=5.0 * units.pixel,
-                                        flux_column="FLUX_PSF",
-                                        stars_only=True,
-                                        star_class_tol=star_class_tol,
-                                        exp_time=exp_time,
-                                        )
-
-    zeropoint = zp["zeropoint"]
-    depth = np.max(sextractor_3sigma["MAG_WIN"]) + zeropoint
-    print("OBJECTS SNR > 3:", len(sextractor_3sigma))
-    print("DEPTH:", depth)
-
-    return depth
 
 
 def get_median_background(image: Union[str, fits.HDUList], ra: float = None, dec: float = None, frame: int = 100,
@@ -263,8 +298,12 @@ def get_median_background(image: Union[str, fits.HDUList], ra: float = None, dec
     return np.nanmedian(back_patch)
 
 
-def fit_background(data: np.ndarray, model_type='polynomial', deg: int = 2, footprint: List[int] = None,
-                   weights: np.ndarray = None):
+def fit_background(
+        data: np.ndarray,
+        model_type='polynomial',
+        deg: int = 2,
+        footprint: List[int] = None,
+        weights: np.ndarray = None):
     """
 
     :param data:
@@ -298,12 +337,8 @@ def fit_background(data: np.ndarray, model_type='polynomial', deg: int = 2, foot
     else:
         raise ValueError("Unrecognised model; must be in", accepted_models)
     fitter = fitting.LevMarLSQFitter()
-    # print(footprint)
     if weights is not None:
         weights = weights[footprint[0]:footprint[1], footprint[2]:footprint[3]]
-    # print(data[footprint[0]:footprint[1], footprint[2]:footprint[3]].shape)
-    # print(x.shape)
-    # print(y.shape)
     model = fitter(init, x, y, data[footprint[0]:footprint[1], footprint[2]:footprint[3]],
                    weights=weights)
 
@@ -311,10 +346,12 @@ def fit_background(data: np.ndarray, model_type='polynomial', deg: int = 2, foot
     return model(x, y), model(x_large, y_large), model
 
 
-def fit_background_fits(image: Union[str, fits.HDUList], model_type='polynomial', local: bool = True, global_sub=False,
-                        centre_x: int = None, centre_y: int = None,
-                        frame: int = 50,
-                        deg: int = 3, weights: np.ndarray = None):
+def fit_background_fits(
+        image: Union[str, fits.HDUList], model_type='polynomial', local: bool = True, global_sub=False,
+        centre_x: int = None, centre_y: int = None,
+        frame: int = 50,
+        deg: int = 3, weights: np.ndarray = None
+):
     image, _ = ff.path_or_hdu(image)
     data = image[0].data
 
@@ -355,7 +392,114 @@ def gain_mean_combine(old_gain: float = 0.8, n_frames: int = 1):
     return n_frames * old_gain
 
 
-def magnitude_complete(
+AB_zeropoint = 3631 * units.Jy
+
+
+def redshift_frequency(nu: units.Quantity, z: float, z_new: float):
+    return nu * (1 + z) / (1 + z_new)
+
+
+def redshift_wavelength(wavelength: units.Quantity, z: float, z_new: float):
+    return wavelength * (1 + z_new) / (1 + z)
+
+
+def redshift_flux_nu(
+        flux,
+        z: float,
+        z_new: float,
+        cosmo: cosmology.LambdaCDM = cosmology.Planck18,
+):
+    d_l = cosmo.luminosity_distance(z)
+    d_l_shift = cosmo.luminosity_distance(z_new)
+
+    return flux * ((1 + z_new) * d_l ** 2) / ((1 + z) * d_l_shift ** 2)
+
+
+def redshift_flux_lambda(
+        flux,
+        z: float,
+        z_new: float,
+        cosmo: cosmology.LambdaCDM = cosmology.Planck18,
+):
+    d_l = cosmo.luminosity_distance(z)
+    d_l_shift = cosmo.luminosity_distance(z_new)
+
+    return flux * ((1 + z) * d_l ** 2) / ((1 + z_new) * d_l_shift ** 2)
+
+
+def magnitude_AB(
+        flux: units.Quantity,
+        band_transmission: Union[np.ndarray, units.Quantity],
+        frequency: units.Quantity,
+        use_quantum_factor: bool = True
+):
+    """
+    All three arguments must be of the same length, with entries corresponding 1-to-1.
+    :param flux:
+    :param band_transmission:
+    :param frequency:
+    :return:
+    """
+    flux_tbl = table.QTable(
+        data={
+            "nu": frequency,
+            "e": band_transmission,
+            "f": flux
+        }
+    )
+    flux_tbl.sort("nu")
+
+    if use_quantum_factor:
+        quantum_factor = (constants.h * flux_tbl["nu"]) ** -1
+    else:
+        quantum_factor = 1
+
+    flux_band = np.trapz(
+        y=flux_tbl["f"] * quantum_factor * flux_tbl["e"],
+        x=flux_tbl["nu"]
+    )
+    flux_ab = np.trapz(
+        y=AB_zeropoint * quantum_factor * flux_tbl["e"],
+        x=flux_tbl["nu"]
+    )
+
+    return -2.5 * np.log10(flux_band / flux_ab)
+
+
+def magnitude_absolute_from_luminosity(
+        luminosity_nu: units.Quantity,
+        band_transmission: Union[np.ndarray, units.Quantity],
+        frequency: units.Quantity,
+        use_quantum_factor: bool = True
+):
+    lum_tbl = table.QTable(
+        data={
+            "nu": frequency,
+            "e": band_transmission,
+            "L": luminosity_nu
+        }
+    )
+    lum_tbl.sort("nu")
+
+    if use_quantum_factor:
+        quantum_factor = (constants.h * lum_tbl["nu"]) ** -1
+    else:
+        quantum_factor = 1
+
+    luminosity_band = np.trapz(
+        y=lum_tbl["L"] * lum_tbl["e"] * quantum_factor / lum_tbl["nu"],
+        x=lum_tbl["nu"]
+    )
+
+    luminosity_ab = np.trapz(
+        y=AB_zeropoint * lum_tbl["e"] * quantum_factor / lum_tbl["nu"],
+        x=lum_tbl["nu"]
+    )
+
+    return -2.5 * np.log10(luminosity_band / (luminosity_ab * 4 * np.pi * 100 * units.pc ** 2))
+
+
+def magnitude_instrumental(
         flux: units.Quantity,
         flux_err: units.Quantity = 0.0 * units.ct,
         exp_time: units.Quantity = 1. * units.second,
@@ -383,7 +527,7 @@ def magnitude_complete(
     :return:
     """
 
-    print('Calculating magnitudes...')
+    # print('Calculating magnitudes...')
 
     if colour is None:
         colour = 0.0
@@ -397,7 +541,7 @@ def magnitude_complete(
     exp_time = u.check_quantity(exp_time, units.s)
     exp_time_err = u.check_quantity(exp_time_err, units.s)
 
-    u.debug_print(2, "photometry.magnitude_complete():")
+    u.debug_print(2, "photometry.magnitude_instrumental():")
     u.debug_print(2, "\texp_time ==", exp_time, "+/-", exp_time_err)
     u.debug_print(2, "\tzeropoint ==", zeropoint, "+/-", zeropoint_err)
     u.debug_print(2, "\tairmass", airmass, "+/-", airmass_err)
@@ -435,6 +579,10 @@ def magnitude_uncertainty(
     return mag, error
 
 
+def distance_modulus(distance: units.Quantity):
+    return (5 * np.log10(distance / units.pc) - 5) * units.mag
+
+
 def determine_zeropoint_sextractor(
         sextractor_cat: Union[str, table.QTable],
         cat_path: str,
@@ -458,7 +606,8 @@ def determine_zeropoint_sextractor(
         mag_range_sex_lower: units.Quantity = -100 * units.mag,
         stars_only: bool = True,
         star_class_tol: float = 0.95,
-        star_class_col: str = 'CLASS_STAR',
+        star_class_type: str = "CLASS_STAR",
+        star_class_kwargs={},
         exp_time: float = None,
         y_lower: units.Quantity = 0 * units.pix,
         y_upper: units.Quantity = 100000 * units.pix,
@@ -467,7 +616,8 @@ def determine_zeropoint_sextractor(
         cat_zeropoint_err: units.Quantity = 0.0 * units.mag,
         snr_cut: float = 10.,
         snr_col: str = 'SNR_WIN',
-        iterate_uncertainty: bool = True
+        iterate_uncertainty: bool = True,
+        do_x_shift: bool = True
 ):
     """
     This function expects your catalogue to be a .csv.
@@ -491,8 +641,6 @@ def determine_zeropoint_sextractor(
     :param mag_range_sex_upper:
     :param mag_range_sex_lower:
     :param stars_only:
-    :param star_class_tol:
-    :param star_class_col:
     :param exp_time:
     :param y_lower:
     :param y_upper:
@@ -510,7 +658,8 @@ def determine_zeropoint_sextractor(
     params['image_path'] = str(path)
 
     print("Running zeropoint determination, with:")
-    print('SExtractor catalogue path:', sextractor_cat)
+    if isinstance(sextractor_cat, str):
+        print('SExtractor catalogue path:', sextractor_cat)
     print('Image path:', path)
     print('Catalogue path:', cat_path)
     print('Output:', output_path)
@@ -523,19 +672,18 @@ def determine_zeropoint_sextractor(
 
     # Extract pixel scales from images.
     _, pix_scale = ff.get_pixel_scale(image, astropy_units=True)
-    print('PIXEL SCALE:', pix_scale)
     # Get tolerance as angle.
     if dist_tol.unit.is_equivalent(units.pix):
         tolerance = dist_tol.to(units.deg, pix_scale)
     else:
         tolerance = dist_tol
-    print('TOLERANCE:', tolerance)
 
     # Import the catalogue of the sky region.
     if cat_type != 'sextractor':
         cat = table.QTable.read(cat_path, format='ascii.csv')
         if cat_mag_col not in cat.colnames:
             print(f"{cat_mag_col} not found in {cat_name}; is this band included?")
+            p.save_params(file=output_path + 'parameters.yaml', dictionary=params)
             return None
         cat = cat.filled(fill_value=-999.)
         cat[cat_ra_col] *= units.deg
@@ -551,7 +699,6 @@ def determine_zeropoint_sextractor(
     params['time'] = str(time.Time.now())
     params['catalogue'] = str(cat_name)
     params['airmass'] = 0.0
-    print('Airmass:', params['airmass'])
     params['exp_time'] = exp_time = u.check_quantity(exp_time, units.second)
     params['pix_tol'] = dist_tol
     params['ang_tol'] = tolerance = u.check_quantity(tolerance, units.deg)
@@ -571,16 +718,21 @@ def determine_zeropoint_sextractor(
     params['cat_zeropoint'] = u.check_quantity(cat_zeropoint, units.mag)
     params['cat_zeropoint_err'] = u.check_quantity(cat_zeropoint_err, units.mag)
     if stars_only:
-        params['star_class_tol'] = float(star_class_tol)
+        params['star_class_kwargs'] = star_class_kwargs
 
-    if type(sextractor_cat) is str:
+    if isinstance(sextractor_cat, str):
         source_tbl = table.QTable.read(sextractor_cat, format="ascii.sextractor")
     else:
         source_tbl = sextractor_cat
 
-    source_tbl['mag'], source_tbl['mag_err'] = magnitude_complete(flux=source_tbl[flux_column],
-                                                                  flux_err=source_tbl[flux_err_column],
-                                                                  exp_time=exp_time)
+    if flux_column not in sextractor_cat.colnames:
+        print(f"Flux column {flux_column} not in provided SE catalogue.")
+        p.save_params(file=output_path + 'parameters.yaml', dictionary=params)
+        return None
+
+    source_tbl['mag'], source_tbl['mag_err'] = magnitude_instrumental(flux=source_tbl[flux_column],
+                                                                      flux_err=source_tbl[flux_err_column],
+                                                                      exp_time=exp_time)
 
     # Plot all stars found by SExtractor.
     plt.close()
@@ -640,6 +792,42 @@ def determine_zeropoint_sextractor(
         cat_dec_col = cat_dec_col + '_' + cat_name
     matches_cat_pix_x, matches_cat_pix_y = wcst.all_world2pix(matches[cat_ra_col], matches[cat_dec_col], 0, quiet=False)
 
+    # Clean undesirable objects from consideration:
+    print(len(matches), 'total matches')
+    n_match = 0
+
+    params[f'matches_{n_match}_total'] = len(matches)
+    n_match += 1
+
+    remove = np.isnan(matches[cat_mag_col])
+    print(sum(np.invert(remove)), 'matches after removing catalogue mag nans')
+    params[f'matches_{n_match}_nans_cat'] = int(sum(np.invert(remove)))
+    n_match += 1
+
+    star_class_col = "CLASS_STAR"
+    if stars_only:
+        if star_class_type == "SPREAD_MODEL":
+            if "class_flag_col" in star_class_kwargs:
+                star_class_col = star_class_kwargs["class_flag_col"]
+            else:
+                star_class_col = "CLASS_FLAG"
+            is_star = u.trim_to_class(
+                matches,
+                classify_kwargs=star_class_kwargs,
+                modify=False,
+                allowed=np.arange(0, star_class_tol + 1)
+            )
+            remove = remove + np.invert(is_star)
+            print(sum(np.invert(remove)), 'matches after removing non-stars (class_flag < ' + str(star_class_tol) + ')')
+        else:
+            if "class_flag_col" in star_class_kwargs:
+                star_class_col = star_class_kwargs["class_flag_col"]
+            remove = remove + (matches[star_class_col] < star_class_tol)
+            print(sum(np.invert(remove)),
+                  'matches after removing non-stars (class_star >= ' + str(star_class_tol) + ')')
+        params[f'matches_{n_match}_non_stars'] = int(sum(np.invert(remove)))
+        n_match += 1
+
     plt.imshow(image[0].data, origin='lower', norm=plotting.nice_norm(image[0].data))
     plt.scatter(matches_cat_pix_x, matches_cat_pix_y, label=cat_name + 'Catalogue', c=matches[star_class_col],
                 cmap="plasma")
@@ -652,18 +840,6 @@ def determine_zeropoint_sextractor(
     plt.close()
 
     matches[cat_mag_col] = matches[cat_mag_col] + cat_zeropoint
-
-    # Clean undesirable objects from consideration:
-    print(len(matches), 'total matches')
-    n_match = 0
-
-    params[f'matches_{n_match}_total'] = len(matches)
-    n_match += 1
-
-    remove = np.isnan(matches[cat_mag_col])
-    print(sum(np.invert(remove)), 'matches after removing catalogue mag nans')
-    params[f'matches_{n_match}_nans_cat'] = int(sum(np.invert(remove)))
-    n_match += 1
 
     remove = remove + np.isnan(matches['mag'])
     print(sum(np.invert(remove)), 'matches after removing SExtractor mag nans')
@@ -705,21 +881,12 @@ def determine_zeropoint_sextractor(
     params[f'matches_{n_match}_snr'] = int(sum(np.invert(remove)))
     n_match += 1
 
-    if stars_only:
-        if star_class_col == 'spread_model':
-            remove = remove + (np.abs(matches[star_class_col]) > star_class_tol)
-            print(sum(np.invert(remove)),
-                  f'matches after removing non-stars (abs({star_class_tol}) > spread_model)')
-        else:
-            remove = remove + (matches[star_class_col] < star_class_tol)
-            print(sum(np.invert(remove)), 'matches after removing non-stars (star_class < ' + str(star_class_tol) + ')')
-        params[f'matches_{n_match}_non_stars'] = int(sum(np.invert(remove)))
-        n_match += 1
     keep_these = np.invert(remove)
     matches_clean = matches[keep_these]
 
     if len(matches_clean) < 3:
         print('Not enough valid matches to calculate zeropoint.')
+        p.save_params(file=output_path + 'parameters.yaml', dictionary=params)
         return None
 
     # Plot remaining matches
@@ -737,6 +904,12 @@ def determine_zeropoint_sextractor(
     # Linear fit of catalogue magnitudes vs sextractor magnitudes
 
     x = matches_clean[cat_mag_col]
+    # Change coordinates to get centred
+    x_shift = 0.
+    if do_x_shift:
+        x_shift = np.nanmean(x)
+    params["x_shift"] = x_shift
+    x -= x_shift
     x_uncertainty = matches_clean[cat_mag_col_err]
     y = matches_clean['mag']
     y_uncertainty = matches_clean['mag_err']
@@ -753,8 +926,8 @@ def determine_zeropoint_sextractor(
 
     fitter = fitting.LinearLSQFitter()
 
-    mag_max = None
-    mag_min = None
+    mag_max = np.inf
+    mag_min = -np.inf
 
     matches = matches_clean
 
@@ -789,34 +962,44 @@ def determine_zeropoint_sextractor(
             matches_prior = matches_iter
 
             keep = x_iter >= mag_min
+            if sum(keep) < 3:
+                break
             x_iter = x_iter[keep]
             y_iter = y_iter[keep]
             y_uncertainty_iter = y_uncertainty_iter[keep]
             y_weights_iter = y_weights_iter[keep]
             x_weights_iter = x_weights_iter[keep]
             matches_iter = matches_iter[keep]
-
-            fitted_iter = fitter(linear_model_fixed, x_iter, y_iter, weights=y_weights_iter)
-            line_iter = fitted_iter(x_iter)
-
-            err_this = u.std_err_intercept(
-                y_model=line_iter,
-                y_obs=y_iter,
-                x_obs=x_iter,
-                y_weights=y_weights_iter,
-                x_weights=x_weights_iter,
+            zps_iter = x_iter - y_iter
+            zp_mean_iter = np.average(zps_iter, weights=y_weights_iter)
+            err_this = u.root_mean_squared_error(
+                model_values=zp_mean_iter * np.ones_like(zps_iter).value,
+                obs_values=zps_iter,
+                weights=y_weights_iter,
                 dof_correction=1
-            )
+            ) / np.sqrt(len(zps_iter))
 
-            plt.scatter(x_iter, y_iter, c='blue')
-            plt.plot(x_iter, line_iter, c='green')
-            plt.suptitle("")
-            plt.xlabel(f"Magnitude in {cat_name}")
-            plt.ylabel("SExtractor Magnitude in " + image_name)
-            plt.savefig(
-                f"{output_path}min_mag_iterations/{n}_{cat_name}vsex_std_err_{err_this}_delta{delta}_magmin_{mag_min}.png")
-            plt.close()
-
+            #         fitted_iter = fitter(linear_model_fixed, x_iter, y_iter, weights=y_weights_iter)
+            #         line_iter = fitted_iter(x_iter)
+            #
+            #         err_this = u.std_err_intercept(
+            #             y_model=line_iter,
+            #             y_obs=y_iter,
+            #             x_obs=x_iter,
+            #             y_weights=y_weights_iter,
+            #             x_weights=x_weights_iter,
+            #             dof_correction=1
+            #         )
+            #
+            #         plt.scatter(x_iter, y_iter, c='blue')
+            #         plt.plot(x_iter, line_iter, c='green')
+            #         plt.suptitle("")
+            #         plt.xlabel(f"Magnitude in {cat_name}")
+            #         plt.ylabel("SExtractor Magnitude in " + image_name)
+            #         plt.savefig(
+            #             f"{output_path}min_mag_iterations/{n}_{cat_name}vsex_std_err_{err_this}_delta{delta}_magmin_{mag_min}.png")
+            #         plt.close()
+            #
             delta = err_this - std_err_prior
 
             mag_min += 0.1 * units.mag
@@ -861,6 +1044,8 @@ def determine_zeropoint_sextractor(
             matches_prior = matches_iter
 
             keep = x_iter <= mag_max
+            if sum(keep) < 3:
+                break
             x_iter = x_iter[keep]
             y_iter = y_iter[keep]
             y_uncertainty_iter = y_uncertainty_iter[keep]
@@ -868,25 +1053,34 @@ def determine_zeropoint_sextractor(
             x_weights_iter = x_weights_iter[keep]
             matches_iter = matches_iter[keep]
 
-            fitted_iter = fitter(linear_model_fixed, x_iter, y_iter, weights=y_weights_iter)
-            line_iter = fitted_iter(x_iter)
+            zps_iter = x_iter - y_iter
+            zp_mean_iter = np.average(zps_iter, weights=y_weights_iter)
+            err_this = u.root_mean_squared_error(
+                model_values=zp_mean_iter * np.ones_like(zps_iter).value,
+                obs_values=zps_iter,
+                weights=y_weights_iter,
+                dof_correction=1
+            ) / np.sqrt(len(zps_iter))
 
-            err_this = u.std_err_intercept(
-                y_model=line_iter,
-                y_obs=y_iter,
-                x_obs=x_iter,
-                y_weights=y_weights_iter,
-                x_weights=x_weights_iter
-            )
-
-            plt.scatter(x_iter, y_iter, c='blue')
-            plt.plot(x_iter, line_iter, c='green')
-            plt.suptitle("")
-            plt.xlabel(f"Magnitude in {cat_name}")
-            plt.ylabel("SExtractor Magnitude in " + image_name)
-            plt.savefig(f"{output_path}max_mag_iterations/{n}_{cat_name}vsex_std_err_{err_this}_magmax_{mag_max}.png")
-            plt.close()
-
+            #         fitted_iter = fitter(linear_model_fixed, x_iter, y_iter, weights=y_weights_iter)
+            #         line_iter = fitted_iter(x_iter)
+            #
+            #         err_this = u.std_err_intercept(
+            #             y_model=line_iter,
+            #             y_obs=y_iter,
+            #             x_obs=x_iter,
+            #             y_weights=y_weights_iter,
+            #             x_weights=x_weights_iter
+            #         )
+            #
+            #         plt.scatter(x_iter, y_iter, c='blue')
+            #         plt.plot(x_iter, line_iter, c='green')
+            #         plt.suptitle("")
+            #         plt.xlabel(f"Magnitude in {cat_name}")
+            #         plt.ylabel("SExtractor Magnitude in " + image_name)
+            #         plt.savefig(f"{output_path}max_mag_iterations/{n}_{cat_name}vsex_std_err_{err_this}_magmax_{mag_max}.png")
+            #         plt.close()
+            #
             delta = err_this - std_err_prior
 
             mag_max -= 0.1 * units.mag
@@ -914,16 +1108,42 @@ def determine_zeropoint_sextractor(
     fitted_free = fitter(linear_model_free, x, y, weights=y_weights)
     fitted_fixed = fitter(linear_model_fixed, x, y, weights=y_weights)
 
-    line_free = fitted_free(x)
-    line_fixed = fitted_fixed(x)
+    zps = x - y
+    zp_mean_shifted = np.average(zps, weights=y_weights)
+    zp_mean = zp_mean_shifted + x_shift
+    zp_mean_err = u.root_mean_squared_error(
+        model_values=zp_mean_shifted * np.ones_like(zps).value,
+        obs_values=zps,
+        weights=y_weights,
+        dof_correction=1
+    ) / np.sqrt(len(zps))
 
-    std_err = u.std_err_intercept(
+    line_free = fitted_free(x)
+    std_err_free = u.std_err_intercept(
+        y_model=line_free,
+        y_obs=y,
+        y_weights=y_weights,
+        x_obs=x,
+        x_weights=x_weights,
+        dof_correction=2
+    )
+    std_err_free_slope = u.std_err_slope(
+        y_model=line_free,
+        y_obs=y,
+        x_obs=x,
+        y_weights=y_weights,
+        x_weights=x_weights,
+        dof_correction=2
+    )
+
+    line_fixed = fitted_fixed(x)
+    std_err_fixed = u.std_err_intercept(
         y_model=line_fixed,
         y_obs=y,
         y_weights=y_weights,
         x_obs=x,
         x_weights=x_weights,
-        dof_correction=1
+        dof_correction=2
     )
 
     plt.plot(x, line_free, c='red', label='Line of best fit')
@@ -939,25 +1159,28 @@ def determine_zeropoint_sextractor(
         plt.show()
     plt.close()
 
-    print("FREE:", fitted_free)
-    print("FIXED:", fitted_fixed)
-    print("STD ERR:", std_err)
+    zp_free = -fitted_free.intercept.value * units.mag + x_shift
+    slope_free = fitted_free.slope.value
+    zp_fixed = -fitted_fixed.intercept.value * units.mag + x_shift
+    print("UNCLIPPED")
+    print("Linear fit (slope free):")
+    print(f"\tZeropoint = {zp_free} +/- {std_err_free}")
+    print(f"\tSlope = {slope_free} +/- {std_err_free_slope}")
+    print(f"Linear fit (slope fixed): Zeropoint = {zp_fixed} +/- {std_err_fixed}")
+    print(f"Mean: {zp_mean} +/- {zp_mean_err}")
 
-    params["zeropoint_raw"] = -fitted_fixed.intercept
-    params["std_err_raw"] = std_err
-    params["free_fit"] = [float(fitted_free.intercept.value), float(fitted_free.slope.value)]
+    params["zeropoint_raw"] = zp_mean
+    params["zeropoint_err_raw"] = zp_mean_err
+    params["free_zeropoint"] = zp_free
+    params["free_zeropoint_err"] = std_err_free
+    params["free_slope"] = slope_free
+    params["free_slope_err"] = std_err_free_slope
+    params["fixed_zeropoint"] = zp_fixed
+    params["fixed_zeropoint_err"] = std_err_fixed
 
-    or_fitter = fitting.FittingWithOutlierRemoval(fitter, sigma_clip, niter=1, sigma=2.0)
-
-    # print(type(linear_model_fixed), type(x), type(y), type(weights))
-    fitted_clipped, mask = or_fitter(linear_model_fixed, x.value, y.value, weights=y_weights.value)
-    fitted_free_clipped, free_mask = or_fitter(linear_model_free, x.value, y.value, weights=y_weights.value)
-
-    line_clipped = fitted_clipped(x.value)
-    line_clipped = line_clipped[~mask]
-
-    line_free_clipped = fitted_free_clipped(x.value)
-    line_free_clipped = line_free_clipped[~free_mask]
+    zps_masked = sigma_clip(zps, sigma=2.0, masked=True, copy=True)
+    mask = zps_masked.mask
+    zps_clipped = zps[~mask]
 
     y_clipped = y[~mask]
     x_clipped = x[~mask]
@@ -965,15 +1188,50 @@ def determine_zeropoint_sextractor(
     y_weights_clipped = y_weights[~mask]
     x_weights_clipped = x_weights[~mask]
 
-    y_free_clipped = y[~free_mask]
-    x_free_clipped = x[~free_mask]
-    y_weights_free_clipped = y_weights[~free_mask]
-    x_weights_free_clipped = x_weights[~free_mask]
+    zp_mean_clipped_shifted = np.average(zps, weights=y_weights)
+    zp_mean_clipped = zp_mean_clipped_shifted + x_shift
+    zp_mean_clipped_err = u.root_mean_squared_error(
+        model_values=zp_mean_clipped_shifted * np.ones_like(zps_clipped).value,
+        obs_values=zps_clipped,
+        weights=y_weights_clipped,
+        dof_correction=1
+    ) / np.sqrt(len(zps_clipped))
 
-    plt.plot(x_free_clipped, line_free_clipped, c='red', label='Line of best fit')
+    fitted_clipped = fitter(linear_model_fixed, x_clipped, y_clipped, weights=y_weights_clipped)
+    fitted_free_clipped = fitter(linear_model_free, x_clipped, y_clipped, weights=y_weights_clipped)
+
+    line_free_clipped = fitted_free_clipped(x_clipped)
+    std_err_free_clipped = u.std_err_intercept(
+        y_model=line_free_clipped,
+        y_obs=y_clipped,
+        y_weights=y_weights_clipped,
+        x_obs=x_clipped,
+        x_weights=y_weights_clipped,
+        dof_correction=2
+    )
+    std_err_free_slope_clipped = u.std_err_slope(
+        y_model=line_free_clipped,
+        y_obs=y_clipped,
+        x_obs=x_clipped,
+        y_weights=y_weights_clipped,
+        x_weights=x_weights_clipped,
+        dof_correction=2
+    )
+
+    line_fixed_clipped = fitted_clipped(x_clipped)
+    std_err_fixed_clipped = u.std_err_intercept(
+        y_model=line_fixed_clipped,
+        y_obs=y_clipped,
+        y_weights=y_weights_clipped,
+        x_obs=x_clipped,
+        x_weights=y_weights_clipped,
+        dof_correction=2
+    )
+
+    plt.plot(x_clipped, line_free_clipped, c='red', label='Line of best fit')
     plt.scatter(x_clipped, y_clipped, c='blue')
     # plt.errorbar(x_clipped, y_clipped, yerr=y_uncertainty_clipped, linestyle="None")
-    plt.plot(x_clipped, line_clipped, c='green', label='Fixed slope = 1')
+    plt.plot(x_clipped, line_fixed_clipped, c='green', label='Fixed slope = 1')
     plt.legend()
     plt.suptitle("Magnitude Comparisons")
     plt.xlabel("Magnitude in " + cat_name)
@@ -983,30 +1241,34 @@ def determine_zeropoint_sextractor(
         plt.show()
     plt.close()
 
-    print(sum(~mask), 'matches after clipping outliers from linear fit')
+    print(sum(~mask), 'matches after clipping outliers from mean')
     params[f'matches_{n_match}_mag_clipped'] = int(sum(~mask))
     n_match += 1
     if sum(~mask) < 3:
         print('Not enough valid matches to calculate zeropoint.')
+        p.save_params(file=output_path + 'parameters.yaml', dictionary=params)
         return None
 
-    print("CLIPPED:", fitted_clipped)
-    std_err = u.std_err_intercept(
-        y_model=line_clipped * units.mag,
-        y_obs=y_clipped,
-        y_weights=y_weights_clipped,
-        x_weights=x_weights_clipped,
-        x_obs=x_clipped,
-        dof_correction=1
-    )
-    print("STD ERR:", std_err)
+    zp_free_clipped = -fitted_free_clipped.intercept.value * units.mag + x_shift
+    slope_free = fitted_free.slope.value
+    zp_fixed_clipped = -fitted_fixed.intercept.value * units.mag + x_shift
+    print("CLIPPED:")
+    print("Linear fit:")
+    print(f"\tZeropoint = {zp_free_clipped} +/- {std_err_free_clipped}")
+    print(f"\tSlope = {slope_free} +/- {std_err_free_slope_clipped}")
+    print(f"Linear fit (slope fixed): Zeropoint = {zp_fixed_clipped} +/- {std_err_fixed_clipped}")
+    print(f"Mean: {zp_mean_clipped} +/- {zp_mean_clipped_err}")
 
     matches_final = matches[~mask]
 
-    params["free_fit_clipped"] = [float(fitted_free_clipped.intercept.value), float(fitted_free_clipped.slope.value)]
-    params['std_err_clipped'] = std_err
-    params['zeropoint'] = float(-fitted_clipped.intercept) * units.mag
-    params['zeropoint_err'] = cat_zeropoint_err + params['std_err_clipped']
+    params["zeropoint"] = zp_mean_clipped
+    params["zeropoint_err"] = np.sqrt(zp_mean_clipped_err ** 2 + cat_zeropoint_err ** 2)
+    params["free_zeropoint_clipped"] = zp_free_clipped
+    params["free_zeropoint_clipped_err"] = std_err_free_clipped
+    params["free_slope_clipped"] = slope_free
+    params["free_slope_clipped_err"] = std_err_free_slope_clipped
+    params["fixed_zeropoint_clipped"] = zp_fixed_clipped
+    params["fixed_zeropoint_clipped_err"] = std_err_fixed_clipped
 
     #     if latex_plot:
     #         plot_params = p.plotting_params()
@@ -1050,9 +1312,9 @@ def determine_zeropoint_sextractor(
 
     matches_final["mag_cat"] = matches_final[cat_mag_col]
 
-    matches_final.write(output_path + "matches.csv", format='ascii.csv')
-    u.rm_check(output_path + 'parameters.yaml')
-    p.add_params(file=output_path + 'parameters.yaml', params=params, skip_json=True)
+    matches_final.write(output_path + "matches.csv", format='ascii.csv', overwrite=True)
+    # u.rm_check(output_path + 'parameters.yaml')
+    p.save_params(file=output_path + 'parameters.yaml', dictionary=params)
 
     print('Zeropoint - kx: ' + str(params['zeropoint']) + ' +/- ' + str(
         params['zeropoint_err']))
@@ -1064,218 +1326,12 @@ def determine_zeropoint_sextractor(
     return params
 
 
-def zeropoint_science_field(
-        epoch: str,
-        instrument: str,
-        test_name: str = None,
-        sex_x_col: str = 'XPSF_IMAGE',
-        sex_y_col: str = 'YPSF_IMAGE',
-        sex_ra_col: str = 'ALPHAPSF_SKY',
-        sex_dec_col: str = 'DELTAPSF_SKY',
-        sex_flux_col: str = 'FLUX_PSF',
-        stars_only: bool = True,
-        star_class_col: str = 'CLASS_STAR',
-        star_class_tol: float = 0.95,
-        show_plots: bool = False,
-        mag_range_sex_lower: float = -100.,
-        mag_range_sex_upper: float = 100.,
-        pix_tol: float = 5.,
-        separate_chips=False,
-        cat_name: str = "DES"
-):
-    properties = p.object_params_instrument(obj=epoch, instrument=instrument)
-    frb_properties = p.object_params_frb(obj=epoch[:-2])
-    outputs = p.object_output_params(obj=epoch, instrument=instrument)
-    paths = p.object_output_paths(obj=epoch, instrument=instrument)
-
-    output = properties['data_dir'] + '/9-zeropoint/'
-    u.mkdir_check(output)
-    output = output + 'field/'
-    u.mkdir_check(output)
-
-    instrument = instrument.upper()
-
-    if cat_name.lower() != "sextractor":
-        print(f"Looking for photometry data in field of {epoch[:-2]}; catalogue {cat_name} :")
-
-        retrieved = r.update_frb_photometry(frb=epoch[:-2], cat=cat_name)
-
-        if retrieved is None or retrieved == "ERROR":
-            print("\t\tNo data found in archive.")
-            return None, None
-
-    if instrument != "FORS2":
-        separate_chips = False
-
-    for fil in properties['filters']:
-
-        print('Doing filter', fil)
-
-        f_0 = fil[0]
-        # do_zeropoint = properties[f_0 + '_do_zeropoint_field']
-
-        output_path_pre = os.path.join(output, f_0)
-        u.mkdir_check(output_path_pre)
-
-        if f_0 + '_zeropoint_provided' not in outputs:  # and do_zeropoint:
-
-            print('Zeropoint not found, attempting to calculate zeropoint...')
-
-            now = time.Time.now()
-            now.format = 'isot'
-            if test_name is None:
-                test_name = cat_name
-            test_name = str(now) + '_' + test_name
-
-            output_path = os.path.join(output_path_pre, test_name)
-            u.mkdir_check(output_path)
-
-            chip_1_bottom = 740
-            chip_2_top = 600
-
-            cat_zeropoint = 0.
-            cat_zeropoint_err = 0.
-
-            if cat_name.lower() != "sextractor":
-                cat_path = os.path.join(f"{frb_properties['data_dir']}", f"{cat_name}", f"{cat_name}.csv")
-                column_names = r.cat_columns(cat=cat_name, f=f_0)
-                cat_ra_col = column_names['ra']
-                cat_dec_col = column_names['dec']
-                cat_mag_col = column_names['mag_psf']
-                cat_type = "csv"
-
-            else:
-                cat_path = properties[f_0 + '_cat_calib_path']
-                cat_zeropoint = properties[f_0 + '_cat_calib_zeropoint']
-                cat_zeropoint_err = properties[f_0 + '_cat_calib_zeropoint_err']
-                if cat_path is None:
-                    raise ValueError(
-                        'No other epoch catalogue available at the position of ' + epoch + '.')
-                cat_ra_col = 'ra_cat'
-                cat_dec_col = 'dec_cat'
-                cat_mag_col = 'mag_psf_other'
-                cat_type = 'sextractor'
-                star_class_col = star_class_col + '_fors'
-                sex_x_col = sex_x_col + '_fors'
-                sex_y_col = sex_y_col + '_fors'
-                cat_name = 'other'
-
-            image_path = paths[f_0 + '_' + properties['subtraction_image']]
-            sextractor_path = paths[f_0 + '_cat_path']
-
-            exp_time = ff.get_exp_time(image_path)
-
-            # print(cat_zeropoint)
-
-            if separate_chips:
-                # Split based on which CCD chip the object falls upon.
-                u.mkdir_check(os.path.join(output_path, "chip_1"))
-                u.mkdir_check(os.path.join(output_path, "chip_2"))
-
-                print('Chip 1:')
-                up = determine_zeropoint_sextractor(sextractor_cat=sextractor_path,
-                                                    image=image_path,
-                                                    cat_path=cat_path,
-                                                    cat_name=cat_name,
-                                                    output_path=os.path.join(output_path, "chip_1"),
-                                                    show=show_plots,
-                                                    cat_ra_col=cat_ra_col,
-                                                    cat_dec_col=cat_dec_col,
-                                                    cat_mag_col=cat_mag_col,
-                                                    sex_ra_col=sex_ra_col,
-                                                    sex_dec_col=sex_dec_col,
-                                                    sex_x_col=sex_x_col,
-                                                    sex_y_col=sex_y_col,
-                                                    dist_tol=pix_tol,
-                                                    flux_column=sex_flux_col,
-                                                    mag_range_sex_upper=mag_range_sex_upper,
-                                                    mag_range_sex_lower=mag_range_sex_lower,
-                                                    stars_only=stars_only,
-                                                    star_class_tol=star_class_tol,
-                                                    star_class_col=star_class_col,
-                                                    exp_time=exp_time,
-                                                    y_lower=chip_1_bottom,
-                                                    cat_type=cat_type,
-                                                    cat_zeropoint=cat_zeropoint,
-                                                    cat_zeropoint_err=cat_zeropoint_err
-                                                    )
-
-                print('Chip 2:')
-                down = determine_zeropoint_sextractor(sextractor_cat=sextractor_path,
-                                                      image=image_path,
-                                                      cat_path=cat_path,
-                                                      cat_name=cat_name,
-                                                      output_path=os.path.join(output_path, "chip_2"),
-                                                      show=show_plots,
-                                                      cat_ra_col=cat_ra_col,
-                                                      cat_dec_col=cat_dec_col,
-                                                      cat_mag_col=cat_mag_col,
-                                                      sex_ra_col=sex_ra_col,
-                                                      sex_dec_col=sex_dec_col,
-                                                      sex_x_col=sex_x_col,
-                                                      sex_y_col=sex_y_col,
-                                                      dist_tol=pix_tol,
-                                                      flux_column=sex_flux_col,
-                                                      mag_range_sex_upper=mag_range_sex_upper,
-                                                      mag_range_sex_lower=mag_range_sex_lower,
-                                                      stars_only=stars_only,
-                                                      star_class_tol=star_class_tol,
-                                                      star_class_col=star_class_col,
-                                                      exp_time=exp_time,
-                                                      y_upper=chip_2_top,
-                                                      cat_type=cat_type,
-                                                      cat_zeropoint=cat_zeropoint,
-                                                      cat_zeropoint_err=cat_zeropoint_err
-                                                      )
-                return up, down
-
-            else:
-                chip = determine_zeropoint_sextractor(sextractor_cat=sextractor_path,
-                                                      image=image_path,
-                                                      cat_path=cat_path,
-                                                      cat_name=cat_name,
-                                                      output_path=output_path + "/",
-                                                      show=show_plots,
-                                                      cat_ra_col=cat_ra_col,
-                                                      cat_dec_col=cat_dec_col,
-                                                      cat_mag_col=cat_mag_col,
-                                                      sex_ra_col=sex_ra_col,
-                                                      sex_dec_col=sex_dec_col,
-                                                      sex_x_col=sex_x_col,
-                                                      sex_y_col=sex_y_col,
-                                                      dist_tol=pix_tol,
-                                                      flux_column=sex_flux_col,
-                                                      mag_range_sex_upper=mag_range_sex_upper,
-                                                      mag_range_sex_lower=mag_range_sex_lower,
-                                                      stars_only=stars_only,
-                                                      star_class_tol=star_class_tol,
-                                                      star_class_col=star_class_col,
-                                                      exp_time=exp_time,
-                                                      y_lower=0,
-                                                      cat_type=cat_type,
-                                                      cat_zeropoint=cat_zeropoint,
-                                                      cat_zeropoint_err=cat_zeropoint_err
-                                                      )
-                return chip
-
-
-def jy_to_mag(jy: 'float'):
-    """
-    Converts a flux density in janskys to a magnitude.
-    :param jy: value in janskys.
-    :return: Magnitude
-    """
-
-    return -2.5 * np.log10(jy)
-
-
 def single_aperture_photometry(data: np.ndarray, aperture: ph.Aperture, annulus: ph.Aperture, exp_time: float = 1.0,
                                zeropoint: float = 0.0, extinction: float = 0.0, airmass: float = 0.0):
     # Use background annulus to obtain a median sky background
     mask = annulus.to_mask()
     annulus_data = mask.multiply(data)[mask.data > 0]
     _, median, _ = stats.sigma_clipped_stats(annulus_data)
-    print('BACKGROUND MEDIAN:', median)
     # Get the photometry of the aperture
     cat_photutils = ph.aperture_photometry(data=data, apertures=aperture)
     # Multiply the median by the aperture area, so that we subtract the right amount for the aperture:
@@ -1283,13 +1339,13 @@ def single_aperture_photometry(data: np.ndarray, aperture: ph.Aperture, annulus:
     # Correct:
     flux_photutils = cat_photutils['aperture_sum'] - subtract_flux
     # Convert to magnitude, with uncertainty propagation:
-    mag_photutils, _, _ = magnitude_complete(flux=flux_photutils,
-                                             # flux_err=cat_photutils['aperture_sum_err'],
-                                             exp_time=exp_time,  # exp_time_err=exp_time_err,
-                                             zeropoint=zeropoint,  # zeropoint_err=zeropoint_err,
-                                             ext=extinction,  # ext_err=extinction_err,
-                                             airmass=airmass,  # airmass_err=airmass_err
-                                             )
+    mag_photutils, _, _ = magnitude_instrumental(flux=flux_photutils,
+                                                 # flux_err=cat_photutils['aperture_sum_err'],
+                                                 exp_time=exp_time,  # exp_time_err=exp_time_err,
+                                                 zeropoint=zeropoint,  # zeropoint_err=zeropoint_err,
+                                                 ext=extinction,  # ext_err=extinction_err,
+                                                 airmass=airmass,  # airmass_err=airmass_err
+                                                 )
 
     return mag_photutils, flux_photutils, subtract_flux, median
 
@@ -1387,18 +1443,18 @@ def aperture_photometry(data: np.ndarray, x: float = None, y: float = None, fwhm
     # 'flux' is then the corrected flux of the aperture.
     cat['flux'] = cat['aperture_sum'] - cat['subtract']
     # 'mag' is the aperture magnitude.
-    cat['mag'], cat['mag_err'] = magnitude_complete(flux=cat['flux'],
-                                                    # flux_err=cat['aperture_sum_err'],
-                                                    exp_time=exp_time,
-                                                    exp_time_err=exp_time_err,
-                                                    zeropoint=zeropoint,
-                                                    zeropoint_err=zeropoint_err,
-                                                    ext=ext, ext_err=ext_err,
-                                                    airmass=airmass,
-                                                    airmass_err=airmass_err,
-                                                    colour_term=colour_term,
-                                                    colour_term_err=colour_term_err,
-                                                    colour=colours, colour_err=colours_err)
+    cat['mag'], cat['mag_err'] = magnitude_instrumental(flux=cat['flux'],
+                                                        # flux_err=cat['aperture_sum_err'],
+                                                        exp_time=exp_time,
+                                                        exp_time_err=exp_time_err,
+                                                        zeropoint=zeropoint,
+                                                        zeropoint_err=zeropoint_err,
+                                                        ext=ext, ext_err=ext_err,
+                                                        airmass=airmass,
+                                                        airmass_err=airmass_err,
+                                                        colour_term=colour_term,
+                                                        colour_term_err=colour_term_err,
+                                                        colour=colours, colour_err=colours_err)
     # If selected, plot the apertures and annuli against the image.
     if plot:
         plt.imshow(data, origin='lower')
@@ -1522,7 +1578,6 @@ def source_table(file: Union[fits.HDUList, str],
 
     if not fwhm_override and algorithm == 'IRAF':
         fwhm = np.mean(sources['fwhm'])
-    print("FWHM:", fwhm)
 
     # Feed locations to our aperture photometry function.
     phot, _, _ = aperture_photometry(data=data, x=x, y=y, fwhm=fwhm, exp_time=exp_time, plot=plot,
@@ -1780,75 +1835,7 @@ def match_coordinates_filters_multi(prime, match_tables, ra_tolerance, dec_toler
     return data
 
 
-def match_coordinates_multi(
-        prime, match_tables, ra_tolerance: 'float', dec_tolerance: 'float', ra_name: 'str' = 'ra',
-        dec_name: 'str' = 'dec', mag_name: 'str' = 'mag', extra_cols: 'list' = None,
-        x_name: 'str' = 'xcentroid', y_name: 'str' = 'ycentroid'
-):
-    """
-
-    :param prime:
-    :param match_tables:
-    :param ra_tolerance:
-    :param dec_tolerance:
-    :param ra_name:
-    :param dec_name:
-    :param extra_cols: the names of any extra columns in the tables of prime and match_tables you wish to be appended
-            to the returned data.
-    :return:
-    """
-    # TODO: Oh god why does this use a pandas dataframe
-    if extra_cols is None:
-        extra_cols = []
-    keys = sorted(match_tables)
-
-    ras_1 = prime[ra_name]
-    decs_1 = prime[dec_name]
-    mags_1 = prime[mag_name]
-
-    data = table.Table()
-    data[ra_name] = ras_1
-    data[dec_name] = decs_1
-    data['x'] = prime[x_name]
-    data['y'] = prime[y_name]
-    data['mag_prime'] = prime[mag_name]
-    for name in extra_cols:
-        data[name + '_prime'] = prime[name]
-
-    for i, key in enumerate(keys):
-        data['mag_' + str(i)] = np.nan
-        for name in extra_cols:
-            data[name + '_' + str(i)] = np.nan
-        ras_2 = match_tables[key][ra_name]
-        decs_2 = match_tables[key][dec_name]
-        mags_2 = match_tables[key][mag_name]
-
-        for j in range(len(ras_1)):
-            candidate_mag = float("inf")
-            ra_1 = ras_1[j]
-            dec_1 = decs_1[j]
-            mag_1 = mags_1[j]
-            for k in range(len(ras_2)):
-                ra_2 = ras_2[k]
-                dec_2 = decs_2[k]
-                mag_2 = mags_2[k]
-                ra_diff = abs(ra_1 - ra_2)
-                dec_diff = abs(dec_1 - dec_2)
-
-                # This makes sure that, in case of multiple matches, the closest match in terms of magnitude is
-                # written in.
-                if dec_diff < dec_tolerance and ra_diff < ra_tolerance \
-                        and abs(mag_1 - mag_2) < abs(mag_1 - candidate_mag):
-                    candidate_mag = mag_2
-                    for name in extra_cols:
-                        data[name + '_' + str(i)][j] = match_tables[key][name][k]
-
-            if candidate_mag != float("inf"):
-                data['mag_' + str(i)][j] = candidate_mag
-    return data.dropna()
-
-
-def mag_to_flux(
+def mag_to_instrumental_flux(
         mag: Union[float, units.Quantity],
         exp_time: Union[float, units.Quantity] = 1.0 * units.second,
         zeropoint: Union[float, units.Quantity] = 0.0 * units.mag,
@@ -1897,8 +1884,8 @@ def insert_synthetic_point_sources_gauss(
     sources = table.QTable()
     sources.add_column(x, name="x_0")
     sources.add_column(y, name="y_0")
-    flux = mag_to_flux(mag=mag, exp_time=exp_time, zeropoint=zeropoint, extinction=extinction,
-                       airmass=airmass)
+    flux = mag_to_instrumental_flux(mag=mag, exp_time=exp_time, zeropoint=zeropoint, extinction=extinction,
+                                    airmass=airmass)
 
     u.debug_print(1, "sources:\n", sources)
     u.debug_print(2, "x:", x)
@@ -1965,10 +1952,9 @@ def insert_synthetic_point_sources_psfex(
 
     combine = np.zeros(image.shape)
     print('Generating additive image...')
-    print(x, y, type(x), isinstance(x, Iterable))
     for i in range(len(x)):
-        flux = mag_to_flux(mag=mag[i], exp_time=exp_time, zeropoint=zeropoint, extinction=extinction,
-                           airmass=airmass)
+        flux = mag_to_instrumental_flux(mag=mag[i], exp_time=exp_time, zeropoint=zeropoint, extinction=extinction,
+                                        airmass=airmass)
 
         row = (x[i], y[i], flux)
         source = table.QTable(rows=[row], names=('x_inserted', 'y_inserted', 'flux_inserted'))
@@ -2038,13 +2024,10 @@ def insert_point_sources_to_file(
 
     if saturate is None and 'SATURATE' in file[0].header:
         saturate = file[0].header['SATURATE']
-        print('SATURATE:', saturate)
     if airmass is None and 'AIRMASS' in file[0].header:
         airmass = file[0].header['AIRMASS']
-        print('AIRMASS:', airmass)
     if exp_time is None and 'EXPTIME' in file[0].header:
         exp_time = file[0].header['EXPTIME']
-        print('EXPTIME:', exp_time)
 
     wcs_info = wcs.WCS(file[0].header)
     if world_coordinates:
@@ -2086,7 +2069,7 @@ def insert_point_sources_to_file(
     if path:
         file.close()
 
-    sources['mag_inserted'], _ = magnitude_complete(
+    sources['mag_inserted'], _ = magnitude_instrumental(
         flux=sources['flux_inserted'], exp_time=exp_time, zeropoint=zeropoint,
         airmass=airmass,
         ext=extinction)
@@ -2198,7 +2181,6 @@ def insert_synthetic(obj: Union[dict, str], x, y, test_path, filters: list, magn
         f_0 = f[0]
 
         fwhm = output_properties[f_0 + '_fwhm_pix']
-        print(instrument)
         zeropoint, _, airmass, _, extinction, _ = select_zeropoint(obj, f, instrument=instrument)
 
         base_path = paths[f_0 + '_' + params['subtraction_image']]
@@ -2248,8 +2230,6 @@ def select_zeropoint(obj: str, filt: str, instrument: str, outputs: dict = None)
         zeropoint_err = zeropoint_dict['zeropoint_err']
         typ = zeropoint_dict['type']
 
-        print(typ)
-
         if typ == 'science_field':
             airmass = 0.0
             airmass_err = 0.0
@@ -2282,12 +2262,16 @@ def select_zeropoint(obj: str, filt: str, instrument: str, outputs: dict = None)
     return zeropoint, zeropoint_err, airmass, airmass_err, extinction, extinction_err
 
 
-def subtract(template_origin: str, comparison_origin: str,
-             template_fwhm: float,
-             comparison_fwhm: float, output: str, comparison_title: str, template_title: str, comparison_epoch: int,
-             template_epoch: int,
-             field: str,
-             force_subtract_better_seeing: bool = True, sextractor_threshold: float = None):
+def subtract(
+        template_origin: str, comparison_origin: str,
+        template_fwhm: float, comparison_fwhm: float,
+        output: str,
+        template_title: str, comparison_title: str,
+        template_epoch: int, comparison_epoch: int,
+        field: str,
+        force_subtract_better_seeing: bool = True,
+        sextractor_threshold: float = None
+):
     """
 
     :param template_origin:
@@ -2336,12 +2320,14 @@ def subtract(template_origin: str, comparison_origin: str,
 
             sigma_match = math.sqrt(sigma_template ** 2 - sigma_comparison ** 2)
 
-            os.system(f'hotpants -inim {template_file}'
-                      f' -tmplim {comparison_file}'
-                      f' -outim {difference_file}'
-                      f' -ng 3 6 {0.5 * sigma_match} 4 {sigma_match} 2 {2 * sigma_match}'
-                      f' -oki {output}kernel.fits'
-                      f' -n i')
+            os.system(
+                f'hotpants -inim {template_file}'
+                f' -tmplim {comparison_file}'
+                f' -outim {difference_file}'
+                f' -ng 3 6 {0.5 * sigma_match} 4 {sigma_match} 2 {2 * sigma_match}'
+                f' -oki {output}kernel.fits'
+                f' -n i'
+            )
 
             # We then reverse the pixels of the difference image, giving transients positive flux (so that SExtractor
             # can see them)

@@ -11,6 +11,7 @@ import craftutils.utils as u
 from craftutils.photometry import gain_median_combine, gain_mean_combine
 import craftutils.observation.image as image
 
+
 def image_table(input_directory: str, output_path: str = "images.tbl"):
     """
     Executes the Montage task mImgtbl <input_directory> <output_path>
@@ -35,7 +36,11 @@ def make_header(table_path: str, output_path: str):
 
 def check_input_images(input_directory: str,
                        **kwargs):
-    table = image.fits_table_all(input_directory, science_only=True)
+    table = image.fits_table_all(
+        input_directory, science_only=False)
+    if len(table) == 0:
+        raise FileNotFoundError(f"There appear to be no files in the input directory {input_directory}")
+
     table.sort("FILENAME")
 
     template = table[0]
@@ -91,7 +96,6 @@ def inject_header(
         f"AIRMASS": airmass_mean,
         f"AIRMASS_ERR": max(np.nanmax(airmasses) - airmass_mean,
                             airmass_mean - np.nanmin(airmasses)),
-        f"SATURATE": np.nanmean(np.float64(table[important_keys['saturate']])),
         f"OBJECT": template.extract_object(),
         f"MJD-OBS": float(np.nanmin(np.float64(table[important_keys["mjd-obs"]]))),
         f"DATE-OBS": template.extract_date_obs(),
@@ -108,6 +112,10 @@ def inject_header(
 
     insert_dict["NCOMBINE"] = n_frames
 
+    if "TEXPTIME" in table.colnames:
+        insert_dict["TEXPTIME"] = np.sum(table["TEXPTIME"])
+    if important_keys['saturate'] in table.colnames:
+        insert_dict[f"SATURATE"] = np.nanmean(np.float64(table[important_keys['saturate']])),
     if "OLD_EXPTIME" in table.colnames:
         insert_dict["OLD_EXPTIME"] = np.nanmean(table["OLD_EXPTIME"])
         insert_dict["INTTIME"] = insert_dict["OLD_EXPTIME"] * n_frames
@@ -173,9 +181,12 @@ def project_execute(input_directory: str, table_path: str, header_path: str, pro
     table_path = u.sanitise_file_ext(filename=table_path, ext=".tbl")
     header_path = u.sanitise_file_ext(filename=header_path, ext=".hdr")
     stats_table_path = u.sanitise_file_ext(filename=stats_table_path, ext=".tbl")
-    return u.system_command(command="mProjExec",
-                            arguments=[table_path, header_path, proj_dir, stats_table_path],
-                            p=input_directory)
+    return u.system_command(
+        command="mProjExec",
+        arguments=[table_path, header_path, proj_dir, stats_table_path],
+        p=input_directory,
+        # s="mProjExec_status.txt"
+    )
 
 
 def overlaps(table_path: str, difference_table_path: str):

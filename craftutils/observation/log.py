@@ -7,7 +7,10 @@ from astropy.time import Time
 import craftutils.params as p
 import craftutils.utils as u
 
+__all__ = []
 
+
+@u.export
 class Log:
 
     def __init__(
@@ -86,8 +89,7 @@ class Log:
             else:
                 log_entry["method"] = method.__name__
 
-        if method_args is not None:
-            log_entry["method_args"] = method_args
+        log_entry["method_args"] = method_args
 
         if ancestor_logs is not None:
             log_entry["ancestor_logs"] = {}
