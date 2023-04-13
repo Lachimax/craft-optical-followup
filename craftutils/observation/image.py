@@ -1432,7 +1432,7 @@ class ImagingImage(Image):
                 self.dual_mode_template = outputs["dual_mode_template"]
         return outputs
 
-    def select_zeropoint(self, no_user_input: bool = False, preferred: str = None):
+    def select_zeropoint(self, no_user_input: bool = True, preferred: str = None):
 
         if not self.zeropoints:
             print(f"No zeropoints set ({self}.zeropoints is None); try loading output file.")
@@ -3635,7 +3635,7 @@ class ImagingImage(Image):
         self.model_background_photometry(method="sep", do_mask=True, ext=ext, **kwargs)
         rms = self.sep_background[ext].rms()
 
-        flux, _, _ = sep.sum_circle(rms, [x], [y], ap_radius_pix)
+        flux, _, _ = sep.sum_circle(rms**2, [x], [y], ap_radius_pix)
         sigma_flux = np.sqrt(flux)
 
         limits = []
@@ -4929,6 +4929,8 @@ class CoaddedImage(ImagingImage):
             return HubbleImage
         elif instrument == "decam":
             return DESCutout
+        elif instrument == "gs-aoi":
+            return GSAOIImage
         else:
             raise ValueError(f"Unrecognised instrument {instrument}")
 

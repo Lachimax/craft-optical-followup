@@ -20,6 +20,7 @@ import craftutils.utils as u
 
 __all__ = []
 
+
 # TODO: Fill in docstrings.
 
 @u.export
@@ -41,11 +42,12 @@ def get_rotation_angle(header: fits.header, astropy_units=False):
 
     return theta
 
+
 def path_or_hdu(hdu: Union[fits.HDUList, str], update=False):
-    # TODO: Propagate this method to where it's needed.
     path = None
     if type(hdu) is str:
         path = u.sanitise_file_ext(filename=hdu, ext=".fits")
+        u.debug_print(1, f"Loading HDU at {path}")
         if update:
             hdu = fits.open(hdu, mode='update')
         else:

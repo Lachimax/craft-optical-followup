@@ -167,7 +167,10 @@ def image_psf_diagnostics(
         # First, a Moffat function
         model_init = models.Moffat2D(x_0=frame, y_0=frame)
         fitter = fitting.LevMarLSQFitter()
-        model = fitter(model_init, x, y, data)
+        try:
+            model = fitter(model_init, x, y, data)
+        except fitting.NonFiniteValueError:
+            continue
         fwhm = (model.fwhm * units.pixel).to(units.arcsec, scale)
         star["MOFFAT_FWHM_FITTED"] = fwhm
         star["MOFFAT_GAMMA_FITTED"] = model.gamma.value
