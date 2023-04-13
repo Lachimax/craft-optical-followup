@@ -1832,8 +1832,23 @@ def save_gemini_calibs(output: str, obs_date: Time, instrument: str = 'GSAOI', f
     save_gemini_files(standards, output=output, overwrite=overwrite)
 
 
-def save_gemini_epoch(output: str, program_id: str, coord: SkyCoord,
-                      instrument: str = 'GSAOI', overwrite: bool = False):
+def save_gemini_epoch(
+        output: str,
+        program_id: str,
+        coord: SkyCoord,
+        instrument: str = 'GSAOI',
+        overwrite: bool = False
+):
+    """
+
+    :param output:
+    :param program_id:
+    :param coord:
+    :param instrument:
+    :param overwrite:
+    :return: astropy table of retrieved images.
+    """
+    # Get a dictionary of science files
     science_files = gemini.Observations.query_criteria(
         instrument=instrument,
         program_id=program_id,

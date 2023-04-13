@@ -297,6 +297,7 @@ class Epoch:
             self.instrument = None
 
         self.date = date
+        # If we have a datetime.date, convert it to string before attempting to turn it into an astropy Time
         if isinstance(self.date, datetime.date):
             self.date = str(self.date)
         # print(self.date, type(self.date))
@@ -3099,7 +3100,12 @@ class GSAOIImagingEpoch(ImagingEpoch):
             output=output_dir,
             program_id=self.program_id,
             coord=self.field.centre_coords,
-            overwrite=overwrite)
+            overwrite=overwrite
+        )
+
+        # Get the observation date from image headers if we don't have one specified
+        if self.date is None:
+            self.set_date(science_files["ut_datetime"][0])
 
         # Set up filters from retrieved science files.
         for img in science_files:
@@ -3115,7 +3121,8 @@ class GSAOIImagingEpoch(ImagingEpoch):
                 output=output_dir,
                 obs_date=self.date,
                 fil=fil,
-                overwrite=overwrite)
+                overwrite=overwrite
+            )
 
     def _initial_setup(self, output_dir: str, **kwargs):
         data_dir = self.data_path

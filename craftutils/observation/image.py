@@ -4929,6 +4929,8 @@ class CoaddedImage(ImagingImage):
             return HubbleImage
         elif instrument == "decam":
             return DESCutout
+        elif instrument == "gs-aoi":
+            return GSAOIImage
         else:
             raise ValueError(f"Unrecognised instrument {instrument}")
 
