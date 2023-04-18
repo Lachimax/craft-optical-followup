@@ -346,7 +346,7 @@ class Object:
         deepest_dict = self.select_deepest()
         deepest_path = deepest_dict["good_image_path"]
 
-        cls = image.CoaddedImage.select_child_class(instrument=deepest_dict["instrument"])
+        cls = image.CoaddedImage.select_child_class(instrument_name=deepest_dict["instrument"])
         deepest_img = cls(path=deepest_path)
         deep_mask = deepest_img.write_mask(
             output_path=os.path.join(
@@ -395,7 +395,7 @@ class Object:
                     phot_dict = self.photometry[instrument][band][epoch]
                     if phot_dict["good_image_path"] == deepest_path:
                         continue
-                    cls = image.CoaddedImage.select_child_class(instrument=instrument)
+                    cls = image.CoaddedImage.select_child_class(instrument_name=instrument)
                     img = cls(path=phot_dict["good_image_path"])
                     mask_rp = deep_mask.reproject(
                         other_image=img,

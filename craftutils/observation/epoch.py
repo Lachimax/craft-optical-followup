@@ -664,7 +664,7 @@ class Epoch:
         if isinstance(img, str):
             u.debug_print(2, f"Epoch._add_coadded(): {self.name}.instrument_name ==", self.instrument_name)
             if os.path.isfile(img):
-                cls = image.CoaddedImage.select_child_class(instrument=self.instrument_name)
+                cls = image.CoaddedImage.select_child_class(instrument_name=self.instrument_name)
                 u.debug_print(2, f"Epoch._add_coadded(): cls ==", cls)
 
                 img = image.from_path(
@@ -2378,8 +2378,8 @@ class ImagingEpoch(Epoch):
     def load_output_file(self, **kwargs):
         outputs = super().load_output_file(**kwargs)
         if isinstance(outputs, dict):
-            frame_cls = image.ImagingImage.select_child_class(instrument=self.instrument_name, mode='imaging')
-            coadd_class = image.CoaddedImage.select_child_class(instrument=self.instrument_name, mode='imaging')
+            frame_cls = image.ImagingImage.select_child_class(instrument_name=self.instrument_name, mode='imaging')
+            coadd_class = image.CoaddedImage.select_child_class(instrument_name=self.instrument_name, mode='imaging')
             if self.date is None:
                 if "date" in outputs:
                     self.date = outputs["date"]
@@ -2549,7 +2549,7 @@ class ImagingEpoch(Epoch):
     def _check_frame(self, frame: Union[image.ImagingImage, str], frame_type: str):
         if isinstance(frame, str):
             if os.path.isfile(frame):
-                cls = image.ImagingImage.select_child_class(instrument=self.instrument_name)
+                cls = image.ImagingImage.select_child_class(instrument_name=self.instrument_name)
                 u.debug_print(2, f"{cls} {self.instrument_name}")
                 frame = image.from_path(
                     path=frame,
@@ -3995,7 +3995,7 @@ class ESOImagingEpoch(ImagingEpoch):
         # (which the ESO archive often associates anyway, especially with HAWK-I)
         for i, row in enumerate(tbl_full):
             path = os.path.join(raw_dir, row["identifier"])
-            cls = image.ImagingImage.select_child_class(instrument=self.instrument_name, mode="imaging")
+            cls = image.ImagingImage.select_child_class(instrument_name=self.instrument_name, mode="imaging")
             img = image.from_path(path, cls=cls)
             img.extract_frame_type()
             img.extract_filter()

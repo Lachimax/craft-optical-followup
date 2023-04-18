@@ -232,7 +232,7 @@ def fits_table_all(
         if instrument is None:
             print(f"Instrument could not be detected for {file_path}.")
             continue
-        cls = ImagingImage.select_child_class(instrument=instrument)
+        cls = ImagingImage.select_child_class(instrument_name=instrument)
         image = cls.from_fits(path=file_path)
         if science_only:
             frame_type = image.extract_frame_type()
@@ -312,6 +312,7 @@ def expunge():
 class Image:
     instrument_name = "dummy"
     num_chips = 1
+    class_dict = {}
 
     def __init__(
             self,
@@ -778,9 +779,9 @@ class Image:
         if 'mode' in kwargs:
             mode = kwargs['mode']
             if mode == 'imaging':
-                return ImagingImage.select_child_class(instrument=instrument, **kwargs)
+                return ImagingImage.select_child_class(instrument_name=instrument, **kwargs)
             elif mode == 'spectroscopy':
-                return Spectrum.select_child_class(instrument=instrument, **kwargs)
+                return Spectrum.select_child_class(instrument_name=instrument, **kwargs)
             else:
                 raise ValueError(f"Unrecognised mode {mode}")
         else:
@@ -828,6 +829,7 @@ class ESOImage(Image):
 
 
 class ImagingImage(Image):
+
     def __init__(
             self,
             path: str,
@@ -1406,11 +1408,13 @@ class ImagingImage(Image):
                 self.filter_name = outputs["filter"]
             if "psfex_path" in outputs:
                 self.psfex_path = outputs["psfex_path"]
-            if "source_cat_path" in outputs and outputs["source_cat_path"] is not None and os.path.exists(outputs["source_cat_path"]):
+            if "source_cat_path" in outputs and outputs["source_cat_path"] is not None and os.path.exists(
+                    outputs["source_cat_path"]):
                 self.source_cat = catalog.SECatalogue(path=outputs["source_cat_path"], image=self)
             if "synth_cat_path" in outputs:
                 self.synth_cat_path = outputs["synth_cat_path"]
-            if "source_cat_dual_path" in outputs and outputs["source_cat_dual_path"] is not None and os.path.exists(outputs["source_cat_dual_path"]):
+            if "source_cat_dual_path" in outputs and outputs["source_cat_dual_path"] is not None and os.path.exists(
+                    outputs["source_cat_dual_path"]):
                 self.source_cat_dual = catalog.SECatalogue(path=outputs["source_cat_dual_path"], image=self)
             if "fwhm_psfex" in outputs:
                 self.fwhm_psfex = outputs["fwhm_psfex"]
@@ -2446,7 +2450,7 @@ class ImagingImage(Image):
         stars_gauss.write(os.path.join(output_path, "psf_diag_stars_gauss.ecsv"), overwrite=True)
         stars_sex.write(os.path.join(output_path, "psf_diag_stars_sex.ecsv"), overwrite=True)
 
-        fwhm_gauss = stars_gauss["GAUSSIAN_FWHM_FITTED"] # [~np.isnan(stars_gauss["GAUSSIAN_FWHM_FITTED"])]
+        fwhm_gauss = stars_gauss["GAUSSIAN_FWHM_FITTED"]  # [~np.isnan(stars_gauss["GAUSSIAN_FWHM_FITTED"])]
         self.fwhm_median_gauss = np.nanmedian(fwhm_gauss)
         self.fwhm_max_gauss = np.nanmax(fwhm_gauss)
         self.fwhm_min_gauss = np.nanmin(fwhm_gauss)
@@ -2454,7 +2458,7 @@ class ImagingImage(Image):
         self.fwhm_rms_gauss = np.sqrt(np.mean(fwhm_gauss ** 2))
         self.send_column_to_source_cat("GAUSSIAN_FWHM_FITTED", stars_gauss)
 
-        fwhm_moffat = stars_moffat["MOFFAT_FWHM_FITTED"] # [~np.isnan(stars_moffat["MOFFAT_FWHM_FITTED"])]
+        fwhm_moffat = stars_moffat["MOFFAT_FWHM_FITTED"]  # [~np.isnan(stars_moffat["MOFFAT_FWHM_FITTED"])]
         self.fwhm_median_moffat = np.nanmedian(fwhm_moffat)
         self.fwhm_max_moffat = np.nanmax(fwhm_moffat)
         self.fwhm_min_moffat = np.nanmin(fwhm_moffat)
@@ -2462,7 +2466,7 @@ class ImagingImage(Image):
         self.fwhm_rms_moffat = np.sqrt(np.mean(fwhm_moffat ** 2))
         self.send_column_to_source_cat("MOFFAT_FWHM_FITTED", stars_moffat)
 
-        fwhm_sextractor = stars_sex["FWHM_WORLD"] # [~np.isnan(stars_sex["FWHM_WORLD"])].to(units.arcsec)
+        fwhm_sextractor = stars_sex["FWHM_WORLD"]  # [~np.isnan(stars_sex["FWHM_WORLD"])].to(units.arcsec)
         self.fwhm_median_sextractor = np.nanmedian(fwhm_sextractor)
         self.fwhm_max_sextractor = np.nanmax(fwhm_sextractor)
         self.fwhm_min_sextractor = np.nanmin(fwhm_sextractor)
@@ -3635,7 +3639,7 @@ class ImagingImage(Image):
         self.model_background_photometry(method="sep", do_mask=True, ext=ext, **kwargs)
         rms = self.sep_background[ext].rms()
 
-        flux, _, _ = sep.sum_circle(rms**2, [x], [y], ap_radius_pix)
+        flux, _, _ = sep.sum_circle(rms ** 2, [x], [y], ap_radius_pix)
         sigma_flux = np.sqrt(flux)
 
         limits = []
@@ -4715,24 +4719,15 @@ class ImagingImage(Image):
         return best_params
 
     @classmethod
-    def select_child_class(cls, instrument: str, **kwargs):
-        if instrument is None:
-            return ImagingImage
-        instrument = instrument.lower()
-        if instrument == "panstarrs1":
-            return PanSTARRS1Cutout
-        elif instrument == "vlt-fors2":
-            return FORS2Image
-        elif instrument == "vlt-hawki":
-            return HAWKIImage
-        elif instrument == "gs-aoi":
-            return GSAOIImage
-        elif "hst" in instrument:
-            return HubbleImage
-        elif instrument == "decam":
-            return DESCutout
+    def select_child_class(cls, instrument_name: str, **kwargs):
+        if not isinstance(instrument_name, str):
+            instrument_name = str(instrument_name)
+        instrument_name = instrument_name.lower()
+        if instrument_name in cls.class_dict:
+            subclass = cls.class_dict[instrument_name]
         else:
-            raise ValueError(f"Unrecognised instrument {instrument}")
+            raise ValueError(f"Unrecognised instrument {instrument_name}")
+        return subclass
 
     @classmethod
     def header_keys(cls):
@@ -4913,27 +4908,6 @@ class CoaddedImage(ImagingImage):
         key = self.header_keys()["ncombine"]
         return self.extract_header_item(key)
 
-    @classmethod
-    def select_child_class(cls, instrument: str, **kwargs):
-        if not isinstance(instrument, str):
-            instrument = str(instrument)
-        if instrument is None:
-            return CoaddedImage
-        elif instrument == "vlt-fors2":
-            return FORS2CoaddedImage
-        elif instrument == "vlt-hawki":
-            return HAWKICoaddedImage
-        elif instrument == "panstarrs1":
-            return PanSTARRS1Cutout
-        elif "hst" in instrument:
-            return HubbleImage
-        elif instrument == "decam":
-            return DESCutout
-        elif instrument == "gs-aoi":
-            return GSAOIImage
-        else:
-            raise ValueError(f"Unrecognised instrument {instrument}")
-
 
 class F4CoaddedImage(CoaddedImage):
     def zeropoint(self, **kwargs):
@@ -4952,6 +4926,13 @@ class F4CoaddedImage(CoaddedImage):
 class SurveyCutout(CoaddedImage):
     def do_subtract_background(self):
         return False
+
+
+class WISECutout(SurveyCutout):
+    instrument_name = "wise"
+
+    def extract_filter(self):
+        pass
 
 
 class DESCutout(SurveyCutout):
@@ -5480,7 +5461,7 @@ class Spectrum(Image):
             print("self.epoch not set; could not determine lambda range")
 
     @classmethod
-    def select_child_class(cls, instrument: str, **kwargs):
+    def select_child_class(cls, instrument_name: str, **kwargs):
         if 'frame_type' in kwargs:
             frame_type = kwargs['frame_type']
             if frame_type == "coadded":
@@ -5609,6 +5590,29 @@ class Coadded1DSpectrum(Spectrum):
             "trimmed_paths": self.trimmed_path
         })
         return outputs
+
+
+ImagingImage.class_dict = {
+    "none": ImagingImage,
+    "decam": DESCutout,
+    "gs-aoi": GSAOIImage,
+    "hst-wfc3_uvis2": HubbleImage,
+    "hst-wfc3_ir": HubbleImage,
+    "panstarrs1": PanSTARRS1Cutout,
+    "vlt-fors2": FORS2Image,
+    "vlt-hawki": HAWKIImage,
+}
+
+CoaddedImage.class_dict = {
+    "none": CoaddedImage,
+    "decam": DESCutout,
+    "gs-aoi": GSAOIImage,
+    "hst-wfc3_uvis2": HubbleImage,
+    "hst-wfc3_ir": HubbleImage,
+    "panstarrs1": PanSTARRS1Cutout,
+    "vlt-fors2": FORS2CoaddedImage,
+    "vlt-hawki": HAWKICoaddedImage,
+}
 
 
 def deepest(

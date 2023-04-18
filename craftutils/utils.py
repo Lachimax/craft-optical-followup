@@ -957,7 +957,7 @@ def round_to_sig_fig(x: float, n: int) -> float:
     :param n: Number of significant figures to round to.
     :return: Rounded number
     """
-
+    print(x, type(x))
     return round(x, (n - 1) - int(np.floor(np.log10(abs(x)))))
 
 
@@ -1151,7 +1151,8 @@ def select_option(
         message: str,
         options: Union[List[str], dict],
         default: Union[str, int] = None,
-        sort: bool = False
+        sort: bool = False,
+        include_exit: bool = True
 ) -> tuple:
     """
     Options can be a list of strings, or a dict in which the keys are the options to be printed and the values are the
