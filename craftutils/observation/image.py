@@ -4932,7 +4932,22 @@ class WISECutout(SurveyCutout):
     instrument_name = "wise"
 
     def extract_filter(self):
-        pass
+        key = self.header_keys()["filter"]
+        band_n = self.extract_header_item(key)
+        self.filter_name = f"W{band_n}"
+        if self.filter_name is not None:
+            self.filter_short = self.filter_name
+        self._filter_from_name()
+        return self.filter_name
+
+
+    @classmethod
+    def header_keys(cls):
+        header_keys = super().header_keys()
+        header_keys.update({
+            "filter": "BAND"
+        })
+        return header_keys
 
 
 class DESCutout(SurveyCutout):
@@ -5601,6 +5616,7 @@ ImagingImage.class_dict = {
     "panstarrs1": PanSTARRS1Cutout,
     "vlt-fors2": FORS2Image,
     "vlt-hawki": HAWKIImage,
+    "wise": WISECutout
 }
 
 CoaddedImage.class_dict = {
@@ -5612,6 +5628,7 @@ CoaddedImage.class_dict = {
     "panstarrs1": PanSTARRS1Cutout,
     "vlt-fors2": FORS2CoaddedImage,
     "vlt-hawki": HAWKICoaddedImage,
+    "wise": WISECutout
 }
 
 
