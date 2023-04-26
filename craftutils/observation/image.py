@@ -1,31 +1,27 @@
 # Code by Lachlan Marnoch, 2021
 import copy
 import math
-import string
 import os
 import shutil
-from typing import Union, Tuple, List
+import string
 from copy import deepcopy
-
-import numpy as np
-
-import matplotlib.pyplot as plt
-from matplotlib.patches import Ellipse
+from typing import Union, Tuple, List
 
 import astropy.io.fits as fits
 import astropy.table as table
-import astropy.wcs as wcs
 import astropy.units as units
-from astropy.stats import SigmaClip
+import astropy.wcs as wcs
+import matplotlib.pyplot as plt
+import numpy as np
+from astroalign import register
+from astropy.coordinates import SkyCoord
 from astropy.modeling import models, fitting
-
+from astropy.stats import SigmaClip
+from astropy.time import Time
 from astropy.visualization import (
     ImageNormalize, LogStretch, SqrtStretch, MinMaxInterval, ZScaleInterval)
-from astropy.coordinates import SkyCoord
-from astropy.time import Time
 from astropy.visualization import quantity_support
-
-from astroalign import register
+from matplotlib.patches import Ellipse
 
 try:
     import photutils
@@ -71,6 +67,7 @@ active_images = {}
 
 gain_unit = units.electron / units.ct
 noise_read_unit = units.electron / units.pixel
+
 
 # TODO: Make this list all fits files, then write wrapper that eliminates non-science images and use that in scripts.
 @u.export
@@ -967,6 +964,7 @@ class ImagingImage(Image):
             # Set up a list of photometric apertures to pass to SE as a string.
             _, scale = self.extract_pixel_scale()
             aper_arcsec = [
+                              # 50,
                               4.87,
                               3.9,
                               2.92
@@ -982,7 +980,7 @@ class ImagingImage(Image):
 
             config = p.path_to_config_sextractor_config_pre_psfex()
             output_params = p.path_to_config_sextractor_param_pre_psfex()
-            catalog = self.source_extraction(
+            catalogue = self.source_extraction(
                 configuration_file=config,
                 output_dir=output_dir,
                 parameters_file=output_params,
@@ -991,7 +989,7 @@ class ImagingImage(Image):
             )
 
             psfex_path = psfex.psfex(
-                catalog=catalog,
+                catalog=catalogue,
                 output_dir=output_dir,
                 **kwargs
             )
@@ -1004,7 +1002,7 @@ class ImagingImage(Image):
                 kwargs["PHOTFLUXERR_KEY"] = "FLUXERR_AUTO"
 
                 psfex_path = psfex.psfex(
-                    catalog=catalog,
+                    catalog=catalogue,
                     output_dir=output_dir,
                     **kwargs
                 )
@@ -1016,7 +1014,7 @@ class ImagingImage(Image):
                 kwargs["PHOTFLUX_KEY"] = f'"FLUX_APER({i + 1})"'
                 kwargs["PHOTFLUXERR_KEY"] = f'"FLUXERR_APER({i + 1})"'
 
-                catalog = self.source_extraction(
+                catalogue = self.source_extraction(
                     configuration_file=config,
                     output_dir=output_dir,
                     parameters_file=output_params,
@@ -1025,7 +1023,7 @@ class ImagingImage(Image):
                 )
 
                 psfex_path = psfex.psfex(
-                    catalog=catalog,
+                    catalog=catalogue,
                     output_dir=output_dir,
                     **kwargs
                 )
@@ -4944,14 +4942,28 @@ class WISECutout(SurveyCutout):
         return self.filter_name
 
     def extract_gain(self):
+        """
+        I couldn't find any effective gain in FITS headers or in WISE documentation, so we'll assume this.
+
+        :return:
+        """
         self.gain = 1. * gain_unit
         return self.gain
+
+    def extract_exposure_time(self):
+        """
+        I couldn't find any effective exposure time in FITS headers or in WISE documentation, so we'll assume this.
+
+        :return:
+        """
+        self.exposure_time = 1 * units.second
+        return self.exposure_time
 
     def zeropoint(
             self,
             **kwargs
     ):
-        self.add_zeropoint(
+        self.zeropoint_best = self.add_zeropoint(
             catalogue="calib_pipeline",
             zeropoint=self.extract_header_item("MAGZP"),
             zeropoint_err=self.extract_header_item("MAGZPUNC"),
@@ -4960,11 +4972,7 @@ class WISECutout(SurveyCutout):
             airmass=0.0,
             airmass_err=0.0
         )
-        zp = super().zeropoint(
-            **kwargs
-        )
-
-        return zp
+        return self.zeropoint_best
 
     @classmethod
     def header_keys(cls):
