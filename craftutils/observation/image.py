@@ -69,6 +69,8 @@ instrument_header = {
 
 active_images = {}
 
+gain_unit = units.electron / units.ct
+noise_read_unit = units.electron / units.pixel
 
 # TODO: Make this list all fits files, then write wrapper that eliminates non-science images and use that in scripts.
 @u.export
@@ -636,9 +638,9 @@ class Image:
         if self.gain is None:
             key = self.header_keys()["gain"]
             u.debug_print(2, f"Image.extract_gain(): type({self})", type(self), key)
-            self.gain = self.extract_header_item(key) * units.electron / units.ct
+            self.gain = self.extract_header_item(key) * gain_unit
         if self.gain is not None:
-            self.gain = u.check_quantity(self.gain, units.electron / units.ct)
+            self.gain = u.check_quantity(self.gain, gain_unit)
         return self.gain
 
     def extract_date_obs(self):
@@ -657,7 +659,7 @@ class Image:
         key = self.header_keys()["noise_read"]
         noise = self.extract_header_item(key)
         if noise is not None:
-            self.noise_read = self.extract_header_item(key) * units.electron / units.pixel
+            self.noise_read = self.extract_header_item(key) * noise_read_unit
         else:
             raise KeyError(f"{key} not present in header.")
         return self.noise_read
@@ -3080,6 +3082,7 @@ class ImagingImage(Image):
                 data[bottom:top, left:right],
                 **normalize_kwargs
             ),
+            interpolation="none",
             **imshow_kwargs
         )
         ax.set_xlim(left, right)
@@ -4940,6 +4943,28 @@ class WISECutout(SurveyCutout):
         self._filter_from_name()
         return self.filter_name
 
+    def extract_gain(self):
+        self.gain = 1. * gain_unit
+        return self.gain
+
+    def zeropoint(
+            self,
+            **kwargs
+    ):
+        self.add_zeropoint(
+            catalogue="calib_pipeline",
+            zeropoint=self.extract_header_item("MAGZP"),
+            zeropoint_err=self.extract_header_item("MAGZPUNC"),
+            extinction=0.0 * units.mag,
+            extinction_err=0.0 * units.mag,
+            airmass=0.0,
+            airmass_err=0.0
+        )
+        zp = super().zeropoint(
+            **kwargs
+        )
+
+        return zp
 
     @classmethod
     def header_keys(cls):
@@ -4983,7 +5008,7 @@ class DESCutout(SurveyCutout):
         return self.exposure_time
 
     def extract_noise_read(self):
-        self.noise_read = 0. * units.electron / units.pixel
+        self.noise_read = 0. * noise_read_unit
         return self.noise_read
 
     def extract_integration_time(self):
@@ -5399,7 +5424,7 @@ class HubbleImage(CoaddedImage):
         return self.exposure_time
 
     def extract_noise_read(self):
-        self.noise_read = 0.0 * units.electron / units.pixel
+        self.noise_read = 0.0 * noise_read_unit
         return self.noise_read
 
     def zeropoint(self, **kwargs):
