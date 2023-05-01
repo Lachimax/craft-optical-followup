@@ -764,7 +764,7 @@ class Image:
             # Look for standard instrument name in list
             if instrument in instrument_header:
                 instrument = instrument_header[instrument]
-                child = cls.select_child_class(instrument=instrument, mode=mode)
+                child = cls.select_child_class(instrument_name=instrument, mode=mode)
             else:
                 child = ImagingImage
         u.debug_print(2, "Image.from_fits(): instrument ==", instrument)
