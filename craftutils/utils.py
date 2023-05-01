@@ -298,7 +298,6 @@ def check_dict(key: str, dictionary: dict, na_values: Union[tuple, list] = (None
     if check_key(key=key, dictionary=dictionary, na_values=na_values):
         return dictionary[key]
 
-
 def check_quantity(
         number: Union[float, int, units.Quantity],
         unit: units.Unit,

@@ -1261,7 +1261,7 @@ class Extragalactic(Object):
         self.mu = None
         self.set_z(z, **kwargs)
 
-    def set_z(self, z, **kwargs):
+    def set_z(self, z: float, **kwargs):
         self.z = z
         if z is not None:
             if "z_err" in kwargs:

@@ -1092,6 +1092,7 @@ class FRBField(Field):
             imshow_kwargs=imshow_kwargs,
             normalize_kwargs=normalize_kwargs,
             scale_bar_kwargs=scale_bar_kwargs,
+            obj=self.frb.host_galaxy,
             **kwargs
         )
 

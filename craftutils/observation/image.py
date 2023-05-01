@@ -11,6 +11,7 @@ import astropy.io.fits as fits
 import astropy.table as table
 import astropy.units as units
 import astropy.wcs as wcs
+import astropy.cosmology as cosmo
 import matplotlib.pyplot as plt
 import numpy as np
 from astroalign import register
@@ -2996,15 +2997,22 @@ class ImagingImage(Image):
         other_args = {}
         if centre is not None and frame is not None:
             x, y = self.world_to_pixel(centre, 0)
-            frame = u.check_quantity(
-                number=frame,
-                unit=units.pix,
-                allow_mismatch=True,
-                enforce_equivalency=False
+            if "z" in kwargs:
+                z = kwargs["z"]
+            else:
+                z = None
+            if "obj" in kwargs:
+                obj = kwargs["obj"]
+            else:
+                obj = None
+            frame = self.pixel(
+                value=frame,
+                z=z,
+                obj=obj
             )
             other_args["x"] = x
             other_args["y"] = y
-            left, right, bottom, top = u.frame_from_centre(frame.to(units.pix, scale).value, x, y, data)
+            left, right, bottom, top = u.frame_from_centre(frame.value, x, y, data)
         elif corners is not None:
             x_0, y_0 = self.world_to_pixel(corners[0], 0)
             x_1, y_1 = self.world_to_pixel(corners[1], 0)
@@ -3230,12 +3238,41 @@ class ImagingImage(Image):
 
         return ax
 
-    def pixel(self, value: Union[float, int, units.Quantity], ext: int = 0):
-        if not isinstance(value, units.Quantity):
-            value *= units.pix
-        else:
+    # def pixel(self, value: Union[float, int, units.Quantity], ext: int = 0):
+    #     if not isinstance(value, units.Quantity):
+    #         value *= units.pix
+    #     else:
+    #         self.extract_pixel_scale(ext)
+    #         value = value.to(units.pix, self.pixel_scale_y)
+    #     return value
+
+    def pixel(
+            self,
+            value: Union[float, int, units.Quantity],
+            z: float = None,
+            obj: objects.Extragalactic = None,
+            ext: int = 0
+    ):
+        value = u.check_quantity(
+            number=value,
+            unit=units.pix,
+            allow_mismatch=True,
+            enforce_equivalency=False
+        )
+
+        if not value.unit.is_equivalent(units.pix):
+            if value.unit.is_equivalent(units.m):
+                if obj is None:
+                    if z is None:
+                        raise ValueError("If `value` is in units of physical size, then `obj` or `z` must be provided.")
+                    else:
+                        obj = objects.Extragalactic(z=z)
+                value = obj.angular_size(
+                    distance=value
+                )
             self.extract_pixel_scale(ext)
             value = value.to(units.pix, self.pixel_scale_y)
+
         return value
 
     def frame_from_coord(
