@@ -1600,8 +1600,8 @@ class ImagingImage(Image):
 
         if vega:
             offset = self.filter.vega_magnitude_offset()
-            zp_dict["zeropoint"] += self.filter.vega_magnitude_offset()
-            zp_dict["ab_correction"] = self.filter.vega_magnitude_offset()
+            zp_dict["zeropoint"] += offset
+            zp_dict["ab_correction"] = offset
 
         zp_dict = self.add_zeropoint(
             # catalogue=cat_name,
@@ -1819,7 +1819,8 @@ class ImagingImage(Image):
             self,
             zeropoint_name: str = "best",
             dual: bool = False,
-            star_tolerance: int = 1,
+            stars_only: bool = False,
+            star_tolerance: float = 0.9,
             do_magnitude_calibration: bool = True
     ):
         """
@@ -1842,36 +1843,36 @@ class ImagingImage(Image):
         # "secure" finds the brightest object with S/N < x sigma, then increments to the
         # overall; thus giving the faintest magnitude at which we can be confident of a detection
 
-        stars = u.trim_to_class(cat=source_cat, modify=True, allowed=np.arange(0, star_tolerance + 1))
-
-        if stars is None or len(stars) < 10:
-            stars = source_cat[source_cat["CLASS_STAR"] >= 0.9]
-        source_cat = stars
+        if stars_only:
+            source_cat = source_cat[source_cat["CLASS_STAR"] >= star_tolerance]
 
         for snr_key in ["PSF", "AUTO"]:  # ["SNR_CCD", "SNR_MEASURED", "SNR_SE"]:
             # We do this to ensure that, in the "secure" step, object i+1 is the next-brightest in the catalogue
             if f"FLUX_{snr_key}" not in source_cat.colnames:
                 continue
-            source_cat.sort(f"FLUX_{snr_key}")
+            source_cat_key = source_cat.copy()
+            source_cat_key.sort(f"FLUX_{snr_key}")
             self.depth["max"][f"SNR_{snr_key}"] = {}
             self.depth["secure"][f"SNR_{snr_key}"] = {}
             # Dispose of the infinite SNRs and mags
-            source_cat = source_cat[np.invert(np.isinf(source_cat[f"MAG_{snr_key}"]))]
-            source_cat = source_cat[np.invert(np.isinf(source_cat[f"SNR_{snr_key}"]))]
-            source_cat.sort(f"FLUX_{snr_key}")
+            source_cat_key = source_cat_key[np.invert(np.isinf(source_cat_key[f"MAG_{snr_key}"]))]
+            source_cat_key = source_cat_key[np.invert(np.isinf(source_cat_key[f"SNR_{snr_key}"]))]
+            source_cat_key = source_cat_key[source_cat_key[f"MAG_{snr_key}"] < 100 * units.mag]
+            source_cat_key.sort(f"FLUX_{snr_key}")
             for sigma in range(1, 6):
+                source_cat_sigma = source_cat_key.copy()
                 u.debug_print(1, "ImagingImage.estimate_depth(): snr_key, sigma ==", snr_key, sigma)
                 # Faintest source at x-sigma:
                 u.debug_print(
                     1, f"ImagingImage.estimate_depth(): source_cat[SNR_{snr_key}].unit ==",
-                    source_cat[f"SNR_{snr_key}"].unit)
-                cat_more_xsigma = source_cat[source_cat[f"SNR_{snr_key}"] > sigma]
+                    source_cat_sigma[f"SNR_{snr_key}"].unit)
+                cat_more_xsigma = source_cat_sigma[source_cat_sigma[f"SNR_{snr_key}"] > sigma]
                 self.depth["max"][f"SNR_{snr_key}"][f"{sigma}-sigma"] = np.max(
                     cat_more_xsigma[f"MAG_{snr_key}_ZP_{zeropoint_name}"])
 
                 # Brightest source less than x-sigma (kind of)
                 # Get the sources with SNR less than x-sigma
-                source_less_sigma = source_cat[source_cat[f"SNR_{snr_key}"] < sigma]
+                source_less_sigma = source_cat_sigma[source_cat_sigma[f"SNR_{snr_key}"] < sigma]
                 if len(source_less_sigma) > 0:
                     # Get the source with the greatest flux
                     i = np.argmax(source_less_sigma[f"FLUX_{snr_key}"])
@@ -1882,9 +1883,10 @@ class ImagingImage(Image):
                     src_lim = source_cat[i]
 
                 else:
-                    src_lim = source_cat[source_cat[f"SNR_{snr_key}"].argmin()]
+                    src_lim = source_cat_sigma[source_cat_sigma[f"SNR_{snr_key}"].argmin()]
 
                 self.depth["secure"][f"SNR_{snr_key}"][f"{sigma}-sigma"] = src_lim[f"MAG_{snr_key}_ZP_{zeropoint_name}"]
+
                 self.update_output_file()
 
         source_cat.sort("NUMBER")

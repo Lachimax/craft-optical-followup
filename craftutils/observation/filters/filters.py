@@ -87,6 +87,8 @@ class Filter:
     ):
         zp_ab = 3631 * units.Jy
         zp_vega = self.vega_zeropoint
+        if transmission is None:
+            transmission, _ = self.select_transmission_table()
         delta_mag = 2.5 * np.log10(
             np.trapz(
                 y=zp_ab * transmission["Transmission"],
