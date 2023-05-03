@@ -1855,8 +1855,8 @@ class ImagingEpoch(Epoch):
                 path_kwargs = kwargs["path_kwargs"]
             else:
                 path_kwargs = {
-                    "p_u": 0.2,
-                    "radius": 10
+                    "priors": {"U": 0.2},
+                    "config": {"radius": 10}
                 }
             self.probabilistic_association(image_type=image_type, **path_kwargs)
         self.get_photometry(output_dir, image_type=image_type)

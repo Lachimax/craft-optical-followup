@@ -45,6 +45,19 @@ uncertainty_dict = {
 __all__ = []
 
 
+def set_cosmology(cos: Union[str, cosmo.Cosmology]):
+    global cosmology
+    if isinstance(cos, str):
+        if cos in cosmo.available:
+            cosmology = getattr(cosmo, cos)
+        else:
+            raise ValueError(f"Cosmology {cos} not found in `astropy.cosmology`. Available are: {cosmo.available}")
+    elif isinstance(cos, cosmo.Cosmology):
+        cosmology = cos
+    else:
+        raise TypeError("cos must be string or `astropy.cosmology.Cosmology`.")
+
+
 @u.export
 def skycoord_to_position_dict(skycoord: SkyCoord):
     ra_float = skycoord.ra.value
@@ -1658,9 +1671,10 @@ class FRB(Transient):
 
     def probabilistic_association(
             self,
-            p_u: float,
             img: 'craftutils.observation.image.ImagingImage',
-            radius: float = 10
+            priors: Union[str, dict] = "adopted",
+            offset_priors: dict = {},
+            config: dict = {},
     ):
         """
         Performs a customised PATH run on an image.
@@ -1688,8 +1702,8 @@ class FRB(Transient):
         img.extract_pixel_scale()
         instname = img.instrument.name.replace("-", "_").upper()
         filname = f'{instname}_{img.filter.band_name}'
-        config = dict(
-            max_radius=radius,
+        config_n = dict(
+            max_radius=10,
             skip_bayesian=False,
             npixels=9,
             image_file=img.path,
@@ -1698,19 +1712,31 @@ class FRB(Transient):
             ZP=img.zeropoint_best["zeropoint_img"].value,
             deblend=True,
             cand_bright=17.,
-            cand_separation=radius * units.arcsec,
+            cand_separation=10 * units.arcsec,
             plate_scale=(1 * units.pix).to(units.arcsec, img.pixel_scale_y),
         )
-        print("P(U) ==", p_u)
-        priors = path.priors.load_std_priors()["adopted"]
-        priors["U"] = p_u
+        config_n.update(config)
+        config = config_n
+
+        priors_std = path.priors.load_std_priors()
+        if isinstance(priors, str):
+            if priors in priors_std:
+                priors = priors_std[priors]
+            else:
+                raise ValueError(f"Prior set '{priors}' not recognised; available are: {list(priors_std.keys())}")
+        elif isinstance(priors, dict):
+            priors_adopted = priors_std["adopted"]
+            priors_adopted.update(priors)
+            priors = priors_adopted
+        priors["theta"].update(offset_priors)
+
+        print("P(U) ==", priors["U"])
         try:
             ass = associate.run_individual(
                 config=config,
                 #         show=True,
                 #         verbose=True,
                 FRB=x_frb,
-
                 prior=priors
                 #     skip_bayesian=True
             )
