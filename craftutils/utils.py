@@ -929,12 +929,11 @@ def numpy_to_list(arr):
 
 def find_nearest(array, value):
     """
-    Thanks to this thread: https://stackoverflow.com/questions/2566412/find-nearest-value-in-numpy-array/2566508
     :param array:
     :param value:
     :return:
     """
-    idx = np.argmin(np.abs(array - value))
+    idx = np.nanargmin(np.abs(array - value))
     return idx, array[idx]
 
 
