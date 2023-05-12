@@ -784,7 +784,12 @@ class Object:
     #     extinction.fitzpatrick99(tbl["lambda_eff"], a_v, r_v) * units.mag
     #     pass
 
-    def estimate_galactic_extinction(self, ax=None, r_v: float = 3.1, **kwargs):
+    def estimate_galactic_extinction(
+            self,
+            ax=None,
+            r_v: float = 3.1,
+            **kwargs
+    ):
         import extinction
         if ax is None:
             fig, ax = plt.subplots()

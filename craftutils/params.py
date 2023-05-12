@@ -872,8 +872,8 @@ def trim_transmission_curves(f: str, instrument: str, lambda_min: float, lambda_
     wavelengths = file_params['wavelengths']
     if len(wavelengths) > 0:
         transmissions = file_params['transmissions']
-        arg_lambda_min, _ = u.find_nearest(np.array(wavelengths), lambda_min, sorted=True)
-        arg_lambda_max, _ = u.find_nearest(np.array(wavelengths), lambda_max, sorted=True)
+        arg_lambda_min, _ = u.find_nearest(np.array(wavelengths), lambda_min)
+        arg_lambda_max, _ = u.find_nearest(np.array(wavelengths), lambda_max)
         arg_lambda_max += 1
         file_params['transmissions'] = transmissions[arg_lambda_min:arg_lambda_max]
         file_params['wavelengths'] = wavelengths[arg_lambda_min:arg_lambda_max]
@@ -881,8 +881,8 @@ def trim_transmission_curves(f: str, instrument: str, lambda_min: float, lambda_
     wavelengths = file_params['wavelengths_filter_only']
     if len(wavelengths) > 0:
         transmissions = file_params['transmissions_filter_only']
-        arg_lambda_min, _ = u.find_nearest(np.array(wavelengths), lambda_min, sorted=True)
-        arg_lambda_max, _ = u.find_nearest(np.array(wavelengths), lambda_max, sorted=True)
+        arg_lambda_min, _ = u.find_nearest(np.array(wavelengths), lambda_min)
+        arg_lambda_max, _ = u.find_nearest(np.array(wavelengths), lambda_max)
         arg_lambda_max += 1
         file_params['transmissions_filter_only'] = transmissions[arg_lambda_min:arg_lambda_max]
         file_params['wavelengths_filter_only'] = wavelengths[arg_lambda_min:arg_lambda_max]

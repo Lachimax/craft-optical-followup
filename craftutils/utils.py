@@ -927,26 +927,15 @@ def numpy_to_list(arr):
     return ls
 
 
-def find_nearest(array, value, sorted: bool = False):
+def find_nearest(array, value):
     """
     Thanks to this thread: https://stackoverflow.com/questions/2566412/find-nearest-value-in-numpy-array/2566508
     :param array:
     :param value:
     :return:
     """
-    if not sorted:
-        array.sort()
-
-    if value < array[0]:
-        return 0, array[0]
-    elif value > array[-1]:
-        return len(array) - 1, array[-1]
-
-    idx = np.searchsorted(array, value, side="left")
-    if idx == len(array) or np.abs(value - array[idx - 1]) < np.abs(value - array[idx]):
-        return idx - 1, array[idx - 1]
-    else:
-        return idx, array[idx]
+    idx = np.argmin(np.abs(array - value))
+    return idx, array[idx]
 
 
 def round_to_sig_fig(x: float, n: int) -> float:
