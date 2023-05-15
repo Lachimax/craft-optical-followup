@@ -1659,10 +1659,40 @@ class FRB(Transient):
         super().__init__(
             **kwargs
         )
+        # Observed Dispersion Measure
         self.dm = dm
         if self.dm is not None:
             self.dm = u.check_quantity(self.dm, unit=dm_units)
+        self.dm_err = 0 * dm_units
+        if "dm_err" in kwargs:
+            self.dm_err = u.check_quantity(kwargs["dm_err"], dm_units)
 
+        # Scattering model parameters
+        # ===========================
+        # Intrinsic width; 2 * sigma of gaussian model
+        self.width_int = None
+        if "width_int" in kwargs:
+            self.width_int = u.check_quantity(kwargs["width_int"], units.ms)
+        self.width_int_err = None
+        if "width_int_err" in kwargs:
+            self.width_int_err = u.check_quantity(kwargs["width_int_err"], units.ms)
+        # Scattering timescale, exponent of exponential model
+        self.tau = None
+        if "tau" in kwargs:
+            self.tau = u.check_quantity(kwargs["tau"], units.ms)
+        self.tau_err = None
+        if "tau_err" in kwargs:
+            self.tau_err = u.check_quantity(kwargs["tau_err"], units.ms)
+        # Frequency at which scattering is measured
+        self.nu_scattering = None
+        if "nu_scattering" in kwargs:
+            self.nu_scattering = u.check_quantity(kwargs["nu_scattering"], units.GHz)
+
+        # DM components
+        self._dm_mw_ism_ne2001 = None
+        self._dm_mw_ism_ymw16 = None
+
+        # Placeholder for an associated `frb.frb.FRB` object
         self.x_frb = None
 
     def generate_x_frb(self):
@@ -1676,7 +1706,7 @@ class FRB(Transient):
 
     def probabilistic_association(
             self,
-            img: 'craftutils.observation.image.ImagingImage',
+            img,
             priors: Union[str, dict] = "adopted",
             offset_priors: dict = {},
             config: dict = {},
@@ -1881,6 +1911,10 @@ class FRB(Transient):
         default_params.update({
             "host_galaxy": Galaxy.default_params(),
             "date": "0000-01-01",
+            "tau": None,
+            "tau_err": None,
+            "width_intrinsic": None,
+            "width_intrinsic_err": None,
             "tns_name": None
         })
         return default_params
@@ -1913,33 +1947,44 @@ class FRB(Transient):
         except ValueError:
             return date_str
 
-    def dm_mw_ism_ne2001(self, distance: Union[units.Quantity, float] = 100. * units.kpc):
+    def dm_mw_ism_ne2001(
+            self,
+            distance: Union[units.Quantity, float] = 100. * units.kpc,
+            force: bool = False
+    ):
         """
         Borrowed from frb.mw
         :param distance:
         :return:
         """
         # from frb.mw import ismDM
+        if self._dm_mw_ism_ne2001 is None or force:
+            from ne2001 import density
+            distance = u.dequantify(distance, unit=units.kpc)
+            ne = density.ElectronDensity()
+            dm_ism = ne.DM(
+                self.position.galactic.l.value,
+                self.position.galactic.b.value,
+                distance
+            )
+            self._dm_mw_ism_ne2001 = dm_ism
+        return self._dm_mw_ism_ne2001
 
-        from ne2001 import density
-        distance = u.dequantify(distance, unit=units.kpc)
-        ne = density.ElectronDensity()
-        dm_ism = ne.DM(
-            self.position.galactic.l.value,
-            self.position.galactic.b.value,
-            distance
-        )
-        return dm_ism
-
-    def dm_mw_ism_ymw16(self, distance: Union[units.Quantity, float] = 50. * units.kpc):
-        import pygedm
-        dm, tau = pygedm.dist_to_dm(
-            self.position.galactic.l,
-            self.position.galactic.b,
-            distance,
-            method="ymw16"
-        )
-        return dm
+    def dm_mw_ism_ymw16(
+            self,
+            distance: Union[units.Quantity, float] = 50. * units.kpc,
+            force: bool = False
+    ):
+        if self._dm_mw_ism_ymw16 is None or force:
+            import pygedm
+            dm, tau = pygedm.dist_to_dm(
+                self.position.galactic.l,
+                self.position.galactic.b,
+                distance,
+                method="ymw16"
+            )
+            self._dm_mw_ism_ymw16 = dm
+        return self._dm_mw_ism_ymw16
 
     def dm_mw_ism(
             self,
@@ -2115,6 +2160,54 @@ class FRB(Transient):
     #     dm_cosmic = self.estimate_dm_cosmic()
     #     dm_halo = 60 * dm_units
     #     return self.dm - dm_ism - dm_cosmic - dm_halo
+
+    def dm_host_from_tau(
+            self,
+            afg: Union[units.Quantity, float],
+            z_host: float = None,
+            subtract_mw: bool = True
+    ):
+        """
+        Implements an inverted form of Equation 9, equivalent to Equation 23, of
+        Cordes et al 2022 (https://www.doi.org/10.3847/1538-4357/ac6873)
+        Note that the quantity returned is in the HOST FRAME.
+
+        :param afg: $A_\tau \widetilde{F} G$, as described in Cordes et al 2022; these parameters, related to the
+            geometry of the source, host, and ISM, are usually constrained in combination.
+        :param z_host: The redshift of the host galaxy. If not given, will attempt to use the `self.host_galaxy.z`
+        :return: Estimated DM_host, in the host rest frame.
+        """
+        if z_host is None:
+            z_host = self.host_galaxy.z
+        nu = u.check_quantity(self.nu_scattering, units.MHz)
+        tau = u.check_quantity(self.tau * 1., units.ms)
+        if subtract_mw:
+            tau_mw = self.tau_mw()
+            tau -= tau_mw
+        afg_unit = (units.pc ** (-2 / 3) * units.km ** (-1 / 3))
+        afg = u.check_quantity(afg, afg_unit)
+        nu_4 = (nu / units.GHz) ** 4
+        z_3 = (1 + z_host) ** 3
+        tau_norm = 0.48 * units.ms
+        dm = (100 * dm_units * (tau * nu_4 * z_3 * (afg_unit / (tau_norm * afg))) ** (1. / 2.))
+        return dm.to(dm_units)
+
+    def tau_mw(
+            self,
+            x_tau: float = 4.
+    ):
+        """
+        Implements Equation 8 of
+        Cordes et al 2022 (https://www.doi.org/10.3847/1538-4357/ac6873)
+
+        :param x_tau:
+        :return:
+        """
+        dm = self.dm_mw_ism_ne2001()
+        nu = self.nu_scattering
+
+        tau_dm_mw = 1.9 * 10e-7 * units.ms * (nu / units.GHz) ** x_tau * (dm / dm_units) ** 1.5 * (1 + 3.55e-5 * (dm / dm_units) ** 3)
+        return tau_dm_mw.to(units.ms)
 
     def z_from_dm(
             self,

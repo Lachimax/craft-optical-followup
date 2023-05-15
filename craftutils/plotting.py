@@ -31,6 +31,15 @@ __all__ = []
 
 quantity_support()
 
+textwidths = {
+    "MNRAS": 7.03,
+    "mqthesis": 6.1
+}
+
+textheights = {
+    "mqthesis": 9.6
+}
+
 
 @u.export
 def plot_kron(fig: plt.Figure, data_title: str, instrument: str, f: str, index: Union[int, list], catalogue: str,
