@@ -2184,7 +2184,7 @@ class FRB(Transient):
         if subtract_mw:
             tau_mw = self.tau_mw()
             tau -= tau_mw
-        afg_unit = (units.pc ** (-2 / 3) * units.km ** (-1 / 3))
+        afg_unit = units.pc ** (-2 / 3) * units.km ** (-1 / 3)
         afg = u.check_quantity(afg, afg_unit)
         nu_4 = (nu / units.GHz) ** 4
         z_3 = (1 + z_host) ** 3
