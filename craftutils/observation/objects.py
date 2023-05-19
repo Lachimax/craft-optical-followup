@@ -582,7 +582,7 @@ class Object:
             "photometry": self.photometry,
             "irsa_extinction_path": self.irsa_extinction_path,
             "extinction_law": self.extinction_power_law,
-
+            "ebv_sandf": self.ebv_sandf
         }
 
     def load_output_file(self):
@@ -909,6 +909,7 @@ class Object:
         if force or self.ebv_sandf is None:
             # Get E(B-V) at this coordinate.
             tbl = r.retrieve_irsa_details(coord=self.position)
+            tbl.write(os.path.join(self.data_path, "IRSA_extinction.ecsv"), overwrite=True)
             self.ebv_sandf = tbl["ext SandF ref"][0] * units.mag
 
     def load_extinction_table(self, force: bool = False):
