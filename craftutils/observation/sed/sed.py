@@ -185,9 +185,19 @@ class SEDModel:
             new_model = self
         return new_model
 
-    # def flux_through_band(
-    #         self
-    # ):
+    def flux_in_band(
+            self,
+            band: filters.Filter,
+            use_quantum_factor: bool = False
+    ):
+        tbl = self.model_table
+        transmission = self.add_band(band=band)
+        return ph.flux_from_band(
+            flux=tbl["flux_nu"],
+            band_transmission=transmission,
+            frequency=tbl["frequency"],
+            use_quantum_factor=use_quantum_factor
+        )
 
     def magnitude_AB(
             self,
@@ -277,6 +287,9 @@ class SEDModel:
         self.model_table[bn] = _add_band(self.model_table, band)
         self.model_table[f"flux_nu_{bn}"] = self.model_table["flux_nu"] * self.model_table[bn]
         return self.model_table[bn]
+
+    def write(self, path: str, fmt="ascii.ecsv", **kwargs):
+        self.model_table.write(path, format=fmt, **kwargs)
 
     @classmethod
     def columns(cls):

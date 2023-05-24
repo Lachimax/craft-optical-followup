@@ -230,7 +230,9 @@ def main(
 if __name__ == '__main__':
     import argparse
 
-    parser = argparse.ArgumentParser(description="General pipeline for optical/infrared data reduction.")
+    parser = argparse.ArgumentParser(
+        description="General pipeline for optical/infrared data reduction."
+    )
     parser.add_argument(
         "--field",
         help='Name of field, eg FRB180924',

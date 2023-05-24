@@ -1708,17 +1708,15 @@ class FRB(Transient):
     def probabilistic_association(
             self,
             img,
-            priors: Union[str, dict] = "adopted",
-            offset_priors: dict = {},
+            prior_set: Union[str, dict] = "adopted",
+            priors: dict = {},
+            offset_priors: dict = {"scale": 0.5},
             config: dict = {},
     ):
         """
         Performs a customised PATH run on an image.
 
-        :param p_u: The prior for the probability of the host being unseen in the image.
         :param img: The image on which to run PATH.
-        :param frb_object: the FRB in question.
-        :param radius: Maximum distance in arcseconds for an object to be considered as a candidate.
         :return:
         """
         import frb.associate.frbassociate as associate
@@ -1738,6 +1736,7 @@ class FRB(Transient):
         img.extract_pixel_scale()
         instname = img.instrument.name.replace("-", "_").upper()
         filname = f'{instname}_{img.filter.band_name}'
+        # TODO: subtract Galactic extinction from zeropoint
         config_n = dict(
             max_radius=10,
             skip_bayesian=False,
@@ -1754,27 +1753,30 @@ class FRB(Transient):
         config_n.update(config)
         config = config_n
 
+        # Load priors from astropath repo
         priors_std = path.priors.load_std_priors()
-        if isinstance(priors, str):
-            if priors in priors_std:
-                priors = priors_std[priors]
+        if isinstance(prior_set, str):
+            if prior_set in priors_std:
+                prior_set = priors_std[prior_set]
             else:
-                raise ValueError(f"Prior set '{priors}' not recognised; available are: {list(priors_std.keys())}")
-        elif isinstance(priors, dict):
+                raise ValueError(f"Prior set '{prior_set}' not recognised; available are: {list(priors_std.keys())}")
+        elif isinstance(prior_set, dict):
             priors_adopted = priors_std["adopted"]
-            priors_adopted.update(priors)
-            priors = priors_adopted
-        priors["theta"].update(offset_priors)
+            priors_adopted.update(prior_set)
+            prior_set = priors_adopted
+        # Update with passed priors
+        prior_set["theta"].update(offset_priors)
+        prior_set.update(priors)
 
-        print("P(U) ==", priors["U"])
+        print("P(U) ==", prior_set["U"])
+        print()
+        print("priors:", prior_set)
         try:
             ass = associate.run_individual(
                 config=config,
-                #         show=True,
-                #         verbose=True,
                 FRB=x_frb,
-                prior=priors
-                #     skip_bayesian=True
+                prior=prior_set,
+                # extinction_correct=True
             )
             p_ux = ass.P_Ux
             print("P(U|x) ==", p_ux)

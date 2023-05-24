@@ -427,6 +427,39 @@ def redshift_flux_lambda(
     return flux * ((1 + z) * d_l ** 2) / ((1 + z_new) * d_l_shift ** 2)
 
 
+def flux_from_band(
+        flux: units.Quantity,
+        band_transmission: Union[np.ndarray, units.Quantity],
+        frequency: units.Quantity,
+        use_quantum_factor: bool = True
+):
+    """
+    All three arguments must be of the same length, with entries corresponding 1-to-1.
+    :param flux:
+    :param band_transmission:
+    :param frequency:
+    :return:
+    """
+    flux_tbl = table.QTable(
+        data={
+            "nu": frequency,
+            "e": band_transmission,
+            "f": flux
+        }
+    )
+    flux_tbl.sort("nu")
+
+    if use_quantum_factor:
+        quantum_factor = (constants.h * flux_tbl["nu"]) ** -1
+    else:
+        quantum_factor = 1
+
+    return np.trapz(
+        y=flux_tbl["f"] * quantum_factor * flux_tbl["e"],
+        x=flux_tbl["nu"]
+    )
+
+
 def magnitude_AB(
         flux: units.Quantity,
         band_transmission: Union[np.ndarray, units.Quantity],
