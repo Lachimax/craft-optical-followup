@@ -397,7 +397,8 @@ class Image:
             output_path: str = None,
             packages: List[str] = None,
             ext: int = 0,
-            ancestors: List['Image'] = None
+            ancestors: List['Image'] = None,
+            **method_kwargs,
     ):
 
         if ancestors is not None:
@@ -412,7 +413,8 @@ class Image:
             input_path=input_path,
             output_path=output_path,
             packages=packages,
-            ancestor_logs=ancestors
+            ancestor_logs=ancestors,
+            method_args=method_kwargs
         )
         self.add_history(note=action, ext=ext)
         # self.update_output_file()
@@ -1893,6 +1895,8 @@ class ImagingImage(Image):
         self.add_log(
             action=f"Estimated image depth.",
             method=self.estimate_depth,
+            stars_only=stars_only,
+            star_tolerance=star_tolerance
         )
         self.update_output_file()
 

@@ -133,7 +133,6 @@ def image_psf_diagnostics(
             stars["MOFFAT_FWHM_FITTED"] *= units.arcsec
 
     print()
-    print("STARS")
 
     for j, star in enumerate(stars):
         ra = star[ra_col]
@@ -497,6 +496,7 @@ def magnitude_AB(
     )
 
     return -2.5 * np.log10(flux_band / flux_ab)
+
 
 
 def magnitude_absolute_from_luminosity(

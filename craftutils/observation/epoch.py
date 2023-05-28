@@ -5345,7 +5345,7 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
         # if "skip_retrievable" in kwargs and kwargs["skip_retrievable"] is not None:
         #     skip_retrievable = kwargs.pop("skip_retrievable")
 
-        suppress_select = False
+        suppress_select = True
         if "suppress_select" in kwargs and kwargs["suppress_select"] is not None:
             suppress_select = kwargs.pop("suppress_select")
 
