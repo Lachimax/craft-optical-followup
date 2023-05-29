@@ -693,7 +693,7 @@ def retrieve_irsa_extinction(ra: float = None, dec: float = None, coord: SkyCoor
             table = irsa_dust.IrsaDust.get_extinction_table(coord)
         except urllib.error.HTTPError:
             attempts += 1
-            print(f"Could not retrieve table due to HTML error. Trying again after clearing cache ({attempts=}/100).")
+            print(f"Could not retrieve table due to HTML error. Trying again after clearing cache (attempts={attempts}/100).")
             cache_path = os.path.join(p.home_path, ".astropy", "cache", "astroquery")
             u.rmtree_check(cache_path)
 

@@ -1751,7 +1751,7 @@ class ImagingImage(Image):
     ):
         cat = self.get_source_cat(dual=dual, force=True)
         if cat is None:
-            raise ValueError(f"Catalogue ({dual=}) could not be loaded.")
+            raise ValueError(f"Catalogue (dual={dual}) could not be loaded.")
 
         self.extract_exposure_time()
         zp_dict = self.get_zeropoint(cat_name=zeropoint_name)
