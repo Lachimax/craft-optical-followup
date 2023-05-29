@@ -188,35 +188,32 @@ class SEDModel:
     def flux_in_band(
             self,
             band: filters.Filter,
-            use_quantum_factor: bool = False
     ):
         tbl = self.model_table
         transmission = self.add_band(band=band)
         return ph.flux_from_band(
             flux=tbl["flux_nu"],
-            band_transmission=transmission,
+            transmission=transmission,
             frequency=tbl["frequency"],
-            use_quantum_factor=use_quantum_factor
+            use_quantum_factor=True
         )
 
     def magnitude_AB(
             self,
             band: filters.Filter,
-            use_quantum_factor: bool = False
     ):
         tbl = self.model_table
         transmission = self.add_band(band=band)
         return ph.magnitude_AB(
             flux=tbl["flux_nu"],
-            band_transmission=transmission,
+            transmission=transmission,
             frequency=tbl["frequency"],
-            use_quantum_factor=use_quantum_factor
+            use_quantum_factor=True
         )
 
     def magnitude_absolute(
             self,
             band: filters.Filter,
-            use_quantum_factor: bool = False
     ):
         self.luminosity_per_frequency()
         self.calculate_rest_luminosity()
@@ -224,9 +221,9 @@ class SEDModel:
         tbl = self.rest_luminosity
         return ph.magnitude_absolute_from_luminosity(
             luminosity_nu=tbl["luminosity_nu"],
-            band_transmission=transmission,
+            transmission=transmission,
             frequency=tbl["frequency"],
-            use_quantum_factor=use_quantum_factor
+            use_quantum_factor=True
         )
 
     def k_correction(
@@ -289,7 +286,7 @@ class SEDModel:
         return self.model_table[bn]
 
     def write(self, path: str, fmt="ascii.ecsv", **kwargs):
-        self.model_table.write(path, format=fmt, **kwargs)
+        self.model_table.write(path, format=fmt, overwrite=True, **kwargs)
 
     @classmethod
     def columns(cls):

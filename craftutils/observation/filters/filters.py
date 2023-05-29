@@ -90,15 +90,20 @@ class Filter:
         if transmission is None:
             transmission, _ = self.select_transmission_table()
         delta_mag = 2.5 * np.log10(
-            np.trapz(
-                y=zp_ab * transmission["Transmission"],
-                x=transmission["Wavelength"]
-            ) / np.trapz(
+            self.ab_flux(transmission=transmission) / np.trapz(
                 y=zp_vega * transmission["Transmission"],
                 x=transmission["Wavelength"]
             )
         )
         return delta_mag * units.mag
+
+    def ab_flux(self, transmission: table.QTable = None):
+        if transmission is None:
+            transmission, _ = self.select_transmission_table()
+        return np.trapz(
+            y=3631 * units.Jy * transmission["Transmission"],
+            x=transmission["Wavelength"]
+        )
 
     def compare_transmissions(self, other: 'Filter'):
         tbl_self, tbl_other = self.find_comparable_table(other)
@@ -159,9 +164,6 @@ class Filter:
             xp=tbl["Wavelength"].value,
             fp=tbl["Transmission"].value
         )
-
-
-
 
     def compare_wavelength_range(self, other: 'Filter'):
         tbl_self, tbl_other = self.find_comparable_table(other)

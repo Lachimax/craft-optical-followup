@@ -426,107 +426,151 @@ def redshift_flux_lambda(
     return flux * ((1 + z) * d_l ** 2) / ((1 + z_new) * d_l_shift ** 2)
 
 
+def flux_ab(
+        tbl: table.QTable = None,
+        transmission: Union[np.ndarray, units.Quantity] = None,
+        frequency: units.Quantity = None,
+        use_quantum_factor: bool = True
+):
+    """
+    For calculating the denominator of the AB Magnitude formula for a given filter.
+    """
+
+    if tbl is None:
+        if transmission is None:
+            raise ValueError(
+                "If `tbl` is not provided (with transmission included as column 'transmission'), `transmission` must be provided.")
+
+        if frequency is None:
+            raise ValueError(
+                "If `tbl` is not provided (with frequency included as column 'frequency'), `frequency` must be provided.")
+
+        tbl = table.QTable(
+            data={
+                "frequency": frequency,
+                "transmission": transmission,
+            }
+        )
+    tbl["flux"] = np.ones(len(tbl)) * AB_zeropoint
+
+    # flux_ab = np.trapz(
+    #     y=AB_zeropoint * quantum_factor * tbl["transmission"],
+    #     x=tbl["frequency"]
+    # )
+
+    return flux_from_band(
+        tbl,
+        use_quantum_factor=use_quantum_factor
+    )
+
+
 def flux_from_band(
-        flux: units.Quantity,
-        band_transmission: Union[np.ndarray, units.Quantity],
-        frequency: units.Quantity,
+        flux: Union[units.Quantity, table.QTable],
+        transmission: Union[np.ndarray, units.Quantity] = None,
+        frequency: units.Quantity = None,
         use_quantum_factor: bool = True
 ):
     """
     All three arguments must be of the same length, with entries corresponding 1-to-1.
-    :param flux:
-    :param band_transmission:
+    :param flux: flux per unit frequency.
+    :param transmission:
     :param frequency:
+    :param use_quantum_factor: For use if flux is in energy-related units (eg, Jy, erg/s, etc.) to convert to photon
+        counts. If you are passing an SED flux, then you should set this to True.
     :return:
     """
-    flux_tbl = table.QTable(
-        data={
-            "nu": frequency,
-            "e": band_transmission,
-            "f": flux
-        }
-    )
-    flux_tbl.sort("nu")
+    if not isinstance(flux, table.Table):
+        if transmission is None:
+            raise ValueError(
+                "If `flux` is not a table (with transmission included as column 'transmission'), `band_transmission` must be provided.")
+        if frequency is None:
+            raise ValueError(
+                "If `flux` is not a table (with frequency included as column 'frequency'), `frequency` must be provided.")
+
+        flux_tbl = table.QTable(
+            data={
+                "frequency": frequency,
+                "transmission": transmission,
+                "flux": flux
+            }
+        )
+    else:
+        if "frequency" not in flux.colnames:
+            raise ValueError("If `flux` is a table, frequency must be included as column `frequency`")
+        if "transmission" not in flux.colnames:
+            raise ValueError("If `flux` is a table, transmission must be included as column `transmission`")
+        flux_tbl = flux
+
+    flux_tbl.sort("frequency")
 
     if use_quantum_factor:
-        quantum_factor = (constants.h * flux_tbl["nu"]) ** -1
+        quantum_factor = (constants.h * flux_tbl["frequency"]) ** -1
     else:
         quantum_factor = 1
 
     return np.trapz(
-        y=flux_tbl["f"] * quantum_factor * flux_tbl["e"],
-        x=flux_tbl["nu"]
+        y=flux_tbl["flux"] * quantum_factor * flux_tbl["transmission"],
+        x=flux_tbl["frequency"]
     )
 
 
 def magnitude_AB(
         flux: units.Quantity,
-        band_transmission: Union[np.ndarray, units.Quantity],
+        transmission: Union[np.ndarray, units.Quantity],
         frequency: units.Quantity,
         use_quantum_factor: bool = True
+
 ):
     """
     All three arguments must be of the same length, with entries corresponding 1-to-1.
     :param flux:
-    :param band_transmission:
+    :param transmission:
     :param frequency:
     :return:
     """
     flux_tbl = table.QTable(
         data={
-            "nu": frequency,
-            "e": band_transmission,
-            "f": flux
+            "frequency": frequency,
+            "transmission": transmission,
+            "flux": flux
         }
     )
-    flux_tbl.sort("nu")
+    flux_tbl.sort("frequency")
 
-    if use_quantum_factor:
-        quantum_factor = (constants.h * flux_tbl["nu"]) ** -1
-    else:
-        quantum_factor = 1
+    flux_band = flux_from_band(flux=flux_tbl, use_quantum_factor=use_quantum_factor)
+    flux_ab_this = flux_ab(flux_tbl, use_quantum_factor=use_quantum_factor)
 
-    flux_band = np.trapz(
-        y=flux_tbl["f"] * quantum_factor * flux_tbl["e"],
-        x=flux_tbl["nu"]
-    )
-    flux_ab = np.trapz(
-        y=AB_zeropoint * quantum_factor * flux_tbl["e"],
-        x=flux_tbl["nu"]
-    )
-
-    return -2.5 * np.log10(flux_band / flux_ab)
-
+    return -2.5 * np.log10(flux_band / flux_ab_this)
 
 
 def magnitude_absolute_from_luminosity(
         luminosity_nu: units.Quantity,
-        band_transmission: Union[np.ndarray, units.Quantity],
+        transmission: Union[np.ndarray, units.Quantity],
         frequency: units.Quantity,
         use_quantum_factor: bool = True
 ):
     lum_tbl = table.QTable(
         data={
-            "nu": frequency,
-            "e": band_transmission,
-            "L": luminosity_nu
+            "frequency": frequency,
+            "transmission": transmission,
+            "luminosity_nu": luminosity_nu
         }
     )
-    lum_tbl.sort("nu")
+    lum_tbl.sort("frequency")
 
     if use_quantum_factor:
-        quantum_factor = (constants.h * lum_tbl["nu"]) ** -1
+        quantum_factor = (constants.h * lum_tbl["frequency"]) ** -1
     else:
         quantum_factor = 1
 
     luminosity_band = np.trapz(
-        y=lum_tbl["L"] * lum_tbl["e"] * quantum_factor / lum_tbl["nu"],
-        x=lum_tbl["nu"]
+        y=lum_tbl["luminosity_nu"] * lum_tbl["transmission"] * quantum_factor / lum_tbl["frequency"],
+        x=lum_tbl["frequency"]
     )
 
     luminosity_ab = np.trapz(
-        y=AB_zeropoint * lum_tbl["e"] * quantum_factor / lum_tbl["nu"],
-        x=lum_tbl["nu"]
+        y=AB_zeropoint * lum_tbl["transmission"] * quantum_factor / lum_tbl["frequency"],
+        x=lum_tbl["frequency"]
     )
 
     return -2.5 * np.log10(luminosity_band / (luminosity_ab * 4 * np.pi * 100 * units.pc ** 2))
