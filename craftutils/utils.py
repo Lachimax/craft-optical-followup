@@ -172,11 +172,17 @@ def trim_image(
 
 
 def check_iterable(obj):
-    try:
-        len(obj)
-    except TypeError:
+    if not is_iterable(obj):
         obj = [obj]
     return obj
+
+
+def is_iterable(obj):
+    try:
+        len(obj)
+        return True
+    except TypeError:
+        return False
 
 
 def theta_range(theta: units.Quantity):
@@ -297,6 +303,7 @@ def check_dict(key: str, dictionary: dict, na_values: Union[tuple, list] = (None
     """
     if check_key(key=key, dictionary=dictionary, na_values=na_values):
         return dictionary[key]
+
 
 def check_quantity(
         number: Union[float, int, units.Quantity],

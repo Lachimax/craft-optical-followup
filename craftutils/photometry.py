@@ -430,7 +430,6 @@ def flux_ab(
         tbl: table.QTable = None,
         transmission: Union[np.ndarray, units.Quantity] = None,
         frequency: units.Quantity = None,
-        use_quantum_factor: bool = True
 ):
     """
     For calculating the denominator of the AB Magnitude formula for a given filter.
@@ -453,14 +452,9 @@ def flux_ab(
         )
     tbl["flux"] = np.ones(len(tbl)) * AB_zeropoint
 
-    # flux_ab = np.trapz(
-    #     y=AB_zeropoint * quantum_factor * tbl["transmission"],
-    #     x=tbl["frequency"]
-    # )
-
     return flux_from_band(
         tbl,
-        use_quantum_factor=use_quantum_factor
+        use_quantum_factor=True
     )
 
 
@@ -486,7 +480,8 @@ def flux_from_band(
         if frequency is None:
             raise ValueError(
                 "If `flux` is not a table (with frequency included as column 'frequency'), `frequency` must be provided.")
-
+        if not u.is_iterable(flux):
+            flux = flux * np.ones(len(frequency))
         flux_tbl = table.QTable(
             data={
                 "frequency": frequency,
