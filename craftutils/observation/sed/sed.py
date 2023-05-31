@@ -198,6 +198,20 @@ class SEDModel:
             use_quantum_factor=True
         )
 
+    def luminosity_in_band(
+            self,
+            band: filters.Filter,
+    ):
+        self.calculate_rest_luminosity()
+        tbl = self.rest_luminosity
+        transmission = self.add_band(band=band)
+        return ph.luminosity_in_band(
+            luminosity_nu=tbl["luminosity_nu"],
+            transmission=transmission,
+            frequency=tbl["frequency"],
+            use_quantum_factor=False
+        )
+
     def magnitude_AB(
             self,
             band: filters.Filter,
@@ -223,19 +237,24 @@ class SEDModel:
             luminosity_nu=tbl["luminosity_nu"],
             transmission=transmission,
             frequency=tbl["frequency"],
-            use_quantum_factor=True
         )
 
     def k_correction(
             self,
             band: filters.Filter,
     ):
+        """
+        Implementing a less-general form of Equation (9) of Hogg et al 2002 (https://arxiv.org/abs/astro-ph/0210394v1)
+        :param band:
+        :return:
+        """
 
         self.luminosity_per_frequency()
         transmission_obs = self.add_band(band)
-        transmission_emm = self.add_band_rest(band)
+        # transmission_emm = self.add_band_rest(band)
         tbl_obs = self.model_table
         tbl_emm = self.rest_luminosity
+        # lum_obs_mod = self._luminosity(frequency=(1 + self.z) * tbl_obs["frequency"], tbl=tbl_emm)
         lum_obs = np.trapz(
             x=tbl_obs["luminosity_nu"] * transmission_obs / tbl_obs["frequency"],
             y=tbl_obs["frequency"]
@@ -246,6 +265,20 @@ class SEDModel:
         )
 
         return -2.5 * np.log10((1 + self.z) * lum_obs / lum_emm)
+
+    def _luminosity(
+            self,
+            frequency,
+            tbl=None,
+    ):
+        if tbl is None:
+            tbl = self.model_table
+        luminosity_interp = np.interp(
+            x=frequency,
+            xp=tbl["frequency"],
+            fp=tbl["luminosity_nu"]
+        )
+        return luminosity_interp
 
     def luminosity_bolometric(self):
         self.luminosity_per_frequency()

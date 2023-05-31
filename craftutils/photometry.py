@@ -533,7 +533,7 @@ def magnitude_AB(
     flux_tbl.sort("frequency")
 
     flux_band = flux_from_band(flux=flux_tbl, use_quantum_factor=use_quantum_factor)
-    flux_ab_this = flux_ab(flux_tbl, use_quantum_factor=use_quantum_factor)
+    flux_ab_this = flux_ab(flux_tbl)
 
     return -2.5 * np.log10(flux_band / flux_ab_this)
 
@@ -542,7 +542,41 @@ def magnitude_absolute_from_luminosity(
         luminosity_nu: units.Quantity,
         transmission: Union[np.ndarray, units.Quantity],
         frequency: units.Quantity,
-        use_quantum_factor: bool = True
+):
+    """
+    Derived from Equation (5) of Hogg et al 2002 (https://arxiv.org/abs/astro-ph/0210394v1)
+    :param luminosity_nu:
+    :param transmission:
+    :param frequency:
+    :return:
+    """
+    lum_tbl = table.QTable(
+        data={
+            "frequency": frequency,
+            "transmission": transmission,
+            "luminosity_nu": luminosity_nu
+        }
+    )
+    lum_tbl.sort("frequency")
+
+    luminosity_band = np.trapz(
+        y=lum_tbl["luminosity_nu"] * lum_tbl["transmission"] / lum_tbl["frequency"],
+        x=lum_tbl["frequency"]
+    )
+
+    ab = np.trapz(
+        y=AB_zeropoint * lum_tbl["transmission"] / lum_tbl["frequency"],
+        x=lum_tbl["frequency"]
+    )
+
+    return -2.5 * np.log10(luminosity_band / (ab * 4 * np.pi * 100 * units.pc ** 2))
+
+
+def luminosity_in_band(
+        luminosity_nu: units.Quantity,
+        transmission: Union[np.ndarray, units.Quantity],
+        frequency: units.Quantity,
+        use_quantum_factor: bool = False
 ):
     lum_tbl = table.QTable(
         data={
@@ -558,17 +592,10 @@ def magnitude_absolute_from_luminosity(
     else:
         quantum_factor = 1
 
-    luminosity_band = np.trapz(
-        y=lum_tbl["luminosity_nu"] * lum_tbl["transmission"] * quantum_factor / lum_tbl["frequency"],
+    return np.trapz(
+        y=lum_tbl["luminosity_nu"] * lum_tbl["transmission"] * quantum_factor,
         x=lum_tbl["frequency"]
     )
-
-    luminosity_ab = np.trapz(
-        y=AB_zeropoint * lum_tbl["transmission"] * quantum_factor / lum_tbl["frequency"],
-        x=lum_tbl["frequency"]
-    )
-
-    return -2.5 * np.log10(luminosity_band / (luminosity_ab * 4 * np.pi * 100 * units.pc ** 2))
 
 
 def magnitude_instrumental(
