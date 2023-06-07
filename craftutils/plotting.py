@@ -1,4 +1,4 @@
-# Code by Lachlan Marnoch, 2019
+# Code by Lachlan Marnoch, 2019-2023
 
 import os
 from typing import Union
