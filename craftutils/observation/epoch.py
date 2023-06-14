@@ -1777,7 +1777,7 @@ class ImagingEpoch(Epoch):
             distance_tolerance: units.Quantity = None,
             snr_min: float = 3.,
             star_class_tolerance: int = 0.95,
-            suppress_select: bool = False,
+            suppress_select: bool = True,
             **kwargs
     ):
 

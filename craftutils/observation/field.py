@@ -1189,6 +1189,7 @@ class FRBField(Field):
         param_dict = super().new_yaml(name=name, path=None)
         param_dict["frb"]["name"] = name
         param_dict["frb"]["type"] = "FRB"
+        param_dict["frb"]["host_galaxy"] = objects.Galaxy.default_params()
         if "FRB" in name:
             param_dict["frb"]["host_galaxy"]["name"] = name.replace("FRB", "HG")
         else:
