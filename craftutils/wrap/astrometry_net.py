@@ -72,8 +72,8 @@ def solve_field(
         guess_scale: bool = True,
         time_limit: units.Quantity = None,
         verify: bool = True,
-        odds_to_tune_up: float = 1e6,
-        odds_to_solve: float = 1e9,
+        odds_to_tune_up: float = 1e3,
+        odds_to_solve: float = 1e5,
         am_flags: list = None,
         am_params: dict = None,
 ):
