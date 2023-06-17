@@ -87,6 +87,10 @@ def check_for_config():
         config_dict = load_params(config_file)
         # except FileNotFoundError:
         #     warnings.warn("config file was not created properly; most likely you are running something other than Linux.")
+    for path_name in config_dict:
+        path = config_dict[path_name]
+        if path is not None:
+            config_dict[path_name] = os.path.abspath(path)
     else:
         for param in config_dict:
             if config_dict[param] is not None:
@@ -868,8 +872,8 @@ def trim_transmission_curves(f: str, instrument: str, lambda_min: float, lambda_
     wavelengths = file_params['wavelengths']
     if len(wavelengths) > 0:
         transmissions = file_params['transmissions']
-        arg_lambda_min, _ = u.find_nearest(np.array(wavelengths), lambda_min, sorted=True)
-        arg_lambda_max, _ = u.find_nearest(np.array(wavelengths), lambda_max, sorted=True)
+        arg_lambda_min, _ = u.find_nearest(np.array(wavelengths), lambda_min)
+        arg_lambda_max, _ = u.find_nearest(np.array(wavelengths), lambda_max)
         arg_lambda_max += 1
         file_params['transmissions'] = transmissions[arg_lambda_min:arg_lambda_max]
         file_params['wavelengths'] = wavelengths[arg_lambda_min:arg_lambda_max]
@@ -877,8 +881,8 @@ def trim_transmission_curves(f: str, instrument: str, lambda_min: float, lambda_
     wavelengths = file_params['wavelengths_filter_only']
     if len(wavelengths) > 0:
         transmissions = file_params['transmissions_filter_only']
-        arg_lambda_min, _ = u.find_nearest(np.array(wavelengths), lambda_min, sorted=True)
-        arg_lambda_max, _ = u.find_nearest(np.array(wavelengths), lambda_max, sorted=True)
+        arg_lambda_min, _ = u.find_nearest(np.array(wavelengths), lambda_min)
+        arg_lambda_max, _ = u.find_nearest(np.array(wavelengths), lambda_max)
         arg_lambda_max += 1
         file_params['transmissions_filter_only'] = transmissions[arg_lambda_min:arg_lambda_max]
         file_params['wavelengths_filter_only'] = wavelengths[arg_lambda_min:arg_lambda_max]
@@ -960,7 +964,6 @@ def params_init(param_file: Union[str, dict]):
 
 
 def load_output_file(obj):
-    print(obj.data_path, obj.name)
     if obj.data_path is not None and obj.name is not None:
         obj.output_file = os.path.join(obj.data_path, f"{obj.name}_outputs.yaml")
         outputs = load_params(file=obj.output_file)
@@ -984,6 +987,34 @@ def update_output_file(obj):
         save_params(dictionary=param_dict, file=obj.output_file)
     else:
         raise ValueError("Output could not be saved to file due to lack of valid output path.")
+
+
+def join_data_dir(path: str):
+    """
+    If the path is relative, joins it to data_dir; otherwise returns path unchanged.
+
+    :param path:
+    :return:
+    """
+    if not os.path.isabs(path):
+        path = os.path.join(data_dir, path)
+    return os.path.abspath(path)
+
+
+def split_data_dir(path: str):
+    """
+    If a path is inside data_dir, turns it into a relative path (relative to data_dir); else returns the path unchanged.
+
+    :param path: Must be an absolute path.
+    :return:
+    """
+    if not os.path.isabs(path):
+        raise ValueError(f"path {path} is not absolute.")
+    path = os.path.abspath(path)
+    if path.startswith(data_dir):
+        return path.replace(data_dir, "")
+    else:
+        return path
 
 
 # def change_param_name(folder):

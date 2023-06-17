@@ -146,7 +146,7 @@ class Field:
                     if obj != "<name>":
                         obj_dict = objs[obj]
                         if "name" not in obj_dict or obj_dict["name"] is None:
-                            obj_dict["name"] = name
+                            obj_dict["name"] = obj
                     else:
                         continue
                 elif type(objs) is list:
@@ -725,10 +725,11 @@ class Field:
             )
 
     @classmethod
-    def from_params(cls, name):
+    def from_params(cls, name, quiet: bool = False):
         if name in active_fields:
             return active_fields[name]
-        print("Initializing field...")
+        if not quiet:
+            print("Initializing field...")
         path = cls.build_param_path(field_name=name)
         return cls.from_file(param_file=path)
 
@@ -1091,6 +1092,7 @@ class FRBField(Field):
             imshow_kwargs=imshow_kwargs,
             normalize_kwargs=normalize_kwargs,
             scale_bar_kwargs=scale_bar_kwargs,
+            obj=self.frb.host_galaxy,
             **kwargs
         )
 
@@ -1187,6 +1189,7 @@ class FRBField(Field):
         param_dict = super().new_yaml(name=name, path=None)
         param_dict["frb"]["name"] = name
         param_dict["frb"]["type"] = "FRB"
+        param_dict["frb"]["host_galaxy"] = objects.Galaxy.default_params()
         if "FRB" in name:
             param_dict["frb"]["host_galaxy"]["name"] = name.replace("FRB", "HG")
         else:

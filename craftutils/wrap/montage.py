@@ -46,7 +46,7 @@ def check_input_images(input_directory: str,
     template = table[0]
     template_path = os.path.join(input_directory, template["FILENAME"])
     template_img = image.ImagingImage.select_child_class(
-        instrument=image.detect_instrument(path=template_path)
+        instrument_name=image.detect_instrument(path=template_path)
     )(template_path)
     keys = template_img.header_keys()
     exptime_key = keys["exposure_time"]

@@ -1,4 +1,4 @@
-# Code by Lachlan Marnoch, 2019
+# Code by Lachlan Marnoch, 2019-2023
 
 import os
 from typing import Union
@@ -9,12 +9,18 @@ import numpy as np
 import photutils
 
 import astropy.io.fits as fits
+import astropy.units as units
+import astropy.constants as constants
 import astropy.wcs as wcs
 from astropy.table import Table
-from astropy.visualization import (ImageNormalize, LogStretch, SqrtStretch, ZScaleInterval, MinMaxInterval,
-                                   PowerStretch, wcsaxes)
-
-from astropy.visualization import quantity_support
+from astropy.visualization import (
+    ImageNormalize,
+    LogStretch,
+    SqrtStretch,
+    ZScaleInterval,
+    MinMaxInterval,
+    quantity_support
+)
 
 import craftutils.fits_files as ff
 import craftutils.params as p
@@ -24,6 +30,16 @@ import craftutils.utils as u
 __all__ = []
 
 quantity_support()
+
+textwidths = {
+    "MNRAS": 7.03,
+    "mqthesis": 6.1
+}
+
+textheights = {
+    "mqthesis": 9.6
+}
+
 
 @u.export
 def plot_kron(fig: plt.Figure, data_title: str, instrument: str, f: str, index: Union[int, list], catalogue: str,
@@ -778,3 +794,21 @@ def plot_all_params(
 
     if path:
         image.close()
+
+
+def plot_lines(ax, z_shift, space: str = "wavelength", **kwargs):
+    from linetools.lists.linelist import LineList
+    gal_lines = LineList('Galaxy')
+    lines = gal_lines.wrest
+    ylim = ax.get_ylim()
+    if space == "frequency":
+        lines = constants.c / lines
+        z_factor = 1 / (1 + z_shift)
+    elif space == "wavelength":
+        z_factor = 1 + z_shift
+    if "c" not in kwargs:
+        kwargs["c"] = "black"
+    if "ls" not in kwargs:
+        kwargs["ls"] = ":"
+    for line in lines:
+        ax.plot(units.Quantity([line * z_factor, line * z_factor]), ylim, **kwargs)
