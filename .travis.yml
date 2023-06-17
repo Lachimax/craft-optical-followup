@@ -8,7 +8,6 @@ python:
   - "3.9"
 install:
   - pip install -r requirements.txt
-  - sudo apt update && sudo apt upgrade openssl
 # The actions below are for Code Climate test coverage checking
 before_script:
   - curl -L https://codeclimate.com/downloads/test-reporter/test-reporter-latest-linux-amd64 > ./cc-test-reporter
