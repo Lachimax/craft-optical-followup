@@ -88,6 +88,14 @@ def frame_from_centre(frame, x, y, data):
     :param data:
     :return: (x_left, x_right, y_bottom, y_top)
     """
+
+    if x is None:
+        n_y, n_x = data.shape
+        x = int(dequantify(n_x / 2))
+    if y is None:
+        n_y, n_x = data.shape
+        y = int(dequantify(n_y / 2))
+
     left = x - frame
     right = x + frame
     bottom = y - frame
