@@ -1581,12 +1581,14 @@ class Galaxy(Extragalactic):
             position_err = dictionary.pop("position_err")
         else:
             position_err = PositionUncertainty.default_params()
-        return cls(name=dictionary.pop("name"),
-                   position=f"{ra} {dec}",
-                   position_err=position_err,
-                   z=dictionary.pop("z"),
-                   field=field,
-                   **dictionary)
+        return cls(
+            name=dictionary.pop("name"),
+            position=f"{ra} {dec}",
+            position_err=position_err,
+            z=dictionary.pop("z"),
+            field=field,
+            **dictionary
+        )
 
 
 @u.export
@@ -2209,7 +2211,8 @@ class FRB(Transient):
         dm = self.dm_mw_ism_ne2001()
         nu = self.nu_scattering
 
-        tau_dm_mw = 1.9 * 10e-7 * units.ms * (nu / units.GHz) ** x_tau * (dm / dm_units) ** 1.5 * (1 + 3.55e-5 * (dm / dm_units) ** 3)
+        tau_dm_mw = 1.9 * 10e-7 * units.ms * (nu / units.GHz) ** x_tau * (dm / dm_units) ** 1.5 * (
+                1 + 3.55e-5 * (dm / dm_units) ** 3)
         return tau_dm_mw.to(units.ms)
 
     def z_from_dm(
