@@ -1724,6 +1724,8 @@ class FRB(Transient):
         import frb.associate.frbassociate as associate
         import astropath.path as path
         astm_rms = img.extract_astrometry_err()
+        if astm_rms is None:
+            astm_rms = 0.
         a, b = self.position_err.uncertainty_quadrature()
         a = np.sqrt(a ** 2 + astm_rms ** 2)
         b = np.sqrt(b ** 2 + astm_rms ** 2)
@@ -1788,6 +1790,8 @@ class FRB(Transient):
             print("\n\n")
             cand_tbl["ra"] *= units.deg
             cand_tbl["dec"] *= units.deg
+            coord = SkyCoord(cand_tbl["ra"], cand_tbl["dec"])
+            cand_tbl["x"], cand_tbl["y"] = img.world_to_pixel(coord=coord)
             cand_tbl["separation"] *= units.arcsec
             cand_tbl[filname] *= units.mag
             self.host_candidate_tables[img.name] = cand_tbl
