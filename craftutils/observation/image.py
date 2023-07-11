@@ -338,6 +338,7 @@ class Image:
         self.frame_type = frame_type
         self.headers = None
         self.data = None
+        self.date = None
         if instrument_name is not None:
             self.instrument_name = instrument_name
         try:
@@ -648,6 +649,14 @@ class Image:
         self.date_obs = self.extract_header_item(key)
         key = self.header_keys()["mjd-obs"]
         self.mjd_obs = self.extract_header_item(key)
+        if self.date_obs is None and self.mjd_obs is not None:
+            self.date = Time(self.mjd_obs, format="mjd")
+            self.date_obs = self.date.strftime("%Y-%m-%dT%H:%M:%S")
+        elif self.mjd_obs is None and self.date_obs is not None:
+            self.date = Time(self.date_obs)
+            self.mjd_obs = self.date.mjd
+        else:
+            self.date = Time(self.date_obs)
         return self.date_obs
 
     def extract_exposure_time(self):
@@ -5529,7 +5538,10 @@ class HubbleImage(CoaddedImage):
     @classmethod
     def header_keys(cls):
         header_keys = super().header_keys()
-        header_keys.update({"gain": "CCDGAIN"})
+        header_keys.update({
+            "gain": "CCDGAIN",
+            "mjd-obs": "EXPSTART"
+        })
         return header_keys
 
 

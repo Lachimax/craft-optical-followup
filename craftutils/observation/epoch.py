@@ -3424,6 +3424,8 @@ class HubbleImagingEpoch(ImagingEpoch):
             if self.instrument_name in [None, "hst-dummy"]:
                 self.instrument_name = img.instrument_name
             fil = img.extract_filter()
+            img.extract_date_obs()
+            self.date = img.date
             self.exp_time_mean[fil] = img.extract_header_item('TEXPTIME') * units.second / img.extract_ncombine()
             img.set_header_item('INTTIME', img.extract_header_item('TEXPTIME'))
             self.add_coadded_image(img, key=fil)
