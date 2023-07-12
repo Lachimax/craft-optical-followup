@@ -2481,14 +2481,6 @@ class ImagingImage(Image):
         self.fwhm_rms_moffat = np.sqrt(np.mean(fwhm_moffat ** 2))
         self.send_column_to_source_cat("MOFFAT_FWHM_FITTED", stars_moffat)
 
-        stars_se = star_dict["FWHM_WORLD"]
-        fwhm_sextractor = stars_se["FWHM_WORLD"].to(units.arcsec)
-        self.fwhm_median_sextractor = np.nanmedian(fwhm_sextractor)
-        self.fwhm_max_sextractor = np.nanmax(fwhm_sextractor)
-        self.fwhm_min_sextractor = np.nanmin(fwhm_sextractor)
-        self.fwhm_sigma_sextractor = np.nanstd(fwhm_sextractor)
-        self.fwhm_rms_sextractor = np.sqrt(np.mean(fwhm_sextractor ** 2))
-
         self.close()
 
         results = {
@@ -2513,14 +2505,26 @@ class ImagingImage(Image):
                 "fwhm_sigma": self.fwhm_sigma_moffat.to(units.arcsec),
                 "fwhm_rms": self.fwhm_rms_moffat.to(units.arcsec)
             },
-            "sextractor": {
+
+        }
+
+        if "FWHM_WORLD" in star_dict:
+            stars_se = star_dict["FWHM_WORLD"]
+            fwhm_sextractor = stars_se["FWHM_WORLD"].to(units.arcsec)
+            self.fwhm_median_sextractor = np.nanmedian(fwhm_sextractor)
+            self.fwhm_max_sextractor = np.nanmax(fwhm_sextractor)
+            self.fwhm_min_sextractor = np.nanmin(fwhm_sextractor)
+            self.fwhm_sigma_sextractor = np.nanstd(fwhm_sextractor)
+            self.fwhm_rms_sextractor = np.sqrt(np.mean(fwhm_sextractor ** 2))
+            results["sextractor"] = {
                 "fwhm_median": self.fwhm_median_sextractor.to(units.arcsec),
                 "fwhm_mean": np.nanmean(fwhm_sextractor).to(units.arcsec),
                 "fwhm_max": self.fwhm_max_sextractor.to(units.arcsec),
                 "fwhm_min": self.fwhm_min_sextractor.to(units.arcsec),
                 "fwhm_sigma": self.fwhm_sigma_sextractor.to(units.arcsec),
-                "fwhm_rms": self.fwhm_rms_sextractor.to(units.arcsec)}
-        }
+                "fwhm_rms": self.fwhm_rms_sextractor.to(units.arcsec)
+            }
+
         self.headers[ext]["PSF_FWHM"] = self.fwhm_median_gauss.to(units.arcsec).value
         self.headers[ext]["PSF_FWHM_ERR"] = self.fwhm_sigma_gauss.to(units.arcsec).value
         self.add_log(
