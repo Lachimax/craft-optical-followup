@@ -1710,6 +1710,7 @@ class FRB(Transient):
     def probabilistic_association(
             self,
             img,
+            include_img_err: bool = True,
             prior_set: Union[str, dict] = "adopted",
             priors: dict = {},
             offset_priors: dict = {"scale": 0.5},
@@ -1723,7 +1724,9 @@ class FRB(Transient):
         """
         import frb.associate.frbassociate as associate
         import astropath.path as path
-        astm_rms = img.extract_astrometry_err()
+        astm_rms = 0.
+        if include_img_err:
+            astm_rms = img.extract_astrometry_err()
         if astm_rms is None:
             astm_rms = 0.
         a, b = self.position_err.uncertainty_quadrature()
