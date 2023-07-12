@@ -2442,12 +2442,13 @@ class ImagingImage(Image):
             output_path: str = None
     ):
         self.open()
+        self.source_cat.load_table()
         if frame is None:
             _, scale = self.extract_pixel_scale()
             frame = (4 * units.arcsec).to(units.pix, scale).value
         if output_path is None:
             output_path = self.data_path
-        stars_moffat, stars_gauss, stars_sex = ph.image_psf_diagnostics(
+        star_dict = ph.image_psf_diagnostics(
             hdu=self.hdu_list,
             cat=self.source_cat.table,
             mag_max=mag_max,
@@ -2462,11 +2463,8 @@ class ImagingImage(Image):
             star_class_tol=star_class_tol,
         )
 
-        stars_moffat.write(os.path.join(output_path, "psf_diag_stars_moffat.ecsv"), overwrite=True)
-        stars_gauss.write(os.path.join(output_path, "psf_diag_stars_gauss.ecsv"), overwrite=True)
-        stars_sex.write(os.path.join(output_path, "psf_diag_stars_sex.ecsv"), overwrite=True)
-
-        fwhm_gauss = stars_gauss["GAUSSIAN_FWHM_FITTED"]  # [~np.isnan(stars_gauss["GAUSSIAN_FWHM_FITTED"])]
+        stars_gauss = star_dict["GAUSSIAN_FWHM_FITTED"]
+        fwhm_gauss = stars_gauss["GAUSSIAN_FWHM_FITTED"]
         self.fwhm_median_gauss = np.nanmedian(fwhm_gauss)
         self.fwhm_max_gauss = np.nanmax(fwhm_gauss)
         self.fwhm_min_gauss = np.nanmin(fwhm_gauss)
@@ -2474,7 +2472,8 @@ class ImagingImage(Image):
         self.fwhm_rms_gauss = np.sqrt(np.mean(fwhm_gauss ** 2))
         self.send_column_to_source_cat("GAUSSIAN_FWHM_FITTED", stars_gauss)
 
-        fwhm_moffat = stars_moffat["MOFFAT_FWHM_FITTED"]  # [~np.isnan(stars_moffat["MOFFAT_FWHM_FITTED"])]
+        stars_moffat = star_dict["MOFFAT_FWHM_FITTED"]
+        fwhm_moffat = stars_moffat["MOFFAT_FWHM_FITTED"]
         self.fwhm_median_moffat = np.nanmedian(fwhm_moffat)
         self.fwhm_max_moffat = np.nanmax(fwhm_moffat)
         self.fwhm_min_moffat = np.nanmin(fwhm_moffat)
@@ -2482,7 +2481,8 @@ class ImagingImage(Image):
         self.fwhm_rms_moffat = np.sqrt(np.mean(fwhm_moffat ** 2))
         self.send_column_to_source_cat("MOFFAT_FWHM_FITTED", stars_moffat)
 
-        fwhm_sextractor = stars_sex["FWHM_WORLD"]  # [~np.isnan(stars_sex["FWHM_WORLD"])].to(units.arcsec)
+        stars_se = star_dict["FWHM_WORLD"]
+        fwhm_sextractor = stars_se["FWHM_WORLD"].to(units.arcsec)
         self.fwhm_median_sextractor = np.nanmedian(fwhm_sextractor)
         self.fwhm_max_sextractor = np.nanmax(fwhm_sextractor)
         self.fwhm_min_sextractor = np.nanmin(fwhm_sextractor)
@@ -2531,7 +2531,7 @@ class ImagingImage(Image):
         self.psf_stats = results
         self.update_output_file()
         self.write_fits_file()
-        return results, stars_moffat, stars_gauss, stars_sex
+        return results, star_dict
 
     def trim(
             self,
