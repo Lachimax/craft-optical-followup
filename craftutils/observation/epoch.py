@@ -2261,7 +2261,7 @@ class ImagingEpoch(Epoch):
             img = images[fil]
             if not self.quiet:
                 print(f"Performing PSF measurements on {img}...")
-            self.psf_stats[fil], _, _, _ = img.psf_diagnostics()
+            self.psf_stats[fil], _ = img.psf_diagnostics()
             self.psf_stats[fil]["file_path"] = img.path
 
         self.update_output_file()
@@ -3494,7 +3494,7 @@ class HubbleImagingEpoch(ImagingEpoch):
             else:
                 if not self.quiet:
                     print(f"Performing PSF measurements on {img}...")
-                self.psf_stats[fil], _, _, _ = img.psf_diagnostics()
+                self.psf_stats[fil], _ = img.psf_diagnostics()
 
         self.update_output_file()
         return self.psf_stats

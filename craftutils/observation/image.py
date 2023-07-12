@@ -2442,7 +2442,7 @@ class ImagingImage(Image):
             output_path: str = None
     ):
         self.open()
-        self.source_cat.load_table()
+        # self.source_cat.load_table()
         if frame is None:
             _, scale = self.extract_pixel_scale()
             frame = (4 * units.arcsec).to(units.pix, scale).value
