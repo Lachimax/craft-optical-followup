@@ -908,6 +908,11 @@ class ImagingEpoch(Epoch):
 
         # self.load_output_file(mode="imaging")
 
+    def _pipeline_init(self):
+        super()._pipeline_init()
+        for fil in self.filters:
+            self.check_filter(fil)
+
     @classmethod
     def stages(cls):
 
@@ -2341,7 +2346,7 @@ class ImagingEpoch(Epoch):
     def _output_dict(self):
         output_dict = super()._output_dict()
         if self.deepest is not None:
-            deepest = self.deepest.output_file
+            deepest = self.deepest.path
         else:
             deepest = None
 
