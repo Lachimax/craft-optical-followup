@@ -1693,9 +1693,8 @@ class ImagingEpoch(Epoch):
     ):
         images = self._get_images(image_type)
         if not self.quiet:
-            print("Extracting sources for", image_type, "with", len(list(images.keys())))
-        for fil in images:
-            img = images[fil]
+            print("\nExtracting sources for", image_type, "with", len(list(images.keys())), "\n")
+        for fil, img in images.items():
             if not self.quiet:
                 print(f"Extracting sources from {fil} image: {img}")
             configs = self.source_extractor_config
@@ -4739,7 +4738,11 @@ class HAWKIImagingEpoch(ESOImagingEpoch):
             image_type=image_type,
             **kwargs
         )
-        self.coadded_unprojected = self.coadded_astrometry.copy()
+        if not self.coadded_astrometry:
+            self.coadded_final = "coadded_esoreflex"
+            self.coadded_unprojected = self.coadded_esoreflex.copy()
+        else:
+            self.coadded_unprojected = self.coadded_astrometry.copy()
 
     def _get_images(self, image_type: str) -> Dict[str, image.CoaddedImage]:
         if image_type in ("final", "coadded_final"):
