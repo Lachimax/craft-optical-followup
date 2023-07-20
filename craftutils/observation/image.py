@@ -1777,13 +1777,19 @@ class ImagingImage(Image):
     def magnitude(
             self,
             flux: units.Quantity,
-            flux_err: units.Quantity = 0 * units.ct,
+            flux_err: units.Quantity = None,
             cat_name: str = 'best',
             img_name: str = 'self',
             **kwargs
     ):
 
         zp_dict = self.get_zeropoint(cat_name=cat_name, img_name=img_name)
+
+        if flux_err is None:
+            if isinstance(flux, units.Quantity):
+                flux_err = 0 * flux.unit
+            else:
+                flux_err = 0.
 
         if zp_dict is None:
             raise ValueError(f"The {cat_name} zeropoint on {img_name}, for {self.name}, does not appear to exist.")
@@ -2700,6 +2706,34 @@ class ImagingImage(Image):
         else:
             return data_scaled
 
+    def pixel_magnitudes(
+            self,
+            ext: int = 0,
+            sub_back: bool = False,
+            back_kwargs: dict = {},
+            **kwargs
+    ):
+        self.load_data()
+        self.load_output_file()
+        data = self.data[ext]
+        if sub_back:
+            _, bkg = self.model_background_photometry(**back_kwargs)
+            data -= bkg
+        data[data <= 0] = 0.
+        return self.magnitude(
+            data.value
+        )
+
+    def surface_brightness(
+            self,
+            ext: int = 0
+    ):
+        self.load_data()
+        self.load_output_file()
+        data = self.data[ext].value
+        pix_mags = self.pixel_magnitudes()
+
+
     def reproject(
             self,
             other_image: 'ImagingImage',
@@ -3005,6 +3039,8 @@ class ImagingImage(Image):
         elif data == "background_subtracted_image":
             self.model_background_photometry(**kwargs)
             data = self.data_sub_bkg[ext]
+        elif data == "pixel_magnitudes":
+            data, _, _, _ = self.pixel_magnitudes(**kwargs)
         elif isinstance(data, np.ndarray):
             data = data
         else:
