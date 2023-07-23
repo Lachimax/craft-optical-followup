@@ -2229,8 +2229,8 @@ class ImagingEpoch(Epoch):
         if reference_cat is None:
             reference_cat = self.epoch_gaia_catalogue()
 
-        for fil in images:
-            img = images[fil]
+        for fil, img in images.items():
+            print("Attempting astrometry diagnostics for", img.name)
             img.source_cat.load_table()
             stats = -99.
             while not isinstance(stats, dict):
@@ -5093,7 +5093,11 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
                     raise ValueError(
                         f"Astrometry method {method} not recognised. Must be individual, pairwise or propagate_from_single")
 
-    def estimate_atmospheric_extinction(self, n: int = 10, output: str = None):
+    def estimate_atmospheric_extinction(
+            self,
+            n: int = 10,
+            output: str = None
+    ):
         mjd = self.date.mjd
         fils_known = []
         tbls_known = {}
@@ -5145,31 +5149,35 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
             extinctions_known_err = np.array(extinctions_known_err)
             model_init = models.PowerLaw1D()
             fitter = fitting.LevMarLSQFitter()
-            model = fitter(model_init, lambdas_known, extinctions_known, weights=1 / extinctions_known_err)
 
-            curve_err = u.root_mean_squared_error(model_values=model(lambdas_known), obs_values=extinctions_known)
-
-            results_tbl["curve_err"].append(curve_err)
-
-            extinctions_find = model(lambdas_find)
-
-            lambda_eff_fit = np.linspace(3000, 10000)
-            plt.close()
-            plt.plot(lambda_eff_fit, model(lambda_eff_fit))
-            plt.scatter(lambdas_known, extinctions_known, label="Known")
-            for j, m in enumerate(mjds):
-                plt.text(lambdas_known[j], extinctions_known[j], m)
-            plt.scatter(lambdas_find, extinctions_find, label="fitted")
-            plt.xlabel("$\lambda_{eff}$ (Ang)")
-            plt.ylabel("Extinction (mag)")
             try:
-                plt.savefig(os.path.join(output, f"extinction_fit_mjd_{mjd}.png"))
-            except TypeError:
-                pass
-            plt.close()
+                model = fitter(model_init, np.array(lambdas_known), np.array(extinctions_known), weights=1 / extinctions_known_err)
+                curve_err = u.root_mean_squared_error(model_values=model(lambdas_known), obs_values=extinctions_known)
+                results_tbl["curve_err"].append(curve_err)
+                extinctions_find = model(lambdas_find)
+                lambda_eff_fit = np.linspace(3000, 10000)
+                plt.close()
+                plt.plot(lambda_eff_fit, model(lambda_eff_fit))
+                plt.scatter(lambdas_known, extinctions_known, label="Known")
+                for j, m in enumerate(mjds):
+                    plt.text(lambdas_known[j], extinctions_known[j], m)
+                plt.scatter(lambdas_find, extinctions_find, label="fitted")
+                plt.xlabel("$\lambda_{eff}$ (Ang)")
+                plt.ylabel("Extinction (mag)")
+                try:
+                    plt.savefig(os.path.join(output, f"extinction_fit_mjd_{mjd}.png"))
+                except TypeError:
+                    pass
+                plt.close()
 
-            for fil in fils_find:
-                results_tbl[f"ext_{fil.name}"].append(model(fil.lambda_eff.value))
+                for fil in fils_find:
+                    results_tbl[f"ext_{fil.name}"].append(model(fil.lambda_eff.value))
+
+            except fitting.NonFiniteValueError:
+                print("Fitting failed for MJD", mjd)
+                results_tbl["curve_err"].append(np.nan)
+                for fil in fils_find:
+                    results_tbl[f"ext_{fil.name}"].append(np.nan)
 
         for fil in fils_find:
             results_tbl[f"stat_err_{fil.name}"] = [np.std(results_tbl[f"ext_{fil.name}"])] * n
