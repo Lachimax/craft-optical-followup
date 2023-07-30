@@ -83,11 +83,14 @@ def image_psf_diagnostics(
     # stars = u.trim_to_class(cat=cat, modify=True, allowed=np.arange(0, star_class_tol + 1))
     stars = cat[cat["CLASS_STAR"] >= star_class_tol]
     print(f"Initial num stars:", len(stars))
-    stars = stars[stars["MAG_PSF"] < mag_max]
-    print(f"Num stars with MAG_PSF < {mag_max}:", len(stars))
-    print(stars["MAG_PSF"].max(), stars["MAG_PSF"].mean(), mag_max, mag_min)
-    stars = stars[stars["MAG_PSF"] > mag_min]
-    print(f"Num stars with MAG_PSF > {mag_min}:", len(stars))
+    if "MAG_PSF" in stars.colnames:
+        mag_col = "MAG_PSF"
+    else:
+        mag_col = "MAG_AUTO"
+    stars = stars[stars[mag_col] < mag_max]
+    print(f"Num stars with {mag_col} < {mag_max}:", len(stars))
+    stars = stars[stars[mag_col] > mag_min]
+    print(f"Num stars with {mag_col} > {mag_min}:", len(stars))
 
     if near_radius is not None:
         header = hdu[ext].header
@@ -213,35 +216,24 @@ def image_psf_diagnostics(
 
     # print()
 
-    clipped = sigma_clip(stars["MOFFAT_FWHM_FITTED"], masked=True, sigma=2)
-    stars_clip_moffat = stars[~clipped.mask]
-    stars_clip_moffat = stars_clip_moffat[np.isfinite(stars_clip_moffat["MOFFAT_FWHM_FITTED"])]
-    stars_clip_moffat = stars_clip_moffat[stars_clip_moffat["MOFFAT_FWHM_FITTED"] > 0.1 * units.arcsec]
-    print(f"Num stars after sigma clipping w. astropy Moffat PSF:", len(stars_clip_moffat))
+    cols_check = ("MOFFAT_FWHM_FITTED", "GAUSSIAN_FWHM_FITTED", "FWHM_WORLD")
+    clip_dict = {}
 
-    clipped = sigma_clip(stars["GAUSSIAN_FWHM_FITTED"], masked=True, sigma=2)
-    stars_clip_gauss = stars[~clipped.mask]
-    stars_clip_gauss = stars_clip_gauss[np.isfinite(stars_clip_gauss["GAUSSIAN_FWHM_FITTED"])]
-    stars_clip_gauss = stars_clip_gauss[stars_clip_gauss["GAUSSIAN_FWHM_FITTED"] > 0.1 * units.arcsec]
-    print(f"Num stars after sigma clipping w. astropy Gaussian PSF:", len(stars_clip_gauss))
-
-    clipped = sigma_clip(stars["FWHM_WORLD"], masked=True, sigma=2)
-    stars_clip_sex = stars[~clipped.mask]
-    stars_clip_sex = stars_clip_sex[np.isfinite(stars_clip_sex["FWHM_WORLD"])]
-    print(f"Num stars after sigma clipping w. Sextractor PSF:", len(stars_clip_sex))
+    for col in cols_check:
+        if col in stars.colnames:
+            clipped = sigma_clip(stars[col], masked=True, sigma=2)
+            stars_clip = stars[~clipped.mask]
+            stars_clip = stars_clip[np.isfinite(stars_clip[col])]
+            stars_clip = stars_clip[stars_clip[col] > 0.1 * units.arcsec]
+            clip_dict[col] = stars_clip
+            print(f"Num stars after sigma clipping {col}:", len(stars_clip))
 
     plt.close()
     u.debug_print(2, f"image_psf_diagnostics(): {output=}")
     if output is not None:
 
         with quantity_support():
-            tmp_dict = {
-                "MOFFAT_FWHM_FITTED": stars_clip_moffat,
-                "GAUSSIAN_FWHM_FITTED": stars_clip_gauss,
-                "FWHM_WORLD": stars_clip_sex
-            }
-
-            for colname in ["MOFFAT_FWHM_FITTED", "GAUSSIAN_FWHM_FITTED", "FWHM_WORLD"]:
+            for colname in clip_dict:
                 fig, ax = plt.subplots()
                 ax.hist(
                     stars[colname][np.isfinite(stars[colname])].to(units.arcsec),
@@ -253,7 +245,7 @@ def image_psf_diagnostics(
 
                 fig, ax = plt.subplots()
                 ax.hist(
-                    tmp_dict[colname][colname].to(units.arcsec),
+                    clip_dict[colname][colname].to(units.arcsec),
                     edgecolor='black',
                     linewidth=1.2,
                     label="Sigma-clipped",
@@ -263,7 +255,7 @@ def image_psf_diagnostics(
                 ax.legend()
                 fig.savefig(os.path.join(output, f"{plot_file_prefix}_psf_histogram_{colname}_clipped.png"))
 
-    return stars_clip_moffat, stars_clip_gauss, stars_clip_sex
+    return clip_dict
 
 
 def get_median_background(image: Union[str, fits.HDUList], ra: float = None, dec: float = None, frame: int = 100,

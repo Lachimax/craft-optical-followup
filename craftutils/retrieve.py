@@ -2,6 +2,7 @@
 import urllib
 import os
 import time
+import warnings
 from datetime import date, datetime
 from json.decoder import JSONDecodeError
 from typing import Union, Iterable
@@ -278,11 +279,14 @@ def save_catalogue(
         else:
             data_release = 1
 
-    if func is save_mast_photometry:
-        return func(ra=ra, dec=dec, output=output, cat=cat, radius=radius, data_release=data_release)
-    else:
-        return func(ra=ra, dec=dec, output=output, radius=radius, data_release=data_release)
-
+    try:
+        if func is save_mast_photometry:
+            return func(ra=ra, dec=dec, output=output, cat=cat, radius=radius, data_release=data_release)
+        else:
+            return func(ra=ra, dec=dec, output=output, radius=radius, data_release=data_release)
+    except PermissionError:
+        warnings.warn(f"{cat} data was not retrieved due to incorrect user/password.")
+        return 'ERROR'
 
 # ESO retrieval code based on the script at
 # http://archive.eso.org/programmatic/scripts/eso_authenticated_download_raw_and_calibs.py
