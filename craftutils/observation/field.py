@@ -1050,6 +1050,7 @@ class FRBField(Field):
             latex_kwargs: dict = {},
             draw_scale_bar: bool = False,
             scale_bar_kwargs: dict = {},
+            include_img_err: bool = True,
             **kwargs
     ) -> Tuple[plt.Axes, plt.Figure, dict]:
         """
@@ -1097,7 +1098,13 @@ class FRBField(Field):
         )
 
         if show_frb:
-            self.frb_ellipse_to_plot(ext=ext, frb_kwargs=frb_kwargs, img=img, ax=ax)
+            self.frb_ellipse_to_plot(
+                ext=ext,
+                frb_kwargs=frb_kwargs,
+                img=img,
+                ax=ax,
+                include_img_err=include_img_err
+            )
             if show_legend:
                 ax.legend()
 
@@ -1114,7 +1121,7 @@ class FRBField(Field):
             colour: str = None,
             frb_kwargs: dict = {},
             plot_centre: bool = False,
-            include_img_err: bool = True,
+            include_img_err: bool = True
     ):
         from matplotlib.patches import Ellipse
         img.load_headers()

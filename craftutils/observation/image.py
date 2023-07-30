@@ -338,6 +338,7 @@ class Image:
         self.frame_type = frame_type
         self.headers = None
         self.data = None
+        self.date = None
         if instrument_name is not None:
             self.instrument_name = instrument_name
         try:
@@ -648,6 +649,14 @@ class Image:
         self.date_obs = self.extract_header_item(key)
         key = self.header_keys()["mjd-obs"]
         self.mjd_obs = self.extract_header_item(key)
+        if self.date_obs is None and self.mjd_obs is not None:
+            self.date = Time(self.mjd_obs, format="mjd")
+            self.date_obs = self.date.strftime("%Y-%m-%dT%H:%M:%S")
+        elif self.mjd_obs is None and self.date_obs is not None:
+            self.date = Time(self.date_obs)
+            self.mjd_obs = self.date.mjd
+        else:
+            self.date = Time(self.date_obs)
         return self.date_obs
 
     def extract_exposure_time(self):
@@ -1768,13 +1777,19 @@ class ImagingImage(Image):
     def magnitude(
             self,
             flux: units.Quantity,
-            flux_err: units.Quantity = 0 * units.ct,
+            flux_err: units.Quantity = None,
             cat_name: str = 'best',
             img_name: str = 'self',
             **kwargs
     ):
 
         zp_dict = self.get_zeropoint(cat_name=cat_name, img_name=img_name)
+
+        if flux_err is None:
+            if isinstance(flux, units.Quantity):
+                flux_err = 0 * flux.unit
+            else:
+                flux_err = 0.
 
         if zp_dict is None:
             raise ValueError(f"The {cat_name} zeropoint on {img_name}, for {self.name}, does not appear to exist.")
@@ -2433,12 +2448,13 @@ class ImagingImage(Image):
             output_path: str = None
     ):
         self.open()
+        # self.source_cat.load_table()
         if frame is None:
             _, scale = self.extract_pixel_scale()
             frame = (4 * units.arcsec).to(units.pix, scale).value
         if output_path is None:
             output_path = self.data_path
-        stars_moffat, stars_gauss, stars_sex = ph.image_psf_diagnostics(
+        star_dict = ph.image_psf_diagnostics(
             hdu=self.hdu_list,
             cat=self.source_cat.table,
             mag_max=mag_max,
@@ -2453,11 +2469,8 @@ class ImagingImage(Image):
             star_class_tol=star_class_tol,
         )
 
-        stars_moffat.write(os.path.join(output_path, "psf_diag_stars_moffat.ecsv"), overwrite=True)
-        stars_gauss.write(os.path.join(output_path, "psf_diag_stars_gauss.ecsv"), overwrite=True)
-        stars_sex.write(os.path.join(output_path, "psf_diag_stars_sex.ecsv"), overwrite=True)
-
-        fwhm_gauss = stars_gauss["GAUSSIAN_FWHM_FITTED"]  # [~np.isnan(stars_gauss["GAUSSIAN_FWHM_FITTED"])]
+        stars_gauss = star_dict["GAUSSIAN_FWHM_FITTED"]
+        fwhm_gauss = stars_gauss["GAUSSIAN_FWHM_FITTED"]
         self.fwhm_median_gauss = np.nanmedian(fwhm_gauss)
         self.fwhm_max_gauss = np.nanmax(fwhm_gauss)
         self.fwhm_min_gauss = np.nanmin(fwhm_gauss)
@@ -2465,20 +2478,14 @@ class ImagingImage(Image):
         self.fwhm_rms_gauss = np.sqrt(np.mean(fwhm_gauss ** 2))
         self.send_column_to_source_cat("GAUSSIAN_FWHM_FITTED", stars_gauss)
 
-        fwhm_moffat = stars_moffat["MOFFAT_FWHM_FITTED"]  # [~np.isnan(stars_moffat["MOFFAT_FWHM_FITTED"])]
+        stars_moffat = star_dict["MOFFAT_FWHM_FITTED"]
+        fwhm_moffat = stars_moffat["MOFFAT_FWHM_FITTED"]
         self.fwhm_median_moffat = np.nanmedian(fwhm_moffat)
         self.fwhm_max_moffat = np.nanmax(fwhm_moffat)
         self.fwhm_min_moffat = np.nanmin(fwhm_moffat)
         self.fwhm_sigma_moffat = np.nanstd(fwhm_moffat)
         self.fwhm_rms_moffat = np.sqrt(np.mean(fwhm_moffat ** 2))
         self.send_column_to_source_cat("MOFFAT_FWHM_FITTED", stars_moffat)
-
-        fwhm_sextractor = stars_sex["FWHM_WORLD"]  # [~np.isnan(stars_sex["FWHM_WORLD"])].to(units.arcsec)
-        self.fwhm_median_sextractor = np.nanmedian(fwhm_sextractor)
-        self.fwhm_max_sextractor = np.nanmax(fwhm_sextractor)
-        self.fwhm_min_sextractor = np.nanmin(fwhm_sextractor)
-        self.fwhm_sigma_sextractor = np.nanstd(fwhm_sextractor)
-        self.fwhm_rms_sextractor = np.sqrt(np.mean(fwhm_sextractor ** 2))
 
         self.close()
 
@@ -2504,14 +2511,26 @@ class ImagingImage(Image):
                 "fwhm_sigma": self.fwhm_sigma_moffat.to(units.arcsec),
                 "fwhm_rms": self.fwhm_rms_moffat.to(units.arcsec)
             },
-            "sextractor": {
+
+        }
+
+        if "FWHM_WORLD" in star_dict:
+            stars_se = star_dict["FWHM_WORLD"]
+            fwhm_sextractor = stars_se["FWHM_WORLD"].to(units.arcsec)
+            self.fwhm_median_sextractor = np.nanmedian(fwhm_sextractor)
+            self.fwhm_max_sextractor = np.nanmax(fwhm_sextractor)
+            self.fwhm_min_sextractor = np.nanmin(fwhm_sextractor)
+            self.fwhm_sigma_sextractor = np.nanstd(fwhm_sextractor)
+            self.fwhm_rms_sextractor = np.sqrt(np.mean(fwhm_sextractor ** 2))
+            results["sextractor"] = {
                 "fwhm_median": self.fwhm_median_sextractor.to(units.arcsec),
                 "fwhm_mean": np.nanmean(fwhm_sextractor).to(units.arcsec),
                 "fwhm_max": self.fwhm_max_sextractor.to(units.arcsec),
                 "fwhm_min": self.fwhm_min_sextractor.to(units.arcsec),
                 "fwhm_sigma": self.fwhm_sigma_sextractor.to(units.arcsec),
-                "fwhm_rms": self.fwhm_rms_sextractor.to(units.arcsec)}
-        }
+                "fwhm_rms": self.fwhm_rms_sextractor.to(units.arcsec)
+            }
+
         self.headers[ext]["PSF_FWHM"] = self.fwhm_median_gauss.to(units.arcsec).value
         self.headers[ext]["PSF_FWHM_ERR"] = self.fwhm_sigma_gauss.to(units.arcsec).value
         self.add_log(
@@ -2522,7 +2541,7 @@ class ImagingImage(Image):
         self.psf_stats = results
         self.update_output_file()
         self.write_fits_file()
-        return results, stars_moffat, stars_gauss, stars_sex
+        return results, star_dict
 
     def trim(
             self,
@@ -2686,6 +2705,34 @@ class ImagingImage(Image):
             return data_scaled, extra_vals
         else:
             return data_scaled
+
+    def pixel_magnitudes(
+            self,
+            ext: int = 0,
+            sub_back: bool = False,
+            back_kwargs: dict = {},
+            **kwargs
+    ):
+        self.load_data()
+        self.load_output_file()
+        data = self.data[ext]
+        if sub_back:
+            _, bkg = self.model_background_photometry(**back_kwargs)
+            data -= bkg
+        data[data <= 0] = 0.
+        return self.magnitude(
+            data.value
+        )
+
+    def surface_brightness(
+            self,
+            ext: int = 0
+    ):
+        self.load_data()
+        self.load_output_file()
+        data = self.data[ext].value
+        pix_mags = self.pixel_magnitudes()
+
 
     def reproject(
             self,
@@ -2992,6 +3039,8 @@ class ImagingImage(Image):
         elif data == "background_subtracted_image":
             self.model_background_photometry(**kwargs)
             data = self.data_sub_bkg[ext]
+        elif data == "pixel_magnitudes":
+            data, _, _, _ = self.pixel_magnitudes(**kwargs)
         elif isinstance(data, np.ndarray):
             data = data
         else:
@@ -5529,7 +5578,10 @@ class HubbleImage(CoaddedImage):
     @classmethod
     def header_keys(cls):
         header_keys = super().header_keys()
-        header_keys.update({"gain": "CCDGAIN"})
+        header_keys.update({
+            "gain": "CCDGAIN",
+            "mjd-obs": "EXPSTART"
+        })
         return header_keys
 
 
