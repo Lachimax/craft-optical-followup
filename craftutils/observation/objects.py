@@ -21,6 +21,7 @@ import craftutils.retrieve as r
 import craftutils.observation as obs
 import craftutils.observation.instrument as inst
 import craftutils.observation.filters as filters
+import craftutils.observation.sed as sed
 from craftutils.photometry import distance_modulus
 
 cosmology = cosmo.Planck18
@@ -1404,6 +1405,8 @@ class Galaxy(Extragalactic):
         self.halo_mb15 = None
         self.halo_mb04 = None
 
+        self.sed_models = {}
+
         self.cigale_model_path = None
         self.cigale_model = None
 
@@ -1413,7 +1416,32 @@ class Galaxy(Extragalactic):
         self.cigale_results_path = None
         self.cigale_results = None
 
+    def sed_model_path(self):
+        path = os.path.join(self.data_path, "sed_models")
+        u.mkdir_check(path)
+        return path
+
+    def add_sed_model(
+            self,
+            path: str,
+            name: str,
+            model_type: type = sed.SEDModel,
+            **kwargs
+    ):
+        sed_path = os.path.join(self.sed_model_path(), name)
+        u.mkdir_check(sed_path)
+        self.sed_models[name] = model_type(
+            z=self.z,
+            path=path,
+            output_path=sed_path,
+            name=name,
+            **kwargs
+        )
+        return self.sed_models[name]
+
+
     def load_cigale_model(self, force: bool = False):
+        # TODO: incorporate into SEDModel
         if self.cigale_model_path is None:
             print(f"Cannot load CIGALE model; {self}.cigale_model_path has not been set.")
         elif force or self.cigale_model is None:
@@ -1445,8 +1473,10 @@ class Galaxy(Extragalactic):
         if outputs is not None:
             if "mass_stellar" in outputs and outputs["mass_stellar"] is not None:
                 self.mass_stellar = outputs["mass_stellar"]
-            if "mass_stellar_err" in outputs and outputs["mass_stellar_err"] is not None:
-                self.mass_stellar_err = outputs["mass_stellar_err"]
+            if "mass_stellar_err_plus" in outputs and outputs["mass_stellar_err_plus"] is not None:
+                self.mass_stellar_err_plus = outputs["mass_stellar_err_plus"]
+            if "mass_stellar_err_minus" in outputs and outputs["mass_stellar_err_minus"] is not None:
+                self.mass_stellar_err_minus = outputs["mass_stellar_err_minus"]
             if "sfr" in outputs and outputs["sfr"] is not None:
                 self.sfr = outputs["sfr"]
             if "sfr_err" in outputs and outputs["sfr_err"] is not None:

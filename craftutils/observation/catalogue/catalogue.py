@@ -29,6 +29,9 @@ class Catalogue:
         self.path: str = None
         self.set_table_path(path, load=False)
         self.table: table.QTable = None
+
+        for key, value in kwargs.items():
+            setattr(self, key, value)
         self.load_output_file()
         if self.path is not None:
             self.load_table()

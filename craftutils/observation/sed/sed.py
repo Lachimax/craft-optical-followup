@@ -1,3 +1,6 @@
+import os.path
+from typing import List
+
 import numpy as np
 
 import astropy.table as table
@@ -8,6 +11,7 @@ import astropy.cosmology as cosmology
 import craftutils.observation.filters as filters
 import craftutils.photometry as ph
 import craftutils.utils as u
+import craftutils.params as p
 
 
 @u.export
@@ -21,8 +25,10 @@ class SEDModel:
             model_table: table.QTable = None,
             **kwargs
     ):
-        self.path: str = None
+        self.input_path: str = None
+        self.output_path: str = None
         self.model_table: table.QTable = None
+        self.name: str = None
         self.z: float = z
         self.model_table: table.QTable = None
         self.obs_table: table.QTable = None
@@ -30,14 +36,19 @@ class SEDModel:
         self.distance_modulus: units.Quantity = None
         self.rest_luminosity = None
         self.cosmology: cosmology.LambdaCDM = self.default_cosmology
-        if "cosmology" in kwargs and isinstance(kwargs["cosmology"], cosmology.LambdaCDM):
-            self.cosmology = kwargs["cosmology"]
+        self.z_mag_tbl: table.QTable = None
+        self.z_flux_tbl: table.QTable = None
+        self.sfh = None
+        # if "cosmology" in kwargs and isinstance(kwargs["cosmology"], cosmology.LambdaCDM):
+        #     self.cosmology = kwargs["cosmology"]
         self.shifted_models = {}
         if path is not None:
-            self.path = str(path)
+            self.input_path = str(path)
             self.load_data()
         elif model_table is not None:
             self.model_table = model_table
+        for key, value in kwargs.items():
+            setattr(self, key, value)
 
     def prep_data(self):
         self.distances()
@@ -53,7 +64,7 @@ class SEDModel:
         self.model_table[key] = value
 
     def load_data(self):
-        self.model_table = table.QTable.read(self.path)
+        self.model_table = table.QTable.read(self.input_path)
         self.prep_data()
 
     def prep_columns(self):
@@ -163,27 +174,110 @@ class SEDModel:
 
         return tbl["flux_lambda"] * ((1 + self.z) * d_l ** 2) / ((1 + z_new) * d_l_shift ** 2)
 
-    def move_to_redshift(self, z_new: float = 1.):
-        if z_new != self.z:
-            # self.model_table = _d_nu_d_lambda(self.model_table)
-            new_tbl = self.model_table["wavelength", "frequency", "flux_nu"].copy()
-            # new_tbl["flux_nu_d_nu"] = new_tbl["flux_nu"] * new_tbl["d_nu"]
-            new_tbl["wavelength"] = ph.redshift_wavelength(wavelength=new_tbl["wavelength"], z=self.z, z_new=z_new)
-            new_tbl["frequency"] = ph.redshift_frequency(nu=new_tbl["frequency"], z=self.z, z_new=z_new)
-            # new_tbl = _d_nu_d_lambda(new_tbl)
-            # new_tbl["flux_nu"] = new_tbl["flux_nu_d_nu"] / new_tbl["d_nu"]
-            new_tbl["flux_nu"] = ph.redshift_flux_nu(
-                flux=new_tbl["flux_nu"],
-                z=self.z,
-                z_new=z_new,
-                cosmo=self.cosmology
-            )
-            new_model = self.__class__(z=z_new, model_table=new_tbl, cosmology=self.cosmology)
-            new_model.model_table = new_tbl
-            self.shifted_models[z_new] = new_model
+    def move_to_redshift(
+            self,
+            z_new: float = 1.,
+            force: bool = False
+    ):
+        if force or z_new not in self.shifted_models:
+            if z_new != self.z:
+                new_tbl = self.model_table["wavelength", "frequency", "flux_nu"].copy()
+                new_tbl["wavelength"] = ph.redshift_wavelength(wavelength=new_tbl["wavelength"], z=self.z, z_new=z_new)
+                new_tbl["frequency"] = ph.redshift_frequency(nu=new_tbl["frequency"], z=self.z, z_new=z_new)
+                new_tbl["flux_nu"] = ph.redshift_flux_nu(
+                    flux=new_tbl["flux_nu"],
+                    z=self.z,
+                    z_new=z_new,
+                    cosmo=self.cosmology
+                )
+                new_model = self.__class__(z=z_new, model_table=new_tbl, cosmology=self.cosmology)
+                new_model.model_table = new_tbl
+                self.shifted_models[z_new] = new_model
+            else:
+                new_model = self
         else:
-            new_model = self
+            new_model = self.shifted_models[z_new]
         return new_model
+
+    def mag_from_model_flux(
+            self,
+            bands: List[filters.Filter],
+            z_shift: float = 1.0,
+            force: bool = False
+    ):
+        """
+        Uses a set of bandpasses to derive observed magnitudes for this model when placed at a counterfactual redshift.
+
+        :param model: The `SEDModel` object to shift and measure.
+        :param z_shift: Redshift at which to place the model.
+        :param bands: List or other iterable of `craftutils.observation.filters.Filter` objects through which to observe
+            the redshifted galaxy.
+        :return: dict of AB magnitudes in the given bands, with keys being the band names and values being the magnitudes.
+        """
+        mags = {}
+        shifted_model = self.move_to_redshift(z_new=z_shift, force=force)
+
+        fluxes = {}
+
+        for band in bands:
+            band_name = band.machine_name()
+            m_ab_shift = shifted_model.magnitude_AB(band=band)
+            mags[band_name] = m_ab_shift
+            fluxes[band_name] = shifted_model.flux_in_band(band=band)
+
+        return mags, fluxes
+
+    def z_mag_table(
+            self,
+            bands: List[filters.Filter],
+            z_min: float = 0.01,
+            z_max: float = 3.0,
+            n_z: int = 20,
+            recalculate_all: bool = False
+    ):
+        """
+        Uses `move_to_redshift()` to construct a table of magnitudes vs displaced reshift.
+
+        :param bands: List or other iterable of `craftutils.observation.filters.Filter` objects through which to observe
+            the redshifted galaxy.
+        :param z_min: Minimum redshift to take measurements at.
+        :param z_max: Maximum redshift to take measurements at.
+        :param n_z: number of redshifts to take measurements at.
+        :param bands: List or other iterable of `craftutils.observation.filters.Filter` objects through which to observe
+            the redshifted galaxy.
+        :return: `astropy.table.QTable` of the derived magnitudes, with columns corresponding to bands
+            and redshift.
+        """
+        mags = {}
+        fluxes = {}
+        for band in bands:
+            band_name = band.machine_name()
+            mags[band_name] = []
+            fluxes[band_name] = []
+        # Construct array of redshifts.
+        zs = list(np.linspace(z_min, z_max, n_z))
+        zs.append(self.z)
+        zs.sort()
+        for z in zs:
+            # Get magnitudes at this redshift.
+            mags_this, flux_this = self.mag_from_model_flux(
+                bands=bands,
+                z_shift=z,
+                force=recalculate_all
+            )
+            for band in bands:
+                band_name = band.machine_name()
+                mags[band_name].append(
+                    mags_this[band_name]
+                )
+                fluxes[band_name].append(
+                    flux_this[band_name]
+                )
+        mags["z"] = zs
+        fluxes["z"] = zs
+        self.z_mag_tbl = table.QTable(mags)
+        self.z_flux_tbl = table.QTable(fluxes)
+        return self.z_mag_tbl
 
     def flux_in_band(
             self,
@@ -318,8 +412,51 @@ class SEDModel:
         self.model_table[f"flux_nu_{bn}"] = self.model_table["flux_nu"] * self.model_table[bn]
         return self.model_table[bn]
 
-    def write(self, path: str, fmt="ascii.ecsv", **kwargs):
-        self.model_table.write(path, format=fmt, overwrite=True, **kwargs)
+    def write_model_table(
+            self,
+            path: str = None,
+            **kwargs
+    ):
+        if path is None:
+            path = os.path.join(self.output_path, f"{self.name}_model_table.ecsv")
+        self.model_table_path = path
+        self.model_table.write(path, overwrite=True, **kwargs)
+
+    def write_z_mag_table(
+            self,
+            path: str = None,
+            **kwargs
+    ):
+        if path is None:
+            path = os.path.join(self.output_path, f"{self.name}_z_mag_table.ecsv")
+        self.z_mag_tbl_path = path
+        self.z_mag_tbl.write(path, overwrite=True, **kwargs)
+
+    def write_z_flux_table(
+            self,
+            path: str = None,
+            **kwargs
+    ):
+        if path is None:
+            path = os.path.join(self.output_path, f"{self.name}_z_mag_table.ecsv")
+        self.z_flux_tbl_path = path
+        self.z_flux_tbl.write(path, overwrite=True, **kwargs)
+
+    def update_output_file(self):
+        if self.output_path is not None:
+            p.update_output_file(self)
+
+    def _output_dict(self):
+        output_dict = self.__dict__.copy()
+        output_dict.pop("z_flux_tbl")
+        output_dict.pop("z_mag_tbl")
+        output_dict.pop("model_table")
+        for key, value in output_dict.items():
+            if not isinstance(value, (float, int, str)):
+                value = str(value)
+                output_dict[key] = value
+        return output_dict
+
 
     @classmethod
     def columns(cls):
