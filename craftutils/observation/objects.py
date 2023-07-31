@@ -81,8 +81,10 @@ class PositionUncertainty:
             self,
             uncertainty: Union[float, units.Quantity, dict, tuple] = None,
             position: SkyCoord = None,
+            ra_err_total: Union[float, units.Quantity] = None,
             ra_err_sys: Union[float, units.Quantity] = None,
             ra_err_stat: Union[float, units.Quantity] = None,
+            dec_err_total: Union[float, units.Quantity] = None,
             dec_err_sys: Union[float, units.Quantity] = None,
             dec_err_stat: Union[float, units.Quantity] = None,
             a_stat: Union[float, units.Quantity] = None,
@@ -2378,7 +2380,11 @@ class FRB(Transient):
             halo_info["mass_stellar"] = fg_m_star = obj.mass_stellar
             halo_info["mass_stellar_err_plus"] = fg_m_star_err_plus = obj.mass_stellar_err_plus
             halo_info["mass_stellar_err_minus"] = fg_m_star_err_minus = obj.mass_stellar_err_minus
-            halo_info["log_mass_stellar"] = np.log10(fg_m_star / units.solMass)
+            print(fg_m_star, type(fg_m_star))
+            try:
+                halo_info["log_mass_stellar"] = np.log10(fg_m_star / units.solMass)
+            except units.UnitTypeError:
+                continue
             halo_info["log_mass_stellar_err_plus"] = u.uncertainty_log10(
                 arg=fg_m_star,
                 uncertainty_arg=fg_m_star_err_plus
