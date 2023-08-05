@@ -1001,7 +1001,7 @@ class ImagingEpoch(Epoch):
                     "class_star_tolerance": 0.95,
                     "image_type": "final",
                     "preferred_zeropoint": {},
-                    "suppress_select": False
+                    "suppress_select": True
                 }
             },
             "dual_mode_source_extraction": {
@@ -3000,7 +3000,7 @@ class FORS2StandardEpoch(StandardEpoch, ImagingEpoch):
             distance_tolerance: units.Quantity = None,
             snr_min: float = 3.,
             star_class_tolerance: float = 0.9,
-            suppress_select: bool = False,
+            suppress_select: bool = True,
             **kwargs
     ):
 

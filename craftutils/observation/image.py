@@ -4241,7 +4241,7 @@ class ImagingImage(Image):
         """
         Generates and writes a source mask to a FITS file.
         Any argument accepted by generate_mask() can be passed as a keyword.
-        
+
         :param output_path: path to write the mask file to.
         :param ext: FITS extension to modify.
         :return:
