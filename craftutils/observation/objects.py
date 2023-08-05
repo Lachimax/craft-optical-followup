@@ -370,7 +370,7 @@ class Object:
                 f"{self.name_filesys}_master-mask_{deepest_dict['instrument']}_{deepest_dict['filter']}_{deepest_dict['epoch_name']}.fits",
             ),
             method="sep",
-            unmasked=self.position_photometry
+            do_not_mask=self.position_photometry
         )
 
         mag_results = deepest_img.sep_elliptical_magnitude(
