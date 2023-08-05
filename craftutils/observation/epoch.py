@@ -1051,6 +1051,21 @@ class ImagingEpoch(Epoch):
         if isinstance(frames, str):
             frames = self._get_frames(frames)
 
+        print(self.field.objects_dict)
+
+        if "do_not_mask" in kwargs:
+            do_not_mask = kwargs.pop("do_not_mask")
+            for i, obj in enumerate(do_not_mask):
+                if isinstance(obj, str):
+                    if obj in self.field.objects_dict:
+                        obj = self.field.objects_dict[obj].position
+                    elif not isinstance(obj, SkyCoord):
+                        obj = astm.attempt_skycoord(obj)
+                do_not_mask[i] = obj
+            if "mask_kwargs" not in kwargs:
+                kwargs["mask_kwargs"] = {}
+            kwargs["mask_kwargs"]["do_not_mask"] = do_not_mask
+
         for fil in frames:
             frame_list = frames[fil]
             for frame in frame_list:
@@ -1070,6 +1085,8 @@ class ImagingEpoch(Epoch):
                             kwargs["centre"] = self.field.frb.position
                         else:
                             kwargs["centre"] = frame.extract_pointing()
+                    else:
+                        kwargs["centre"] = astm.attempt_skycoord(kwargs["centre"])
                     if "frame" not in kwargs:
                         kwargs["frame"] = 15 * units.arcsec
                     if isinstance(self.field, fld.FRBField):
@@ -1704,6 +1721,10 @@ class ImagingEpoch(Epoch):
                 output_dir=output_dir,
                 phot_autoparams=f"{configs['kron_factor']},{configs['kron_radius_min']}"
             )
+            # if fil in self.coadded_subtracted and self.coadded_subtracted[fil] is not None:
+            #     img_subbed = self.coadded_subtracted[fil]
+            #     img_subbed.source_cat = img.source_cat
+            #     img_subbed.update_output_file()
         if do_astrometry_diagnostics:
             if "offset_tolerance" in kwargs:
                 offset_tolerance = kwargs["offset_tolerance"]
@@ -1945,6 +1966,11 @@ class ImagingEpoch(Epoch):
                 print(obj.name)
                 print("FILTER:", fil)
 
+                if "subtract_background_frames" in self.param_file and self.param_file["subtract_background_frames"]:
+                    good_image_path = self.coadded_subtracted[fil].output_file
+                else:
+                    good_image_path = self.coadded_unprojected[fil].output_file
+
                 if separation > match_tolerance:
                     obj.add_photometry(
                         instrument=self.instrument_name,
@@ -1975,7 +2001,7 @@ class ImagingEpoch(Epoch):
                         snr_psf=-999.,
                         image_depth=depth,
                         image_path=img.path,
-                        good_image_path=self.coadded_unprojected[fil].output_file,
+                        good_image_path=good_image_path,
                         do_mask=img.mask_nearby()
                     )
                     print(f"No object detected at position.")
@@ -2039,7 +2065,7 @@ class ImagingEpoch(Epoch):
                         snr_psf=snr_psf,
                         image_depth=depth,
                         image_path=img.path,
-                        good_image_path=self.coadded_unprojected[fil].output_file,
+                        good_image_path=good_image_path,
                         do_mask=img.mask_nearby()
                     )
 

@@ -3868,8 +3868,35 @@ class ImagingImage(Image):
             generate_mask: bool = True,
             mask_ellipses: List[dict] = None,
             mask_kwargs: dict = {},
-            saturate_factor: float = 0.5
+            saturate_factor: float = 0.5,
     ):
+        """
+        Models and subtracts the background of a specified part of the image.
+        A mask can be generated using either `sep` or `photutils`, automatically excluding objects from the background
+        fit. Negative and saturated or near-saturated pixels, above `saturate_factor * header["SATURATE"]`, will also be masked
+        regardless of `generate_mask`.
+
+        :param centre: the centre of the mask region, as a SkyCoord.
+        :param frame: the size of the region to fit, from `centre` to the edge, in pixels or units of on-sky angle.
+            Currently only a square region is supported.
+        :param ext: FITS extension of image to model.
+        :param model_type: an `astropy` model to use for the background.
+        :param fitter_type: an `astropy` Fitter to use.
+        :param init_params: the initial parameters to give to the model.
+        :param write: path to write the modelled background to disk, as a FITS file. If None, no file is written.
+        :param write_subbed: path to write the subtracted image to, as a FITS file. If None, no file is written.
+        :param generate_mask: whether to generate a mask or not.
+        :param mask_ellipses: a set of ellipses to mask. If a mask is generated, will be added to it.
+        :param mask_kwargs: keyword arguments to pass to `generate_mask()`.
+        :param saturate_factor: pixels with values greater than `saturate_factor * header["SATURATE"] will be masked.
+        :return: Tuple of:
+            `model`: the fitted model.
+            `model_eval`: the pixel values of the model.
+            `data`: the original data.
+            `subbed_data`: the full image with the model subtracted from the window.
+            `mask`: the final mask used for fitting.
+            `weights`: the weights used for fitting, the inverse of the image error.
+        """
         margins = left, right, bottom, top = self.frame_from_coord(
             frame=frame,
             centre=centre,
@@ -3889,10 +3916,11 @@ class ImagingImage(Image):
             )
             mask = mask  # [bottom:top, left:right]
             mask = mask.astype(bool)
-            mask += data < 0
-            mask += data > self.extract_saturate() * saturate_factor
         else:
             mask = np.zeros(data.shape, dtype=bool)
+
+        mask += data < 0
+        mask += data > self.extract_saturate() * saturate_factor
 
         if mask_ellipses:
             for ellipse_dict in mask_ellipses:
@@ -3912,7 +3940,8 @@ class ImagingImage(Image):
                 rad_cc = (xct ** 2 / (a / 2.) ** 2) + (yct ** 2 / (b / 2.) ** 2)
                 mask += rad_cc <= 1
 
-        data -= np.median(self.data[ext])
+        median = np.median(self.data[ext])
+        data -= median
 
         mask[:, :left] = True
         mask[:, right:] = True
@@ -3937,8 +3966,8 @@ class ImagingImage(Image):
         )
         model_eval = model(x, y)
         subbed_all = data.value - model_eval
-        subbed_window = data
-        subbed_window[bottom:top, left:right] = subbed_all[bottom:top, left:right] * data.unit
+        subbed = data.copy() + median
+        subbed[bottom:top, left:right] = subbed_all[bottom:top, left:right] * data.unit + median
 
         if isinstance(write, str):
             back_file = self.copy(write)
@@ -3984,7 +4013,7 @@ class ImagingImage(Image):
             subbed_file = self.copy(write_subbed)
             subbed_file.load_data()
             subbed_file.load_headers()
-            subbed_file.data[ext] = subbed_window
+            subbed_file.data[ext] = subbed
             subbed_file.add_log(
                 action=f"Background modelled and subtracted.",
                 method=self.model_background_photometry,
@@ -3994,7 +4023,7 @@ class ImagingImage(Image):
             )
             subbed_file.write_fits_file()
 
-        return model, model_eval, data, subbed_window, mask, weights
+        return model, model_eval, data, subbed, mask, weights
 
     def model_background_photometry(
             self, ext: int = 0,
@@ -4132,7 +4161,7 @@ class ImagingImage(Image):
 
     def generate_mask(
             self,
-            unmasked: SkyCoord = (),
+            do_not_mask: SkyCoord = (),
             ext: int = 0,
             threshold: float = 4,
             method: str = "sep",
@@ -4142,12 +4171,13 @@ class ImagingImage(Image):
     ):
         """
         Uses a segmentation map to produce a mask covering field objects.
-        :param unmasked: SkyCoord list of objects to keep unmasked; if any
+
+        :param do_not_mask: SkyCoord list of objects to keep unmasked; if any
         :param ext:
         :param threshold:
         :param method:
-        :param obj_value: For GALFIT masks, should be 1.
-        :param back_value: For GALFIT masks, should be 0.
+        :param obj_value: The value to set object pixels to. For GALFIT masks, should be 1.
+        :param back_value: The value to set non-object pixels to. For GALFIT masks, should be 0.
         :param margins: If only part of the image is to be masked, provide (left, right, bottom, top) in pixel
             coordinates as tuple.
         :return:
@@ -4161,7 +4191,7 @@ class ImagingImage(Image):
         )
         self.load_wcs()
 
-        unmasked = u.check_iterable(unmasked)
+        do_not_mask = u.check_iterable(do_not_mask)
 
         if segmap is None:
             mask = np.zeros(data.shape)
@@ -4170,13 +4200,16 @@ class ImagingImage(Image):
             mask = np.ones(data.shape, dtype=bool)
             # This sets all the background pixels to False
             mask[segmap == 0] = False
-            for coord in unmasked:
-                x_unmasked, y_unmasked = self.wcs[ext].all_world2pix(coord.ra, coord.dec, 0)
-                # obj_id is the integer representing that object in the segmap
-                obj_id = segmap[int(np.round(y_unmasked)), int(np.round(x_unmasked))]
-                # If obj_id is zero, then our work here is already done (ie, the segmap routine read it as background anyway)
-                if obj_id != 0:
-                    mask[segmap == obj_id] = False
+            for coord in do_not_mask:
+                if self.wcs[ext].footprint_contains(coord):
+                    x_unmasked, y_unmasked = self.world_to_pixel(coord=coord, ext=ext)
+                    x_unmasked = int(np.round(x_unmasked))
+                    y_unmasked = int(np.round(y_unmasked))
+                    # obj_id is the integer representing that object in the segmap
+                    obj_id = segmap[y_unmasked, x_unmasked]
+                    # If obj_id is zero, then our work here is already done (ie, the segmap routine read it as background anyway)
+                    if obj_id != 0:
+                        mask[segmap == obj_id] = False
 
         # Convert to integer (from bool)
         mask = mask.astype(int)
@@ -4208,6 +4241,7 @@ class ImagingImage(Image):
         """
         Generates and writes a source mask to a FITS file.
         Any argument accepted by generate_mask() can be passed as a keyword.
+        
         :param output_path: path to write the mask file to.
         :param ext: FITS extension to modify.
         :return:
@@ -4297,7 +4331,7 @@ class ImagingImage(Image):
             mask = mask_nearby.data[0].value
         elif mask_nearby:
             mask = self.write_mask(
-                unmasked=centre,
+                do_not_mask=centre,
                 ext=ext,
                 method="sep",
                 output_path=segmap_output
@@ -4676,7 +4710,7 @@ class ImagingImage(Image):
         margins_max = u.frame_from_centre(frame_upper + 1, x, y, data)
         mask = new.write_mask(
             output_path=mask_path,
-            unmasked=list(map(lambda m: m["position"], model_guesses)),
+            do_not_mask=list(map(lambda m: m["position"], model_guesses)),
             ext=ext,
             method="sep",
             obj_value=1,
