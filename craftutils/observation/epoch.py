@@ -1751,7 +1751,6 @@ class ImagingEpoch(Epoch):
         if "suppress_select" not in kwargs:
             kwargs["suppress_select"] = True
 
-
         image_dict = self._get_images(image_type=image_type)
         for fil in image_dict:
             img = image_dict[fil]
@@ -1900,7 +1899,7 @@ class ImagingEpoch(Epoch):
                 **path_kwargs
             )
         self.field.frb.consolidate_candidate_tables()
-        self.field.objects.extend(self.field.frb.host_candidates)
+        # self.field.objects.extend(self.field.frb.host_candidates)
 
     def get_photometry(
             self,
@@ -1911,6 +1910,7 @@ class ImagingEpoch(Epoch):
     ):
         """
         Retrieve photometric properties of key objects and write to disk.
+
         :param path: Path to which to write the data products.
         :return:
         """
@@ -1950,6 +1950,8 @@ class ImagingEpoch(Epoch):
                 depth = img.depth["secure"]["SNR_PSF"][f"5-sigma"]
             else:
                 depth = img.depth["secure"]["SNR_AUTO"][f"5-sigma"]
+
+            img.load_data()
 
             for obj in self.field.objects:
                 # obj.load_output_file()
@@ -2075,14 +2077,9 @@ class ImagingEpoch(Epoch):
                             10 * units.arcsec,
                             20 * units.arcsec,
                             40 * units.arcsec,
-                            None
                         ]
                         if "frame" in obj.plotting_params and obj.plotting_params["frame"] is not None:
                             frames.append(obj.plotting_params["frame"])
-
-                        normalisations = [
-
-                        ]
 
                         normalize_kwargs = {}
                         if fil in obj.plotting_params:
@@ -2091,8 +2088,10 @@ class ImagingEpoch(Epoch):
 
                         for frame in frames:
                             for stretch in ["log", "sqrt"]:
+                                print(f"\nPlotting {frame=}, {stretch=}")
                                 normalize_kwargs["stretch"] = stretch
                                 centre = obj.position_from_cat_row()
+
                                 fig = plt.figure(figsize=(6, 5))
                                 ax, fig, _ = self.field.plot_host(
                                     img=img,
@@ -2108,8 +2107,9 @@ class ImagingEpoch(Epoch):
                                     },
                                     normalize_kwargs=normalize_kwargs
                                 )
-                                output_path = os.path.join(fil_output_path,
-                                                           f"{obj.name_filesys}_{fil}_{str(frame).replace(' ', '-')}_{stretch}")
+                                output_path = os.path.join(
+                                    fil_output_path,
+                                    f"{obj.name_filesys}_{fil}_{str(frame).replace(' ', '-')}_{stretch}")
                                 name = obj.name
                                 img.extract_filter()
                                 if img.filter is None:
@@ -2119,7 +2119,9 @@ class ImagingEpoch(Epoch):
                                 ax.set_title(f"{name}, {f_name}")
                                 fig.savefig(output_path + ".pdf")
                                 fig.savefig(output_path + ".png")
-                                plt.close(fig)
+                                ax.clear()
+                                fig.clf()
+                                plt.close("all")
                                 pl.latex_off()
 
             tbl = table.vstack(rows)
@@ -2130,10 +2132,14 @@ class ImagingEpoch(Epoch):
 
             tbl.write(
                 os.path.join(fil_output_path, f"{self.field.name}_{self.name}_{fil}.ecsv"),
-                format="ascii.ecsv")
+                format="ascii.ecsv",
+                overwrite=True
+            )
             tbl.write(
                 os.path.join(fil_output_path, f"{self.field.name}_{self.name}_{fil}.csv"),
-                format="ascii.csv")
+                format="ascii.csv",
+                overwrite=True
+            )
 
         for fil in self.coadded_unprojected:
 
@@ -5177,7 +5183,8 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
             fitter = fitting.LevMarLSQFitter()
 
             try:
-                model = fitter(model_init, np.array(lambdas_known), np.array(extinctions_known), weights=1 / extinctions_known_err)
+                model = fitter(model_init, np.array(lambdas_known), np.array(extinctions_known),
+                               weights=1 / extinctions_known_err)
                 curve_err = u.root_mean_squared_error(model_values=model(lambdas_known), obs_values=extinctions_known)
                 results_tbl["curve_err"].append(curve_err)
                 extinctions_find = model(lambdas_find)
