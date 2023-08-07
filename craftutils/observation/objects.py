@@ -334,6 +334,12 @@ class Object:
             self.theta = self.photometry_args["theta"]
             self.kron = self.photometry_args["kron_radius"]
 
+    def _get_object(self, obj_name: str):
+        if self.field is not None and obj_name in self.field.objects_dict:
+            return self.field.objects_dict
+        else:
+            return None
+
     def set_name_filesys(self):
         if self.name is not None:
             self.name_filesys = self.name.replace(" ", "-")
@@ -1667,6 +1673,10 @@ class Transient(Object):
         super().__init__(
             **kwargs
         )
+        if isinstance(host_galaxy, str):
+            hg = self._get_object(host_galaxy)
+            if hg:
+                host_galaxy = hg
         self.host_galaxy = host_galaxy
         self.host_candidate_tables = {}
         self.host_candidates = []

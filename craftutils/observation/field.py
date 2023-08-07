@@ -159,6 +159,8 @@ class Field:
                     continue
                 self.add_object_from_dict(obj_dict)
 
+        self.gather_objects()
+
         self.load_output_file()
 
         self.extent = extent
@@ -190,24 +192,25 @@ class Field:
         else:
             warnings.warn(f"param_dir is not set for this {type(self)}.")
 
-    def _gather_objects(self, quiet: bool = True):
+    def gather_objects(self, quiet: bool = True):
         if not quiet:
             print(f"Searching for object param files...")
-        objs = {}
+
         if self.param_dir is not None:
             obj_path = os.path.join(self.param_dir, "objects")
             if not quiet:
                 print(f"Looking in {obj_path}")
 
-            epoch_params = list(filter(lambda f: f.endswith(".yaml"), os.listdir(instrument_path)))
-            epoch_params.sort()
-            for epoch_param in epoch_params:
-                epoch_name = epoch_param[:epoch_param.find(".yaml")]
-                param_path = os.path.join(instrument_path, epoch_param)
-                epoch = p.load_params(file=param_path)
-                epoch["format"] = "current"
-                epoch["param_path"] = param_path
-                epochs[epoch_name] = epoch
+            obj_params = list(filter(lambda f: f.endswith(".yaml"), os.listdir(obj_path)))
+            obj_params.sort()
+            for obj_param in obj_params:
+                obj_name = obj_param[:obj_param.find(".yaml")]
+                param_path = os.path.join(obj_path, obj_param)
+                obj_dict = p.load_params(file=param_path)
+                obj_dict["param_path"] = param_path
+                if "name" not in obj_dict:
+                    obj_dict["name"] = obj_name
+                self.add_object_from_dict(obj_dict=obj_dict)
 
     def _gather_epochs(self, mode: str = "imaging", quiet: bool = False):
         """
@@ -707,7 +710,7 @@ class Field:
             "name": None,
             "type": "Field",
             "centre": objects.position_dictionary.copy(),
-            "objects": [objects.Object.default_params()],
+            # "objects": [objects.Object.default_params()],
             "extent": 0.3 * units.deg,
             "survey": None
         }
@@ -913,14 +916,15 @@ class FRBField(Field):
                 centre_coords = frb.position
 
         # Input attributes
-        super().__init__(name=name,
-                         centre_coords=centre_coords,
-                         param_path=param_path,
-                         data_path=data_path,
-                         objs=objs,
-                         extent=extent,
-                         **kwargs
-                         )
+        super().__init__(
+            name=name,
+            centre_coords=centre_coords,
+            param_path=param_path,
+            data_path=data_path,
+            objs=objs,
+            extent=extent,
+            **kwargs
+        )
 
         self.frb = frb
         if self.frb is not None:
