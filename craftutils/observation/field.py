@@ -190,10 +190,30 @@ class Field:
         else:
             warnings.warn(f"param_dir is not set for this {type(self)}.")
 
+    def _gather_objects(self, quiet: bool = True):
+        if not quiet:
+            print(f"Searching for object param files...")
+        objs = {}
+        if self.param_dir is not None:
+            obj_path = os.path.join(self.param_dir, "objects")
+            if not quiet:
+                print(f"Looking in {obj_path}")
+
+            epoch_params = list(filter(lambda f: f.endswith(".yaml"), os.listdir(instrument_path)))
+            epoch_params.sort()
+            for epoch_param in epoch_params:
+                epoch_name = epoch_param[:epoch_param.find(".yaml")]
+                param_path = os.path.join(instrument_path, epoch_param)
+                epoch = p.load_params(file=param_path)
+                epoch["format"] = "current"
+                epoch["param_path"] = param_path
+                epochs[epoch_name] = epoch
+
     def _gather_epochs(self, mode: str = "imaging", quiet: bool = False):
         """
         Helper method for code reuse in gather_epochs_spectroscopy() and gather_epochs_imaging().
         Gathers all of the observation epochs of the given mode for this field.
+
         :param mode: str, "imaging" or "spectroscopy"
         :return: Dict, with keys being the epoch names and values being nested dictionaries containing the same
         information as the epoch .yaml files.

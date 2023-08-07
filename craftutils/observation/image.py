@@ -337,7 +337,7 @@ class Image:
         self.hdu_list = None
         self.frame_type = frame_type
         self.headers = None
-        self.data = None
+        self.data = []
         self.date = None
         if instrument_name is not None:
             self.instrument_name = instrument_name
@@ -504,7 +504,7 @@ class Image:
         return self.headers
 
     def load_data(self, force: bool = False):
-        if self.data is None or force:
+        if force or not self.data:
             unit = self.extract_units()
             self.open()
             u.debug_print(1, f"Image.load_data() 1: {self}.hdu_list:", self.hdu_list)
@@ -850,7 +850,9 @@ class ImagingImage(Image):
     ):
         super().__init__(path=path, frame_type=frame_type, instrument_name=instrument_name)
 
-        self.wcs = None
+        print("Initiating", path)
+
+        self.wcs = []
 
         self.filter_name = None
         self.filter_short = None
@@ -1161,7 +1163,12 @@ class ImagingImage(Image):
         print()
         self.update_output_file()
 
-    def world_to_pixel(self, coord: SkyCoord, origin: int = 0, ext: int = 0) -> np.ndarray:
+    def world_to_pixel(
+            self,
+            coord: SkyCoord,
+            origin: int = 0,
+            ext: int = 0
+    ) -> Tuple[np.ndarray]:
         """
         Turns a sky coordinate into image pixel coordinates;
         :param coord: SkyCoord object to convert to pixel coordinates; essentially a wrapper for SkyCoord.to_pixel()
@@ -1191,10 +1198,12 @@ class ImagingImage(Image):
         return SkyCoord.from_pixel(x, y, wcs=self.wcs[ext], origin=origin)
 
     def load_data(self, force: bool = False):
-        super().load_data()
-        self.data_sub_bkg = [None] * len(self.data)
-        self.sep_background = [None] * len(self.data)
-        self.pu_background = [None] * len(self.data)
+        reset = force or not self.data
+        super().load_data(force=force)
+        if reset:
+            self.data_sub_bkg = [None] * len(self.data)
+            self.sep_background = [None] * len(self.data)
+            self.pu_background = [None] * len(self.data)
         return self.data
 
     def get_source_cat(self, dual: bool, force: bool = False):
@@ -1267,10 +1276,11 @@ class ImagingImage(Image):
             self.synth_cat.write(self.synth_cat_path, format="ascii.ecsv", overwrite=True)
 
     def load_wcs(self) -> List[wcs.WCS]:
-        self.load_headers()
-        self.wcs = []
-        for ext in range(len(self.headers)):
-            self.wcs.append(wcs.WCS(header=self.headers[ext]))
+        if not self.wcs:
+            self.load_headers()
+            self.wcs = []
+            for ext in range(len(self.headers)):
+                self.wcs.append(wcs.WCS(header=self.headers[ext]))
         return self.wcs
 
     def extract_astrometry_err(self):
@@ -1289,8 +1299,10 @@ class ImagingImage(Image):
         return self.astrometry_err
 
     def extract_rotation_angle(self, ext: int = 0):
-        self.load_headers()
-        return ff.get_rotation_angle(header=self.headers[ext], astropy_units=True)
+        self.load_wcs()
+        matrix = self.wcs[ext].pixel_scale_matrix
+        theta = np.arctan2(matrix[1, 1], matrix[1, 0]) * 180 / np.pi - 90
+        return theta * units.deg
 
     def extract_wcs_footprint(self, ext: int = 0):
         """
@@ -1298,10 +1310,12 @@ class ImagingImage(Image):
         :return: tuple of SkyCoords, (top_left, top_right, bottom_left, bottom_right)
         """
         self.load_wcs()
+        print("Calculating footprint.")
         return self.wcs[ext].calc_footprint()
 
     def _pixel_scale(self, ext: int = 0):
         self.load_wcs()
+        print("Getting pixel scale.")
         return wcs.utils.proj_plane_pixel_scales(
             self.wcs[ext]
         ) * units.deg
@@ -3042,7 +3056,7 @@ class ImagingImage(Image):
         elif data == "pixel_magnitudes":
             data, _, _, _ = self.pixel_magnitudes(**kwargs)
         elif isinstance(data, np.ndarray):
-            data = data
+            data = data * 1.
         else:
             raise ValueError(
                 f"data_type {data} not recognised; this can be 'image', 'background', or 'background_subtracted_image'")
@@ -3093,7 +3107,6 @@ class ImagingImage(Image):
 
         if fig is None:
             fig = plt.figure()
-
         if normalize_kwargs is None:
             normalize_kwargs = {}
         if imshow_kwargs is None:
@@ -3130,22 +3143,24 @@ class ImagingImage(Image):
             frame1.axes.set_yticks([])
             frame1.axes.invert_yaxis()
 
-        # scaling_data = data[bottom:top, left:right]
-        # sigma_clip = SigmaClip(sigma=3.)
-        # data_clipped = sigma_clip(scaling_data, masked=False)
+        scaling_data = data[bottom:top, left:right]
+        sigma_clip = SigmaClip(sigma=3.)
+        data_clipped = sigma_clip(scaling_data, masked=False)
 
         # if "vmin" not in normalize_kwargs:
-        #     normalize_kwargs["vmin"] = np.median(data[bottom:top, left:right]) #np.median(scaling_data)
+        #     normalize_kwargs["vmin"] = np.min(data_clipped)
 
-        other_args["mapping"] = ax.imshow(
+        mapping = ax.imshow(
             data,
             norm=ImageNormalize(
-                data[bottom:top, left:right],
+                data_clipped,
                 **normalize_kwargs
             ),
             interpolation="none",
             **imshow_kwargs
         )
+
+        # other_args["mapping"] = mapping
         ax.set_xlim(left, right)
         ax.set_ylim(bottom, top)
 
@@ -3168,7 +3183,6 @@ class ImagingImage(Image):
                 fig=fig,
                 **scale_bar_kwargs
             )
-
         if output_path is not None:
             fig.savefig(output_path)
 

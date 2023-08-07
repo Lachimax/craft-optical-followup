@@ -1,0 +1,2 @@
+class SEDSample:
+    pass
