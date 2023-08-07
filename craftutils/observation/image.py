@@ -850,8 +850,6 @@ class ImagingImage(Image):
     ):
         super().__init__(path=path, frame_type=frame_type, instrument_name=instrument_name)
 
-        print("Initiating", path)
-
         self.wcs = []
 
         self.filter_name = None

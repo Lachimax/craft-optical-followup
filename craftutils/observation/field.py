@@ -197,7 +197,7 @@ class Field:
             print(f"Searching for object param files...")
 
         if self.param_dir is not None:
-            obj_path = os.path.join(self.param_dir, "objects")
+            obj_path = self._obj_path()
             if not quiet:
                 print(f"Looking in {obj_path}")
 
@@ -316,6 +316,28 @@ class Field:
             epoch = ep.SpectroscopyEpoch.from_file(epoch, field=self)
             self.epochs_spectroscopy_loaded[epoch.name] = epoch
         return epoch
+
+    def _obj_path(self):
+        obj_path = os.path.join(self.param_dir, "objects")
+        return obj_path
+
+    def new_object(
+            self,
+            name: str,
+            obj_type: str,
+            position: Union[SkyCoord, str, tuple, list, np.ndarray],
+            **kwargs
+    ):
+        objects_path = self._obj_path()
+        obj_path = os.path.join(objects_path, f"{name}.yaml")
+        obj_type = objects.Object.select_child_class(obj_type=obj_type)
+        obj_dict = obj_type.default_params()
+        obj_dict["name"] = name
+        obj_dict["field"] = self.name
+        obj_dict["position"] = astm.attempt_skycoord(position)
+        obj_dict.update(kwargs)
+        p.save_params(file=obj_path, dictionary=obj_dict)
+        return self.add_object_from_dict(obj_dict)
 
     def new_epoch_imaging(self):
         return self._new_epoch(mode="imaging")
@@ -614,8 +636,10 @@ class Field:
         obj.field = self
 
     def add_object_from_dict(self, obj_dict: dict):
-        obj = objects.Object.from_dict(obj_dict, field=self)
+        obj_dict["field"] = self
+        obj = objects.Object.from_dict(obj_dict)
         self.add_object(obj=obj)
+        return obj
 
     def object_properties(self):
         self.objects.sort(key=lambda o: o.name, reverse=True)
@@ -928,9 +952,8 @@ class FRBField(Field):
 
         self.frb = frb
         if self.frb is not None:
-
             if isinstance(self.frb, dict):
-                self.frb = objects.FRB.from_dict(self.frb, field=self)
+                self.frb = objects.FRB.from_dict(self.frb)
 
             self.frb.field = self
             if self.frb.host_galaxy is not None:

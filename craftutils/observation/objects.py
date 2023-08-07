@@ -1184,21 +1184,34 @@ class Object:
                 {
                     "frame": None
                 },
-            "publication_doi": None
+            "publication_doi": None,
+            "field": None,
+            "other_names": [],
         }
         return default_params
 
     @classmethod
-    def from_dict(cls, dictionary: dict, field=None) -> 'Object':
+    def from_dict(cls, dictionary: dict, **kwargs) -> 'Object':
         """
         Construct an Object or appropriate child class (FRB, Galaxy...) from a passed dict.
+
         :param dictionary: dict with keys:
             'position': position dictionary as given by position_dictionary
             'position_err':
         :return: Object reflecting dictionary.
         """
+        dictionary.update(kwargs)
         dict_pristine = dictionary.copy()
-        ra, dec = p.select_coords(dictionary.pop("position"))
+        position = dictionary.pop("position")
+        if isinstance(position, dict):
+            ra, dec = p.select_coords(position)
+            position = f"{ra} {dec}"
+        elif isinstance(position, str):
+            astm.attempt_skycoord(position)
+        elif not isinstance(position, SkyCoord):
+            raise TypeError(f"position type {type(position)} not recognised. "
+                            f"Can be SkyCoord, string (hms dms), or dictionary (see objects.position_dictionary)")
+
         if "position_err" in dictionary:
             position_err = dictionary.pop("position_err")
         else:
@@ -1219,17 +1232,14 @@ class Object:
         else:
             name = None
 
-        if selected in (Object, FRB):
-            return selected(
-                name=name,
-                position=f"{ra} {dec}",
-                position_err=position_err,
-                field=field,
-                plotting=plotting,
-                **dictionary
-            )
-        else:
-            return selected.from_dict(dictionary=dict_pristine, field=field)
+        return selected(
+            name=name,
+            position=position,
+            position_err=position_err,
+            plotting=plotting,
+            **dictionary
+        )
+
 
     @classmethod
     def select_child_class(cls, obj_type: str):
@@ -1240,6 +1250,8 @@ class Object:
             return FRB
         elif obj_type == "star":
             return Object
+        elif obj_type == "transienthostcandidate":
+            return TransientHostCandidate
         else:
             raise ValueError(f"Didn't recognise obj_type '{obj_type}'")
 
@@ -1611,24 +1623,6 @@ class Galaxy(Extragalactic):
         })
         return default_params
 
-    # TODO: There do not need to be separate methods per class for this. Just pass dictionary as a **kwargs and be done with it
-    @classmethod
-    def from_dict(cls, dictionary: dict, field=None):
-        ra, dec = p.select_coords(dictionary.pop("position"))
-        if "position_err" in dictionary:
-            position_err = dictionary.pop("position_err")
-        else:
-            position_err = PositionUncertainty.default_params()
-        return cls(
-            name=dictionary.pop("name"),
-            position=f"{ra} {dec}",
-            position_err=position_err,
-            z=dictionary.pop("z"),
-            field=field,
-            **dictionary
-        )
-
-
 @u.export
 class TransientHostCandidate(Galaxy):
     def __init__(
@@ -1653,6 +1647,17 @@ class TransientHostCandidate(Galaxy):
         if "P_Ox" in kwargs:
             self.P_Ox = kwargs["P_Ox"]
 
+    @classmethod
+    def default_params(cls):
+        default_params = super().default_params()
+        default_params.update({
+            "type": "TransientHostCandidate",
+            "transient": None,
+            "P_O": None,
+            "P_xO": None,
+            "P_Ox": None
+        })
+        return default_params
 
 dm_units = units.parsec * units.cm ** -3
 
@@ -1963,6 +1968,9 @@ class FRB(Transient):
     def default_params(cls):
         default_params = super().default_params()
         default_params.update({
+            "type": "FRB",
+            "dm": 0.0 * dm_units,
+            "snr": 0.0,
             "host_galaxy": Galaxy.default_params(),
             "date": "0000-01-01",
             "tau": None,
@@ -2620,20 +2628,11 @@ class FRB(Transient):
         return outputs
 
     @classmethod
-    def from_dict(cls, dictionary: dict, name: str = None, field=None):
-        frb = super().from_dict(dictionary=dictionary)
+    def from_dict(cls, dictionary: dict, **kwargs):
+        frb = super().from_dict(dictionary=dictionary, **kwargs)
         # if "dm" in dictionary:
         #     frb.dm = u.check_quantity(dictionary["dm"], dm_units)
         dictionary["host_galaxy"]["transient"] = frb
-        host_galaxy = TransientHostCandidate.from_dict(dictionary=dictionary["host_galaxy"], field=field)
+        host_galaxy = TransientHostCandidate.from_dict(dictionary=dictionary["host_galaxy"])
         frb.host_galaxy = host_galaxy
         return frb
-
-    @classmethod
-    def default_params(cls):
-        default_params = super().default_params()
-        default_params.update({
-            "dm": 0.0 * dm_units,
-            "snr": 0.0,
-        })
-        return default_params
