@@ -1,5 +1,5 @@
 import os.path
-from typing import List
+from typing import List, Union, Dict
 
 import numpy as np
 
@@ -21,16 +21,17 @@ class SEDModel:
     def __init__(
             self,
             z: float = None,
-            path: str = None,
+            input_path: str = None,
             model_table: table.QTable = None,
             **kwargs
     ):
         self.input_path: str = None
-        self.output_path: str = None
+        self.output_dir: str = None
+        self.output_file: str = None
         self.model_table: table.QTable = None
+        self.model_table_path: str = None
         self.name: str = None
         self.z: float = z
-        self.model_table: table.QTable = None
         self.obs_table: table.QTable = None
         self.luminosity_distance: units.Quantity = None
         self.distance_modulus: units.Quantity = None
@@ -39,16 +40,20 @@ class SEDModel:
         self.z_mag_tbl: table.QTable = None
         self.z_flux_tbl: table.QTable = None
         self.sfh = None
-        # if "cosmology" in kwargs and isinstance(kwargs["cosmology"], cosmology.LambdaCDM):
-        #     self.cosmology = kwargs["cosmology"]
-        self.shifted_models = {}
-        if path is not None:
-            self.input_path = str(path)
+
+        self.shifted_models: Dict[str, 'SEDModel'] = {}
+        if input_path is not None:
+            self.input_path = str(input_path)
             self.load_data()
         elif model_table is not None:
             self.model_table = model_table
         for key, value in kwargs.items():
             setattr(self, key, value)
+
+        if isinstance(self.output_dir, str):
+            u.mkdir_check(self.output_dir)
+            if self.output_file is None:
+                self.set_output_file()
 
     def prep_data(self):
         self.distances()
@@ -177,8 +182,18 @@ class SEDModel:
     def move_to_redshift(
             self,
             z_new: float = 1.,
-            force: bool = False
-    ):
+            force: bool = False,
+            write: bool = True,
+            output: str = None
+    ) -> 'SEDModel':
+        """
+        Displaces this model in redshift, attenuating its flux appropriately.
+
+        :param z_new: cosmological redshift to move the model to.
+        :param force: recalculates the model; otherwise, if the same z has been calculated before, re-uses that.
+        :param write: attempts to write the new table to disk.
+        :return: New SEDModel object with the redshifted values.
+        """
         if force or z_new not in self.shifted_models:
             if z_new != self.z:
                 new_tbl = self.model_table["wavelength", "frequency", "flux_nu"].copy()
@@ -190,8 +205,30 @@ class SEDModel:
                     z_new=z_new,
                     cosmo=self.cosmology
                 )
-                new_model = self.__class__(z=z_new, model_table=new_tbl, cosmology=self.cosmology)
-                new_model.model_table = new_tbl
+
+                if self.name:
+                    name = self.name + f"_z_{z_new}"
+                else:
+                    name = None
+                if write:
+                    if isinstance(output, str):
+                        new_dir = output
+                    elif self.output_dir:
+                        new_dir = os.path.join(self.output_dir, name)
+                    else:
+                        raise ValueError("If write is True, self.output_dir must be set or output must be provided")
+                else:
+                    new_dir = None
+                new_model = self.__class__(
+                    z=z_new,
+                    model_table=new_tbl,
+                    cosmology=self.cosmology,
+                    name=name,
+                    output_dir=new_dir
+                )
+                if write:
+                    new_model.write_model_table()
+                    new_model.update_output_file()
                 self.shifted_models[z_new] = new_model
             else:
                 new_model = self
@@ -199,23 +236,31 @@ class SEDModel:
             new_model = self.shifted_models[z_new]
         return new_model
 
+    def set_output_file(self, path: str = None):
+        if path is None and self.output_dir is not None:
+            self.output_file = os.path.join(self.output_dir, self._output_file_name())
+        else:
+            self.output_file = path
+
     def mag_from_model_flux(
             self,
             bands: List[filters.Filter],
             z_shift: float = 1.0,
-            force: bool = False
+            force: bool = False,
+            write: bool = True,
     ):
         """
         Uses a set of bandpasses to derive observed magnitudes for this model when placed at a counterfactual redshift.
 
-        :param model: The `SEDModel` object to shift and measure.
         :param z_shift: Redshift at which to place the model.
         :param bands: List or other iterable of `craftutils.observation.filters.Filter` objects through which to observe
             the redshifted galaxy.
+                :param force: recalculates the model; otherwise, if the same z has been calculated before, re-uses that.
+        :param write: attempts to write the new table to disk.
         :return: dict of AB magnitudes in the given bands, with keys being the band names and values being the magnitudes.
         """
         mags = {}
-        shifted_model = self.move_to_redshift(z_new=z_shift, force=force)
+        shifted_model = self.move_to_redshift(z_new=z_shift, force=force, write=write)
 
         fluxes = {}
 
@@ -233,10 +278,12 @@ class SEDModel:
             z_min: float = 0.01,
             z_max: float = 3.0,
             n_z: int = 20,
-            recalculate_all: bool = False
+            recalculate_all: bool = False,
+            write_all: bool = False,
+            include_actual: bool = True
     ):
         """
-        Uses `move_to_redshift()` to construct a table of magnitudes vs displaced reshift.
+        Uses `move_to_redshift()` to construct a table of magnitudes vs displaced redshift for this model.
 
         :param bands: List or other iterable of `craftutils.observation.filters.Filter` objects through which to observe
             the redshifted galaxy.
@@ -245,6 +292,9 @@ class SEDModel:
         :param n_z: number of redshifts to take measurements at.
         :param bands: List or other iterable of `craftutils.observation.filters.Filter` objects through which to observe
             the redshifted galaxy.
+        :param recalculate_all: Forces models to be recalculated; otherwise, those that were stored already are used.
+        :param write_all: Write all of the model tables to disk?
+        :param include_actual: Whether to insert actual redshift in the z list.
         :return: `astropy.table.QTable` of the derived magnitudes, with columns corresponding to bands
             and redshift.
         """
@@ -256,14 +306,16 @@ class SEDModel:
             fluxes[band_name] = []
         # Construct array of redshifts.
         zs = list(np.linspace(z_min, z_max, n_z))
-        zs.append(self.z)
-        zs.sort()
+        if include_actual:
+            zs.append(self.z)
+            zs.sort()
         for z in zs:
             # Get magnitudes at this redshift.
             mags_this, flux_this = self.mag_from_model_flux(
                 bands=bands,
                 z_shift=z,
-                force=recalculate_all
+                force=recalculate_all,
+                write=write_all
             )
             for band in bands:
                 band_name = band.machine_name()
@@ -310,13 +362,20 @@ class SEDModel:
             self,
             band: filters.Filter,
     ):
+        """
+        Generates an AB magnitude from the SED using the given bandpass.
+
+        :param band: `craftutils.observation.filters.Filter` object through which to observe the galaxy.
+        :return:
+        """
         tbl = self.model_table
         transmission = self.add_band(band=band)
         return ph.magnitude_AB(
             flux=tbl["flux_nu"],
             transmission=transmission,
             frequency=tbl["frequency"],
-            use_quantum_factor=True
+            use_quantum_factor=True,
+            mag_unit=True
         )
 
     def magnitude_absolute(
@@ -418,9 +477,61 @@ class SEDModel:
             **kwargs
     ):
         if path is None:
-            path = os.path.join(self.output_path, f"{self.name}_model_table.ecsv")
+            path = self._model_table_path()
         self.model_table_path = path
         self.model_table.write(path, overwrite=True, **kwargs)
+
+    def _model_table_path(self):
+        if self.output_dir:
+            return os.path.join(self.output_dir, f"{self.name}_model_table.ecsv")
+
+    def load_model_table(
+            self,
+            path: str = None,
+    ):
+        if path is None:
+            if self.model_table_path:
+                path = self.model_table_path
+            elif self.output_dir:
+                path = self._model_table_path()
+            else:
+                raise ValueError("No valid path for model table found.")
+        self.model_table = table.QTable.read(path)
+        return self.model_table
+
+    def expunge_shifted_models(self):
+        """
+        Clears `self.shifted_models` and removes every z-displaced version of this model from memory.
+        Useful for keeping memory usage low; the model tables can occupy memory quickly at scale.
+        """
+        for name, model in self.shifted_models.items():
+            self.shifted_models[name] = None
+            del model
+        self.shifted_models.clear()
+
+    def load_z_mag_table(
+            self,
+            path: str = None,
+    ):
+        """
+        Loads a z-magnitude table from disk. If no path is given, uses either `self.z_mag_tbl_path` or, if this is not
+        set, tries to guess.
+
+        :param path: the path to the table.
+        :return: the z-magnitude table.
+        """
+        if path is None:
+            if self.z_mag_tbl_path:
+                path = self.z_mag_tbl_path
+            elif self.output_dir:
+                path = self._z_mag_tbl_path()
+            else:
+                raise ValueError("No valid path for model table found.")
+        self.z_mag_tbl = table.QTable.read(path)
+        return self.z_mag_tbl
+
+    def _z_mag_tbl_path(self):
+        return os.path.join(self.output_dir, f"{self.name}_z_mag_table.ecsv")
 
     def write_z_mag_table(
             self,
@@ -428,7 +539,7 @@ class SEDModel:
             **kwargs
     ):
         if path is None:
-            path = os.path.join(self.output_path, f"{self.name}_z_mag_table.ecsv")
+            path = self._z_mag_tbl_path()
         self.z_mag_tbl_path = path
         self.z_mag_tbl.write(path, overwrite=True, **kwargs)
 
@@ -438,12 +549,19 @@ class SEDModel:
             **kwargs
     ):
         if path is None:
-            path = os.path.join(self.output_path, f"{self.name}_z_mag_table.ecsv")
+            path = os.path.join(self.output_dir, f"{self.name}_z_mag_table.ecsv")
         self.z_flux_tbl_path = path
         self.z_flux_tbl.write(path, overwrite=True, **kwargs)
 
+    def _output_file_name(self):
+        if self.name:
+            name = f"{self.name}_outputs.yaml"
+        else:
+            name = f"{type(self)}"
+        return name
+
     def update_output_file(self):
-        if self.output_path is not None:
+        if self.output_dir is not None:
             p.update_output_file(self)
 
     def _output_dict(self):
@@ -452,11 +570,8 @@ class SEDModel:
         output_dict.pop("z_mag_tbl")
         output_dict.pop("model_table")
         for key, value in output_dict.items():
-            if not isinstance(value, (float, int, str)):
-                value = str(value)
-                output_dict[key] = value
+            output_dict[key] = value
         return output_dict
-
 
     @classmethod
     def columns(cls):
