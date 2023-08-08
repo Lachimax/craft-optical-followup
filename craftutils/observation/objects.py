@@ -1451,7 +1451,7 @@ class Galaxy(Extragalactic):
         self.sed_models[name] = model_type(
             z=self.z,
             path=path,
-            output_path=sed_path,
+            output_dir=sed_path,
             name=name,
             **kwargs
         )
@@ -1762,6 +1762,7 @@ class FRB(Transient):
             priors: dict = {},
             offset_priors: dict = {"scale": 0.5},
             config: dict = {},
+            associate_kwargs={}
     ):
         """
         Performs a customised PATH run on an image.
@@ -1791,12 +1792,13 @@ class FRB(Transient):
         instname = img.instrument.name.replace("-", "_").upper()
         filname = f'{instname}_{img.filter.band_name}'
         # TODO: subtract Galactic extinction from zeropoint
+        max_radius = 20.
         config_n = dict(
-            max_radius=10,
+            max_radius=int(max_radius),
             skip_bayesian=False,
             npixels=9,
             image_file=img.path,
-            cut_size=30.,
+            cut_size=max_radius * 2,
             filter=filname,
             ZP=img.zeropoint_best["zeropoint_img"].value,
             deblend=True,
@@ -1830,6 +1832,7 @@ class FRB(Transient):
                 config=config,
                 FRB=x_frb,
                 prior=prior_set,
+                **associate_kwargs
                 # extinction_correct=True
             )
             p_ux = ass.P_Ux
@@ -1851,7 +1854,7 @@ class FRB(Transient):
             p_ox = None
             p_ux = None
 
-        return cand_tbl, p_ox, p_ux
+        return cand_tbl, p_ox, p_ux, prior_set
 
     def consolidate_candidate_tables(
             self,
