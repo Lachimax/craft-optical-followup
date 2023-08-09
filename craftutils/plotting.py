@@ -40,6 +40,9 @@ textheights = {
     "mqthesis": 9.6
 }
 
+tick_fontsize = 12
+axis_fontsize = 14
+lineweight = 1.5
 
 @u.export
 def plot_kron(fig: plt.Figure, data_title: str, instrument: str, f: str, index: Union[int, list], catalogue: str,

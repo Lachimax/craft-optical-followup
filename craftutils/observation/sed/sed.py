@@ -375,7 +375,7 @@ class SEDModel:
             transmission=transmission,
             frequency=tbl["frequency"],
             use_quantum_factor=True,
-            mag_unit=True
+            mag_unit=False
         )
 
     def magnitude_absolute(
