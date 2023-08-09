@@ -33,6 +33,9 @@ class SEDSample:
         for key, item in kwargs.items():
             setattr(self, key, item)
 
+        if self.output_dir:
+            u.mkdir_check_nested(self.output_dir, remove_last=False)
+
     def add_model(self, model: SEDModel, name: str = None):
         if name is None:
             if model.name is None:
@@ -201,10 +204,9 @@ class SEDSample:
         )
         tbl["p(z|U,DM) gauss"] = gauss_fit(tbl["z"]) / p_u_gauss
 
-        print()
-        print("Normal approximation")
-        print("Peak p(z|U,DM) at z =", gauss_fit.mean.value)
-        print("P(U) =", p_u_gauss)
+        p_z_dm_u_dict = {
+            "normal": gauss_fit
+        }
 
         if isinstance(band, fil.Filter):
             band_name = band.machine_name()
@@ -314,4 +316,8 @@ class SEDSample:
             plt.close(fig)
 
         p_u_dict = {"step": p_u, "gaussian": p_u_gauss}
-        return p_u, tbl, z_lost
+        values = {
+            "P(U)": p_u_dict,
+            "p(z|DM,U)": p_z_dm_u_dict
+        }
+        return values, tbl, z_lost
