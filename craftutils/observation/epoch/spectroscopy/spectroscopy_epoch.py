@@ -143,17 +143,14 @@ class SpectroscopyEpoch(Epoch):
         f_start = pypeit_lines.index("data read\n") + 3
         f_end = pypeit_lines.index("data end\n")
         for line in pypeit_lines[f_start:f_end]:
-            raw = image.RawSpectrum.from_pypeit_line(line=line, pypeit_raw_path=self.paths["raw_dir"])
-            self.add_frame_raw(raw)
+            raw = image.RawSpectrum.from_pypeit_line(line=line, pypeit_raw_path=self.paths["download"])
+            # self.add_frame_raw(raw)
         return pypeit_lines
 
     def read_pypeit_file(self, setup: str):
-        if "pypeit_dir" in self.paths and self.paths["pypeit_dir"] is not None:
-            filename = f"{self._instrument_pypeit}_{setup}"
-            self._read_pypeit_file(filename=filename)
-            return self._pypeit_file
-        else:
-            raise KeyError("pypeit_run_dir has not been set.")
+        filename = f"{self._instrument_pypeit}_{setup}"
+        self._read_pypeit_file(filename=filename)
+        return self._pypeit_file
 
     def write_pypeit_file_science(self):
         """
@@ -188,7 +185,7 @@ class SpectroscopyEpoch(Epoch):
             p_start = pypeit_file.index("# User-defined execution parameters\n") + 1
             insert_here = False
             # For each level of the param list, look to see if it's already there.
-            for i, line in pypeit_file[p_start]:
+            for i, line in enumerate(pypeit_file[p_start]):
                 if param[0] in line:
                     p_start = i
                     break
@@ -326,7 +323,7 @@ class SpectroscopyEpoch(Epoch):
             },
             "pypeit_coadd": {
                 "method": cls.proc_pypeit_coadd,
-                "message": "Coadd spectra using PypeIt?",
+                "message": "Do coaddition with PypeIt?\nYou should first inspect the 2D spectra to determine which objects to co-add.",
                 "default": True,
                 "keywords": {},
             },

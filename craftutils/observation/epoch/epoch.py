@@ -372,7 +372,7 @@ class Epoch:
         if "combined_epoch" in kwargs:
             self.combined_epoch = kwargs["combined_epoch"]
 
-        # self.load_output_file()
+        self.load_output_file()
 
         active_epochs[self.name] = self
 

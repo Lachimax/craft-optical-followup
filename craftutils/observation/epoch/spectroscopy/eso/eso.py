@@ -58,7 +58,7 @@ class ESOSpectroscopyEpoch(SpectroscopyEpoch):
         raw_dir = self.paths["download"]
         m_path = os.path.join(raw_dir, "M")
         u.mkdir_check(m_path)
-        os.system(f"mv {os.path.join(self.paths['raw_dir'], 'M.')}* {m_path}")
+        os.system(f"mv {os.path.join(raw_dir, 'M.')}* {m_path}")
         image.fits_table_all(
             input_path=raw_dir,
             output_path=os.path.join(self.data_path, f"{self.name}_fits_table_science.csv")
