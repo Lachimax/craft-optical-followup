@@ -191,23 +191,25 @@ class Field:
             warnings.warn(f"param_dir is not set for this {type(self)}.")
 
     def _gather_objects(self, quiet: bool = True):
-        if not quiet:
-            print(f"Searching for object param files...")
-        objs = {}
-        if self.param_dir is not None:
-            obj_path = os.path.join(self.param_dir, "objects")
-            if not quiet:
-                print(f"Looking in {obj_path}")
-
-            epoch_params = list(filter(lambda f: f.endswith(".yaml"), os.listdir(instrument_path)))
-            epoch_params.sort()
-            for epoch_param in epoch_params:
-                epoch_name = epoch_param[:epoch_param.find(".yaml")]
-                param_path = os.path.join(instrument_path, epoch_param)
-                epoch = p.load_params(file=param_path)
-                epoch["format"] = "current"
-                epoch["param_path"] = param_path
-                epochs[epoch_name] = epoch
+        pass
+        # Forgot to finish this; copied _gather_epochs, needs adapting
+        # if not quiet:
+        #     print(f"Searching for object param files...")
+        # objs = {}
+        # if self.param_dir is not None:
+        #     obj_path = os.path.join(self.param_dir, "objects")
+        #     if not quiet:
+        #         print(f"Looking in {obj_path}")
+        #
+        #     epoch_params = list(filter(lambda f: f.endswith(".yaml"), os.listdir(instrument_path)))
+        #     epoch_params.sort()
+        #     for epoch_param in epoch_params:
+        #         epoch_name = epoch_param[:epoch_param.find(".yaml")]
+        #         param_path = os.path.join(instrument_path, epoch_param)
+        #         epoch = p.load_params(file=param_path)
+        #         epoch["format"] = "current"
+        #         epoch["param_path"] = param_path
+        #         epochs[epoch_name] = epoch
 
     def _gather_epochs(self, mode: str = "imaging", quiet: bool = False):
         """
@@ -300,8 +302,14 @@ class Field:
     def select_epoch_spectroscopy(self):
         options = {}
         for epoch in self.epochs_spectroscopy:
+            date_string = ""
+            if "date" in epoch and epoch["date"] is not None:
+                if isinstance(epoch["date"], str):
+                    date_string = f" {epoch['date']}"
+                else:
+                    date_string = f" {epoch['date'].strftime('%Y-%m-%d')}"
             epoch = self.epochs_spectroscopy[epoch]
-            options[f"{epoch['name']}\t{epoch['date'].to_datetime().date()}\t{epoch['instrument']}"] = epoch
+            options[f"{epoch['name']}\t{date_string}\t{epoch['instrument']}"] = epoch
         for epoch in self.epochs_spectroscopy_loaded:
             epoch = self.epochs_spectroscopy_loaded[epoch]
             options[f'*{epoch.name}\t{epoch.date.isot}\t{epoch.instrument_name}'] = epoch
@@ -312,6 +320,9 @@ class Field:
         elif not isinstance(epoch, ep.Epoch):
             epoch = ep.SpectroscopyEpoch.from_file(epoch, field=self)
             self.epochs_spectroscopy_loaded[epoch.name] = epoch
+
+
+
         return epoch
 
     def new_epoch_imaging(self):
