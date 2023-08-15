@@ -3160,7 +3160,7 @@ class ImagingImage(Image):
             **imshow_kwargs
         )
 
-        # other_args["mapping"] = mapping
+        other_args["mapping"] = mapping
         ax.set_xlim(left, right)
         ax.set_ylim(bottom, top)
 
