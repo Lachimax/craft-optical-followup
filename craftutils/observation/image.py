@@ -3040,6 +3040,7 @@ class ImagingImage(Image):
             scale_bar_object: objects.Extragalactic = None,
             scale_bar_kwargs: dict = None,
             data: str = "image",
+            clip_data: bool = False,
             **kwargs,
     ) -> Tuple[plt.Axes, plt.Figure, dict]:
 
@@ -3142,8 +3143,9 @@ class ImagingImage(Image):
             frame1.axes.invert_yaxis()
 
         scaling_data = data[bottom:top, left:right]
-        sigma_clip = SigmaClip(sigma=3.)
-        data_clipped = sigma_clip(scaling_data, masked=False)
+        if clip_data:
+            sigma_clip = SigmaClip(sigma_lower=2., sigma_upper=np.inf)
+            scaling_data = sigma_clip(scaling_data, masked=False)
 
         # if "vmin" not in normalize_kwargs:
         #     normalize_kwargs["vmin"] = np.min(data_clipped)
@@ -3151,7 +3153,7 @@ class ImagingImage(Image):
         mapping = ax.imshow(
             data,
             norm=ImageNormalize(
-                data_clipped,
+                scaling_data,
                 **normalize_kwargs
             ),
             interpolation="none",
