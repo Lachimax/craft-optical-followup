@@ -1240,7 +1240,6 @@ class Object:
             **dictionary
         )
 
-
     @classmethod
     def select_child_class(cls, obj_type: str):
         obj_type = obj_type.lower()
@@ -1457,7 +1456,6 @@ class Galaxy(Extragalactic):
         )
         return self.sed_models[name]
 
-
     def load_cigale_model(self, force: bool = False):
         # TODO: incorporate into SEDModel
         if self.cigale_model_path is None:
@@ -1623,6 +1621,7 @@ class Galaxy(Extragalactic):
         })
         return default_params
 
+
 @u.export
 class TransientHostCandidate(Galaxy):
     def __init__(
@@ -1658,6 +1657,7 @@ class TransientHostCandidate(Galaxy):
             "P_Ox": None
         })
         return default_params
+
 
 dm_units = units.parsec * units.cm ** -3
 
@@ -1789,10 +1789,16 @@ class FRB(Transient):
         )
         #     img.load_output_file()
         img.extract_pixel_scale()
-        instname = img.instrument.name.replace("-", "_").upper()
-        filname = f'{instname}_{img.filter.band_name}'
+        if img.filter.frb_repo_name is None:
+            instname = img.instrument.name.replace("-", "_").upper()
+            filname = f'{instname}_{img.filter.band_name}'
+        else:
+            filname = img.filter.frb_repo_name
         # TODO: subtract Galactic extinction from zeropoint
-        max_radius = 20.
+        if "max_radius" in config:
+            max_radius = config["max_radius"]
+        else:
+            max_radius = 20.
         config_n = dict(
             max_radius=int(max_radius),
             skip_bayesian=False,
@@ -1803,7 +1809,7 @@ class FRB(Transient):
             ZP=img.zeropoint_best["zeropoint_img"].value,
             deblend=True,
             cand_bright=17.,
-            cand_separation=10 * units.arcsec,
+            cand_separation=max_radius * units.arcsec,
             plate_scale=(1 * units.pix).to(units.arcsec, img.pixel_scale_y),
         )
         config_n.update(config)
@@ -1854,7 +1860,7 @@ class FRB(Transient):
             p_ox = None
             p_ux = None
 
-        return cand_tbl, p_ox, p_ux, prior_set
+        return cand_tbl, p_ox, p_ux, prior_set, config_n
 
     def consolidate_candidate_tables(
             self,

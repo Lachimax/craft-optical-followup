@@ -5533,6 +5533,16 @@ class FORS2CoaddedImage(CoaddedImage):
         else:
             return None
 
+class GMOSCoaddedImage(CoaddedImage):
+    instrument_name="gs-gmos"
+    @classmethod
+    def header_keys(cls):
+        header_keys = super().header_keys()
+        header_keys.update({
+            "filter": "FILTER2",
+            "noise_read": "RDNOISE"
+        })
+        return header_keys
 
 class GSAOIImage(CoaddedImage):
     instrument_name = "gs-aoi"

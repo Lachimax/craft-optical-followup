@@ -36,6 +36,10 @@ class Filter:
         elif self.name is not None:
             self.band_name = self.name[0]
 
+        self.frb_repo_name = None
+        if "frb_repo_name" in kwargs:
+            self.frb_repo_name = kwargs["frb_repo_name"]
+
         self.svo_id = []
         self.svo_instrument = None
         if "svo_service" in kwargs:
