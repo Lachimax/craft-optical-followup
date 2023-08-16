@@ -799,6 +799,8 @@ def plot_all_params(
         image.close()
 
 
+
+
 def plot_lines(ax, z_shift, space: str = "wavelength", **kwargs):
     from linetools.lists.linelist import LineList
     gal_lines = LineList('Galaxy')

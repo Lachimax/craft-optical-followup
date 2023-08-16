@@ -11,7 +11,6 @@ import astropy.io.fits as fits
 import astropy.table as table
 import astropy.units as units
 import astropy.wcs as wcs
-import astropy.cosmology as cosmo
 import matplotlib.pyplot as plt
 import numpy as np
 from astroalign import register
@@ -22,7 +21,7 @@ from astropy.time import Time
 from astropy.visualization import (
     ImageNormalize, LogStretch, SqrtStretch, MinMaxInterval, ZScaleInterval)
 from astropy.visualization import quantity_support
-from matplotlib.patches import Ellipse
+from matplotlib.patches import Ellipse, Rectangle
 
 try:
     import photutils
@@ -2765,7 +2764,6 @@ class ImagingImage(Image):
         data = self.data[ext].value
         pix_mags = self.pixel_magnitudes()
 
-
     def reproject(
             self,
             other_image: 'ImagingImage',
@@ -3563,6 +3561,35 @@ class ImagingImage(Image):
         u.debug_print(2, f"{self}.plot_catalogue(): len(cat):", len(cat))
 
         return ax, fig
+
+    def plot_slit(
+            self,
+            ax: plt.Axes,
+            centre: SkyCoord,
+            width: units.Quantity,
+            length: units.Quantity,
+            position_angle: units.Quantity,
+            **kwargs
+    ):
+        position_angle = (u.check_quantity(position_angle, units.rad) + self.extract_rotation_angle())
+        centre_x, centre_y = self.world_to_pixel(centre)
+        slit_width = self.pixel(width).value
+        slit_length = self.pixel(length).value
+        # Do some trigonometry to determine pixel coordinates for the Rectangle badge (which uses the corner as its origin. Thanks, matplotlib.)
+        rec_x = centre_x + np.sin(np.deg2rad(position_angle)) * slit_length / 2 + np.cos(
+            position_angle) * slit_width / 2
+        rec_y = centre_y - np.cos(np.deg2rad(position_angle)) * slit_length / 2 - np.sin(
+            np.deg2rad(position_angle)) * slit_width / 2
+
+        rect = Rectangle(
+            (rec_x, rec_y),
+            slit_width,
+            slit_length,
+            angle=position_angle,
+            **kwargs
+        )
+        ax.add_artist(rect)
+        return ax
 
     def insert_synthetic_sources(
             self,

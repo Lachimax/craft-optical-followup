@@ -372,7 +372,7 @@ class Epoch:
         if "combined_epoch" in kwargs:
             self.combined_epoch = kwargs["combined_epoch"]
 
-        self.load_output_file()
+        # self.load_output_file()
 
         active_epochs[self.name] = self
 
@@ -624,13 +624,13 @@ class Epoch:
         self.binning_std = binning
         return binning
 
-    def get_path(self, key):
+    def get_path(self, key: str):
         if key in self.paths:
             return self.paths[key]
         else:
             raise KeyError(f"{key} has not been set.")
 
-    def set_path(self, key, value):
+    def set_path(self, key: str, value: str):
         self.paths[key] = value
 
     def update_param_file(self, param: str):

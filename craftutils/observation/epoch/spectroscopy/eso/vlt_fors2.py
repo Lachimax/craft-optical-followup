@@ -23,21 +23,24 @@ class FORS2SpectroscopyEpoch(ESOSpectroscopyEpoch):
 
     def proc_pypeit_setup(
             self,
-            output_dir:
-            str, **kwargs
+            output_dir: str,
+            **kwargs
     ):
         if "setups" in kwargs and kwargs["setups"]:
             setups = kwargs["setups"]
         else:
             setups = ["G"]
-        setup_files = os.path.join(output_dir, 'setup_files', '')
-        self.paths["pypeit_setup_dir"] = setup_files
-        self.paths["pypeit_dir"] = output_dir
+
+        pypeit_dir = self.get_pypeit_path("pypeit_dir")
+        setup_files = os.path.join(pypeit_dir, 'setup_files')
+
+        self.set_pypeit_path("pypeit_setup_dir", setup_files)
+
         # os.system(f"rm {setup_files}*")
         # Generate .sorted file and others
         spec.pypeit_setup(
-            root=self.paths['download'],
-            output_path=output_dir,
+            root=self.get_path('download'),
+            output_path=pypeit_dir,
             spectrograph=self._instrument_pypeit
         )
         # Generate files to use for run. Set cfg_split to "A" because that corresponds to Chip 1, which is the only
@@ -47,9 +50,23 @@ class FORS2SpectroscopyEpoch(ESOSpectroscopyEpoch):
         self.read_pypeit_sorted_file()
 
         for config in setups:
+
+            self.add_configuration(config)
+            config_dir = os.path.join(pypeit_dir, self._config_filename(config))
+            self.set_configuration_property(
+                config=config,
+                key="pypeit_run_dir",
+                value=config_dir
+            )
+            self.set_configuration_property(
+                config=config,
+                key="pypeit_science_dir",
+                value=os.path.join(config_dir, 'Science')
+            )
+
             spec.pypeit_setup(
-                root=self.paths['download'],
-                output_path=output_dir,
+                root=self.get_path('download'),
+                output_path=pypeit_dir,
                 spectrograph=self._instrument_pypeit,
                 cfg_split=config
             )
@@ -66,20 +83,41 @@ class FORS2SpectroscopyEpoch(ESOSpectroscopyEpoch):
                 "##########################################################\n") + std_start_index
             std_lines = self._pypeit_sorted_file[std_start_index:std_end_index]
             # Read in .pypeit file
-            self.read_pypeit_file(setup=config)
+            self.read_pypeit_file(config=config)
             # Add lines to set slit prediction to "nearest" in .pypeit file.
-            self.add_pypeit_user_param(param=["calibrations", "slitedges", "sync_predict"], value="nearest")
+            self.add_pypeit_user_param(
+                param=["calibrations", "slitedges", "sync_predict"],
+                value="nearest",
+                config=config
+            )
             # Insert bias lines from .sorted file
-            self.add_pypeit_file_lines(lines=bias_lines + std_lines)
+            self.add_pypeit_file_lines(
+                config=config,
+                lines=bias_lines + std_lines
+            )
             # Write modified .pypeit file back to disk.
-            self.write_pypeit_file_science()
+            self.write_pypeit_file_science(config=config)
 
-    def proc_pypeit_run(self, no_query: bool = False, do_not_reuse_masters: bool = False, **kwargs):
-        spec.run_pypeit(
-            pypeit_file=self.paths['pypeit_file'],
-            redux_path=self.paths['pypeit_run_dir'],
-            do_not_reuse_masters=do_not_reuse_masters
-        )
+    def proc_pypeit_run(
+            self,
+            output_dir: str,
+            **kwargs
+    ):
+        do_not_reuse_masters = False
+        if "do_not_reuse_masters" in kwargs:
+            do_not_reuse_masters = kwargs["do_not_reuse_masters"]
+        for config in self.configurations:
+            spec.run_pypeit(
+                pypeit_file=self.get_configuration_property(
+                    config=config,
+                    key='pypeit_file'
+                ),
+                redux_path=self.get_configuration_property(
+                    config=config,
+                    key='pypeit_run_dir'
+                ),
+                do_not_reuse_masters=do_not_reuse_masters
+            )
 
     def proc_pypeit_coadd(self, no_query: bool = False, **kwargs):
         for file in filter(lambda f: "spec1d" in f, os.listdir(self.paths["pypeit_science_dir"])):

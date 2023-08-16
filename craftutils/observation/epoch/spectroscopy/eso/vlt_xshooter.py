@@ -114,7 +114,7 @@ class XShooterSpectroscopyEpoch(ESOSpectroscopyEpoch):
                 spec.pypeit_setup(root=self.paths['raw_dir'], output_path=self.paths['pypeit_dir'],
                                   spectrograph=f"{self._instrument_pypeit}_{arm}", cfg_split=setup)
                 # Retrieve text from .pypeit file
-                self.read_pypeit_file(setup=setup)
+                self.read_pypeit_file(config=setup)
                 # Add parameter to use dark frames for NIR reduction.
                 if arm == "nir":
                     self.add_pypeit_user_param(param=["calibrations", "pixelflatframe", "process", "use_darkimage"],
@@ -300,10 +300,10 @@ class XShooterSpectroscopyEpoch(ESOSpectroscopyEpoch):
         else:
             raise KeyError("pypeit_setup_dir has not been set.")
 
-    def read_pypeit_file(self, setup: str):
+    def read_pypeit_file(self, config: str):
         if "pypeit_dir" in self.paths and self.paths["pypeit_dir"] is not None:
             arm = self._get_current_arm()
-            filename = f"{self._instrument_pypeit}_{arm}_{setup}"
+            filename = f"{self._instrument_pypeit}_{arm}_{config}"
             self._read_pypeit_file(filename=filename)
             return self._pypeit_file[arm]
         else:
