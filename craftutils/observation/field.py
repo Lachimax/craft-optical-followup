@@ -159,6 +159,8 @@ class Field:
                     continue
                 self.add_object_from_dict(obj_dict)
 
+        self.gather_objects()
+
         self.load_output_file()
 
         self.extent = extent
@@ -324,6 +326,28 @@ class Field:
 
 
         return epoch
+
+    def _obj_path(self):
+        obj_path = os.path.join(self.param_dir, "objects")
+        return obj_path
+
+    def new_object(
+            self,
+            name: str,
+            obj_type: str,
+            position: Union[SkyCoord, str, tuple, list, np.ndarray],
+            **kwargs
+    ):
+        objects_path = self._obj_path()
+        obj_path = os.path.join(objects_path, f"{name}.yaml")
+        obj_type = objects.Object.select_child_class(obj_type=obj_type)
+        obj_dict = obj_type.default_params()
+        obj_dict["name"] = name
+        obj_dict["field"] = self.name
+        obj_dict["position"] = astm.attempt_skycoord(position)
+        obj_dict.update(kwargs)
+        p.save_params(file=obj_path, dictionary=obj_dict)
+        return self.add_object_from_dict(obj_dict)
 
     def new_epoch_imaging(self):
         return self._new_epoch(mode="imaging")
@@ -622,8 +646,10 @@ class Field:
         obj.field = self
 
     def add_object_from_dict(self, obj_dict: dict):
-        obj = objects.Object.from_dict(obj_dict, field=self)
+        obj_dict["field"] = self
+        obj = objects.Object.from_dict(obj_dict)
         self.add_object(obj=obj)
+        return obj
 
     def object_properties(self):
         self.objects.sort(key=lambda o: o.name, reverse=True)
@@ -718,7 +744,7 @@ class Field:
             "name": None,
             "type": "Field",
             "centre": objects.position_dictionary.copy(),
-            "objects": [objects.Object.default_params()],
+            # "objects": [objects.Object.default_params()],
             "extent": 0.3 * units.deg,
             "survey": None
         }
@@ -924,20 +950,20 @@ class FRBField(Field):
                 centre_coords = frb.position
 
         # Input attributes
-        super().__init__(name=name,
-                         centre_coords=centre_coords,
-                         param_path=param_path,
-                         data_path=data_path,
-                         objs=objs,
-                         extent=extent,
-                         **kwargs
-                         )
+        super().__init__(
+            name=name,
+            centre_coords=centre_coords,
+            param_path=param_path,
+            data_path=data_path,
+            objs=objs,
+            extent=extent,
+            **kwargs
+        )
 
         self.frb = frb
         if self.frb is not None:
-
             if isinstance(self.frb, dict):
-                self.frb = objects.FRB.from_dict(self.frb, field=self)
+                self.frb = objects.FRB.from_dict(self.frb)
 
             self.frb.field = self
             if self.frb.host_galaxy is not None:

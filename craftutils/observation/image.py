@@ -870,8 +870,6 @@ class ImagingImage(Image):
     ):
         super().__init__(path=path, frame_type=frame_type, instrument_name=instrument_name)
 
-        print("Initiating", path)
-
         self.wcs = []
 
         self.filter_name = None
@@ -5536,6 +5534,16 @@ class FORS2CoaddedImage(CoaddedImage):
         else:
             return None
 
+class GMOSCoaddedImage(CoaddedImage):
+    instrument_name="gs-gmos"
+    @classmethod
+    def header_keys(cls):
+        header_keys = super().header_keys()
+        header_keys.update({
+            "filter": "FILTER2",
+            "noise_read": "RDNOISE"
+        })
+        return header_keys
 
 class GSAOIImage(CoaddedImage):
     instrument_name = "gs-aoi"

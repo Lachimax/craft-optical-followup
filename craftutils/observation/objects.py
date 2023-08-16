@@ -21,6 +21,7 @@ import craftutils.retrieve as r
 import craftutils.observation as obs
 import craftutils.observation.instrument as inst
 import craftutils.observation.filters as filters
+import craftutils.observation.sed as sed
 from craftutils.photometry import distance_modulus
 
 cosmology = cosmo.Planck18
@@ -332,6 +333,12 @@ class Object:
             self.b = self.photometry_args["b"]
             self.theta = self.photometry_args["theta"]
             self.kron = self.photometry_args["kron_radius"]
+
+    def _get_object(self, obj_name: str):
+        if self.field is not None and obj_name in self.field.objects_dict:
+            return self.field.objects_dict
+        else:
+            return None
 
     def set_name_filesys(self):
         if self.name is not None:
@@ -1177,21 +1184,34 @@ class Object:
                 {
                     "frame": None
                 },
-            "publication_doi": None
+            "publication_doi": None,
+            "field": None,
+            "other_names": [],
         }
         return default_params
 
     @classmethod
-    def from_dict(cls, dictionary: dict, field=None) -> 'Object':
+    def from_dict(cls, dictionary: dict, **kwargs) -> 'Object':
         """
         Construct an Object or appropriate child class (FRB, Galaxy...) from a passed dict.
+
         :param dictionary: dict with keys:
             'position': position dictionary as given by position_dictionary
             'position_err':
         :return: Object reflecting dictionary.
         """
+        dictionary.update(kwargs)
         dict_pristine = dictionary.copy()
-        ra, dec = p.select_coords(dictionary.pop("position"))
+        position = dictionary.pop("position")
+        if isinstance(position, dict):
+            ra, dec = p.select_coords(position)
+            position = f"{ra} {dec}"
+        elif isinstance(position, str):
+            astm.attempt_skycoord(position)
+        elif not isinstance(position, SkyCoord):
+            raise TypeError(f"position type {type(position)} not recognised. "
+                            f"Can be SkyCoord, string (hms dms), or dictionary (see objects.position_dictionary)")
+
         if "position_err" in dictionary:
             position_err = dictionary.pop("position_err")
         else:
@@ -1212,17 +1232,13 @@ class Object:
         else:
             name = None
 
-        if selected in (Object, FRB):
-            return selected(
-                name=name,
-                position=f"{ra} {dec}",
-                position_err=position_err,
-                field=field,
-                plotting=plotting,
-                **dictionary
-            )
-        else:
-            return selected.from_dict(dictionary=dict_pristine, field=field)
+        return selected(
+            name=name,
+            position=position,
+            position_err=position_err,
+            plotting=plotting,
+            **dictionary
+        )
 
     @classmethod
     def select_child_class(cls, obj_type: str):
@@ -1233,6 +1249,8 @@ class Object:
             return FRB
         elif obj_type == "star":
             return Object
+        elif obj_type == "transienthostcandidate":
+            return TransientHostCandidate
         else:
             raise ValueError(f"Didn't recognise obj_type '{obj_type}'")
 
@@ -1404,6 +1422,8 @@ class Galaxy(Extragalactic):
         self.halo_mb15 = None
         self.halo_mb04 = None
 
+        self.sed_models = {}
+
         self.cigale_model_path = None
         self.cigale_model = None
 
@@ -1413,7 +1433,31 @@ class Galaxy(Extragalactic):
         self.cigale_results_path = None
         self.cigale_results = None
 
+    def sed_model_path(self):
+        path = os.path.join(self.data_path, "sed_models")
+        u.mkdir_check(path)
+        return path
+
+    def add_sed_model(
+            self,
+            path: str,
+            name: str,
+            model_type: type = sed.SEDModel,
+            **kwargs
+    ):
+        sed_path = os.path.join(self.sed_model_path(), name)
+        u.mkdir_check(sed_path)
+        self.sed_models[name] = model_type(
+            z=self.z,
+            path=path,
+            output_dir=sed_path,
+            name=name,
+            **kwargs
+        )
+        return self.sed_models[name]
+
     def load_cigale_model(self, force: bool = False):
+        # TODO: incorporate into SEDModel
         if self.cigale_model_path is None:
             print(f"Cannot load CIGALE model; {self}.cigale_model_path has not been set.")
         elif force or self.cigale_model is None:
@@ -1445,8 +1489,10 @@ class Galaxy(Extragalactic):
         if outputs is not None:
             if "mass_stellar" in outputs and outputs["mass_stellar"] is not None:
                 self.mass_stellar = outputs["mass_stellar"]
-            if "mass_stellar_err" in outputs and outputs["mass_stellar_err"] is not None:
-                self.mass_stellar_err = outputs["mass_stellar_err"]
+            if "mass_stellar_err_plus" in outputs and outputs["mass_stellar_err_plus"] is not None:
+                self.mass_stellar_err_plus = outputs["mass_stellar_err_plus"]
+            if "mass_stellar_err_minus" in outputs and outputs["mass_stellar_err_minus"] is not None:
+                self.mass_stellar_err_minus = outputs["mass_stellar_err_minus"]
             if "sfr" in outputs and outputs["sfr"] is not None:
                 self.sfr = outputs["sfr"]
             if "sfr_err" in outputs and outputs["sfr_err"] is not None:
@@ -1575,23 +1621,6 @@ class Galaxy(Extragalactic):
         })
         return default_params
 
-    # TODO: There do not need to be separate methods per class for this. Just pass dictionary as a **kwargs and be done with it
-    @classmethod
-    def from_dict(cls, dictionary: dict, field=None):
-        ra, dec = p.select_coords(dictionary.pop("position"))
-        if "position_err" in dictionary:
-            position_err = dictionary.pop("position_err")
-        else:
-            position_err = PositionUncertainty.default_params()
-        return cls(
-            name=dictionary.pop("name"),
-            position=f"{ra} {dec}",
-            position_err=position_err,
-            z=dictionary.pop("z"),
-            field=field,
-            **dictionary
-        )
-
 
 @u.export
 class TransientHostCandidate(Galaxy):
@@ -1617,6 +1646,18 @@ class TransientHostCandidate(Galaxy):
         if "P_Ox" in kwargs:
             self.P_Ox = kwargs["P_Ox"]
 
+    @classmethod
+    def default_params(cls):
+        default_params = super().default_params()
+        default_params.update({
+            "type": "TransientHostCandidate",
+            "transient": None,
+            "P_O": None,
+            "P_xO": None,
+            "P_Ox": None
+        })
+        return default_params
+
 
 dm_units = units.parsec * units.cm ** -3
 
@@ -1637,6 +1678,10 @@ class Transient(Object):
         super().__init__(
             **kwargs
         )
+        if isinstance(host_galaxy, str):
+            hg = self._get_object(host_galaxy)
+            if hg:
+                host_galaxy = hg
         self.host_galaxy = host_galaxy
         self.host_candidate_tables = {}
         self.host_candidates = []
@@ -1717,6 +1762,7 @@ class FRB(Transient):
             priors: dict = {},
             offset_priors: dict = {"scale": 0.5},
             config: dict = {},
+            associate_kwargs={}
     ):
         """
         Performs a customised PATH run on an image.
@@ -1743,20 +1789,27 @@ class FRB(Transient):
         )
         #     img.load_output_file()
         img.extract_pixel_scale()
-        instname = img.instrument.name.replace("-", "_").upper()
-        filname = f'{instname}_{img.filter.band_name}'
+        if img.filter.frb_repo_name is None:
+            instname = img.instrument.name.replace("-", "_").upper()
+            filname = f'{instname}_{img.filter.band_name}'
+        else:
+            filname = img.filter.frb_repo_name
         # TODO: subtract Galactic extinction from zeropoint
+        if "max_radius" in config:
+            max_radius = config["max_radius"]
+        else:
+            max_radius = 20.
         config_n = dict(
-            max_radius=10,
+            max_radius=int(max_radius),
             skip_bayesian=False,
             npixels=9,
             image_file=img.path,
-            cut_size=30.,
+            cut_size=max_radius * 2,
             filter=filname,
             ZP=img.zeropoint_best["zeropoint_img"].value,
             deblend=True,
             cand_bright=17.,
-            cand_separation=10 * units.arcsec,
+            cand_separation=max_radius * units.arcsec,
             plate_scale=(1 * units.pix).to(units.arcsec, img.pixel_scale_y),
         )
         config_n.update(config)
@@ -1785,6 +1838,7 @@ class FRB(Transient):
                 config=config,
                 FRB=x_frb,
                 prior=prior_set,
+                **associate_kwargs
                 # extinction_correct=True
             )
             p_ux = ass.P_Ux
@@ -1806,7 +1860,7 @@ class FRB(Transient):
             p_ox = None
             p_ux = None
 
-        return cand_tbl, p_ox, p_ux
+        return cand_tbl, p_ox, p_ux, prior_set, config_n
 
     def consolidate_candidate_tables(
             self,
@@ -1923,6 +1977,9 @@ class FRB(Transient):
     def default_params(cls):
         default_params = super().default_params()
         default_params.update({
+            "type": "FRB",
+            "dm": 0.0 * dm_units,
+            "snr": 0.0,
             "host_galaxy": Galaxy.default_params(),
             "date": "0000-01-01",
             "tau": None,
@@ -2580,20 +2637,11 @@ class FRB(Transient):
         return outputs
 
     @classmethod
-    def from_dict(cls, dictionary: dict, name: str = None, field=None):
-        frb = super().from_dict(dictionary=dictionary)
+    def from_dict(cls, dictionary: dict, **kwargs):
+        frb = super().from_dict(dictionary=dictionary, **kwargs)
         # if "dm" in dictionary:
         #     frb.dm = u.check_quantity(dictionary["dm"], dm_units)
         dictionary["host_galaxy"]["transient"] = frb
-        host_galaxy = TransientHostCandidate.from_dict(dictionary=dictionary["host_galaxy"], field=field)
+        host_galaxy = TransientHostCandidate.from_dict(dictionary=dictionary["host_galaxy"])
         frb.host_galaxy = host_galaxy
         return frb
-
-    @classmethod
-    def default_params(cls):
-        default_params = super().default_params()
-        default_params.update({
-            "dm": 0.0 * dm_units,
-            "snr": 0.0,
-        })
-        return default_params

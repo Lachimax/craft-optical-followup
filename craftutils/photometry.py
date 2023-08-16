@@ -505,7 +505,8 @@ def magnitude_AB(
         flux: units.Quantity,
         transmission: Union[np.ndarray, units.Quantity],
         frequency: units.Quantity,
-        use_quantum_factor: bool = True
+        use_quantum_factor: bool = True,
+        mag_unit: bool = False
 
 ):
     """
@@ -526,8 +527,10 @@ def magnitude_AB(
 
     flux_band = flux_from_band(flux=flux_tbl, use_quantum_factor=use_quantum_factor)
     flux_ab_this = flux_ab(flux_tbl)
-
-    return -2.5 * np.log10(flux_band / flux_ab_this)
+    val = -2.5 * np.log10(flux_band / flux_ab_this)
+    if mag_unit:
+        val *= units.mag
+    return val
 
 
 def magnitude_absolute_from_luminosity(
