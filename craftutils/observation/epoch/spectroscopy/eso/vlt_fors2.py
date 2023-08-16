@@ -120,6 +120,10 @@ class FORS2SpectroscopyEpoch(ESOSpectroscopyEpoch):
             )
 
     def proc_pypeit_coadd(self, no_query: bool = False, **kwargs):
-        for file in filter(lambda f: "spec1d" in f, os.listdir(self.paths["pypeit_science_dir"])):
-            path = os.path.join(self.paths["pypeit_science_dir"], file)
-            os.system(f"pypeit_show_1dspec {path}")
+        for config in self.configurations:
+            for file in filter(lambda f: "spec1d" in f, os.listdir(self.paths["pypeit_science_dir"])):
+                path = os.path.join(self.get_configuration_property(
+                    config=config,
+                    key="pypeit_science_dir",
+                ))
+                # os.system(f"pypeit_show_1dspec {path}")

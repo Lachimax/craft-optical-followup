@@ -3581,11 +3581,18 @@ class ImagingImage(Image):
         rec_y = centre_y - np.cos(np.deg2rad(position_angle)) * slit_length / 2 - np.sin(
             np.deg2rad(position_angle)) * slit_width / 2
 
+        default_kwargs = dict(
+            linewidth=2,
+            edgecolor='white',
+            facecolor='none'
+        )
+        kwargs.update(default_kwargs)
+
         rect = Rectangle(
             (rec_x, rec_y),
             slit_width,
             slit_length,
-            angle=position_angle,
+            angle=position_angle.value,
             **kwargs
         )
         ax.add_artist(rect)
@@ -5561,8 +5568,10 @@ class FORS2CoaddedImage(CoaddedImage):
         else:
             return None
 
+
 class GMOSCoaddedImage(CoaddedImage):
-    instrument_name="gs-gmos"
+    instrument_name = "gs-gmos"
+
     @classmethod
     def header_keys(cls):
         header_keys = super().header_keys()
@@ -5571,6 +5580,7 @@ class GMOSCoaddedImage(CoaddedImage):
             "noise_read": "RDNOISE"
         })
         return header_keys
+
 
 class GSAOIImage(CoaddedImage):
     instrument_name = "gs-aoi"

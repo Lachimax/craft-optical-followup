@@ -159,7 +159,7 @@ class Field:
                     continue
                 self.add_object_from_dict(obj_dict)
 
-        self.gather_objects()
+        # self.gather_objects()
 
         self.load_output_file()
 
