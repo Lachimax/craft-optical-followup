@@ -69,8 +69,10 @@ class SpectroscopyEpoch(Epoch):
     def _pypeit_flux(self):
         pypeit_run_dir = self.get_path("pypeit_run_dir")
         pypeit_science_dir = os.path.join(pypeit_run_dir, "Science")
-        std_reduced_filename = filter(lambda f: "spec1d" in f and "STD,FLUX" in f and f.endswith(".fits"),
-                                      os.listdir(pypeit_science_dir)).__next__()
+        std_reduced_filename = filter(
+            lambda f: "spec1d" in f and "STD,FLUX" in f and f.endswith(".fits"),
+            os.listdir(pypeit_science_dir)
+        ).__next__()
         std_reduced_path = os.path.join(pypeit_science_dir, std_reduced_filename)
         if not self.quiet:
             print(f"Using {std_reduced_path} for fluxing.")
@@ -305,7 +307,7 @@ class SpectroscopyEpoch(Epoch):
                 "method": cls.proc_pypeit_setup,
                 "message": "Do PypeIt setup?",
                 "default": True,
-                "keywords": {}
+                "keywords": {"setups": []}
             },
             "pypeit_run": {
                 "method": cls.proc_pypeit_run,
