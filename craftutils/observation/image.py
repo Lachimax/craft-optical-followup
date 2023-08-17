@@ -3576,10 +3576,8 @@ class ImagingImage(Image):
         slit_width = self.pixel(width).value
         slit_length = self.pixel(length).value
         # Do some trigonometry to determine pixel coordinates for the Rectangle badge (which uses the corner as its origin. Thanks, matplotlib.)
-        rec_x = centre_x + np.sin(np.deg2rad(position_angle)) * slit_length / 2 + np.cos(
-            position_angle) * slit_width / 2
-        rec_y = centre_y - np.cos(np.deg2rad(position_angle)) * slit_length / 2 + np.sin(
-            position_angle) * slit_width / 2
+        rec_x = centre_x + np.sin(position_angle) * slit_length / 2 + np.cos(position_angle) * slit_width / 2
+        rec_y = centre_y - np.cos(position_angle) * slit_length / 2 - np.sin(position_angle) * slit_width / 2
 
         default_kwargs = dict(
             linewidth=2,
