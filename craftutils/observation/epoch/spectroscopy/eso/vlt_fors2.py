@@ -79,8 +79,11 @@ class FORS2SpectroscopyEpoch(ESOSpectroscopyEpoch):
             self.standards_raw.append(std_raw)
             std_start_index = self._pypeit_sorted_file.index(std_line)
             # Find last line of the std-obs configuration (encapsulating the required calibration files)
-            std_end_index = self._pypeit_sorted_file[std_start_index:].index(
-                "##########################################################\n") + std_start_index
+            cfg_break = "##########################################################\n"
+            if cfg_break in self._pypeit_sorted_file[std_start_index:]:
+                std_end_index = self._pypeit_sorted_file[std_start_index:].index(cfg_break) + std_start_index
+            else:
+                std_end_index = self._pypeit_sorted_file[std_start_index:].index("##end\n")
             std_lines = self._pypeit_sorted_file[std_start_index:std_end_index]
             # Read in .pypeit file
             self.read_pypeit_file(config=config)
@@ -121,7 +124,7 @@ class FORS2SpectroscopyEpoch(ESOSpectroscopyEpoch):
 
     def proc_pypeit_coadd(self, no_query: bool = False, **kwargs):
         for config in self.configurations:
-            for file in filter(lambda f: "spec1d" in f, os.listdir(self.paths["pypeit_science_dir"])):
+            for file in filter(lambda f: "spec1d" in f, os.listdir(self.get_configuration_property(config, "pypeit_science_dir"))):
                 path = os.path.join(self.get_configuration_property(
                     config=config,
                     key="pypeit_science_dir",
