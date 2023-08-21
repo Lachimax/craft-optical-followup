@@ -533,6 +533,9 @@ AND dec<{dec_max}
             raise TypeError(f"obj must be str or SkyCoord, not {type(obj)}")
     u.debug_print(1, "Query for ESO Archive:\n")
     u.debug_print(1, query)
+
+    print(query)
+
     return query
 
 

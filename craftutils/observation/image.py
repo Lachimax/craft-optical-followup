@@ -11,7 +11,6 @@ import astropy.io.fits as fits
 import astropy.table as table
 import astropy.units as units
 import astropy.wcs as wcs
-import astropy.cosmology as cosmo
 import matplotlib.pyplot as plt
 import numpy as np
 from astroalign import register
@@ -22,7 +21,7 @@ from astropy.time import Time
 from astropy.visualization import (
     ImageNormalize, LogStretch, SqrtStretch, MinMaxInterval, ZScaleInterval)
 from astropy.visualization import quantity_support
-from matplotlib.patches import Ellipse
+from matplotlib.patches import Ellipse, Rectangle
 
 try:
     import photutils
@@ -829,6 +828,26 @@ class ESOImage(Image):
     """
     Generic parent class for ESO images, both spectra and imaging
     """
+
+    def extract_frame_type(self):
+        obj = self.extract_object()
+        category = self.extract_header_item("ESO DPR CATG")
+        if category is None:
+            category = self.extract_header_item("ESO PRO CATG")
+        if obj == "BIAS":
+            self.frame_type = "bias"
+        elif "FLAT" in obj:
+            self.frame_type = "flat"
+        elif obj == "STD":
+            self.frame_type = "standard"
+        elif obj == "DARK":
+            self.frame_type = "dark"
+        elif category == "SCIENCE":
+            self.frame_type = "science"
+        elif category == "SCIENCE_REDUCED_IMG":
+            self.frame_type = "science_reduced"
+        u.debug_print(2, f"ESOImagingImage.extract_frame_type(): {obj=}, {category=}, {self.frame_type=}")
+        return self.frame_type
 
     @classmethod
     def header_keys(cls):
@@ -2745,7 +2764,6 @@ class ImagingImage(Image):
         data = self.data[ext].value
         pix_mags = self.pixel_magnitudes()
 
-
     def reproject(
             self,
             other_image: 'ImagingImage',
@@ -3543,6 +3561,40 @@ class ImagingImage(Image):
         u.debug_print(2, f"{self}.plot_catalogue(): len(cat):", len(cat))
 
         return ax, fig
+
+    def plot_slit(
+            self,
+            ax: plt.Axes,
+            centre: SkyCoord,
+            width: units.Quantity,
+            length: units.Quantity,
+            position_angle: units.Quantity,
+            **kwargs
+    ):
+        position_angle = (u.check_quantity(position_angle, units.deg) - self.extract_rotation_angle())
+        centre_x, centre_y = self.world_to_pixel(centre)
+        slit_width = self.pixel(width).value
+        slit_length = self.pixel(length).value
+        # Do some trigonometry to determine pixel coordinates for the Rectangle badge (which uses the corner as its origin. Thanks, matplotlib.)
+        rec_x = centre_x + np.sin(position_angle) * slit_length / 2 + np.cos(position_angle) * slit_width / 2
+        rec_y = centre_y - np.cos(position_angle) * slit_length / 2 + np.sin(position_angle) * slit_width / 2
+
+        default_kwargs = dict(
+            linewidth=2,
+            edgecolor='white',
+            facecolor='none'
+        )
+        default_kwargs.update(kwargs)
+
+        rect = Rectangle(
+            (rec_x, rec_y),
+            slit_width,
+            slit_length,
+            angle=position_angle.value,
+            **default_kwargs
+        )
+        ax.add_artist(rect)
+        return ax
 
     def insert_synthetic_sources(
             self,
@@ -5261,25 +5313,6 @@ class PanSTARRS1Cutout(SurveyCutout):
 
 
 class ESOImagingImage(ImagingImage, ESOImage):
-    def extract_frame_type(self):
-        obj = self.extract_object()
-        category = self.extract_header_item("ESO DPR CATG")
-        if category is None:
-            category = self.extract_header_item("ESO PRO CATG")
-        if obj == "BIAS":
-            self.frame_type = "bias"
-        elif "FLAT" in obj:
-            self.frame_type = "flat"
-        elif obj == "STD":
-            self.frame_type = "standard"
-        elif obj == "DARK":
-            self.frame_type = "dark"
-        elif category == "SCIENCE":
-            self.frame_type = "science"
-        elif category == "SCIENCE_REDUCED_IMG":
-            self.frame_type = "science_reduced"
-        u.debug_print(2, f"ESOImagingImage.extract_frame_type(): {obj=}, {category=}, {self.frame_type=}")
-        return self.frame_type
 
     def extract_airmass(self):
         key = self.header_keys()["airmass"]
@@ -5533,8 +5566,10 @@ class FORS2CoaddedImage(CoaddedImage):
         else:
             return None
 
+
 class GMOSCoaddedImage(CoaddedImage):
-    instrument_name="gs-gmos"
+    instrument_name = "gs-gmos"
+
     @classmethod
     def header_keys(cls):
         header_keys = super().header_keys()
@@ -5543,6 +5578,7 @@ class GMOSCoaddedImage(CoaddedImage):
             "noise_read": "RDNOISE"
         })
         return header_keys
+
 
 class GSAOIImage(CoaddedImage):
     instrument_name = "gs-aoi"
@@ -5685,7 +5721,7 @@ class RawSpectrum(Spectrum):
         attributes = line.split('|')
         attributes = list(map(lambda at: at.replace(" ", ""), attributes))
         inst = from_path(
-            path=os.path.join(pypeit_raw_path, attributes[1]),
+            path=os.path.join(pypeit_raw_path, attributes[0]),
             frame_type=attributes[2],
             decker=attributes[7],
             binning=attributes[8],
