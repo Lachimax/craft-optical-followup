@@ -3008,18 +3008,6 @@ class ImagingImage(Image):
             print("Sky background already estimated.")
         return self.sky_background
 
-    def plot_apertures(self, dual=False, output: str = None, show: bool = False):
-        cat = self.get_source_cat(dual=dual).table
-
-        if cat is not None:
-            pl.plot_all_params(image=self.path, cat=cat, kron=True, show=False)
-            plt.title(self.filter_name)
-            if output is None:
-                output = os.path.join(self.data_path, f"{self.name}_source_cat_dual-{dual}.pdf")
-            plt.savefig(output)
-            if show:
-                plt.show()
-
     def find_object(self, coord: SkyCoord, dual: bool = True):
         cat = self.get_source_cat(dual=dual)
         u.debug_print(2, f"{self}.find_object(): dual ==", dual)
@@ -3039,6 +3027,119 @@ class ImagingImage(Image):
         source_cat = self.get_source_cat(dual=dual)
         i, _ = u.find_nearest(source_cat["NUMBER"], index)
         return source_cat[i], i
+
+    def pixel(
+            self,
+            value: Union[float, int, units.Quantity],
+            z: float = None,
+            obj: objects.Extragalactic = None,
+            ext: int = 0
+    ):
+        value = u.check_quantity(
+            number=value,
+            unit=units.pix,
+            allow_mismatch=True,
+            enforce_equivalency=False
+        )
+
+        if not value.unit.is_equivalent(units.pix):
+            if value.unit.is_equivalent(units.m):
+                if obj is None:
+                    if z is None:
+                        raise ValueError("If `value` is in units of physical size, then `obj` or `z` must be provided.")
+                    else:
+                        obj = objects.Extragalactic(z=z)
+                value = obj.angular_size(
+                    distance=value
+                )
+            self.extract_pixel_scale(ext)
+            value = value.to(units.pix, self.pixel_scale_y)
+
+        return value
+
+    def frame_from_coord(
+            self,
+            frame: units.Quantity,
+            centre: SkyCoord,
+            ext: int = 0,
+
+    ):
+        frame = self.pixel(frame, ext=ext)
+        self.load_data()
+        x, y = self.world_to_pixel(centre, 0)
+        return u.frame_from_centre(frame=frame.value, x=x, y=y, data=self.data[ext])
+
+    def prep_for_colour(
+            self,
+            output_path: str,
+            frame: units.Quantity,
+            centre: SkyCoord = None,
+            vmax: float = None,
+            vmin: float = None,
+            ext: int = 0,
+            scale_to_jansky: bool = False
+    ):
+        left, right, bottom, top = self.frame_from_coord(
+            frame=frame,
+            centre=centre,
+            ext=ext
+        )
+        trimmed = self.trim(
+            left=left,
+            right=right,
+            bottom=bottom,
+            top=top,
+            output_path=output_path
+        )
+        trimmed.load_wcs()
+
+        if scale_to_jansky:
+            data, vs = trimmed.scale_to_jansky(ext, vmax, vmin)
+            vmax = u.dequantify(vs[0])
+            vmin = u.dequantify(vs[1])
+            data = data.value
+        else:
+            data = trimmed.data[0].value
+
+        if vmax is not None:
+            data[data > vmax] = vmax
+        if vmin is not None:
+            data[data < vmin] = vmin
+
+        median = np.nanmedian(data)
+        data_subbed = data - median
+        data_subbed[np.isnan(data_subbed)] = median
+        # data_scaled = data_subbed * 255 / np.max(data_subbed)
+        return data_subbed, trimmed
+
+    def nice_frame(
+            self,
+            row: Union[table.Row, dict],
+            frame: units.Quantity = 10 * units.pix,
+    ):
+        self.extract_pixel_scale()
+        u.debug_print(1, "ImagingImage.nice_frame(): row['KRON_RADIUS'], row['A_WORLD'] ==", row['KRON_RADIUS'],
+                      row['A_WORLD'].to(units.arcsec))
+        kron_a = row['KRON_RADIUS'] * row['A_WORLD']
+        u.debug_print(1, "ImagingImage.nice_frame(): kron_a ==", kron_a)
+        pix_scale = self.pixel_scale_y
+        u.debug_print(1, "ImagingImage.nice_frame(): self.pixel_scale_dec ==", self.pixel_scale_y)
+        this_frame = max(
+            kron_a.to(units.pixel, pix_scale), frame)  # + 5 * units.pix,
+        u.debug_print(1, "ImagingImage.nice_frame(): this_frame ==", this_frame)
+        return this_frame
+
+    def plot_apertures(self, dual=False, output: str = None, show: bool = False):
+        cat = self.get_source_cat(dual=dual).table
+
+        if cat is not None:
+            pl.plot_all_params(image=self.path, cat=cat, kron=True, show=False)
+            plt.title(self.filter_name)
+            if output is None:
+                output = os.path.join(self.data_path, f"{self.name}_source_cat_dual-{dual}.pdf")
+            plt.savefig(output)
+            if show:
+                plt.show()
 
     def plot_subimage(
             self,
@@ -3324,115 +3425,6 @@ class ImagingImage(Image):
         # I am a matplotlib god.
 
         return ax
-
-    # def pixel(self, value: Union[float, int, units.Quantity], ext: int = 0):
-    #     if not isinstance(value, units.Quantity):
-    #         value *= units.pix
-    #     else:
-    #         self.extract_pixel_scale(ext)
-    #         value = value.to(units.pix, self.pixel_scale_y)
-    #     return value
-
-    def pixel(
-            self,
-            value: Union[float, int, units.Quantity],
-            z: float = None,
-            obj: objects.Extragalactic = None,
-            ext: int = 0
-    ):
-        value = u.check_quantity(
-            number=value,
-            unit=units.pix,
-            allow_mismatch=True,
-            enforce_equivalency=False
-        )
-
-        if not value.unit.is_equivalent(units.pix):
-            if value.unit.is_equivalent(units.m):
-                if obj is None:
-                    if z is None:
-                        raise ValueError("If `value` is in units of physical size, then `obj` or `z` must be provided.")
-                    else:
-                        obj = objects.Extragalactic(z=z)
-                value = obj.angular_size(
-                    distance=value
-                )
-            self.extract_pixel_scale(ext)
-            value = value.to(units.pix, self.pixel_scale_y)
-
-        return value
-
-    def frame_from_coord(
-            self,
-            frame: units.Quantity,
-            centre: SkyCoord,
-            ext: int = 0,
-
-    ):
-        frame = self.pixel(frame, ext=ext)
-        self.load_data()
-        x, y = self.world_to_pixel(centre, 0)
-        return u.frame_from_centre(frame=frame.value, x=x, y=y, data=self.data[ext])
-
-    def prep_for_colour(
-            self,
-            output_path: str,
-            frame: units.Quantity,
-            centre: SkyCoord = None,
-            vmax: float = None,
-            vmin: float = None,
-            ext: int = 0,
-            scale_to_jansky: bool = False
-    ):
-        left, right, bottom, top = self.frame_from_coord(
-            frame=frame,
-            centre=centre,
-            ext=ext
-        )
-        trimmed = self.trim(
-            left=left,
-            right=right,
-            bottom=bottom,
-            top=top,
-            output_path=output_path
-        )
-        trimmed.load_wcs()
-
-        if scale_to_jansky:
-            data, vs = trimmed.scale_to_jansky(ext, vmax, vmin)
-            vmax = u.dequantify(vs[0])
-            vmin = u.dequantify(vs[1])
-            data = data.value
-        else:
-            data = trimmed.data[0].value
-
-        if vmax is not None:
-            data[data > vmax] = vmax
-        if vmin is not None:
-            data[data < vmin] = vmin
-
-        median = np.nanmedian(data)
-        data_subbed = data - median
-        data_subbed[np.isnan(data_subbed)] = median
-        # data_scaled = data_subbed * 255 / np.max(data_subbed)
-        return data_subbed, trimmed
-
-    def nice_frame(
-            self,
-            row: Union[table.Row, dict],
-            frame: units.Quantity = 10 * units.pix,
-    ):
-        self.extract_pixel_scale()
-        u.debug_print(1, "ImagingImage.nice_frame(): row['KRON_RADIUS'], row['A_WORLD'] ==", row['KRON_RADIUS'],
-                      row['A_WORLD'].to(units.arcsec))
-        kron_a = row['KRON_RADIUS'] * row['A_WORLD']
-        u.debug_print(1, "ImagingImage.nice_frame(): kron_a ==", kron_a)
-        pix_scale = self.pixel_scale_y
-        u.debug_print(1, "ImagingImage.nice_frame(): self.pixel_scale_dec ==", self.pixel_scale_y)
-        this_frame = max(
-            kron_a.to(units.pixel, pix_scale), frame)  # + 5 * units.pix,
-        u.debug_print(1, "ImagingImage.nice_frame(): this_frame ==", this_frame)
-        return this_frame
 
     def plot_source_extractor_object(
             self,

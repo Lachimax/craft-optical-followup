@@ -192,26 +192,25 @@ class Field:
         else:
             warnings.warn(f"param_dir is not set for this {type(self)}.")
 
-    def _gather_objects(self, quiet: bool = True):
-        pass
-        # Forgot to finish this; copied _gather_epochs, needs adapting
-        # if not quiet:
-        #     print(f"Searching for object param files...")
-        # objs = {}
-        # if self.param_dir is not None:
-        #     obj_path = os.path.join(self.param_dir, "objects")
-        #     if not quiet:
-        #         print(f"Looking in {obj_path}")
-        #
-        #     epoch_params = list(filter(lambda f: f.endswith(".yaml"), os.listdir(instrument_path)))
-        #     epoch_params.sort()
-        #     for epoch_param in epoch_params:
-        #         epoch_name = epoch_param[:epoch_param.find(".yaml")]
-        #         param_path = os.path.join(instrument_path, epoch_param)
-        #         epoch = p.load_params(file=param_path)
-        #         epoch["format"] = "current"
-        #         epoch["param_path"] = param_path
-        #         epochs[epoch_name] = epoch
+    def gather_objects(self, quiet: bool = True):
+        if not quiet:
+            print(f"Searching for object param files...")
+
+        if self.param_dir is not None:
+            obj_path = self._obj_path()
+            if not quiet:
+                print(f"Looking in {obj_path}")
+
+            obj_params = list(filter(lambda f: f.endswith(".yaml"), os.listdir(obj_path)))
+            obj_params.sort()
+            for obj_param in obj_params:
+                obj_name = obj_param[:obj_param.find(".yaml")]
+                param_path = os.path.join(obj_path, obj_param)
+                obj_dict = p.load_params(file=param_path)
+                obj_dict["param_path"] = param_path
+                if "name" not in obj_dict:
+                    obj_dict["name"] = obj_name
+                self.add_object_from_dict(obj_dict=obj_dict)
 
     def _gather_epochs(self, mode: str = "imaging", quiet: bool = False):
         """
