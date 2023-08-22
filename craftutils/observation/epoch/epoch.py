@@ -38,10 +38,6 @@ import craftutils.wrap.dragons as dragons
 
 config = p.config
 
-epoch_stage_dirs = {"0-download": "0-data_with_raw_calibs",
-                    "2-pypeit": "2-pypeit",
-                    }
-
 active_epochs = {}
 
 if p.data_dir:
@@ -5580,4 +5576,3 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
                       dictionary=new_params)
 
         return output_path
-
