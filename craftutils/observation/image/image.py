@@ -308,9 +308,12 @@ class Image:
             frame_type: str = None,
             instrument_name: str = None,
             logg: log.Log = None,
+            **kwargs
     ):
-
-        if not os.path.isfile(path):
+        ignore_missing_path = False
+        if "ignore_missing_path" in kwargs:
+            ignore_missing_path = kwargs["ignore_missing_path"]
+        if not ignore_missing_path and not os.path.isfile(path):
             raise FileNotFoundError(f"The image file {path} does not exist.")
         active_images[path] = self
         if path.endswith("_outputs.yaml"):

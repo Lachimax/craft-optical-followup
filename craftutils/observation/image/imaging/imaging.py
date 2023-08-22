@@ -65,9 +65,15 @@ class ImagingImage(Image):
             path: str,
             frame_type: str = None,
             instrument_name: str = None,
-            load_outputs: bool = True
+            load_outputs: bool = True,
+            **kwargs
     ):
-        super().__init__(path=path, frame_type=frame_type, instrument_name=instrument_name)
+        super().__init__(
+            path=path,
+            frame_type=frame_type,
+            instrument_name=instrument_name,
+            **kwargs
+        )
 
         self.wcs = []
 
