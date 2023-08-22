@@ -159,7 +159,7 @@ class Field:
                     continue
                 self.add_object_from_dict(obj_dict)
 
-        # self.gather_objects()
+        self.gather_objects()
 
         self.load_output_file()
 
@@ -321,8 +321,6 @@ class Field:
         elif not isinstance(epoch, ep.Epoch):
             epoch = ep.SpectroscopyEpoch.from_file(epoch, field=self)
             self.epochs_spectroscopy_loaded[epoch.name] = epoch
-
-
 
         return epoch
 
@@ -1182,7 +1180,6 @@ class FRBField(Field):
         from matplotlib.patches import Ellipse
         img.load_headers()
         frb = self.frb.position
-        x, y = img.world_to_pixel(frb, 0)
         uncertainty = self.frb.position_err
         a, b = uncertainty.uncertainty_quadrature()
         if a == 0 * units.arcsec or b == 0 * units.arcsec:
@@ -1206,17 +1203,19 @@ class FRBField(Field):
         if img_err is not None:
             a = np.sqrt(a ** 2 + img_err ** 2)
             b = np.sqrt(b ** 2 + img_err ** 2)
-        e = Ellipse(
-            xy=(x, y),
-            width=2 * a.to(units.pix, img.pixel_scale_y).value,
-            height=2 * b.to(units.pix, img.pixel_scale_y).value,
-            angle=theta.value,
-            **frb_kwargs
+        ax = img.plot_ellipse(
+            ax=ax,
+            coord=frb,
+            a=a, b=b,
+            theta=theta,
+            plot_centre=plot_centre,
+            centre_kwargs=dict(
+                c=frb_kwargs["edgecolor"],
+                marker="x"
+            ),
+            **frb_kwargs,
         )
-        # e.set_edgecolor(color)
-        ax.add_artist(e)
-        if plot_centre:
-            ax.scatter(x, y, c=frb_kwargs["edgecolor"], marker="x")
+
         return ax
 
     @classmethod
