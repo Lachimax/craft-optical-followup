@@ -1214,6 +1214,46 @@ class ImagingImage(Image):
         y = u.dequantify(y, unit=units.pix)
         return SkyCoord.from_pixel(x, y, wcs=self.wcs[ext], origin=origin)
 
+    def plot_ellipse(
+            self,
+            ax: plt.Axes,
+            coord: SkyCoord,
+            a: units.Quantity,
+            b: units.Quantity = None,
+            theta: units.Quantity = None,
+            plot_centre: bool = False,
+            centre_kwargs: dict = {},
+            **kwargs
+    ):
+        if b is None:
+            b = a
+        if theta is None:
+            theta = 0 * units.deg
+        if "edgecolor" not in kwargs:
+            kwargs["edgecolor"] = "white"
+        if "facecolor" not in kwargs:
+            kwargs["facecolor"] = "none"
+        x, y = self.world_to_pixel(coord, 0)
+        e = Ellipse(
+            xy=(x, y),
+            width=2 * a.to(units.pix, self.pixel_scale_y).value,
+            height=2 * b.to(units.pix, self.pixel_scale_y).value,
+            angle=theta.value,
+            **kwargs
+        )
+        # e.set_edgecolor(color)
+        ax.add_artist(e)
+        if plot_centre:
+            if "c" not in centre_kwargs:
+                if "edgecolor" in kwargs:
+                    centre_kwargs["c"] = kwargs["edgecolor"]
+                else:
+                    centre_kwargs["c"] = "white"
+            if "marker" not in centre_kwargs:
+                centre_kwargs["marker"] = "x"
+            ax.scatter(x, y, **centre_kwargs)
+        return ax
+
     def load_data(self, force: bool = False):
         reset = force or not self.data
         super().load_data(force=force)
@@ -2583,6 +2623,7 @@ class ImagingImage(Image):
             output_path: str = None,
             ext: int = 0
     ):
+
         left = u.dequantify(left, unit=units.pix)
         right = u.dequantify(right, unit=units.pix)
         bottom = u.dequantify(bottom, unit=units.pix)
@@ -2602,6 +2643,8 @@ class ImagingImage(Image):
             left=left, right=right, bottom=bottom, top=top,
             return_margins=True
         )
+
+        left, right, bottom, top = margins
 
         crpix1 = header['CRPIX1'] - left
         crpix2 = header['CRPIX2'] - bottom
@@ -3554,6 +3597,26 @@ class ImagingImage(Image):
 
         return ax, fig
 
+    def plot_coords(
+            self,
+            ax: plt.Axes,
+            coord: Union[SkyCoord, List[SkyCoord]],
+            **kwargs
+    ):
+        coord = u.check_iterable(coord)
+        for i, c in enumerate(coord):
+            coord[i] = astm.attempt_skycoord(c)
+        coord = SkyCoord(coord)
+        x, y = self.world_to_pixel(coord=coord)
+        if "marker" not in kwargs:
+            kwargs["marker"] = "x"
+        if "c" not in kwargs:
+            kwargs["c"] = "white"
+        ax.scatter(
+            x, y, **kwargs
+        )
+        return ax
+
     def plot_slit(
             self,
             ax: plt.Axes,
@@ -3563,13 +3626,13 @@ class ImagingImage(Image):
             position_angle: units.Quantity,
             **kwargs
     ):
-        position_angle = (u.check_quantity(position_angle, units.deg) - self.extract_rotation_angle())
+        position_angle = (u.check_quantity(position_angle, units.deg) + self.extract_rotation_angle())
         centre_x, centre_y = self.world_to_pixel(centre)
         slit_width = self.pixel(width).value
         slit_length = self.pixel(length).value
         # Do some trigonometry to determine pixel coordinates for the Rectangle badge (which uses the corner as its origin. Thanks, matplotlib.)
-        rec_x = centre_x + np.sin(position_angle) * slit_length / 2 + np.cos(position_angle) * slit_width / 2
-        rec_y = centre_y - np.cos(position_angle) * slit_length / 2 + np.sin(position_angle) * slit_width / 2
+        rec_x = centre_x + np.sin(position_angle) * slit_length / 2 - np.cos(position_angle) * slit_width / 2
+        rec_y = centre_y - np.cos(position_angle) * slit_length / 2 - np.sin(position_angle) * slit_width / 2
 
         default_kwargs = dict(
             linewidth=2,
@@ -4328,7 +4391,8 @@ class ImagingImage(Image):
         return True
 
     def sep_aperture_photometry(
-            self, x: float, y: float,
+            self,
+            x: float, y: float,
             aperture_radius: units.Quantity = 2.0 * units.arcsec,
             ext: int = 0,
             sub_background: bool = True
@@ -4345,7 +4409,8 @@ class ImagingImage(Image):
             x, y,
             pixel_radius.value,
             err=self.sep_background[ext].rms(),
-            gain=self.extract_gain().value)
+            gain=self.extract_gain().value
+        )
         return flux, fluxerr, flag
 
     def sep_elliptical_photometry(
