@@ -3055,12 +3055,19 @@ class ImagingImage(Image):
     def test_limit_location(
             self,
             coord: SkyCoord,
-            ap_radius: units.Quantity = 2 * units.arcsec,
+            ap_radius: units.Quantity = None,
             ext: int = 0,
             sigma_min: int = 1,
             sigma_max: int = 10,
             **kwargs
     ):
+
+        if ap_radius is None:
+            psf = self.extract_header_item("PSF_FWHM", ext=ext) * units.arcsec
+            if not psf:
+                ap_radius = 2 * units.arcsec
+            else:
+                ap_radius = 2 * psf
 
         self.load_wcs()
         _, pix_scale = self.extract_pixel_scale()
