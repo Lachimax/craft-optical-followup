@@ -2515,10 +2515,13 @@ class ImagingImage(Image):
             frame1.axes.set_yticks([])
             frame1.axes.invert_yaxis()
 
-        scaling_data = data[bottom:top, left:right]
-        if clip_data:
-            sigma_clip = SigmaClip(sigma_lower=2., sigma_upper=np.inf)
-            scaling_data = sigma_clip(scaling_data, masked=False)
+        if "data" not in normalize_kwargs:
+            scaling_data = data[bottom:top, left:right]
+            if clip_data:
+                sigma_clip = SigmaClip(sigma_lower=2., sigma_upper=np.inf)
+                scaling_data = sigma_clip(scaling_data, masked=False)
+        else:
+            scaling_data = normalize_kwargs.pop("data")
 
         # if "vmin" not in normalize_kwargs:
         #     normalize_kwargs["vmin"] = np.min(data_clipped)

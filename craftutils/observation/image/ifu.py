@@ -69,9 +69,3 @@ class IFUImage(ImagingImage):
 
 class MUSEImage(IFUImage):
     pass
-    # def white_light_image(
-    #         self,
-    #         ext: 1,
-    #         output_path: str = None
-    # ):
-    #     super().white_light_image()
