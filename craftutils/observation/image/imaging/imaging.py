@@ -1408,7 +1408,10 @@ class ImagingImage(Image):
     def transfer_wcs(self, other_image: 'ImagingImage', ext: int = 0):
         other_image.load_headers()
         self.load_headers()
-        self.headers[ext] = ff.wcs_transfer(header_template=other_image.headers[ext], header_update=self.headers[ext])
+        self.headers[ext] = ff.wcs_transfer(
+            header_template=other_image.headers[ext],
+            header_update=self.headers[ext]
+        )
         self.add_log(
             f"Changed WCS information to match {other_image}.",
             method=self.transfer_wcs

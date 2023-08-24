@@ -705,7 +705,7 @@ class Image:
         for i in range(len(self.headers)):
             if i >= len(self.hdu_list):
                 self.hdu_list.append(fits.ImageHDU())
-            if self.data is not None:
+            if len(self.data) > i:
                 unit = self.data[i].unit
                 self.hdu_list[i].data = u.dequantify(self.data[i])
                 self.set_header_item(
@@ -719,7 +719,7 @@ class Image:
         while len(self.hdu_list) > len(self.headers):
             self.hdu_list.pop(-1)
 
-        self.hdu_list.writeto(self.path, overwrite=True)
+        self.hdu_list.writeto(self.path, overwrite=True, output_verify="fix")
 
         self.close()
 
