@@ -59,7 +59,11 @@ def build_astrometry_index(
     if scan_through_catalog:
         flags.append("E")
 
-    system_command("build-astrometry-index", None, False, True, *flags, **params)
+    system_command(
+        "build-astrometry-index",
+        None, False, True,
+        *flags, **params
+    )
 
 
 def solve_field(
