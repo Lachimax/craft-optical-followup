@@ -1312,11 +1312,13 @@ def system_command(
         elif len(param) > 1:
             sys_str += f" --{param} {params[param]}"
     for flag in flags:
-        debug_print(2, "utils.system_command(): flag ==", flag, "len", len(flag))
+        print(2, "utils.system_command(): flag ==", flag, "len", len(flag))
         if len(flag) == 1:
             sys_str += f" -{flag}"
         elif len(flag) > 1:
             sys_str += f" --{flag}"
+        else:
+            print(len(flag))
 
     return system_command_verbose(command=sys_str, suppress_print=suppress_print, error_on_exit_code=error_on_exit_code)
 

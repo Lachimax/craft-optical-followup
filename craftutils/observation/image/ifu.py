@@ -61,7 +61,7 @@ class IFUImage(ImagingImage):
             ext: int = 1
     ):
         header = self.headers[ext].copy()
-        for key in ("CTYPE3", "CUNIT3", "CRVAL3", "CRPIX3", "CRDER3", "CD1_3", "CD2_3", "CD3_1", "CD3_2", "CD3_3"):
+        for key in ("CTYPE3", "CUNIT3", "CRVAL3", "CRPIX3", "CRDER3", "CD1_3", "CD2_3", "CD3_1", "CD3_2", "CD3_3", "CHECKSUM", "DATASUM"):
             if key in header:
                 header.pop(key)
         return header
