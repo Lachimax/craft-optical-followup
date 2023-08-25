@@ -72,6 +72,10 @@ class Filter:
         if "instrument" in kwargs:
             self.instrument = kwargs["instrument"]
 
+        self.cmap = None
+        if "cmap" in kwargs:
+            self.cmap = kwargs["cmap"]
+
         self.lambda_eff = None
         self.lambda_fwhm = None
         self.vega_zeropoint = None

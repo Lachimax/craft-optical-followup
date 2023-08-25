@@ -5,6 +5,7 @@ from typing import Union
 
 import matplotlib.pyplot as plt
 import matplotlib
+import cmasher as cmr
 import numpy as np
 import photutils
 

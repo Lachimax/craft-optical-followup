@@ -2318,6 +2318,7 @@ class ImagingImage(Image):
 
         return value
 
+
     def frame_from_coord(
             self,
             frame: units.Quantity,
@@ -2529,6 +2530,10 @@ class ImagingImage(Image):
                 scaling_data = sigma_clip(scaling_data, masked=False)
         else:
             scaling_data = normalize_kwargs.pop("data")
+
+        if "cmap" not in imshow_kwargs:
+            if self.filter and self.filter.cmap:
+                imshow_kwargs["cmap"] = self.filter.cmap
 
         # if "vmin" not in normalize_kwargs:
         #     normalize_kwargs["vmin"] = np.min(data_clipped)
@@ -4225,7 +4230,8 @@ class ImagingImage(Image):
             "airmass_err": "AIRMASS_ERR",
             "astrometry_err": "ASTM_RMS",
             "ra_err": "RA_RMS",
-            "dec_err": "DEC_RMS"
+            "dec_err": "DEC_RMS",
+            "psf_fwhm": "PSF_FWHM"
         })
         return header_keys
 
