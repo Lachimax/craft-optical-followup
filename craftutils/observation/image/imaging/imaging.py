@@ -561,6 +561,10 @@ class ImagingImage(Image):
             self.dec_err *= units.arcsec
         return self.astrometry_err
 
+    def extract_psf_fwhm(self):
+        key = self.header_keys()["psf_fwhm"]
+        return self.extract_header_item(key) * units.arcsec
+
     def extract_rotation_angle(self, ext: int = 0):
         self.load_wcs()
         matrix = self.wcs[ext].pixel_scale_matrix
