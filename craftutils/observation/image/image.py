@@ -241,6 +241,9 @@ def fits_table_all(
 
 # @u.export
 def detect_instrument(path: str, ext: int = 0, fail_quietly: bool = False):
+    if not os.path.exists(path) or not os.path.isfile(path):
+        raise FileNotFoundError(f"No image found at {path}")
+
     try:
         with fits.open(path) as file:
             if "INSTRUME" in file[ext].header:
