@@ -2,8 +2,7 @@
 
 import os
 import shutil as sh
-import string
-from copy import deepcopy
+import copy
 from datetime import datetime as dt
 from typing import Union
 
@@ -19,12 +18,15 @@ from astropy.visualization import ImageNormalize, ZScaleInterval, SqrtStretch
 
 import craftutils.utils as u
 
+__all__ = []
+
 
 # TODO: Fill in docstrings.
 
+@u.export
 def get_rotation_angle(header: fits.header, astropy_units=False):
     """
-    Special thanks to https://math.stackexchange.com/questions/301319/derive-a-rotation-from-a-2d-rotation-matrix
+    Special thanks to `this StackExchange solution <https://math.stackexchange.com/questions/301319/derive-a-rotation-from-a-2d-rotation-matrix>`
     :param header:
     :return theta: rotation angle, in degrees.
     """
@@ -40,11 +42,12 @@ def get_rotation_angle(header: fits.header, astropy_units=False):
 
     return theta
 
+
 def path_or_hdu(hdu: Union[fits.HDUList, str], update=False):
-    # TODO: Propagate this method to where it's needed.
     path = None
     if type(hdu) is str:
         path = u.sanitise_file_ext(filename=hdu, ext=".fits")
+        u.debug_print(1, f"Loading HDU at {path}")
         if update:
             hdu = fits.open(hdu, mode='update')
         else:
@@ -201,7 +204,7 @@ def subtract_file(file: Union[str, fits.HDUList], sub_file: Union[str, fits.HDUL
     if in_place:
         subbed = hdu
     else:
-        subbed = deepcopy(hdu)
+        subbed = copy.deepcopy(hdu)
     print(f"Subtracting:")
     print(f"\t {sub_path} from")
     print(f"\t {path}")
@@ -455,7 +458,11 @@ def sort_by_filter(path: 'str'):
             sh.move(path + file, filter_path)
 
 
-def get_pixel_scale(file: Union['fits.hdu_list.hdulist.HDUList', 'str'], ext: int = 0, astropy_units: bool = False):
+def get_pixel_scale(
+        file: Union['fits.hdu_list.hdulist.HDUList', 'str'],
+        ext: int = 0,
+        astropy_units: bool = False
+):
     """
     Using the FITS file header, obtains the pixel scale of the file (in degrees).
     Declination scale is the true angular size of the pixel.
@@ -539,7 +546,7 @@ def trim(hdu: fits.hdu.hdulist.HDUList,
     if in_place:
         new_hdu = hdu
     else:
-        new_hdu = deepcopy(hdu)
+        new_hdu = copy.deepcopy(hdu)
 
     if update_wcs:
         new_hdu[ext].header['CRPIX1'] = hdu[ext].header['CRPIX1'] - u.dequantify(left, units.pix)

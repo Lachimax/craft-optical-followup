@@ -46,7 +46,7 @@ def check_input_images(input_directory: str,
     template = table[0]
     template_path = os.path.join(input_directory, template["FILENAME"])
     template_img = image.ImagingImage.select_child_class(
-        instrument=image.detect_instrument(path=template_path)
+        instrument_name=image.detect_instrument(path=template_path)
     )(template_path)
     keys = template_img.header_keys()
     exptime_key = keys["exposure_time"]
@@ -96,7 +96,6 @@ def inject_header(
         f"AIRMASS": airmass_mean,
         f"AIRMASS_ERR": max(np.nanmax(airmasses) - airmass_mean,
                             airmass_mean - np.nanmin(airmasses)),
-        f"SATURATE": np.nanmean(np.float64(table[important_keys['saturate']])),
         f"OBJECT": template.extract_object(),
         f"MJD-OBS": float(np.nanmin(np.float64(table[important_keys["mjd-obs"]]))),
         f"DATE-OBS": template.extract_date_obs(),
@@ -113,6 +112,10 @@ def inject_header(
 
     insert_dict["NCOMBINE"] = n_frames
 
+    if "TEXPTIME" in table.colnames:
+        insert_dict["TEXPTIME"] = np.sum(table["TEXPTIME"])
+    if important_keys['saturate'] in table.colnames:
+        insert_dict[f"SATURATE"] = np.nanmean(np.float64(table[important_keys['saturate']])),
     if "OLD_EXPTIME" in table.colnames:
         insert_dict["OLD_EXPTIME"] = np.nanmean(table["OLD_EXPTIME"])
         insert_dict["INTTIME"] = insert_dict["OLD_EXPTIME"] * n_frames

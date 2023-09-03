@@ -1,33 +1,76 @@
-# Code by Lachlan Marnoch, 2019
+# Code by Lachlan Marnoch, 2019-2023
 
 import os
 from typing import Union
 
 import matplotlib.pyplot as plt
 import matplotlib
+import cmasher as cmr
 import numpy as np
 import photutils
 
 import astropy.io.fits as fits
+import astropy.units as units
+import astropy.constants as constants
 import astropy.wcs as wcs
 from astropy.table import Table
-from astropy.visualization import (ImageNormalize, LogStretch, SqrtStretch, ZScaleInterval, MinMaxInterval,
-                                   PowerStretch, wcsaxes)
-
-from astropy.visualization import quantity_support
+from astropy.visualization import (
+    ImageNormalize,
+    LogStretch,
+    SqrtStretch,
+    ZScaleInterval,
+    MinMaxInterval,
+    quantity_support
+)
 
 import craftutils.fits_files as ff
 import craftutils.params as p
 import craftutils.astrometry as am
 import craftutils.utils as u
 
+__all__ = []
+
 quantity_support()
 
+textwidths = {
+    "MNRAS": 7.03,
+    "mqthesis": 6.1
+}
 
+textheights = {
+    "mqthesis": 9.6
+}
+
+tick_fontsize = 12
+axis_fontsize = 14
+lineweight = 1.5
+
+@u.export
 def plot_kron(fig: plt.Figure, data_title: str, instrument: str, f: str, index: Union[int, list], catalogue: str,
               n: int, n_x: int, n_y: int,
               image_name: str, frame: Union[int, float], cmap: str = 'viridis', vmin: float = None, vmax: float = None,
               des: bool = False, offset_ra: int = 0, offset_dec: int = 0):
+    """
+
+    :param fig:
+    :param data_title:
+    :param instrument:
+    :param f:
+    :param index:
+    :param catalogue:
+    :param n:
+    :param n_x:
+    :param n_y:
+    :param image_name:
+    :param frame:
+    :param cmap:
+    :param vmin:
+    :param vmax:
+    :param des:
+    :param offset_ra:
+    :param offset_dec:
+    :return:
+    """
     table = Table().read(catalogue, format='ascii.csv')
 
     if type(index) is int:
@@ -554,6 +597,11 @@ def latex_setup(
         use_tex: bool = True,
         **kwargs
 ):
+    from distutils.spawn import find_executable
+
+    if not find_executable("latex"):
+        use_tex = False
+
     if "font.serif" not in kwargs:
         kwargs["font.serif"] = 'Times'
     if "font.sans-serif" not in kwargs:
@@ -609,11 +657,19 @@ def plot_file(path: str, label: str = None, colour: str = None, show: bool = Fal
 
 
 def plot_gal_params(
-        hdu: fits.HDUList, ras: Union[list, np.ndarray, float], decs: Union[list, np.ndarray, float],
-        a: Union[list, np.ndarray, float], b: Union[list, np.ndarray, float],
-        theta: Union[list, np.ndarray, float], colour: str = 'white',
+        hdu: fits.HDUList,
+        ras: Union[list, np.ndarray, float],
+        decs: Union[list, np.ndarray, float],
+        a: Union[list, np.ndarray, float],
+        b: Union[list, np.ndarray, float],
+        theta: Union[list, np.ndarray, float],
+        colour: str = 'white',
         show_centre: bool = False,
-        label: str = None, world: bool = True, world_axes: bool = True, **kwargs):
+        label: str = None,
+        world: bool = True,
+        world_axes: bool = True,
+        **kwargs
+):
     """
 
     :param hdu:
@@ -623,7 +679,6 @@ def plot_gal_params(
     :param b: In degrees.
     :param theta: In degrees, apparently.
     :param colour:
-    :param offset:
     :param show_centre:
     :return:
     """
@@ -699,9 +754,15 @@ def plot_all_params(
     plt.subplot(projection=wcs_image)
     norm = ImageNormalize(data, interval=ZScaleInterval(), stretch=SqrtStretch())
     plt.imshow(data, origin='lower', norm=norm, )
-    plot_gal_params(hdu=image, ras=cat[ra_key], decs=cat[dec_key], a=cat[a_key],
-                    b=cat[b_key],
-                    theta=cat[theta_key], colour='red')
+    plot_gal_params(
+        hdu=image,
+        ras=cat[ra_key],
+        decs=cat[dec_key],
+        a=cat[a_key],
+        b=cat[b_key],
+        theta=cat[theta_key],
+        colour='red'
+    )
     if kron:
         plot_gal_params(hdu=image, ras=cat[ra_key], decs=cat[dec_key], a=cat[kron_key] * cat[a_key],
                         b=cat[kron_key] * cat[b_key],
@@ -737,3 +798,23 @@ def plot_all_params(
 
     if path:
         image.close()
+
+
+
+
+def plot_lines(ax, z_shift, space: str = "wavelength", **kwargs):
+    from linetools.lists.linelist import LineList
+    gal_lines = LineList('Galaxy')
+    lines = gal_lines.wrest
+    ylim = ax.get_ylim()
+    if space == "frequency":
+        lines = constants.c / lines
+        z_factor = 1 / (1 + z_shift)
+    elif space == "wavelength":
+        z_factor = 1 + z_shift
+    if "c" not in kwargs:
+        kwargs["c"] = "black"
+    if "ls" not in kwargs:
+        kwargs["ls"] = ":"
+    for line in lines:
+        ax.plot(units.Quantity([line * z_factor, line * z_factor]), ylim, **kwargs)

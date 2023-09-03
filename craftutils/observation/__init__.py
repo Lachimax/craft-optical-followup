@@ -8,9 +8,11 @@ import astropy.units as units
 import craftutils.params as p
 import craftutils.utils as u
 
-config = p.config
+__all__ = []
 
-u.mkdir_check_nested(config["table_dir"])
+config = p.config
+if config["table_dir"] is not None:
+    u.mkdir_check_nested(config["table_dir"])
 
 
 def _construct_column_lists(columns: dict, replace_str: bool = True):
@@ -40,6 +42,7 @@ def _construct_column_lists(columns: dict, replace_str: bool = True):
     return colnames, dtypes, un
 
 
+@u.export
 def split_dtype(val, replace_str: bool = True):
     if isinstance(val, units.Unit) or isinstance(val, units.IrreducibleUnit):
         dtype = units.Quantity
@@ -75,6 +78,10 @@ def split_dtype(val, replace_str: bool = True):
 #     add_columns_by_fil(tbl=master_objects_all_table, coldict=master_objects_columns, fil=fil)
 #     write_master_all_objects_table()
 
+if config["table_dir"] is not None:
+    master_imaging_path = os.path.join(config["table_dir"], "master_imaging_table.yaml")
+    master_objects_path = os.path.join(config["table_dir"], "master_select_objects_table.yaml")
+    master_objects_all_path = os.path.join(config["table_dir"], "master_all_objects_table.yaml")
 
 furby_table = None
 furby_table_columns = {
@@ -107,10 +114,9 @@ furby_table_columns = {
 }
 
 master_imaging = None
-master_imaging_path = os.path.join(config["table_dir"], "master_imaging_table.yaml")
 master_imaging_columns = {
     "field_name": str,
-    "frb_tns_name": str,
+    # "transient_tns_name": str,
     "epoch_name": str,
     "filter_name": str,
     "instrument": str,
@@ -134,13 +140,11 @@ master_imaging_columns = {
 }
 
 master_objects = None
-master_objects_path = os.path.join(config["table_dir"], "master_select_objects_table.yaml")
 
 master_objects_all = None
-master_objects_all_path = os.path.join(config["table_dir"], "master_all_objects_table.yaml")
 master_objects_columns = {
     "field_name": str,
-    "transient_tns_name": str,
+    # "transient_tns_name": str,
     "object_name": str,
     "jname": str,
     "ra": units.deg,
@@ -282,7 +286,7 @@ def add_entry(
 ):
     for item in required:
         if item not in entry:
-            raise ValueError(f"Required key {required} not found in entry.")
+            raise ValueError(f"Required key {item} not found in entry.")
 
     for colname in entry:
         if colname not in tbl["template"]:
@@ -346,6 +350,21 @@ def write_master_table(
         tbl.pop("template")
     tbl_list = list(map(lambda e: tbl[e], tbl))
     tbl_astropy = table.QTable(tbl_list)
+
+    # For FRB fields, try to make the field names match the TNS name (if it exists)
+    if "transient_tns_name" in tbl_astropy.colnames:
+        change_dict = {}
+        for row in tbl_astropy:
+            if row["transient_tns_name"] != "N/A" \
+                    and row["field_name"].startswith("FRB") \
+                    and row["transient_tns_name"].startswith("FRB"):
+                change_dict[row["field_name"]] = row["transient_tns_name"]
+        # Some objects in an FRB field will not have an associated TNS name (non-host objects of interest)
+        # so we loop again
+        for row in tbl_astropy:
+            if row["field_name"] in change_dict:
+                row["field_name"] = change_dict[row["field_name"]]
+
     tbl_names = tbl_astropy.colnames
     names = sort_by.copy()
     names.reverse()

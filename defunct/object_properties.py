@@ -174,7 +174,7 @@ def main(obj,
 
         # print(cat.colnames)
         # np.genfromtxt(cat_path, names=params.sextractor_names_psf())
-        mag_auto_true, mag_auto_err_plus, mag_auto_err_minus = ph.magnitude_complete(flux=cat['FLUX_AUTO'],
+        mag_auto_true, mag_auto_err_plus, mag_auto_err_minus = ph.magnitude_instrumental(flux=cat['FLUX_AUTO'],
                                                                                      flux_err=cat['FLUXERR_AUTO'],
                                                                                      exp_time=exp_time,
                                                                                      exp_time_err=exp_time_err,
@@ -187,7 +187,7 @@ def main(obj,
                                                                                      airmass=airmass,
                                                                                      airmass_err=airmass_err
                                                                                      )
-        mag_psf, mag_psf_err_plus, mag_psf_err_minus = ph.magnitude_complete(flux=cat['FLUX_PSF'],
+        mag_psf, mag_psf_err_plus, mag_psf_err_minus = ph.magnitude_instrumental(flux=cat['FLUX_PSF'],
                                                                              flux_err=cat['FLUXERR_PSF'],
                                                                              exp_time=exp_time,
                                                                              exp_time_err=exp_time_err,
@@ -201,7 +201,7 @@ def main(obj,
                                                                              airmass_err=airmass_err
                                                                              )
 
-        mag_aper, mag_aper_err_plus, mag_aper_err_minus = ph.magnitude_complete(flux=cat['FLUX_APER'],
+        mag_aper, mag_aper_err_plus, mag_aper_err_minus = ph.magnitude_instrumental(flux=cat['FLUX_APER'],
                                                                                 flux_err=cat['FLUXERR_APER'],
                                                                                 exp_time=exp_time,
                                                                                 exp_time_err=exp_time_err,
@@ -216,7 +216,7 @@ def main(obj,
                                                                                 )
 
         cat_local = Table.read(cat_path_local, format="ascii.sextractor")
-        mag_auto_local, mag_auto_local_err_plus, mag_auto_local_err_minus = ph.magnitude_complete(
+        mag_auto_local, mag_auto_local_err_plus, mag_auto_local_err_minus = ph.magnitude_instrumental(
             flux=cat_local['FLUX_AUTO'],
             flux_err=cat_local['FLUXERR_AUTO'],
             exp_time=exp_time,
@@ -231,7 +231,7 @@ def main(obj,
             airmass_err=airmass_err
         )
 
-        mag_aper_local, mag_aper_local_err_plus, mag_aper_local_err_minus = ph.magnitude_complete(
+        mag_aper_local, mag_aper_local_err_plus, mag_aper_local_err_minus = ph.magnitude_instrumental(
             flux=cat_local['FLUX_APER'],
             flux_err=cat_local['FLUXERR_APER'],
             exp_time=exp_time,

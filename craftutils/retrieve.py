@@ -2,6 +2,7 @@
 import urllib
 import os
 import time
+import warnings
 from datetime import date, datetime
 from json.decoder import JSONDecodeError
 from typing import Union, Iterable
@@ -38,6 +39,8 @@ except ModuleNotFoundError:
 import craftutils.params as p
 import craftutils.utils as u
 
+__all__ = []
+
 irsa.Irsa.ROW_LIMIT = -1
 
 default_data_release = {
@@ -52,8 +55,14 @@ default_data_release = {
 
 # import craftutils.observation.instrument as inst
 
-
+@u.export
 def cat_columns(cat, f: str = None):
+    """
+
+    :param cat:
+    :param f:
+    :return:
+    """
     cat = cat.lower()
     if f == "rank":
         f = {
@@ -190,7 +199,7 @@ def retrieve_svo_filter(facility_name: str, instrument_name: str, filter_name: s
     else:
         return response
 
-
+@u.export
 def save_svo_filter(facility_name: str, instrument_name: str, filter_name: str, output: str):
     """
 
@@ -270,11 +279,14 @@ def save_catalogue(
         else:
             data_release = 1
 
-    if func is save_mast_photometry:
-        return func(ra=ra, dec=dec, output=output, cat=cat, radius=radius, data_release=data_release)
-    else:
-        return func(ra=ra, dec=dec, output=output, radius=radius, data_release=data_release)
-
+    try:
+        if func is save_mast_photometry:
+            return func(ra=ra, dec=dec, output=output, cat=cat, radius=radius, data_release=data_release)
+        else:
+            return func(ra=ra, dec=dec, output=output, radius=radius, data_release=data_release)
+    except PermissionError:
+        warnings.warn(f"{cat} data was not retrieved due to incorrect user/password.")
+        return 'ERROR'
 
 # ESO retrieval code based on the script at
 # http://archive.eso.org/programmatic/scripts/eso_authenticated_download_raw_and_calibs.py
@@ -414,7 +426,6 @@ def save_eso_raw_data_and_calibs(
     query = query_eso_raw(
         program_id=program_id, date_obs=date_obs, obj=obj, instrument=instrument, mode=mode, coord_tol=coord_tol
     )
-    print(query)
     raw_frames = get_eso_raw_frame_list(query=query)
     calib_urls = get_eso_calib_associations_all(raw_frames=raw_frames)
     urls = list(raw_frames['url']) + calib_urls
@@ -521,6 +532,9 @@ AND dec<{dec_max}
             raise TypeError(f"obj must be str or SkyCoord, not {type(obj)}")
     u.debug_print(1, "Query for ESO Archive:\n")
     u.debug_print(1, query)
+
+    print(query)
+
     return query
 
 
@@ -596,7 +610,7 @@ def retrieve_fors2_calib(fil: str = 'I_BESS', date_from: str = '2017-01-01', dat
     page = urllib.request.urlopen("http://archive.eso.org/qc1/qc1_cgi", request)
     return str(page.read().replace(b'!', b''), 'utf-8')
 
-
+@u.export
 def save_fors2_calib(output: str, fil: str = 'I_BESS', date_from: str = '2017-01-01', date_to: str = None):
     """
     Retrieves the full set of photometry parameters from the FORS2 quality control archive
@@ -685,7 +699,7 @@ def retrieve_irsa_extinction(ra: float = None, dec: float = None, coord: SkyCoor
             table = irsa_dust.IrsaDust.get_extinction_table(coord)
         except urllib.error.HTTPError:
             attempts += 1
-            print(f"Could not retrieve table due to HTML error. Trying again after clearing cache ({attempts=}/100).")
+            print(f"Could not retrieve table due to HTML error. Trying again after clearing cache (attempts={attempts}/100).")
             cache_path = os.path.join(p.home_path, ".astropy", "cache", "astroquery")
             u.rmtree_check(cache_path)
 
@@ -1824,8 +1838,23 @@ def save_gemini_calibs(output: str, obs_date: Time, instrument: str = 'GSAOI', f
     save_gemini_files(standards, output=output, overwrite=overwrite)
 
 
-def save_gemini_epoch(output: str, program_id: str, coord: SkyCoord,
-                      instrument: str = 'GSAOI', overwrite: bool = False):
+def save_gemini_epoch(
+        output: str,
+        program_id: str,
+        coord: SkyCoord,
+        instrument: str = 'GSAOI',
+        overwrite: bool = False
+):
+    """
+
+    :param output:
+    :param program_id:
+    :param coord:
+    :param instrument:
+    :param overwrite:
+    :return: astropy table of retrieved images.
+    """
+    # Get a dictionary of science files
     science_files = gemini.Observations.query_criteria(
         instrument=instrument,
         program_id=program_id,

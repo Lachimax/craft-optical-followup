@@ -22,7 +22,37 @@ from astropy.time import Time
 debug_level = 0
 
 
+def export(obj):
+    """
+    A function used for decorating those objects which may be exported from a file.
+    Taken from `a solution posted by mhostetter <https://github.com/jbms/sphinx-immaterial/issues/152>`_
+
+    :param obj: The object to be added to __all__
+    :return:
+    """
+    # Determine the private module that defined the object
+    module = sys.modules[obj.__module__]
+
+    # Set the object's module to the package name. This way the REPL will display the object
+    # as craftutils.obj and not craftutils._private_module.obj
+    obj.__module__ = "craftutils"
+
+    # Append this object to the private module's "all" list
+    public_members = getattr(module, "__all__", [])
+    public_members.append(obj.__name__)
+    setattr(module, "__all__", public_members)
+
+    return obj
+
+
+@export
 def pad_zeroes(n: int, length: int = 2):
+    """
+
+    :param n:
+    :param length:
+    :return:
+    """
     n_str = str(n)
     while len(n_str) < length:
         n_str = "0" + n_str
@@ -49,6 +79,23 @@ def get_git_hash(directory: str, short: bool = False):
 
 
 def frame_from_centre(frame, x, y, data):
+    """
+    Given the coordinates for a centre and the padding around that centre, generates the x coordinate for the left and
+    right and the y coordinate for the bottom and top of the described rectangular cutout of the data.
+    :param frame:
+    :param x:
+    :param y:
+    :param data:
+    :return: (x_left, x_right, y_bottom, y_top)
+    """
+
+    if x is None:
+        n_y, n_x = data.shape
+        x = int(dequantify(n_x / 2))
+    if y is None:
+        n_y, n_x = data.shape
+        y = int(dequantify(n_y / 2))
+
     left = x - frame
     right = x + frame
     bottom = y - frame
@@ -64,8 +111,8 @@ def check_margins(data, left=None, right=None, bottom=None, top=None, margins: t
     :param right:
     :param bottom:
     :param top:
-    :param margins: In the order left, right, bottom, top
-    :return:
+    :param margins: In the order x_left, x_right, y_bottom, y_top
+    :return: (x_left, x_right, y_bottom, y_top)
     """
     shape = data.shape
 
@@ -133,11 +180,17 @@ def trim_image(
 
 
 def check_iterable(obj):
-    try:
-        len(obj)
-    except TypeError:
+    if not is_iterable(obj):
         obj = [obj]
     return obj
+
+
+def is_iterable(obj):
+    try:
+        len(obj)
+        return True
+    except TypeError:
+        return False
 
 
 def theta_range(theta: units.Quantity):
@@ -262,7 +315,7 @@ def check_dict(key: str, dictionary: dict, na_values: Union[tuple, list] = (None
 
 def check_quantity(
         number: Union[float, int, units.Quantity],
-        unit: units.Unit,
+        unit: Union[str, units.Unit],
         allow_mismatch: bool = True,
         enforce_equivalency: bool = True,
         convert: bool = False
@@ -274,8 +327,12 @@ def check_quantity(
 
     :param number: Quantity (or not) to check.
     :param unit: Unit to check for.
-    :param allow_mismatch: If False, even compatible units will not be allowed.
-    :param convert: If True, convert compatible Quantity to units unit.
+    :param allow_mismatch: If `False`, even compatible units will not be allowed.
+    :param enforce_equivalency: If `True`, and if `allow_mismatch` is True, a `units.UnitsError` will be raised if the
+        `number` has units that are not equivalent to `unit`.
+        That is, set this (and `allow_mismatch`) to `True` if you want to ensure `number` has the same
+        dimensionality as `unit`, but not necessarily the same units. Savvy?
+    :param convert: If `True`, convert compatible `Quantity` to units `unit`.
     :return:
     """
     if number is None:
@@ -557,15 +614,12 @@ def uncertainty_func(arg, err, func=lambda x: np.log10(x), absolute=False):
     :return:
     """
     measurement = func(arg)
-    print("\narg", arg)
-    print("\nmeasurement", measurement)
     # One of these should come out negative - that becomes the minus error, and the positive the plus error.
     error_plus = func(arg + err) - measurement
     error_minus = func(arg - err) - measurement
 
     error_plus_actual = []
     error_minus_actual = []
-    print("\nerror_plus", error_plus)
     try:
         for i, _ in enumerate(error_plus):
             error_plus_actual.append(np.max([error_plus[i], error_minus[i]]))
@@ -588,7 +642,6 @@ def uncertainty_func_percent(arg, err, func=lambda x: np.log10(x)):
 def get_column_names(path, delimiter=','):
     with open(path) as f:
         names = f.readline().split(delimiter)
-    print(names)
     return names
 
 
@@ -602,7 +655,6 @@ def get_column_names_sextractor(path):
                 line_list.remove("")
             columns.append(line_list[2])
             line = f.readline()
-    print(columns)
     return columns
 
 
@@ -890,26 +942,14 @@ def numpy_to_list(arr):
     return ls
 
 
-def find_nearest(array, value, sorted: bool = False):
+def find_nearest(array, value):
     """
-    Thanks to this thread: https://stackoverflow.com/questions/2566412/find-nearest-value-in-numpy-array/2566508
     :param array:
     :param value:
     :return:
     """
-    if not sorted:
-        array.sort()
-
-    if value < array[0]:
-        return 0, array[0]
-    elif value > array[-1]:
-        return len(array) - 1, array[-1]
-
-    idx = np.searchsorted(array, value, side="left")
-    if idx == len(array) or math.fabs(value - array[idx - 1]) < math.fabs(value - array[idx]):
-        return idx - 1, array[idx - 1]
-    else:
-        return idx, array[idx]
+    idx = np.nanargmin(np.abs(array - value))
+    return idx, array[idx]
 
 
 def round_to_sig_fig(x: float, n: int) -> float:
@@ -919,7 +959,7 @@ def round_to_sig_fig(x: float, n: int) -> float:
     :param n: Number of significant figures to round to.
     :return: Rounded number
     """
-
+    print(x, type(x))
     return round(x, (n - 1) - int(np.floor(np.log10(abs(x)))))
 
 
@@ -1109,10 +1149,13 @@ def enter_time(message: str):
     return date
 
 
-def select_option(message: str,
-                  options: Union[List[str], dict],
-                  default: Union[str, int] = None,
-                  sort: bool = False) -> tuple:
+def select_option(
+        message: str,
+        options: Union[List[str], dict],
+        default: Union[str, int] = None,
+        sort: bool = False,
+        include_exit: bool = True
+) -> tuple:
     """
     Options can be a list of strings, or a dict in which the keys are the options to be printed and the values are the
     represented options. The returned object is a tuple, with the first entry being the number given by the user and
@@ -1120,6 +1163,7 @@ def select_option(message: str,
     dict value.
     :param message: Message to display before options.
     :param options: Options to display.
+
     :param default: Option to return if no user input is given.
     :param sort: Sort options?
     :return: Tuple containing (user input, selection)
@@ -1188,28 +1232,28 @@ def select_yn_exit(message: str):
         exit(0)
 
 
-def user_input(message: str, typ: type = str, default=None):
+def user_input(message: str, input_type: type = str, default=None):
     inp = None
     if default is not None:
-        if type(default) is not typ:
+        if type(default) is not input_type:
             try:
-                default = typ(default)
+                default = input_type(default)
 
             except ValueError:
-                print(f"Default ({default}) could not be cast to {typ}. Proceeding without default value.")
+                print(f"Default ({default}) could not be cast to {input_type}. Proceeding without default value.")
 
         message += f" [default: {default}]"
 
     print(message)
-    while type(inp) is not typ:
+    while type(inp) is not input_type:
         inp = input()
         if inp == "":
             inp = default
-        if type(inp) is not typ:
+        if type(inp) is not input_type:
             try:
-                inp = typ(inp)
+                inp = input_type(inp)
             except ValueError:
-                print(f"Could not cast {inp} to {typ}. Try again:")
+                print(f"Could not cast {inp} to {input_type}. Try again:")
     print(f"You have entered {inp}.")
     return inp
 
@@ -1268,11 +1312,13 @@ def system_command(
         elif len(param) > 1:
             sys_str += f" --{param} {params[param]}"
     for flag in flags:
-        debug_print(2, "utils.system_command(): flag ==", flag, "len", len(flag))
+        print(2, "utils.system_command(): flag ==", flag, "len", len(flag))
         if len(flag) == 1:
             sys_str += f" -{flag}"
         elif len(flag) > 1:
             sys_str += f" --{flag}"
+        else:
+            print(len(flag))
 
     return system_command_verbose(command=sys_str, suppress_print=suppress_print, error_on_exit_code=error_on_exit_code)
 
@@ -1281,8 +1327,28 @@ def system_command_verbose(
         command: str,
         suppress_print: bool = False,
         error_on_exit_code: bool = True,
-        suppress_path: bool = False
+        suppress_path: bool = False,
+        go_to_working_directory: str = None
 ):
+    """
+    A convenience function for executing terminal commands.
+
+    :param command: The full command to send to the terminal.
+    :param suppress_print: Do not print command, result, etc. This will not turn off stdout, so the command you run may
+        still print to terminal.
+    :param error_on_exit_code: If True, will raise a Python error on a non-0 exit code, ie if the command fails.
+        If False, the Python code can continue even if the terminal command fails.
+    :param suppress_path: If True, the working directory will not print even if `suppress_print` is False.
+        `suppress_print=True` overrides.
+    :param go_to_working_directory: The path to switch the working directory to while the command executes.
+        The old working directory will be returned to upon completion. Useful if, for example,  there are output files
+        that get written to the working directory.
+    :return:
+    """
+    cwd = ""
+    if go_to_working_directory is not None:
+        cwd = os.getcwd()
+        os.chdir(go_to_working_directory)
     if not suppress_print:
         print()
         if not suppress_path:
@@ -1299,6 +1365,8 @@ def system_command_verbose(
         print(command)
         print("With code", result)
         print()
+    if go_to_working_directory is not None:
+        os.chdir(cwd)
     return result
 
 

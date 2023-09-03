@@ -159,7 +159,7 @@ def main(field, subtraction_path, epoch, instrument, instrument_template, show):
                             plt.show()
                         plt.close()
 
-                        matches_sextractor['mag_sextractor'], _, _ = ph.magnitude_complete(
+                        matches_sextractor['mag_sextractor'], _, _ = ph.magnitude_instrumental(
                             flux=matches_sextractor['flux_auto'],
                             exp_time=exp_time, airmass=airmass,
                             zeropoint=comparison_zeropoint,
