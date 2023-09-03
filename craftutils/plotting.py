@@ -5,6 +5,7 @@ from typing import Union
 
 import matplotlib.pyplot as plt
 import matplotlib
+import cmasher as cmr
 import numpy as np
 import photutils
 
@@ -40,6 +41,9 @@ textheights = {
     "mqthesis": 9.6
 }
 
+tick_fontsize = 12
+axis_fontsize = 14
+lineweight = 1.5
 
 @u.export
 def plot_kron(fig: plt.Figure, data_title: str, instrument: str, f: str, index: Union[int, list], catalogue: str,
@@ -794,6 +798,8 @@ def plot_all_params(
 
     if path:
         image.close()
+
+
 
 
 def plot_lines(ax, z_shift, space: str = "wavelength", **kwargs):

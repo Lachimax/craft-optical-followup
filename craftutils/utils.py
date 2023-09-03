@@ -315,7 +315,7 @@ def check_dict(key: str, dictionary: dict, na_values: Union[tuple, list] = (None
 
 def check_quantity(
         number: Union[float, int, units.Quantity],
-        unit: units.Unit,
+        unit: Union[str, units.Unit],
         allow_mismatch: bool = True,
         enforce_equivalency: bool = True,
         convert: bool = False
@@ -1312,11 +1312,13 @@ def system_command(
         elif len(param) > 1:
             sys_str += f" --{param} {params[param]}"
     for flag in flags:
-        debug_print(2, "utils.system_command(): flag ==", flag, "len", len(flag))
+        print(2, "utils.system_command(): flag ==", flag, "len", len(flag))
         if len(flag) == 1:
             sys_str += f" -{flag}"
         elif len(flag) > 1:
             sys_str += f" --{flag}"
+        else:
+            print(len(flag))
 
     return system_command_verbose(command=sys_str, suppress_print=suppress_print, error_on_exit_code=error_on_exit_code)
 
@@ -1325,8 +1327,28 @@ def system_command_verbose(
         command: str,
         suppress_print: bool = False,
         error_on_exit_code: bool = True,
-        suppress_path: bool = False
+        suppress_path: bool = False,
+        go_to_working_directory: str = None
 ):
+    """
+    A convenience function for executing terminal commands.
+
+    :param command: The full command to send to the terminal.
+    :param suppress_print: Do not print command, result, etc. This will not turn off stdout, so the command you run may
+        still print to terminal.
+    :param error_on_exit_code: If True, will raise a Python error on a non-0 exit code, ie if the command fails.
+        If False, the Python code can continue even if the terminal command fails.
+    :param suppress_path: If True, the working directory will not print even if `suppress_print` is False.
+        `suppress_print=True` overrides.
+    :param go_to_working_directory: The path to switch the working directory to while the command executes.
+        The old working directory will be returned to upon completion. Useful if, for example,  there are output files
+        that get written to the working directory.
+    :return:
+    """
+    cwd = ""
+    if go_to_working_directory is not None:
+        cwd = os.getcwd()
+        os.chdir(go_to_working_directory)
     if not suppress_print:
         print()
         if not suppress_path:
@@ -1343,6 +1365,8 @@ def system_command_verbose(
         print(command)
         print("With code", result)
         print()
+    if go_to_working_directory is not None:
+        os.chdir(cwd)
     return result
 
 

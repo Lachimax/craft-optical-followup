@@ -159,6 +159,8 @@ class Field:
                     continue
                 self.add_object_from_dict(obj_dict)
 
+        self.gather_objects()
+
         self.load_output_file()
 
         self.extent = extent
@@ -190,24 +192,25 @@ class Field:
         else:
             warnings.warn(f"param_dir is not set for this {type(self)}.")
 
-    def _gather_objects(self, quiet: bool = True):
+    def gather_objects(self, quiet: bool = True):
         if not quiet:
             print(f"Searching for object param files...")
-        objs = {}
+
         if self.param_dir is not None:
-            obj_path = os.path.join(self.param_dir, "objects")
+            obj_path = self._obj_path()
             if not quiet:
                 print(f"Looking in {obj_path}")
 
-            epoch_params = list(filter(lambda f: f.endswith(".yaml"), os.listdir(instrument_path)))
-            epoch_params.sort()
-            for epoch_param in epoch_params:
-                epoch_name = epoch_param[:epoch_param.find(".yaml")]
-                param_path = os.path.join(instrument_path, epoch_param)
-                epoch = p.load_params(file=param_path)
-                epoch["format"] = "current"
-                epoch["param_path"] = param_path
-                epochs[epoch_name] = epoch
+            obj_params = list(filter(lambda f: f.endswith(".yaml"), os.listdir(obj_path)))
+            obj_params.sort()
+            for obj_param in obj_params:
+                obj_name = obj_param[:obj_param.find(".yaml")]
+                param_path = os.path.join(obj_path, obj_param)
+                obj_dict = p.load_params(file=param_path)
+                obj_dict["param_path"] = param_path
+                if "name" not in obj_dict:
+                    obj_dict["name"] = obj_name
+                self.add_object_from_dict(obj_dict=obj_dict)
 
     def _gather_epochs(self, mode: str = "imaging", quiet: bool = False):
         """
@@ -300,8 +303,14 @@ class Field:
     def select_epoch_spectroscopy(self):
         options = {}
         for epoch in self.epochs_spectroscopy:
+            date_string = ""
+            if "date" in epoch and epoch["date"] is not None:
+                if isinstance(epoch["date"], str):
+                    date_string = f" {epoch['date']}"
+                else:
+                    date_string = f" {epoch['date'].strftime('%Y-%m-%d')}"
             epoch = self.epochs_spectroscopy[epoch]
-            options[f"{epoch['name']}\t{epoch['date'].to_datetime().date()}\t{epoch['instrument']}"] = epoch
+            options[f"{epoch['name']}\t{date_string}\t{epoch['instrument']}"] = epoch
         for epoch in self.epochs_spectroscopy_loaded:
             epoch = self.epochs_spectroscopy_loaded[epoch]
             options[f'*{epoch.name}\t{epoch.date.isot}\t{epoch.instrument_name}'] = epoch
@@ -312,7 +321,30 @@ class Field:
         elif not isinstance(epoch, ep.Epoch):
             epoch = ep.SpectroscopyEpoch.from_file(epoch, field=self)
             self.epochs_spectroscopy_loaded[epoch.name] = epoch
+
         return epoch
+
+    def _obj_path(self):
+        obj_path = os.path.join(self.param_dir, "objects")
+        return obj_path
+
+    def new_object(
+            self,
+            name: str,
+            obj_type: str,
+            position: Union[SkyCoord, str, tuple, list, np.ndarray],
+            **kwargs
+    ):
+        objects_path = self._obj_path()
+        obj_path = os.path.join(objects_path, f"{name}.yaml")
+        obj_type = objects.Object.select_child_class(obj_type=obj_type)
+        obj_dict = obj_type.default_params()
+        obj_dict["name"] = name
+        obj_dict["field"] = self.name
+        obj_dict["position"] = astm.attempt_skycoord(position)
+        obj_dict.update(kwargs)
+        p.save_params(file=obj_path, dictionary=obj_dict)
+        return self.add_object_from_dict(obj_dict)
 
     def new_epoch_imaging(self):
         return self._new_epoch(mode="imaging")
@@ -611,8 +643,10 @@ class Field:
         obj.field = self
 
     def add_object_from_dict(self, obj_dict: dict):
-        obj = objects.Object.from_dict(obj_dict, field=self)
+        obj_dict["field"] = self
+        obj = objects.Object.from_dict(obj_dict)
         self.add_object(obj=obj)
+        return obj
 
     def object_properties(self):
         self.objects.sort(key=lambda o: o.name, reverse=True)
@@ -707,7 +741,7 @@ class Field:
             "name": None,
             "type": "Field",
             "centre": objects.position_dictionary.copy(),
-            "objects": [objects.Object.default_params()],
+            # "objects": [objects.Object.default_params()],
             "extent": 0.3 * units.deg,
             "survey": None
         }
@@ -726,16 +760,21 @@ class Field:
         centre_ra, centre_dec = p.select_coords(param_dict["centre"])
         coord_str = f"{centre_ra} {centre_dec}"
 
+        if "objects" in param_dict:
+            objs = param_dict.pop("objects")
+        else:
+            objs = None
+
         if field_type == "Field":
             return cls(
                 centre_coords=coord_str,
-                objs=param_dict["objects"],
+                objs=objs,
                 **param_dict
             )
         elif field_type == "FRBField":
             return FRBField(
                 centre_coords=coord_str,
-                objs=param_dict["objects"],
+                objs=objs,
                 **param_dict
             )
         elif field_type == "StandardField":
@@ -913,20 +952,20 @@ class FRBField(Field):
                 centre_coords = frb.position
 
         # Input attributes
-        super().__init__(name=name,
-                         centre_coords=centre_coords,
-                         param_path=param_path,
-                         data_path=data_path,
-                         objs=objs,
-                         extent=extent,
-                         **kwargs
-                         )
+        super().__init__(
+            name=name,
+            centre_coords=centre_coords,
+            param_path=param_path,
+            data_path=data_path,
+            objs=objs,
+            extent=extent,
+            **kwargs
+        )
 
         self.frb = frb
         if self.frb is not None:
-
             if isinstance(self.frb, dict):
-                self.frb = objects.FRB.from_dict(self.frb, field=self)
+                self.frb = objects.FRB.from_dict(self.frb)
 
             self.frb.field = self
             if self.frb.host_galaxy is not None:
@@ -1146,7 +1185,6 @@ class FRBField(Field):
         from matplotlib.patches import Ellipse
         img.load_headers()
         frb = self.frb.position
-        x, y = img.world_to_pixel(frb, 0)
         uncertainty = self.frb.position_err
         a, b = uncertainty.uncertainty_quadrature()
         if a == 0 * units.arcsec or b == 0 * units.arcsec:
@@ -1170,17 +1208,19 @@ class FRBField(Field):
         if img_err is not None:
             a = np.sqrt(a ** 2 + img_err ** 2)
             b = np.sqrt(b ** 2 + img_err ** 2)
-        e = Ellipse(
-            xy=(x, y),
-            width=2 * a.to(units.pix, img.pixel_scale_y).value,
-            height=2 * b.to(units.pix, img.pixel_scale_y).value,
-            angle=theta.value,
-            **frb_kwargs
+        ax = img.plot_ellipse(
+            ax=ax,
+            coord=frb,
+            a=a, b=b,
+            theta=theta,
+            plot_centre=plot_centre,
+            centre_kwargs=dict(
+                c=frb_kwargs["edgecolor"],
+                marker="x"
+            ),
+            **frb_kwargs,
         )
-        # e.set_edgecolor(color)
-        ax.add_artist(e)
-        if plot_centre:
-            ax.scatter(x, y, c=frb_kwargs["edgecolor"], marker="x")
+
         return ax
 
     @classmethod

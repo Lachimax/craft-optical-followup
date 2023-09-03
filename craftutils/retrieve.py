@@ -426,7 +426,6 @@ def save_eso_raw_data_and_calibs(
     query = query_eso_raw(
         program_id=program_id, date_obs=date_obs, obj=obj, instrument=instrument, mode=mode, coord_tol=coord_tol
     )
-    print(query)
     raw_frames = get_eso_raw_frame_list(query=query)
     calib_urls = get_eso_calib_associations_all(raw_frames=raw_frames)
     urls = list(raw_frames['url']) + calib_urls
@@ -533,6 +532,9 @@ AND dec<{dec_max}
             raise TypeError(f"obj must be str or SkyCoord, not {type(obj)}")
     u.debug_print(1, "Query for ESO Archive:\n")
     u.debug_print(1, query)
+
+    print(query)
+
     return query
 
 

@@ -36,6 +36,10 @@ class Filter:
         elif self.name is not None:
             self.band_name = self.name[0]
 
+        self.frb_repo_name = None
+        if "frb_repo_name" in kwargs:
+            self.frb_repo_name = kwargs["frb_repo_name"]
+
         self.svo_id = []
         self.svo_instrument = None
         if "svo_service" in kwargs:
@@ -67,6 +71,10 @@ class Filter:
         self.instrument = None
         if "instrument" in kwargs:
             self.instrument = kwargs["instrument"]
+
+        self.cmap = None
+        if "cmap" in kwargs:
+            self.cmap = kwargs["cmap"]
 
         self.lambda_eff = None
         self.lambda_fwhm = None

@@ -58,7 +58,7 @@ def generate_astrometry_indices(
         index_output_dir: str,
         fits_cat_output: str = None,
         add_path: bool = True,
-        p_lower: int = -1, p_upper: int = 2):
+        p_lower: int = -2, p_upper: int = 2):
     u.mkdir_check(index_output_dir)
     if add_path:
         astrometry_net.add_index_directory(index_output_dir)
