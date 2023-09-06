@@ -1909,7 +1909,9 @@ class ImagingEpoch(Epoch):
                 **path_kwargs
             )
         self.field.frb.consolidate_candidate_tables()
-        # self.field.objects.extend(self.field.frb.host_candidates)
+        for obj in self.field.frb.host_candidates:
+            if obj.P_Ox is not None and obj.P_Ox > 0.1:
+                self.field.objects.append(obj)
 
     def get_photometry(
             self,
@@ -5207,7 +5209,7 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
                 plt.plot(lambda_eff_fit, model(lambda_eff_fit))
                 plt.scatter(lambdas_known, extinctions_known, label="Known")
                 for j, m in enumerate(mjds):
-                    plt.text(lambdas_known[j], extinctions_known[j], m)
+                    plt.text(lambdas_known[j], extinctions_known[j], fils_known[j])
                 plt.scatter(lambdas_find, extinctions_find, label="fitted")
                 plt.xlabel("$\lambda_{eff}$ (Ang)")
                 plt.ylabel("Extinction (mag)")
