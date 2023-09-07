@@ -1683,6 +1683,10 @@ class Transient(Object):
             if hg:
                 host_galaxy = hg
         self.host_galaxy = host_galaxy
+        if self.host_galaxy is None:
+            self.host_galaxy = TransientHostCandidate(transient=self)
+        if "z" in kwargs:
+            self.host_galaxy.z = kwargs["z"]
         self.host_candidate_tables = {}
         self.host_candidates = []
         if not isinstance(date, time.Time) and date is not None:
