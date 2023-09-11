@@ -763,7 +763,7 @@ def root_mean_squared_error(
     return np.sqrt(mse)
 
 
-def detect_problem_table(tbl: table.Table, fmt: str = "ecsv"):
+def detect_problem_table(tbl: table.Table, fmt: str = "ascii.ecsv"):
     for i, row in enumerate(tbl):
         tbl_this = tbl[:i + 1]
         try:
