@@ -1288,11 +1288,12 @@ def print_nested_dict(dictionary, level: int = 0):
 
 
 def system_command(
-        command: str, arguments: Union[str, list] = None,
+        command: str,
+        arguments: Union[str, list] = None,
         suppress_print: bool = False,
         error_on_exit_code: bool = True,
         force_single_dash: bool = False,
-        *flags,
+        flags: list = (),
         **params
 ):
     if command in [""]:
@@ -1311,6 +1312,8 @@ def system_command(
             sys_str += f" -{param} {params[param]}"
         elif len(param) > 1:
             sys_str += f" --{param} {params[param]}"
+    print("utils.system_command()")
+    print(flags)
     for flag in flags:
         print(2, "utils.system_command(): flag ==", flag, "len", len(flag))
         if len(flag) == 1:
