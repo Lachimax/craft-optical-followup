@@ -1324,7 +1324,7 @@ class ImagingEpoch(Epoch):
                     if not self.quiet:
                         print(
                             f"There were no successful frames for chip {chip} using astrometry.net; performing coarse correction on {tmp}.")
-                    first_success = tmp.correct_astrometry_coarse(
+                    first_success, _ = tmp.correct_astrometry_coarse(
                         output_dir=astrometry_fil_path,
                         cat=self.gaia_catalogue,
                         cat_name="gaia"

@@ -708,7 +708,7 @@ class Image:
         for i in range(len(self.headers)):
             if i >= len(self.hdu_list):
                 self.hdu_list.append(fits.ImageHDU())
-            if len(self.data) > i:
+            if len(self.data) > i and self.data[i]:
                 unit = self.data[i].unit
                 self.hdu_list[i].data = u.dequantify(self.data[i])
                 self.set_header_item(

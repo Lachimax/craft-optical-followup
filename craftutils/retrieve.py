@@ -54,6 +54,7 @@ default_data_release = {
 
 }
 
+
 # import craftutils.observation.instrument as inst
 
 @u.export
@@ -200,6 +201,7 @@ def retrieve_svo_filter(facility_name: str, instrument_name: str, filter_name: s
     else:
         return response
 
+
 @u.export
 def save_svo_filter(facility_name: str, instrument_name: str, filter_name: str, output: str):
     """
@@ -288,6 +290,7 @@ def save_catalogue(
     except PermissionError:
         warnings.warn(f"{cat} data was not retrieved due to incorrect user/password.")
         return 'ERROR'
+
 
 # ESO retrieval code based on the script at
 # http://archive.eso.org/programmatic/scripts/eso_authenticated_download_raw_and_calibs.py
@@ -615,6 +618,7 @@ def retrieve_fors2_calib(fil: str = 'I_BESS', date_from: str = '2017-01-01', dat
     page = urllib.request.urlopen("http://archive.eso.org/qc1/qc1_cgi", request)
     return str(page.read().replace(b'!', b''), 'utf-8')
 
+
 @u.export
 def save_fors2_calib(output: str, fil: str = 'I_BESS', date_from: str = '2017-01-01', date_to: str = None):
     """
@@ -704,7 +708,8 @@ def retrieve_irsa_extinction(ra: float = None, dec: float = None, coord: SkyCoor
             table = irsa_dust.IrsaDust.get_extinction_table(coord)
         except urllib.error.HTTPError:
             attempts += 1
-            print(f"Could not retrieve table due to HTML error. Trying again after clearing cache (attempts={attempts}/100).")
+            print(
+                f"Could not retrieve table due to HTML error. Trying again after clearing cache (attempts={attempts}/100).")
             cache_path = os.path.join(p.home_path, ".astropy", "cache", "astroquery")
             u.rmtree_check(cache_path)
 
@@ -1757,6 +1762,8 @@ def load_catalogue(
                 cat[col_name.format(fil)] = cat[col_name.format(fil)] * cat_column_units[col_name]
         else:
             cat[col_name] = cat[col_name] * cat_column_units[col_name]
+    col_names = cat_columns(cat_name)
+    cat["coord"] = SkyCoord(cat[col_names["ra"]], cat[col_names["dec"]])
     return cat
 
 
@@ -1888,7 +1895,7 @@ filters = {
 }
 
 column_units = {
-    "2mass": # See http://tdc-www.harvard.edu/software/catalogs/tmc.format.html
+    "2mass":  # See http://tdc-www.harvard.edu/software/catalogs/tmc.format.html
         {
             "ra": units.deg,
             "dec": units.deg,

@@ -1356,7 +1356,8 @@ class ImagingImage(Image):
             output_dir: str = None,
             cat: table.Table = None,
             ext: int = 0,
-            cat_name: str = None
+            cat_name: str = None,
+            **diag_kwargs
     ):
         if self.source_cat.table is None:
             self.source_extraction_psf(output_dir=output_dir)
@@ -1368,7 +1369,7 @@ class ImagingImage(Image):
                 raise ValueError(f"If image epoch is not assigned, cat must be provided.")
         diagnostics = self.astrometry_diagnostics(
             reference_cat=cat,
-            offset_tolerance=3 * units.arcsec
+            **diag_kwargs
         )
         new_path = os.path.join(output_dir, self.filename.replace(".fits", "_astrometry.fits"))
         new = self.copy(new_path)
@@ -1376,11 +1377,15 @@ class ImagingImage(Image):
         ra_scale, dec_scale = self.extract_world_scale(ext=ext)
 
         new.load_headers()
+
         if not np.isnan(diagnostics["median_offset_x"].value) and not np.isnan(diagnostics["median_offset_y"].value):
 
+            delta_ra = diagnostics["median_offset_x"].to(units.deg, ra_scale).value
+            delta_dec = -diagnostics["median_offset_y"].to(units.deg, dec_scale).value
+
             new.shift_wcs(
-                delta_ra=diagnostics["median_offset_x"].to(units.deg, ra_scale).value,
-                delta_dec=diagnostics["median_offset_y"].to(units.deg, dec_scale).value
+                delta_ra=delta_ra,
+                delta_dec=delta_dec
             )
 
             new.add_log(
@@ -1393,7 +1398,7 @@ class ImagingImage(Image):
             if cat_name.lower() == 'gaia':
                 new.set_header_item("GAIA", True)
             new.write_fits_file()
-            return new
+            return new, {"delta_ra": delta_ra, "delta_dec": delta_dec}
         else:
             u.rm_check(new_path)
             return None
