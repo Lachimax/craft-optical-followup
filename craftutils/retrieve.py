@@ -7,6 +7,7 @@ from datetime import date, datetime
 from json.decoder import JSONDecodeError
 from typing import Union, Iterable
 
+from tqdm import tqdm
 import cgi
 import requests
 import re
@@ -326,7 +327,7 @@ def save_eso_asset(
     token = login_eso()
     if token is not None:
         headers = {"Authorization": "Bearer " + keys["eso_auth_token"]}
-        response = requests.get(file_url, headers=headers)
+        response = requests.get(file_url, stream=True, headers=headers)
     else:
         # Trying to download anonymously
         response = requests.get(file_url, stream=True, headers=headers)
@@ -341,13 +342,17 @@ def save_eso_asset(
             # last chance: get anything after the last '/'
             filename = file_url[file_url.rindex('/') + 1:]
 
-    path = os.path.join(output, filename)
+    path = os.path.join(output, filename.replace(":", "_"))
     if os.path.exists(path) and not overwrite:
         print(f"{path} already exists. Skipping.")
     elif response.status_code == 200:
         print(f"Writing asset to {path}...")
+        total_size_in_bytes = int(response.headers.get('content-length', 0))
+        block_size = 1024  # 1 Kibibyte
+        progress_bar = tqdm(total=total_size_in_bytes, unit='iB', unit_scale=True)
         with open(path, 'wb') as f:
-            for chunk in response.iter_content(chunk_size=50000):
+            for chunk in response.iter_content(chunk_size=block_size):
+                progress_bar.update(len(chunk))
                 f.write(chunk)
         print("Done")
     else:
