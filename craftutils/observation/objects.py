@@ -1297,17 +1297,18 @@ class Extragalactic(Object):
         self.z_err = None
         self.D_A = None
         self.D_L = None
+        self.D_comoving = None
         self.mu = None
         self.set_z(z, **kwargs)
 
     def set_z(self, z: float, **kwargs):
         self.z = z
-        if z is not None:
-            if "z_err" in kwargs:
-                self.z_err = kwargs["z_err"]
-            self.D_A = self.angular_size_distance()
-            self.D_L = self.luminosity_distance()
-            self.mu = self.distance_modulus()
+        if "z_err" in kwargs:
+            self.z_err = kwargs["z_err"]
+        self.D_A = self.angular_size_distance()
+        self.D_L = self.luminosity_distance()
+        self.D_comoving = self.comoving_distance()
+        self.mu = self.distance_modulus()
 
     def angular_size_distance(self):
         if self.z is not None:
@@ -1682,11 +1683,19 @@ class Transient(Object):
             hg = self._get_object(host_galaxy)
             if hg:
                 host_galaxy = hg
+        z = None
+        z_err = None
+        if "z" in kwargs:
+            z = kwargs["z"]
+        if "z_err" in kwargs:
+            z_err = kwargs["z"]
         self.host_galaxy = host_galaxy
         if self.host_galaxy is None:
-            self.host_galaxy = TransientHostCandidate(transient=self)
-        if "z" in kwargs:
-            self.host_galaxy.z = kwargs["z"]
+            self.host_galaxy = TransientHostCandidate(
+                transient=self,
+                z=z,
+                z_err=z_err
+            )
         self.host_candidate_tables = {}
         self.host_candidates = []
         if not isinstance(date, time.Time) and date is not None:
