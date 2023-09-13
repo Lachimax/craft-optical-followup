@@ -457,6 +457,7 @@ def size_from_ang_size_distance(theta: float, ang_size_distance: float):
 def latex_sanitise(string: str):
     """
     Special thanks to https://stackoverflow.com/questions/2627135/how-do-i-sanitize-latex-input
+
     :param string:
     :return:
     """
@@ -972,10 +973,15 @@ def round_decimals_up(number: float, decimals: int = 2):
     if decimals < 0:
         raise ValueError(f"decimal places has to be 0 or more (received {decimals})")
     elif decimals == 0:
+        print(f"\t\t{decimals=}, returning {math.ceil(number)=}")
         return math.ceil(number)
-
-    factor = 10 ** decimals
-    return math.ceil(number * factor) / factor
+    elif number > 1:
+        print(f"\t\t{number=}>1, returning {np.round(number, decimals)=}")
+        return np.round(number, decimals)
+    else:
+        factor = 10 ** decimals
+        print(f"\t\t{number=}, factor={10 ** decimals=}, returning {math.ceil(number * factor) / factor=}")
+        return math.ceil(number * factor) / factor
 
 
 def uncertainty_string(
@@ -997,16 +1003,25 @@ def uncertainty_string(
         limit_char = ">"
 
     # If we have an upper limit, set uncertainty to blank
-    if uncertainty in limit_vals:
+    if uncertainty == 0:
+        # print("\t\tuncertainty is 0, setting precision to 1")
+        precision = 1
+    elif uncertainty in limit_vals or np.ma.is_masked(uncertainty):
+        # print(f"\t\tuncertainty {uncertainty} indicates {limit_type} limit, setting precision to 1")
         uncertainty = nan_string
         precision = 1
     else:
         precision = np.log10(uncertainty)
+        # print(f"\t\t{np.log10(uncertainty)=}=precision;")
         if precision < 0:
+            # print(f"\t\tprecision<0, setting precision to {int(-precision + n_digits_err)=}")
             precision = int(-precision + n_digits_err)
         else:
+            # print(f"\t\tprecision>=0, setting precision to {n_digits_err=}")
             precision = n_digits_err
+        # print(f"\t\tsending to round_decimals_up() with {uncertainty=}, {abs(precision)=}")
         uncertainty = round_decimals_up(uncertainty, abs(precision))
+        # print(f"\t\t{uncertainty=}")
 
     if value in limit_vals:
         value = nan_string
@@ -1023,7 +1038,12 @@ def uncertainty_string(
         while len(val_rnd[val_rnd.find("."):]) < precision + 1:
             val_rnd += "0"
 
-        if brackets:
+        if uncertainty == 0:
+            this_str = f"${val_rnd}$"
+        # elif uncertainty > 1.:
+        #     uncertainty_digit = str(uncertainty)[0]
+        #     this_str = f"${val_rnd}({uncertainty_digit})$"
+        elif brackets:
             uncertainty_digit = str(uncertainty)[-n_digits_err:]
             this_str = f"${val_rnd}({uncertainty_digit})$"
         else:
