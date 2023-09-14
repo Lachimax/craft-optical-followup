@@ -211,6 +211,7 @@ class Field:
                 if "name" not in obj_dict:
                     obj_dict["name"] = obj_name
                 self.add_object_from_dict(obj_dict=obj_dict)
+                print(obj_name)
 
     def _gather_epochs(self, mode: str = "imaging", quiet: bool = False):
         """
@@ -735,6 +736,19 @@ class Field:
         for obj in self.objects:
             obj.load_output_file()
 
+    def get_object(self, name: str) -> objects.Object:
+        """
+        Retrieves the named object from the field's object dictionary.
+
+        :param name: Name of object.
+        :return: Requested object.
+        """
+        if name in self.objects_dict:
+            return self.objects_dict[name]
+        else:
+            raise ValueError(f"No object with name '{name}' found in field '{self.name}'.")
+
+
     @classmethod
     def default_params(cls):
         default_params = {
@@ -963,15 +977,18 @@ class FRBField(Field):
         )
 
         self.frb = frb
+        print(self.objects_dict.keys())
         if self.frb is not None:
             if isinstance(self.frb, str):
                 self.frb = self.objects_dict[self.frb]
             if isinstance(self.frb, dict):
                 self.frb = objects.FRB.from_dict(self.frb)
             self.frb.field = self
-            if self.frb.host_galaxy is not None:
+            self.frb.get_host()
+            if self.frb.host_galaxy not in self.objects and self.frb.host_galaxy is not None:
                 self.add_object(self.frb.host_galaxy)
         self.epochs_imaging_old = {}
+
 
     def plot_host_colour(
             self,

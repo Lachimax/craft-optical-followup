@@ -1683,19 +1683,13 @@ class Transient(Object):
             hg = self._get_object(host_galaxy)
             if hg:
                 host_galaxy = hg
-        z = None
-        z_err = None
+        self.z = None
+        self.z_err = None
         if "z" in kwargs:
-            z = kwargs["z"]
+            self.z = kwargs["z"]
         if "z_err" in kwargs:
-            z_err = kwargs["z"]
+            self.z_err = kwargs["z"]
         self.host_galaxy = host_galaxy
-        if self.host_galaxy is None:
-            self.host_galaxy = TransientHostCandidate(
-                transient=self,
-                z=z,
-                z_err=z_err
-            )
         self.host_candidate_tables = {}
         self.host_candidates = []
         if not isinstance(date, time.Time) and date is not None:
@@ -1704,6 +1698,24 @@ class Transient(Object):
         self.tns_name = None
         if "tns_name" in kwargs:
             self.tns_name = kwargs["tns_name"]
+
+    def get_host(self) -> Galaxy:
+        """
+        If `self.host_galaxy` is a string, checks for a host galaxy with that in the FRB's field and sets
+        `self.host_galaxy` to that object.
+        If `self.host_galaxy` is `None`, sets it to an empty `TransientHostCandidate` with the same `z` and `z_err`.
+
+        :return: The Galaxy or TransientHostCandidate object.
+        """
+        if self.host_galaxy is None:
+            self.host_galaxy = TransientHostCandidate(
+                transient=self,
+                z=self.z,
+                z_err=self.z_err
+            )
+        elif isinstance(self.host_galaxy, str) and self.field:
+            self.host_galaxy = self.field.get_object(self.host_galaxy)
+        return self.host_galaxy
 
 
 @u.export
