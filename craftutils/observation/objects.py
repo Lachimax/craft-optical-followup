@@ -1921,8 +1921,9 @@ class FRB(Transient):
         self.host_candidate_tables["consolidated"] = path_cat
         for row in path_cat:
             idn = self.name.replace("FRB", "")
-            host_candidate = Galaxy(
+            host_candidate = TransientHostCandidate(
                 z=None,
+                transient=self,
                 position=SkyCoord(row["ra"], row["dec"]),
                 field=self.field,
                 name=f"HC{row['id']}_{idn}"

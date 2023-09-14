@@ -964,9 +964,10 @@ class FRBField(Field):
 
         self.frb = frb
         if self.frb is not None:
+            if isinstance(self.frb, str):
+                self.frb = self.objects_dict[self.frb]
             if isinstance(self.frb, dict):
                 self.frb = objects.FRB.from_dict(self.frb)
-
             self.frb.field = self
             if self.frb.host_galaxy is not None:
                 self.add_object(self.frb.host_galaxy)
