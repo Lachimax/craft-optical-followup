@@ -2432,7 +2432,7 @@ class ImagingImage(Image):
 
         if data == "image":
             self.load_data()
-            data = self.data[ext].value * 1.0
+            data = self.data[ext].value
         elif data == "background":
             _, data = self.model_background_photometry(**kwargs)
         elif data == "background_subtracted_image":
@@ -2441,7 +2441,7 @@ class ImagingImage(Image):
         elif data == "pixel_magnitudes":
             data, _, _, _ = self.pixel_magnitudes(**kwargs)
         elif isinstance(data, np.ndarray):
-            data = data * 1.
+            data = data
         else:
             raise ValueError(
                 f"data_type {data} not recognised; this can be 'image', 'background', or 'background_subtracted_image'")
@@ -2578,6 +2578,8 @@ class ImagingImage(Image):
             )
         if output_path is not None:
             fig.savefig(output_path)
+
+        del data
 
         return ax, fig, other_args
 

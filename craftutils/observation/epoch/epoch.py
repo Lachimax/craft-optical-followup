@@ -1023,6 +1023,10 @@ class ImagingEpoch(Epoch):
                 "method": cls.proc_get_photometry,
                 "message": "Get photometry?",
                 "default": True,
+                "keywords": {
+                    "image_type": "final",
+                    "skip_plots": False
+                }
             },
             # "get_photometry_all": {
             #     "method": cls.proc_get_photometry_all,
@@ -1893,7 +1897,7 @@ class ImagingEpoch(Epoch):
                     "config": {"radius": 10}
                 }
             self.probabilistic_association(image_type=image_type, **path_kwargs)
-        self.get_photometry(output_dir, image_type=image_type)
+        self.get_photometry(output_dir, image_type=image_type, **kwargs)
 
     def probabilistic_association(
             self,
@@ -1919,6 +1923,7 @@ class ImagingEpoch(Epoch):
             image_type: str = "final",
             dual: bool = False,
             match_tolerance: units.Quantity = 1 * units.arcsec,
+            **kwargs
     ):
         """
         Retrieve photometric properties of key objects and write to disk.
@@ -1937,6 +1942,10 @@ class ImagingEpoch(Epoch):
             p.data_dir,
             "Finalised"
         )
+
+        skip_plots = False
+        if "skip_plots" in kwargs:
+            skip_plots = kwargs["skip_plots"]
 
         image_dict = self._get_images(image_type=image_type)
         u.mkdir_check(path)
@@ -2083,7 +2092,7 @@ class ImagingEpoch(Epoch):
                         do_mask=img.mask_nearby()
                     )
 
-                    if isinstance(self.field, fld.FRBField):
+                    if isinstance(self.field, fld.FRBField) and not skip_plots:
                         frames = [
                             img.nice_frame(row=obj.cat_row),
                             10 * units.arcsec,
@@ -2097,7 +2106,6 @@ class ImagingEpoch(Epoch):
                         if fil in obj.plotting_params:
                             if "normalize" in obj.plotting_params[fil]:
                                 normalize_kwargs = obj.plotting_params[fil]["normalize"]
-
                         for frame in frames:
                             for stretch in ["log", "sqrt"]:
                                 print(f"\nPlotting {frame=}, {stretch=}")
@@ -2105,7 +2113,7 @@ class ImagingEpoch(Epoch):
                                 centre = obj.position_from_cat_row()
 
                                 fig = plt.figure(figsize=(6, 5))
-                                ax, fig, _ = self.field.plot_host(
+                                ax, fig, other = self.field.plot_host(
                                     img=img,
                                     fig=fig,
                                     centre=centre,
@@ -2135,6 +2143,7 @@ class ImagingEpoch(Epoch):
                                 fig.clf()
                                 plt.close("all")
                                 pl.latex_off()
+                                del ax, fig, other
 
             tbl = table.vstack(rows)
             tbl.add_column(names, name="NAME")
