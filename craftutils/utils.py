@@ -988,13 +988,16 @@ def uncertainty_string(
         value: float,
         uncertainty: float,
         n_digits_err: int = 1,
+        n_digits_lim: int = None,
         unit: units.Unit = None,
         brackets: bool = True,
         limit_val: int = None,
         limit_type: str = "upper",
         nan_string: str = "--"
 ):
-    limit_vals = (limit_val, -99, -999)
+    limit_vals = (limit_val, -99, -999, -999.)
+    if np.ma.is_masked(uncertainty):
+        uncertainty = 0.
     value = dequantify(value, unit)
     uncertainty = dequantify(uncertainty, unit)
     if limit_type == "upper":
@@ -1002,54 +1005,85 @@ def uncertainty_string(
     else:
         limit_char = ">"
 
-    # If we have an upper limit, set uncertainty to blank
-    if uncertainty == 0:
-        # print("\t\tuncertainty is 0, setting precision to 1")
-        precision = 1
-    elif uncertainty in limit_vals or np.ma.is_masked(uncertainty):
-        # print(f"\t\tuncertainty {uncertainty} indicates {limit_type} limit, setting precision to 1")
-        uncertainty = nan_string
-        precision = 1
-    else:
-        precision = np.log10(uncertainty)
-        # print(f"\t\t{np.log10(uncertainty)=}=precision;")
-        if precision < 0:
-            # print(f"\t\tprecision<0, setting precision to {int(-precision + n_digits_err)=}")
-            precision = int(-precision + n_digits_err)
+    value_str = str(value)
+    uncertainty_str = str(abs(uncertainty))
+
+    # Find the decimal point in the value.
+    v_point = value_str.find(".")
+    # If there isn't one, there's an imaginary one at the end of the string.
+    if v_point == -1:
+        v_point = len(value_str)
+
+    if value in limit_vals or np.ma.is_masked(value):
+        return nan_string
+
+    if uncertainty in limit_vals:
+        if n_digits_lim:
+            # Account for the decimal point
+            print(v_point, n_digits_lim)
+            if v_point < n_digits_lim:
+                n_digits_lim += 1
+                x = 0
+            else:
+                x = v_point - n_digits_lim
+            value_str = value_str[:n_digits_lim] + "0" * x
+
+        return f"${limit_char} {value_str}$"
+
+    if "e" in uncertainty_str:
+        if abs(uncertainty) < 1:
+            m = -int(np.log10(uncertainty) - 1)
         else:
-            # print(f"\t\tprecision>=0, setting precision to {n_digits_err=}")
-            precision = n_digits_err
-        # print(f"\t\tsending to round_decimals_up() with {uncertainty=}, {abs(precision)=}")
-        uncertainty = round_decimals_up(uncertainty, abs(precision))
-        # print(f"\t\t{uncertainty=}")
-
-    if value in limit_vals:
-        value = nan_string
-    else:
-        value = np.round(value, precision)
-
-    if uncertainty == nan_string:
-        if value != nan_string:
-            this_str = f"${limit_char} {value}$"
+            m = 10
+        uncertainty_str = f"{uncertainty:.{m}f}"
+    if "e" in value_str:
+        if abs(value) < 1:
+            m = -int(np.log10(value) - 1)
         else:
-            this_str = "--"
+            m = 10
+        value_str = f"{value:.{m}f}"
+
+    if uncertainty == 0.:
+        return f"${value_str}$"
+
+    # Find the decimal point in the uncertainty.
+    u_point = uncertainty_str.find(".")
+    if u_point == -1:
+        u_point = len(uncertainty_str)
+    # If the uncertainty is less than 1, we iterate along the string starting at the decimal place until we find a non-zero character.
+    if uncertainty < 1.:
+        i = u_point + 1
+        while uncertainty_str[i] == "0":
+            i += 1
+        # x is the number of digits after the decimal point to show.
+        x = i - u_point + n_digits_err
+        value_str = value_str[:v_point + x]
+        uncertainty_str = uncertainty_str[:u_point + x]
+        while len(uncertainty_str) < i + n_digits_err:
+            uncertainty_str += "0"
+        u_dp = len(uncertainty_str) - u_point
+        v_dp = len(value_str) - v_point
+        while v_dp < u_dp:
+            value_str += "0"
+            v_dp = len(value_str) - v_point
     else:
-        val_rnd = str(value)
-        while len(val_rnd[val_rnd.find("."):]) < precision + 1:
-            val_rnd += "0"
+        # Here x is the number of digits before the decimal point to set to zero.
+        if u_point < n_digits_err:
+            # Account for the decimal point
+            n_digits_err += 1
+        x = u_point - n_digits_err
+        value_str = value_str[:v_point - x] + "0" * x
+        uncertainty_str = uncertainty_str[:n_digits_err] + "0" * x
 
-        if uncertainty == 0:
-            this_str = f"${val_rnd}$"
-        # elif uncertainty > 1.:
-        #     uncertainty_digit = str(uncertainty)[0]
-        #     this_str = f"${val_rnd}({uncertainty_digit})$"
-        elif brackets:
-            uncertainty_digit = str(uncertainty)[-n_digits_err:]
-            this_str = f"${val_rnd}({uncertainty_digit})$"
+    if brackets:
+        if uncertainty < 1:
+            uncertainty_str = uncertainty_str[-n_digits_err:]
         else:
-            this_str = f"${val_rnd} \\pm {uncertainty}$"
-
-    return this_str, value, uncertainty
+            x = u_point - n_digits_err
+            uncertainty_str = uncertainty_str[:n_digits_err] + "0" * x
+        return f"${value_str}({uncertainty_str})$"
+    else:
+        return f"${value_str} \pm {uncertainty_str}$"
 
 
 def wcs_as_deg(ra: str, dec: str):
