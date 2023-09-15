@@ -1991,11 +1991,12 @@ class FRB(Transient):
             if "host_candidates" in outputs:
                 for obj in outputs["host_candidates"]:
                     self.host_candidates.append(
-                        Galaxy(
+                        TransientHostCandidate(
                             z=obj["z"],
                             position=obj["position"],
                             name=obj["name"],
-                            field=self.field
+                            field=self.field,
+                            transient=self
                         )
                     )
 
