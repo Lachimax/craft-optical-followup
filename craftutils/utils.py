@@ -997,7 +997,7 @@ def uncertainty_string(
 ):
     limit_vals = (limit_val, -99, -999, -999.)
     if value in limit_vals or np.ma.is_masked(value):
-        return nan_string
+        return nan_string, value, uncertainty
     if np.ma.is_masked(uncertainty):
         uncertainty = 0.
     value = float(dequantify(value, unit))
@@ -1027,7 +1027,7 @@ def uncertainty_string(
                 x = v_point - n_digits_lim
             value_str = value_str[:n_digits_lim] + "0" * x
 
-        return f"${limit_char} {value_str}$"
+        return f"${limit_char} {value_str}$", value, uncertainty
 
     if "e" in uncertainty_str:
         if abs(uncertainty) < 1:
@@ -1043,7 +1043,7 @@ def uncertainty_string(
         value_str = f"{value:.{m}f}"
 
     if uncertainty == 0.:
-        return f"${value_str}$"
+        return f"${np.round(float(value_str), n_digits_err)}$", value, uncertainty
 
     # Find the decimal point in the uncertainty.
     u_point = uncertainty_str.find(".")
@@ -1086,9 +1086,9 @@ def uncertainty_string(
         else:
             x = u_point - n_digits_err
             uncertainty_str = uncertainty_str[:n_digits_err] + "0" * x
-        return f"${value_str}({uncertainty_str})$"
+        return f"${value_str}({uncertainty_str})$", value_rnd, uncertainty_rnd
     else:
-        return f"${value_str} \pm {uncertainty_str}$"
+        return f"${value_str} \pm {uncertainty_str}$", value_rnd, uncertainty_rnd
 
 
 def uncertainty_str_coord(
@@ -1100,9 +1100,9 @@ def uncertainty_str_coord(
 
 ):
     ra = coord.ra
-    ra_s_str = uncertainty_string(
+    ra_s_str, ra_rounded, ra_unc_rounded = uncertainty_string(
         value=coord.ra.hms.s,
-        uncertainty=uncertainty_dec,
+        uncertainty=uncertainty_ra,
         n_digits_err=n_digits_err,
         brackets=brackets
     )
@@ -1115,13 +1115,14 @@ def uncertainty_str_coord(
     ra_uncertainty_str = ra_str.replace(ra_replace, ra_s_str)
 
     dec = coord.dec
-    dec_s_str = uncertainty_string(
-        value=coord.dec.dms.s,
-        uncertainty=uncertainty_ra,
+    dec_s_str, dec_rounded, dec_unc_rounded = uncertainty_string(
+        value=abs(coord.dec.dms.s),
+        uncertainty=uncertainty_dec,
         n_digits_err=n_digits_err,
         brackets=brackets
     )
     dec_s_str = dec_s_str.replace("$", "")
+
     dec_str = dec.to_string(format="latex")
     s_i = dec_str.find("\prime") + 6
     s_2 = dec_str[s_i:]
