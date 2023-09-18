@@ -1890,7 +1890,7 @@ class ImagingEpoch(Epoch):
 
     def proc_get_photometry(self, output_dir: str, **kwargs):
         if "image_type" in kwargs and isinstance(kwargs["image_type"], str):
-            image_type = kwargs["image_type"]
+            image_type = kwargs.pop("image_type")
         else:
             image_type = "final"
         u.debug_print(2, f"{self}.proc_get_photometry(): image_type ==:", image_type)
