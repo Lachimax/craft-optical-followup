@@ -22,11 +22,6 @@ def main(
         instrument: str,
         furby_path: str,
         do: str,
-        do_not_reuse_masters: bool,
-        overwrite_download: bool,
-        distance_tolerance: float,
-        snr_min: float,
-        class_star_tolerance: float,
         debug_level: int,
 ):
     if not p.param_dir:
@@ -218,13 +213,7 @@ def main(
 
     u.debug_print(2, "pipeline.py: type(epoch) ==", type(epoch))
     epoch.do = do
-    epoch.pipeline(
-        do_not_reuse_masters=do_not_reuse_masters,
-        overwrite_download=overwrite_download,
-        distance_tolerance=distance_tolerance,
-        snr_min=snr_min,
-        class_star_tolerance=class_star_tolerance
-    )
+    epoch.pipeline()
 
 
 if __name__ == '__main__':
@@ -235,12 +224,12 @@ if __name__ == '__main__':
     )
     parser.add_argument(
         "--field",
-        help='Name of field, eg FRB180924',
+        help='Name of field, eg FRB20180924',
         type=str,
         default=None)
     parser.add_argument(
         "--epoch",
-        help='Name of epoch, eg FRB181112_1',
+        help='Name of epoch, eg FRB20181112_1',
         type=str,
         default=None)
     parser.add_argument(
@@ -257,36 +246,14 @@ if __name__ == '__main__':
         "--do",
         help="Epoch processing stages to perform (overrides manual selection if provided). "
              "Numbers separated by space or comma.",
-        type=str)
-    parser.add_argument(
-        "--do_not_reuse_masters",
-        help="If provided, PypeIt is asked to re-make master frames for every"
-             "science reduction (including within a run). DRASTICALLY "
-             "increases PypeIt runtime, especially for epochs with many "
-             "science frames.",
-        action='store_true')
-    parser.add_argument(
-        "-o",
-        help="Overwrite existing files during download.",
-        action='store_true')
-    parser.add_argument(
-        "--distance_tolerance",
-        help="Distance tolerance for object-matching.",
-        type=float
+        type=str
     )
-    parser.add_argument(
-        "--snr_min",
-        help="Minimum SNR for photometric calibration",
-        type=float)
-    parser.add_argument(
-        "--class_star_tolerance",
-        help="Minimum class_star for object inclusion in photometric calibration.",
-        type=float)
     parser.add_argument(
         "-d",
         help="Debug level for verbosity purposes.",
         type=int,
-        default=0)
+        default=0
+    )
     parser.add_argument(
         "--furby_path",
         help="Path to FURBY json file. If specified, will create a new FRB param file & FORS2 epoch param file, and use"
@@ -300,12 +267,6 @@ if __name__ == '__main__':
              "those for FORS2 data retrieval and reduction. Overrides --epoch, --field, -i and -s.",
         type=str
     )
-    # parser.add_argument(
-    #     "--furby_test",
-    #     help="Puts the automated FURBY pipeline in test mode, retrieving I-band data instead of R-band and using old "
-    #          "programme IDs.",
-    #     action="store_true",
-    # )
 
     # Load arguments
 
@@ -322,11 +283,6 @@ if __name__ == '__main__':
         mode=args.mode,
         instrument=args.instrument,
         do=args.do,
-        do_not_reuse_masters=args.do_not_reuse_masters,
-        overwrite_download=args.o,
-        distance_tolerance=args.distance_tolerance,
-        snr_min=args.snr_min,
-        class_star_tolerance=args.class_star_tolerance,
         debug_level=args.d,
         furby_path=fp,
     )
