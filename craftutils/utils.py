@@ -985,21 +985,23 @@ def round_decimals_up(number: float, decimals: int = 2):
 
 
 def uncertainty_string(
-        value: float,
-        uncertainty: float,
+        value: Union[float, units.Quantity],
+        uncertainty: Union[float, units.Quantity],
         n_digits_err: int = 1,
         n_digits_lim: int = None,
         unit: units.Unit = None,
         brackets: bool = True,
         limit_val: int = None,
         limit_type: str = "upper",
-        nan_string: str = "--"
+        nan_string: str = "--",
 ):
     limit_vals = (limit_val, -99, -999, -999.)
+    if value in limit_vals or np.ma.is_masked(value):
+        return nan_string
     if np.ma.is_masked(uncertainty):
         uncertainty = 0.
-    value = dequantify(value, unit)
-    uncertainty = dequantify(uncertainty, unit)
+    value = float(dequantify(value, unit))
+    uncertainty = float(dequantify(uncertainty, unit))
     if limit_type == "upper":
         limit_char = "<"
     else:
@@ -1013,9 +1015,6 @@ def uncertainty_string(
     # If there isn't one, there's an imaginary one at the end of the string.
     if v_point == -1:
         v_point = len(value_str)
-
-    if value in limit_vals or np.ma.is_masked(value):
-        return nan_string
 
     if uncertainty in limit_vals:
         if n_digits_lim:
@@ -1057,8 +1056,12 @@ def uncertainty_string(
             i += 1
         # x is the number of digits after the decimal point to show.
         x = i - u_point + n_digits_err
-        value_str = value_str[:v_point + x]
-        uncertainty_str = uncertainty_str[:u_point + x]
+        # Round appropriately
+        uncertainty_rnd = np.round(uncertainty, x - 1)
+        value_rnd = np.round(value, x - 1)
+        value_str = str(value_rnd)[:v_point + x]
+        uncertainty_str = str(uncertainty_rnd)[:u_point + x]
+
         while len(uncertainty_str) < i + n_digits_err:
             uncertainty_str += "0"
         u_dp = len(uncertainty_str) - u_point
@@ -1072,8 +1075,10 @@ def uncertainty_string(
             # Account for the decimal point
             n_digits_err += 1
         x = u_point - n_digits_err
-        value_str = value_str[:v_point - x] + "0" * x
-        uncertainty_str = uncertainty_str[:n_digits_err] + "0" * x
+        uncertainty_rnd = np.round(uncertainty, -x)
+        value_rnd = np.round(value, -x)
+        value_str = str(value_rnd)[:v_point - x] + "0" * x
+        uncertainty_str = str(uncertainty_rnd)[:n_digits_err] + "0" * x
 
     if brackets:
         if uncertainty < 1:
@@ -1086,9 +1091,51 @@ def uncertainty_string(
         return f"${value_str} \pm {uncertainty_str}$"
 
 
+def uncertainty_str_coord(
+        coord: SkyCoord,
+        uncertainty_ra: Union[float, units.Quantity],
+        uncertainty_dec: Union[float, units.Quantity],
+        n_digits_err: int = 2,
+        brackets: bool = True
+
+):
+    ra = coord.ra
+    ra_s_str = uncertainty_string(
+        value=coord.ra.hms.s,
+        uncertainty=uncertainty_dec,
+        n_digits_err=n_digits_err,
+        brackets=brackets
+    )
+    ra_s_str = ra_s_str.replace("$", "")
+    ra_str = ra.to_string("h", format="latex")
+    s_i = ra_str.find(r"{m}}") + 4
+    s_2 = ra_str[s_i:]
+    e_i = s_2.find("^") + s_i
+    ra_replace = ra_str[s_i:e_i]
+    ra_uncertainty_str = ra_str.replace(ra_replace, ra_s_str)
+
+    dec = coord.dec
+    dec_s_str = uncertainty_string(
+        value=coord.dec.dms.s,
+        uncertainty=uncertainty_ra,
+        n_digits_err=n_digits_err,
+        brackets=brackets
+    )
+    dec_s_str = dec_s_str.replace("$", "")
+    dec_str = dec.to_string(format="latex")
+    s_i = dec_str.find("\prime") + 6
+    s_2 = dec_str[s_i:]
+    e_i = s_2.find("{}^") + s_i
+    dec_replace = dec_str[s_i:e_i]
+    dec_uncertainty_str = dec_str.replace(dec_replace, dec_s_str)
+
+    return ra_uncertainty_str, dec_uncertainty_str
+
+
 def wcs_as_deg(ra: str, dec: str):
     """
     Using the same syntax as astropy.coordinates.SkyCoord, converts a string of WCS coordinates into degrees.
+
     :param ra:
     :param dec:
     :return:
@@ -1101,6 +1148,7 @@ def wcs_as_deg(ra: str, dec: str):
 def sanitise_file_ext(filename: str, ext: str):
     """
     Checks if the filename has the desired extension; adds it if not and returns the filename.
+
     :param filename: The filename.
     :param ext: The extension, eg '.fits'
     :return:
