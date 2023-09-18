@@ -421,6 +421,14 @@ class Epoch:
 
         return stages
 
+    @classmethod
+    def enumerate_stages(cls, show: bool = True):
+        stages = list(enumerate(cls.stages()))
+        if show:
+            for i, stage in stages:
+                print(f"{i}. {stage}")
+        return stages
+
     def pipeline(self, no_query: bool = False, **kwargs):
         """
         Performs the pipeline methods given in stages() for this Epoch.
@@ -731,24 +739,23 @@ class Epoch:
     @classmethod
     def default_params(cls):
         default_params = {
+            "mode": cls.mode,
             "name": None,
             "field": None,
             "data_path": None,
-            "instrument": None,
+            "instrument": cls.instrument_name,
             "date": None,
             "target": None,
             "program_id": None,
             "do": {},
             "notes": [],
-            "combined_epoch": False
+            "combined_epoch": False,
         }
         # Pull the list of applicable kwargs from the stage information
         stages = cls.stages()
-        print(cls)
-        print(stages)
         for stage in stages:
             stage_info = stages[stage]
-            if "keywords" in stage_info:
+            if stage_info is not None and "keywords" in stage_info:
                 default_params[stage] = stage_info["keywords"]
             else:
                 default_params[stage] = {}
