@@ -2323,7 +2323,6 @@ class ImagingImage(Image):
 
         return value
 
-
     def frame_from_coord(
             self,
             frame: units.Quantity,
@@ -2861,8 +2860,9 @@ class ImagingImage(Image):
     ):
         # Multiplying by the "y-sense" (the 1,1 entry on the wcs pixel scale matrix) accounts for images where the
         # y-axis is reversed wrt north (eg certain GMOS images)
-        position_angle = u.check_quantity(position_angle,
-                                          units.deg) * self.extract_y_sense() + self.extract_rotation_angle()
+        position_angle = u.check_quantity(
+            position_angle,
+            units.deg) * self.extract_y_sense() + self.extract_rotation_angle()
         centre_x, centre_y = self.world_to_pixel(centre)
         slit_width = self.pixel(width).value
         slit_length = self.pixel(length).value
