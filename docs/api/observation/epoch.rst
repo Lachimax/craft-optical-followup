@@ -13,6 +13,8 @@ However, stages listed in `Epoch.do` will still only be performed if they are `d
 
 That is, the `do` list is really a list of steps to *check* for this particular run, each of which will be performed only if it is specified by the epoch YAML or it is a default stage.
 
+In normal useage, this attribute is set by the `craft_optical_pipeline` argument `--do`.
+
 Functions
 ---------
 .. python-apigen-group:: Epoch functions
