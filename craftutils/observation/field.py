@@ -211,7 +211,6 @@ class Field:
                 if "name" not in obj_dict:
                     obj_dict["name"] = obj_name
                 self.add_object_from_dict(obj_dict=obj_dict)
-                print(obj_name)
 
     def _gather_epochs(self, mode: str = "imaging", quiet: bool = False):
         """
@@ -528,6 +527,7 @@ class Field:
     ):
         """
         Retrieves and saves a catalogue of this field.
+
         :param cat_name: Name of catalogue; must match one of those available in craftutils.retrieve
         :param force_update: If True, retrieves the catalogue even if one is already on disk.
         :return:
@@ -540,7 +540,8 @@ class Field:
         output = self._cat_data_path(cat=cat_name)
         ra = self.centre_coords.ra.value
         dec = self.centre_coords.dec.value
-        if force_update or f"in_{cat_name}" not in self.cats:
+
+        if force_update or f"in_{cat_name}" not in self.cats or not os.path.isfile(output):
             u.debug_print(2, "Field.retrieve_catalogue(): radius ==", radius)
             response = retrieve.save_catalogue(
                 ra=ra,
@@ -563,10 +564,10 @@ class Field:
                 self.update_output_file()
             return response
         elif self.cats[f"in_{cat_name}"] is True:
-            u.debug_print(1, f"There is already {cat_name} data present for this field.")
+            print(1, f"There is already {cat_name} data present for this field.")
             return True
         else:
-            u.debug_print(1, f"This field is not present in {cat_name}.")
+            print(1, f"This field is not present in {cat_name}.")
 
     def load_catalogue(self, cat_name: str, **kwargs):
         if self.retrieve_catalogue(cat_name):
@@ -747,7 +748,6 @@ class Field:
             return self.objects_dict[name]
         else:
             raise ValueError(f"No object with name '{name}' found in field '{self.name}'.")
-
 
     @classmethod
     def default_params(cls):
@@ -977,7 +977,6 @@ class FRBField(Field):
         )
 
         self.frb = frb
-        print(self.objects_dict.keys())
         if self.frb is not None:
             if isinstance(self.frb, str):
                 self.frb = self.objects_dict[self.frb]
@@ -988,7 +987,6 @@ class FRBField(Field):
             if self.frb.host_galaxy not in self.objects and self.frb.host_galaxy is not None:
                 self.add_object(self.frb.host_galaxy)
         self.epochs_imaging_old = {}
-
 
     def plot_host_colour(
             self,
