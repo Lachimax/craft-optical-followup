@@ -11,6 +11,7 @@ import craftutils.utils as u
 
 from .sed import SEDModel
 
+
 # __all__ = []
 
 
@@ -63,7 +64,6 @@ class GordonProspectorModel(SEDModel):
         if "observed_flux_err_path" in kwargs:
             self.observed_flux_err_path = kwargs["observed_flux_err_path"]
 
-
         super().__init__(**kwargs)
         if self.model_wavelength_path is not None and self.model_flux_path is not None:
             self.load_data()
@@ -93,6 +93,8 @@ class GordonProspectorModel(SEDModel):
         else:
             obs_flux_err = []
             self.observed_flux_err_path = None
+
+
 
         self.model_table = table.QTable(
             {

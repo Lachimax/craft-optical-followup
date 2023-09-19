@@ -324,16 +324,20 @@ class SEDSample:
     @classmethod
     def from_file(cls, path: str):
         param_dict = p.load_params(path)
-        param_dir = os.path.split(path)[0]
-
         sample = cls()
 
         for model_dict in param_dict:
             for key, value in model_dict.items():
-                if key.endswith(path) and value:
+                if key.endswith("path") and value:
                     if not os.path.isabs(value):
-                        value = os.path.join(param_dir, value)
+                        value = os.path.join(p.param_dir, value)
                         model_dict[key] = value
 
             model = SEDModel.from_dict(model_dict)
             sample.add_model(model)
+        return sample
+
+    @classmethod
+    def from_params(cls, name: str):
+        path = os.path.join(p.param_dir, "sed_samples", name, name + ".yaml")
+        return cls.from_file(path=path)
