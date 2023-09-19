@@ -9,8 +9,8 @@ import astropy.units as units
 import astropy.cosmology as cosmology
 from astropy.modeling import models, fitting
 
-
 import craftutils.utils as u
+import craftutils.params as p
 import craftutils.observation.filters as fil
 import craftutils.observation.objects as objects
 from craftutils.plotting import tick_fontsize, axis_fontsize, lineweight
@@ -61,8 +61,7 @@ class SEDSample:
         :param z_min: Minimum redshift to take measurements at.
         :param z_max: Maximum redshift to take measurements at.
         :param n_z: number of redshifts to take measurements at.
-        :param output:
-        :return:
+        :return: a dictionary of all of the magnitude tables that have been generated for this SED model.
         """
 
         # Empty dict of dicts
@@ -309,7 +308,7 @@ class SEDSample:
                 os.path.join(output, f"probability_{objects.cosmology.name}_{band_name}_gaussian.png"),
                 bbox_inches="tight", dpi=200
             )
-            
+
             if show:
                 plt.show(fig)
 
@@ -321,3 +320,20 @@ class SEDSample:
             "p(z|DM,U)": p_z_dm_u_dict
         }
         return values, tbl, z_lost
+
+    @classmethod
+    def from_file(cls, path: str):
+        param_dict = p.load_params(path)
+        param_dir = os.path.split(path)[0]
+
+        sample = cls()
+
+        for model_dict in param_dict:
+            for key, value in model_dict.items():
+                if key.endswith(path) and value:
+                    if not os.path.isabs(value):
+                        value = os.path.join(param_dir, value)
+                        model_dict[key] = value
+
+            model = SEDModel.from_dict(model_dict)
+            sample.add_model(model)

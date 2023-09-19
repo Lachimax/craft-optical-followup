@@ -11,10 +11,10 @@ import craftutils.utils as u
 
 from .sed import SEDModel
 
-__all__ = []
+# __all__ = []
 
 
-@u.export
+# @u.export
 class GordonProspectorModel(SEDModel):
     """
     The `GordonProspectorModel` uses the data model established by [GordonProspector]_.
