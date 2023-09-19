@@ -21,6 +21,7 @@ If you make use of this code, as-is or in a derived form, please cite [Marnoch20
    config
    outputs
    instruments
+   software
    references
    api
 
