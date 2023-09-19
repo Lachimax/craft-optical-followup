@@ -5302,7 +5302,7 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
                 # For each chip, generate a master bias image
                 try:
                     master_bias = esorex.fors_bias(
-                        bias_frames=list(map(lambda b: b.output_file, bias_set)),
+                        bias_frames=list(map(lambda b: b.path, bias_set)),
                         output_dir=output_path,
                         output_filename=f"master_bias_{chip}.fits",
                         sof_name=f"bias_{chip}.sof"
@@ -5317,7 +5317,7 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
                     img = image_dict[fil]
                     if "calib_pipeline" in img.zeropoints:
                         img.zeropoints.pop("calib_pipeline")
-                    flat_set = list(map(lambda b: b.output_file, flat_sets[fil][i]))
+                    flat_set = list(map(lambda b: b.path, flat_sets[fil][i]))
                     fil_dir = os.path.join(output_path, fil)
                     u.mkdir_check(fil_dir)
                     try:
@@ -5356,7 +5356,7 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
                             std_dir = os.path.join(fil_dir, std.name)
                             u.mkdir_check(std_dir)
                             aligned_phot, std_reduced = esorex.fors_zeropoint(
-                                standard_img=std.output_file,
+                                standard_img=std.path,
                                 master_bias=master_bias,
                                 master_sky_flat_img=master_sky_flat_img,
                                 output_dir=std_dir,
