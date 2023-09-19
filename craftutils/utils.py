@@ -457,6 +457,7 @@ def size_from_ang_size_distance(theta: float, ang_size_distance: float):
 def latex_sanitise(string: str):
     """
     Special thanks to https://stackoverflow.com/questions/2627135/how-do-i-sanitize-latex-input
+
     :param string:
     :return:
     """
@@ -763,7 +764,7 @@ def root_mean_squared_error(
     return np.sqrt(mse)
 
 
-def detect_problem_table(tbl: table.Table, fmt: str = "ecsv"):
+def detect_problem_table(tbl: table.Table, fmt: str = "ascii.ecsv"):
     for i, row in enumerate(tbl):
         tbl_this = tbl[:i + 1]
         try:
@@ -972,69 +973,170 @@ def round_decimals_up(number: float, decimals: int = 2):
     if decimals < 0:
         raise ValueError(f"decimal places has to be 0 or more (received {decimals})")
     elif decimals == 0:
+        print(f"\t\t{decimals=}, returning {math.ceil(number)=}")
         return math.ceil(number)
-
-    factor = 10 ** decimals
-    return math.ceil(number * factor) / factor
+    elif number > 1:
+        print(f"\t\t{number=}>1, returning {np.round(number, decimals)=}")
+        return np.round(number, decimals)
+    else:
+        factor = 10 ** decimals
+        print(f"\t\t{number=}, factor={10 ** decimals=}, returning {math.ceil(number * factor) / factor=}")
+        return math.ceil(number * factor) / factor
 
 
 def uncertainty_string(
-        value: float,
-        uncertainty: float,
+        value: Union[float, units.Quantity],
+        uncertainty: Union[float, units.Quantity],
         n_digits_err: int = 1,
+        n_digits_lim: int = None,
         unit: units.Unit = None,
         brackets: bool = True,
         limit_val: int = None,
         limit_type: str = "upper",
-        nan_string: str = "--"
+        nan_string: str = "--",
 ):
-    limit_vals = (limit_val, -99, -999)
-    value = dequantify(value, unit)
-    uncertainty = dequantify(uncertainty, unit)
+    limit_vals = (limit_val, -99, -999, -999.)
+    if value in limit_vals or np.ma.is_masked(value):
+        return nan_string, value, uncertainty
+    if np.ma.is_masked(uncertainty):
+        uncertainty = 0.
+    value = float(dequantify(value, unit))
+    uncertainty = float(dequantify(uncertainty, unit))
     if limit_type == "upper":
         limit_char = "<"
     else:
         limit_char = ">"
 
-    # If we have an upper limit, set uncertainty to blank
+    value_str = str(value)
+    uncertainty_str = str(abs(uncertainty))
+
+    # Find the decimal point in the value.
+    v_point = value_str.find(".")
+    # If there isn't one, there's an imaginary one at the end of the string.
+    if v_point == -1:
+        v_point = len(value_str)
+
     if uncertainty in limit_vals:
-        uncertainty = nan_string
-        precision = 1
-    else:
-        precision = np.log10(uncertainty)
-        if precision < 0:
-            precision = int(-precision + n_digits_err)
+        if n_digits_lim:
+            # Account for the decimal point
+            print(v_point, n_digits_lim)
+            if v_point < n_digits_lim:
+                n_digits_lim += 1
+                x = 0
+            else:
+                x = v_point - n_digits_lim
+            value_str = value_str[:n_digits_lim] + "0" * x
+
+        return f"${limit_char} {value_str}$", value, uncertainty
+
+    if "e" in uncertainty_str:
+        if abs(uncertainty) < 1:
+            m = -int(np.log10(uncertainty) - 1)
         else:
-            precision = n_digits_err
-        uncertainty = round_decimals_up(uncertainty, abs(precision))
-
-    if value in limit_vals:
-        value = nan_string
-    else:
-        value = np.round(value, precision)
-
-    if uncertainty == nan_string:
-        if value != nan_string:
-            this_str = f"${limit_char} {value}$"
+            m = 10
+        uncertainty_str = f"{uncertainty:.{m}f}"
+    if "e" in value_str:
+        if abs(value) < 1:
+            m = -int(np.log10(value) - 1)
         else:
-            this_str = "--"
+            m = 10
+        value_str = f"{value:.{m}f}"
+
+    if uncertainty == 0.:
+        return f"${np.round(float(value_str), n_digits_err)}$", value, uncertainty
+
+    # Find the decimal point in the uncertainty.
+    u_point = uncertainty_str.find(".")
+    if u_point == -1:
+        u_point = len(uncertainty_str)
+    # If the uncertainty is less than 1, we iterate along the string starting at the decimal place until we find a non-zero character.
+    if uncertainty < 1.:
+        i = u_point + 1
+        while uncertainty_str[i] == "0":
+            i += 1
+        # x is the number of digits after the decimal point to show.
+        x = i - u_point + n_digits_err
+        # Round appropriately
+        uncertainty_rnd = np.round(uncertainty, x - 1)
+        value_rnd = np.round(value, x - 1)
+        value_str = str(value_rnd)[:v_point + x]
+        uncertainty_str = str(uncertainty_rnd)[:u_point + x]
+
+        while len(uncertainty_str) < i + n_digits_err:
+            uncertainty_str += "0"
+        u_dp = len(uncertainty_str) - u_point
+        v_dp = len(value_str) - v_point
+        while v_dp < u_dp:
+            value_str += "0"
+            v_dp = len(value_str) - v_point
     else:
-        val_rnd = str(value)
-        while len(val_rnd[val_rnd.find("."):]) < precision + 1:
-            val_rnd += "0"
+        # Here x is the number of digits before the decimal point to set to zero.
+        if u_point < n_digits_err:
+            # Account for the decimal point
+            n_digits_err += 1
+        x = u_point - n_digits_err
+        uncertainty_rnd = np.round(uncertainty, -x)
+        value_rnd = np.round(value, -x)
+        value_str = str(value_rnd)[:v_point - x] + "0" * x
+        uncertainty_str = str(uncertainty_rnd)[:n_digits_err] + "0" * x
 
-        if brackets:
-            uncertainty_digit = str(uncertainty)[-n_digits_err:]
-            this_str = f"${val_rnd}({uncertainty_digit})$"
+    if brackets:
+        if uncertainty < 1:
+            uncertainty_str = uncertainty_str[-n_digits_err:]
         else:
-            this_str = f"${val_rnd} \\pm {uncertainty}$"
+            x = u_point - n_digits_err
+            uncertainty_str = uncertainty_str[:n_digits_err] + "0" * x
+        return f"${value_str}({uncertainty_str})$", value_rnd, uncertainty_rnd
+    else:
+        return f"${value_str} \pm {uncertainty_str}$", value_rnd, uncertainty_rnd
 
-    return this_str, value, uncertainty
+
+def uncertainty_str_coord(
+        coord: SkyCoord,
+        uncertainty_ra: Union[float, units.Quantity],
+        uncertainty_dec: Union[float, units.Quantity],
+        n_digits_err: int = 2,
+        brackets: bool = True
+
+):
+    ra = coord.ra
+    ra_s_str, ra_rounded, ra_unc_rounded = uncertainty_string(
+        value=coord.ra.hms.s,
+        uncertainty=uncertainty_ra,
+        n_digits_err=n_digits_err,
+        brackets=brackets
+    )
+    ra_s_str = ra_s_str.replace("$", "")
+    ra_str = ra.to_string("h", format="latex")
+    s_i = ra_str.find(r"{m}}") + 4
+    s_2 = ra_str[s_i:]
+    e_i = s_2.find("^") + s_i
+    ra_replace = ra_str[s_i:e_i]
+    ra_uncertainty_str = ra_str.replace(ra_replace, ra_s_str)
+
+    dec = coord.dec
+    dec_s_str, dec_rounded, dec_unc_rounded = uncertainty_string(
+        value=abs(coord.dec.dms.s),
+        uncertainty=uncertainty_dec,
+        n_digits_err=n_digits_err,
+        brackets=brackets
+    )
+    dec_s_str = dec_s_str.replace("$", "")
+
+    dec_str = dec.to_string(format="latex")
+    s_i = dec_str.find("\prime") + 6
+    s_2 = dec_str[s_i:]
+    e_i = s_2.find("{}^") + s_i
+    dec_replace = dec_str[s_i:e_i]
+    dec_uncertainty_str = dec_str.replace(dec_replace, dec_s_str)
+
+    return ra_uncertainty_str, dec_uncertainty_str
 
 
 def wcs_as_deg(ra: str, dec: str):
     """
     Using the same syntax as astropy.coordinates.SkyCoord, converts a string of WCS coordinates into degrees.
+
     :param ra:
     :param dec:
     :return:
@@ -1047,6 +1149,7 @@ def wcs_as_deg(ra: str, dec: str):
 def sanitise_file_ext(filename: str, ext: str):
     """
     Checks if the filename has the desired extension; adds it if not and returns the filename.
+
     :param filename: The filename.
     :param ext: The extension, eg '.fits'
     :return:
@@ -1288,11 +1391,12 @@ def print_nested_dict(dictionary, level: int = 0):
 
 
 def system_command(
-        command: str, arguments: Union[str, list] = None,
+        command: str,
+        arguments: Union[str, list] = None,
         suppress_print: bool = False,
         error_on_exit_code: bool = True,
         force_single_dash: bool = False,
-        *flags,
+        flags: list = (),
         **params
 ):
     if command in [""]:
@@ -1312,7 +1416,7 @@ def system_command(
         elif len(param) > 1:
             sys_str += f" --{param} {params[param]}"
     for flag in flags:
-        print(2, "utils.system_command(): flag ==", flag, "len", len(flag))
+        debug_print(2, "utils.system_command(): flag ==", flag, "len", len(flag))
         if len(flag) == 1:
             sys_str += f" -{flag}"
         elif len(flag) > 1:

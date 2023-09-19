@@ -1356,7 +1356,8 @@ class ImagingImage(Image):
             output_dir: str = None,
             cat: table.Table = None,
             ext: int = 0,
-            cat_name: str = None
+            cat_name: str = None,
+            **diag_kwargs
     ):
         if self.source_cat.table is None:
             self.source_extraction_psf(output_dir=output_dir)
@@ -1368,7 +1369,7 @@ class ImagingImage(Image):
                 raise ValueError(f"If image epoch is not assigned, cat must be provided.")
         diagnostics = self.astrometry_diagnostics(
             reference_cat=cat,
-            offset_tolerance=3 * units.arcsec
+            **diag_kwargs
         )
         new_path = os.path.join(output_dir, self.filename.replace(".fits", "_astrometry.fits"))
         new = self.copy(new_path)
@@ -1376,11 +1377,15 @@ class ImagingImage(Image):
         ra_scale, dec_scale = self.extract_world_scale(ext=ext)
 
         new.load_headers()
+
         if not np.isnan(diagnostics["median_offset_x"].value) and not np.isnan(diagnostics["median_offset_y"].value):
 
+            delta_ra = diagnostics["median_offset_x"].to(units.deg, ra_scale).value
+            delta_dec = -diagnostics["median_offset_y"].to(units.deg, dec_scale).value
+
             new.shift_wcs(
-                delta_ra=diagnostics["median_offset_x"].to(units.deg, ra_scale).value,
-                delta_dec=diagnostics["median_offset_y"].to(units.deg, dec_scale).value
+                delta_ra=delta_ra,
+                delta_dec=delta_dec
             )
 
             new.add_log(
@@ -1393,7 +1398,7 @@ class ImagingImage(Image):
             if cat_name.lower() == 'gaia':
                 new.set_header_item("GAIA", True)
             new.write_fits_file()
-            return new
+            return new, {"delta_ra": delta_ra, "delta_dec": delta_dec}
         else:
             u.rm_check(new_path)
             return None
@@ -2318,7 +2323,6 @@ class ImagingImage(Image):
 
         return value
 
-
     def frame_from_coord(
             self,
             frame: units.Quantity,
@@ -2427,7 +2431,7 @@ class ImagingImage(Image):
 
         if data == "image":
             self.load_data()
-            data = self.data[ext].value * 1.0
+            data = self.data[ext].value
         elif data == "background":
             _, data = self.model_background_photometry(**kwargs)
         elif data == "background_subtracted_image":
@@ -2436,7 +2440,7 @@ class ImagingImage(Image):
         elif data == "pixel_magnitudes":
             data, _, _, _ = self.pixel_magnitudes(**kwargs)
         elif isinstance(data, np.ndarray):
-            data = data * 1.
+            data = data
         else:
             raise ValueError(
                 f"data_type {data} not recognised; this can be 'image', 'background', or 'background_subtracted_image'")
@@ -2573,6 +2577,8 @@ class ImagingImage(Image):
             )
         if output_path is not None:
             fig.savefig(output_path)
+
+        del data
 
         return ax, fig, other_args
 
@@ -2854,8 +2860,9 @@ class ImagingImage(Image):
     ):
         # Multiplying by the "y-sense" (the 1,1 entry on the wcs pixel scale matrix) accounts for images where the
         # y-axis is reversed wrt north (eg certain GMOS images)
-        position_angle = u.check_quantity(position_angle,
-                                          units.deg) * self.extract_y_sense() + self.extract_rotation_angle()
+        position_angle = u.check_quantity(
+            position_angle,
+            units.deg) * self.extract_y_sense() + self.extract_rotation_angle()
         centre_x, centre_y = self.world_to_pixel(centre)
         slit_width = self.pixel(width).value
         slit_length = self.pixel(length).value

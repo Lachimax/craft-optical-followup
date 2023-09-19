@@ -421,6 +421,14 @@ class Epoch:
 
         return stages
 
+    @classmethod
+    def enumerate_stages(cls, show: bool = True):
+        stages = list(enumerate(cls.stages()))
+        if show:
+            for i, stage in stages:
+                print(f"{i}. {stage}")
+        return stages
+
     def pipeline(self, no_query: bool = False, **kwargs):
         """
         Performs the pipeline methods given in stages() for this Epoch.
@@ -731,24 +739,23 @@ class Epoch:
     @classmethod
     def default_params(cls):
         default_params = {
+            "mode": cls.mode,
             "name": None,
             "field": None,
             "data_path": None,
-            "instrument": None,
+            "instrument": cls.instrument_name,
             "date": None,
             "target": None,
             "program_id": None,
             "do": {},
             "notes": [],
-            "combined_epoch": False
+            "combined_epoch": False,
         }
         # Pull the list of applicable kwargs from the stage information
         stages = cls.stages()
-        print(cls)
-        print(stages)
         for stage in stages:
             stage_info = stages[stage]
-            if "keywords" in stage_info:
+            if stage_info is not None and "keywords" in stage_info:
                 default_params[stage] = stage_info["keywords"]
             else:
                 default_params[stage] = {}
@@ -1023,6 +1030,10 @@ class ImagingEpoch(Epoch):
                 "method": cls.proc_get_photometry,
                 "message": "Get photometry?",
                 "default": True,
+                "keywords": {
+                    "image_type": "final",
+                    "skip_plots": False
+                }
             },
             # "get_photometry_all": {
             #     "method": cls.proc_get_photometry_all,
@@ -1324,7 +1335,7 @@ class ImagingEpoch(Epoch):
                     if not self.quiet:
                         print(
                             f"There were no successful frames for chip {chip} using astrometry.net; performing coarse correction on {tmp}.")
-                    first_success = tmp.correct_astrometry_coarse(
+                    first_success, _ = tmp.correct_astrometry_coarse(
                         output_dir=astrometry_fil_path,
                         cat=self.gaia_catalogue,
                         cat_name="gaia"
@@ -1879,7 +1890,7 @@ class ImagingEpoch(Epoch):
 
     def proc_get_photometry(self, output_dir: str, **kwargs):
         if "image_type" in kwargs and isinstance(kwargs["image_type"], str):
-            image_type = kwargs["image_type"]
+            image_type = kwargs.pop("image_type")
         else:
             image_type = "final"
         u.debug_print(2, f"{self}.proc_get_photometry(): image_type ==:", image_type)
@@ -1893,7 +1904,7 @@ class ImagingEpoch(Epoch):
                     "config": {"radius": 10}
                 }
             self.probabilistic_association(image_type=image_type, **path_kwargs)
-        self.get_photometry(output_dir, image_type=image_type)
+        self.get_photometry(output_dir, image_type=image_type, **kwargs)
 
     def probabilistic_association(
             self,
@@ -1909,7 +1920,9 @@ class ImagingEpoch(Epoch):
                 **path_kwargs
             )
         self.field.frb.consolidate_candidate_tables()
-        # self.field.objects.extend(self.field.frb.host_candidates)
+        for obj in self.field.frb.host_candidates:
+            if obj.P_Ox is not None and obj.P_Ox > 0.1:
+                self.field.objects.append(obj)
 
     def get_photometry(
             self,
@@ -1917,6 +1930,7 @@ class ImagingEpoch(Epoch):
             image_type: str = "final",
             dual: bool = False,
             match_tolerance: units.Quantity = 1 * units.arcsec,
+            **kwargs
     ):
         """
         Retrieve photometric properties of key objects and write to disk.
@@ -1935,6 +1949,10 @@ class ImagingEpoch(Epoch):
             p.data_dir,
             "Finalised"
         )
+
+        skip_plots = False
+        if "skip_plots" in kwargs:
+            skip_plots = kwargs["skip_plots"]
 
         image_dict = self._get_images(image_type=image_type)
         u.mkdir_check(path)
@@ -2081,7 +2099,7 @@ class ImagingEpoch(Epoch):
                         do_mask=img.mask_nearby()
                     )
 
-                    if isinstance(self.field, fld.FRBField):
+                    if isinstance(self.field, fld.FRBField) and not skip_plots:
                         frames = [
                             img.nice_frame(row=obj.cat_row),
                             10 * units.arcsec,
@@ -2095,7 +2113,6 @@ class ImagingEpoch(Epoch):
                         if fil in obj.plotting_params:
                             if "normalize" in obj.plotting_params[fil]:
                                 normalize_kwargs = obj.plotting_params[fil]["normalize"]
-
                         for frame in frames:
                             for stretch in ["log", "sqrt"]:
                                 print(f"\nPlotting {frame=}, {stretch=}")
@@ -2103,7 +2120,7 @@ class ImagingEpoch(Epoch):
                                 centre = obj.position_from_cat_row()
 
                                 fig = plt.figure(figsize=(6, 5))
-                                ax, fig, _ = self.field.plot_host(
+                                ax, fig, other = self.field.plot_host(
                                     img=img,
                                     fig=fig,
                                     centre=centre,
@@ -2133,6 +2150,7 @@ class ImagingEpoch(Epoch):
                                 fig.clf()
                                 plt.close("all")
                                 pl.latex_off()
+                                del ax, fig, other
 
             tbl = table.vstack(rows)
             tbl.add_column(names, name="NAME")
@@ -5207,7 +5225,7 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
                 plt.plot(lambda_eff_fit, model(lambda_eff_fit))
                 plt.scatter(lambdas_known, extinctions_known, label="Known")
                 for j, m in enumerate(mjds):
-                    plt.text(lambdas_known[j], extinctions_known[j], m)
+                    plt.text(lambdas_known[j], extinctions_known[j], fils_known[j])
                 plt.scatter(lambdas_find, extinctions_find, label="fitted")
                 plt.xlabel("$\lambda_{eff}$ (Ang)")
                 plt.ylabel("Extinction (mag)")

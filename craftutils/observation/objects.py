@@ -1297,17 +1297,18 @@ class Extragalactic(Object):
         self.z_err = None
         self.D_A = None
         self.D_L = None
+        self.D_comoving = None
         self.mu = None
         self.set_z(z, **kwargs)
 
     def set_z(self, z: float, **kwargs):
         self.z = z
-        if z is not None:
-            if "z_err" in kwargs:
-                self.z_err = kwargs["z_err"]
-            self.D_A = self.angular_size_distance()
-            self.D_L = self.luminosity_distance()
-            self.mu = self.distance_modulus()
+        if "z_err" in kwargs:
+            self.z_err = kwargs["z_err"]
+        self.D_A = self.angular_size_distance()
+        self.D_L = self.luminosity_distance()
+        self.D_comoving = self.comoving_distance()
+        self.mu = self.distance_modulus()
 
     def angular_size_distance(self):
         if self.z is not None:
@@ -1682,6 +1683,12 @@ class Transient(Object):
             hg = self._get_object(host_galaxy)
             if hg:
                 host_galaxy = hg
+        self.z = None
+        self.z_err = None
+        if "z" in kwargs:
+            self.z = kwargs["z"]
+        if "z_err" in kwargs:
+            self.z_err = kwargs["z"]
         self.host_galaxy = host_galaxy
         self.host_candidate_tables = {}
         self.host_candidates = []
@@ -1691,6 +1698,24 @@ class Transient(Object):
         self.tns_name = None
         if "tns_name" in kwargs:
             self.tns_name = kwargs["tns_name"]
+
+    def get_host(self) -> Galaxy:
+        """
+        If `self.host_galaxy` is a string, checks for a host galaxy with that in the FRB's field and sets
+        `self.host_galaxy` to that object.
+        If `self.host_galaxy` is `None`, sets it to an empty `TransientHostCandidate` with the same `z` and `z_err`.
+
+        :return: The Galaxy or TransientHostCandidate object.
+        """
+        if self.host_galaxy is None:
+            self.host_galaxy = TransientHostCandidate(
+                transient=self,
+                z=self.z,
+                z_err=self.z_err
+            )
+        elif isinstance(self.host_galaxy, str) and self.field:
+            self.host_galaxy = self.field.get_object(self.host_galaxy)
+        return self.host_galaxy
 
 
 @u.export
@@ -1908,8 +1933,9 @@ class FRB(Transient):
         self.host_candidate_tables["consolidated"] = path_cat
         for row in path_cat:
             idn = self.name.replace("FRB", "")
-            host_candidate = Galaxy(
+            host_candidate = TransientHostCandidate(
                 z=None,
+                transient=self,
                 position=SkyCoord(row["ra"], row["dec"]),
                 field=self.field,
                 name=f"HC{row['id']}_{idn}"
@@ -1965,11 +1991,12 @@ class FRB(Transient):
             if "host_candidates" in outputs:
                 for obj in outputs["host_candidates"]:
                     self.host_candidates.append(
-                        Galaxy(
+                        TransientHostCandidate(
                             z=obj["z"],
                             position=obj["position"],
                             name=obj["name"],
-                            field=self.field
+                            field=self.field,
+                            transient=self
                         )
                     )
 

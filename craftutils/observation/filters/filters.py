@@ -107,6 +107,12 @@ class Filter:
             self,
             transmission: table.QTable = None
     ):
+        """
+
+
+        :param transmission:
+        :return:
+        """
         if transmission is None:
             transmission, _ = self.select_transmission_table()
         return ph.flux_from_band(
@@ -117,17 +123,19 @@ class Filter:
         )
 
     def ab_flux(self, transmission: table.QTable = None):
+        """
+        Calculates the total integrated flux of the flat AB source (3631 Jy) as seen through the filter.
+
+        :param transmission: transmission table to use. If `None`, `select_transmission_table()` will be used to select
+            the 'best' one.
+        :return:
+        """
         if transmission is None:
             transmission, _ = self.select_transmission_table()
         return ph.flux_ab(
             transmission=transmission["Transmission"],
             frequency=transmission["Frequency"],
         )
-
-        #     np.trapz(
-        #     y=3631 * units.Jy * transmission["Transmission"],
-        #     x=transmission["Wavelength"]
-        # )
 
     def compare_transmissions(self, other: 'Filter'):
         tbl_self, tbl_other = self.find_comparable_table(other)

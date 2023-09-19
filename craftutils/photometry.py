@@ -424,7 +424,17 @@ def flux_ab(
         frequency: units.Quantity = None,
 ):
     """
-    For calculating the denominator of the AB Magnitude formula for a given filter.
+    Calculates the total integrated flux of the flat AB source (3631 Jy) as seen through a given filter;
+    that is, the denominator of the AB Magnitude formula.
+    `transmission` and `frequency`, whether provided in `tbl` or as separate arguments, must be the same length and
+    correspond 1-to-1.
+
+    :param tbl: an astropy `Table` with `transmission` and/or `frequency` as columns; when these columns are provided,
+        their respective arguments can be ignored, but if either is missing from the table it must be provided in an
+        argument.
+    :param transmission: the filter profile as an array of transmission fractions as a function of frequency.
+    :param frequency: the corresponding frequency coordinates for the transmission argument.
+    :return: The integrated AB flux.
     """
 
     if tbl is None:
@@ -457,13 +467,16 @@ def flux_from_band(
         use_quantum_factor: bool = True
 ):
     """
-    All three arguments must be of the same length, with entries corresponding 1-to-1.
+    Calculates the integrated flux of an object with an SED `flux` as a function of `frequency`, as seen through a
+    filter with transmission profile `transmission`.
+    `flux`, `transmission` and `frequency` must all be of the same length, with entries corresponding 1-to-1.
+
     :param flux: flux per unit frequency.
-    :param transmission:
-    :param frequency:
+    :param transmission: the filter profile as an array of transmission fractions as a function of frequency.
+    :param frequency: the corresponding frequency coordinates for the transmission argument.
     :param use_quantum_factor: For use if flux is in energy-related units (eg, Jy, erg/s, etc.) to convert to photon
         counts. If you are passing an SED flux, then you should set this to True.
-    :return:
+    :return: Integrated flux in the bandpass.
     """
     if not isinstance(flux, table.Table):
         if transmission is None:
@@ -510,11 +523,13 @@ def magnitude_AB(
 
 ):
     """
-    All three arguments must be of the same length, with entries corresponding 1-to-1.
-    :param flux:
-    :param transmission:
-    :param frequency:
-    :return:
+    `flux`, `transmission` and `frequency` must all be of the same length, with entries corresponding 1-to-1.
+
+        :param flux: flux per unit frequency.
+    :param transmission: the filter profile as an array of transmission fractions as a function of frequency.
+    :param frequency: the corresponding frequency coordinates for the transmission argument.
+    :param use_quantum_factor: For use if flux is in energy-related units (eg, Jy, erg/s, etc.) to convert to photon
+        counts. If you are passing an SED flux, then you should set this to True.
     """
     flux_tbl = table.QTable(
         data={

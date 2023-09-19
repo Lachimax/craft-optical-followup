@@ -389,19 +389,7 @@ class XShooterSpectroscopyEpoch(ESOSpectroscopyEpoch):
     @classmethod
     def stages(cls):
         param_dict = super().stages()
-        param_dict.update({
-            "2-pypeit_setup": None,
-            "3.1-pypeit_run_uvb": None,
-            "3.2-pypeit_run_vis": None,
-            "3.3-pypeit_run_nir": None,
-            "4.1-pypeit_flux_calib_uvb": None,
-            "4.2-pypeit_flux_calib_vis": None,
-            "4.3-pypeit_flux_calib_nir": None,
-            "5.1-pypeit_coadd_uvb": None,
-            "5.2-pypeit_coadd_vis": None,
-            "5.3-pypeit_coadd_nir": None,
-            "6-convert_to_marz_format": None
-        })
+        param_dict.update({})
         return param_dict
 
     def _output_dict(self):
