@@ -1000,8 +1000,13 @@ def determine_zeropoint_sextractor(
 
     # Plot remaining matches
     plt.imshow(image[0].data, origin='lower', norm=plotting.nice_norm(image[0].data))
-    plt.scatter(matches_clean[sex_x_col], matches_clean[sex_y_col], label='SExtractor',
-                c=matches_clean[star_class_col], cmap="plasma")
+    plt.scatter(
+        u.dequantify(matches_clean[sex_x_col]),
+        u.dequantify(matches_clean[sex_y_col]),
+        label='SExtractor',
+        c=matches_clean[star_class_col],
+        cmap="plasma"
+    )
     plt.colorbar()
     plt.legend()
     plt.title('Matches with ' + cat_name + ' Catalogue against image (Using SExtractor)')
@@ -1255,10 +1260,10 @@ def determine_zeropoint_sextractor(
         dof_correction=2
     )
 
-    plt.plot(x, line_free, c='red', label='Line of best fit')
-    plt.scatter(x, y, c='blue')
+    plt.plot(u.dequantify(x), line_free, c='red', label='Line of best fit')
+    plt.scatter(u.dequantify(x), u.dequantify(y), c='blue')
     #    plt.errorbar(x, y, yerr=y_uncertainty, linestyle="None")
-    plt.plot(x, line_fixed, c='green', label='Fixed slope = 1')
+    plt.plot(u.dequantify(x), u.dequantify(line_fixed), c='green', label='Fixed slope = 1')
     plt.legend()
     plt.suptitle("Magnitude Comparisons")
     plt.xlabel("Magnitude in " + cat_name)
@@ -1337,10 +1342,10 @@ def determine_zeropoint_sextractor(
         dof_correction=2
     )
 
-    plt.plot(x_clipped, line_free_clipped, c='red', label='Line of best fit')
-    plt.scatter(x_clipped, y_clipped, c='blue')
+    plt.plot(u.dequantify(x_clipped), u.dequantify(line_free_clipped), c='red', label='Line of best fit')
+    plt.scatter(u.dequantify(x_clipped), u.dequantify(y_clipped), c='blue')
     # plt.errorbar(x_clipped, y_clipped, yerr=y_uncertainty_clipped, linestyle="None")
-    plt.plot(x_clipped, line_fixed_clipped, c='green', label='Fixed slope = 1')
+    plt.plot(u.dequantify(x_clipped), u.dequantify(line_fixed_clipped), c='green', label='Fixed slope = 1')
     plt.legend()
     plt.suptitle("Magnitude Comparisons")
     plt.xlabel("Magnitude in " + cat_name)
