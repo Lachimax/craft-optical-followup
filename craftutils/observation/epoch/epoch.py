@@ -979,7 +979,7 @@ class ImagingEpoch(Epoch):
                 "message": "Coadd frames with Montage?",
                 "default": True,
                 "keywords": {
-                    "frames": "astrometry",  # normalised, trimmed
+                    "frames": "final",  # normalised, trimmed
                     "sigma_clip": 1.0
                 }
             },
@@ -1269,6 +1269,7 @@ class ImagingEpoch(Epoch):
             frames = self.frames_reduced
 
         for fil in frames:
+            self.astrometry_successful[fil] = {}
             frames_by_chip = self.sort_by_chip(frames[fil])
             for chip in frames_by_chip:
                 if not self.quiet:
@@ -1906,6 +1907,22 @@ class ImagingEpoch(Epoch):
             self.probabilistic_association(image_type=image_type, **path_kwargs)
         self.get_photometry(output_dir, image_type=image_type, **kwargs)
 
+    def best_for_path(
+            self,
+            image_type: str = "final"
+    ):
+        image_dict = self._get_images(image_type=image_type)
+        r_sloan = filters.Filter.from_params("r", "sdss")
+        best_score = np.inf * units.angstrom
+        best_img = None
+        for fil_name, img in image_dict.items():
+            fil = img.filter
+            score = r_sloan.compare_wavelength_range(fil)
+            if score < best_score:
+                best_score = score
+                best_img = img
+        return best_img
+
     def probabilistic_association(
             self,
             image_type: str = "final",
@@ -1913,16 +1930,38 @@ class ImagingEpoch(Epoch):
     ):
         image_dict = self._get_images(image_type=image_type)
         self.field.frb.load_output_file()
+
         for fil in image_dict:
             img = image_dict[fil]
             self.field.frb.probabilistic_association(
                 img=img,
+                do_plot=True,
                 **path_kwargs
             )
-        self.field.frb.consolidate_candidate_tables()
+
+        best_img = self.best_for_path(image_type=image_type)
+
+        self.field.frb.consolidate_candidate_tables(
+            sort_by="P_Ox",
+            reverse_sort=True,
+            p_ox_assign=best_img.name
+        )
         for obj in self.field.frb.host_candidates:
+            print(obj.name, obj.P_Ox)
             if obj.P_Ox is not None and obj.P_Ox > 0.1:
                 self.field.objects.append(obj)
+
+        # yaml_dict = {}
+        #
+        # for i, o in enumerate(path_cat_02):
+        #     obj_name = f"HC{o['id']}-20210912A"
+        #     obj_dict = objects.Galaxy.default_params()
+        #     obj_dict["name"] = obj_name
+        #     obj_dict["position"]["alpha"]["decimal"] = o["ra"].value
+        #     obj_dict["position"]["delta"]["decimal"] = o["dec"].value
+        #     yaml_dict[obj_name] = obj_dict
+        #
+        # p.save_params(os.path.join(output_path, "PATH", "host_candidates.yaml"), yaml_dict)
 
     def get_photometry(
             self,
@@ -1980,6 +2019,14 @@ class ImagingEpoch(Epoch):
                 depth = img.depth["secure"]["SNR_AUTO"][f"5-sigma"]
 
             img.load_data()
+
+            if not skip_plots:
+                self.field.plot_host(
+                    img=img,
+                    frame=10 * units.arcsec,
+                    centre=self.field.frb.position,
+                    output_path=os.path.join(fil_output_path, "plot_quick.pdf")
+                )
 
             for obj in self.field.objects:
                 # obj.load_output_file()
@@ -2100,6 +2147,7 @@ class ImagingEpoch(Epoch):
                     )
 
                     if isinstance(self.field, fld.FRBField) and not skip_plots:
+
                         frames = [
                             img.nice_frame(row=obj.cat_row),
                             10 * units.arcsec,
@@ -2937,13 +2985,7 @@ class ImagingEpoch(Epoch):
     @classmethod
     def default_params(cls):
         default_params = super().default_params()
-
         default_params.update({
-            "astrometry":
-                {"tweak": True
-                 },
-            "coadd":
-                {"frames": "astrometry"},
             "sextractor":
                 {"dual_mode": False,
                  "threshold": 1.5,
