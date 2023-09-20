@@ -128,11 +128,11 @@ class PositionUncertainty:
                 if "sys" in uncertainty[ra_key] and uncertainty[ra_key]["sys"] is not None:
                     ra_err_sys = uncertainty[ra_key]["sys"]
                     if isinstance(ra_err_sys, str):
-                        ra_err_sys = (Longitude(ra_err_sys) * np.cos(position.dec)).to("arcsec")
+                        ra_err_sys = Longitude(ra_err_sys).to("arcsec")
                 if "stat" in uncertainty[ra_key] and uncertainty[ra_key]["stat"] is not None:
                     ra_err_stat = uncertainty[ra_key]["stat"]
                     if isinstance(ra_err_stat, str):
-                        ra_err_stat = (Longitude(ra_err_stat) * np.cos(position.dec)).to("arcsec")
+                        ra_err_stat = Longitude(ra_err_stat).to("arcsec")
 
             dec_key = None
             if "dec" in uncertainty and uncertainty["dec"] is not None:
@@ -168,9 +168,9 @@ class PositionUncertainty:
             theta = 0.0 * units.deg
 
         if ra_err_stat is None and "alpha_err_stat" in kwargs:
-            ra_err_stat = kwargs["alpha_err_stat"]
+            ra_err_stat = (kwargs["alpha_err_stat"] / np.cos(position.dec)).to("arcsec")
         if ra_err_sys is None and "alpha_err_sys" in kwargs:
-            ra_err_sys = kwargs["alpha_err_sys"]
+            ra_err_sys = (kwargs["alpha_err_sys"] / np.cos(position.dec)).to("arcsec")
         if dec_err_stat is None and "delta_err_stat" in kwargs:
             dec_err_stat = kwargs["delta_err_stat"]
         if dec_err_sys is None and "delta_err_sys" in kwargs:
@@ -197,16 +197,12 @@ class PositionUncertainty:
         if not ellipse:
             ra = position.ra
             dec = position.dec
-            a_sys = ra_err_sys
-            # SkyCoord(0.0 * units.degree, dec).separation(SkyCoord(ra_err_sys, dec))
-            a_stat = ra_err_stat
-            # SkyCoord(0.0 * units.degree, dec).separation(SkyCoord(ra_err_stat, dec))
+            a_sys = ra_err_sys * np.cos(position.dec)
+            a_stat = ra_err_stat * np.cos(position.dec)
             b_sys = dec_err_sys
-            # SkyCoord(ra, dec).separation(SkyCoord(ra, dec + dec_err_sys))
             b_stat = dec_err_stat
-            # SkyCoord(ra, dec).separation(SkyCoord(ra, dec + dec_err_stat))
-            # a_sys, b_sys = max(a_sys, b_sys), min(a_sys, b_sys)
-            # a_stat, b_stat = max(a_stat, b_stat), min(a_stat, b_stat)
+            a_sys, b_sys = max(a_sys, b_sys), min(a_sys, b_sys)
+            a_stat, b_stat = max(a_stat, b_stat), min(a_stat, b_stat)
             theta = 0.0 * units.degree
         # Or use ellipse parameters as given.
         else:
@@ -231,7 +227,9 @@ class PositionUncertainty:
         return f"PositionUncertainty: a_stat={self.a_stat}, b_stat={self.b_stat}; a_sys={self.a_sys}, b_sys={self.b_sys}"
 
     def uncertainty_quadrature(self):
-        return np.sqrt(self.a_sys ** 2 + self.a_stat ** 2), np.sqrt(self.b_sys ** 2 + self.b_stat ** 2)
+        a_quad = np.sqrt(self.a_sys ** 2 + self.a_stat ** 2)
+        b_quad = np.sqrt(self.b_sys ** 2 + self.b_stat ** 2)
+        return max(a_quad, b_quad), min(a_quad, b_quad)
 
     def uncertainty_quadrature_equ(self):
         return np.sqrt(self.ra_sys ** 2 + self.ra_stat ** 2), np.sqrt(self.dec_sys ** 2 + self.dec_stat ** 2)
@@ -1787,7 +1785,8 @@ class FRB(Transient):
             priors: dict = {},
             offset_priors: dict = {"scale": 0.5},
             config: dict = {},
-            associate_kwargs={}
+            associate_kwargs={},
+            do_plot: bool = False
     ):
         """
         Performs a customised PATH run on an image.
@@ -1797,6 +1796,7 @@ class FRB(Transient):
         """
         import frb.associate.frbassociate as associate
         import astropath.path as path
+        from craftutils.observation.field import FRBField
         astm_rms = 0.
         if include_img_err:
             astm_rms = img.extract_astrometry_err()
@@ -1880,6 +1880,19 @@ class FRB(Transient):
             cand_tbl[filname] *= units.mag
             self.host_candidate_tables[img.name] = cand_tbl
             self.update_output_file()
+
+            if do_plot and isinstance(self.field, FRBField):
+                fig = plt.figure(figsize=(12,12))
+                ax, fig, _ = self.field.plot_host(
+                    img=img,
+                    fig=fig,
+                    frame=cand_tbl["separation"].max(),
+                    centre=self.position
+                )
+                c = ax.scatter(cand_tbl["x"], cand_tbl["y"], marker="x", c=cand_tbl["P_Ox"], cmap="bwr")
+                fig.colorbar(c)
+                fig.savefig(os.path.join(self.data_path, f"PATH_{img.name}.pdf"))
+
         except IndexError:
             cand_tbl = None
             p_ox = None
@@ -1890,13 +1903,16 @@ class FRB(Transient):
     def consolidate_candidate_tables(
             self,
             sort_by: str = "separation",
-            reverse_sort: bool = True
+            reverse_sort: bool = False,
+            p_ox_assign: str = None
     ):
         # Build a shared catalogue of host candidates.
         path_cat = None
         for tbl_name in self.host_candidate_tables:
             if tbl_name == "consolidated":
                 continue
+            if p_ox_assign is None:
+                p_ox_assign = tbl_name
             print(tbl_name)
             cand_tbl = self.host_candidate_tables[tbl_name]
             if path_cat is None:
@@ -1909,7 +1925,6 @@ class FRB(Transient):
             )
 
             for prefix in ["label", "P_Ox", "mag"]:
-
                 if f"{prefix}_{tbl_name}" not in matched.colnames:
                     print(f"{prefix}_{tbl_name}")
                     matched[f"{prefix}_{tbl_name}"] = matched[prefix]
@@ -1926,6 +1941,8 @@ class FRB(Transient):
                 path_cat.add_row(row[path_cat.colnames])
 
         # path_cat["coord"] = SkyCoord(path_cat["ra"], path_cat["dec"])
+        if sort_by == "P_Ox":
+            sort_by = f"P_Ox_{p_ox_assign}"
         path_cat.sort(sort_by, reverse=reverse_sort)
         path_cat["id"] = np.zeros(len(path_cat), dtype=str)
         for i, row in enumerate(path_cat):
@@ -1938,7 +1955,8 @@ class FRB(Transient):
                 transient=self,
                 position=SkyCoord(row["ra"], row["dec"]),
                 field=self.field,
-                name=f"HC{row['id']}_{idn}"
+                name=f"HC{row['id']}_{idn}",
+                P_Ox=row[f"P_Ox_{p_ox_assign}"]
             )
             self.host_candidates.append(host_candidate)
         self.update_output_file()
