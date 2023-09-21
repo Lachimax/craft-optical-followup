@@ -1440,8 +1440,15 @@ def determine_zeropoint_sextractor(
     return params
 
 
-def single_aperture_photometry(data: np.ndarray, aperture: ph.Aperture, annulus: ph.Aperture, exp_time: float = 1.0,
-                               zeropoint: float = 0.0, extinction: float = 0.0, airmass: float = 0.0):
+def single_aperture_photometry(
+        data: np.ndarray,
+        aperture: ph.Aperture,
+        annulus: ph.Aperture,
+        exp_time: float = 1.0,
+        zeropoint: float = 0.0,
+        extinction: float = 0.0,
+        airmass: float = 0.0
+):
     # Use background annulus to obtain a median sky background
     mask = annulus.to_mask()
     annulus_data = mask.multiply(data)[mask.data > 0]
@@ -1453,13 +1460,14 @@ def single_aperture_photometry(data: np.ndarray, aperture: ph.Aperture, annulus:
     # Correct:
     flux_photutils = cat_photutils['aperture_sum'] - subtract_flux
     # Convert to magnitude, with uncertainty propagation:
-    mag_photutils, _, _ = magnitude_instrumental(flux=flux_photutils,
-                                                 # flux_err=cat_photutils['aperture_sum_err'],
-                                                 exp_time=exp_time,  # exp_time_err=exp_time_err,
-                                                 zeropoint=zeropoint,  # zeropoint_err=zeropoint_err,
-                                                 ext=extinction,  # ext_err=extinction_err,
-                                                 airmass=airmass,  # airmass_err=airmass_err
-                                                 )
+    mag_photutils, _, _ = magnitude_instrumental(
+        flux=flux_photutils,
+        # flux_err=cat_photutils['aperture_sum_err'],
+        exp_time=exp_time,  # exp_time_err=exp_time_err,
+        zeropoint=zeropoint,  # zeropoint_err=zeropoint_err,
+        ext=extinction,  # ext_err=extinction_err,
+        airmass=airmass,  # airmass_err=airmass_err
+    )
 
     return mag_photutils, flux_photutils, subtract_flux, median
 
