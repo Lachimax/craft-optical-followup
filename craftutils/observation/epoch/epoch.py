@@ -370,6 +370,8 @@ class Epoch:
 
         # self.load_output_file()
 
+        self.stage_params: dict = {}
+
         active_epochs[self.name] = self
 
     def __str__(self):
@@ -473,6 +475,7 @@ class Epoch:
                     stage_name=name,
                     stage_kwargs=stage_kwargs
             )):
+                self.stage_params[name] = stage_kwargs.copy()
                 if not self.quiet:
                     print(f"Performing processing step {n}: {name}")
                 # Construct path; if dir_name is None then the step is pathless.
@@ -541,21 +544,24 @@ class Epoch:
                         self.add_coadded_image(img=outputs["coadded"][fil], key=fil, **kwargs)
             if "log" in outputs:
                 self.log = log.Log(outputs["log"])
+            if "stage_params" in outputs and isinstance(outputs["stage_params"], dict):
+                self.stage_params = outputs["stage_params"]
         return outputs
 
     def _output_dict(self):
 
         return {
+            "combined_from": self.combined_from,
+            "coadded": _output_img_dict_single(self.coadded),
             "date": self.date,
-            "stages": self.stages_complete,
-            "paths": self.paths,
             "frames_science": _output_img_dict_list(self.frames_science),
             "frames_flat": _output_img_dict_list(self.frames_flat),
             "frames_std": _output_img_dict_list(self.frames_standard),
             "frames_bias": _output_img_list(self.frames_bias),
-            "coadded": _output_img_dict_single(self.coadded),
             "log": self.log.to_dict(),
-            "combined_from": self.combined_from
+            "paths": self.paths,
+            "stages": self.stages_complete,
+            "stage_params": self.stage_params
         }
 
     def update_output_file(self):
@@ -914,6 +920,7 @@ class ImagingEpoch(Epoch):
         self.coadded_unprojected = {}
         self.coadded_astrometry = {}
         self.coadded_subtracted = {}
+        self.coadded_subtracted_patch = {}
         self.coadded_final = None
 
         self.gaia_catalogue = None
@@ -972,7 +979,14 @@ class ImagingEpoch(Epoch):
                 "method": cls.proc_subtract_background_frames,
                 "message": "Subtract local background from frames?",
                 "default": False,
-                "keywords": {}
+                "keywords": {
+                    "do_not_mask": False,
+                    "centre": None,
+                    "frame": 15 * units.arcsec,
+                    "frames": "astrometry",
+                    "mask_kwargs": {},
+                    "method": "local"
+                }
             },
             "coadd": {
                 "method": cls.proc_coadd,
@@ -1072,8 +1086,6 @@ class ImagingEpoch(Epoch):
         if isinstance(frames, str):
             frames = self._get_frames(frames)
 
-        print(self.field.objects_dict)
-
         if "do_not_mask" in kwargs:
             do_not_mask = kwargs.pop("do_not_mask")
             for i, obj in enumerate(do_not_mask):
@@ -1101,7 +1113,7 @@ class ImagingEpoch(Epoch):
                         **kwargs
                     )
                 elif method == "local":
-                    if "centre" not in kwargs:
+                    if "centre" not in kwargs or kwargs["centre"] is None:
                         if isinstance(self.field, fld.FRBField):
                             kwargs["centre"] = self.field.frb.position
                         else:
@@ -1129,6 +1141,7 @@ class ImagingEpoch(Epoch):
 
                 new_frame = type(frame)(subbed_path)
                 self.add_frame_subtracted(new_frame)
+        self.stage_params["subtract_background_frames"].update(kwargs)
 
     def proc_register(self, output_dir: str, **kwargs):
         self.frames_registered = {}
@@ -1675,7 +1688,7 @@ class ImagingEpoch(Epoch):
             self,
             output_dir: str,
             images: dict = None,
-            reproject: bool = False
+            reproject: bool = False,
     ):
         if images is None:
             images = self.coadded
@@ -1709,6 +1722,29 @@ class ImagingEpoch(Epoch):
                 output_path_sub = os.path.join(output_dir, img_sub.filename.replace(".fits", "_bgsub_trimmed.fits"))
                 trimmed_sub = img_sub.trim_from_area(output_path=output_path_sub)
                 self.coadded_subtracted[fil] = trimmed_sub
+
+                bg_kwargs = self.stage_params["subtract_background_frames"]
+                if "method" not in bg_kwargs or bg_kwargs["method"] == "local":
+                    output_path_patch_unsub = os.path.join(
+                        output_dir,
+                        img_sub.filename.replace(".fits", "_unsubbed_patch.fits"))
+                    left, right, bottom, top = img.frame_from_coord(
+                        frame=bg_kwargs["frame"].to("arcsec", img.pixel_scale_y) - 1 * units.arcsec,
+                        centre=bg_kwargs["centre"]
+                    )
+                    trimmed_patch = img.trim(
+                        left=left, right=right, bottom=bottom, top=top,
+                        output_path=output_path_patch_unsub
+                    )
+                    output_path_patch = os.path.join(output_dir, img_sub.filename.replace(".fits", "_bgsub_patch.fits"))
+                    trimmed_patch_sub = img_sub.trim(
+                        left=left, right=right, bottom=bottom, top=top,
+                        output_path=output_path_patch
+                    )
+                    self.add_coadded_subtracted_patch_image(
+                        img=trimmed_patch_sub,
+                        key=fil
+                    )
 
     def proc_source_extraction(self, output_dir: str, **kwargs):
         if "do_astrometry_diagnostics" not in kwargs:
@@ -1810,6 +1846,11 @@ class ImagingEpoch(Epoch):
                 img.zeropoints = image_dict[fil].zeropoints
                 img.zeropoint_best = image_dict[fil].zeropoint_best
                 img.update_output_file()
+            if self.coadded_subtracted_patch[fil] is not None:
+                img = self.coadded_subtracted_patch[fil]
+                img.zeropoints = image_dict[fil].zeropoints
+                img.zeropoint_best = image_dict[fil].zeropoint_best
+                img.update_output_file()
 
         self.deepest_filter = deepest.filter_name
         self.deepest = deepest
@@ -1904,7 +1945,11 @@ class ImagingEpoch(Epoch):
                     "priors": {"U": 0.1},
                     "config": {"radius": 10}
                 }
-            self.probabilistic_association(image_type=image_type, **path_kwargs)
+            image_type_path = image_type
+            if "subtract_background_frames" in self.do_kwargs and "method" not in self.stage_params[
+                "subtract_background_frames"] or self.stage_params["subtract_background_frames"]["method"] == "local":
+                image_type_path = "coadded_subtracted_patch"
+            self.probabilistic_association(image_type=image_type_path, **path_kwargs)
         self.get_photometry(output_dir, image_type=image_type, **kwargs)
 
     def best_for_path(
@@ -2400,6 +2445,8 @@ class ImagingEpoch(Epoch):
             image_dict = self.coadded_unprojected
         elif image_type in ["coadded_subtracted", "subtracted"]:
             image_dict = self.coadded_subtracted
+        elif image_type in ["coadded_subtracted_patch", "subtracted_patch"]:
+            image_dict = self.coadded_subtracted_patch
         elif image_type in ["coadded_astrometry", "astrometry"]:
             image_dict = self.coadded_astrometry
         else:
@@ -2467,6 +2514,7 @@ class ImagingEpoch(Epoch):
             "coadded_unprojected": _output_img_dict_single(self.coadded_unprojected),
             "coadded_astrometry": _output_img_dict_single(self.coadded_astrometry),
             "coadded_subtracted": _output_img_dict_single(self.coadded_subtracted),
+            "coadded_subtracted_patch": _output_img_dict_single(self.coadded_subtracted_patch),
             "std_pointings": self.std_pointings,
             "frames_final": self.frames_final,
             "frames_raw": _output_img_list(self.frames_raw),
@@ -2569,6 +2617,14 @@ class ImagingEpoch(Epoch):
                 for fil in outputs["coadded_subtracted"]:
                     if outputs["coadded_subtracted"][fil] is not None:
                         self.add_coadded_subtracted_image(img=outputs["coadded_subtracted"][fil], key=fil, **kwargs)
+            if "coadded_subtracted_patch" in outputs:
+                for fil in outputs["coadded_subtracted_patch"]:
+                    if outputs["coadded_subtracted_patch"][fil] is not None:
+                        self.add_coadded_subtracted_patch_image(
+                            img=outputs["coadded_subtracted_patch"][fil],
+                            key=fil,
+                            **kwargs
+                        )
             if "coadded_trimmed" in outputs:
                 for fil in outputs["coadded_trimmed"]:
                     if outputs["coadded_trimmed"][fil] is not None:
@@ -2723,6 +2779,9 @@ class ImagingEpoch(Epoch):
 
     def add_coadded_subtracted_image(self, img: Union[str, image.Image], key: str, **kwargs):
         return self._add_coadded(img=img, key=key, image_dict=self.coadded_subtracted)
+
+    def add_coadded_subtracted_patch_image(self, img: Union[str, image.Image], key: str, **kwargs):
+        return self._add_coadded(img=img, key=key, image_dict=self.coadded_subtracted_patch)
 
     def add_coadded_astrometry_image(self, img: Union[str, image.Image], key: str, **kwargs):
         return self._add_coadded(img=img, key=key, image_dict=self.coadded_astrometry)

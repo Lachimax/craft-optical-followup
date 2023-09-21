@@ -1948,7 +1948,8 @@ class FRB(Transient):
         for i, row in enumerate(path_cat):
             row["id"] = chr(65 + i)
         self.host_candidate_tables["consolidated"] = path_cat
-        for row in path_cat:
+        best_i = np.argmax(path_cat[f"P_Ox_{p_ox_assign}"])
+        for i, row in enumerate(path_cat):
             idn = self.name.replace("FRB", "")
             host_candidate = TransientHostCandidate(
                 z=None,
@@ -1959,6 +1960,8 @@ class FRB(Transient):
                 P_Ox=row[f"P_Ox_{p_ox_assign}"]
             )
             self.host_candidates.append(host_candidate)
+            if i == best_i and row[f"P_Ox_{p_ox_assign}"] > 0.9:
+                self.host_galaxy = host_candidate
         self.update_output_file()
         return path_cat
 
