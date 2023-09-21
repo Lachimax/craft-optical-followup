@@ -564,10 +564,10 @@ class Field:
                 self.update_output_file()
             return response
         elif self.cats[f"in_{cat_name}"] is True:
-            print(1, f"There is already {cat_name} data present for this field.")
+            u.debug_print(1, f"There is already {cat_name} data present for this field.")
             return True
         else:
-            print(1, f"This field is not present in {cat_name}.")
+            u.debug_print(1, f"This field is not present in {cat_name}.")
 
     def load_catalogue(self, cat_name: str, **kwargs):
         if self.retrieve_catalogue(cat_name):
