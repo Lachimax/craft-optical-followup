@@ -1050,6 +1050,8 @@ class ImagingImage(Image):
 
         self.extract_exposure_time()
         zp_dict = self.get_zeropoint(cat_name=zeropoint_name)
+        if zp_dict is None:
+            raise ValueError(f"No zeropoint found for {self.name}.")
         cat.calibrate_magnitudes(
             zeropoint_dict=zp_dict,
             mag_name=f"ZP_{zeropoint_name}",
