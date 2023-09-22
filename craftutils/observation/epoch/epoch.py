@@ -1728,8 +1728,9 @@ class ImagingEpoch(Epoch):
                     output_path_patch_unsub = os.path.join(
                         output_dir,
                         img_sub.filename.replace(".fits", "_unsubbed_patch.fits"))
+                    _, p_scale = img.extract_pixel_scale()
                     left, right, bottom, top = img.frame_from_coord(
-                        frame=bg_kwargs["frame"].to("arcsec", img.pixel_scale_y) - 1 * units.arcsec,
+                        frame=bg_kwargs["frame"].to("arcsec", p_scale) - 1 * units.arcsec,
                         centre=bg_kwargs["centre"]
                     )
                     trimmed_patch = img.trim(
@@ -1946,9 +1947,11 @@ class ImagingEpoch(Epoch):
                     "config": {"radius": 10}
                 }
             image_type_path = image_type
-            if "subtract_background_frames" in self.do_kwargs and "method" not in self.stage_params[
-                "subtract_background_frames"] or self.stage_params["subtract_background_frames"]["method"] == "local":
-                image_type_path = "coadded_subtracted_patch"
+            if "subtract_background_frames" in self.do_kwargs:
+                if "subract_background_frames" in self.stage_params:
+                    stage_params = self.stage_params["subract_background_frames"]
+                    if "method" not in stage_params or stage_params["method"] == "local":
+                        image_type_path = "coadded_subtracted_patch"
             self.probabilistic_association(image_type=image_type_path, **path_kwargs)
         self.get_photometry(output_dir, image_type=image_type, **kwargs)
 
@@ -2654,6 +2657,7 @@ class ImagingEpoch(Epoch):
         """
         Generates astrometry indices using astrometry.net and the specified catalogue, unless they have been generated
         before; in which case it simply copies them to the main index directory (overwriting those of other epochs there).
+
         :param cat_name:
         :param correct_to_epoch:
         :param force:
@@ -2833,6 +2837,8 @@ class ImagingEpoch(Epoch):
                 self.coadded_unprojected[fil] = None
             if fil not in self.coadded_subtracted:
                 self.coadded_subtracted[fil] = None
+            if fil not in self.coadded_subtracted_patch:
+                self.coadded_subtracted_patch[fil] = None
             if fil not in self.coadded_astrometry:
                 self.coadded_astrometry[fil] = None
             if fil not in self.exp_time_mean:
