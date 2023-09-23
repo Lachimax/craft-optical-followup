@@ -45,6 +45,31 @@ uncertainty_dict = {
 
 __all__ = []
 
+object_index = {}
+
+
+def object_from_index(
+        name: str,
+        tolerate_missing: bool = False
+):
+    if name in object_index:
+        return object_index[name]
+    elif tolerate_missing:
+        return None
+    else:
+        raise ValueError(f"Object with name {name} is not found in object_index.")
+
+
+def object_to_index(
+        obj: 'Object',
+        allow_overwrite: bool = False
+):
+    name = obj.name
+    if not allow_overwrite and name in object_index:
+        raise ValueError(f"Object with name {name} already exists.")
+    object_index[name] = obj
+    return obj
+
 
 def set_cosmology(cos: Union[str, cosmo.Cosmology]):
     global cosmology
@@ -115,6 +140,7 @@ class PositionUncertainty:
         :param theta:
         :param sigma: The confidence interval (expressed in multiples of sigma) of the uncertainty ellipse.
         """
+
         self.sigma = sigma
         # Assign values from dictionary, if provided.
         if type(uncertainty) is dict:
@@ -276,6 +302,9 @@ class Object:
     ):
         self.name = name
 
+        if self.name:
+            object_to_index(self)
+
         self.cat_row = row
         self.position = None
         self.position_err = None
@@ -334,7 +363,7 @@ class Object:
 
     def _get_object(self, obj_name: str):
         if self.field is not None and obj_name in self.field.objects_dict:
-            return self.field.objects_dict
+            return self.field.objects_dict[obj_name]
         else:
             return None
 
@@ -1882,7 +1911,7 @@ class FRB(Transient):
             self.update_output_file()
 
             if do_plot and isinstance(self.field, FRBField):
-                fig = plt.figure(figsize=(12,12))
+                fig = plt.figure(figsize=(12, 12))
                 ax, fig, _ = self.field.plot_host(
                     img=img,
                     fig=fig,
@@ -2687,9 +2716,11 @@ class FRB(Transient):
     @classmethod
     def from_dict(cls, dictionary: dict, **kwargs):
         frb = super().from_dict(dictionary=dictionary, **kwargs)
+        print(f"FRB.from_dict() 1 {frb.host_galaxy}")
         # if "dm" in dictionary:
         #     frb.dm = u.check_quantity(dictionary["dm"], dm_units)
         dictionary["host_galaxy"]["transient"] = frb
         host_galaxy = TransientHostCandidate.from_dict(dictionary=dictionary["host_galaxy"])
         frb.host_galaxy = host_galaxy
+        print(f"FRB.from_dict() 2 {frb.host_galaxy}")
         return frb

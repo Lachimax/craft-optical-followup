@@ -764,7 +764,18 @@ def root_mean_squared_error(
     return np.sqrt(mse)
 
 
-def detect_problem_table(tbl: table.Table, fmt: str = "ascii.ecsv"):
+def detect_problem_table(
+        tbl: table.Table,
+        fmt: str = "ascii.ecsv"
+) -> table.Row:
+    """
+    This function iterates through the rows of an astropy Table and attempts to write each one to disk;
+    if it fails on one, the row's index and the row itself are returned.
+
+    :param tbl: The Table (or subclass) to check.
+    :param fmt: The format to attempt to write; different formats may have trouble with different data types.
+    :return: index, row
+    """
     for i, row in enumerate(tbl):
         tbl_this = tbl[:i + 1]
         try:

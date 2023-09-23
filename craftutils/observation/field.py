@@ -640,6 +640,8 @@ class Field:
         p.update_output_file(self)
 
     def add_object(self, obj: objects.Object):
+        if isinstance(obj, dict):
+            self.add_object_from_dict(obj)
         self.objects.append(obj)
         self.objects_dict[obj.name] = obj
         obj.field = self
