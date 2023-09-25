@@ -64,9 +64,10 @@ def object_to_index(
         obj: 'Object',
         allow_overwrite: bool = False
 ):
+    print(f"Adding {str(type(obj))} {obj.name} to object index.")
     name = obj.name
     if not allow_overwrite and name in object_index:
-        raise ValueError(f"Object with name {name} already exists.")
+        raise ValueError(f"Object with name {name} already exists in object_index.")
     object_index[name] = obj
     return obj
 
@@ -1942,7 +1943,7 @@ class FRB(Transient):
                 continue
             if p_ox_assign is None:
                 p_ox_assign = tbl_name
-            print(tbl_name)
+            # print(tbl_name)
             cand_tbl = self.host_candidate_tables[tbl_name]
             if path_cat is None:
                 path_cat = cand_tbl["label", "ra", "dec", "separation"]
@@ -1955,7 +1956,7 @@ class FRB(Transient):
 
             for prefix in ["label", "P_Ox", "mag"]:
                 if f"{prefix}_{tbl_name}" not in matched.colnames:
-                    print(f"{prefix}_{tbl_name}")
+                    # print(f"{prefix}_{tbl_name}")
                     matched[f"{prefix}_{tbl_name}"] = matched[prefix]
 
                 for col in list(filter(lambda c: c.startswith(prefix + "_"), path_cat.colnames)):
@@ -2007,15 +2008,7 @@ class FRB(Transient):
 
     def _output_dict(self):
         output = super()._output_dict()
-        cand_list = []
-        for obj in self.host_candidates:
-            new_dict = Galaxy.default_params()
-            new_dict.update({
-                "name": obj.name,
-                "position": obj.position,
-                "z": obj.z,
-            })
-            cand_list.append(new_dict)
+        cand_list = list(map(lambda o: o.name, self.host_candidates))
 
         output.update({
             "host_candidate_tables": self.write_candidate_tables(),
@@ -2039,16 +2032,11 @@ class FRB(Transient):
                             continue
 
             if "host_candidates" in outputs:
-                for obj in outputs["host_candidates"]:
-                    self.host_candidates.append(
-                        TransientHostCandidate(
-                            z=obj["z"],
-                            position=obj["position"],
-                            name=obj["name"],
-                            field=self.field,
-                            transient=self
-                        )
-                    )
+                for obj_name in outputs["host_candidates"]:
+                    obj = object_from_index(obj_name, tolerate_missing=True)
+                    if obj is None:
+                        obj = obj_name
+                    self.host_candidates.append(obj)
 
     @classmethod
     def default_params(cls):
@@ -2716,11 +2704,9 @@ class FRB(Transient):
     @classmethod
     def from_dict(cls, dictionary: dict, **kwargs):
         frb = super().from_dict(dictionary=dictionary, **kwargs)
-        print(f"FRB.from_dict() 1 {frb.host_galaxy}")
         # if "dm" in dictionary:
         #     frb.dm = u.check_quantity(dictionary["dm"], dm_units)
         dictionary["host_galaxy"]["transient"] = frb
         host_galaxy = TransientHostCandidate.from_dict(dictionary=dictionary["host_galaxy"])
         frb.host_galaxy = host_galaxy
-        print(f"FRB.from_dict() 2 {frb.host_galaxy}")
         return frb
