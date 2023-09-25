@@ -2652,7 +2652,8 @@ class ImagingEpoch(Epoch):
             self,
             cat_name="gaia",
             correct_to_epoch: bool = True,
-            force: bool = False
+            force: bool = False,
+            delete_others: bool = True
     ):
         """
         Generates astrometry indices using astrometry.net and the specified catalogue, unless they have been generated
@@ -2698,6 +2699,10 @@ class ImagingEpoch(Epoch):
         u.mkdir_check(index_path)
         cat_index_path = os.path.join(index_path, cat_name)
         astm.astrometry_net.add_index_directory(cat_index_path)
+        if delete_others:
+            for file in os.listdir(cat_index_path):
+                file_path = os.path.join(cat_index_path, file)
+                u.rm_check(file_path)
         for index_path in self.astrometry_indices:
             shutil.copy(index_path, cat_index_path)
         self.update_output_file()
