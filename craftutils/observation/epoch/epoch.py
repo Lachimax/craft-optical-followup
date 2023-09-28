@@ -1007,7 +1007,8 @@ class ImagingEpoch(Epoch):
                     "frame": 15 * units.arcsec,
                     "frames": "astrometry",
                     "mask_kwargs": {},
-                    "method": "local"
+                    "method": "local",
+                    # "polynomial_degree": 3
                 }
             },
             "coadd": {
@@ -1093,6 +1094,8 @@ class ImagingEpoch(Epoch):
                 kwargs["frames"] = "astrometry"
             else:
                 kwargs["frames"] = "normalised"
+        # if "polynomial_degree" in kwargs:
+        #     kwargs["init_params"]["degree"]
         self.subtract_background_frames(
             output_dir=output_dir,
             **kwargs
@@ -1121,8 +1124,10 @@ class ImagingEpoch(Epoch):
                 kwargs["mask_kwargs"] = {}
             kwargs["mask_kwargs"]["do_not_mask"] = do_not_mask
 
+        fit_info = {}
         for fil in frames:
             frame_list = frames[fil]
+            fit_info[fil] = {}
             for frame in frame_list:
                 subbed_path = os.path.join(output_dir, fil, frame.name + "_backsub.fits")
                 back_path = os.path.join(output_dir, fil, frame.name + "_background.fits")
@@ -1153,17 +1158,19 @@ class ImagingEpoch(Epoch):
                         }]
                     else:
                         mask_ellipses = None
-                    frame.model_background_local(
+                    model, model_eval, data, subbed, mask, weights = frame.model_background_local(
                         write_subbed=subbed_path,
                         write=back_path,
                         generate_mask=True,
                         mask_ellipses=mask_ellipses,
                         **kwargs
                     )
+                    fit_info[fil][frame.name] = model
 
                 new_frame = type(frame)(subbed_path)
                 self.add_frame_subtracted(new_frame)
         self.stage_params["subtract_background_frames"].update(kwargs)
+        self.stage_params["subtract_background_frames"]["models"] = fit_info
 
     def proc_register(self, output_dir: str, **kwargs):
         self.frames_registered = {}
