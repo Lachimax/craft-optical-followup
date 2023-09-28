@@ -64,7 +64,10 @@ def object_to_index(
         obj: 'Object',
         allow_overwrite: bool = False
 ):
+    # print(object_index)
     print(f"Adding {str(type(obj))} {obj.name} to object index.")
+    if not isinstance(obj, Object):
+        raise TypeError(f"obj {obj} is not an Object.")
     name = obj.name
     if not allow_overwrite and name in object_index:
         raise ValueError(f"Object with name {name} already exists in object_index.")
@@ -304,7 +307,7 @@ class Object:
         self.name = name
 
         if self.name:
-            object_to_index(self)
+            object_to_index(self, allow_overwrite=True)
 
         self.cat_row = row
         self.position = None
@@ -361,6 +364,9 @@ class Object:
             self.b = self.photometry_args["b"]
             self.theta = self.photometry_args["theta"]
             self.kron = self.photometry_args["kron_radius"]
+
+    def __str__(self):
+        return self.name
 
     def _get_object(self, obj_name: str):
         if self.field is not None and obj_name in self.field.objects_dict:
@@ -1974,9 +1980,13 @@ class FRB(Transient):
         if sort_by == "P_Ox":
             sort_by = f"P_Ox_{p_ox_assign}"
         path_cat.sort(sort_by, reverse=reverse_sort)
-        path_cat["id"] = np.zeros(len(path_cat), dtype=str)
+        ids = []
+        id_strs = []
         for i, row in enumerate(path_cat):
-            row["id"] = chr(65 + i)
+            ids.append(i)
+            id_strs.append(str(i).zfill(int(np.ceil(np.log10(len(path_cat))))))
+        path_cat["id"] = ids
+        path_cat["id_str"] = id_strs
         self.host_candidate_tables["consolidated"] = path_cat
         best_i = np.argmax(path_cat[f"P_Ox_{p_ox_assign}"])
         for i, row in enumerate(path_cat):
@@ -1986,7 +1996,7 @@ class FRB(Transient):
                 transient=self,
                 position=SkyCoord(row["ra"], row["dec"]),
                 field=self.field,
-                name=f"HC{row['id']}_{idn}",
+                name=f"HC{row['id_str']}_{idn}",
                 P_Ox=row[f"P_Ox_{p_ox_assign}"]
             )
             self.host_candidates.append(host_candidate)
@@ -2008,7 +2018,8 @@ class FRB(Transient):
 
     def _output_dict(self):
         output = super()._output_dict()
-        cand_list = list(map(lambda o: o.name, self.host_candidates))
+        cand_list = []
+        cand_list = list(map(lambda o: str(o), self.host_candidates))
 
         output.update({
             "host_candidate_tables": self.write_candidate_tables(),
@@ -2032,7 +2043,11 @@ class FRB(Transient):
                             continue
 
             if "host_candidates" in outputs:
-                for obj_name in outputs["host_candidates"]:
+                for obj_dict in outputs["host_candidates"]:
+                    if isinstance(obj_dict, str):
+                        obj_name = obj_dict
+                    else:
+                        obj_name = obj_dict["name"]
                     obj = object_from_index(obj_name, tolerate_missing=True)
                     if obj is None:
                         obj = obj_name

@@ -488,7 +488,11 @@ class Epoch:
                 self.set_path(name, output_dir)
 
                 if stage["method"](self, output_dir=output_dir, **stage_kwargs) is not False:
-                    self.stages_complete[name] = Time.now()
+                    self.stages_complete[name] = {
+                        "status": "complete",
+                        "time": Time.now(),
+                        "kwargs": stage_kwargs
+                    }
 
                     if "log_message" in stage and stage["log_message"] is not None:
                         log_message = stage["log_message"]
@@ -498,9 +502,15 @@ class Epoch:
 
                     u.rmtree_check(output_dir_backup)
 
+                last_complete = dir_name
                 self.update_output_file()
 
-                last_complete = dir_name
+            elif not do_this:
+                self.stages_complete[name] = {
+                    "status": "skipped",
+                    "time": Time.now(),
+                    "kwargs": {}
+                }
 
         return last_complete
 
@@ -573,7 +583,12 @@ class Epoch:
         if stage not in self.stages():
             raise ValueError(f"{stage} is not a valid stage for this Epoch.")
         if stage in self.stages_complete:
-            return self.stages_complete[stage]
+            if isinstance(self.stages_complete[stage], Time):
+                return self.stages_complete[stage]
+            elif self.stages_complete[stage]["status"] == "skipped":
+                return None
+            else:
+                return self.stages_complete[stage]["time"]
         else:
             return None
 
@@ -1630,6 +1645,8 @@ class ImagingEpoch(Epoch):
             aa_template = kwargs["astroalign_template"]
         else:
             aa_template = None
+        if aa_template is not None:
+            aa_template = p.join_data_dir(aa_template)
 
         first_success = None
         unsuccessful = []
@@ -1995,9 +2012,10 @@ class ImagingEpoch(Epoch):
             p_ox_assign=best_img.name
         )
         for obj in self.field.frb.host_candidates:
-            print(obj.name, obj.P_Ox)
-            if obj.P_Ox is not None and obj.P_Ox > 0.1:
-                self.field.objects.append(obj)
+            if isinstance(obj, objects.TransientHostCandidate):
+                print(obj.name, obj.P_Ox)
+                if obj.P_Ox is not None and obj.P_Ox > 0.1:
+                    self.field.objects.append(obj)
 
         # yaml_dict = {}
         #
