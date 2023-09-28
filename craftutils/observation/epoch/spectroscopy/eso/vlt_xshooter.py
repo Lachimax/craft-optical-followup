@@ -13,22 +13,29 @@ from .eso import ESOSpectroscopyEpoch
 
 class XShooterSpectroscopyEpoch(ESOSpectroscopyEpoch):
     _instrument_pypeit = "vlt_xshooter"
-    grisms = {'uvb': {"lambda_min": 300 * units.nm,
-                      "lambda_max": 550 * units.nm},
-              "vis": {"lambda_min": 550 * units.nm,
-                      "lambda_max": 1000 * units.nm},
-              "nir": {"lambda_min": 1000 * units.nm,
-                      "lambda_max": 2500 * units.nm}}
+    grisms = {
+        'uvb': {
+            "lambda_min": 300 * units.nm,
+            "lambda_max": 550 * units.nm},
+        "vis": {
+            "lambda_min": 550 * units.nm,
+            "lambda_max": 1000 * units.nm},
+        "nir": {
+            "lambda_min": 1000 * units.nm,
+            "lambda_max": 2500 * units.nm
+        }}
 
-    def __init__(self,
-                 param_path: str = None,
-                 name: str = None,
-                 field: Union[str, 'craftutils.observation.field.Field'] = None,
-                 data_path: str = None,
-                 instrument: str = None,
-                 date: Union[str, Time] = None,
-                 program_id: str = None,
-                 ):
+    def __init__(
+            self,
+            param_path: str = None,
+            name: str = None,
+            field: Union[str, 'craftutils.observation.field.Field'] = None,
+            data_path: str = None,
+            instrument: str = None,
+            date: Union[str, Time] = None,
+            program_id: str = None,
+            **kwargs
+    ):
 
         super().__init__(
             param_path=param_path,
@@ -312,13 +319,13 @@ class XShooterSpectroscopyEpoch(ESOSpectroscopyEpoch):
     def pypeit_flux_title(self):
         return f"{self._instrument_pypeit}_{self._get_current_arm()}.flux"
 
-    def get_path(self, key):
-        key = self._get_key_arm(key)
-        return self.paths[key]
-
-    def set_path(self, key: str, value: str):
-        key = self._get_key_arm(key)
-        self.paths[key] = value
+    # def get_path(self, key):
+    #     key = self._get_key_arm(key)
+    #     return self.paths[key]
+    #
+    # def set_path(self, key: str, value: str):
+    #     key = self._get_key_arm(key)
+    #     self.paths[key] = value
 
     def get_frames_science(self):
         return self.frames_science[self._get_current_arm()]

@@ -300,6 +300,131 @@ class ImagingImage(Image):
         else:
             return psfex.load_psfex_oversampled(model=self.psfex_path, x=x, y=y)
 
+    def clone_diagnostics(
+            self,
+            other: 'ImagingImage',
+            ext: int = 0
+    ):
+        """
+        The intent behind this function is to use it when it is a derived image that should have the same
+        characteristics (eg PSF, astrometry, zeropoint) as the original or other derivative, and to transfer
+        those properties across.
+
+        :param other:
+        :param ext:
+        :return:
+        """
+
+        self.load_headers()
+        other.load_headers()
+        self.clone_psf(other=other, ext=ext)
+        self.clone_zeropoints(other=other, ext=ext)
+        self.clone_astrometry_info(other=other, ext=ext)
+
+        self.update_output_file()
+        self.write_fits_file()
+
+    def clone_astrometry_info(
+            self,
+            other: 'ImagingImage',
+            ext: int = 0
+    ):
+        self.astrometry_stats = other.astrometry_stats
+        self.astrometry_err = other.astrometry_err
+        self.ra_err = other.ra_err
+        self.dec_err = other.dec_err
+        astm_rms = other.extract_header_item(key="ASTM_RMS", accept_absent=True)
+        if astm_rms:
+            self.set_header_item(
+                key="ASTM_RMS",
+                value=astm_rms,
+                ext=ext
+            )
+        ra_rms = other.extract_header_item(key="RA_RMS", accept_absent=True)
+        if ra_rms:
+            self.set_header_item(
+                key="RA_RMS",
+                value=ra_rms,
+                ext=ext
+            )
+        dec_rms = other.extract_header_item(key="DEC_RMS", accept_absent=True)
+        if dec_rms:
+            self.set_header_item(
+                key="DEC_RMS",
+                value=dec_rms,
+                ext=ext
+            )
+
+    def clone_zeropoints(
+            self,
+            other: 'ImagingImage',
+            ext: int = 0
+    ):
+        self.zeropoints = other.zeropoints.copy()
+        self.zeropoint_best = other.zeropoint_best
+        zp = other.extract_header_item(key="ZP", accept_absent=True)
+        if zp:
+            self.set_header_item(
+                key="ZP",
+                value=zp,
+                ext=ext
+            )
+        zp_err = other.extract_header_item(key="ZP_ERR", accept_absent=True)
+        if zp_err:
+            self.set_header_item(
+                key="ZP_ERR",
+                value=zp_err,
+                ext=ext
+            )
+        zp_cat = other.extract_header_item(key="ZPCAT", accept_absent=True)
+        if zp_cat:
+            self.set_header_item(
+                key="ZPCAT",
+                value=zp_cat,
+                ext=ext
+            )
+
+    def clone_psf(
+            self,
+            other: 'ImagingImage',
+            ext: int = 0
+    ):
+        self.load_headers()
+
+        self.psfex_path = other.psfex_path
+        self.fwhm_pix_psfex = other.fwhm_pix_psfex
+        self.fwhm_psfex = other.fwhm_psfex
+        self.psfex_successful = other.psfex_successful
+        self.psfex_output = other.psfex_output
+        self.psf_stats = other.psf_stats
+
+        self.fwhm_median_gauss = other.fwhm_median_gauss
+        self.fwhm_max_gauss = other.fwhm_max_gauss
+        self.fwhm_min_gauss = other.fwhm_min_gauss
+        self.fwhm_sigma_gauss = other.fwhm_sigma_gauss
+        self.fwhm_rms_gauss = other.fwhm_rms_gauss
+
+        self.fwhm_median_moffat = other.fwhm_median_moffat
+        self.fwhm_max_moffat = other.fwhm_max_moffat
+        self.fwhm_min_moffat = other.fwhm_min_moffat
+        self.fwhm_sigma_moffat = other.fwhm_sigma_moffat
+        self.fwhm_rms_moffat = other.fwhm_rms_moffat
+
+        psf_fwhm = other.extract_header_item(key="PSF_FWHM", ext=ext, accept_absent=True)
+        if psf_fwhm:
+            self.set_header_item(
+                key="PSF_FWHM",
+                value=psf_fwhm,
+                ext=ext
+            )
+        psf_fwhm_err = other.extract_header_item(key="PSF_FWHM_ERR", ext=ext, accept_absent=True)
+        if psf_fwhm_err:
+            self.set_header_item(
+                key="PSF_FWHM_ERR",
+                value=psf_fwhm_err,
+                ext=ext
+            )
+
     def source_extraction_psf(
             self,
             output_dir: str,
