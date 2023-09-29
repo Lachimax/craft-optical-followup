@@ -1486,7 +1486,7 @@ class ImagingImage(Image):
             cat_name: str = None,
             **diag_kwargs
     ):
-        if self.source_cat.table is None:
+        if self.source_cat is None or self.source_cat.table is None:
             self.source_extraction_psf(output_dir=output_dir)
 
         if cat is None:

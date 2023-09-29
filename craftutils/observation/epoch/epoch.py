@@ -1165,7 +1165,11 @@ class ImagingEpoch(Epoch):
                         mask_ellipses=mask_ellipses,
                         **kwargs
                     )
-                    fit_info[fil][frame.name] = model
+                    model_info = {}
+                    if "init_params" in kwargs:
+                        model_info.update(kwargs["init_params"])
+                    model_info.update(dict(zip(model.param_names, model.parameters)))
+                    fit_info[fil][frame.name] = model_info
 
                 new_frame = type(frame)(subbed_path)
                 self.add_frame_subtracted(new_frame)
