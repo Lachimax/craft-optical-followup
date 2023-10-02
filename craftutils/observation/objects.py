@@ -1801,6 +1801,8 @@ class FRB(Transient):
         self._dm_mw_ism_ne2001 = None
         self._dm_mw_ism_ymw16 = None
 
+        self.zdm_table: table.QTable = None
+
         # Placeholder for an associated `frb.frb.FRB` object
         self.x_frb = None
 
@@ -2715,6 +2717,18 @@ class FRB(Transient):
         outputs["dm_cum_table"] = cosmic_tbl
 
         return outputs
+
+    def read_p_z_dm(self, path: str):
+        zdm_np = np.load(path)
+        self.zdm_table = table.QTable(
+            {
+                "z": zdm_np["zvals"],
+                "p(z|DM)_best": zdm_np["all_pzgdm"][0]
+            }
+        )
+        for i, zdm in enumerate(zdm_np["all_pzgdm"][1:]):
+            self.zdm_table[f"p(z|DM)_90_{i}"] = zdm
+        return self.zdm_table
 
     @classmethod
     def from_dict(cls, dictionary: dict, **kwargs):

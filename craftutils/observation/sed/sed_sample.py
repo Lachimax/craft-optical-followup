@@ -25,16 +25,21 @@ class SEDSample:
     """
 
     def __init__(self, **kwargs):
+        self.name = None
         self.model_dict: Dict[str, SEDModel] = {}
         self.model_directory: str = None
-        self.output_dir: str = None
+        self.data_path: str = None
+        self.output_file: str = None
         self.z_mag_tbls: Dict[str, table.QTable] = {}
         self.z_mag_tbl_paths: Dict[str, str] = {}
         for key, item in kwargs.items():
             setattr(self, key, item)
 
-        if self.output_dir:
-            u.mkdir_check_nested(self.output_dir, remove_last=False)
+    def set_output_dir(self, path: str):
+        self.data_path = path
+        u.mkdir_check_nested(self.data_path, remove_last=False)
+        if not self.output_file and self.name:
+            self.output_file = os.path.join(self.data_path, f"{self.name}_outputs.yaml")
 
     def add_model(self, model: SEDModel, name: str = None):
         if name is None:
@@ -94,12 +99,19 @@ class SEDSample:
 
     def write_z_mag_tbls(self, directory: str = None):
         if directory is None:
-            directory = os.path.join(self.output_dir, "z_mag_tables")
-        u.mkdir_check(directory)
+            directory = os.path.join(self.data_path, "z_mag_tables")
+        u.mkdir_check_nested(directory, remove_last=False)
         for band_name, z_mag_tbl in self.z_mag_tbls.items():
             path = os.path.join(directory, f"{band_name}_z_mag_table.ecsv")
             z_mag_tbl.write(path, overwrite=True)
             self.z_mag_tbl_paths[band_name] = path
+
+    def read_z_mag_tbls(self):
+        for band_name, path in self.z_mag_tbl_paths.items():
+            path_full = p.join_data_dir(path)
+            self.z_mag_tbl_paths[band_name] = path_full
+            self.z_mag_tbls[band_name] = table.QTable.read(path_full)
+        return self.z_mag_tbls
 
     def calculate_for_limit(
             self,
@@ -107,7 +119,7 @@ class SEDSample:
             limit: units.Quantity,
             output: str = None,
     ):
-        # limit = u.check_quantity(limit, units.mag)
+        limit = u.dequantify(limit, units.mag)
         if isinstance(band, fil.Filter):
             band_name = band.machine_name()
         else:
@@ -152,22 +164,25 @@ class SEDSample:
             self,
             band: Union[str, fil.Filter],
             limit: units.Quantity,
-            p_z_dm: Union[table.Table, np.ndarray],
+            obj: Union[table.Table, np.ndarray, 'objects.FRB'],
             z: np.ndarray = None,
             output: str = None,
             plot: bool = False,
-            show: bool = False
+            show: bool = False,
+            pzdm_column: str = "p(z|DM)_best"
     ):
 
         if output:
             u.mkdir_check(output)
 
-        if isinstance(p_z_dm, np.ndarray):
+        if isinstance(obj, objects.FRB):
+            obj = obj.zdm_table
+        elif isinstance(obj, np.ndarray):
             if z:
-                p_z_dm = table.QTable(
+                obj = table.QTable(
                     {
                         "z": z,
-                        "p(z|DM)": p_z_dm
+                        "p(z|DM)_best": obj
                     }
                 )
             else:
@@ -176,13 +191,13 @@ class SEDSample:
         tbl, z_lost = self.calculate_for_limit(
             band=band,
             limit=limit,
-            output=os.path.join(output, "z_table.ecsv")
+            output=os.path.join(output, f"{self.name}_z_table.ecsv")
         )
 
         tbl["p(z|DM)"] = np.interp(
             x=tbl["z"],
-            xp=p_z_dm["z"],
-            fp=p_z_dm["p(z|DM)"]
+            xp=obj["z"],
+            fp=obj[pzdm_column]
         )
         # Calculate P(U) and, at the same time, get p(z|U,DM)
         curve = tbl["P(U|z)"] * tbl["p(z|DM)"]
@@ -310,7 +325,7 @@ class SEDSample:
             )
 
             if show:
-                plt.show(fig)
+                fig.show()
 
             plt.close(fig)
 
@@ -321,10 +336,31 @@ class SEDSample:
         }
         return values, tbl, z_lost
 
+    def _output_dict(self):
+        obj_dict = self.__dict__.copy()
+        obj_dict.pop("z_mag_tbls")
+        obj_dict.pop("model_dict")
+        for band, path in obj_dict["z_mag_tbl_paths"].items():
+            obj_dict[band]["z_mag_tbl_paths"] = p.split_data_dir(path)
+        for key, value in obj_dict.items():
+            if isinstance(value, str):
+                if os.path.exists(value):
+                    obj_dict[key] = p.split_data_dir(value)
+        return obj_dict
+
+    def update_output_file(self):
+        p.update_output_file(self)
+
+    def load_output_file(self):
+        outputs = p.load_output_file(self)
+        for key, value in outputs.items():
+            setattr(self, key, value)
+        return outputs
+
     @classmethod
-    def from_file(cls, path: str):
+    def from_file(cls, path: str, name: str, **kwargs):
         param_dict = p.load_params(path)
-        sample = cls()
+        sample = cls(name=name)
 
         for model_dict in param_dict:
             for key, value in model_dict.items():
@@ -332,12 +368,14 @@ class SEDSample:
                     if not os.path.isabs(value):
                         value = os.path.join(p.param_dir, value)
                         model_dict[key] = value
-
+            model_dict.update(kwargs)
             model = SEDModel.from_dict(model_dict)
             sample.add_model(model)
         return sample
 
     @classmethod
-    def from_params(cls, name: str):
+    def from_params(cls, name: str, **kwargs):
         path = os.path.join(p.param_dir, "sed_samples", name, name + ".yaml")
-        return cls.from_file(path=path)
+        if "name" in kwargs:
+            name = kwargs.pop("name")
+        return cls.from_file(path=path, name=name, **kwargs)

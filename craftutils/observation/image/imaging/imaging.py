@@ -3223,6 +3223,7 @@ class ImagingImage(Image):
         self.model_background_photometry(method="sep", do_mask=True, ext=ext, **kwargs)
         rms = self.sep_background[ext].rms()
 
+
         flux, _, _ = sep.sum_circle(rms ** 2, [x], [y], ap_radius_pix)
         sigma_flux = np.sqrt(flux)
 
