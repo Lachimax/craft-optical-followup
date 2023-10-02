@@ -42,7 +42,8 @@ active_fields = {}
 
 @u.export
 def expunge_fields():
-    for field_name in active_fields:
+    field_list = active_fields.keys()
+    for field_name in field_list:
         del active_fields[field_name]
 
 
@@ -64,20 +65,6 @@ def list_fields(include_std: bool = False):
         os.path.join(param_path, d, f"{d}.yaml")), os.listdir(param_path)))
     if not include_std:
         fields = list(filter(lambda f: "STD" not in f, fields))
-    fields.sort()
-    return fields
-
-
-def list_fields_old():
-    print("Searching for old-format field param files...")
-    param_path = os.path.join(config['param_dir'], 'FRBs')
-    if os.path.isdir(param_path):
-        fields = filter(
-            lambda d: os.path.isfile(os.path.join(param_path, d)) and d.endswith('.yaml'),
-            os.listdir(param_path))
-        fields = list(map(lambda f: f.split(".")[0], fields))
-    else:
-        fields = []
     fields.sort()
     return fields
 
@@ -201,7 +188,8 @@ class Field:
             if not quiet:
                 print(f"Looking in {obj_path}")
 
-            obj_params = list(filter(lambda f: f.endswith(".yaml"), os.listdir(obj_path)))
+            obj_params = list(
+                filter(lambda f: f.endswith(".yaml") and not f.endswith("backup.yaml"), os.listdir(obj_path)))
             obj_params.sort()
             for obj_param in obj_params:
                 obj_name = obj_param[:obj_param.find(".yaml")]
@@ -211,7 +199,6 @@ class Field:
                 if "name" not in obj_dict:
                     obj_dict["name"] = obj_name
                 self.add_object_from_dict(obj_dict=obj_dict)
-                print(obj_name)
 
     def _gather_epochs(self, mode: str = "imaging", quiet: bool = False):
         """
@@ -233,7 +220,11 @@ class Field:
                 instrument_path = os.path.join(mode_path, instrument)
                 if not quiet:
                     print(f"Looking in {instrument_path}")
-                epoch_params = list(filter(lambda f: f.endswith(".yaml"), os.listdir(instrument_path)))
+                epoch_params = list(
+                    filter(
+                        lambda f: f.endswith(".yaml") and not f.endswith("backup.yaml"),
+                        os.listdir(instrument_path)
+                    ))
                 epoch_params.sort()
                 for epoch_param in epoch_params:
                     epoch_name = epoch_param[:epoch_param.find(".yaml")]
@@ -277,13 +268,10 @@ class Field:
         for epoch in self.epochs_imaging:
             epoch = self.epochs_imaging[epoch]
             date_string = ""
-            if epoch["format"] == 'old':
-                date_string = " (old format)           "
-            elif "date" in epoch and epoch["date"] is not None:
-                if isinstance(epoch["date"], str):
-                    date_string = f" {epoch['date']}"
-                else:
-                    date_string = f" {epoch['date'].strftime('%Y-%m-%d')}"
+            if isinstance(epoch["date"], str):
+                date_string = f" {epoch['date']}"
+            else:
+                date_string = f" {epoch['date'].strftime('%Y-%m-%d')}"
             options[f'{epoch["name"]}\t{date_string}\t{epoch["instrument"]}'] = epoch
         for epoch in self.epochs_imaging_loaded:
             # If epoch is already instantiated.
@@ -294,10 +282,7 @@ class Field:
         if epoch == "new":
             epoch = self.new_epoch_imaging()
         elif not isinstance(epoch, ep.Epoch):
-            old_format = False
-            if epoch["format"] == "old":
-                old_format = True
-            epoch = ep.ImagingEpoch.from_file(epoch, old_format=old_format, field=self)
+            epoch = ep.ImagingEpoch.from_file(epoch, field=self)
             self.epochs_imaging_loaded[epoch.name] = epoch
         return epoch
 
@@ -384,18 +369,21 @@ class Field:
         else:
             is_survey = False
             default_prefix = f"{self.name}_{instrument.upper()[instrument.find('-') + 1:]}"
-            others_like = list(filter(
-                lambda string: string.startswith(default_prefix) and string[-1].isnumeric(),
-                current_epochs
-            ))
-            next_n = 1
-            if others_like:
-                others_like.sort()
-                next_n = int(others_like[-1][-1]) + 1
-                print("Other epochs for this instrument are:")
-                for st in others_like:
-                    print(f"\t", st)
-            default = f"{default_prefix}_{next_n}"
+            if is_combined:
+                default = default_prefix + "_combined"
+            else:
+                others_like = list(filter(
+                    lambda string: string.startswith(default_prefix) and string[-1].isnumeric(),
+                    current_epochs
+                ))
+                next_n = 1
+                if others_like:
+                    others_like.sort()
+                    next_n = int(others_like[-1][-1]) + 1
+                    print("Other epochs for this instrument are:")
+                    for st in others_like:
+                        print(f"\t", st)
+                default = f"{default_prefix}_{next_n}"
             name = None
             while name is None:
                 name = u.user_input("Please enter a name for the epoch.", default=default)
@@ -428,10 +416,10 @@ class Field:
         # Set up a combined epoch by gathering reduced frames from other epochs.
         if is_combined:
             dates = []
-            print(f"Gathering reduced frames from all {instrument} epochs")
+            frame_type = epoch.frames_for_combined
+            print(f"Gathering {frame_type} frames from all {instrument} epochs")
             # Get list of other epochs
             epochs = self.gather_epochs_imaging()
-            frame_type = epoch.frames_for_combined
             this_frame_dict = epoch._get_frames(frame_type=frame_type)
             for other_epoch_name in epochs:
                 # Loop over gathered epochs
@@ -456,8 +444,8 @@ class Field:
                                 frames_dict=this_frame_dict,
                                 frame_type=frame_type
                             )
+            epoch.set_date(Time(np.mean(list(map(lambda d: d.mjd, dates))), format="mjd"))
             epoch.update_output_file()
-            epoch.date = Time(np.mean(list(map(lambda d: d.mjd, dates))), format="mjd")
 
         return epoch
 
@@ -528,6 +516,7 @@ class Field:
     ):
         """
         Retrieves and saves a catalogue of this field.
+
         :param cat_name: Name of catalogue; must match one of those available in craftutils.retrieve
         :param force_update: If True, retrieves the catalogue even if one is already on disk.
         :return:
@@ -540,7 +529,8 @@ class Field:
         output = self._cat_data_path(cat=cat_name)
         ra = self.centre_coords.ra.value
         dec = self.centre_coords.dec.value
-        if force_update or f"in_{cat_name}" not in self.cats:
+
+        if force_update or f"in_{cat_name}" not in self.cats or not os.path.isfile(output):
             u.debug_print(2, "Field.retrieve_catalogue(): radius ==", radius)
             response = retrieve.save_catalogue(
                 ra=ra,
@@ -639,6 +629,8 @@ class Field:
         p.update_output_file(self)
 
     def add_object(self, obj: objects.Object):
+        if isinstance(obj, dict):
+            self.add_object_from_dict(obj)
         self.objects.append(obj)
         self.objects_dict[obj.name] = obj
         obj.field = self
@@ -747,7 +739,6 @@ class Field:
             return self.objects_dict[name]
         else:
             raise ValueError(f"No object with name '{name}' found in field '{self.name}'.")
-
 
     @classmethod
     def default_params(cls):
@@ -977,7 +968,6 @@ class FRBField(Field):
         )
 
         self.frb = frb
-        print(self.objects_dict.keys())
         if self.frb is not None:
             if isinstance(self.frb, str):
                 self.frb = self.objects_dict[self.frb]
@@ -988,7 +978,6 @@ class FRBField(Field):
             if self.frb.host_galaxy not in self.objects and self.frb.host_galaxy is not None:
                 self.add_object(self.frb.host_galaxy)
         self.epochs_imaging_old = {}
-
 
     def plot_host_colour(
             self,
@@ -1361,97 +1350,3 @@ class FRBField(Field):
             output_path=output_path
         )
         return param_dict
-
-    @classmethod
-    def convert_old_param(cls, frb: str):
-
-        new_frb = f"FRB20{frb[3:]}"
-        new_params = cls.new_yaml(name=new_frb, path=None)
-        old_params = p.object_params_frb(frb)
-
-        new_params["name"] = new_frb
-
-        new_params["centre"]["dec"]["decimal"] = old_params["burst_dec"]
-        new_params["centre"]["dec"]["dms"] = old_params["burst_dec_str"]
-
-        new_params["centre"]["ra"]["decimal"] = old_params["burst_ra"]
-        new_params["centre"]["ra"]["hms"] = old_params["burst_ra_str"]
-
-        old_data_dir = old_params["data_dir"]
-        if isinstance(old_data_dir, str):
-            new_params["data_path"] = old_data_dir.replace(frb, new_frb)
-
-        new_params["frb"]["name"] = new_frb
-
-        new_params["frb"]["host_galaxy"]["position"]["dec"]["decimal"] = old_params["hg_dec"]
-        new_params["frb"]["host_galaxy"]["position"]["ra"]["decimal"] = old_params["hg_ra"]
-
-        new_params["frb"]["host_galaxy"]["position_err"]["dec"]["stat"] = old_params["hg_err_y"]
-        new_params["frb"]["host_galaxy"]["position_err"]["ra"]["stat"] = old_params["hg_err_x"]
-
-        new_params["frb"]["host_galaxy"]["z"] = old_params["z"]
-
-        new_params["frb"]["mjd"] = old_params["mjd_burst"]
-
-        new_params["frb"]["position"]["dec"]["decimal"] = old_params["burst_dec"]
-        new_params["frb"]["position"]["dec"]["dms"] = old_params["burst_dec_str"]
-
-        new_params["frb"]["position"]["ra"]["decimal"] = old_params["burst_ra"]
-        new_params["frb"]["position"]["ra"]["hms"] = old_params["burst_ra_str"]
-
-        new_params["frb"]["position_err"]["a"]["stat"] = old_params["burst_err_stat_a"]
-        new_params["frb"]["position_err"]["a"]["sys"] = old_params["burst_err_sys_a"]
-
-        new_params["frb"]["position_err"]["b"]["stat"] = old_params["burst_err_stat_b"]
-        new_params["frb"]["position_err"]["b"]["sys"] = old_params["burst_err_sys_b"]
-
-        new_params["frb"]["position_err"]["dec"]["stat"] = old_params["burst_err_stat_dec"]
-        new_params["frb"]["position_err"]["dec"]["sys"] = old_params["burst_err_sys_dec"]
-
-        new_params["frb"]["position_err"]["ra"]["stat"] = old_params["burst_err_stat_ra"]
-        new_params["frb"]["position_err"]["ra"]["sys"] = old_params["burst_err_sys_ra"]
-
-        new_params["frb"]["position_err"]["theta"] = old_params["burst_err_theta"]
-
-        if "other_objects" in old_params and type(old_params["other_objects"]) is dict:
-            for obj in old_params["other_objects"]:
-                if obj != "<name>":
-                    obj_dict = objects.Object.default_params()
-                    obj_dict["name"] = obj
-                    obj_dict["position"] = objects.position_dictionary.copy()
-                    obj_dict["position"]["dec"]["decimal"] = old_params["other_objects"][obj]["dec"]
-                    obj_dict["position"]["ra"]["decimal"] = old_params["other_objects"][obj]["ra"]
-                    new_params["objects"].append(obj_dict)
-
-        new_params["subtraction"]["template_epochs"]["des"] = old_params["template_epoch_des"]
-        new_params["subtraction"]["template_epochs"]["fors2"] = old_params["template_epoch_fors2"]
-        new_params["subtraction"]["template_epochs"]["sdss"] = old_params["template_epoch_sdss"]
-        new_params["subtraction"]["template_epochs"]["xshooter"] = old_params["template_epoch_xshooter"]
-
-        param_path_upper = os.path.join(p.param_dir, "fields", new_frb)
-        u.mkdir_check(param_path_upper)
-        p.save_params(file=os.path.join(param_path_upper, f"{new_frb}.yaml"), dictionary=new_params)
-
-    def gather_epochs_old(self):
-        print("Searching for old-format imaging epoch param files...")
-        epochs = {}
-        param_dir = p.param_dir
-        for instrument_path in filter(lambda d: d.startswith("epochs_"), os.listdir(param_dir)):
-            instrument = instrument_path.split("_")[-1]
-            instrument_path = os.path.join(param_dir, instrument_path)
-            gathered = list(filter(
-                lambda f: (f.startswith(self.name) or f.startswith(f"FRB{self.name[5:]}")) and f.endswith(".yaml"),
-                os.listdir(instrument_path)))
-            gathered.sort()
-            for epoch_param in gathered:
-                epoch_name = epoch_param[:epoch_param.find('.yaml')]
-                if f"{self.name}_{epoch_name[-1]}" not in self.epochs_imaging:
-                    param_path = os.path.join(instrument_path, epoch_param)
-                    epoch = p.load_params(file=param_path)
-                    epoch["format"] = "old"
-                    epoch["name"] = epoch_name
-                    epoch["instrument"] = instrument
-                    epoch["param_path"] = param_path
-                    epochs[epoch_name] = epoch
-        self.epochs_imaging.update(epochs)
-        return epochs

@@ -764,7 +764,18 @@ def root_mean_squared_error(
     return np.sqrt(mse)
 
 
-def detect_problem_table(tbl: table.Table, fmt: str = "ascii.ecsv"):
+def detect_problem_table(
+        tbl: table.Table,
+        fmt: str = "ascii.ecsv"
+) -> table.Row:
+    """
+    This function iterates through the rows of an astropy Table and attempts to write each one to disk;
+    if it fails on one, the row's index and the row itself are returned.
+
+    :param tbl: The Table (or subclass) to check.
+    :param fmt: The format to attempt to write; different formats may have trouble with different data types.
+    :return: index, row
+    """
     for i, row in enumerate(tbl):
         tbl_this = tbl[:i + 1]
         try:
@@ -1216,7 +1227,11 @@ def unit_str_to_float(string: str):
     return value, units
 
 
-def option(options: list, default: str = None):
+def option(
+        options: list,
+        default: str = None,
+        allow_text_entry: bool = True
+):
     for i, opt in enumerate(options):
         print(i, opt)
 
@@ -1227,10 +1242,18 @@ def option(options: list, default: str = None):
         selection = input()
         if selection == "" and default is not None:
             selection = default
-        try:
+        if selection.isnumeric():
             selection = int(selection)
-        except ValueError:
-            print("Invalid response. Please enter an integer.")
+        # The user may type their option instead of making a numeric selection.
+        elif allow_text_entry and selection in options:
+            picked = selection
+            selection = options.index(picked)
+            return selection, picked
+        else:
+            if allow_text_entry:
+                print("Invalid response. Please enter an integer, or type a valid option.")
+            else:
+                print("Invalid response. Please enter an integer.")
             continue
         try:
             picked = options[selection]
@@ -1257,7 +1280,8 @@ def select_option(
         options: Union[List[str], dict],
         default: Union[str, int] = None,
         sort: bool = False,
-        include_exit: bool = True
+        include_exit: bool = True,
+        allow_text_entry: bool = True
 ) -> tuple:
     """
     Options can be a list of strings, or a dict in which the keys are the options to be printed and the values are the
@@ -1291,7 +1315,12 @@ def select_option(
 
     if sort:
         options_list.sort()
-    selection, picked = option(options=options_list, default=default)
+    if include_exit:
+        options_list.append("Exit")
+
+    selection, picked = option(options=options_list, default=default, allow_text_entry=allow_text_entry)
+    if include_exit and picked == "Exit":
+        exit()
     if dictionary:
         return selection, options[picked]
     else:
@@ -1325,14 +1354,12 @@ def select_yn(message: str, default: Union[str, bool] = None):
 
 
 def select_yn_exit(message: str):
-    options = ["No", "Yes", "Exit"]
-    opt, _ = select_option(message=message, options=options)
+    options = ["No", "Yes"]
+    opt, _ = select_option(message=message, options=options, include_exit=True)
     if opt == 0:
         return False
     if opt == 1:
         return True
-    if opt == 2:
-        exit(0)
 
 
 def user_input(message: str, input_type: type = str, default=None):

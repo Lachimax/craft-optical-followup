@@ -574,6 +574,27 @@ class SEDModel:
         return output_dict
 
     @classmethod
+    def from_dict(cls, dictionary: dict):
+        sed_class = SEDModel.select_child_class(dictionary["type"])
+        model = sed_class(
+            **dictionary
+        )
+        return model
+
+    @classmethod
+    def select_child_class(cls, type_str: str):
+        from .__init__ import CIGALEModel, GordonProspectorModel
+        type_dict = {
+            "CIGALEModel": CIGALEModel,
+            "GordonProspectorModel": GordonProspectorModel,
+            "SEDModel": SEDModel
+        }
+        if type_str in type_dict:
+            return type_dict[type_str]
+        else:
+            raise ValueError(f"SEDModel type {type_str} not recognised")
+
+    @classmethod
     def columns(cls):
         return {}
 

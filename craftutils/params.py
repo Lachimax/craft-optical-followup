@@ -137,8 +137,18 @@ def save_params(file: str, dictionary: dict):
         for key in dictionary:
             print(key, type(dictionary[key]), dictionary[key])
 
-    with open(file, 'w') as f:
-        yaml.dump(dictionary, f)
+    file_backup = file.replace(".yaml", "_backup.yaml")
+    if os.path.exists(file):
+        shutil.copy(file, file_backup)
+
+    from yaml.representer import RepresenterError
+    try:
+        with open(file, 'w') as f:
+            yaml.dump(dictionary, f)
+    except RepresenterError as err:
+        if os.path.exists(file_backup):
+            shutil.copy(file_backup, file)
+        raise err
 
 
 def select_coords(dictionary):
@@ -309,6 +319,7 @@ def set_config_path(key: str, path: str, write: bool = True):
 
 
 def get_project_git_hash(short: bool = False):
+    global project_dir
     return u.get_git_hash(directory=project_dir, short=short)
 
 

@@ -13,22 +13,29 @@ from .eso import ESOSpectroscopyEpoch
 
 class XShooterSpectroscopyEpoch(ESOSpectroscopyEpoch):
     _instrument_pypeit = "vlt_xshooter"
-    grisms = {'uvb': {"lambda_min": 300 * units.nm,
-                      "lambda_max": 550 * units.nm},
-              "vis": {"lambda_min": 550 * units.nm,
-                      "lambda_max": 1000 * units.nm},
-              "nir": {"lambda_min": 1000 * units.nm,
-                      "lambda_max": 2500 * units.nm}}
+    grisms = {
+        'uvb': {
+            "lambda_min": 300 * units.nm,
+            "lambda_max": 550 * units.nm},
+        "vis": {
+            "lambda_min": 550 * units.nm,
+            "lambda_max": 1000 * units.nm},
+        "nir": {
+            "lambda_min": 1000 * units.nm,
+            "lambda_max": 2500 * units.nm
+        }}
 
-    def __init__(self,
-                 param_path: str = None,
-                 name: str = None,
-                 field: Union[str, 'craftutils.observation.field.Field'] = None,
-                 data_path: str = None,
-                 instrument: str = None,
-                 date: Union[str, Time] = None,
-                 program_id: str = None,
-                 ):
+    def __init__(
+            self,
+            param_path: str = None,
+            name: str = None,
+            field: Union[str, 'craftutils.observation.field.Field'] = None,
+            data_path: str = None,
+            instrument: str = None,
+            date: Union[str, Time] = None,
+            program_id: str = None,
+            **kwargs
+    ):
 
         super().__init__(
             param_path=param_path,
@@ -175,7 +182,7 @@ class XShooterSpectroscopyEpoch(ESOSpectroscopyEpoch):
                 #              os.path.join(self.get_path("pypeit_run_dir"), f"vlt_xshooter_{arm}_std.pypeit"))
                 # self.write_pypeit_file_std()
             self._current_arm = None
-            self.stages_complete['2-pypeit_setup'] = Time.now()
+            # self.stages_complete['2-pypeit_setup'] = Time.now()
             self.update_output_file()
 
     def proc_pypeit_run(self, no_query: bool = False, do_not_reuse_masters: bool = False, **kwargs):
@@ -189,7 +196,7 @@ class XShooterSpectroscopyEpoch(ESOSpectroscopyEpoch):
                 spec.run_pypeit(pypeit_file=self.get_path('pypeit_file'),
                                 redux_path=self.get_path('pypeit_run_dir'),
                                 do_not_reuse_masters=do_not_reuse_masters)
-                self.stages_complete[f'3.{i + 1}-pypeit_run_{arm}'] = Time.now()
+                # self.stages_complete[f'3.{i + 1}-pypeit_run_{arm}'] = Time.now()
                 self.update_output_file()
             # if arm != "nir" and self.query_stage(f"Run PypeIt on flux standards for {arm.upper()} arm?",
             #                                      stage=f'3.{i + 1}-pypeit_run_{arm}_std'):
@@ -211,7 +218,7 @@ class XShooterSpectroscopyEpoch(ESOSpectroscopyEpoch):
                                             stage_name=f'4.{i + 1}-pypeit_flux_calib_{arm}'):
                 self._current_arm = arm
                 self._pypeit_flux()
-            self.stages_complete[f'4.{i + 1}-pypeit_flux_calib_{arm}'] = Time.now()
+            # self.stages_complete[f'4.{i + 1}-pypeit_flux_calib_{arm}'] = Time.now()
         self._current_arm = None
         self.update_output_file()
 
@@ -244,7 +251,7 @@ class XShooterSpectroscopyEpoch(ESOSpectroscopyEpoch):
                 spec.pypeit_coadd_1dspec(coadd1d_file=coadd_file_path)
                 self.add_coadded_image(coadd_file_path, key=arm)
 
-            self.stages_complete[f'5.{i + 1}-pypeit_coadd_{arm}'] = Time.now()
+            # self.stages_complete[f'5.{i + 1}-pypeit_coadd_{arm}'] = Time.now()
 
         self._current_arm = None
 
@@ -253,7 +260,7 @@ class XShooterSpectroscopyEpoch(ESOSpectroscopyEpoch):
                                         stage_name='6-convert_to_marz_format'):
             for arm in self.coadded:
                 self.coadded[arm].convert_to_marz_format()
-            self.stages_complete[f'6-convert_to_marz_format'] = Time.now()
+            # self.stages_complete[f'6-convert_to_marz_format'] = Time.now()
 
     def add_coadded_image(self, img: Union[str, image.Coadded1DSpectrum], **kwargs):
         arm = kwargs["key"]
@@ -312,13 +319,13 @@ class XShooterSpectroscopyEpoch(ESOSpectroscopyEpoch):
     def pypeit_flux_title(self):
         return f"{self._instrument_pypeit}_{self._get_current_arm()}.flux"
 
-    def get_path(self, key):
-        key = self._get_key_arm(key)
-        return self.paths[key]
-
-    def set_path(self, key: str, value: str):
-        key = self._get_key_arm(key)
-        self.paths[key] = value
+    # def get_path(self, key):
+    #     key = self._get_key_arm(key)
+    #     return self.paths[key]
+    #
+    # def set_path(self, key: str, value: str):
+    #     key = self._get_key_arm(key)
+    #     self.paths[key] = value
 
     def get_frames_science(self):
         return self.frames_science[self._get_current_arm()]

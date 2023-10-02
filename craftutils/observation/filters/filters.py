@@ -16,10 +16,10 @@ import craftutils.photometry as ph
 
 active_filters = {}
 
-__all__ = []
+# __all__ = []
 
 
-@u.export
+# @u.export
 class Filter:
 
     def __init__(self, **kwargs):
@@ -198,6 +198,12 @@ class Filter:
         )
 
     def compare_wavelength_range(self, other: 'Filter'):
+        """
+
+        :param other:
+        :return:
+        """
+
         tbl_self, tbl_other = self.find_comparable_table(other)
         self_wavelength = tbl_self["Wavelength"]
         other_wavelength = tbl_other["Wavelength"]

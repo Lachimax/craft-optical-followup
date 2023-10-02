@@ -85,6 +85,7 @@ def solve_field(
         odds_to_solve: float = 1e5,
         am_flags: list = None,
         am_params: dict = None,
+        **kwargs
 ):
     """
     Returns True if successful (by checking whether the corrected file is generated); False if not.
