@@ -234,7 +234,11 @@ class Field:
                 instrument_path = os.path.join(mode_path, instrument)
                 if not quiet:
                     print(f"Looking in {instrument_path}")
-                epoch_params = list(filter(lambda f: f.endswith(".yaml"), os.listdir(instrument_path)))
+                epoch_params = list(
+                    filter(
+                        lambda f: f.endswith(".yaml") and not f.endswith("backup.yaml"),
+                        os.listdir(instrument_path)
+                    ))
                 epoch_params.sort()
                 for epoch_param in epoch_params:
                     epoch_name = epoch_param[:epoch_param.find(".yaml")]
