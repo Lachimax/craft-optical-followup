@@ -319,6 +319,7 @@ def set_config_path(key: str, path: str, write: bool = True):
 
 
 def get_project_git_hash(short: bool = False):
+    global project_dir
     return u.get_git_hash(directory=project_dir, short=short)
 
 
