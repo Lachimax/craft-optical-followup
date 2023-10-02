@@ -49,6 +49,6 @@ So, if you've made the main installation via ``pip``,  ``astrometry.net`` should
 
 .. code-block:: bash
 
-    $ conda install astrometry
+    $ conda install -c conda-forge astrometry
 
 If you are not using `conda`, `astrometry.net` can also be installed following the instructions at http://astrometry.net/doc/build.html. This should work fine but is marginally less convenient.
