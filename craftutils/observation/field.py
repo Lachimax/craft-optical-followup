@@ -69,20 +69,6 @@ def list_fields(include_std: bool = False):
     return fields
 
 
-def list_fields_old():
-    print("Searching for old-format field param files...")
-    param_path = os.path.join(config['param_dir'], 'FRBs')
-    if os.path.isdir(param_path):
-        fields = filter(
-            lambda d: os.path.isfile(os.path.join(param_path, d)) and d.endswith('.yaml'),
-            os.listdir(param_path))
-        fields = list(map(lambda f: f.split(".")[0], fields))
-    else:
-        fields = []
-    fields.sort()
-    return fields
-
-
 @u.export
 class Field:
     def __init__(
@@ -299,10 +285,7 @@ class Field:
         if epoch == "new":
             epoch = self.new_epoch_imaging()
         elif not isinstance(epoch, ep.Epoch):
-            old_format = False
-            if epoch["format"] == "old":
-                old_format = True
-            epoch = ep.ImagingEpoch.from_file(epoch, old_format=old_format, field=self)
+            epoch = ep.ImagingEpoch.from_file(epoch, field=self)
             self.epochs_imaging_loaded[epoch.name] = epoch
         return epoch
 
@@ -1367,97 +1350,3 @@ class FRBField(Field):
             output_path=output_path
         )
         return param_dict
-
-    @classmethod
-    def convert_old_param(cls, frb: str):
-
-        new_frb = f"FRB20{frb[3:]}"
-        new_params = cls.new_yaml(name=new_frb, path=None)
-        old_params = p.object_params_frb(frb)
-
-        new_params["name"] = new_frb
-
-        new_params["centre"]["dec"]["decimal"] = old_params["burst_dec"]
-        new_params["centre"]["dec"]["dms"] = old_params["burst_dec_str"]
-
-        new_params["centre"]["ra"]["decimal"] = old_params["burst_ra"]
-        new_params["centre"]["ra"]["hms"] = old_params["burst_ra_str"]
-
-        old_data_dir = old_params["data_dir"]
-        if isinstance(old_data_dir, str):
-            new_params["data_path"] = old_data_dir.replace(frb, new_frb)
-
-        new_params["frb"]["name"] = new_frb
-
-        new_params["frb"]["host_galaxy"]["position"]["dec"]["decimal"] = old_params["hg_dec"]
-        new_params["frb"]["host_galaxy"]["position"]["ra"]["decimal"] = old_params["hg_ra"]
-
-        new_params["frb"]["host_galaxy"]["position_err"]["dec"]["stat"] = old_params["hg_err_y"]
-        new_params["frb"]["host_galaxy"]["position_err"]["ra"]["stat"] = old_params["hg_err_x"]
-
-        new_params["frb"]["host_galaxy"]["z"] = old_params["z"]
-
-        new_params["frb"]["mjd"] = old_params["mjd_burst"]
-
-        new_params["frb"]["position"]["dec"]["decimal"] = old_params["burst_dec"]
-        new_params["frb"]["position"]["dec"]["dms"] = old_params["burst_dec_str"]
-
-        new_params["frb"]["position"]["ra"]["decimal"] = old_params["burst_ra"]
-        new_params["frb"]["position"]["ra"]["hms"] = old_params["burst_ra_str"]
-
-        new_params["frb"]["position_err"]["a"]["stat"] = old_params["burst_err_stat_a"]
-        new_params["frb"]["position_err"]["a"]["sys"] = old_params["burst_err_sys_a"]
-
-        new_params["frb"]["position_err"]["b"]["stat"] = old_params["burst_err_stat_b"]
-        new_params["frb"]["position_err"]["b"]["sys"] = old_params["burst_err_sys_b"]
-
-        new_params["frb"]["position_err"]["dec"]["stat"] = old_params["burst_err_stat_dec"]
-        new_params["frb"]["position_err"]["dec"]["sys"] = old_params["burst_err_sys_dec"]
-
-        new_params["frb"]["position_err"]["ra"]["stat"] = old_params["burst_err_stat_ra"]
-        new_params["frb"]["position_err"]["ra"]["sys"] = old_params["burst_err_sys_ra"]
-
-        new_params["frb"]["position_err"]["theta"] = old_params["burst_err_theta"]
-
-        if "other_objects" in old_params and type(old_params["other_objects"]) is dict:
-            for obj in old_params["other_objects"]:
-                if obj != "<name>":
-                    obj_dict = objects.Object.default_params()
-                    obj_dict["name"] = obj
-                    obj_dict["position"] = objects.position_dictionary.copy()
-                    obj_dict["position"]["dec"]["decimal"] = old_params["other_objects"][obj]["dec"]
-                    obj_dict["position"]["ra"]["decimal"] = old_params["other_objects"][obj]["ra"]
-                    new_params["objects"].append(obj_dict)
-
-        new_params["subtraction"]["template_epochs"]["des"] = old_params["template_epoch_des"]
-        new_params["subtraction"]["template_epochs"]["fors2"] = old_params["template_epoch_fors2"]
-        new_params["subtraction"]["template_epochs"]["sdss"] = old_params["template_epoch_sdss"]
-        new_params["subtraction"]["template_epochs"]["xshooter"] = old_params["template_epoch_xshooter"]
-
-        param_path_upper = os.path.join(p.param_dir, "fields", new_frb)
-        u.mkdir_check(param_path_upper)
-        p.save_params(file=os.path.join(param_path_upper, f"{new_frb}.yaml"), dictionary=new_params)
-
-    def gather_epochs_old(self):
-        print("Searching for old-format imaging epoch param files...")
-        epochs = {}
-        param_dir = p.param_dir
-        for instrument_path in filter(lambda d: d.startswith("epochs_"), os.listdir(param_dir)):
-            instrument = instrument_path.split("_")[-1]
-            instrument_path = os.path.join(param_dir, instrument_path)
-            gathered = list(filter(
-                lambda f: (f.startswith(self.name) or f.startswith(f"FRB{self.name[5:]}")) and f.endswith(".yaml"),
-                os.listdir(instrument_path)))
-            gathered.sort()
-            for epoch_param in gathered:
-                epoch_name = epoch_param[:epoch_param.find('.yaml')]
-                if f"{self.name}_{epoch_name[-1]}" not in self.epochs_imaging:
-                    param_path = os.path.join(instrument_path, epoch_param)
-                    epoch = p.load_params(file=param_path)
-                    epoch["format"] = "old"
-                    epoch["name"] = epoch_name
-                    epoch["instrument"] = instrument
-                    epoch["param_path"] = param_path
-                    epochs[epoch_name] = epoch
-        self.epochs_imaging.update(epochs)
-        return epochs

@@ -123,10 +123,6 @@ def main(
         if field_name is None:
             fields = ["New field"]
             fields += fld.list_fields()
-            old_fields = fld.list_fields_old()
-            for old_field in old_fields:
-                if old_field not in fields and f"FRB20{old_field[3:]}" not in fields:
-                    fields.append(old_field)
             opt, field_name = u.select_option("No field specified. Please select one:", options=fields, sort=False)
             if opt == 0:
                 new_field = True
