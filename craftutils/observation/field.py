@@ -202,7 +202,8 @@ class Field:
             if not quiet:
                 print(f"Looking in {obj_path}")
 
-            obj_params = list(filter(lambda f: f.endswith(".yaml"), os.listdir(obj_path)))
+            obj_params = list(
+                filter(lambda f: f.endswith(".yaml") and not f.endswith("backup.yaml"), os.listdir(obj_path)))
             obj_params.sort()
             for obj_param in obj_params:
                 obj_name = obj_param[:obj_param.find(".yaml")]
