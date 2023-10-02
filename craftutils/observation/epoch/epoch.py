@@ -373,7 +373,21 @@ class Epoch:
 
         self.stage_params: dict = {}
 
+        self.exclude_frames: list = []
+        if "exclude_frames" in kwargs and isinstance(kwargs["exclude_frames"], list):
+            self.exclude_frames = kwargs["exclude_frames"]
+
         active_epochs[self.name] = self
+
+    def is_excluded(self, frame: Union[image.Image, str]):
+        if isinstance(frame, image.Image):
+            ident = frame.name
+        else:
+            ident = str(frame)
+        for fname in self.exclude_frames:
+            if fname in ident:
+                return True
+        return False
 
     def __str__(self):
         return self.name
@@ -764,6 +778,7 @@ class Epoch:
         default_params = {
             "mode": cls.mode,
             "name": None,
+            "exclude_frames": [],
             "field": None,
             "data_path": None,
             "instrument": cls.instrument_name,
@@ -1133,6 +1148,8 @@ class ImagingEpoch(Epoch):
             frame_list = frames[fil]
             fit_info[fil] = {}
             for frame in frame_list:
+                if self.is_excluded(frame):
+                    continue
                 subbed_path = os.path.join(output_dir, fil, frame.name + "_backsub.fits")
                 back_path = os.path.join(output_dir, fil, frame.name + "_background.fits")
                 if method in ("sep", "photutils"):
@@ -1250,6 +1267,8 @@ class ImagingEpoch(Epoch):
 
         for chip in include_chips:
             for i, frame in enumerate(frames_by_chip[chip]):
+                if self.is_excluded(frame):
+                    continue
                 if i != n_template:
                     registered = frame.register(
                         target=tmp,
@@ -1404,6 +1423,8 @@ class ImagingEpoch(Epoch):
                         f"Re-processing failed frames for chip {chip} with astroalign, with template {first_success}:")
                     print()
                 for frame in frames_by_chip[chip]:
+                    if self.is_excluded(frame):
+                        continue
                     if not self.astrometry_successful[fil][frame.name]:
                         if not self.quiet:
                             print(f"Running astroalign on {frame}...")
@@ -1573,6 +1594,8 @@ class ImagingEpoch(Epoch):
             input_directory_fil = os.path.join(output_directory_fil, "inputdir")
             u.mkdir_check(input_directory_fil)
             for frame in frame_list:
+                if self.is_excluded(frame):
+                    continue
                 frame.copy_with_outputs(input_directory_fil)
 
             coadded_path = montage.standard_script(
@@ -4531,6 +4554,8 @@ class ESOImagingEpoch(ImagingEpoch):
                 edged = True
 
             for i, frame in enumerate(self.frames_esoreflex_backgrounds[fil]):
+                if self.is_excluded(frame):
+                    continue
                 new_path = os.path.join(
                     fil_path_back,
                     frame.filename.replace(".fits", "_trim.fits")
@@ -4549,6 +4574,8 @@ class ESOImagingEpoch(ImagingEpoch):
             # Repeat for science images
 
             for i, frame in enumerate(self.frames_reduced[fil]):
+                if self.is_excluded(frame):
+                    continue
                 # Split the files into upper CCD and lower CCD
                 new_file = frame.filename.replace(".fits", "_trim.fits")
                 new_path = os.path.join(fil_path_science, new_file)
@@ -4608,6 +4635,8 @@ class ESOImagingEpoch(ImagingEpoch):
             u.mkdir_check(fil_path_science)
             u.mkdir_check(fil_path_back)
             for frame in self.frames_trimmed[fil]:
+                if self.is_excluded(frame):
+                    continue
                 do = True
                 if upper_only:
                     if frame.extract_chip_number() != 1:
