@@ -42,7 +42,8 @@ active_fields = {}
 
 @u.export
 def expunge_fields():
-    for field_name in active_fields:
+    field_list = active_fields.keys()
+    for field_name in field_list:
         del active_fields[field_name]
 
 
