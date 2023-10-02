@@ -992,7 +992,8 @@ class ImagingEpoch(Epoch):
                     "upper_only": False,
                     "method": "individual",
                     "back_subbed": False,
-                    "correct_to_epoch": True
+                    "correct_to_epoch": True,
+                    "registration_template": None
                 }
             },
             "frame_diagnostics": {
@@ -1375,6 +1376,7 @@ class ImagingEpoch(Epoch):
                                   self.astrometry_successful)
                     self.update_output_file()
 
+                # Allow unsolved frames to be registered to an external image instead of against a solved frame
                 if 'registration_template' in kwargs and kwargs['registration_template'] is not None:
                     first_success = image.from_path(
                         kwargs['registration_template'],
@@ -2009,7 +2011,8 @@ class ImagingEpoch(Epoch):
 
     def best_for_path(
             self,
-            image_type: str = "final"
+            image_type: str = "final",
+            exclude: list = ()
     ):
         print(f"best_for_path: {image_type=}")
         image_dict = self._get_images(image_type=image_type)
@@ -2017,6 +2020,8 @@ class ImagingEpoch(Epoch):
         best_score = np.inf * units.angstrom
         best_img = None
         for fil_name, img in image_dict.items():
+            if fil_name in exclude:
+                continue
             fil = img.filter
             score = r_sloan.compare_wavelength_range(fil)
             if score < best_score:
@@ -2029,20 +2034,23 @@ class ImagingEpoch(Epoch):
             image_type: str = "final",
             **path_kwargs
     ):
-        print(f"probabilistic association: {image_type=}")
         image_dict = self._get_images(image_type=image_type)
         self.field.frb.load_output_file()
 
+        failed = []
         for fil in image_dict:
             img = image_dict[fil]
-            print(f"probabilistic association: {img.path=}")
-            self.field.frb.probabilistic_association(
-                img=img,
-                do_plot=True,
-                **path_kwargs
-            )
+            try:
+                self.field.frb.probabilistic_association(
+                    img=img,
+                    do_plot=True,
+                    **path_kwargs
+                )
+            except ValueError:
+                print(f"PATH failed on {fil} image.")
+                failed.append(fil)
 
-        best_img = self.best_for_path(image_type=image_type)
+        best_img = self.best_for_path(image_type=image_type, exclude=failed)
 
         self.field.frb.consolidate_candidate_tables(
             sort_by="P_Ox",
@@ -5173,6 +5181,7 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
                     unsolved chip.
                 propagate_from_single: Each upper-chip image is passed to astrometry.net until a solution is found; this
                     solution is then propagated to all other upper-chip images. The same is repeated for the lower chip.
+                    THIS CAN GIVE COARSE RESULTS ONLY.
         :return:
         """
         self.frames_astrometry = {}
