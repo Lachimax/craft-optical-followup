@@ -143,8 +143,11 @@ def main(
             field = fld.Field.from_params(name=field_name)
 
     if mode is None:
-        _, mode = u.select_option(message="Please select a mode.",
-                                  options=["Imaging", "Spectroscopy", "Objects", "Exit"])
+        _, mode = u.select_option(
+            message="Please select a mode.",
+            options=["Imaging", "Spectroscopy", "Objects"],
+            include_exit=True
+        )
 
     mode = mode.lower()
     epoch = None
