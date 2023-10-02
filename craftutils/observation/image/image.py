@@ -286,6 +286,7 @@ def from_path(path: str, cls: type = None, **kwargs):
     :param kwargs:
     :return:
     """
+    path = p.join_data_dir(path)
     u.debug_print(3, "image.from_path(): path ==", path)
     if path in active_images:
         return active_images[path]
