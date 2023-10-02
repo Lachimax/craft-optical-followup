@@ -2178,7 +2178,7 @@ class ImagingEpoch(Epoch):
                 print(obj.name)
                 print("FILTER:", fil)
 
-                if "subtract_background_frames" in self.param_file and self.param_file["subtract_background_frames"]:
+                if self.did_local_background_subtraction():
                     good_image_path = self.coadded_subtracted[fil].output_file
                 else:
                     good_image_path = self.coadded_unprojected[fil].output_file

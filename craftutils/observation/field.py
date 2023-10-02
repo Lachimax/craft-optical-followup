@@ -270,8 +270,10 @@ class Field:
             date_string = ""
             if isinstance(epoch["date"], str):
                 date_string = f" {epoch['date']}"
-            else:
+            elif isinstance(epoch["date"], Time):
                 date_string = f" {epoch['date'].strftime('%Y-%m-%d')}"
+            else:
+                date_string = "--"
             options[f'{epoch["name"]}\t{date_string}\t{epoch["instrument"]}'] = epoch
         for epoch in self.epochs_imaging_loaded:
             # If epoch is already instantiated.
