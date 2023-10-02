@@ -629,8 +629,9 @@ class Epoch:
     def set_date(self, date: Union[str, Time]):
         if isinstance(date, str):
             date = Time(date)
-        self.date = date
-        self.update_param_file("date")
+        if date is not None:
+            self.date = date
+            self.update_param_file("date")
 
     def set_target(self, target: str):
         self.target = target
@@ -991,6 +992,7 @@ class ImagingEpoch(Epoch):
                     "upper_only": False,
                     "method": "individual",
                     "back_subbed": False,
+                    "correct_to_epoch": True
                 }
             },
             "frame_diagnostics": {
@@ -2579,7 +2581,7 @@ class ImagingEpoch(Epoch):
             coadd_class = image.CoaddedImage.select_child_class(instrument_name=self.instrument_name, mode='imaging')
             if self.date is None:
                 if "date" in outputs:
-                    self.date = outputs["date"]
+                    self.set_date(outputs["date"])
             if "filters" in outputs:
                 self.filters = outputs["filters"]
             if self._check_output_file_path("deepest", outputs):
@@ -3053,7 +3055,6 @@ class ImagingEpoch(Epoch):
     def from_file(
             cls,
             param_file: Union[str, dict],
-            old_format: bool = False,
             field: 'fld.Field' = None,
             quiet: bool = False
     ):
@@ -3067,10 +3068,7 @@ class ImagingEpoch(Epoch):
 
         pdict_backup = param_dict.copy()
 
-        if old_format:
-            instrument = "vlt-fors2"
-        else:
-            instrument = param_dict.pop("instrument").lower()
+        instrument = param_dict.pop("instrument").lower()
 
         fld_from_dict = param_dict.pop("field")
         if field is None:
@@ -3095,7 +3093,7 @@ class ImagingEpoch(Epoch):
                 **param_dict
             )
         elif sub_cls is FORS2ImagingEpoch:
-            return sub_cls.from_file(param_dict, name=name, old_format=old_format, field=field)
+            return sub_cls.from_file(param_dict, name=name, field=field)
         else:
             return sub_cls.from_file(pdict_backup, name=name, field=field)
 
@@ -3648,7 +3646,7 @@ class HubbleImagingEpoch(ImagingEpoch):
                 self.instrument_name = img.instrument_name
             fil = img.extract_filter()
             img.extract_date_obs()
-            self.date = img.date
+            self.set_date(img.date)
             self.exp_time_mean[fil] = img.extract_header_item('TEXPTIME') * units.second / img.extract_ncombine()
             img.set_header_item('INTTIME', img.extract_header_item('TEXPTIME'))
             self.add_coadded_image(img, key=fil)
@@ -3825,7 +3823,6 @@ class SurveyImagingEpoch(ImagingEpoch):
         super()._pipeline_init()
         self.coadded_final = "coadded"
         self.paths["download"] = os.path.join(self.data_path, "0-download")
-        # self.frames_final = "coadded"
 
     # TODO: Automatic cutout download; don't worry for now.
     def proc_download(self, output_dir: str, **kwargs):
@@ -5041,7 +5038,8 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
         super()._pipeline_init()
         self.frames_final = "astrometry"
         # If told not to correct astrometry on frames:
-        if "correct_astrometry_frames" in self.do_kwargs and not self.do_kwargs["correct_astrometry_frames"]:
+        if not self.combined_epoch and (
+                "correct_astrometry_frames" in self.do_kwargs and not self.do_kwargs["correct_astrometry_frames"]):
             self.frames_final = "normalised"
             # If told to register frames
             if "register_frames" in self.do_kwargs and self.do_kwargs["register_frames"]:

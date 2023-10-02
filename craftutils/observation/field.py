@@ -268,13 +268,10 @@ class Field:
         for epoch in self.epochs_imaging:
             epoch = self.epochs_imaging[epoch]
             date_string = ""
-            if epoch["format"] == 'old':
-                date_string = " (old format)           "
-            elif "date" in epoch and epoch["date"] is not None:
-                if isinstance(epoch["date"], str):
-                    date_string = f" {epoch['date']}"
-                else:
-                    date_string = f" {epoch['date'].strftime('%Y-%m-%d')}"
+            if isinstance(epoch["date"], str):
+                date_string = f" {epoch['date']}"
+            else:
+                date_string = f" {epoch['date'].strftime('%Y-%m-%d')}"
             options[f'{epoch["name"]}\t{date_string}\t{epoch["instrument"]}'] = epoch
         for epoch in self.epochs_imaging_loaded:
             # If epoch is already instantiated.
@@ -372,18 +369,21 @@ class Field:
         else:
             is_survey = False
             default_prefix = f"{self.name}_{instrument.upper()[instrument.find('-') + 1:]}"
-            others_like = list(filter(
-                lambda string: string.startswith(default_prefix) and string[-1].isnumeric(),
-                current_epochs
-            ))
-            next_n = 1
-            if others_like:
-                others_like.sort()
-                next_n = int(others_like[-1][-1]) + 1
-                print("Other epochs for this instrument are:")
-                for st in others_like:
-                    print(f"\t", st)
-            default = f"{default_prefix}_{next_n}"
+            if is_combined:
+                default = default_prefix + "_combined"
+            else:
+                others_like = list(filter(
+                    lambda string: string.startswith(default_prefix) and string[-1].isnumeric(),
+                    current_epochs
+                ))
+                next_n = 1
+                if others_like:
+                    others_like.sort()
+                    next_n = int(others_like[-1][-1]) + 1
+                    print("Other epochs for this instrument are:")
+                    for st in others_like:
+                        print(f"\t", st)
+                default = f"{default_prefix}_{next_n}"
             name = None
             while name is None:
                 name = u.user_input("Please enter a name for the epoch.", default=default)
@@ -416,10 +416,10 @@ class Field:
         # Set up a combined epoch by gathering reduced frames from other epochs.
         if is_combined:
             dates = []
-            print(f"Gathering reduced frames from all {instrument} epochs")
+            frame_type = epoch.frames_for_combined
+            print(f"Gathering {frame_type} frames from all {instrument} epochs")
             # Get list of other epochs
             epochs = self.gather_epochs_imaging()
-            frame_type = epoch.frames_for_combined
             this_frame_dict = epoch._get_frames(frame_type=frame_type)
             for other_epoch_name in epochs:
                 # Loop over gathered epochs
@@ -444,8 +444,8 @@ class Field:
                                 frames_dict=this_frame_dict,
                                 frame_type=frame_type
                             )
+            epoch.set_date(Time(np.mean(list(map(lambda d: d.mjd, dates))), format="mjd"))
             epoch.update_output_file()
-            epoch.date = Time(np.mean(list(map(lambda d: d.mjd, dates))), format="mjd")
 
         return epoch
 

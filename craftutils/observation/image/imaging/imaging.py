@@ -907,7 +907,7 @@ class ImagingImage(Image):
                                    f"{row['n_matches']} stars, " \
                                    f"from {row['image_name']}"
                         zps[pick_str] = self.zeropoints[row['catalogue']][row['image_name']]
-                    _, zeropoint_best = u.select_option(message="Select best zeropoint:", options=zps)
+                    _, zeropoint_best = u.select_option(message="Select best zeropoint:", options=zps, include_exit=False)
                     best_cat = zeropoint_best["catalogue"]
             self.zeropoint_best = zeropoint_best
 
