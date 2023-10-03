@@ -11,6 +11,7 @@ from astropy.modeling import models, fitting
 
 import craftutils.utils as u
 import craftutils.params as p
+import craftutils.plotting as pl
 import craftutils.observation.filters as fil
 import craftutils.observation.objects as objects
 from craftutils.plotting import tick_fontsize, axis_fontsize, lineweight
@@ -134,7 +135,6 @@ class SEDSample:
             if colname in tbl.colnames:
                 tbl["n>lim"] += tbl[colname] > limit
                 tbl["n<lim"] += tbl[colname] < limit
-                print(colname)
                 if len(tbl["z"][tbl[colname] > limit]) > 0:
                     z_lost[colname] = np.min(tbl["z"][tbl[colname] > limit])
                 else:
@@ -169,7 +169,7 @@ class SEDSample:
             output: str = None,
             plot: bool = False,
             show: bool = False,
-            pzdm_column: str = "p(z|DM)_best"
+            pzdm_column: str = "p(z|DM)_best",
     ):
 
         if output:
@@ -209,7 +209,12 @@ class SEDSample:
         tbl["P(U|z) * p(z|DM)"] = curve
 
         # Add normal approximation
-        gauss_init = models.Gaussian1D(mean=1.2, amplitude=1.75, stddev=1.)
+        peak_i = tbl["P(U|z) * p(z|DM)"].argmax()
+        gauss_init = models.Gaussian1D(
+            mean=tbl["z"][peak_i],
+            amplitude=tbl["P(U|z) * p(z|DM)"][peak_i],
+            stddev=1.
+        )
         fitter = fitting.LevMarLSQFitter()
         gauss_fit = fitter(gauss_init, x=tbl["z"], y=tbl["P(U|z) * p(z|DM)"])
         p_u_gauss = np.trapz(
@@ -228,9 +233,12 @@ class SEDSample:
             band_name = band
 
         if plot:
-            fig, ax = plt.subplots()
+            fig = plt.figure(figsize=(pl.textwidths["mqthesis"], pl.textwidths["mqthesis"]))
+            ax = fig.add_subplot()
 
             leg_x = 1.13
+
+            np.max(tbl["z"])
 
             ax_pdf = ax.twinx()
             ax_pdf.set_ylabel("Host fraction", rotation=-90, labelpad=35, fontsize=axis_fontsize)
@@ -238,6 +246,7 @@ class SEDSample:
             ax.yaxis.set_ticks_position('both')
             ax.tick_params(axis="y", labelright=True, labelsize=tick_fontsize)
             ax.tick_params(axis="x", labelsize=tick_fontsize)
+
 
             # Do some plotting
             ax.plot(
@@ -321,6 +330,130 @@ class SEDSample:
             )
             fig.savefig(
                 os.path.join(output, f"probability_{objects.cosmology.name}_{band_name}_gaussian.png"),
+                bbox_inches="tight", dpi=200
+            )
+
+            if show:
+                fig.show()
+
+            plt.close(fig)
+
+            # Do a plot with an extra panel showing the galaxy mag-z relationship
+            fig = plt.figure(figsize=(pl.textwidths["mqthesis"], pl.textwidths["mqthesis"]))
+            gs = fig.add_gridspec(nrows=2, ncols=1, height_ratios=(1, 1))
+            ax = fig.add_subplot(gs[0, 0])
+            ax_m_z = fig.add_subplot(gs[1, 0])
+            fig.subplots_adjust(hspace=0.)
+
+            max_z = np.max(tbl["z"])
+
+            ax_pdf = ax.twinx()
+            ax_pdf.set_ylabel("Host fraction", rotation=-90, labelpad=35, fontsize=axis_fontsize)
+            ax_pdf.tick_params(right=False, labelright=False)
+            ax.yaxis.set_ticks_position('both')
+            ax.tick_params(axis="y", labelright=True, labelsize=tick_fontsize)
+            ax.tick_params(axis="x", labelsize=tick_fontsize)
+
+            ax.plot(
+                tbl["z"],
+                tbl["P(U|z)"],
+                label="$P(U|z) = N_\mathrm{unseen}(z)/N_\mathrm{hosts}$",
+                # = \dfrac{N_\mathrm{unseen}(z)}{N_\mathrm{hosts}}$"
+                lw=2,
+                c="cyan"
+            )
+
+            ax.set_xlabel("$z$")
+            ax.set_xlim(0., max_z)
+
+            ax.set_ylabel("Probability density", fontsize=axis_fontsize)
+
+            ax.plot(
+                tbl["z"],
+                tbl["p(z|DM)"],
+                label="$p(z|\mathrm{DM})$",
+                lw=2,
+                c="purple"
+            )
+
+            ax.plot(
+                tbl["z"],
+                tbl["p(z|U,DM)"],
+                label="$p(z|U,\mathrm{DM})$",  # = \dfrac{P(U|z)p(z|\mathrm{DM,etc.})}{P(U)}$"
+                lw=2,
+                c="green"
+            )
+
+            ax.plot(
+                tbl["z"],
+                tbl["p(z|U,DM) gauss"],
+                label="$p(z|U,\mathrm{DM})$, Gaussian fit",  # = \dfrac{P(U|z)p(z|\mathrm{DM,etc.})}{P(U)}$"
+                lw=2,
+                c="darkorange",
+                ls=":"
+            )
+
+            ax.legend(
+                loc=(leg_x, 0),
+                fontsize=tick_fontsize
+            )
+
+            kwargs_lim_def = dict(c="black", lw=2, ls=":")
+            # kwargs_lim_def.update(kwargs_lim)
+            ax_m_z.plot(
+                (0.0, max_z),
+                (limit.value, limit.value),
+                **kwargs_lim_def
+            )
+            for model_name, model in self.model_dict.items():
+                if model_name in tbl.colnames:
+                    colour = "black"
+                    alpha = 0.1
+                    lw = 5
+                    ax_m_z.plot(
+                        tbl["z"],
+                        tbl[model_name],
+                        color=colour,  # colour[n],
+                        alpha=alpha,
+                        zorder=-1,
+                        lw=lw
+                    )
+                    if model.z:
+                        i, _ = u.find_nearest(tbl["z"], model.z)
+                        ax_m_z.scatter(
+                            model.z,
+                            tbl[model_name][i],
+                            color="cyan",
+                            alpha=1.,
+                            marker=".",
+                            edgecolors="cyan",
+                            zorder=1
+                        )
+            ax.plot(
+                tbl["z"],
+                tbl["median"],
+                color="red",
+                zorder=1,
+                lw=2,
+                ls=":"
+            )
+
+            ax_m_z.set_xlim(0., max_z)
+            ax_m_z.invert_yaxis()
+            ax_m_z.set_xlabel("$z$", fontsize=axis_fontsize)
+
+            ax_m_z.set_ylabel(f"$m_\mathrm{{{band.nice_name()}}}$", fontsize=axis_fontsize)
+
+            ax_pdf.tick_params(bottom=False, labelsize=tick_fontsize)
+            ax_pdf.xaxis.set_ticks([])
+            ax_m_z.tick_params(labelsize=tick_fontsize)
+
+            fig.savefig(
+                os.path.join(output, f"mag-z+probability_{objects.cosmology.name}_{band_name}.pdf"),
+                bbox_inches="tight"
+            )
+            fig.savefig(
+                os.path.join(output, f"mag-z+probability_{objects.cosmology.name}_{band_name}.png"),
                 bbox_inches="tight", dpi=200
             )
 

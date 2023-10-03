@@ -631,6 +631,7 @@ def latex_setup(
     kwargs["font.family"] = font_family
     plt.rcParams.update(kwargs)
     plt.rcParams['axes.linewidth'] = 2.
+    plt.rcParams['font.size'] = axis_fontsize
 
 
 def latex_off():
