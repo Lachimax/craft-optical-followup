@@ -233,7 +233,7 @@ class SEDSample:
             band_name = band
 
         if plot:
-            fig = plt.figure(figsize=(pl.textwidths["mqthesis"], pl.textwidths["mqthesis"]))
+            fig = plt.figure(figsize=(pl.textwidths["mqthesis"], 0.5 * pl.textwidths["mqthesis"]))
             ax = fig.add_subplot()
 
             leg_x = 1.13
@@ -420,16 +420,17 @@ class SEDSample:
                     )
                     if model.z:
                         i, _ = u.find_nearest(tbl["z"], model.z)
+                        c="blue"
                         ax_m_z.scatter(
                             model.z,
                             tbl[model_name][i],
-                            color="cyan",
+                            color=c,
                             alpha=1.,
                             marker=".",
-                            edgecolors="cyan",
+                            edgecolors=c,
                             zorder=1
                         )
-            ax.plot(
+            ax_m_z.plot(
                 tbl["z"],
                 tbl["median"],
                 color="red",
