@@ -470,6 +470,9 @@ class SEDSample:
         }
         return values, tbl, z_lost
 
+    def average_template(self):
+        pass
+
     def _output_dict(self):
         obj_dict = self.__dict__.copy()
         obj_dict.pop("z_mag_tbls")

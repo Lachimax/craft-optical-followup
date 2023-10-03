@@ -187,6 +187,9 @@ def main(
                 epoch.do = [-1]
                 # Run only the last stage of each epoch pipeline
                 epoch.pipeline()
+        if isinstance(field, fld.FRBField):
+            if u.select_yn_exit("Run PATH on imaging?"):
+                pass
         if u.select_yn_exit("Refine photometry?"):
             field.object_properties()
         exit()

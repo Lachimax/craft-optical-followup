@@ -458,3 +458,4 @@ class Filter:
             ),
             f"{filter_name}_photometry.ecsv"
         )
+
