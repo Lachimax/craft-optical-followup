@@ -1138,6 +1138,8 @@ class Object:
             row["mu"] = self.mu
 
         if isinstance(self, TransientHostCandidate):
+            if not self.transient:
+                self
             row["transient_tns_name"] = self.transient.tns_name
 
         for instrument in self.photometry:
@@ -1681,6 +1683,12 @@ class TransientHostCandidate(Galaxy):
         if "P_Ox" in kwargs:
             self.P_Ox = kwargs["P_Ox"]
 
+    def get_transient(self, tolerate_missing: bool = False):
+        if isinstance(self.transient, str):
+            self.transient = object_from_index(self.transient, tolerate_missing=tolerate_missing)
+        elif not isinstance(self.transient, Transient):
+            raise ValueError(f"{self.name}.transient is not set correctly ({self.transient})")
+
     @classmethod
     def default_params(cls):
         default_params = super().default_params()
@@ -1824,7 +1832,8 @@ class FRB(Transient):
             offset_priors: dict = {"scale": 0.5},
             config: dict = {},
             associate_kwargs={},
-            do_plot: bool = False
+            do_plot: bool = False,
+            output_dir: str = None
     ):
         """
         Performs a customised PATH run on an image.
@@ -1840,6 +1849,8 @@ class FRB(Transient):
             astm_rms = img.extract_astrometry_err()
         if astm_rms is None:
             astm_rms = 0.
+        if output_dir is None:
+            output_dir = self.data_path
         a, b = self.position_err.uncertainty_quadrature()
         a = np.sqrt(a ** 2 + astm_rms ** 2)
         b = np.sqrt(b ** 2 + astm_rms ** 2)
@@ -1918,6 +1929,12 @@ class FRB(Transient):
             cand_tbl[filname] *= units.mag
             self.host_candidate_tables[img.name] = cand_tbl
             self.update_output_file()
+            for fmt in ("csv", "ecsv"):
+                cand_tbl.write(
+                    os.path.join(output_dir, f"{self.name}_PATH_{img.name}.{fmt}"),
+                    format=f"ascii.{fmt}",
+                    overwrite=True
+                )
 
             if do_plot and isinstance(self.field, FRBField):
                 fig = plt.figure(figsize=(12, 12))
@@ -1929,7 +1946,8 @@ class FRB(Transient):
                 )
                 c = ax.scatter(cand_tbl["x"], cand_tbl["y"], marker="x", c=cand_tbl["P_Ox"], cmap="bwr")
                 fig.colorbar(c)
-                fig.savefig(os.path.join(self.data_path, f"PATH_{img.name}.pdf"))
+                fig.savefig(os.path.join(output_dir, f"{self.name}_PATH_{img.name}.pdf"))
+                plt.close(fig)
 
         except IndexError:
             cand_tbl = None
