@@ -209,7 +209,7 @@ def _check_do_list(
 
 
 def expunge_epochs():
-    epoch_list = active_epochs.keys()
+    epoch_list = list(active_epochs.keys())
     for epoch_name in epoch_list:
         del active_epochs[epoch_name]
 

@@ -296,7 +296,7 @@ def from_path(path: str, cls: type = None, **kwargs):
 
 # @u.export
 def expunge():
-    image_list = active_images.keys()
+    image_list = list(active_images.keys())
     for img_path in image_list:
         del active_images[img_path]
 
