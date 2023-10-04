@@ -2102,6 +2102,26 @@ class FRB(Transient):
         return default_params
 
     @classmethod
+    def host_name(cls, frb_name: str):
+        if "FRB" in frb_name:
+            host_name = frb_name.replace("FRB", "HG")
+        else:
+            host_name = frb_name + " Host"
+        return host_name
+
+    @classmethod
+    def default_host_params(cls, frb_name: str, position=None, **kwargs):
+        default_params = TransientHostCandidate.default_params()
+        host_name = cls.host_name(frb_name)
+
+        default_params["name"] = host_name
+        default_params["transient"] = frb_name
+        if position:
+            default_params["position"] = position
+        default_params.update(**kwargs)
+        return default_params
+
+    @classmethod
     def _date_from_name(cls, name):
         if name.startswith("FRB"):
             name = name
