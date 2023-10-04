@@ -443,15 +443,20 @@ class Image:
         )
         return new_image
 
-    def copy(self, destination: str):
+    def copy(self, destination: str, suffix: str = ""):
         """
         A note to future me: do copy, THEN make changes, or be prepared to suffer the consequences.
+
         :param destination:
         :return:
         """
         u.debug_print(1, "Copying", self.path, "to", destination)
         if os.path.isdir(destination):
-            destination = os.path.join(destination, self.filename)
+            filename, ext = os.path.splitext(self.filename)
+            if not suffix.startswith("_"):
+                suffix = "_" + suffix
+            filename = filename + suffix + ext
+            destination = os.path.join(destination, filename)
         u.mkdir_check_nested(destination)
         shutil.copy(self.path, destination)
         new_image = self.new_image(path=destination)
