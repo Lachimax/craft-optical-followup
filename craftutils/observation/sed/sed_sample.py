@@ -478,7 +478,9 @@ class SEDSample:
         obj_dict.pop("z_mag_tbls")
         obj_dict.pop("model_dict")
         for band, path in obj_dict["z_mag_tbl_paths"].items():
-            obj_dict[band]["z_mag_tbl_paths"] = p.split_data_dir(path)
+            if not os.path.isabs(path):
+                path = p.split_data_dir(path)
+            obj_dict["z_mag_tbl_paths"][band] = path
         for key, value in obj_dict.items():
             if isinstance(value, str):
                 if os.path.exists(value):

@@ -219,6 +219,7 @@ def save_svo_filter(facility_name: str, instrument_name: str, filter_name: str, 
     )
     u.debug_print(1, "retrieve.save_svo_filter(): response ==", response)
     if response == "ERROR":
+        print('Error occurred; no data retrieved from SVO.')
         return response
     elif response is not None:
         u.mkdir_check_nested(path=output, remove_last=True)
