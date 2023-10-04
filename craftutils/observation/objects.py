@@ -827,19 +827,31 @@ class Object:
     #     extinction.fitzpatrick99(tbl["lambda_eff"], a_v, r_v) * units.mag
     #     pass
 
+    def galactic_extinction_f99(
+            self,
+            lambda_eff: units.Quantity,
+            r_v: float = 3.1
+    ):
+        import extinction
+        lambda_eff = u.dequantify(lambda_eff, unit=units.Angstrom)
+        lambda_eff = np.array(u.check_iterable(lambda_eff))
+        self.retrieve_extinction_table()
+        a_v = (r_v * self.ebv_sandf).value
+        return extinction.fitzpatrick99(lambda_eff, a_v, r_v) * units.mag
+
     def estimate_galactic_extinction(
             self,
             ax=None,
             r_v: float = 3.1,
             **kwargs
     ):
-        import extinction
+
         if ax is None:
             fig, ax = plt.subplots()
         if "marker" not in kwargs:
             kwargs["marker"] = "x"
 
-        self.retrieve_extinction_table()
+
         lambda_eff_tbl = self.irsa_extinction["LamEff"].to(
             units.Angstrom)
         power_law = models.PowerLaw1D()
@@ -852,7 +864,7 @@ class Object:
 
         a_v = (r_v * self.ebv_sandf).value
 
-        tbl["ext_gal_sandf"] = extinction.fitzpatrick99(tbl["lambda_eff"], a_v, r_v) * units.mag
+        tbl["ext_gal_sandf"] = self.galactic_extinction_f99(lambda_eff=tbl["lambda_eff"], r_v=r_v)
         tbl["ext_gal_pl"] = fitted(tbl["lambda_eff"]) * units.mag
         tbl["ext_gal_interp"] = np.interp(
             tbl["lambda_eff"],
@@ -861,7 +873,7 @@ class Object:
         ) * units.mag
 
         ax.plot(
-            x, extinction.fitzpatrick99(x, a_v, r_v),
+            x, self.galactic_extinction_f99(x, r_v=r_v),
             label="S\&F + F99 extinction law",
             c="red"
         )
