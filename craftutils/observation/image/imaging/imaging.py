@@ -688,7 +688,10 @@ class ImagingImage(Image):
 
     def extract_psf_fwhm(self):
         key = self.header_keys()["psf_fwhm"]
-        return self.extract_header_item(key) * units.arcsec
+        psf = self.extract_header_item(key)
+        if psf:
+            psf = psf * units.arcsec
+        return psf
 
     def extract_rotation_angle(self, ext: int = 0):
         self.load_wcs()
@@ -3209,11 +3212,11 @@ class ImagingImage(Image):
     ):
 
         if ap_radius is None:
-            psf = self.extract_header_item("PSF_FWHM", ext=ext) * units.arcsec
+            psf = self.extract_header_item("PSF_FWHM", ext=ext)
             if not psf:
                 ap_radius = 2 * units.arcsec
             else:
-                ap_radius = 2 * psf
+                ap_radius = 2 * psf * units.arcsec
 
         self.load_wcs()
         _, pix_scale = self.extract_pixel_scale()
@@ -3234,7 +3237,9 @@ class ImagingImage(Image):
             limits.append({
                 "sigma": i,
                 "flux": n_sigma_flux[0],
-                "mag": limit[0]
+                "mag": limit[0],
+                "aperture_radius": ap_radius,
+                "aperture_radius_pix": ap_radius_pix
             })
         return table.QTable(limits)
 
@@ -3568,14 +3573,14 @@ class ImagingImage(Image):
             raise ValueError(f"Unrecognised method {method}.")
 
         if isinstance(write, str):
-            back_file = self.copy(write)
+            back_file = self.copy(write, suffix=f"background_{method}")
             back_file.load_data()
             back_file.load_headers()
             back_file.data[ext] = bkg_data
             back_file.write_fits_file()
 
         if isinstance(write_subbed, str):
-            subbed_file = self.copy(write_subbed)
+            subbed_file = self.copy(write_subbed, suffix=f"background-subtracted_{method}")
             subbed_file.load_data()
             subbed_file.load_headers()
             subbed_file.data[ext] = self.data[ext] - bkg_data
