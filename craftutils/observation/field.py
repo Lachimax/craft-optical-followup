@@ -590,13 +590,14 @@ class Field:
             u.mkdir_check(index_path)
             cat_index_path = os.path.join(index_path, cat_name)
             prefix = f"{cat_name}_index_{self.name}"
+            id_prefix = astm.jname(coord=self.centre_coords)[1:].replace("+", "").replace("-", "").replace(".", "")
             astm.generate_astrometry_indices(
                 cat_name=cat_name,
                 cat=cat_path,
                 fits_cat_output=cat_path.replace(".csv", ".fits"),
                 output_file_prefix=prefix,
                 index_output_dir=cat_index_path,
-                unique_id_prefix=int(self.name.replace("FRB", ""))
+                unique_id_prefix=int(id_prefix)
             )
 
     def get_path(self, key):
