@@ -1793,6 +1793,12 @@ class FRB(Transient):
         self.width_int_err = None
         if "width_int_err" in kwargs:
             self.width_int_err = u.check_quantity(kwargs["width_int_err"], units.ms)
+        self.width_total = None
+        if "width_total" in kwargs:
+            self.width_total = u.check_quantity(kwargs["width_total"], units.ms)
+        self.width_total_err = None
+        if "width_total_err" in kwargs:
+            self.width_total_err = u.check_quantity(kwargs["width_total_err"], units.ms)
         # Scattering timescale, exponent of exponential model
         self.tau = None
         if "tau" in kwargs:
@@ -2097,6 +2103,8 @@ class FRB(Transient):
             "tau_err": None,
             "width_intrinsic": None,
             "width_intrinsic_err": None,
+            "width_total": None,
+            "width_total_err": None,
             "tns_name": None
         })
         return default_params
