@@ -2170,6 +2170,19 @@ class ImagingImage(Image):
             method: str = 'exact',
             mask_mode: bool = False
     ):
+        """
+
+
+        :param other_image:
+        :param ext:
+        :param output_path:
+        :param include_footprint:
+        :param write_footprint:
+        :param method:
+        :param mask_mode: If you are reprojecting a mask, the values will change slightly, so set this to True to round
+            them back to the correct numbers.
+        :return:
+        """
         import reproject as rp
         if output_path is None:
             output_path = self.path.replace(".fits", "_reprojected.fits")

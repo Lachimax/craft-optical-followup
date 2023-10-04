@@ -1805,6 +1805,12 @@ class FRB(Transient):
         self.width_int_err = None
         if "width_int_err" in kwargs:
             self.width_int_err = u.check_quantity(kwargs["width_int_err"], units.ms)
+        self.width_total = None
+        if "width_total" in kwargs:
+            self.width_total = u.check_quantity(kwargs["width_total"], units.ms)
+        self.width_total_err = None
+        if "width_total_err" in kwargs:
+            self.width_total_err = u.check_quantity(kwargs["width_total_err"], units.ms)
         # Scattering timescale, exponent of exponential model
         self.tau = None
         if "tau" in kwargs:
@@ -1845,7 +1851,8 @@ class FRB(Transient):
             config: dict = {},
             associate_kwargs={},
             do_plot: bool = False,
-            output_dir: str = None
+            output_dir: str = None,
+            show: bool = False
     ):
         """
         Performs a customised PATH run on an image.
@@ -1862,6 +1869,7 @@ class FRB(Transient):
         if astm_rms is None:
             astm_rms = 0.
         if output_dir is None:
+            self.check_data_path()
             output_dir = self.data_path
         a, b = self.position_err.uncertainty_quadrature()
         a = np.sqrt(a ** 2 + astm_rms ** 2)
@@ -1885,6 +1893,7 @@ class FRB(Transient):
             max_radius = config["max_radius"]
         else:
             max_radius = 20.
+
         config_n = dict(
             max_radius=int(max_radius),
             skip_bayesian=False,
@@ -1919,6 +1928,10 @@ class FRB(Transient):
         print("P(U) ==", prior_set["U"])
         print()
         print("priors:", prior_set)
+
+        if "show" not in associate_kwargs:
+            associate_kwargs["show"] = show
+
         try:
             ass = associate.run_individual(
                 config=config,
@@ -1941,14 +1954,15 @@ class FRB(Transient):
             cand_tbl[filname] *= units.mag
             self.host_candidate_tables[img.name] = cand_tbl
             self.update_output_file()
-            for fmt in ("csv", "ecsv"):
-                cand_tbl.write(
-                    os.path.join(output_dir, f"{self.name}_PATH_{img.name}.{fmt}"),
-                    format=f"ascii.{fmt}",
-                    overwrite=True
-                )
+            if output_dir:
+                for fmt in ("csv", "ecsv"):
+                    cand_tbl.write(
+                        os.path.join(output_dir, f"{self.name}_PATH_{img.name}.{fmt}"),
+                        format=f"ascii.{fmt}",
+                        overwrite=True
+                    )
 
-            if do_plot and isinstance(self.field, FRBField):
+            if do_plot and isinstance(self.field, FRBField) and (show or output_dir):
                 fig = plt.figure(figsize=(12, 12))
                 ax, fig, _ = self.field.plot_host(
                     img=img,
@@ -1958,7 +1972,10 @@ class FRB(Transient):
                 )
                 c = ax.scatter(cand_tbl["x"], cand_tbl["y"], marker="x", c=cand_tbl["P_Ox"], cmap="bwr")
                 fig.colorbar(c)
-                fig.savefig(os.path.join(output_dir, f"{self.name}_PATH_{img.name}.pdf"))
+                if show:
+                    plt.show(fig)
+                if output_dir:
+                    fig.savefig(os.path.join(output_dir, f"{self.name}_PATH_{img.name}.pdf"))
                 plt.close(fig)
 
         except IndexError:
@@ -2092,14 +2109,36 @@ class FRB(Transient):
             "type": "FRB",
             "dm": 0.0 * dm_units,
             "snr": 0.0,
-            "host_galaxy": Galaxy.default_params(),
+            "host_galaxy": None,
             "date": "0000-01-01",
             "tau": None,
             "tau_err": None,
             "width_intrinsic": None,
             "width_intrinsic_err": None,
+            "width_total": None,
+            "width_total_err": None,
             "tns_name": None
         })
+        return default_params
+
+    @classmethod
+    def host_name(cls, frb_name: str):
+        if "FRB" in frb_name:
+            host_name = frb_name.replace("FRB", "HG")
+        else:
+            host_name = frb_name + " Host"
+        return host_name
+
+    @classmethod
+    def default_host_params(cls, frb_name: str, position=None, **kwargs):
+        default_params = TransientHostCandidate.default_params()
+        host_name = cls.host_name(frb_name)
+
+        default_params["name"] = host_name
+        default_params["transient"] = frb_name
+        if position:
+            default_params["position"] = position
+        default_params.update(**kwargs)
         return default_params
 
     @classmethod

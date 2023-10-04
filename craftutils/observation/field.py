@@ -869,6 +869,8 @@ class Field:
         position = objects.skycoord_to_position_dict(skycoord=pos_coord)
 
         field_param_path_yaml = os.path.join(field_param_path, f"{field_name}.yaml")
+        object_param_path_yaml = os.path.join(field_param_path, f"objects")
+        u.mkdir_check(object_param_path_yaml)
 
         yaml_dict = field_class.new_yaml(
             path=field_param_path,
@@ -898,14 +900,29 @@ class Field:
             )
             if date in ["", " ", 'None']:
                 date = objects.FRB._date_from_name(field_name)
-            yaml_dict["frb"]["date"] = date
-            yaml_dict["frb"]["position"] = position
-            yaml_dict["frb"]["position_err"]["a"]["stat"] = float(ra_err)
-            yaml_dict["frb"]["position_err"]["b"]["stat"] = float(dec_err)
-            yaml_dict["frb"]["host_galaxy"]["position"] = position
-            yaml_dict["frb"]["tns_name"] = tns_name
+
+            frb_dict = objects.FRB.default_params()
+            host_dict = objects.FRB.default_host_params(
+                frb_name=field_name,
+                position=position
+            )
+
+            yaml_dict["frb"] = field_name
+
+            frb_dict["name"] = field_name
+            frb_dict["date"] = date
+            frb_dict["position"] = position
+            frb_dict["position_err"]["a"]["stat"] = float(ra_err)
+            frb_dict["position_err"]["b"]["stat"] = float(dec_err)
+            frb_dict["tns_name"] = tns_name
+            frb_dict["field"] = field_name
+
+            host_dict["field"] = field_name
+            host_name = host_dict["name"]
 
             p.save_params(field_param_path_yaml, yaml_dict)
+            p.save_params(os.path.join(object_param_path_yaml, f"{field_name}.yaml"), frb_dict)
+            p.save_params(os.path.join(object_param_path_yaml, f"{host_name}.yaml"), frb_dict)
 
         print(f"Template parameter file created at '{field_param_path_yaml}'")
         input("Please edit this file before proceeding, then press Enter to continue.")
@@ -1258,20 +1275,14 @@ class FRBField(Field):
     def new_yaml(cls, name: str, path: str = None, **kwargs) -> dict:
         """
         Generates a new parameter .yaml file for an FRBField.
+
         :param name: Name of the field.
         :param path: Path to write .yaml to.
         :param kwargs: Other keywords to insert or replace in the output yaml.
         :return: dict reflecting content of yaml file.
         """
         param_dict = super().new_yaml(name=name, path=None)
-        param_dict["frb"]["name"] = name
-        param_dict["frb"]["type"] = "FRB"
-        param_dict["frb"]["host_galaxy"] = objects.Galaxy.default_params()
-        if "FRB" in name:
-            param_dict["frb"]["host_galaxy"]["name"] = name.replace("FRB", "HG")
-        else:
-            param_dict["frb"]["host_galaxy"]["name"] = name + " Host"
-
+        param_dict["frb"] = name
         for kwarg in kwargs:
             param_dict[kwarg] = kwargs[kwarg]
         if path is not None:
