@@ -851,7 +851,6 @@ class Object:
         if "marker" not in kwargs:
             kwargs["marker"] = "x"
 
-
         lambda_eff_tbl = self.irsa_extinction["LamEff"].to(
             units.Angstrom)
         power_law = models.PowerLaw1D()
@@ -1806,11 +1805,11 @@ class FRB(Transient):
         if "width_int_err" in kwargs:
             self.width_int_err = u.check_quantity(kwargs["width_int_err"], units.ms)
         self.width_total = None
-        if "width_total" in kwargs:
-            self.width_total = u.check_quantity(kwargs["width_total"], units.ms)
+        if "width" in kwargs:
+            self.width_total = u.check_quantity(kwargs["width"], units.ms)
         self.width_total_err = None
-        if "width_total_err" in kwargs:
-            self.width_total_err = u.check_quantity(kwargs["width_total_err"], units.ms)
+        if "width_err" in kwargs:
+            self.width_total_err = u.check_quantity(kwargs["width_err"], units.ms)
         # Scattering timescale, exponent of exponential model
         self.tau = None
         if "tau" in kwargs:
@@ -1822,6 +1821,17 @@ class FRB(Transient):
         self.nu_scattering = None
         if "nu_scattering" in kwargs:
             self.nu_scattering = u.check_quantity(kwargs["nu_scattering"], units.GHz)
+
+        if not self.width_total and self.width_int and self.tau:
+            self.width_total = self.width_int + self.tau
+            if self.width_int_err and self.tau_err:
+                self.width_total_err = np.sqrt(self.tau_err ** 2 + self.width_int_err ** 2)
+
+        # Detection parameters
+        # ====================
+        self.snr = None
+        if "snr" in kwargs:
+            self.snr = kwargs["snr"]
 
         # DM components
         self._dm_mw_ism_ne2001 = None
@@ -2173,7 +2183,7 @@ class FRB(Transient):
             self,
             distance: Union[units.Quantity, float] = 100. * units.kpc,
             force: bool = False
-    ):
+    ) -> units.Quantity:
         """
         Borrowed from frb.mw
         :param distance:
