@@ -1,5 +1,5 @@
 # Code by Lachlan Marnoch, 2019-2022
-
+import datetime
 import math
 import os
 import shutil
@@ -57,6 +57,13 @@ def pad_zeroes(n: int, length: int = 2):
     while len(n_str) < length:
         n_str = "0" + n_str
     return n_str
+
+
+def check_time(time, fmt: str = None):
+    if isinstance(time, datetime.date):
+        time = str(time)
+    time = Time(time, format=fmt)
+    return time
 
 
 def get_git_hash(directory: str, short: bool = False):
