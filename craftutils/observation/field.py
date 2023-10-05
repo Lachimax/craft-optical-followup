@@ -258,10 +258,12 @@ class Field:
         self.epochs_imaging.update(epochs)
         return epochs
 
-    def epoch_from_params(self, epoch_name: str, instrument: str, old_format: bool = False):
-        epoch = ep.ImagingEpoch.from_params(name=epoch_name, field=self, instrument=instrument, old_format=old_format)
+    def epoch_from_params(self, epoch_name: str, instrument: str):
+        epoch = ep.ImagingEpoch.from_params(name=epoch_name, field=self, instrument=instrument)
         self.epochs_imaging[epoch_name] = epoch
         return epoch
+
+
 
     def select_epoch_imaging(self):
         options = {}

@@ -390,7 +390,7 @@ class Epoch:
         return False
 
     def __str__(self):
-        return self.name
+        return str(self.name)
 
     def date_str(self, include_time: bool = False):
         if not isinstance(self.date, Time):
@@ -3045,21 +3045,16 @@ class ImagingEpoch(Epoch):
             name: str,
             instrument: str,
             field: Union['fld.Field', str] = None,
-            old_format: bool = False,
             quiet: bool = False
     ):
         if name in active_epochs:
             return active_epochs[name]
         instrument = instrument.lower()
         field_name, field = cls._from_params_setup(name=name, field=field)
-        if old_format:
-            instrument = instrument.split("-")[-1]
-            path = os.path.join(p.param_dir, f"epochs_{instrument}", name)
-        else:
-            path = cls.build_param_path(
-                instrument_name=instrument,
-                field_name=field_name,
-                epoch_name=name)
+        path = cls.build_param_path(
+            instrument_name=instrument,
+            field_name=field_name,
+            epoch_name=name)
         return cls.from_file(param_file=path, field=field, quiet=quiet)
 
     @classmethod
@@ -3075,8 +3070,9 @@ class ImagingEpoch(Epoch):
             name: str,
             date: Time = None
     ):
+        date = u.check_time(date)
         if date is not None:
-            name_str = f"{date.isot}-{name}"
+            name_str = f"{date.strftime('%Y-%m-%d')}-{name}"
         else:
             name_str = name
 
@@ -3107,6 +3103,24 @@ class ImagingEpoch(Epoch):
         # else:
         #     param_dict.pop("field")
 
+        data_path = None
+        if "data_path" in param_dict:
+            data_path = param_dict.pop('data_path')
+        if not data_path:
+            data_path = cls.build_data_path_absolute(
+                field=field,
+                instrument_name=instrument,
+                name=name,
+                date=param_dict["date"]
+            )
+
+        p.join_data_dir(data_path)
+
+        if "name" in param_dict:
+            param_dict.pop("name")
+        if "param_path" in param_dict:
+            param_dict.pop("param_path")
+
         sub_cls = cls.select_child_class(instrument=instrument)
         u.debug_print(1, sub_cls)
         if sub_cls is ImagingEpoch:
@@ -3114,7 +3128,7 @@ class ImagingEpoch(Epoch):
                 name=name,
                 field=field,
                 param_path=param_file,
-                data_path=os.path.join(config["top_data_dir"], param_dict.pop('data_path')),
+                data_path=data_path,
                 instrument=instrument,
                 date=param_dict.pop('date'),
                 program_id=param_dict.pop("program_id"),
@@ -3133,11 +3147,12 @@ class ImagingEpoch(Epoch):
         default_params = super().default_params()
         default_params.update({
             "sextractor":
-                {"dual_mode": False,
-                 "threshold": 1.5,
-                 "kron_factor": 2.5,
-                 "kron_radius_min": 3.5
-                 },
+                {
+                    "dual_mode": False,
+                    "threshold": 1.5,
+                    "kron_factor": 2.5,
+                    "kron_radius_min": 3.5
+                },
             # "background_subtraction":
             #     {"renormalise_centre": objects.position_dictionary.copy(),
             #      "test_synths":
@@ -3165,10 +3180,11 @@ class ImagingEpoch(Epoch):
             child_class = HubbleImagingEpoch
         elif instrument == "decam":
             child_class = DESEpoch
-        elif instrument in p.instruments_imaging:
-            child_class = ImagingEpoch
+        # elif instrument in p.instruments_imaging:
         else:
-            raise ValueError(f"Unrecognised instrument {instrument}")
+            child_class = ImagingEpoch
+        # else:
+        # raise ValueError(f"Unrecognised instrument {instrument}")
         u.debug_print(2, f"field.select_child_class(): instrument ==", instrument, "child_class ==", child_class)
         return child_class
 
@@ -5194,10 +5210,18 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
         # With the FORS2 substructure we want to search every subdirectory
         return False
 
-    def correct_astrometry_frames(self, output_dir: str, frames: dict = None, **kwargs):
+    def correct_astrometry_frames(
+            self,
+            output_dir: str,
+            frames: dict = None,
+            **kwargs
+    ):
         """
+        Uses `astrometry.net` with Gaia DR3 indices to correct the WCS of a set of individual exposures associated with
+        this epoch.
 
         :param output_dir:
+        :param frames: A "frames" dictionary ({"filter_name": [image_objects]}) containing the images to solve.
         :param kwargs:
             method: method with which to solve astrometry of epoch. Allowed values are:
                 individual: each frame, including separate chips in the same exposure, will be passed to astrometry.net
