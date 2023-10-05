@@ -910,7 +910,8 @@ class ImagingImage(Image):
                                    f"{row['n_matches']} stars, " \
                                    f"from {row['image_name']}"
                         zps[pick_str] = self.zeropoints[row['catalogue']][row['image_name']]
-                    _, zeropoint_best = u.select_option(message="Select best zeropoint:", options=zps, include_exit=False)
+                    _, zeropoint_best = u.select_option(message="Select best zeropoint:", options=zps,
+                                                        include_exit=False)
                     best_cat = zeropoint_best["catalogue"]
             self.zeropoint_best = zeropoint_best
 
@@ -3239,7 +3240,6 @@ class ImagingImage(Image):
         self.model_background_photometry(method="sep", do_mask=True, ext=ext, **kwargs)
         rms = self.sep_background[ext].rms()
 
-
         flux, _, _ = sep.sum_circle(rms ** 2, [x], [y], ap_radius_pix)
         sigma_flux = np.sqrt(flux)
 
@@ -3407,6 +3407,7 @@ class ImagingImage(Image):
             `mask`: the final mask used for fitting.
             `weights`: the weights used for fitting, the inverse of the image error.
         """
+
         margins = left, right, bottom, top = self.frame_from_coord(
             frame=frame,
             centre=centre,
@@ -3416,7 +3417,7 @@ class ImagingImage(Image):
         print("")
         print(self.filename)
 
-        data = self.data[ext] * 1  # [bottom:top, left:right]
+        data = self.data[ext] * 1  # [bottom:top, left:right] * 1
 
         if generate_mask:
             mask = self.generate_mask(
@@ -3453,6 +3454,7 @@ class ImagingImage(Image):
         median = np.median(self.data[ext])
         data -= median
 
+        # Instead of using a cutout of the data, we use the mask to set the weights to zero outside of it.
         mask[:, :left] = True
         mask[:, right:] = True
         mask[:bottom, :] = True
@@ -3466,8 +3468,11 @@ class ImagingImage(Image):
             weights[i, j] = 0.  # np.invert(mask).astype(float)
 
         model_init = model_type(**init_params)
-        fitter = fitter_type(True)
+        fitter = fitter_type(calc_uncertainties=False)
         y, x = np.mgrid[:data.shape[0], :data.shape[1]]
+        plt.imshow(weights[bottom - 10:top + 10, left - 10:right + 10])
+        plt.colorbar()
+        plt.show()
         model = fitter(
             model_init,
             x, y,
@@ -3480,7 +3485,7 @@ class ImagingImage(Image):
         subbed[bottom:top, left:right] = subbed_all[bottom:top, left:right] * data.unit + median
 
         if isinstance(write, str):
-            back_file = self.copy(write)
+            back_file = self.copy(write, suffix="background_local")
             back_file.load_data()
             back_file.load_headers()
             back_file.data[ext] = model_eval * data.unit
@@ -3520,7 +3525,7 @@ class ImagingImage(Image):
             mask_file.write_fits_file()
 
         if isinstance(write_subbed, str):
-            subbed_file = self.copy(write_subbed)
+            subbed_file = self.copy(write_subbed, suffix="background-subtracted_local")
             subbed_file.load_data()
             subbed_file.load_headers()
             subbed_file.data[ext] = subbed
@@ -4365,7 +4370,8 @@ class ImagingImage(Image):
         if instrument_name in cls.class_dict:
             subclass = cls.class_dict[instrument_name]
         else:
-            raise ValueError(f"Unrecognised instrument {instrument_name}")
+            subclass = ImagingImage
+            # raise ValueError(f"Unrecognised instrument {instrument_name}")
         return subclass
 
     @classmethod
