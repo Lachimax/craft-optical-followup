@@ -466,14 +466,19 @@ def ingest_eso_filter_properties(path: str, instrument: str, update: bool = Fals
     save_params(file=param_dir + f'filters/{instrument}-{name}', dictionary=params)
 
 
-def ingest_filter_transmission(path: str, fil_name: str, instrument: str,
-                               instrument_response: bool = False, atmosphere: bool = False,
-                               lambda_eff: units.Quantity = None,
-                               fwhm: float = None,
-                               source: str = None,
-                               wavelength_unit: units.Unit = units.Angstrom,
-                               percentage: bool = False,
-                               quiet: bool = False):
+def ingest_filter_transmission(
+        path: str,
+        fil_name: str,
+        instrument: str,
+        instrument_response: bool = False,
+        atmosphere: bool = False,
+        lambda_eff: units.Quantity = None,
+        fwhm: float = None,
+        source: str = None,
+        wavelength_unit: units.Unit = units.Angstrom,
+        percentage: bool = False,
+        quiet: bool = False
+):
     """
 
     :param path:
