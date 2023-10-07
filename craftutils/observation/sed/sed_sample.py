@@ -119,6 +119,7 @@ class SEDSample:
             band: Union[str, fil.Filter],
             limit: units.Quantity,
             output: str = None,
+            exclude: list = ()
     ):
         limit = u.dequantify(limit, units.mag)
         if isinstance(band, fil.Filter):
@@ -132,7 +133,7 @@ class SEDSample:
         z_lost = {}
         columns = []
         for colname in self.model_dict:
-            if colname in tbl.colnames:
+            if colname in tbl.colnames and not colname in exclude:
                 tbl["n>lim"] += tbl[colname] > limit
                 tbl["n<lim"] += tbl[colname] < limit
                 if len(tbl["z"][tbl[colname] > limit]) > 0:
@@ -170,6 +171,7 @@ class SEDSample:
             plot: bool = False,
             show: bool = False,
             pzdm_column: str = "p(z|DM)_best",
+            exclude: list = ()
     ):
 
         if output:
@@ -177,6 +179,7 @@ class SEDSample:
 
         if isinstance(obj, objects.FRB):
             obj = obj.zdm_table
+            exclude.append(f"{obj.name}_{self.name}")
         elif isinstance(obj, np.ndarray):
             if z:
                 obj = table.QTable(
@@ -191,7 +194,8 @@ class SEDSample:
         tbl, z_lost = self.calculate_for_limit(
             band=band,
             limit=limit,
-            output=os.path.join(output, f"{self.name}_z_table.ecsv")
+            output=os.path.join(output, f"{self.name}_z_table.ecsv"),
+            exclude=exclude
         )
 
         tbl["p(z|DM)"] = np.interp(

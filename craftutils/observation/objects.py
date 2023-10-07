@@ -1829,6 +1829,12 @@ class FRB(Transient):
 
         # Detection parameters
         # ====================
+        self.instrument: str = None
+        if "instrument" in kwargs:
+            self.snr = kwargs["instrument"]
+        self.survey: str = None
+        if "survey" in kwargs:
+            self.survey = kwargs["survey"]
         self.snr = None
         if "snr" in kwargs:
             self.snr = kwargs["snr"]
