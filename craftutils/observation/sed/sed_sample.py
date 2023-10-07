@@ -240,7 +240,8 @@ class SEDSample:
             fig = plt.figure(figsize=(pl.textwidths["mqthesis"], 0.5 * pl.textwidths["mqthesis"]))
             ax = fig.add_subplot()
 
-            leg_x = 1.13
+            leg_x = 0 #1.13
+            leg_y = 1
 
             np.max(tbl["z"])
 
@@ -283,7 +284,7 @@ class SEDSample:
                 c="purple"
             )
             ax.legend(
-                loc=(leg_x, 0),
+                loc=(leg_x, leg_y + 0.1),
             )
             fig.savefig(
                 os.path.join(output, f"probability_{objects.cosmology.name}_{band_name}_combined.pdf"),
@@ -303,7 +304,7 @@ class SEDSample:
                 c="green"
             )
             ax.legend(
-                loc=(leg_x, 0)
+                loc=(leg_x, leg_y + 0.1)
             )
             fig.savefig(
                 os.path.join(output, f"probability_{objects.cosmology.name}_{band_name}.pdf"),
@@ -324,7 +325,7 @@ class SEDSample:
                 ls=":"
             )
             ax.legend(
-                loc=(leg_x, 0),
+                loc=(leg_x, leg_y + 0.1),
                 fontsize=tick_fontsize
             )
             fig.savefig(
@@ -342,7 +343,7 @@ class SEDSample:
             plt.close(fig)
 
             # Do a plot with an extra panel showing the galaxy mag-z relationship
-            fig = plt.figure(figsize=(pl.textwidths["mqthesis"], pl.textwidths["mqthesis"]))
+            fig = plt.figure(figsize=(pl.textwidths["mqthesis"], 0.6 * pl.textwidths["mqthesis"]))
             gs = fig.add_gridspec(nrows=2, ncols=1, height_ratios=(1, 1))
             ax = fig.add_subplot(gs[0, 0])
             ax_m_z = fig.add_subplot(gs[1, 0])
@@ -397,7 +398,7 @@ class SEDSample:
             )
 
             ax.legend(
-                loc=(leg_x, 0),
+                loc=(leg_x, leg_y + 0.1),
                 fontsize=tick_fontsize
             )
 
@@ -414,7 +415,7 @@ class SEDSample:
             model_alpha = 0.2
             model_lw = 5
 
-            point_colour = "violet"
+            point_colour = "pink"
 
             for model_name, model in self.model_dict.items():
                 if model_name in tbl.colnames:
@@ -461,11 +462,10 @@ class SEDSample:
             ax_m_z.tick_params(labelsize=tick_fontsize)
 
             ax_m_z.legend(
-                loc=(leg_x, 0),
+                loc=(0.5, leg_y * 2 + 0.1),
                 fontsize=tick_fontsize,
                 handles=legend_elements
             )
-
             fig.savefig(
                 os.path.join(output, f"mag-z+probability_{objects.cosmology.name}_{band_name}.pdf"),
                 bbox_inches="tight"
