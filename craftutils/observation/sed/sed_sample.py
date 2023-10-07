@@ -251,7 +251,6 @@ class SEDSample:
             ax.tick_params(axis="y", labelright=True, labelsize=tick_fontsize)
             ax.tick_params(axis="x", labelsize=tick_fontsize)
 
-
             # Do some plotting
             ax.plot(
                 tbl["z"],
@@ -402,45 +401,53 @@ class SEDSample:
                 fontsize=tick_fontsize
             )
 
+            legend_elements = []
             kwargs_lim_def = dict(c="black", lw=2, ls=":")
             # kwargs_lim_def.update(kwargs_lim)
-            ax_m_z.plot(
+            legend_elements += ax_m_z.plot(
                 (0.0, max_z),
                 (limit.value, limit.value),
+                label="Image 5-$\sigma$ depth",
                 **kwargs_lim_def
             )
+            model_colour = "black"
+            model_alpha = 0.2
+            model_lw = 5
+
+            point_colour = "violet"
+
             for model_name, model in self.model_dict.items():
                 if model_name in tbl.colnames:
-                    colour = "black"
-                    alpha = 0.1
-                    lw = 5
-                    ax_m_z.plot(
+                    line = ax_m_z.plot(
                         tbl["z"],
                         tbl[model_name],
-                        color=colour,  # colour[n],
-                        alpha=alpha,
+                        color=model_colour,  # colour[n],
+                        alpha=model_alpha,
                         zorder=-1,
-                        lw=lw
+                        lw=model_lw,
+                        label="Modelled"
                     )
                     if model.z:
                         i, _ = u.find_nearest(tbl["z"], model.z)
-                        c="blue"
-                        ax_m_z.scatter(
+                        point = ax_m_z.scatter(
                             model.z,
                             tbl[model_name][i],
-                            color=c,
-                            alpha=1.,
+                            color=point_colour,
                             marker=".",
-                            edgecolors=c,
-                            zorder=1
+                            edgecolors=point_colour,
+                            zorder=1,
+                            label="Measurements"
                         )
-            ax_m_z.plot(
+            legend_elements += line
+            legend_elements.append(point)
+            legend_elements += ax_m_z.plot(
                 tbl["z"],
                 tbl["median"],
                 color="red",
                 zorder=1,
                 lw=2,
-                ls=":"
+                ls=":",
+                label="Median"
             )
 
             ax_m_z.set_xlim(0., max_z)
@@ -452,6 +459,12 @@ class SEDSample:
             ax_pdf.tick_params(bottom=False, labelsize=tick_fontsize)
             ax_pdf.xaxis.set_ticks([])
             ax_m_z.tick_params(labelsize=tick_fontsize)
+
+            ax_m_z.legend(
+                loc=(leg_x, 0),
+                fontsize=tick_fontsize,
+                handles=legend_elements
+            )
 
             fig.savefig(
                 os.path.join(output, f"mag-z+probability_{objects.cosmology.name}_{band_name}.pdf"),
