@@ -56,22 +56,6 @@ def main(
 
     directory = ep.load_epoch_directory()
 
-    if epoch_name is None and instrument is not None:
-        print(f"Looking for epochs with instrument {instrument}")
-        epochs = []
-        for epoch_name in directory:
-            epoch_dict = directory[epoch_name]
-            if epoch_dict["instrument"] == instrument:
-                if field_name is not None:
-                    if field_name == epoch_dict["field_name"]:
-                        epochs.append(epoch_name)
-                else:
-                    epochs.append(epoch_name)
-        i, epoch_name = u.select_option(
-            f"The following epochs used instrument {instrument}. Which one would you like to use?",
-            options=epochs
-        )
-
     if epoch_name is not None:
         print(f"Looking for {epoch_name} in directory...")
         if epoch_name in directory:
@@ -169,9 +153,9 @@ def main(
     elif mode == "imaging":
         if epoch_name is None:
             # Build a list of imaging epochs from that field.
-            field.gather_epochs_imaging()
+            field.gather_epochs_imaging(instrument=instrument)
             # Let the user select an epoch.
-            epoch = field.select_epoch_imaging()
+            epoch = field.select_epoch_imaging(instrument=instrument)
         else:
             if instrument is None:
                 instrument = fld.select_instrument(mode="imaging")

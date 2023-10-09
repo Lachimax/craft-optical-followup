@@ -65,7 +65,7 @@ def object_to_index(
         allow_overwrite: bool = False
 ):
     # print(object_index)
-    print(f"Adding {str(type(obj))} {obj.name} to object index.")
+    u.debug_print(1, f"Adding {str(type(obj))} {obj.name} to object index.")
     if not isinstance(obj, Object):
         raise TypeError(f"obj {obj} is not an Object.")
     name = obj.name
