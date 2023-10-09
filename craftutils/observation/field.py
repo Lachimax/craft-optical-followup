@@ -120,6 +120,7 @@ class Field:
         self.epochs_spectroscopy_loaded = {}
         self.epochs_imaging = {}
         self.epochs_imaging_loaded = {}
+        self.epochs_loaded = {}
 
         self.paths = {}
 
@@ -226,11 +227,15 @@ class Field:
                 instrument_path = os.path.join(mode_path, instrument)
                 if not quiet:
                     print(f"Looking in {instrument_path}")
-                epoch_params = list(
-                    filter(
-                        lambda f: f.endswith(".yaml") and not f.endswith("backup.yaml"),
-                        os.listdir(instrument_path)
-                    ))
+                if os.path.isdir(instrument_path):
+                    epoch_params = list(
+                        filter(
+                            lambda f: f.endswith(".yaml") and not f.endswith("backup.yaml"),
+                            os.listdir(instrument_path)
+                        )
+                    )
+                else:
+                    epoch_params = []
                 epoch_params.sort()
                 for epoch_param in epoch_params:
                     epoch_name = epoch_param[:epoch_param.find(".yaml")]
@@ -269,10 +274,17 @@ class Field:
         self.epochs_imaging[epoch_name] = epoch
         return epoch
 
-    def select_epoch_imaging(self, instrument: str = None):
+    def select_epoch(self, mode: str, instrument: str = None):
         options = {}
-        for epoch in self.epochs_imaging:
-            epoch = self.epochs_imaging[epoch]
+        epoch_dict = {
+            "imaging": self.epochs_imaging,
+            "spectroscopy": self.epochs_spectroscopy
+        }[mode]
+        loaded_dict = {
+            "imaging": self.epochs_imaging_loaded,
+            "spectroscopy": self.epochs_spectroscopy_loaded
+        }[mode]
+        for epoch_name, epoch in epoch_dict.items():
             if isinstance(epoch["date"], str):
                 date_string = f" {epoch['date']}"
             elif isinstance(epoch["date"], Time):
@@ -280,44 +292,19 @@ class Field:
             else:
                 date_string = "--"
             options[f'{epoch["name"]}\t{date_string}\t{epoch["instrument"]}'] = epoch
-        for epoch in self.epochs_imaging_loaded:
+        for epoch in loaded_dict:
             # If epoch is already instantiated.
-            if isinstance(instrument, str):
-                if epoch.instrument_name != instrument:
-                    continue
-            epoch = self.epochs_spectroscopy_loaded[epoch]
+            if isinstance(instrument, str) and epoch.instrument_name != instrument:
+                continue
+            epoch = loaded_dict[epoch]
             options[f'*{epoch.name}\t{epoch.date.isot}\t{epoch.instrument_name}'] = epoch
         options["New epoch"] = "new"
         j, epoch = u.select_option(message="Select epoch.", options=options, sort=True)
         if epoch == "new":
-            epoch = self.new_epoch_imaging()
+            epoch = self.new_epoch_imaging(instrument=instrument)
         elif not isinstance(epoch, ep.Epoch):
             epoch = ep.ImagingEpoch.from_file(epoch, field=self)
-            self.epochs_imaging_loaded[epoch.name] = epoch
-        return epoch
-
-    def select_epoch_spectroscopy(self):
-        options = {}
-        for epoch in self.epochs_spectroscopy:
-            date_string = ""
-            if "date" in epoch and epoch["date"] is not None:
-                if isinstance(epoch["date"], str):
-                    date_string = f" {epoch['date']}"
-                else:
-                    date_string = f" {epoch['date'].strftime('%Y-%m-%d')}"
-            epoch = self.epochs_spectroscopy[epoch]
-            options[f"{epoch['name']}\t{date_string}\t{epoch['instrument']}"] = epoch
-        for epoch in self.epochs_spectroscopy_loaded:
-            epoch = self.epochs_spectroscopy_loaded[epoch]
-            options[f'*{epoch.name}\t{epoch.date.isot}\t{epoch.instrument_name}'] = epoch
-        options["New epoch"] = "new"
-        j, epoch = u.select_option(message="Select epoch.", options=options)
-        if epoch == "new":
-            epoch = self.new_epoch_spectroscopy()
-        elif not isinstance(epoch, ep.Epoch):
-            epoch = ep.SpectroscopyEpoch.from_file(epoch, field=self)
-            self.epochs_spectroscopy_loaded[epoch.name] = epoch
-
+            loaded_dict[epoch.name] = epoch
         return epoch
 
     def _obj_path(self):
@@ -342,21 +329,21 @@ class Field:
         p.save_params(file=obj_path, dictionary=obj_dict)
         return self.add_object_from_dict(obj_dict)
 
-    def new_epoch_imaging(self):
-        return self._new_epoch(mode="imaging")
+    def new_epoch_imaging(self, instrument: str = None):
+        return self._new_epoch(mode="imaging", instrument=instrument)
 
-    def new_epoch_spectroscopy(self):
-        return self._new_epoch(mode="spectroscopy")
+    def new_epoch_spectroscopy(self, instrument: str = None):
+        return self._new_epoch(mode="spectroscopy", instrument=instrument)
 
-    def _new_epoch(self, mode: str) -> 'Epoch':
+    def _new_epoch(self, mode: str, instrument: str = None) -> 'Epoch':
         """
         Helper method for generating a new epoch.
         :param mode:
         :return:
         """
         # User selects instrument from those available in param directory, and we set up the relevant Epoch object
-
-        instrument = select_instrument(mode=mode)
+        if not isinstance(instrument, str):
+            instrument = select_instrument(mode=mode)
 
         current_epochs = self.gather_epochs_imaging(instrument=instrument)
         current_epochs.update(self.gather_epochs_spectroscopy(instrument=instrument))
@@ -459,6 +446,8 @@ class Field:
                                 frames_dict=this_frame_dict,
                                 frame_type=frame_type
                             )
+            print(f"New epoch is combined from: {epoch.combined_from}")
+            print(f"With filters: {epoch.filters}")
             epoch.set_date(Time(np.mean(list(map(lambda d: d.mjd, dates))), format="mjd"))
             epoch.update_output_file()
 

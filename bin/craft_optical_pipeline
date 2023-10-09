@@ -134,35 +134,8 @@ def main(
         )
 
     mode = mode.lower()
-    epoch = None
 
-    if mode == "exit":
-        exit()
-
-    elif mode == "spectroscopy":
-        if epoch_name is None:
-            # Build a list of imaging epochs from that field.
-            field.gather_epochs_spectroscopy()
-            # Let the user select an epoch.
-            epoch = field.select_epoch_spectroscopy()
-        else:
-            if instrument is None:
-                instrument = fld.select_instrument(mode="spectroscopy")
-            epoch = ep.SpectroscopyEpoch.from_params(epoch_name, instrument=instrument, field=field)
-
-    elif mode == "imaging":
-        if epoch_name is None:
-            # Build a list of imaging epochs from that field.
-            field.gather_epochs_imaging(instrument=instrument)
-            # Let the user select an epoch.
-            epoch = field.select_epoch_imaging(instrument=instrument)
-        else:
-            if instrument is None:
-                instrument = fld.select_instrument(mode="imaging")
-            epoch = ep.ImagingEpoch.from_params(epoch_name, instrument=instrument, field=field)
-            epoch.field = field
-
-    elif mode == "objects":
+    if mode == "objects":
 
         if u.select_yn_exit("Update photometry from all epochs?"):
             epochs = field.gather_epochs_imaging()
@@ -177,6 +150,23 @@ def main(
         if u.select_yn_exit("Refine photometry?"):
             field.object_properties()
         exit()
+
+    else:
+        if epoch_name is None:
+            # Build a list of relevant epochs from that field.
+            if mode == "imaging":
+                field.gather_epochs_imaging(instrument=instrument)
+            elif mode == "spectroscopy":
+                field.gather_epochs_spectroscopy(instrument=instrument)
+            else:
+                raise ValueError(f"mode must be objects, imaging or spectroscopy; received {mode}.")
+            # Let the user select an epoch.
+            epoch = field.select_epoch(instrument=instrument, mode=mode)
+        else:
+            if instrument is None:
+                instrument = fld.select_instrument(mode="imaging")
+            epoch = ep.ImagingEpoch.from_params(epoch_name, instrument=instrument, field=field)
+            epoch.field = field
 
     u.debug_print(2, "pipeline.py: type(epoch) ==", type(epoch))
     epoch.do = do
