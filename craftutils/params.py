@@ -962,18 +962,20 @@ def path_to_source_extractor():
     return os.path.join(project_dir, "craftutils", "param", "sextractor")
 
 
-def params_init(param_file: Union[str, dict]):
+def params_init(param_file: Union[str, dict], name: str = None):
     if type(param_file) is str:
         # Load params from .yaml at path.
         param_file = u.sanitise_file_ext(filename=param_file, ext="yaml")
         param_dict = load_params(file=param_file)
         if param_dict is None:
             return None, param_file, None  # raise FileNotFoundError(f"No parameter file found at {param_file}.")
-        name = u.get_filename(path=param_file, include_ext=False)
+        if name is None:
+            name = u.get_filename(path=param_file, include_ext=False)
         param_dict["param_path"] = param_file
     else:
         param_dict = param_file
-        name = param_dict["name"]
+        if name is None:
+            name = param_dict["name"]
         param_file = param_dict["param_path"]
 
     return name, param_file, param_dict

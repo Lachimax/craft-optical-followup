@@ -3123,24 +3123,19 @@ class ImagingEpoch(Epoch):
 
         sub_cls = cls.select_child_class(instrument=instrument)
         u.debug_print(1, sub_cls)
-        if sub_cls is ImagingEpoch:
-            return cls(
-                name=name,
-                field=field,
-                param_path=param_file,
-                data_path=data_path,
-                instrument=instrument,
-                date=param_dict.pop('date'),
-                program_id=param_dict.pop("program_id"),
-                target=param_dict.pop("target"),
-                source_extractor_config=param_dict.pop('sextractor'),
-                quiet=quiet,
-                **param_dict
-            )
-        elif sub_cls is FORS2ImagingEpoch:
-            return sub_cls.from_file(param_dict, name=name, field=field)
-        else:
-            return sub_cls.from_file(pdict_backup, name=name, field=field)
+        return sub_cls(
+            name=name,
+            field=field,
+            param_path=param_file,
+            data_path=data_path,
+            instrument=instrument,
+            date=param_dict.pop('date'),
+            program_id=param_dict.pop("program_id"),
+            target=param_dict.pop("target"),
+            source_extractor_config=param_dict.pop('sextractor'),
+            quiet=quiet,
+            **param_dict
+        )
 
     @classmethod
     def default_params(cls):
@@ -4719,7 +4714,9 @@ class ESOImagingEpoch(ImagingEpoch):
             field: 'fld.Field' = None
     ):
 
-        name, param_file, param_dict = p.params_init(param_file)
+        print(param_file)
+        print(name)
+        name, param_file, param_dict = p.params_init(param_file, name=name)
         if param_dict is None:
             raise FileNotFoundError(f"No parameter file found at {param_file}.")
 
