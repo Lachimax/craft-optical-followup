@@ -715,7 +715,6 @@ class ImagingImage(Image):
 
     def _pixel_scale(self, ext: int = 0):
         self.load_wcs()
-        print("Getting pixel scale.")
         return wcs.utils.proj_plane_pixel_scales(
             self.wcs[ext]
         ) * units.deg
