@@ -1088,7 +1088,8 @@ class ImagingEpoch(Epoch):
                 "default": True,
                 "keywords": {
                     "image_type": "final",
-                    "skip_plots": False
+                    "skip_plots": False,
+                    "skip_path": False
                 }
             },
             # "get_photometry_all": {
@@ -2010,7 +2011,12 @@ class ImagingEpoch(Epoch):
             image_type = "final"
         u.debug_print(2, f"{self}.proc_get_photometry(): image_type ==:", image_type)
         # Run PATH on imaging if we're doing FRB stuff
-        if isinstance(self.field, fld.FRBField):
+
+        skip_path = False
+        if "skip_path" in kwargs:
+            skip_path = kwargs.pop("skip_path")
+
+        if not skip_path and isinstance(self.field, fld.FRBField):
             if 'path_kwargs' in kwargs:
                 path_kwargs = kwargs["path_kwargs"]
             else:
@@ -2057,6 +2063,9 @@ class ImagingEpoch(Epoch):
             image_type: str = "final",
             **path_kwargs
     ):
+        if not isinstance(self.field, fld.FRBField):
+            raise TypeError(
+                f"To run probabilistic_association, {self.name}.field must be an FRBField, not {type(self.field)}")
         image_dict = self._get_images(image_type=image_type)
         self.field.frb.load_output_file()
 
@@ -2084,7 +2093,7 @@ class ImagingEpoch(Epoch):
             if isinstance(obj, objects.TransientHostCandidate):
                 print(obj.name, obj.P_Ox)
                 if obj.P_Ox is not None and obj.P_Ox > 0.1:
-                    self.field.objects.append(obj)
+                    self.field.add_object(obj)
 
         # yaml_dict = {}
         #
@@ -2163,7 +2172,9 @@ class ImagingEpoch(Epoch):
                     output_path=os.path.join(fil_output_path, "plot_quick.pdf")
                 )
 
-            for obj in self.field.objects:
+            for obj_name, obj in self.field.objects_dict.items():
+                if not obj.optical:
+                    continue
                 # obj.load_output_file()
                 plt.close()
                 # Get nearest Source-Extractor object:
@@ -2372,10 +2383,7 @@ class ImagingEpoch(Epoch):
 
             nice_name = f"{self.field.name}_{inst_name}_{fil.replace('_', '-')}_{date}.fits"
 
-            astm_rms = img_prime.extract_astrometry_err().value
-            psf_fwhm = img_prime.extract_header_item(key="PSF_FWHM")
-            psf_fwhm_err = img_prime.extract_header_item(key="PSF_FWHM_ERR")
-
+            # Make sure various common properties are transferred to image derivatives.
             if img != img_prime:
                 img.clone_diagnostics(img_prime)
             if isinstance(self.coadded_subtracted[fil], image.CoaddedImage):
@@ -3886,7 +3894,7 @@ class SurveyImagingEpoch(ImagingEpoch):
 
     def proc_get_photometry(self, output_dir: str, **kwargs):
         self.load_output_file()
-        self.get_photometry(output_dir, image_type="coadded")
+        self.get_photometry(output_dir, image_type="coadded", **kwargs)
 
     def _initial_setup(self, output_dir: str, **kwargs):
         download_dir = self.paths["download"]

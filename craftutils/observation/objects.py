@@ -294,6 +294,8 @@ class PositionUncertainty:
 
 @u.export
 class Object:
+    optical = False
+
     def __init__(
             self,
             name: str = None,
@@ -368,11 +370,18 @@ class Object:
     def __str__(self):
         return self.name
 
-    def _get_object(self, obj_name: str):
+    def __repr__(self):
+        return f"{str(type(self))} {self.name} at {self.position.to_string('hmsdms')}"
+
+    def _get_object(
+            self,
+            obj_name: str,
+            tolerate_missing: bool = True,
+    ):
         if self.field is not None and obj_name in self.field.objects_dict:
             return self.field.objects_dict[obj_name]
         else:
-            return None
+            return object_from_index(obj_name, tolerate_missing=tolerate_missing)
 
     def set_name_filesys(self):
         if self.name is not None:
@@ -666,6 +675,13 @@ class Object:
         :param output: Path to write plot.
         :return: matplotlib ax object containing plot info
         """
+
+        if not self.photometry:
+            self.load_output_file()
+            if not self.photometry:
+                print(f"No photometry found for {self.name}")
+                return
+
         if output is None:
             output = os.path.join(self.data_path, f"{self.name_filesys}_photometry.pdf")
 
@@ -693,6 +709,13 @@ class Object:
         :param kwargs:
         :return: matplotlib ax object containing plot info
         """
+
+        if not self.photometry:
+            self.load_output_file()
+            if not self.photometry:
+                print(f"No photometry found for {self.name}")
+                return
+
         if ax is None:
             fig, ax = plt.subplots()
         if "ls" not in kwargs:
@@ -774,6 +797,12 @@ class Object:
         :return:
         """
 
+        if not self.photometry:
+            self.load_output_file()
+            if not self.photometry:
+                print(f"No photometry found for {self.name}")
+                return
+
         if output is None:
             output = self.build_photometry_table_path()
 
@@ -851,6 +880,8 @@ class Object:
         if "marker" not in kwargs:
             kwargs["marker"] = "x"
 
+        self.retrieve_extinction_table()
+
         lambda_eff_tbl = self.irsa_extinction["LamEff"].to(
             units.Angstrom)
         power_law = models.PowerLaw1D()
@@ -861,7 +892,11 @@ class Object:
 
         x = np.linspace(0, 80000, 1000) * units.Angstrom
 
-        a_v = (r_v * self.ebv_sandf).value
+        if not self.photometry:
+            self.load_output_file()
+            if not self.photometry:
+                print(f"No photometry found for {self.name}")
+                return
 
         tbl["ext_gal_sandf"] = self.galactic_extinction_f99(lambda_eff=tbl["lambda_eff"], r_v=r_v)
         tbl["ext_gal_pl"] = fitted(tbl["lambda_eff"]) * units.mag
@@ -872,7 +907,7 @@ class Object:
         ) * units.mag
 
         ax.plot(
-            x, self.galactic_extinction_f99(x, r_v=r_v),
+            x, self.galactic_extinction_f99(x, r_v=r_v).value,
             label="S\&F + F99 extinction law",
             c="red"
         )
@@ -986,6 +1021,9 @@ class Object:
     def get_photometry_table(self, output: bool = False, best: bool = False, force: bool = False):
         if not self.photometry:
             self.load_output_file()
+            if not self.photometry:
+                print(f"No photometry found for {self.name}")
+                return
         if output is True:
             output = None
         tbl = None
@@ -1101,7 +1139,13 @@ class Object:
         row = self.photometry_tbl_best[idx]
         return self.photometry[row["instrument"]][row["band"]][row["epoch_name"]]
 
-    def push_to_table(self, select: bool = False, local_output: bool = True):
+    def push_to_table(
+            self,
+            select: bool = False,
+            local_output: bool = True
+    ):
+        if not self.photometry:
+            return
 
         jname = self.jname()
 
@@ -1149,8 +1193,8 @@ class Object:
             row["mu"] = self.mu
 
         if isinstance(self, TransientHostCandidate):
-            if not self.transient:
-                self
+            if not isinstance(self.transient, Transient):
+                self.get_transient()
             row["transient_tns_name"] = self.transient.tns_name
 
         for instrument in self.photometry:
@@ -1295,7 +1339,7 @@ class Object:
         elif obj_type == "frb":
             return FRB
         elif obj_type == "star":
-            return Object
+            return Star
         elif obj_type == "transienthostcandidate":
             return TransientHostCandidate
         else:
@@ -1327,11 +1371,14 @@ class Object:
 
 @u.export
 class Star(Object):
+    optical = True
     pass
 
 
 @u.export
 class Extragalactic(Object):
+    optical = True
+
     def __init__(
             self,
             z: float = None,
@@ -1418,6 +1465,8 @@ class Extragalactic(Object):
 
 @u.export
 class Galaxy(Extragalactic):
+    optical = True
+
     def __init__(
             self,
             z: float = None,
@@ -1695,10 +1744,18 @@ class TransientHostCandidate(Galaxy):
             self.P_Ox = kwargs["P_Ox"]
 
     def get_transient(self, tolerate_missing: bool = False):
-        if isinstance(self.transient, str):
-            self.transient = object_from_index(self.transient, tolerate_missing=tolerate_missing)
+        if self.transient is None:
+            self.transient = Transient(
+                host_galaxy=self,
+                z=self.z,
+                z_err=self.z_err
+            )
+        elif isinstance(self.transient, str):
+            self.transient = self._get_object(self.transient, tolerate_missing=tolerate_missing)
         elif not isinstance(self.transient, Transient):
             raise ValueError(f"{self.name}.transient is not set correctly ({self.transient})")
+
+        return self.transient
 
     @classmethod
     def default_params(cls):
@@ -1723,6 +1780,8 @@ dm_host_median = {
 
 @u.export
 class Transient(Object):
+    optical = False
+
     def __init__(
             self,
             host_galaxy: TransientHostCandidate = None,
@@ -1767,12 +1826,14 @@ class Transient(Object):
                 z_err=self.z_err
             )
         elif isinstance(self.host_galaxy, str) and self.field:
-            self.host_galaxy = self.field.get_object(self.host_galaxy)
+            self.host_galaxy = self._get_object(self.host_galaxy)
         return self.host_galaxy
 
 
 @u.export
 class FRB(Transient):
+    optical = False
+
     def __init__(
             self,
             dm: Union[float, units.Quantity] = None,

@@ -838,9 +838,11 @@ class ImagingImage(Image):
                 self.source_cat = catalog.SECatalogue(path=outputs["source_cat_path"], image=self)
             if "synth_cat_path" in outputs:
                 self.synth_cat_path = outputs["synth_cat_path"]
-            if "source_cat_dual_path" in outputs and outputs["source_cat_dual_path"] is not None and os.path.exists(
-                    outputs["source_cat_dual_path"]):
-                self.source_cat_dual = catalog.SECatalogue(path=outputs["source_cat_dual_path"], image=self)
+            if "source_cat_dual_path" in outputs:
+                if isinstance(outputs["source_cat_dual_path"], tuple):
+                    outputs["source_cat_dual_path"] = outputs["source_cat_dual_path"][0]
+                if outputs["source_cat_dual_path"] is not None and os.path.exists(outputs["source_cat_dual_path"]):
+                    self.source_cat_dual = catalog.SECatalogue(path=outputs["source_cat_dual_path"], image=self)
             if "fwhm_psfex" in outputs:
                 self.fwhm_psfex = outputs["fwhm_psfex"]
             if "fwhm_psfex" in outputs:

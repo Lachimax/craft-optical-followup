@@ -167,6 +167,24 @@ class Field:
     def __repr__(self):
         return self.__str__()
 
+    def objects_pipeline(self):
+        if u.select_yn_exit("Update photometry from all epochs?"):
+            epochs = self.gather_epochs_imaging()
+            for epoch_name in epochs:
+                epoch = ep.epoch_from_directory(epoch_name)
+                epoch.do = [-1]
+                if "get_photometry" not in epoch.param_file:
+                    epoch.param_file["get_photometry"] = {}
+                epoch.param_file["get_photometry"]["skip_plots"] = True
+                epoch.param_file["get_photometry"]["skip_path"] = True
+                # Run only the last stage of each epoch pipeline
+                epoch.pipeline()
+        if isinstance(self, FRBField):
+            if u.select_yn_exit("Run PATH on imaging?"):
+                pass
+        if u.select_yn_exit("Refine photometry?"):
+            self.object_properties()
+
     def mkdir(self):
         if self.data_path is not None:
             u.mkdir_check(self.data_path)
@@ -636,9 +654,13 @@ class Field:
     def add_object(self, obj: objects.Object):
         if isinstance(obj, dict):
             self.add_object_from_dict(obj)
-        self.objects.append(obj)
+        if obj not in self.objects:
+            self.objects.append(obj)
         self.objects_dict[obj.name] = obj
         obj.field = self
+
+    def cull_objects(self):
+        self.objects = list(set(self.objects))
 
     def add_object_from_dict(self, obj_dict: dict):
         obj_dict["field"] = self
@@ -648,7 +670,11 @@ class Field:
 
     def object_properties(self):
         self.objects.sort(key=lambda o: o.name, reverse=True)
+        print(self.objects)
         for obj in self.objects:
+            if not obj.optical:
+                continue
+            print(obj.name)
             obj.load_output_file()
             obj.update_output_file()
             obj.push_to_table(select=True)
