@@ -629,6 +629,8 @@ class Object:
         if self.position_photometry_err is not None:
             pos_phot_err = self.position_photometry_err.to_dict()
         return {
+            "position_input": self.position,
+            "position_input_err": self.position_err,
             "position_photometry": self.position_photometry,
             "position_photometry_err": pos_phot_err,
             "photometry": self.photometry,
