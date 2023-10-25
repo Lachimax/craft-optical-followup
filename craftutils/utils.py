@@ -861,6 +861,7 @@ def match_cat(x_match, y_match, x_cat, y_cat, tolerance=np.inf, world=False, ret
     """
     Matches a set of objects against a catalogue using their positions.
     Provides a list of matching ids
+
     :param x_match: Array of x-coordinates to find in the catalogue. Can be pixel coordinates or RA/DEC.
     :param y_match: Array of y-coordinates to find in the catalogue. Can be pixel coordinates or RA/DEC.
     :param x_cat: Array of catalogue x-coordinates. Can be pixel coordinates or RA/DEC.

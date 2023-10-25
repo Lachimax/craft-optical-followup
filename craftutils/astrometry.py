@@ -252,7 +252,10 @@ def offset_astrometry(hdu: fits.hdu, offset_ra: float, offset_dec: float, output
     return hdu
 
 
-def find_nearest(coord: coordinates.SkyCoord, search_coords: coordinates.SkyCoord):
+def find_nearest(
+        coord: coordinates.SkyCoord,
+        search_coords: coordinates.SkyCoord
+):
     separations = coord.separation(search_coords)
     match_id = np.argmin(separations)
     return match_id, separations[match_id]

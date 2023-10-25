@@ -628,9 +628,12 @@ class Object:
         pos_phot_err = None
         if self.position_photometry_err is not None:
             pos_phot_err = self.position_photometry_err.to_dict()
+        pos_err = None
+        if self.position_err is not None:
+            pos_err = self.position_err.to_dict()
         return {
             "position_input": self.position,
-            "position_input_err": self.position_err,
+            "position_input_err": pos_err,
             "position_photometry": self.position_photometry,
             "position_photometry_err": pos_phot_err,
             "photometry": self.photometry,
@@ -2146,7 +2149,6 @@ class FRB(Transient):
 
     def _output_dict(self):
         output = super()._output_dict()
-        cand_list = []
         cand_list = list(map(lambda o: str(o), self.host_candidates))
 
         output.update({
