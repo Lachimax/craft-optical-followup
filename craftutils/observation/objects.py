@@ -2257,7 +2257,6 @@ class FRB(Transient):
     def dm_mw_ism_ne2001_baror(
             self,
             distance: Union[units.Quantity, float] = np.inf * units.kpc,
-            force: bool = False
     ) -> units.Quantity:
         """
         Derives the ISM component of the DM using the Bar-Or, Prochaska implementation of NE2001:
@@ -2267,17 +2266,15 @@ class FRB(Transient):
         :return:
         """
         # from frb.mw import ismDM
-        if self._dm_mw_ism_ne2001 is None or force:
-            from ne2001 import density
-            distance = u.dequantify(distance, unit=units.kpc)
-            ne = density.ElectronDensity()
-            dm_ism = ne.DM(
-                self.position.galactic.l.value,
-                self.position.galactic.b.value,
-                distance
-            )
-            self._dm_mw_ism_ne2001 = dm_ism
-        return self._dm_mw_ism_ne2001
+        from ne2001 import density
+        distance = u.dequantify(distance, unit=units.kpc)
+        ne = density.ElectronDensity()
+        dm_ism = ne.DM(
+            self.position.galactic.l.value,
+            self.position.galactic.b.value,
+            distance
+        )
+        return dm_ism
 
     def dm_mw_ism_ne2001(
             self,
