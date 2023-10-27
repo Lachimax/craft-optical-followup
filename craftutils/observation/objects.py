@@ -1909,6 +1909,10 @@ class FRB(Transient):
         self._dm_mw_ism_ne2001 = None
         self._dm_mw_ism_ymw16 = None
 
+        # Tau components
+        self._tau_mw_ism_ne2001 = None
+        self._tau_mw_ism_ymw16 = None
+
         self.zdm_table: table.QTable = None
 
         # Placeholder for an associated `frb.frb.FRB` object
@@ -2250,14 +2254,16 @@ class FRB(Transient):
         except ValueError:
             return date_str
 
-    def dm_mw_ism_ne2001(
+    def dm_mw_ism_ne2001_baror(
             self,
-            distance: Union[units.Quantity, float] = 100. * units.kpc,
+            distance: Union[units.Quantity, float] = np.inf * units.kpc,
             force: bool = False
     ) -> units.Quantity:
         """
-        Borrowed from frb.mw
-        :param distance:
+        Derives the ISM component of the DM using the Bar-Or, Prochaska implementation of NE2001:
+        https://github.com/FRBs/ne2001
+
+        :param distance: Distance to object; for extragalactic objects, use np.inf or a value greater than 100 kpc.
         :return:
         """
         # from frb.mw import ismDM
@@ -2273,21 +2279,44 @@ class FRB(Transient):
             self._dm_mw_ism_ne2001 = dm_ism
         return self._dm_mw_ism_ne2001
 
+    def dm_mw_ism_ne2001(
+            self,
+            distance: Union[units.Quantity, float] = np.inf * units.kpc,
+            force: bool = False
+    ):
+        if self._dm_mw_ism_ne2001 is None or force:
+            self._dm_mw_ism_ne2001, self._tau_mw_ism_ne2001 = self._dm_mw_ism_pygedm(
+                method="ne2001",
+                distance=distance
+            )
+        return self._dm_mw_ism_ne2001
+
     def dm_mw_ism_ymw16(
             self,
-            distance: Union[units.Quantity, float] = 50. * units.kpc,
+            distance: Union[units.Quantity, float] = np.inf * units.kpc,
             force: bool = False
     ):
         if self._dm_mw_ism_ymw16 is None or force:
-            import pygedm
-            dm, tau = pygedm.dist_to_dm(
-                self.position.galactic.l,
-                self.position.galactic.b,
-                distance,
-                method="ymw16"
+            self._dm_mw_ism_ymw16, self._tau_mw_ism_ymw16 = self._dm_mw_ism_pygedm(
+                method="ymw16",
+                distance=distance
             )
-            self._dm_mw_ism_ymw16 = dm
         return self._dm_mw_ism_ymw16
+
+    def _dm_mw_ism_pygedm(
+            self,
+            method: str,
+            distance: Union[units.Quantity, float] = np.inf * units.kpc,
+    ):
+        import pygedm
+        dm, tau = pygedm.dist_to_dm(
+            self.position.galactic.l,
+            self.position.galactic.b,
+            distance,
+            method=method
+        )
+        return dm, tau
+
 
     def dm_mw_ism(
             self,
