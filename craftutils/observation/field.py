@@ -319,7 +319,7 @@ class Field:
         options["New epoch"] = "new"
         j, epoch = u.select_option(message="Select epoch.", options=options, sort=True)
         if epoch == "new":
-            epoch = self.new_epoch_imaging(instrument=instrument)
+            epoch = self._new_epoch(instrument=instrument, mode=mode)
         elif not isinstance(epoch, ep.Epoch):
             epoch = ep.ImagingEpoch.from_file(epoch, field=self)
             loaded_dict[epoch.name] = epoch

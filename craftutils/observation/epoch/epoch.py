@@ -537,7 +537,7 @@ class Epoch:
             raise ValueError(f"data_path has not been set for {self}")
         self.field.retrieve_catalogues()
         self.do = _check_do_list(self.do, stages=list(self.stages().keys()))
-        if not self.quiet:
+        if not self.quiet and self.do:
             print(f"Doing stages {self.do}")
         self.paths["download"] = os.path.join(self.data_path, "0-download")
 
