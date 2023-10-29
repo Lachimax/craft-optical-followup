@@ -2474,7 +2474,10 @@ class FRB(Transient):
         from frb.dm.igm import average_DM
         if z_max is None:
             z_max = self.host_galaxy.z
-        return average_DM(z_max, cosmo=cosmology, **kwargs)
+        if z_max <= 0:
+            return 0 * dm_units
+        else:
+            return average_DM(z_max, cosmo=cosmology, **kwargs)
 
     def dm_halos_avg(self, z_max: float = None, **kwargs):
         import frb.halos.hmf as hmf
@@ -2482,7 +2485,10 @@ class FRB(Transient):
         hmf.init_hmf()
         if z_max is None:
             z_max = self.host_galaxy.z
-        return average_DMhalos(z_max, cosmo=cosmology, **kwargs)
+        if z_max <= 0:
+            return 0 * dm_units
+        else:
+            return average_DMhalos(z_max, cosmo=cosmology, **kwargs)
 
     # def estimate_dm_excess(self):
     #     dm_ism = self.estimate_dm_mw_ism()
@@ -2508,8 +2514,16 @@ class FRB(Transient):
         """
         if z_host is None:
             z_host = self.host_galaxy.z
-        nu = u.check_quantity(self.nu_scattering, units.MHz)
-        tau = u.check_quantity(self.tau * 1., units.ms)
+        if not z_host:
+            return 0 * dm_units
+        if self.nu_scattering:
+            nu = u.check_quantity(self.nu_scattering, units.MHz)
+        else:
+            return 0 * dm_units
+        if self.tau:
+            tau = u.check_quantity(self.tau * 1., units.ms)
+        else:
+            return 0 * dm_units
         if subtract_mw:
             tau_mw = self.tau_mw()
             tau -= tau_mw
