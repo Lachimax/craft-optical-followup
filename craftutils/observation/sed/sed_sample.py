@@ -487,8 +487,11 @@ class SEDSample:
         }
         return values, tbl, z_lost
 
-    def average_template(self):
-        pass
+    def average_template(self, norm_band: fil.Filter):
+        luminosities = []
+        for model_name, model in self.model_dict.items():
+            luminosity = model.calculate_rest_luminosity()
+
 
     def _output_dict(self):
         obj_dict = self.__dict__.copy()
