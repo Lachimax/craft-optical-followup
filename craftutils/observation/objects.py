@@ -2256,13 +2256,13 @@ class FRB(Transient):
 
     def dm_mw_ism_ne2001_baror(
             self,
-            distance: Union[units.Quantity, float] = np.inf * units.kpc,
+            distance: Union[units.Quantity, float] = 200 * units.kpc,
     ) -> units.Quantity:
         """
         Derives the ISM component of the DM using the Bar-Or, Prochaska implementation of NE2001:
         https://github.com/FRBs/ne2001
 
-        :param distance: Distance to object; for extragalactic objects, use np.inf or a value greater than 100 kpc.
+        :param distance: Distance to object; for extragalactic objects, use a value greater than 100 kpc.
         :return:
         """
         # from frb.mw import ismDM
@@ -2290,7 +2290,7 @@ class FRB(Transient):
 
     def dm_mw_ism_ymw16(
             self,
-            distance: Union[units.Quantity, float] = np.inf * units.kpc,
+            distance: Union[units.Quantity, float] = 50 * units.kpc,
             force: bool = False
     ):
         if self._dm_mw_ism_ymw16 is None or force:
