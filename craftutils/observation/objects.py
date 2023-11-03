@@ -1138,7 +1138,8 @@ class Object:
 
     def select_deepest_sep(self, local_output: bool = True):
         self.get_photometry_table(output=local_output, best=True)
-        if "snr_sep" not in self.photometry_tbl_best.colnames:
+        if not self.photometry_tbl_best or "snr_sep" not in self.photometry_tbl_best.colnames:
+            print(f"No photometry found for {self.name}")
             return None
         idx = np.argmax(self.photometry_tbl_best["snr_sep"])
         row = self.photometry_tbl_best[idx]
