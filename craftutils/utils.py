@@ -1015,11 +1015,12 @@ def uncertainty_string(
         nan_string: str = "--",
 ):
     limit_vals = (limit_val, -99, -999, -999.)
+    value = float(dequantify(value, unit))
     if value in limit_vals or np.ma.is_masked(value):
         return nan_string, value, uncertainty
     if np.ma.is_masked(uncertainty):
         uncertainty = 0.
-    value = float(dequantify(value, unit))
+
     uncertainty = float(dequantify(uncertainty, unit))
     if limit_type == "upper":
         limit_char = "<"

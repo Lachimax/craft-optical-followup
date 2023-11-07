@@ -671,6 +671,7 @@ class Field:
     def object_properties(self):
         self.objects.sort(key=lambda o: o.name, reverse=True)
         print(self.objects)
+        n_phot = 0
         for obj in self.objects:
             if not obj.optical:
                 continue
@@ -694,6 +695,8 @@ class Field:
                 obj.load_output_file()
                 obj.photometry_to_table()
                 tbl_this = obj.photometry_to_table(best=True)
+                if tbl_this is None:
+                    continue
                 photometry["Galaxy ID"] = obj.name
                 photometry["z"] = obj.z
                 for row in tbl_this:
@@ -724,12 +727,15 @@ class Field:
                             entry[name] = -999.
 
                 photometries.append(photometry)
-        tbl_cigale = table.QTable(photometries)
-        tbl_cigale.write(
-            os.path.join(self.data_path, f"{self.name}_cigale.csv"),
-            overwrite=True
-        )
-        return tbl_cigale
+        if photometries:
+            tbl_cigale = table.QTable(photometries)
+            tbl_cigale.write(
+                os.path.join(self.data_path, f"{self.name}_cigale.csv"),
+                overwrite=True
+            )
+            return tbl_cigale
+        else:
+            return None
 
     def unpack_cigale_results(
             self,

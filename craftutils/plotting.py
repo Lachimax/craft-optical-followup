@@ -34,11 +34,13 @@ quantity_support()
 
 textwidths = {
     "MNRAS": 7.03,
-    "mqthesis": 6.1
+    "mqthesis": 6.1,
+    "PASA": 7.13
 }
 
 textheights = {
-    "mqthesis": 9.6
+    "mqthesis": 9.6,
+    "PASA": 9.45
 }
 
 tick_fontsize = 12

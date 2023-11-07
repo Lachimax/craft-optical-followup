@@ -227,13 +227,19 @@ class PositionUncertainty:
         if not ellipse:
             ra = position.ra
             dec = position.dec
-            a_sys = ra_err_sys * np.cos(position.dec)
-            a_stat = ra_err_stat * np.cos(position.dec)
+            print(ra_err_sys, ra_err_stat)
+            a_sys = ra_err_sys * np.cos(dec)
+            a_stat = ra_err_stat * np.cos(dec)
+            print(a_sys, a_stat)
             b_sys = dec_err_sys
             b_stat = dec_err_stat
+            if b_sys > a_sys:
+                theta = 90. * units.deg
+            else:
+                theta = 0. * units.degree
             a_sys, b_sys = max(a_sys, b_sys), min(a_sys, b_sys)
+            print(a_sys, a_stat)
             a_stat, b_stat = max(a_stat, b_stat), min(a_stat, b_stat)
-            theta = 0.0 * units.degree
         # Or use ellipse parameters as given.
         else:
             a_sys = u.check_quantity(number=a_sys, unit=units.arcsec)
@@ -887,15 +893,31 @@ class Object:
 
         self.retrieve_extinction_table()
 
+        tbl = self.photometry_to_table(fmts=["ascii.ecsv", "ascii.csv"])
+
+        x = np.linspace(0, 80000, 1000) * units.Angstrom
+
         lambda_eff_tbl = self.irsa_extinction["LamEff"].to(
             units.Angstrom)
         power_law = models.PowerLaw1D()
         fitter = fitting.LevMarLSQFitter()
-        fitted = fitter(power_law, lambda_eff_tbl, self.irsa_extinction["A_SandF"].value)
-
-        tbl = self.photometry_to_table(fmts=["ascii.ecsv", "ascii.csv"])
-
-        x = np.linspace(0, 80000, 1000) * units.Angstrom
+        try:
+            fitted = fitter(power_law, lambda_eff_tbl, self.irsa_extinction["A_SandF"].value)
+            tbl["ext_gal_pl"] = fitted(tbl["lambda_eff"]) * units.mag
+            ax.plot(
+                x, fitted(x),
+                label=f"power law fit to IRSA",
+                # , \\alpha={fitted.alpha.value}; $x_0$={fitted.x_0.value}; A={fitted.amplitude.value}",
+                c="blue"
+            )
+            self.extinction_power_law = {
+                "amplitude": fitted.amplitude.value * fitted.amplitude.unit,
+                "x_0": fitted.x_0.value,
+                "alpha": fitted.alpha.value
+            }
+        except fitting.NonFiniteValueError:
+            fitted = None
+            tbl["ext_gal_pl"] = -999. * units.mag
 
         if not self.photometry:
             self.load_output_file()
@@ -904,7 +926,7 @@ class Object:
                 return
 
         tbl["ext_gal_sandf"] = self.galactic_extinction_f99(lambda_eff=tbl["lambda_eff"], r_v=r_v)
-        tbl["ext_gal_pl"] = fitted(tbl["lambda_eff"]) * units.mag
+
         tbl["ext_gal_interp"] = np.interp(
             tbl["lambda_eff"],
             lambda_eff_tbl,
@@ -915,12 +937,6 @@ class Object:
             x, self.galactic_extinction_f99(x, r_v=r_v).value,
             label="S\&F + F99 extinction law",
             c="red"
-        )
-        ax.plot(
-            x, fitted(x),
-            label=f"power law fit to IRSA",
-            # , \\alpha={fitted.alpha.value}; $x_0$={fitted.x_0.value}; A={fitted.amplitude.value}",
-            c="blue"
         )
         ax.scatter(
             lambda_eff_tbl, self.irsa_extinction["A_SandF"].value,
@@ -949,11 +965,6 @@ class Object:
         ax.legend()
         plt.savefig(os.path.join(self.data_path, f"{self.name_filesys}_irsa_extinction.pdf"))
         plt.close()
-        self.extinction_power_law = {
-            "amplitude": fitted.amplitude.value * fitted.amplitude.unit,
-            "x_0": fitted.x_0.value,
-            "alpha": fitted.alpha.value
-        }
 
         for row in tbl:
             instrument = row["instrument"]
