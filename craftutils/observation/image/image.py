@@ -780,7 +780,7 @@ class Image:
             # Look for standard instrument name in list
             if instrument in instrument_header:
                 instrument = instrument_header[instrument]
-                child = cls.select_child_class(instrument=instrument, mode=mode)
+                child = cls.select_child_class(instrument_name=instrument, mode=mode)
             else:
                 child = ImagingImage
         u.debug_print(2, "Image.from_fits(): instrument ==", instrument)
@@ -789,16 +789,16 @@ class Image:
         return img
 
     @classmethod
-    def select_child_class(cls, instrument: str, **kwargs):
-        instrument = instrument.lower()
+    def select_child_class(cls, instrument_name: str, **kwargs):
+        instrument_name = instrument_name.lower()
         if 'mode' in kwargs:
             mode = kwargs['mode']
             if mode == 'imaging':
                 from .imaging import ImagingImage
-                return ImagingImage.select_child_class(instrument_name=instrument, **kwargs)
+                return ImagingImage.select_child_class(instrument_name=instrument_name, **kwargs)
             elif mode == 'spectroscopy':
                 from .__init__ import Spectrum
-                return Spectrum.select_child_class(instrument_name=instrument, **kwargs)
+                return Spectrum.select_child_class(instrument_name=instrument_name, **kwargs)
             else:
                 raise ValueError(f"Unrecognised mode {mode}")
         else:
