@@ -2739,7 +2739,10 @@ class ImagingImage(Image):
             line_kwargs: dict = None,
             text_kwargs: dict = None,
             ext: int = 0,
-            extra_height_top_factor: float = 2.
+            extra_height_top_factor: float = 2.,
+            bold: bool = False,
+            precision_ang: int = 1,
+            precision_spc: int = 1
     ):
         self.extract_pixel_scale(ext=ext)
         if line_kwargs is None:
@@ -2785,11 +2788,16 @@ class ImagingImage(Image):
         if "solid_capstyle" not in line_kwargs:
             line_kwargs["solid_capstyle"] = "butt"
 
+        if bold:
+            str_ang = f"\\textbf{{{size_ang.round(precision_ang)}}}"
+        else:
+            str_ang = size_ang.round(precision_ang)
+
         # Draw angular size text in axes coordinates
         text_ang = ax.text(
             x_ax,
             y_ax,
-            size_ang.round(1),
+            str_ang,
             transform=ax.transAxes,
             **text_kwargs
         )
@@ -2834,10 +2842,14 @@ class ImagingImage(Image):
         # Except for this one, where we transform the final text coordinates back to Axes coordinates
         x_ax, y_proj_ax = ax.transAxes.inverted().transform((x_disp, y_proj_disp))
         # Draw the projected size text.
+        if bold:
+            str_spc = f"\\textbf{{{size_proj.round(precision_spc)}}}"
+        else:
+            str_spc = size_proj.round(precision_spc)
         ax.text(
             x_ax,
             y_proj_ax,
-            size_proj.round(1),
+            str_spc,
             transform=ax.transAxes,
             **text_kwargs
         )

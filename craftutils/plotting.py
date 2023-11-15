@@ -617,7 +617,8 @@ def latex_setup(
 
     plt.rc('text', usetex=use_tex)
     u.debug_print(1, f"Setting mathtext.fontset to {math_fontset}.")
-    plt.rc("mathtext", fontset=math_fontset)
+    if math_fontset is not None:
+        plt.rc("mathtext", fontset=math_fontset)
     # Matplotlib and pyplot settings
     # print(f"Setting font.family to {font_family}")
     # plt.rc('font', family=font_family)

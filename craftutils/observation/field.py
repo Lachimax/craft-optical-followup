@@ -1168,6 +1168,7 @@ class FRBField(Field):
             output_path: str = None,
             show_legend: bool = False,
             latex_kwargs: dict = {},
+            do_latex_setup: bool = True,
             draw_scale_bar: bool = False,
             scale_bar_kwargs: dict = {},
             include_img_err: bool = True,
@@ -1194,7 +1195,8 @@ class FRBField(Field):
         :param kwargs:
         :return: ax, figure
         """
-        pl.latex_setup(**latex_kwargs)
+        if do_latex_setup:
+            pl.latex_setup(**latex_kwargs)
         if not isinstance(self.frb, objects.FRB):
             raise TypeError("self.frb has not been set properly for this FRBField.")
         if centre is None:

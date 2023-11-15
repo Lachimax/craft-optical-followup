@@ -1212,7 +1212,10 @@ class Object:
         if isinstance(self, TransientHostCandidate):
             if not isinstance(self.transient, Transient):
                 self.get_transient()
-            row["transient_tns_name"] = self.transient.tns_name
+            if isinstance(self.transient.tns_name, str):
+                row["transient_tns_name"] = self.transient.tns_name
+            else:
+                row["transient_tns_name"] = "N/A"
 
         for instrument in self.photometry:
             for fil in self.photometry[instrument]:
@@ -1264,6 +1267,7 @@ class Object:
             object_name=self.name,
             entry=row,
         )
+        print()
         obs.write_master_objects_table()
 
     # def plot_ellipse(
