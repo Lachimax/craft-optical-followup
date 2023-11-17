@@ -1954,7 +1954,8 @@ class FRB(Transient):
             associate_kwargs={},
             do_plot: bool = False,
             output_dir: str = None,
-            show: bool = False
+            show: bool = False,
+            max_radius: units.Quantity = None
     ):
         """
         Performs a customised PATH run on an image.
@@ -1991,7 +1992,10 @@ class FRB(Transient):
         else:
             filname = img.filter.frb_repo_name
         # TODO: subtract Galactic extinction from zeropoint
-        if "max_radius" in config:
+
+        if max_radius is not None:
+            max_radius = u.dequantify(max_radius, unit=units.arcsec)
+        elif "max_radius" in config:
             max_radius = config["max_radius"]
         else:
             max_radius = 20.
