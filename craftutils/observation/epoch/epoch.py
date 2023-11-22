@@ -209,7 +209,7 @@ def _check_do_list(
 
 
 def expunge_epochs():
-    epoch_list = active_epochs.keys()
+    epoch_list = list(active_epochs.keys())
     for epoch_name in epoch_list:
         del active_epochs[epoch_name]
 
@@ -390,7 +390,7 @@ class Epoch:
         return False
 
     def __str__(self):
-        return self.name
+        return str(self.name)
 
     def date_str(self, include_time: bool = False):
         if not isinstance(self.date, Time):
@@ -537,7 +537,7 @@ class Epoch:
             raise ValueError(f"data_path has not been set for {self}")
         self.field.retrieve_catalogues()
         self.do = _check_do_list(self.do, stages=list(self.stages().keys()))
-        if not self.quiet:
+        if not self.quiet and self.do:
             print(f"Doing stages {self.do}")
         self.paths["download"] = os.path.join(self.data_path, "0-download")
 
@@ -1088,7 +1088,8 @@ class ImagingEpoch(Epoch):
                 "default": True,
                 "keywords": {
                     "image_type": "final",
-                    "skip_plots": False
+                    "skip_plots": False,
+                    "skip_path": False
                 }
             },
             # "get_photometry_all": {
@@ -2010,7 +2011,12 @@ class ImagingEpoch(Epoch):
             image_type = "final"
         u.debug_print(2, f"{self}.proc_get_photometry(): image_type ==:", image_type)
         # Run PATH on imaging if we're doing FRB stuff
-        if isinstance(self.field, fld.FRBField):
+
+        skip_path = False
+        if "skip_path" in kwargs:
+            skip_path = kwargs.pop("skip_path")
+
+        if not skip_path and isinstance(self.field, fld.FRBField):
             if 'path_kwargs' in kwargs:
                 path_kwargs = kwargs["path_kwargs"]
             else:
@@ -2057,6 +2063,9 @@ class ImagingEpoch(Epoch):
             image_type: str = "final",
             **path_kwargs
     ):
+        if not isinstance(self.field, fld.FRBField):
+            raise TypeError(
+                f"To run probabilistic_association, {self.name}.field must be an FRBField, not {type(self.field)}")
         image_dict = self._get_images(image_type=image_type)
         self.field.frb.load_output_file()
 
@@ -2084,7 +2093,7 @@ class ImagingEpoch(Epoch):
             if isinstance(obj, objects.TransientHostCandidate):
                 print(obj.name, obj.P_Ox)
                 if obj.P_Ox is not None and obj.P_Ox > 0.1:
-                    self.field.objects.append(obj)
+                    self.field.add_object(obj)
 
         # yaml_dict = {}
         #
@@ -2163,7 +2172,9 @@ class ImagingEpoch(Epoch):
                     output_path=os.path.join(fil_output_path, "plot_quick.pdf")
                 )
 
-            for obj in self.field.objects:
+            for obj_name, obj in self.field.objects_dict.items():
+                if not obj.optical:
+                    continue
                 # obj.load_output_file()
                 plt.close()
                 # Get nearest Source-Extractor object:
@@ -2372,10 +2383,7 @@ class ImagingEpoch(Epoch):
 
             nice_name = f"{self.field.name}_{inst_name}_{fil.replace('_', '-')}_{date}.fits"
 
-            astm_rms = img_prime.extract_astrometry_err().value
-            psf_fwhm = img_prime.extract_header_item(key="PSF_FWHM")
-            psf_fwhm_err = img_prime.extract_header_item(key="PSF_FWHM_ERR")
-
+            # Make sure various common properties are transferred to image derivatives.
             if img != img_prime:
                 img.clone_diagnostics(img_prime)
             if isinstance(self.coadded_subtracted[fil], image.CoaddedImage):
@@ -3045,21 +3053,16 @@ class ImagingEpoch(Epoch):
             name: str,
             instrument: str,
             field: Union['fld.Field', str] = None,
-            old_format: bool = False,
             quiet: bool = False
     ):
         if name in active_epochs:
             return active_epochs[name]
         instrument = instrument.lower()
         field_name, field = cls._from_params_setup(name=name, field=field)
-        if old_format:
-            instrument = instrument.split("-")[-1]
-            path = os.path.join(p.param_dir, f"epochs_{instrument}", name)
-        else:
-            path = cls.build_param_path(
-                instrument_name=instrument,
-                field_name=field_name,
-                epoch_name=name)
+        path = cls.build_param_path(
+            instrument_name=instrument,
+            field_name=field_name,
+            epoch_name=name)
         return cls.from_file(param_file=path, field=field, quiet=quiet)
 
     @classmethod
@@ -3075,8 +3078,9 @@ class ImagingEpoch(Epoch):
             name: str,
             date: Time = None
     ):
+        date = u.check_time(date)
         if date is not None:
-            name_str = f"{date.isot}-{name}"
+            name_str = f"{date.strftime('%Y-%m-%d')}-{name}"
         else:
             name_str = name
 
@@ -3107,37 +3111,51 @@ class ImagingEpoch(Epoch):
         # else:
         #     param_dict.pop("field")
 
+        data_path = None
+        if "data_path" in param_dict:
+            data_path = param_dict.pop('data_path')
+        if not data_path:
+            data_path = cls.build_data_path_absolute(
+                field=field,
+                instrument_name=instrument,
+                name=name,
+                date=param_dict["date"]
+            )
+
+        p.join_data_dir(data_path)
+
+        if "name" in param_dict:
+            param_dict.pop("name")
+        if "param_path" in param_dict:
+            param_dict.pop("param_path")
+
         sub_cls = cls.select_child_class(instrument=instrument)
         u.debug_print(1, sub_cls)
-        if sub_cls is ImagingEpoch:
-            return cls(
-                name=name,
-                field=field,
-                param_path=param_file,
-                data_path=os.path.join(config["top_data_dir"], param_dict.pop('data_path')),
-                instrument=instrument,
-                date=param_dict.pop('date'),
-                program_id=param_dict.pop("program_id"),
-                target=param_dict.pop("target"),
-                source_extractor_config=param_dict.pop('sextractor'),
-                quiet=quiet,
-                **param_dict
-            )
-        elif sub_cls is FORS2ImagingEpoch:
-            return sub_cls.from_file(param_dict, name=name, field=field)
-        else:
-            return sub_cls.from_file(pdict_backup, name=name, field=field)
+        return sub_cls(
+            name=name,
+            field=field,
+            param_path=param_file,
+            data_path=data_path,
+            instrument=instrument,
+            date=param_dict.pop('date'),
+            program_id=param_dict.pop("program_id"),
+            target=param_dict.pop("target"),
+            source_extractor_config=param_dict.pop('sextractor'),
+            quiet=quiet,
+            **param_dict
+        )
 
     @classmethod
     def default_params(cls):
         default_params = super().default_params()
         default_params.update({
             "sextractor":
-                {"dual_mode": False,
-                 "threshold": 1.5,
-                 "kron_factor": 2.5,
-                 "kron_radius_min": 3.5
-                 },
+                {
+                    "dual_mode": False,
+                    "threshold": 1.5,
+                    "kron_factor": 2.5,
+                    "kron_radius_min": 3.5
+                },
             # "background_subtraction":
             #     {"renormalise_centre": objects.position_dictionary.copy(),
             #      "test_synths":
@@ -3165,10 +3183,11 @@ class ImagingEpoch(Epoch):
             child_class = HubbleImagingEpoch
         elif instrument == "decam":
             child_class = DESEpoch
-        elif instrument in p.instruments_imaging:
-            child_class = ImagingEpoch
+        # elif instrument in p.instruments_imaging:
         else:
-            raise ValueError(f"Unrecognised instrument {instrument}")
+            child_class = ImagingEpoch
+        # else:
+        # raise ValueError(f"Unrecognised instrument {instrument}")
         u.debug_print(2, f"field.select_child_class(): instrument ==", instrument, "child_class ==", child_class)
         return child_class
 
@@ -3875,7 +3894,7 @@ class SurveyImagingEpoch(ImagingEpoch):
 
     def proc_get_photometry(self, output_dir: str, **kwargs):
         self.load_output_file()
-        self.get_photometry(output_dir, image_type="coadded")
+        self.get_photometry(output_dir, image_type="coadded", **kwargs)
 
     def _initial_setup(self, output_dir: str, **kwargs):
         download_dir = self.paths["download"]
@@ -4703,7 +4722,9 @@ class ESOImagingEpoch(ImagingEpoch):
             field: 'fld.Field' = None
     ):
 
-        name, param_file, param_dict = p.params_init(param_file)
+        print(param_file)
+        print(name)
+        name, param_file, param_dict = p.params_init(param_file, name=name)
         if param_dict is None:
             raise FileNotFoundError(f"No parameter file found at {param_file}.")
 
@@ -5194,10 +5215,18 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
         # With the FORS2 substructure we want to search every subdirectory
         return False
 
-    def correct_astrometry_frames(self, output_dir: str, frames: dict = None, **kwargs):
+    def correct_astrometry_frames(
+            self,
+            output_dir: str,
+            frames: dict = None,
+            **kwargs
+    ):
         """
+        Uses `astrometry.net` with Gaia DR3 indices to correct the WCS of a set of individual exposures associated with
+        this epoch.
 
         :param output_dir:
+        :param frames: A "frames" dictionary ({"filter_name": [image_objects]}) containing the images to solve.
         :param kwargs:
             method: method with which to solve astrometry of epoch. Allowed values are:
                 individual: each frame, including separate chips in the same exposure, will be passed to astrometry.net

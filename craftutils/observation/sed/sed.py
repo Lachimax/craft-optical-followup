@@ -136,7 +136,7 @@ class SEDModel:
         if "luminosity_lambda" in self.model_table.colnames:
             tbl["flux_lambda"] = (tbl["luminosity_lambda"] / self._flux_area()).to("W nm-1 m-2")
         elif "flux_nu" in self.model_table.colnames:
-            tbl["flux_lambda"] = tbl["flux_nu"] * tbl["frequency"] ** 2 / constants.c
+            tbl["flux_lambda"] = (tbl["flux_nu"] * tbl["frequency"] ** 2 / constants.c).to("erg cm-2 s-1 angstrom-1")
 
     def calculate_rest_luminosity(self, force: bool = False):
         if self.rest_luminosity is None or force:

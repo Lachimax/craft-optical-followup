@@ -688,7 +688,10 @@ class ImagingImage(Image):
 
     def extract_psf_fwhm(self):
         key = self.header_keys()["psf_fwhm"]
-        return self.extract_header_item(key) * units.arcsec
+        psf = self.extract_header_item(key)
+        if psf:
+            psf = psf * units.arcsec
+        return psf
 
     def extract_rotation_angle(self, ext: int = 0):
         self.load_wcs()
@@ -712,7 +715,6 @@ class ImagingImage(Image):
 
     def _pixel_scale(self, ext: int = 0):
         self.load_wcs()
-        print("Getting pixel scale.")
         return wcs.utils.proj_plane_pixel_scales(
             self.wcs[ext]
         ) * units.deg
@@ -836,9 +838,11 @@ class ImagingImage(Image):
                 self.source_cat = catalog.SECatalogue(path=outputs["source_cat_path"], image=self)
             if "synth_cat_path" in outputs:
                 self.synth_cat_path = outputs["synth_cat_path"]
-            if "source_cat_dual_path" in outputs and outputs["source_cat_dual_path"] is not None and os.path.exists(
-                    outputs["source_cat_dual_path"]):
-                self.source_cat_dual = catalog.SECatalogue(path=outputs["source_cat_dual_path"], image=self)
+            if "source_cat_dual_path" in outputs:
+                if isinstance(outputs["source_cat_dual_path"], tuple):
+                    outputs["source_cat_dual_path"] = outputs["source_cat_dual_path"][0]
+                if outputs["source_cat_dual_path"] is not None and os.path.exists(outputs["source_cat_dual_path"]):
+                    self.source_cat_dual = catalog.SECatalogue(path=outputs["source_cat_dual_path"], image=self)
             if "fwhm_psfex" in outputs:
                 self.fwhm_psfex = outputs["fwhm_psfex"]
             if "fwhm_psfex" in outputs:
@@ -907,7 +911,8 @@ class ImagingImage(Image):
                                    f"{row['n_matches']} stars, " \
                                    f"from {row['image_name']}"
                         zps[pick_str] = self.zeropoints[row['catalogue']][row['image_name']]
-                    _, zeropoint_best = u.select_option(message="Select best zeropoint:", options=zps, include_exit=False)
+                    _, zeropoint_best = u.select_option(message="Select best zeropoint:", options=zps,
+                                                        include_exit=False)
                     best_cat = zeropoint_best["catalogue"]
             self.zeropoint_best = zeropoint_best
 
@@ -2167,6 +2172,19 @@ class ImagingImage(Image):
             method: str = 'exact',
             mask_mode: bool = False
     ):
+        """
+
+
+        :param other_image:
+        :param ext:
+        :param output_path:
+        :param include_footprint:
+        :param write_footprint:
+        :param method:
+        :param mask_mode: If you are reprojecting a mask, the values will change slightly, so set this to True to round
+            them back to the correct numbers.
+        :return:
+        """
         import reproject as rp
         if output_path is None:
             output_path = self.path.replace(".fits", "_reprojected.fits")
@@ -2721,7 +2739,10 @@ class ImagingImage(Image):
             line_kwargs: dict = None,
             text_kwargs: dict = None,
             ext: int = 0,
-            extra_height_top_factor: float = 2.
+            extra_height_top_factor: float = 2.,
+            bold: bool = False,
+            precision_ang: int = 1,
+            precision_spc: int = 1
     ):
         self.extract_pixel_scale(ext=ext)
         if line_kwargs is None:
@@ -2767,11 +2788,16 @@ class ImagingImage(Image):
         if "solid_capstyle" not in line_kwargs:
             line_kwargs["solid_capstyle"] = "butt"
 
+        if bold:
+            str_ang = f"\\textbf{{{size_ang.round(precision_ang)}}}"
+        else:
+            str_ang = size_ang.round(precision_ang)
+
         # Draw angular size text in axes coordinates
         text_ang = ax.text(
             x_ax,
             y_ax,
-            size_ang.round(1),
+            str_ang,
             transform=ax.transAxes,
             **text_kwargs
         )
@@ -2816,10 +2842,14 @@ class ImagingImage(Image):
         # Except for this one, where we transform the final text coordinates back to Axes coordinates
         x_ax, y_proj_ax = ax.transAxes.inverted().transform((x_disp, y_proj_disp))
         # Draw the projected size text.
+        if bold:
+            str_spc = f"\\textbf{{{size_proj.round(precision_spc)}}}"
+        else:
+            str_spc = size_proj.round(precision_spc)
         ax.text(
             x_ax,
             y_proj_ax,
-            size_proj.round(1),
+            str_spc,
             transform=ax.transAxes,
             **text_kwargs
         )
@@ -3209,11 +3239,11 @@ class ImagingImage(Image):
     ):
 
         if ap_radius is None:
-            psf = self.extract_header_item("PSF_FWHM", ext=ext) * units.arcsec
+            psf = self.extract_header_item("PSF_FWHM", ext=ext)
             if not psf:
                 ap_radius = 2 * units.arcsec
             else:
-                ap_radius = 2 * psf
+                ap_radius = 2 * psf * units.arcsec
 
         self.load_wcs()
         _, pix_scale = self.extract_pixel_scale()
@@ -3233,7 +3263,9 @@ class ImagingImage(Image):
             limits.append({
                 "sigma": i,
                 "flux": n_sigma_flux[0],
-                "mag": limit[0]
+                "mag": limit[0],
+                "aperture_radius": ap_radius,
+                "aperture_radius_pix": ap_radius_pix
             })
         return table.QTable(limits)
 
@@ -3388,6 +3420,7 @@ class ImagingImage(Image):
             `mask`: the final mask used for fitting.
             `weights`: the weights used for fitting, the inverse of the image error.
         """
+
         margins = left, right, bottom, top = self.frame_from_coord(
             frame=frame,
             centre=centre,
@@ -3397,7 +3430,7 @@ class ImagingImage(Image):
         print("")
         print(self.filename)
 
-        data = self.data[ext] * 1  # [bottom:top, left:right]
+        data = self.data[ext] * 1  # [bottom:top, left:right] * 1
 
         if generate_mask:
             mask = self.generate_mask(
@@ -3434,6 +3467,7 @@ class ImagingImage(Image):
         median = np.median(self.data[ext])
         data -= median
 
+        # Instead of using a cutout of the data, we use the mask to set the weights to zero outside of it.
         mask[:, :left] = True
         mask[:, right:] = True
         mask[:bottom, :] = True
@@ -3447,8 +3481,11 @@ class ImagingImage(Image):
             weights[i, j] = 0.  # np.invert(mask).astype(float)
 
         model_init = model_type(**init_params)
-        fitter = fitter_type(True)
+        fitter = fitter_type(calc_uncertainties=False)
         y, x = np.mgrid[:data.shape[0], :data.shape[1]]
+        plt.imshow(weights[bottom - 10:top + 10, left - 10:right + 10])
+        plt.colorbar()
+        plt.show()
         model = fitter(
             model_init,
             x, y,
@@ -3461,7 +3498,7 @@ class ImagingImage(Image):
         subbed[bottom:top, left:right] = subbed_all[bottom:top, left:right] * data.unit + median
 
         if isinstance(write, str):
-            back_file = self.copy(write)
+            back_file = self.copy(write, suffix="background_local")
             back_file.load_data()
             back_file.load_headers()
             back_file.data[ext] = model_eval * data.unit
@@ -3501,7 +3538,7 @@ class ImagingImage(Image):
             mask_file.write_fits_file()
 
         if isinstance(write_subbed, str):
-            subbed_file = self.copy(write_subbed)
+            subbed_file = self.copy(write_subbed, suffix="background-subtracted_local")
             subbed_file.load_data()
             subbed_file.load_headers()
             subbed_file.data[ext] = subbed
@@ -3567,14 +3604,14 @@ class ImagingImage(Image):
             raise ValueError(f"Unrecognised method {method}.")
 
         if isinstance(write, str):
-            back_file = self.copy(write)
+            back_file = self.copy(write, suffix=f"background_{method}")
             back_file.load_data()
             back_file.load_headers()
             back_file.data[ext] = bkg_data
             back_file.write_fits_file()
 
         if isinstance(write_subbed, str):
-            subbed_file = self.copy(write_subbed)
+            subbed_file = self.copy(write_subbed, suffix=f"background-subtracted_{method}")
             subbed_file.load_data()
             subbed_file.load_headers()
             subbed_file.data[ext] = self.data[ext] - bkg_data
@@ -4346,7 +4383,8 @@ class ImagingImage(Image):
         if instrument_name in cls.class_dict:
             subclass = cls.class_dict[instrument_name]
         else:
-            raise ValueError(f"Unrecognised instrument {instrument_name}")
+            subclass = ImagingImage
+            # raise ValueError(f"Unrecognised instrument {instrument_name}")
         return subclass
 
     @classmethod

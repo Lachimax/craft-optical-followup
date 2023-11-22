@@ -124,8 +124,8 @@ class CoaddedImage(ImagingImage):
             new_image.update_output_file()
         return new_image
 
-    def copy(self, destination: str):
-        new_image = super().copy(destination)
+    def copy(self, destination: str, suffix: str = ""):
+        new_image = super().copy(destination, suffix=suffix)
         new_image.area_file = self.area_file
         new_image.update_output_file()
         return new_image

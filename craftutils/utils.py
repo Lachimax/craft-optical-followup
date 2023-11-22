@@ -1,5 +1,5 @@
 # Code by Lachlan Marnoch, 2019-2022
-
+import datetime
 import math
 import os
 import shutil
@@ -57,6 +57,13 @@ def pad_zeroes(n: int, length: int = 2):
     while len(n_str) < length:
         n_str = "0" + n_str
     return n_str
+
+
+def check_time(time, fmt: str = None):
+    if isinstance(time, datetime.date):
+        time = str(time)
+    time = Time(time, format=fmt)
+    return time
 
 
 def get_git_hash(directory: str, short: bool = False):
@@ -854,6 +861,7 @@ def match_cat(x_match, y_match, x_cat, y_cat, tolerance=np.inf, world=False, ret
     """
     Matches a set of objects against a catalogue using their positions.
     Provides a list of matching ids
+
     :param x_match: Array of x-coordinates to find in the catalogue. Can be pixel coordinates or RA/DEC.
     :param y_match: Array of y-coordinates to find in the catalogue. Can be pixel coordinates or RA/DEC.
     :param x_cat: Array of catalogue x-coordinates. Can be pixel coordinates or RA/DEC.
@@ -1007,11 +1015,12 @@ def uncertainty_string(
         nan_string: str = "--",
 ):
     limit_vals = (limit_val, -99, -999, -999.)
+    value = float(dequantify(value, unit))
     if value in limit_vals or np.ma.is_masked(value):
         return nan_string, value, uncertainty
     if np.ma.is_masked(uncertainty):
         uncertainty = 0.
-    value = float(dequantify(value, unit))
+
     uncertainty = float(dequantify(uncertainty, unit))
     if limit_type == "upper":
         limit_char = "<"

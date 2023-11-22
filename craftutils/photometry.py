@@ -1,4 +1,4 @@
-# Code by Lachlan Marnoch, 2019-2021
+# Code by Lachlan Marnoch, 2019-2023
 import copy
 import os
 import math
@@ -171,21 +171,31 @@ def image_psf_diagnostics(
         fitter = fitting.LevMarLSQFitter()
         try:
             model = fitter(model_init, x, y, data)
-        except fitting.NonFiniteValueError:
-            continue
-        fwhm = (model.fwhm * units.pixel).to(units.arcsec, scale)
-        star["MOFFAT_FWHM_FITTED"] = fwhm
-        star["MOFFAT_GAMMA_FITTED"] = model.gamma.value
-        star["MOFFAT_ALPHA_FITTED"] = model.alpha.value
+            # print("fit_info:", fitter.fit_info)
+            # If astropy thinks that the fit is bad, who are we to argue?
+            if "Number of calls to function has reached maxfev = 100" in fitter.fit_info['message']:
+                star["MOFFAT_FWHM_FITTED"] = np.nan
+                star["MOFFAT_GAMMA_FITTED"] = np.nan
+                star["MOFFAT_ALPHA_FITTED"] = np.nan
+            else:
+                fwhm = (model.fwhm * units.pixel).to(units.arcsec, scale)
+                star["MOFFAT_FWHM_FITTED"] = fwhm
+                star["MOFFAT_GAMMA_FITTED"] = model.gamma.value
+                star["MOFFAT_ALPHA_FITTED"] = model.alpha.value
 
-        if debug_plots and output is not None:
-            fig = plt.figure()
-            ax_data_moffat = fig.add_subplot(2, 3, 1)
-            ax_data_moffat.imshow(data)
-            ax_model_moffat = fig.add_subplot(2, 3, 2)
-            ax_model_moffat.imshow(model(x, y))
-            ax_residuals_moffat = fig.add_subplot(2, 3, 3)
-            ax_residuals_moffat.imshow(data - model(x, y))
+                if debug_plots and output is not None:
+                    fig = plt.figure()
+                    ax_data_moffat = fig.add_subplot(2, 3, 1)
+                    ax_data_moffat.imshow(data)
+                    ax_model_moffat = fig.add_subplot(2, 3, 2)
+                    ax_model_moffat.imshow(model(x, y))
+                    ax_residuals_moffat = fig.add_subplot(2, 3, 3)
+                    ax_residuals_moffat.imshow(data - model(x, y))
+
+        except fitting.NonFiniteValueError:
+            star["MOFFAT_FWHM_FITTED"] = np.nan
+            star["MOFFAT_GAMMA_FITTED"] = np.nan
+            star["MOFFAT_ALPHA_FITTED"] = np.nan
 
         # Then a good-old-fashioned Gaussian, with the x and y axes tied together.
         model_init = models.Gaussian2D(x_mean=frame, y_mean=frame)

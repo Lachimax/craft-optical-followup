@@ -296,7 +296,7 @@ def from_path(path: str, cls: type = None, **kwargs):
 
 # @u.export
 def expunge():
-    image_list = active_images.keys()
+    image_list = list(active_images.keys())
     for img_path in image_list:
         del active_images[img_path]
 
@@ -443,15 +443,20 @@ class Image:
         )
         return new_image
 
-    def copy(self, destination: str):
+    def copy(self, destination: str, suffix: str = ""):
         """
         A note to future me: do copy, THEN make changes, or be prepared to suffer the consequences.
+
         :param destination:
         :return:
         """
         u.debug_print(1, "Copying", self.path, "to", destination)
         if os.path.isdir(destination):
-            destination = os.path.join(destination, self.filename)
+            filename, ext = os.path.splitext(self.filename)
+            if not suffix.startswith("_"):
+                suffix = "_" + suffix
+            filename = filename + suffix + ext
+            destination = os.path.join(destination, filename)
         u.mkdir_check_nested(destination)
         shutil.copy(self.path, destination)
         new_image = self.new_image(path=destination)
@@ -712,7 +717,7 @@ class Image:
         for i in range(len(self.headers)):
             if i >= len(self.hdu_list):
                 self.hdu_list.append(fits.ImageHDU())
-            if len(self.data) > i and self.data[i]:
+            if len(self.data) > i and self.data[i] is not None:
                 unit = self.data[i].unit
                 self.hdu_list[i].data = u.dequantify(self.data[i])
                 self.set_header_item(
@@ -784,16 +789,16 @@ class Image:
         return img
 
     @classmethod
-    def select_child_class(cls, instrument: str, **kwargs):
-        from .__init__ import Spectrum
-        instrument = instrument.lower()
+    def select_child_class(cls, instrument_name: str, **kwargs):
+        instrument_name = instrument_name.lower()
         if 'mode' in kwargs:
             mode = kwargs['mode']
             if mode == 'imaging':
                 from .imaging import ImagingImage
-                return ImagingImage.select_child_class(instrument_name=instrument, **kwargs)
+                return ImagingImage.select_child_class(instrument_name=instrument_name, **kwargs)
             elif mode == 'spectroscopy':
-                return Spectrum.select_child_class(instrument_name=instrument, **kwargs)
+                from .__init__ import Spectrum
+                return Spectrum.select_child_class(instrument_name=instrument_name, **kwargs)
             else:
                 raise ValueError(f"Unrecognised mode {mode}")
         else:

@@ -56,22 +56,6 @@ def main(
 
     directory = ep.load_epoch_directory()
 
-    if epoch_name is None and instrument is not None:
-        print(f"Looking for epochs with instrument {instrument}")
-        epochs = []
-        for epoch_name in directory:
-            epoch_dict = directory[epoch_name]
-            if epoch_dict["instrument"] == instrument:
-                if field_name is not None:
-                    if field_name == epoch_dict["field_name"]:
-                        epochs.append(epoch_name)
-                else:
-                    epochs.append(epoch_name)
-        i, epoch_name = u.select_option(
-            f"The following epochs used instrument {instrument}. Which one would you like to use?",
-            options=epochs
-        )
-
     if epoch_name is not None:
         print(f"Looking for {epoch_name} in directory...")
         if epoch_name in directory:
@@ -150,46 +134,26 @@ def main(
         )
 
     mode = mode.lower()
-    epoch = None
 
-    if mode == "exit":
+    if mode == "objects":
+        field.objects_pipeline()
         exit()
-
-    elif mode == "spectroscopy":
+    else:
         if epoch_name is None:
-            # Build a list of imaging epochs from that field.
-            field.gather_epochs_spectroscopy()
+            # Build a list of relevant epochs from that field.
+            if mode == "imaging":
+                field.gather_epochs_imaging(instrument=instrument)
+            elif mode == "spectroscopy":
+                field.gather_epochs_spectroscopy(instrument=instrument)
+            else:
+                raise ValueError(f"mode must be objects, imaging or spectroscopy; received {mode}.")
             # Let the user select an epoch.
-            epoch = field.select_epoch_spectroscopy()
-        else:
-            if instrument is None:
-                instrument = fld.select_instrument(mode="spectroscopy")
-            epoch = ep.SpectroscopyEpoch.from_params(epoch_name, instrument=instrument, field=field)
-
-    elif mode == "imaging":
-        if epoch_name is None:
-            # Build a list of imaging epochs from that field.
-            field.gather_epochs_imaging()
-            # Let the user select an epoch.
-            epoch = field.select_epoch_imaging()
+            epoch = field.select_epoch(instrument=instrument, mode=mode)
         else:
             if instrument is None:
                 instrument = fld.select_instrument(mode="imaging")
             epoch = ep.ImagingEpoch.from_params(epoch_name, instrument=instrument, field=field)
             epoch.field = field
-
-    elif mode == "objects":
-
-        if u.select_yn_exit("Update photometry from all epochs?"):
-            epochs = field.gather_epochs_imaging()
-            for epoch_name in epochs:
-                epoch = ep.epoch_from_directory(epoch_name)
-                epoch.do = [-1]
-                # Run only the last stage of each epoch pipeline
-                epoch.pipeline()
-        if u.select_yn_exit("Refine photometry?"):
-            field.object_properties()
-        exit()
 
     u.debug_print(2, "pipeline.py: type(epoch) ==", type(epoch))
     epoch.do = do
