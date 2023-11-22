@@ -422,8 +422,11 @@ def print_eso_calselector_info(description: str, mode_requested: str):
 
 
 def save_eso_raw_data_and_calibs(
-        output: str, program_id: str, date_obs: Union[str, Time],
-        instrument: str, mode: str,
+        output: str,
+        program_id: str,
+        date_obs: Union[str, Time],
+        instrument: str,
+        mode: str,
         obj: str = None,
         coord_tol: units.Quantity = 1.0 * units.arcmin
 ):
@@ -432,15 +435,33 @@ def save_eso_raw_data_and_calibs(
     login_eso()
     print(f"Querying the ESO TAP service at {eso_tap_url}")
     query = query_eso_raw(
-        program_id=program_id, date_obs=date_obs, obj=obj, instrument=instrument, mode=mode, coord_tol=coord_tol
+        program_id=program_id,
+        date_obs=date_obs, obj=obj,
+        instrument=instrument,
+        mode=mode,
+        coord_tol=coord_tol
     )
     raw_frames = get_eso_raw_frame_list(query=query)
+    print("Found science frames:")
+    for frame in raw_frames["url"]:
+        print("\t", frame)
     calib_urls = get_eso_calib_associations_all(raw_frames=raw_frames)
+    print("Found calibrations frames:")
+    for frame in calib_urls:
+        print("\t", frame)
     urls = list(raw_frames['url']) + calib_urls
+    urls.sort(reverse=True)
+    print("All frames:")
+    for frame in urls:
+        print("\t", frame)
+    for frame in calib_urls:
+        print("\t", frame)
     if not urls:
         print("No data was found in the raw ESO archive for the given parameters.")
     for url in urls:
-        save_eso_asset(file_url=url, output=output)
+        response = save_eso_asset(file_url=url, output=output)
+        if not response:
+            print(f"Could not retrieve following file; do you have permission, and are you logged in?", "\n", url)
     return urls
 
 
