@@ -338,6 +338,8 @@ class Epoch:
 
         self.frames_reduced = []
 
+        self.fringe_maps = {}
+
         self.coadded = {}
 
         u.debug_print(2, f"Epoch.__init__(): kwargs ==", kwargs)
@@ -691,8 +693,12 @@ class Epoch:
     def sort_by_chip(cls, images: list):
         chips = {}
 
+        images.sort(key=lambda f: f.name)
+
         for img in images:
             chip_this = img.extract_chip_number()
+            img.extract_n_pix()
+            print(chip_this, img.name, img.n_x, img.n_y)
             if chip_this is None:
                 print(f"The chip number for {img.name} could not be determined.")
             else:
@@ -989,6 +995,12 @@ class ImagingEpoch(Epoch):
                     "alternate_dir": None
                 }
             },
+            "defringe": {
+                "method": cls.proc_defringe,
+                "message": "Defringe frames?",
+                "default": False,
+                "keywords": {}
+            },
             "register_frames": {
                 "method": cls.proc_register,
                 "message": "Register frames using astroalign?",
@@ -1106,6 +1118,61 @@ class ImagingEpoch(Epoch):
 
     def proc_download(self, output_dir: str, **kwargs):
         pass
+
+    def proc_defringe(
+            self,
+            output_dir: str,
+            **kwargs
+    ):
+        for fil in self.filters:
+            self.fringe_map(
+                fil=fil,
+                output_dir=output_dir,
+                **kwargs
+            )
+
+    def fringe_map(
+            self,
+            fil: str,
+            output_dir: str,
+            frame_type: str = "frames_normalised"
+    ):
+        self.check_filter(fil)
+        frames_reduced = self._get_frames(frame_type=frame_type)[fil]
+        frames_
+        frames_chip = self.sort_by_chip(frames)
+
+        for chip, frames in frames_chip.items():
+            frame_paths = list(map(lambda f: f.path, frames))
+            self.fringe_maps[fil][chip] = {}
+            path_mean = os.path.join(
+                    output_dir,
+                    f"fringemap_{self.name}_{fil}_chip-{chip}_mean.fits"
+                )
+            combined_mean = ccdproc.combine(
+                img_list=frame_paths,
+                method="average",
+                sigma_clip=False,
+                output_file=path_mean
+            )
+            self.fringe_maps[fil][chip]["mean"] = path_mean
+
+            path_median = os.path.join(
+                    output_dir,
+                    f"fringemap_{self.name}_{fil}_chip-{chip}_median.fits"
+                )
+            combined_median = ccdproc.combine(
+                img_list=frame_paths,
+                method="median",
+                sigma_clip=False,
+                output_file=path_median
+            )
+            self.fringe_maps[fil][chip]["median"] = path_median
+
+        return self.fringe_maps
+
+
+
 
     def proc_subtract_background_frames(self, output_dir: str, **kwargs):
         self.frames_subtracted = {}
@@ -1628,11 +1695,15 @@ class ImagingEpoch(Epoch):
                 coadded_median.set_header_item("M_EPOCH", False, write=True)
             ccds = []
             # Here we gather the projected images in preparation for custom reprojection / coaddition
-            for proj_img_path in list(map(
-                    lambda m: os.path.join(corr_dir, m),
-                    filter(
-                        lambda f: f.endswith(".fits") and not f.endswith("area.fits"),
-                        os.listdir(corr_dir)))):
+            for proj_img_path in list(
+                    map(
+                        lambda m: os.path.join(corr_dir, m),
+                        filter(
+                            lambda f: f.endswith(".fits") and not f.endswith("area.fits"),
+                            os.listdir(corr_dir)
+                        )
+                    )
+            ):
                 proj_img = image.FORS2Image(proj_img_path)
                 reproj_img = proj_img.reproject(coadded_median, include_footprint=True)
                 reproj_img_ccd = reproj_img.to_ccddata(unit="electron / second")
@@ -2582,9 +2653,11 @@ class ImagingEpoch(Epoch):
             deepest = None
 
         output_dict.update({
-            "filters": self.filters,
-            "deepest": deepest,
-            "deepest_filter": self.deepest_filter,
+            "airmass_mean": self.airmass_mean,
+            "airmass_err": self.airmass_err,
+            "astrometry_indices": self.astrometry_indices,
+            "astrometry_successful": self.astrometry_successful,
+            "astrometry_stats": self.astrometry_stats,
             "coadded": _output_img_dict_single(self.coadded),
             "coadded_final": self.coadded_final,
             "coadded_trimmed": _output_img_dict_single(self.coadded_trimmed),
@@ -2593,7 +2666,11 @@ class ImagingEpoch(Epoch):
             "coadded_subtracted": _output_img_dict_single(self.coadded_subtracted),
             "coadded_subtracted_trimmed": _output_img_dict_single(self.coadded_subtracted_trimmed),
             "coadded_subtracted_patch": _output_img_dict_single(self.coadded_subtracted_patch),
-            "std_pointings": self.std_pointings,
+            "deepest": deepest,
+            "deepest_filter": self.deepest_filter,
+            "exp_time_mean": self.exp_time_mean,
+            "exp_time_err": self.exp_time_err,
+            "filters": self.filters,
             "frames_final": self.frames_final,
             "frames_raw": _output_img_list(self.frames_raw),
             "frames_reduced": _output_img_dict_list(self.frames_reduced),
@@ -2602,14 +2679,9 @@ class ImagingEpoch(Epoch):
             "frames_registered": _output_img_dict_list(self.frames_registered),
             "frames_astrometry": _output_img_dict_list(self.frames_astrometry),
             "frames_diagnosed": _output_img_dict_list(self.frames_diagnosed),
-            "exp_time_mean": self.exp_time_mean,
-            "exp_time_err": self.exp_time_err,
-            "airmass_mean": self.airmass_mean,
-            "airmass_err": self.airmass_err,
-            "astrometry_indices": self.astrometry_indices,
-            "astrometry_successful": self.astrometry_successful,
-            "astrometry_stats": self.astrometry_stats,
-            "psf_stats": self.psf_stats
+            "fringe_maps": self.fringe_maps,
+            "psf_stats": self.psf_stats,
+            "std_pointings": self.std_pointings,
         })
         return output_dict
 
@@ -2946,6 +3018,8 @@ class ImagingEpoch(Epoch):
                 self.astrometry_stats[fil] = {}
             if fil not in self.frame_stats:
                 self.frame_stats[fil] = {}
+            if fil not in self.fringe_maps:
+                self.fringe_maps[fil] = {}
             return True
         else:
             return False
@@ -5073,6 +5147,7 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
             "sort_reduced": eso_stages["sort_reduced"],
             "trim_reduced": eso_stages["trim_reduced"],
             "convert_to_cs": eso_stages["convert_to_cs"],
+            "defringe": ie_stages["defringe"],
             "register_frames": ie_stages["register_frames"],
             "correct_astrometry_frames": ie_stages["correct_astrometry_frames"],
             "frame_diagnostics": ie_stages["frame_diagnostics"],
@@ -5087,7 +5162,8 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
             # "get_photometry_all": ie_stages["get_photometry_all"]
         }
 
-        stages["photometric_calibration"]["skip_retrievable"] = True
+        stages["defringe"]["default"] = True
+        stages["photometric_calibration"]["keywords"]["skip_retrievable"] = True
 
         u.debug_print(2, f"FORS2ImagingEpoch.stages(): stages ==", stages)
         return stages
