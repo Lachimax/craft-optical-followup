@@ -423,10 +423,11 @@ def print_eso_calselector_info(description: str, mode_requested: str):
 
 def save_eso_raw_data_and_calibs(
         output: str,
-        program_id: str,
         date_obs: Union[str, Time],
         instrument: str,
         mode: str,
+        fil: str = None,
+        program_id: str = None,
         obj: str = None,
         coord_tol: units.Quantity = 1.0 * units.arcmin,
         data_type: str = "science"
@@ -448,12 +449,14 @@ def save_eso_raw_data_and_calibs(
 
     query = query_eso_raw(
         program_id=program_id,
-        date_obs=date_obs, obj=obj,
+        date_obs=date_obs,
+        obj=obj,
         instrument=instrument,
         mode=mode,
         coord_tol=coord_tol,
         dp_cat=dp_cat,
-        dp_type=dp_type
+        dp_type=dp_type,
+        fil=fil
     )
     raw_frames = get_eso_raw_frame_list(query=query)
     print("Found science frames:")
