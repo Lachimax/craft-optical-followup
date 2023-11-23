@@ -338,6 +338,8 @@ class Epoch:
 
         self.frames_reduced = []
 
+        # Master calib files
+        self.master_biases = {}
         self.fringe_maps = {}
 
         self.coadded = {}
@@ -573,6 +575,11 @@ class Epoch:
                 self.log = log.Log(outputs["log"])
             if "stage_params" in outputs and isinstance(outputs["stage_params"], dict):
                 self.stage_params = outputs["stage_params"]
+            if "frames_bias" in outputs:
+                for frame in set(outputs["frames_bias"]):
+                    if os.path.isfile(frame):
+                        self.add_frame_raw(raw_frame=frame)
+
         return outputs
 
     def _output_dict(self):
@@ -585,7 +592,9 @@ class Epoch:
             "frames_flat": _output_img_dict_list(self.frames_flat),
             "frames_std": _output_img_dict_list(self.frames_standard),
             "frames_bias": _output_img_list(self.frames_bias),
+            "fringe_maps": self.fringe_maps,
             "log": self.log.to_dict(),
+            "master_biases": self.master_biases,
             "paths": self.paths,
             "stages": self.stages_complete,
             "stage_params": self.stage_params
@@ -742,6 +751,7 @@ class Epoch:
 
     def sort_frame(self, frame: image.Image, sort_key: str = None):
         frame.extract_frame_type()
+
         u.debug_print(
             2,
             f"sort_frame(); Adding frame {frame.name}, type {frame.frame_type}, to {self}, type {type(self)}")
@@ -1131,6 +1141,13 @@ class ImagingEpoch(Epoch):
                 **kwargs
             )
 
+    def generate_master_biases(self, output_dir: str = None):
+        """
+        This does nothing, but will eventually do what the function name says.
+
+        :return:
+        """
+
     def fringe_map(
             self,
             fil: str,
@@ -1139,16 +1156,19 @@ class ImagingEpoch(Epoch):
     ):
         self.check_filter(fil)
         frames_reduced = self._get_frames(frame_type=frame_type)[fil]
-        frames_
-        frames_chip = self.sort_by_chip(frames)
+        frames_chip = self.sort_by_chip(frames_reduced)
+
+        self.generate_master_biases()
+
+        # self.retrieve_standards(output_dir=os.path.join(output_dir, "standards"), fil=fil)
 
         for chip, frames in frames_chip.items():
             frame_paths = list(map(lambda f: f.path, frames))
             self.fringe_maps[fil][chip] = {}
             path_mean = os.path.join(
-                    output_dir,
-                    f"fringemap_{self.name}_{fil}_chip-{chip}_mean.fits"
-                )
+                output_dir,
+                f"fringemap_{self.name}_{fil}_chip-{chip}_mean.fits"
+            )
             combined_mean = ccdproc.combine(
                 img_list=frame_paths,
                 method="average",
@@ -1158,9 +1178,9 @@ class ImagingEpoch(Epoch):
             self.fringe_maps[fil][chip]["mean"] = path_mean
 
             path_median = os.path.join(
-                    output_dir,
-                    f"fringemap_{self.name}_{fil}_chip-{chip}_median.fits"
-                )
+                output_dir,
+                f"fringemap_{self.name}_{fil}_chip-{chip}_median.fits"
+            )
             combined_median = ccdproc.combine(
                 img_list=frame_paths,
                 method="median",
@@ -1171,8 +1191,25 @@ class ImagingEpoch(Epoch):
 
         return self.fringe_maps
 
-
-
+    def retrieve_standards(
+            self,
+            output_dir: str,
+            fil: str
+    ):
+        u.mkdir_check_nested(output_dir, remove_last=False)
+        instrument = self.instrument_name.split('-')[-1]
+        mode = "imaging"
+        r = retrieve.save_eso_raw_data_and_calibs(
+            output=output_dir,
+            date_obs=self.date,
+            instrument=instrument,
+            mode=mode,
+            fil=fil,
+            data_type="standard"
+        )
+        if r:
+            os.system(f"uncompress {output_dir}/*.Z -f")
+        return r
 
     def proc_subtract_background_frames(self, output_dir: str, **kwargs):
         self.frames_subtracted = {}
@@ -2679,7 +2716,6 @@ class ImagingEpoch(Epoch):
             "frames_registered": _output_img_dict_list(self.frames_registered),
             "frames_astrometry": _output_img_dict_list(self.frames_astrometry),
             "frames_diagnosed": _output_img_dict_list(self.frames_diagnosed),
-            "fringe_maps": self.fringe_maps,
             "psf_stats": self.psf_stats,
             "std_pointings": self.std_pointings,
         })
@@ -2721,7 +2757,7 @@ class ImagingEpoch(Epoch):
             if "frames_raw" in outputs:
                 for frame in set(outputs["frames_raw"]):
                     if os.path.isfile(frame):
-                        self.add_frame_raw(frame=frame)
+                        self.add_frame_raw(raw_frame=frame)
             if "frames_reduced" in outputs:
                 for fil in outputs["frames_reduced"]:
                     if outputs["frames_reduced"][fil] is not None:
@@ -2913,15 +2949,15 @@ class ImagingEpoch(Epoch):
             frames_dict[fil].append(frame)
         return frame
 
-    def add_frame_raw(self, frame: Union[image.ImagingImage, str]):
-        frame, fil = self._check_frame(frame=frame, frame_type="raw")
+    def add_frame_raw(self, raw_frame: Union[image.ImagingImage, str]):
+        raw_frame, fil = self._check_frame(frame=raw_frame, frame_type="raw")
         self.check_filter(fil)
-        if frame is None:
+        if raw_frame is None:
             return None
-        if frame not in self.frames_raw:
-            self.frames_raw.append(frame)
-        self.sort_frame(frame, sort_key=fil)
-        return frame
+        if raw_frame not in self.frames_raw:
+            self.frames_raw.append(raw_frame)
+        self.sort_frame(raw_frame, sort_key=fil)
+        return raw_frame
 
     def add_frame_reduced(self, frame: Union[str, image.ImagingImage]):
         return self._add_frame(frame=frame, frames_dict=self.frames_reduced, frame_type="reduced")
@@ -4370,7 +4406,7 @@ class ESOImagingEpoch(ImagingEpoch):
                 not_science.append(img)
 
         for img in not_science:
-            if img.filter_name in self.filters:
+            if img.filter_name in self.filters or img.frame_type == "bias":
                 self.add_frame_raw(img)
 
         u.debug_print(2, f"ESOImagingEpoch._initial_setup(): {self.frames_science=}")
@@ -5571,6 +5607,35 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
 
         return results_tbl[i], results_tbl
 
+    def generate_master_biases(self, output_dir: str = None):
+        if output_dir is None:
+            output_dir = self.processed_calib_dir()
+        from craftutils.wrap import esorex
+        # Split up bias images by chip
+        print("Bias frames:")
+        for frame in self.frames_bias:
+            print(f"\t{frame.name}")
+        bias_sets = self.sort_by_chip(self.frames_bias)
+        self.master_biases = {}
+        for chip, bias_set in bias_sets.items():
+            # For each chip, generate a master bias image
+            try:
+                master_bias = esorex.fors_bias(
+                    bias_frames=list(map(lambda b: b.path, bias_set)),
+                    output_dir=output_dir,
+                    output_filename=f"master_bias_{chip}.fits",
+                    sof_name=f"bias_{chip}.sof"
+                )
+                self.master_biases[chip] = master_bias
+            except SystemError:
+                continue
+        return self.master_biases
+
+    def processed_calib_dir(self):
+        path = os.path.join(self.data_path, "processed_calibs")
+        u.mkdir_check_nested(path, False)
+        return path
+
     def photometric_calibration_from_standards(
             self,
             image_dict: dict,
@@ -5591,10 +5656,10 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
         # observations
         # image_dict = self._get_images(image_type)
         # Split up bias images by chip
-        bias_sets = self.sort_by_chip(self.frames_bias)
 
-        if 1 in bias_sets and 2 in bias_sets:
-            bias_sets = (bias_sets[1], bias_sets[2])
+        master_biases = self.generate_master_biases()
+
+        if 1 in master_biases and 2 in master_biases:
             flat_sets = {}
             std_sets = {}
             # Split up the flats and standards by filter and chip
@@ -5606,19 +5671,7 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
                 if std_chips:
                     std_sets[fil] = std_chips[1], std_chips[2]
 
-            chips = ("up", "down")
-            for i, chip in enumerate(chips):
-                bias_set = bias_sets[i]
-                # For each chip, generate a master bias image
-                try:
-                    master_bias = esorex.fors_bias(
-                        bias_frames=list(map(lambda b: b.path, bias_set)),
-                        output_dir=output_path,
-                        output_filename=f"master_bias_{chip}.fits",
-                        sof_name=f"bias_{chip}.sof"
-                    )
-                except SystemError:
-                    continue
+            for chip, master_bias in enumerate(master_biases):
 
                 for fil in image_dict:
                     # Generate master flat per-filter, per-chip
@@ -5636,7 +5689,7 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
                             master_bias=master_bias,
                             output_dir=fil_dir,
                             output_filename=f"master_sky_flat_img_{chip}.fits",
-                            sof_name=f"flat_{chip}"
+                            sof_name=f"flat_chip_{chip}"
                         )
                     except SystemError:
                         continue
