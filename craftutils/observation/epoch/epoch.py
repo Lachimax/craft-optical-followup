@@ -5818,7 +5818,7 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
             for fil in aligned_phots[chip]:
                 fil_dir = os.path.join(chip_dir, fil)
                 u.mkdir_check(fil_dir)
-                aligned_phots_this = aligned_phots[chip][fil]
+                aligned_phots_this = list(set(aligned_phots[chip][fil]))
                 if len(aligned_phots_this) > 1:
                     try:
                         master_sky_flat_img = self.get_master_flat(chip=chip, fil=fil)
