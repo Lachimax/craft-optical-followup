@@ -197,13 +197,13 @@ class PositionUncertainty:
             b_sys = 0.0 * units.arcsec
             theta = 0.0 * units.deg
 
-        if ra_err_stat is None and "alpha_err_stat" in kwargs:
+        if ra_err_stat is None and "alpha_err_stat" in kwargs and kwargs["alpha_err_stat"] is not None:
             ra_err_stat = (kwargs["alpha_err_stat"] / np.cos(position.dec)).to("arcsec")
-        if ra_err_sys is None and "alpha_err_sys" in kwargs:
+        if ra_err_sys is None and "alpha_err_sys" in kwargs and kwargs["alpha_err_sys"] is not None:
             ra_err_sys = (kwargs["alpha_err_sys"] / np.cos(position.dec)).to("arcsec")
-        if dec_err_stat is None and "delta_err_stat" in kwargs:
+        if dec_err_stat is None and "delta_err_stat" in kwargs and kwargs["delta_err_stat"] is not None:
             dec_err_stat = kwargs["delta_err_stat"]
-        if dec_err_sys is None and "delta_err_sys" in kwargs:
+        if dec_err_sys is None and "delta_err_sys" in kwargs and kwargs["delta_err_sys"] is not None:
             dec_err_sys = kwargs["delta_err_sys"]
 
         # Check whether we're specifying uncertainty using equatorial coordinates or ellipse parameters.

@@ -2822,7 +2822,16 @@ class ImagingEpoch(Epoch):
         if not isinstance(self.field, fld.Field):
             raise ValueError("field has not been set for this observation.")
 
+        do_indices = False
         if force or not self.astrometry_indices:
+            do_indices = True
+        else:
+            for path in self.astrometry_indices:
+                if not os.path.isdir(path):
+                    do_indices = True
+                    break
+
+        if do_indices:
             epoch_index_path = os.path.join(self.data_path, "astrometry_indices")
             self.field.retrieve_catalogue(cat_name=cat_name)
 
@@ -4302,6 +4311,7 @@ class ESOImagingEpoch(ImagingEpoch):
     def retrieve(self, output_dir: str):
         """
         Check ESO archive for the epoch raw frames, and download those frames and associated files.
+
         :return:
         """
         r = []

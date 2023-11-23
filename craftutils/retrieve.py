@@ -422,25 +422,60 @@ def print_eso_calselector_info(description: str, mode_requested: str):
 
 
 def save_eso_raw_data_and_calibs(
-        output: str, program_id: str, date_obs: Union[str, Time],
-        instrument: str, mode: str,
+        output: str,
+        program_id: str,
+        date_obs: Union[str, Time],
+        instrument: str,
+        mode: str,
         obj: str = None,
-        coord_tol: units.Quantity = 1.0 * units.arcmin
+        coord_tol: units.Quantity = 1.0 * units.arcmin,
+        data_type: str = "science"
 ):
     u.mkdir_check(output)
     instrument = instrument.lower()
     login_eso()
     print(f"Querying the ESO TAP service at {eso_tap_url}")
+    data_type = data_type.lower()
+    dp_cat = {
+        "science": "SCIENCE",
+        "standard": "CALIB"
+    }[data_type]
+
+    dp_type = {
+        "science": None,
+        "standard": "STD"
+    }[data_type]
+
     query = query_eso_raw(
-        program_id=program_id, date_obs=date_obs, obj=obj, instrument=instrument, mode=mode, coord_tol=coord_tol
+        program_id=program_id,
+        date_obs=date_obs, obj=obj,
+        instrument=instrument,
+        mode=mode,
+        coord_tol=coord_tol,
+        dp_cat=dp_cat,
+        dp_type=dp_type
     )
     raw_frames = get_eso_raw_frame_list(query=query)
+    print("Found science frames:")
+    for frame in raw_frames["url"]:
+        print("\t", frame)
     calib_urls = get_eso_calib_associations_all(raw_frames=raw_frames)
+    print("Found calibrations frames:")
+    for frame in calib_urls:
+        print("\t", frame)
     urls = list(raw_frames['url']) + calib_urls
+    urls.sort(reverse=True)
+    print("All frames:")
+    for frame in urls:
+        print("\t", frame)
+    for frame in calib_urls:
+        print("\t", frame)
     if not urls:
         print("No data was found in the raw ESO archive for the given parameters.")
     for url in urls:
-        save_eso_asset(file_url=url, output=output)
+        response = save_eso_asset(file_url=url, output=output)
+        if not response:
+            print(f"Could not retrieve following file; do you have permission, and are you logged in?", "\n", url)
     return urls
 
 
@@ -481,7 +516,11 @@ def query_eso_raw(
         obj: Union[str, SkyCoord] = None,
         coord_tol: units.Quantity = 1.0 * units.arcmin,
         instrument: str = "fors2",
-        mode: str = "imaging"):
+        mode: str = "imaging",
+        dp_cat: str = "science",
+        dp_type: str = None,
+        fil: str = None
+):
     instrument = instrument.lower()
     mode = mode.lower()
     if mode not in ["imaging", "spectroscopy"]:
@@ -502,7 +541,7 @@ def query_eso_raw(
         date_obs = Time(date_obs)
     query = f"""SELECT {select}
 FROM dbo.raw
-WHERE dp_cat='SCIENCE'
+WHERE dp_cat='{dp_cat.upper()}'
 AND instrument='{instrument}'
 AND {mode_str}
 """
@@ -511,6 +550,10 @@ AND {mode_str}
     if date_obs is not None:
         query += f"AND date_obs>='{(date_obs - 0.5).to_datetime().date()}'\n" \
                  f"AND date_obs<='{(date_obs + 1).to_datetime().date()}'\n"
+    if dp_type is not None:
+        query += f"AND dp_type='{dp_type.upper()}'\n"
+    if fil is not None:
+        query += f"AND filter_path='{fil.upper()}'"
     if obj is not None:
         if isinstance(obj, str):
             query += f"AND target='{obj}'\n"
@@ -972,7 +1015,8 @@ def retrieve_delve_photometry(
 ):
     if data_release is None:
         data_release = default_data_release["delve"]
-    print(f"\nQuerying DELVE DR{data_release} archive for field centring on RA={ra}, DEC={dec} with radius {radius} deg")
+    print(
+        f"\nQuerying DELVE DR{data_release} archive for field centring on RA={ra}, DEC={dec} with radius {radius} deg")
     radius = u.dequantify(radius, unit=units.deg)
     url = f"http://datalab.noirlab.edu/tap/sync?REQUEST=doQuery&lang=ADQL&FORMAT=csv&QUERY=SELECT%20q3c_dist" \
           f"%28ra%2Cdec%2C%20247.725%2C-0.972%29%2A3600%20AS%20dist%2C%20%2A%20FROM%20delve_dr{data_release}.objects%20WHERE%20%27t" \
@@ -1226,7 +1270,7 @@ def retrieve_des_photometry(
             f"DEC BETWEEN {dec - radius} and {dec + radius} and " \
             f"ROWNUM < 10000 "
     print('Submitting query job...')
-    response = submit_query_job_des(query)
+    response = submit_job_des(query)
     # Store the unique job ID for the new job
     job_id = response['jobid']
     print(f'New job submitted: {job_id}')
