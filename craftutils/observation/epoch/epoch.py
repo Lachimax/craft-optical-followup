@@ -959,6 +959,7 @@ class ImagingEpoch(Epoch):
         self.airmass_mean = {}
         self.airmass_err = {}
 
+        self.frames_standard_extra = {}
         self.frames_science = {}
         self.frames_reduced = {}
         self.frames_trimmed = {}
@@ -973,6 +974,7 @@ class ImagingEpoch(Epoch):
         self.std_pointings = []
         self.std_objects = {}
         self.std_epochs = {}
+
 
         self.coadded_trimmed = {}
         self.coadded_unprojected = {}
@@ -1145,7 +1147,7 @@ class ImagingEpoch(Epoch):
             **kwargs
     ):
         for fil in self.filters:
-            self.fringe_map(
+            self.generate_fringe_map(
                 fil=fil,
                 output_dir=output_dir,
                 **kwargs
@@ -1165,20 +1167,27 @@ class ImagingEpoch(Epoch):
         :return:
         """
 
-    def fringe_map(
+    def generate_fringe_map(
             self,
             fil: str,
-            output_dir: str,
-            frame_type: str = "frames_normalised"
+            output_dir: str = None,
+            force: bool = False,
+            frames: Union[dict, list] = None
     ):
+        """
+
+        :return:
+        """
+
         self.check_filter(fil)
-        frames_reduced = self._get_frames(frame_type=frame_type)[fil]
-        frames_chip = self.sort_by_chip(frames_reduced)
+        if frames is None:
+            frames = self._get_frames(frame_type="frames_normalised")[fil]
+        elif isinstance(frames, dict):
+            frames = frames[fil]
+        frames_chip = self.sort_by_chip(frames)
 
         self.generate_master_biases()
         self.generate_master_flats()
-
-        # self.retrieve_extra_standards(output_dir=os.path.join(output_dir, "standards"), fil=fil)
 
         for chip, frames in frames_chip.items():
             frame_paths = list(map(lambda f: f.path, frames))
@@ -1190,7 +1199,7 @@ class ImagingEpoch(Epoch):
             combined_mean = ccdproc.combine(
                 img_list=frame_paths,
                 method="average",
-                sigma_clip=False,
+                sigma_clip=True,
                 output_file=path_mean
             )
             self.fringe_maps[fil][chip]["mean"] = path_mean
@@ -1202,32 +1211,14 @@ class ImagingEpoch(Epoch):
             combined_median = ccdproc.combine(
                 img_list=frame_paths,
                 method="median",
-                sigma_clip=False,
+                sigma_clip=True,
                 output_file=path_median
             )
             self.fringe_maps[fil][chip]["median"] = path_median
 
         return self.fringe_maps
 
-    def retrieve_extra_standards(
-            self,
-            output_dir: str,
-            fil: str
-    ):
-        u.mkdir_check_nested(output_dir, remove_last=False)
-        instrument = self.instrument_name.split('-')[-1]
-        mode = "imaging"
-        r = retrieve.save_eso_raw_data_and_calibs(
-            output=output_dir,
-            date_obs=self.date,
-            instrument=instrument,
-            mode=mode,
-            fil=fil,
-            data_type="standard"
-        )
-        if r:
-            os.system(f"uncompress {output_dir}/*.Z -f")
-        return r
+
 
     def proc_subtract_background_frames(self, output_dir: str, **kwargs):
         self.frames_subtracted = {}
@@ -5389,6 +5380,53 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
         # With the FORS2 substructure we want to search every subdirectory
         return False
 
+    def generate_fringe_map(
+            self,
+            fil: str,
+            output_dir: str = None,
+            force: bool = False,
+            frame_type: str = "frames_normalised"
+    ):
+
+        # self.retrieve_extra_standards(output_dir=os.path.join(output_dir, "standards"), fil=fil)
+        # std_epochs = self.build_standard_epochs(
+        #     image_dict=self.frames_standard_extra,
+        #     pointings_dict={},
+        #     epochs_dict={}
+        # )
+        return super().generate_fringe_map(
+            fil=fil,
+            output_dir=output_dir,
+            force=force,
+        )
+
+
+    def retrieve_extra_standards(
+            self,
+            output_dir: str,
+            fil: str
+    ):
+        self.frames_standard_extra[fil] = []
+        u.mkdir_check_nested(output_dir, remove_last=False)
+        instrument = self.instrument_name.split('-')[-1]
+        mode = "imaging"
+        r = retrieve.save_eso_raw_data_and_calibs(
+            output=output_dir,
+            date_obs=self.date,
+            instrument=instrument,
+            mode=mode,
+            fil=fil,
+            data_type="standard"
+        )
+        if r:
+            os.system(f"uncompress {output_dir}/*.Z -f")
+        for file in filter(lambda f: f.endswith(".fits"), os.listdir(output_dir)):
+            img = image.FORS2Image(file, frame_type="standard")
+            self.frames_standard_extra[fil].append(img)
+
+        return
+
+
     def correct_astrometry_frames(
             self,
             output_dir: str,
@@ -5730,10 +5768,16 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
     def build_standard_epochs(
             self,
             image_dict: dict = None,
+            pointings_dict: dict = None,
+            epochs_dict: dict = None,
             output_dir: str = None
     ):
         if image_dict is None:
             image_dict = self.frames_standard
+        if pointings_dict is None:
+            pointings_dict = self.std_pointings
+        if epochs_dict is None:
+            epochs_dict = self.std_epochs
 
         self.generate_master_biases()
         self.generate_master_flats()
@@ -5745,10 +5789,10 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
                 # (and StandardField in the background)
                 pointing = std.extract_pointing()
                 jname = astm.jname(pointing, 0, 0)
-                if pointing not in self.std_pointings:
-                    self.std_pointings.append(pointing)
+                if pointing not in pointings_dict:
+                    pointings_dict.append(pointing)
                     print("\tAdding pointing to std_pointings:", pointing)
-                if jname not in self.std_epochs:
+                if jname not in epochs_dict:
                     print(f"\t{jname=} not found in std_epochs; generating epoch.")
                     std_epoch = FORS2StandardEpoch(
                         centre_coords=pointing,
@@ -5757,16 +5801,16 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
                         frames_bias=self.frames_bias,
                         date=self.date
                     )
-                    self.std_epochs[jname] = std_epoch
+                    epochs_dict[jname] = std_epoch
                     std_epoch.master_flats = self.master_flats.copy()
                     std_epoch.master_biases = self.master_biases.copy()
                 else:
                     print(f"\t{jname=} found in std_epochs; retrieving.")
-                    std_epoch = self.std_epochs[jname]
+                    std_epoch = epochs_dict[jname]
                 print(f"\tAdding raw standard to std_epoch")
                 std_epoch.add_frame_raw(std)
 
-        return self.std_epochs
+        return epochs_dict
 
     def photometric_calibration_from_standards(
             self,
