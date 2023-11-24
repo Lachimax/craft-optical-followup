@@ -1273,7 +1273,7 @@ def retrieve_des_photometry(
             f"DEC BETWEEN {dec - radius} and {dec + radius} and " \
             f"ROWNUM < 10000 "
     print('Submitting query job...')
-    response = submit_job_des(query)
+    response = submit_query_job_des(query)
     # Store the unique job ID for the new job
     job_id = response['jobid']
     print(f'New job submitted: {job_id}')
