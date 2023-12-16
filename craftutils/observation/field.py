@@ -1201,6 +1201,8 @@ class FRBField(Field):
             raise TypeError("self.frb has not been set properly for this FRBField.")
         if centre is None:
             centre = self.frb.host_galaxy.position
+        if centre is None:
+            centre = self.frb.position
 
         if draw_scale_bar:
             kwargs["scale_bar_object"] = self.frb.host_galaxy

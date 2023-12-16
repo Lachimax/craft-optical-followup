@@ -975,7 +975,6 @@ class ImagingEpoch(Epoch):
         self.std_objects = {}
         self.std_epochs = {}
 
-
         self.coadded_trimmed = {}
         self.coadded_unprojected = {}
         self.coadded_astrometry = {}
@@ -1042,7 +1041,9 @@ class ImagingEpoch(Epoch):
                     "method": "individual",
                     "back_subbed": False,
                     "correct_to_epoch": True,
-                    "registration_template": None
+                    "registration_template": None,
+                    "odds_to_tune_up": None,
+                    "odds-to-solve": None
                 }
             },
             "frame_diagnostics": {
@@ -1217,8 +1218,6 @@ class ImagingEpoch(Epoch):
             self.fringe_maps[fil][chip]["median"] = path_median
 
         return self.fringe_maps
-
-
 
     def proc_subtract_background_frames(self, output_dir: str, **kwargs):
         self.frames_subtracted = {}
@@ -2290,6 +2289,8 @@ class ImagingEpoch(Epoch):
                 )
 
             for obj_name, obj in self.field.objects_dict.items():
+                if obj is None or obj.position is None:
+                    continue
                 if not obj.optical:
                     continue
                 # obj.load_output_file()
@@ -2899,7 +2900,7 @@ class ImagingEpoch(Epoch):
                 output_file_prefix=f"{cat_name}_index_{self.field.name}",
                 index_output_dir=epoch_index_path,
                 fits_cat_output=csv_path.replace(".csv", ".fits"),
-                p_lower=-1,
+                p_lower=-2,
                 p_upper=2,
                 unique_id_prefix=unique_id_prefix,
                 add_path=False
@@ -5400,7 +5401,6 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
             force=force,
         )
 
-
     def retrieve_extra_standards(
             self,
             output_dir: str,
@@ -5425,7 +5425,6 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
             self.frames_standard_extra[fil].append(img)
 
         return
-
 
     def correct_astrometry_frames(
             self,
