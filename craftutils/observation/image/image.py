@@ -327,6 +327,9 @@ class Image:
         elif path.endswith(".fits"):
             self.path = path
             self.output_file = path.replace(".fits", "_outputs.yaml")
+        elif path.endswith(".fits.fz"):
+            self.path = path
+            self.output_file = path.replace(".fits.fz", "_outputs.yaml")
         else:
             raise ValueError(f"Not a valid fits file: {path}")
 
