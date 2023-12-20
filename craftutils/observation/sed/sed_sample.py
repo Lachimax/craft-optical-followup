@@ -171,15 +171,15 @@ class SEDSample:
             plot: bool = False,
             show: bool = False,
             pzdm_column: str = "p(z|DM)_best",
-            exclude: list = ()
+            exclude: list = []
     ):
 
         if output:
             u.mkdir_check(output)
 
         if isinstance(obj, objects.FRB):
-            obj = obj.zdm_table
             exclude.append(f"{obj.name}_{self.name}")
+            obj = obj.zdm_table
         elif isinstance(obj, np.ndarray):
             if z:
                 obj = table.QTable(
