@@ -867,7 +867,7 @@ class Object:
     #     extinction.fitzpatrick99(tbl["lambda_eff"], a_v, r_v) * units.mag
     #     pass
 
-    def galactic_extinction_f99(
+    def galactic_extinction_fm07(
             self,
             lambda_eff: units.Quantity,
             r_v: float = 3.1
@@ -877,7 +877,7 @@ class Object:
         lambda_eff = np.array(u.check_iterable(lambda_eff))
         self.retrieve_extinction_table()
         a_v = (r_v * self.ebv_sandf).value
-        return extinction.fitzpatrick99(lambda_eff, a_v, r_v) * units.mag
+        return extinction.fm07(lambda_eff, a_v, unit="aa") * units.mag
 
     def estimate_galactic_extinction(
             self,
@@ -925,7 +925,7 @@ class Object:
                 print(f"No photometry found for {self.name}")
                 return
 
-        tbl["ext_gal_sandf"] = self.galactic_extinction_f99(lambda_eff=tbl["lambda_eff"], r_v=r_v)
+        tbl["ext_gal_sandf"] = self.galactic_extinction_fm07(lambda_eff=tbl["lambda_eff"], r_v=r_v)
 
         tbl["ext_gal_interp"] = np.interp(
             tbl["lambda_eff"],
@@ -934,7 +934,7 @@ class Object:
         ) * units.mag
 
         ax.plot(
-            x, self.galactic_extinction_f99(x, r_v=r_v).value,
+            x, self.galactic_extinction_fm07(x, r_v=r_v).value,
             label="S\&F + F99 extinction law",
             c="red"
         )
@@ -1961,6 +1961,8 @@ class FRB(Transient):
         Performs a customised PATH run on an image.
 
         :param img: The image on which to run PATH.
+        :param include_img_err: If set to True, the image astrometry RMS (from img.extract_astrometry_err()) will be
+            added to the transient localisation error in quadrature.
         :return:
         """
         import frb.associate.frbassociate as associate
