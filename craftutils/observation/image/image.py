@@ -321,6 +321,7 @@ class Image:
         if not ignore_missing_path and not os.path.isfile(path):
             raise FileNotFoundError(f"The image file {path} does not exist.")
         active_images[path] = self
+
         if path.endswith("_outputs.yaml"):
             self.output_file = path
             self.path = path.replace("_outputs.yaml", ".fits")
@@ -331,7 +332,15 @@ class Image:
             self.path = path
             self.output_file = path.replace(".fits.fz", "_outputs.yaml")
         else:
-            raise ValueError(f"Not a valid fits file: {path}")
+            self.path = path
+            self.output_file = path.replace(
+                os.path.splitext(path)[-1],
+                "_outputs.yaml"
+            )
+
+        # Attempt opening the fits file to test whether it's valid; let astropy handle the error.
+        test = fits.open(path, "r")
+        test.close()
 
         self.data_path, self.filename = os.path.split(self.path)
         self.name = self.get_id()
