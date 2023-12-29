@@ -339,7 +339,7 @@ class Image:
             )
 
         # Attempt opening the fits file to test whether it's valid; let astropy handle the error.
-        test = fits.open(path, "r")
+        test = fits.open(path, "readonly")
         test.close()
 
         self.data_path, self.filename = os.path.split(self.path)
