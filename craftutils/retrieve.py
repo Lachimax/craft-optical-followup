@@ -51,7 +51,6 @@ default_data_release = {
     "des": 2,
     "panstarrs1": 2,
     "panstarrs": 2,
-
 }
 
 
@@ -69,6 +68,7 @@ def cat_columns(cat, f: str = None):
     if f == "rank":
         f = {
             "delve": "r",
+            "decaps": "r",
             "des": "r",
             "sdss": "r",
             "skymapper": "r",
@@ -175,6 +175,46 @@ cat_instruments = {
 cat_systems = {
     "2mass": "vega"
 }
+
+
+def download_file(
+        file_url: str,
+        output_dir: str,
+        filename: str = None,
+        overwrite: bool = False,
+        headers: dict = None
+):
+    response = requests.get(file_url, stream=True, headers=headers)
+
+    if filename is None:
+        content_disposition = response.headers.get('Content-Disposition')
+        if content_disposition is not None:
+            value, params = cgi.parse_header(content_disposition)
+            filename = params["filename"]
+
+        if filename is None:
+            # last chance: get anything after the last '/'
+            filename = file_url[file_url.rindex('/') + 1:]
+
+        if filename is None:
+            _, filename = os.path.split(output_dir)
+
+    path = os.path.join(output_dir, filename.replace(":", "_"))
+    if os.path.exists(path) and not overwrite:
+        print(f"{path} already exists. Skipping.")
+    elif response.status_code == 200:
+        print(f"Writing asset to {path}...")
+        total_size_in_bytes = int(response.headers.get('content-length', 0))
+        block_size = 1024  # 1 Kibibyte
+        progress_bar = tqdm(total=total_size_in_bytes, unit='iB', unit_scale=True)
+        with open(path, 'wb') as f:
+            for chunk in response.iter_content(chunk_size=block_size):
+                progress_bar.update(len(chunk))
+                f.write(chunk)
+    else:
+        response = None
+
+    return response
 
 
 def svo_filter_id(facility_name: str, instrument_name: str, filter_name: str) -> str:
@@ -327,39 +367,21 @@ def save_eso_asset(
 ):
     print("Downloading asset from:")
     print(file_url)
-    headers = None
+
     token = login_eso()
     if token is not None:
         headers = {"Authorization": "Bearer " + keys["eso_auth_token"]}
-        response = requests.get(file_url, stream=True, headers=headers)
     else:
         # Trying to download anonymously
-        response = requests.get(file_url, stream=True, headers=headers)
+        headers = None
 
-    if filename is None:
-        content_disposition = response.headers.get('Content-Disposition')
-        if content_disposition is not None:
-            value, params = cgi.parse_header(content_disposition)
-            filename = params["filename"]
-
-        if filename is None:
-            # last chance: get anything after the last '/'
-            filename = file_url[file_url.rindex('/') + 1:]
-
-    path = os.path.join(output, filename.replace(":", "_"))
-    if os.path.exists(path) and not overwrite:
-        print(f"{path} already exists. Skipping.")
-    elif response.status_code == 200:
-        print(f"Writing asset to {path}...")
-        total_size_in_bytes = int(response.headers.get('content-length', 0))
-        block_size = 1024  # 1 Kibibyte
-        progress_bar = tqdm(total=total_size_in_bytes, unit='iB', unit_scale=True)
-        with open(path, 'wb') as f:
-            for chunk in response.iter_content(chunk_size=block_size):
-                progress_bar.update(len(chunk))
-                f.write(chunk)
-    else:
-        response = None
+    response = download_file(
+        file_url=file_url,
+        output_dir=output,
+        filename=filename,
+        overwrite=overwrite,
+        headers=headers
+    )
 
     return response
 
