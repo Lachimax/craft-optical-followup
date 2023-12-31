@@ -2072,7 +2072,7 @@ class ImagingEpoch(Epoch):
                 u.mkdir_check(fil_path)
                 if f"in_{cat_name}" in self.field.cats and self.field.cats[f"in_{cat_name}"]:
                     img.zeropoint(
-                        cat_path=self.field.get_path(f"cat_csv_{cat_name}"),
+                        cat=self.field.get_path(f"cat_csv_{cat_name}"),
                         output_path=os.path.join(fil_path, cat_name),
                         cat_name=cat_name,
                         dist_tol=distance_tolerance,
@@ -3430,7 +3430,7 @@ class FORS2StandardEpoch(StandardEpoch, ImagingEpoch):
                     u.mkdir_check_nested(fil_path, remove_last=False)
                     if f"in_{cat_name}" in self.field.cats and self.field.cats[f"in_{cat_name}"]:
                         zp = img.zeropoint(
-                            cat_path=self.field.get_path(f"cat_csv_{cat_name}"),
+                            cat=self.field.get_path(f"cat_csv_{cat_name}"),
                             output_path=os.path.join(fil_path, cat_name),
                             cat_name=cat_name,
                             dist_tol=distance_tolerance,
@@ -4097,7 +4097,7 @@ class SurveyImagingEpoch(ImagingEpoch):
         for fil in self.coadded:
             img = self.coadded[fil]
             zp = img.zeropoint(
-                cat_path=self.field.get_path(f"cat_csv_{self.catalogue}"),
+                cat=self.field.get_path(f"cat_csv_{self.catalogue}"),
                 output_path=os.path.join(output_path, img.name),
                 cat_name=self.catalogue,
                 dist_tol=distance_tolerance,

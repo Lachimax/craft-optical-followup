@@ -939,7 +939,7 @@ class ImagingImage(Image):
 
     def zeropoint(
             self,
-            cat_path: str,
+            cat: Union[str, table.QTable],
             output_path: str,
             cat_name: str,
             cat_zeropoint: units.Quantity = 0.0 * units.mag,
@@ -993,7 +993,7 @@ class ImagingImage(Image):
         zp_dict = ph.determine_zeropoint_sextractor(
             sextractor_cat=self.source_cat.table,
             image=self.path,
-            cat_path=cat_path,
+            cat=cat,
             cat_name=cat_name,
             output_path=output_path,
             image_name=image_name,

@@ -704,7 +704,7 @@ def distance_modulus(distance: units.Quantity):
 
 def determine_zeropoint_sextractor(
         sextractor_cat: Union[str, table.QTable],
-        cat_path: str,
+        cat: str,
         image: Union[str, fits.HDUList],
         output_path: str,
         cat_name: str = 'Catalogue',
@@ -780,7 +780,6 @@ def determine_zeropoint_sextractor(
     if isinstance(sextractor_cat, str):
         print('SExtractor catalogue path:', sextractor_cat)
     print('Image path:', path)
-    print('Catalogue path:', cat_path)
     print('Output:', output_path)
     print()
 
@@ -798,25 +797,35 @@ def determine_zeropoint_sextractor(
         tolerance = dist_tol
 
     # Import the catalogue of the sky region.
-    if cat_type != 'sextractor':
-        cat = table.QTable.read(cat_path, format='ascii.csv')
-        if cat_mag_col not in cat.colnames:
-            print(f"{cat_mag_col} not found in {cat_name}; is this band included?")
-            p.save_params(file=output_path + 'parameters.yaml', dictionary=params)
-            return None
-        cat = cat.filled(fill_value=-999.)
-        cat[cat_ra_col] *= units.deg
-        cat[cat_dec_col] *= units.deg
-        cat[cat_mag_col] *= units.mag
+
+    if isinstance(cat, str):
+        cat_path = cat
+        if cat_type != 'sextractor':
+            cat = table.QTable.read(cat, format='ascii.csv')
+            if cat_mag_col not in cat.colnames:
+                print(f"{cat_mag_col} not found in {cat}; is this band included?")
+                p.save_params(file=output_path + 'parameters.yaml', dictionary=params)
+                return None
+            cat = cat.filled(fill_value=-999.)
+        else:
+            cat = table.QTable.read(cat, format="ascii.sextractor")
+
+    elif isinstance(cat, table.QTable):
+        cat_path = None
 
     else:
-        cat = table.QTable.read(cat_path, format="ascii.sextractor")
+        cat_path = None
+        cat = table.QTable(cat)
 
     if len(cat) == 0:
         raise ValueError("The reference catalogue is empty.")
 
+    cat[cat_ra_col] = u.check_quantity(cat[cat_ra_col], units.deg)
+    cat[cat_dec_col] = u.check_quantity(cat[cat_dec_col], units.deg)
+    cat[cat_mag_col] = u.check_quantity(cat[cat_mag_col], units.mag)
+
     params['time'] = str(time.Time.now())
-    params['catalogue'] = str(cat_name)
+    params['catalogue'] = str(cat)
     params['airmass'] = 0.0
     params['exp_time'] = exp_time = u.check_quantity(exp_time, units.second)
     params['pix_tol'] = dist_tol
