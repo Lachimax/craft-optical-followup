@@ -1236,7 +1236,7 @@ class ImagingImage(Image):
         mag_no_ext_corr, mag_no_ext_corr_err = ph.magnitude_instrumental(
             flux=flux,
             flux_err=flux_err,
-            exp_time=self.extract_exposure_time(),
+            exp_time=kwargs["exp_time"],
             exp_time_err=0.0 * units.second,
             zeropoint=zp_dict['zeropoint'],
             zeropoint_err=zp_dict['zeropoint_err'],
