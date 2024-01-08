@@ -180,6 +180,8 @@ class SEDSample:
         if isinstance(obj, objects.FRB):
             exclude.append(f"{obj.name}_{self.name}")
             obj = obj.zdm_table
+            if obj is None:
+                raise ValueError(f"{obj} has no zdm_table set.")
         elif isinstance(obj, np.ndarray):
             if z:
                 obj = table.QTable(
@@ -241,9 +243,7 @@ class SEDSample:
             ax = fig.add_subplot()
 
             leg_x = 0 #1.13
-            leg_y = 1
-
-            np.max(tbl["z"])
+            leg_y = 1.1
 
             ax_pdf = ax.twinx()
             ax_pdf.set_ylabel("Host fraction", rotation=-90, labelpad=35, fontsize=axis_fontsize)
@@ -262,8 +262,11 @@ class SEDSample:
                 c="cyan"
             )
 
+            max_z = np.max(tbl["z"])
+            min_z = np.min(tbl["z"])
+
             ax.set_xlabel("$z$")
-            ax.set_xlim(0., np.max(tbl["z"]))
+            ax.set_xlim(min_z, max_z)
             fig.savefig(
                 os.path.join(output, f"probability_{objects.cosmology.name}_{band_name}_steps_only.pdf"),
                 bbox_inches="tight"
@@ -349,8 +352,6 @@ class SEDSample:
             ax_m_z = fig.add_subplot(gs[1, 0])
             fig.subplots_adjust(hspace=0.)
 
-            max_z = np.max(tbl["z"])
-
             ax_pdf = ax.twinx()
             ax_pdf.set_ylabel("Host fraction", rotation=-90, labelpad=35, fontsize=axis_fontsize)
             ax_pdf.tick_params(right=False, labelright=False)
@@ -368,7 +369,7 @@ class SEDSample:
             )
 
             ax.set_xlabel("$z$")
-            ax.set_xlim(0., max_z)
+            ax.set_xlim(min_z, max_z)
 
             ax.set_ylabel("Probability density", fontsize=axis_fontsize)
 
@@ -397,9 +398,15 @@ class SEDSample:
                 ls=":"
             )
 
+            # ax.legend(
+            #     loc=(leg_x, leg_y + 0.1),
+            #     fontsize=tick_fontsize
+            # )
+
             ax.legend(
-                loc=(leg_x, leg_y + 0.1),
-                fontsize=tick_fontsize
+                loc="lower left",
+                bbox_to_anchor=(0, leg_y),
+                fontsize=tick_fontsize,
             )
 
             legend_elements = []
@@ -451,7 +458,7 @@ class SEDSample:
                 label="Median"
             )
 
-            ax_m_z.set_xlim(0., max_z)
+            ax_m_z.set_xlim(min_z, max_z)
             ax_m_z.invert_yaxis()
             ax_m_z.set_xlabel("$z$", fontsize=axis_fontsize)
 
@@ -461,8 +468,9 @@ class SEDSample:
             ax_pdf.xaxis.set_ticks([])
             ax_m_z.tick_params(labelsize=tick_fontsize)
 
-            ax_m_z.legend(
-                loc=(0.5, leg_y * 2 + 0.1),
+            ax_pdf.legend(
+                loc="lower right",
+                bbox_to_anchor=(1, leg_y),
                 fontsize=tick_fontsize,
                 handles=legend_elements
             )
@@ -517,8 +525,14 @@ class SEDSample:
         return outputs
 
     @classmethod
-    def from_file(cls, path: str, name: str, **kwargs):
+    def from_file(cls, path: str, name: str = None, **kwargs):
         param_dict = p.load_params(path)
+        if name is None and path.endswith(".yaml"):
+            _, name = os.path.split(path)
+            name, _ = os.path.splitext(name)
+        else:
+            raise ValueError("A valid name could not be determined for the SED Sample. Try pointing directly to the .yaml file.")
+
         sample = cls(name=name)
 
         for model_dict in param_dict:
