@@ -2681,8 +2681,15 @@ class ImagingImage(Image):
             scaling_data = normalize_kwargs.pop("data")
 
         if "cmap" not in imshow_kwargs:
+            print(None)
             if self.filter and self.filter.cmap:
                 imshow_kwargs["cmap"] = self.filter.cmap
+        else:
+            print(imshow_kwargs["cmap"])
+
+        print(self.filter, self.filter.cmap)
+        print(imshow_kwargs["cmap"])
+
 
         # if "vmin" not in normalize_kwargs:
         #     normalize_kwargs["vmin"] = np.min(data_clipped)
