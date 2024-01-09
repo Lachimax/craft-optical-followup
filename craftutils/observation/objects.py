@@ -1852,7 +1852,7 @@ class Transient(Object):
 
 
 @u.export
-class FRB(Transient):
+class FRB(Transient, Extragalactic):
     optical = False
 
     def __init__(
