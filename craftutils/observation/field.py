@@ -1162,12 +1162,12 @@ class FRBField(Field):
             # ticks: int = None, interval: str = 'minmax',
             # font_size: int = 12,
             # reverse_y=False,
-            frb_kwargs: dict = {},
-            imshow_kwargs: dict = {},
-            normalize_kwargs: dict = {},
+            frb_kwargs: dict = None,
+            imshow_kwargs: dict = None,
+            normalize_kwargs: dict = None,
             output_path: str = None,
             show_legend: bool = False,
-            latex_kwargs: dict = {},
+            latex_kwargs: dict = None,
             do_latex_setup: bool = True,
             draw_scale_bar: bool = False,
             scale_bar_kwargs: dict = {},
@@ -1195,6 +1195,13 @@ class FRBField(Field):
         :param kwargs:
         :return: ax, figure
         """
+        if imshow_kwargs is None:
+            imshow_kwargs = {}
+        if frb_kwargs is None:
+            frb_kwargs = {}
+        if latex_kwargs is None:
+            latex_kwargs = {}
+
         if do_latex_setup:
             pl.latex_setup(**latex_kwargs)
         if not isinstance(self.frb, objects.FRB):
