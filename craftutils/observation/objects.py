@@ -669,6 +669,9 @@ class Object:
     def check_data_path(self):
         if self.field is not None:
             u.debug_print(2, "", self.name)
+            if not self.name_filesys:
+                self.name_filesys = self.name
+            print(self.field.data_path, "objects", self.name_filesys)
             self.data_path = os.path.join(self.field.data_path, "objects", self.name_filesys)
             u.mkdir_check(self.data_path)
             self.output_file = os.path.join(self.data_path, f"{self.name_filesys}_outputs.yaml")
