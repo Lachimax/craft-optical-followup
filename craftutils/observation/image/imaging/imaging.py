@@ -1042,11 +1042,18 @@ class ImagingImage(Image):
             image_name="self",
             **zp_dict
         )
-        self.zeropoint_output_paths[cat_name.lower()] = output_path
+        if isinstance(output_path, str):
+            self.zeropoint_output_paths[cat_name.lower()] = output_path
+            path = output_path
+        else:
+            path = None
+
+        print()
+
         self.add_log(
             action=f"Calculated zeropoint as {zp_dict['zeropoint_img']} +/- {zp_dict['zeropoint_img_err']}, from {zp_dict['catalogue']}.",
             method=self.zeropoint,
-            output_path=output_path
+            output_path=path
         )
         self.update_output_file()
         return zp_dict
