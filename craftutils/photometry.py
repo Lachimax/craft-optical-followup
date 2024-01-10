@@ -825,7 +825,7 @@ def determine_zeropoint_sextractor(
     cat[cat_mag_col] = u.check_quantity(cat[cat_mag_col], units.mag)
 
     params['time'] = str(time.Time.now())
-    params['catalogue'] = str(cat)
+    params['catalogue'] = str(cat_name)
     params['airmass'] = 0.0
     params['exp_time'] = exp_time = u.check_quantity(exp_time, units.second)
     params['pix_tol'] = dist_tol
