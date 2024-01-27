@@ -706,16 +706,21 @@ class Field:
         centre_ra, centre_dec = p.select_coords(param_dict["centre"])
         coord_str = f"{centre_ra} {centre_dec}"
 
+        if "objects" in param_dict:
+            objs = param_dict.pop("objects")
+        else:
+            objs = None
+
         if field_type == "Field":
             return cls(
                 centre_coords=coord_str,
-                objs=param_dict["objects"],
+                objs=objs,
                 **param_dict
             )
         elif field_type == "FRBField":
             return FRBField(
                 centre_coords=coord_str,
-                objs=param_dict["objects"],
+                objs=objs,
                 **param_dict
             )
         elif field_type == "StandardField":
