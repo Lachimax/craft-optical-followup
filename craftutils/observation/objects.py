@@ -2534,7 +2534,7 @@ class FRB(Transient):
         """
         if z_host is None:
             z_host = self.host_galaxy.z
-        if not z_host:
+        if z_host is None:
             return 0 * dm_units
         if self.nu_scattering:
             nu = u.check_quantity(self.nu_scattering, units.MHz)
