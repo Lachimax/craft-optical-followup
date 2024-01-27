@@ -15,6 +15,7 @@ __all__ = []
 @export
 def add_index_directory(path: str):
     """
+    Adds a directory to `astrometry.cfg`, for `Astrometry.net` to check for indices.
 
     :param path:
     :return:
@@ -59,7 +60,15 @@ def build_astrometry_index(
     if scan_through_catalog:
         flags.append("E")
 
-    system_command("build-astrometry-index", None, False, True, *flags, **params)
+    system_command(
+        command="build-astrometry-index",
+        arguments=None,
+        suppress_print=False,
+        error_on_exit_code=True,
+        force_single_dash=False,
+        flags=flags,
+        **params
+    )
 
 
 def solve_field(
@@ -76,6 +85,7 @@ def solve_field(
         odds_to_solve: float = 1e5,
         am_flags: list = None,
         am_params: dict = None,
+        **kwargs
 ):
     """
     Returns True if successful (by checking whether the corrected file is generated); False if not.
@@ -112,7 +122,15 @@ def solve_field(
     if not verify:
         flags.append("y")
 
-    system_command("solve-field", image_files, False, True, False, *flags, **am_params)
+    system_command(
+        command="solve-field",
+        arguments=image_files,
+        suppress_print=False,
+        error_on_exit_code=True,
+        force_single_dash=False,
+        flags=flags,
+        **am_params
+    )
     if isinstance(image_files, list):
         image_path = image_files[0]
     else:

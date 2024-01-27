@@ -58,7 +58,7 @@ def generate_astrometry_indices(
         index_output_dir: str,
         fits_cat_output: str = None,
         add_path: bool = True,
-        p_lower: int = -1, p_upper: int = 2):
+        p_lower: int = -2, p_upper: int = 2):
     u.mkdir_check(index_output_dir)
     if add_path:
         astrometry_net.add_index_directory(index_output_dir)
@@ -252,7 +252,10 @@ def offset_astrometry(hdu: fits.hdu, offset_ra: float, offset_dec: float, output
     return hdu
 
 
-def find_nearest(coord: coordinates.SkyCoord, search_coords: coordinates.SkyCoord):
+def find_nearest(
+        coord: coordinates.SkyCoord,
+        search_coords: coordinates.SkyCoord
+):
     separations = coord.separation(search_coords)
     match_id = np.argmin(separations)
     return match_id, separations[match_id]

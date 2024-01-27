@@ -7,6 +7,7 @@ from datetime import date, datetime
 from json.decoder import JSONDecodeError
 from typing import Union, Iterable
 
+from tqdm import tqdm
 import cgi
 import requests
 import re
@@ -52,6 +53,7 @@ default_data_release = {
     "panstarrs": 2,
 
 }
+
 
 # import craftutils.observation.instrument as inst
 
@@ -199,6 +201,7 @@ def retrieve_svo_filter(facility_name: str, instrument_name: str, filter_name: s
     else:
         return response
 
+
 @u.export
 def save_svo_filter(facility_name: str, instrument_name: str, filter_name: str, output: str):
     """
@@ -216,6 +219,7 @@ def save_svo_filter(facility_name: str, instrument_name: str, filter_name: str, 
     )
     u.debug_print(1, "retrieve.save_svo_filter(): response ==", response)
     if response == "ERROR":
+        print('Error occurred; no data retrieved from SVO.')
         return response
     elif response is not None:
         u.mkdir_check_nested(path=output, remove_last=True)
@@ -288,6 +292,7 @@ def save_catalogue(
         warnings.warn(f"{cat} data was not retrieved due to incorrect user/password.")
         return 'ERROR'
 
+
 # ESO retrieval code based on the script at
 # http://archive.eso.org/programmatic/scripts/eso_authenticated_download_raw_and_calibs.py
 # authored by A.Micol, Archive Science Group, ESO
@@ -326,7 +331,7 @@ def save_eso_asset(
     token = login_eso()
     if token is not None:
         headers = {"Authorization": "Bearer " + keys["eso_auth_token"]}
-        response = requests.get(file_url, headers=headers)
+        response = requests.get(file_url, stream=True, headers=headers)
     else:
         # Trying to download anonymously
         response = requests.get(file_url, stream=True, headers=headers)
@@ -341,15 +346,18 @@ def save_eso_asset(
             # last chance: get anything after the last '/'
             filename = file_url[file_url.rindex('/') + 1:]
 
-    path = os.path.join(output, filename)
+    path = os.path.join(output, filename.replace(":", "_"))
     if os.path.exists(path) and not overwrite:
         print(f"{path} already exists. Skipping.")
     elif response.status_code == 200:
         print(f"Writing asset to {path}...")
+        total_size_in_bytes = int(response.headers.get('content-length', 0))
+        block_size = 1024  # 1 Kibibyte
+        progress_bar = tqdm(total=total_size_in_bytes, unit='iB', unit_scale=True)
         with open(path, 'wb') as f:
-            for chunk in response.iter_content(chunk_size=50000):
+            for chunk in response.iter_content(chunk_size=block_size):
+                progress_bar.update(len(chunk))
                 f.write(chunk)
-        print("Done")
     else:
         response = None
 
@@ -414,26 +422,60 @@ def print_eso_calselector_info(description: str, mode_requested: str):
 
 
 def save_eso_raw_data_and_calibs(
-        output: str, program_id: str, date_obs: Union[str, Time],
-        instrument: str, mode: str,
+        output: str,
+        program_id: str,
+        date_obs: Union[str, Time],
+        instrument: str,
+        mode: str,
         obj: str = None,
-        coord_tol: units.Quantity = 1.0 * units.arcmin
+        coord_tol: units.Quantity = 1.0 * units.arcmin,
+        data_type: str = "science"
 ):
     u.mkdir_check(output)
     instrument = instrument.lower()
     login_eso()
     print(f"Querying the ESO TAP service at {eso_tap_url}")
+    data_type = data_type.lower()
+    dp_cat = {
+        "science": "SCIENCE",
+        "standard": "CALIB"
+    }[data_type]
+
+    dp_type = {
+        "science": None,
+        "standard": "STD"
+    }[data_type]
+
     query = query_eso_raw(
-        program_id=program_id, date_obs=date_obs, obj=obj, instrument=instrument, mode=mode, coord_tol=coord_tol
+        program_id=program_id,
+        date_obs=date_obs, obj=obj,
+        instrument=instrument,
+        mode=mode,
+        coord_tol=coord_tol,
+        dp_cat=dp_cat,
+        dp_type=dp_type
     )
-    print(query)
     raw_frames = get_eso_raw_frame_list(query=query)
+    print("Found science frames:")
+    for frame in raw_frames["url"]:
+        print("\t", frame)
     calib_urls = get_eso_calib_associations_all(raw_frames=raw_frames)
+    print("Found calibrations frames:")
+    for frame in calib_urls:
+        print("\t", frame)
     urls = list(raw_frames['url']) + calib_urls
+    urls.sort(reverse=True)
+    print("All frames:")
+    for frame in urls:
+        print("\t", frame)
+    for frame in calib_urls:
+        print("\t", frame)
     if not urls:
         print("No data was found in the raw ESO archive for the given parameters.")
     for url in urls:
-        save_eso_asset(file_url=url, output=output)
+        response = save_eso_asset(file_url=url, output=output)
+        if not response:
+            print(f"Could not retrieve following file; do you have permission, and are you logged in?", "\n", url)
     return urls
 
 
@@ -474,7 +516,11 @@ def query_eso_raw(
         obj: Union[str, SkyCoord] = None,
         coord_tol: units.Quantity = 1.0 * units.arcmin,
         instrument: str = "fors2",
-        mode: str = "imaging"):
+        mode: str = "imaging",
+        dp_cat: str = "science",
+        dp_type: str = None,
+        fil: str = None
+):
     instrument = instrument.lower()
     mode = mode.lower()
     if mode not in ["imaging", "spectroscopy"]:
@@ -495,7 +541,7 @@ def query_eso_raw(
         date_obs = Time(date_obs)
     query = f"""SELECT {select}
 FROM dbo.raw
-WHERE dp_cat='SCIENCE'
+WHERE dp_cat='{dp_cat.upper()}'
 AND instrument='{instrument}'
 AND {mode_str}
 """
@@ -504,6 +550,10 @@ AND {mode_str}
     if date_obs is not None:
         query += f"AND date_obs>='{(date_obs - 0.5).to_datetime().date()}'\n" \
                  f"AND date_obs<='{(date_obs + 1).to_datetime().date()}'\n"
+    if dp_type is not None:
+        query += f"AND dp_type='{dp_type.upper()}'\n"
+    if fil is not None:
+        query += f"AND filter_path='{fil.upper()}'"
     if obj is not None:
         if isinstance(obj, str):
             query += f"AND target='{obj}'\n"
@@ -533,6 +583,9 @@ AND dec<{dec_max}
             raise TypeError(f"obj must be str or SkyCoord, not {type(obj)}")
     u.debug_print(1, "Query for ESO Archive:\n")
     u.debug_print(1, query)
+
+    print(query)
+
     return query
 
 
@@ -607,6 +660,7 @@ def retrieve_fors2_calib(fil: str = 'I_BESS', date_from: str = '2017-01-01', dat
     print("Retrieving calibration parameters from FORS2 QC1 archive...")
     page = urllib.request.urlopen("http://archive.eso.org/qc1/qc1_cgi", request)
     return str(page.read().replace(b'!', b''), 'utf-8')
+
 
 @u.export
 def save_fors2_calib(output: str, fil: str = 'I_BESS', date_from: str = '2017-01-01', date_to: str = None):
@@ -697,7 +751,8 @@ def retrieve_irsa_extinction(ra: float = None, dec: float = None, coord: SkyCoor
             table = irsa_dust.IrsaDust.get_extinction_table(coord)
         except urllib.error.HTTPError:
             attempts += 1
-            print(f"Could not retrieve table due to HTML error. Trying again after clearing cache (attempts={attempts}/100).")
+            print(
+                f"Could not retrieve table due to HTML error. Trying again after clearing cache (attempts={attempts}/100).")
             cache_path = os.path.join(p.home_path, ".astropy", "cache", "astroquery")
             u.rmtree_check(cache_path)
 
@@ -960,7 +1015,8 @@ def retrieve_delve_photometry(
 ):
     if data_release is None:
         data_release = default_data_release["delve"]
-    print(f"\nQuerying DELVE DR{data_release} archive for field centring on RA={ra}, DEC={dec}")
+    print(
+        f"\nQuerying DELVE DR{data_release} archive for field centring on RA={ra}, DEC={dec} with radius {radius} deg")
     radius = u.dequantify(radius, unit=units.deg)
     url = f"http://datalab.noirlab.edu/tap/sync?REQUEST=doQuery&lang=ADQL&FORMAT=csv&QUERY=SELECT%20q3c_dist" \
           f"%28ra%2Cdec%2C%20247.725%2C-0.972%29%2A3600%20AS%20dist%2C%20%2A%20FROM%20delve_dr{data_release}.objects%20WHERE%20%27t" \
@@ -1168,16 +1224,21 @@ def download_job_files_des(url: str, output: str):
 def retrieve_query_csv_des(job_id: str):
     """
     Retrieves the .csv file produced from an SQL query previously submitted to DESaccess, if any exists.
+
     :param job_id: The unique job id generated by DES Access upon submission of the job.
     :return: Retrieved photometry table, as a Bytes object, if successful; None if not.
     """
     url = f'{des_files_url}/{keys["des_user"]}/query/{job_id}/'
     print("Retrieving DES photometry from", url)
-    r = requests.get(f'{url}/json')
+    try:
+        r = requests.get(f'{url}/json', timeout=60)
+    except requests.exceptions.ReadTimeout:
+        return "ERROR"
     for item in r.json():
+        print(item)
         if item['name'][-4:] == '.csv':
-            data = requests.get(f'{url}/{item["name"]}')
-            return data.content
+            response = requests.get(f'{url}/{item["name"]}')
+            return response.content
     return None
 
 
@@ -1209,7 +1270,7 @@ def retrieve_des_photometry(
             f"DEC BETWEEN {dec - radius} and {dec + radius} and " \
             f"ROWNUM < 10000 "
     print('Submitting query job...')
-    response = submit_query_job_des(query)
+    response = submit_job_des(query)
     # Store the unique job ID for the new job
     job_id = response['jobid']
     print(f'New job submitted: {job_id}')
@@ -1750,6 +1811,8 @@ def load_catalogue(
                 cat[col_name.format(fil)] = cat[col_name.format(fil)] * cat_column_units[col_name]
         else:
             cat[col_name] = cat[col_name] * cat_column_units[col_name]
+    col_names = cat_columns(cat_name)
+    cat["coord"] = SkyCoord(cat[col_names["ra"]], cat[col_names["dec"]])
     return cat
 
 
@@ -1881,7 +1944,7 @@ filters = {
 }
 
 column_units = {
-    "2mass": # See http://tdc-www.harvard.edu/software/catalogs/tmc.format.html
+    "2mass":  # See http://tdc-www.harvard.edu/software/catalogs/tmc.format.html
         {
             "ra": units.deg,
             "dec": units.deg,

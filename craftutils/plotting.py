@@ -5,6 +5,7 @@ from typing import Union
 
 import matplotlib.pyplot as plt
 import matplotlib
+import cmasher as cmr
 import numpy as np
 import photutils
 
@@ -33,13 +34,18 @@ quantity_support()
 
 textwidths = {
     "MNRAS": 7.03,
-    "mqthesis": 6.1
+    "mqthesis": 6.1,
+    "PASA": 7.13
 }
 
 textheights = {
-    "mqthesis": 9.6
+    "mqthesis": 9.6,
+    "PASA": 9.45
 }
 
+tick_fontsize = 12
+axis_fontsize = 14
+lineweight = 1.5
 
 @u.export
 def plot_kron(fig: plt.Figure, data_title: str, instrument: str, f: str, index: Union[int, list], catalogue: str,
@@ -611,7 +617,8 @@ def latex_setup(
 
     plt.rc('text', usetex=use_tex)
     u.debug_print(1, f"Setting mathtext.fontset to {math_fontset}.")
-    plt.rc("mathtext", fontset=math_fontset)
+    if math_fontset is not None:
+        plt.rc("mathtext", fontset=math_fontset)
     # Matplotlib and pyplot settings
     # print(f"Setting font.family to {font_family}")
     # plt.rc('font', family=font_family)
@@ -627,6 +634,7 @@ def latex_setup(
     kwargs["font.family"] = font_family
     plt.rcParams.update(kwargs)
     plt.rcParams['axes.linewidth'] = 2.
+    plt.rcParams['font.size'] = axis_fontsize
 
 
 def latex_off():
@@ -794,6 +802,8 @@ def plot_all_params(
 
     if path:
         image.close()
+
+
 
 
 def plot_lines(ax, z_shift, space: str = "wavelength", **kwargs):

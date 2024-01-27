@@ -1,8 +1,8 @@
-import datetime
 import os
-import warnings
-from typing import Union, List, Dict
 import shutil
+
+import datetime
+from typing import Union, List, Dict
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -15,6 +15,8 @@ import astropy.io.fits as fits
 from astropy.modeling import models, fitting
 
 import ccdproc
+
+# from .spectroscopy import *
 
 import craftutils.astrometry as astm
 import craftutils.fits_files as ff
@@ -30,16 +32,11 @@ import craftutils.observation.survey as survey
 import craftutils.params as p
 import craftutils.plotting as pl
 import craftutils.retrieve as retrieve
-import craftutils.wrap.pypeit as spec
 import craftutils.utils as u
 import craftutils.wrap.montage as montage
 import craftutils.wrap.dragons as dragons
 
 config = p.config
-
-epoch_stage_dirs = {"0-download": "0-data_with_raw_calibs",
-                    "2-pypeit": "2-pypeit",
-                    }
 
 active_epochs = {}
 
@@ -68,6 +65,7 @@ def load_epoch_directory():
 
 
 def epoch_from_directory(epoch_name: str, quiet: bool = False):
+    from .spectroscopy import SpectroscopyEpoch
     directory = load_epoch_directory()
     if not quiet:
         print(f"Looking for {epoch_name} in directory...")
@@ -79,9 +77,19 @@ def epoch_from_directory(epoch_name: str, quiet: bool = False):
         mode = epoch_dict["mode"]
         field = fld.Field.from_params(name=field_name)
         if mode == "imaging":
-            epoch = ImagingEpoch.from_params(epoch_name, instrument=instrument, field=field, quiet=quiet)
+            epoch = ImagingEpoch.from_params(
+                epoch_name,
+                instrument=instrument,
+                field=field,
+                quiet=quiet
+            )
         elif mode == "spectroscopy":
-            epoch = SpectroscopyEpoch.from_params(name=epoch_name, field=field, instrument=instrument, quiet=quiet)
+            epoch = SpectroscopyEpoch.from_params(
+                name=epoch_name,
+                field=field,
+                instrument=instrument,
+                quiet=quiet
+            )
         return epoch
 
 
@@ -201,7 +209,8 @@ def _check_do_list(
 
 
 def expunge_epochs():
-    for epoch_name in active_epochs:
+    epoch_list = list(active_epochs.keys())
+    for epoch_name in epoch_list:
         del active_epochs[epoch_name]
 
 
@@ -362,10 +371,26 @@ class Epoch:
 
         # self.load_output_file()
 
+        self.stage_params: dict = {}
+
+        self.exclude_frames: list = []
+        if "exclude_frames" in kwargs and isinstance(kwargs["exclude_frames"], list):
+            self.exclude_frames = kwargs["exclude_frames"]
+
         active_epochs[self.name] = self
 
+    def is_excluded(self, frame: Union[image.Image, str]):
+        if isinstance(frame, image.Image):
+            ident = frame.name
+        else:
+            ident = str(frame)
+        for fname in self.exclude_frames:
+            if fname in ident:
+                return True
+        return False
+
     def __str__(self):
-        return self.name
+        return str(self.name)
 
     def date_str(self, include_time: bool = False):
         if not isinstance(self.date, Time):
@@ -413,6 +438,14 @@ class Epoch:
 
         return stages
 
+    @classmethod
+    def enumerate_stages(cls, show: bool = True):
+        stages = list(enumerate(cls.stages()))
+        if show:
+            for i, stage in stages:
+                print(f"{i}. {stage}")
+        return stages
+
     def pipeline(self, no_query: bool = False, **kwargs):
         """
         Performs the pipeline methods given in stages() for this Epoch.
@@ -457,8 +490,9 @@ class Epoch:
                     stage_name=name,
                     stage_kwargs=stage_kwargs
             )):
+                self.stage_params[name] = stage_kwargs.copy()
                 if not self.quiet:
-                    print(f"Performing processing step {n}: {name}")
+                    print(f"Performing processing step {n}: {name} with keywords:\n", stage_kwargs)
                 # Construct path; if dir_name is None then the step is pathless.
                 dir_name = f"{n}-{name}"
                 output_dir = os.path.join(self.data_path, dir_name)
@@ -469,7 +503,11 @@ class Epoch:
                 self.set_path(name, output_dir)
 
                 if stage["method"](self, output_dir=output_dir, **stage_kwargs) is not False:
-                    self.stages_complete[name] = Time.now()
+                    self.stages_complete[name] = {
+                        "status": "complete",
+                        "time": Time.now(),
+                        "kwargs": stage_kwargs
+                    }
 
                     if "log_message" in stage and stage["log_message"] is not None:
                         log_message = stage["log_message"]
@@ -479,9 +517,15 @@ class Epoch:
 
                     u.rmtree_check(output_dir_backup)
 
+                last_complete = dir_name
                 self.update_output_file()
 
-                last_complete = dir_name
+            elif not do_this:
+                self.stages_complete[name] = {
+                    "status": "skipped",
+                    "time": Time.now(),
+                    "kwargs": {}
+                }
 
         return last_complete
 
@@ -493,7 +537,7 @@ class Epoch:
             raise ValueError(f"data_path has not been set for {self}")
         self.field.retrieve_catalogues()
         self.do = _check_do_list(self.do, stages=list(self.stages().keys()))
-        if not self.quiet:
+        if not self.quiet and self.do:
             print(f"Doing stages {self.do}")
         self.paths["download"] = os.path.join(self.data_path, "0-download")
 
@@ -525,21 +569,24 @@ class Epoch:
                         self.add_coadded_image(img=outputs["coadded"][fil], key=fil, **kwargs)
             if "log" in outputs:
                 self.log = log.Log(outputs["log"])
+            if "stage_params" in outputs and isinstance(outputs["stage_params"], dict):
+                self.stage_params = outputs["stage_params"]
         return outputs
 
     def _output_dict(self):
 
         return {
+            "combined_from": self.combined_from,
+            "coadded": _output_img_dict_single(self.coadded),
             "date": self.date,
-            "stages": self.stages_complete,
-            "paths": self.paths,
             "frames_science": _output_img_dict_list(self.frames_science),
             "frames_flat": _output_img_dict_list(self.frames_flat),
             "frames_std": _output_img_dict_list(self.frames_standard),
             "frames_bias": _output_img_list(self.frames_bias),
-            "coadded": _output_img_dict_single(self.coadded),
             "log": self.log.to_dict(),
-            "combined_from": self.combined_from
+            "paths": self.paths,
+            "stages": self.stages_complete,
+            "stage_params": self.stage_params
         }
 
     def update_output_file(self):
@@ -551,7 +598,12 @@ class Epoch:
         if stage not in self.stages():
             raise ValueError(f"{stage} is not a valid stage for this Epoch.")
         if stage in self.stages_complete:
-            return self.stages_complete[stage]
+            if isinstance(self.stages_complete[stage], Time):
+                return self.stages_complete[stage]
+            elif self.stages_complete[stage]["status"] == "skipped":
+                return None
+            else:
+                return self.stages_complete[stage]["time"]
         else:
             return None
 
@@ -591,8 +643,9 @@ class Epoch:
     def set_date(self, date: Union[str, Time]):
         if isinstance(date, str):
             date = Time(date)
-        self.date = date
-        self.update_param_file("date")
+        if date is not None:
+            self.date = date
+            self.update_param_file("date")
 
     def set_target(self, target: str):
         self.target = target
@@ -612,13 +665,13 @@ class Epoch:
         self.binning_std = binning
         return binning
 
-    def get_path(self, key):
+    def get_path(self, key: str):
         if key in self.paths:
             return self.paths[key]
         else:
             raise KeyError(f"{key} has not been set.")
 
-    def set_path(self, key, value):
+    def set_path(self, key: str, value: str):
         self.paths[key] = value
 
     def update_param_file(self, param: str):
@@ -723,22 +776,24 @@ class Epoch:
     @classmethod
     def default_params(cls):
         default_params = {
+            "mode": cls.mode,
             "name": None,
+            "exclude_frames": [],
             "field": None,
             "data_path": None,
-            "instrument": None,
+            "instrument": cls.instrument_name,
             "date": None,
             "target": None,
             "program_id": None,
             "do": {},
             "notes": [],
-            "combined_epoch": False
+            "combined_epoch": False,
         }
         # Pull the list of applicable kwargs from the stage information
         stages = cls.stages()
         for stage in stages:
             stage_info = stages[stage]
-            if "keywords" in stage_info:
+            if stage_info is not None and "keywords" in stage_info:
                 default_params[stage] = stage_info["keywords"]
             else:
                 default_params[stage] = {}
@@ -897,7 +952,15 @@ class ImagingEpoch(Epoch):
         self.coadded_unprojected = {}
         self.coadded_astrometry = {}
         self.coadded_subtracted = {}
+        self.coadded_subtracted_trimmed = {}
+        self.coadded_subtracted_patch = {}
         self.coadded_final = None
+        self.coadded_derivatives = (
+            self.coadded_unprojected,
+            self.coadded_subtracted,
+            self.coadded_subtracted_trimmed,
+            self.coadded_subtracted_patch
+        )
 
         self.gaia_catalogue = None
         self.astrometry_indices = []
@@ -944,6 +1007,8 @@ class ImagingEpoch(Epoch):
                     "upper_only": False,
                     "method": "individual",
                     "back_subbed": False,
+                    "correct_to_epoch": True,
+                    "registration_template": None
                 }
             },
             "frame_diagnostics": {
@@ -955,14 +1020,22 @@ class ImagingEpoch(Epoch):
                 "method": cls.proc_subtract_background_frames,
                 "message": "Subtract local background from frames?",
                 "default": False,
-                "keywords": {}
+                "keywords": {
+                    "do_not_mask": False,
+                    "centre": None,
+                    "frame": 15 * units.arcsec,
+                    "frames": "astrometry",
+                    "mask_kwargs": {},
+                    "method": "local",
+                    # "polynomial_degree": 3
+                }
             },
             "coadd": {
                 "method": cls.proc_coadd,
                 "message": "Coadd frames with Montage?",
                 "default": True,
                 "keywords": {
-                    "frames": "astrometry",  # normalised, trimmed
+                    "frames": "final",  # normalised, trimmed
                     "sigma_clip": 1.0
                 }
             },
@@ -1001,7 +1074,7 @@ class ImagingEpoch(Epoch):
                     "class_star_tolerance": 0.95,
                     "image_type": "final",
                     "preferred_zeropoint": {},
-                    "suppress_select": False
+                    "suppress_select": True
                 }
             },
             "dual_mode_source_extraction": {
@@ -1013,6 +1086,11 @@ class ImagingEpoch(Epoch):
                 "method": cls.proc_get_photometry,
                 "message": "Get photometry?",
                 "default": True,
+                "keywords": {
+                    "image_type": "final",
+                    "skip_plots": False,
+                    "skip_path": False
+                }
             },
             # "get_photometry_all": {
             #     "method": cls.proc_get_photometry_all,
@@ -1036,6 +1114,8 @@ class ImagingEpoch(Epoch):
                 kwargs["frames"] = "astrometry"
             else:
                 kwargs["frames"] = "normalised"
+        # if "polynomial_degree" in kwargs:
+        #     kwargs["init_params"]["degree"]
         self.subtract_background_frames(
             output_dir=output_dir,
             **kwargs
@@ -1051,9 +1131,26 @@ class ImagingEpoch(Epoch):
         if isinstance(frames, str):
             frames = self._get_frames(frames)
 
+        if "do_not_mask" in kwargs:
+            do_not_mask = kwargs.pop("do_not_mask")
+            for i, obj in enumerate(do_not_mask):
+                if isinstance(obj, str):
+                    if obj in self.field.objects_dict:
+                        obj = self.field.objects_dict[obj].position
+                    elif not isinstance(obj, SkyCoord):
+                        obj = astm.attempt_skycoord(obj)
+                do_not_mask[i] = obj
+            if "mask_kwargs" not in kwargs:
+                kwargs["mask_kwargs"] = {}
+            kwargs["mask_kwargs"]["do_not_mask"] = do_not_mask
+
+        fit_info = {}
         for fil in frames:
             frame_list = frames[fil]
+            fit_info[fil] = {}
             for frame in frame_list:
+                if self.is_excluded(frame):
+                    continue
                 subbed_path = os.path.join(output_dir, fil, frame.name + "_backsub.fits")
                 back_path = os.path.join(output_dir, fil, frame.name + "_background.fits")
                 if method in ("sep", "photutils"):
@@ -1065,11 +1162,13 @@ class ImagingEpoch(Epoch):
                         **kwargs
                     )
                 elif method == "local":
-                    if "centre" not in kwargs:
+                    if "centre" not in kwargs or kwargs["centre"] is None:
                         if isinstance(self.field, fld.FRBField):
                             kwargs["centre"] = self.field.frb.position
                         else:
                             kwargs["centre"] = frame.extract_pointing()
+                    else:
+                        kwargs["centre"] = astm.attempt_skycoord(kwargs["centre"])
                     if "frame" not in kwargs:
                         kwargs["frame"] = 15 * units.arcsec
                     if isinstance(self.field, fld.FRBField):
@@ -1081,16 +1180,23 @@ class ImagingEpoch(Epoch):
                         }]
                     else:
                         mask_ellipses = None
-                    frame.model_background_local(
+                    model, model_eval, data, subbed, mask, weights = frame.model_background_local(
                         write_subbed=subbed_path,
                         write=back_path,
                         generate_mask=True,
                         mask_ellipses=mask_ellipses,
                         **kwargs
                     )
+                    model_info = {}
+                    if "init_params" in kwargs:
+                        model_info.update(kwargs["init_params"])
+                    model_info.update(dict(zip(model.param_names, model.parameters)))
+                    fit_info[fil][frame.name] = model_info
 
                 new_frame = type(frame)(subbed_path)
                 self.add_frame_subtracted(new_frame)
+        self.stage_params["subtract_background_frames"].update(kwargs)
+        self.stage_params["subtract_background_frames"]["models"] = fit_info
 
     def proc_register(self, output_dir: str, **kwargs):
         self.frames_registered = {}
@@ -1162,6 +1268,8 @@ class ImagingEpoch(Epoch):
 
         for chip in include_chips:
             for i, frame in enumerate(frames_by_chip[chip]):
+                if self.is_excluded(frame):
+                    continue
                 if i != n_template:
                     registered = frame.register(
                         target=tmp,
@@ -1231,6 +1339,7 @@ class ImagingEpoch(Epoch):
             frames = self.frames_reduced
 
         for fil in frames:
+            self.astrometry_successful[fil] = {}
             frames_by_chip = self.sort_by_chip(frames[fil])
             for chip in frames_by_chip:
                 if not self.quiet:
@@ -1287,6 +1396,7 @@ class ImagingEpoch(Epoch):
                                   self.astrometry_successful)
                     self.update_output_file()
 
+                # Allow unsolved frames to be registered to an external image instead of against a solved frame
                 if 'registration_template' in kwargs and kwargs['registration_template'] is not None:
                     first_success = image.from_path(
                         kwargs['registration_template'],
@@ -1297,7 +1407,7 @@ class ImagingEpoch(Epoch):
                     if not self.quiet:
                         print(
                             f"There were no successful frames for chip {chip} using astrometry.net; performing coarse correction on {tmp}.")
-                    first_success = tmp.correct_astrometry_coarse(
+                    first_success, _ = tmp.correct_astrometry_coarse(
                         output_dir=astrometry_fil_path,
                         cat=self.gaia_catalogue,
                         cat_name="gaia"
@@ -1314,6 +1424,8 @@ class ImagingEpoch(Epoch):
                         f"Re-processing failed frames for chip {chip} with astroalign, with template {first_success}:")
                     print()
                 for frame in frames_by_chip[chip]:
+                    if self.is_excluded(frame):
+                        continue
                     if not self.astrometry_successful[fil][frame.name]:
                         if not self.quiet:
                             print(f"Running astroalign on {frame}...")
@@ -1473,6 +1585,8 @@ class ImagingEpoch(Epoch):
         frame_dict = self._get_frames(frame_type=frames)
         if not self.quiet:
             print(f"Coadding {frames} frames.")
+            if frames == "final":
+                print(f"(final is {self.frames_final})")
         for fil in self.filters:
             frame_list = frame_dict[fil]
             output_directory_fil = os.path.join(output_dir, fil)
@@ -1481,6 +1595,8 @@ class ImagingEpoch(Epoch):
             input_directory_fil = os.path.join(output_directory_fil, "inputdir")
             u.mkdir_check(input_directory_fil)
             for frame in frame_list:
+                if self.is_excluded(frame):
+                    continue
                 frame.copy_with_outputs(input_directory_fil)
 
             coadded_path = montage.standard_script(
@@ -1578,6 +1694,8 @@ class ImagingEpoch(Epoch):
             aa_template = kwargs["astroalign_template"]
         else:
             aa_template = None
+        if aa_template is not None:
+            aa_template = p.join_data_dir(aa_template)
 
         first_success = None
         unsuccessful = []
@@ -1636,7 +1754,7 @@ class ImagingEpoch(Epoch):
             self,
             output_dir: str,
             images: dict = None,
-            reproject: bool = False
+            reproject: bool = False,
     ):
         if images is None:
             images = self.coadded
@@ -1669,7 +1787,31 @@ class ImagingEpoch(Epoch):
                 img_sub = self.coadded_subtracted[fil]
                 output_path_sub = os.path.join(output_dir, img_sub.filename.replace(".fits", "_bgsub_trimmed.fits"))
                 trimmed_sub = img_sub.trim_from_area(output_path=output_path_sub)
-                self.coadded_subtracted[fil] = trimmed_sub
+                self.add_coadded_subtracted_trimmed_image(trimmed_sub, key=fil)
+
+                bg_kwargs = self.stage_params["subtract_background_frames"]
+                if "method" not in bg_kwargs or bg_kwargs["method"] == "local":
+                    output_path_patch_unsub = os.path.join(
+                        output_dir,
+                        img_sub.filename.replace(".fits", "_unsubbed_patch.fits"))
+                    _, p_scale = img.extract_pixel_scale()
+                    left, right, bottom, top = trimmed_sub.frame_from_coord(
+                        frame=bg_kwargs["frame"].to("arcsec", p_scale) - 1 * units.arcsec,
+                        centre=bg_kwargs["centre"]
+                    )
+                    trimmed_patch = img.trim(
+                        left=left, right=right, bottom=bottom, top=top,
+                        output_path=output_path_patch_unsub
+                    )
+                    output_path_patch = os.path.join(output_dir, img_sub.filename.replace(".fits", "_bgsub_patch.fits"))
+                    trimmed_patch_sub = trimmed_sub.trim(
+                        left=left, right=right, bottom=bottom, top=top,
+                        output_path=output_path_patch
+                    )
+                    self.add_coadded_subtracted_patch_image(
+                        img=trimmed_patch_sub,
+                        key=fil
+                    )
 
     def proc_source_extraction(self, output_dir: str, **kwargs):
         if "do_astrometry_diagnostics" not in kwargs:
@@ -1704,6 +1846,7 @@ class ImagingEpoch(Epoch):
                 output_dir=output_dir,
                 phot_autoparams=f"{configs['kron_factor']},{configs['kron_radius_min']}"
             )
+
         if do_astrometry_diagnostics:
             if "offset_tolerance" in kwargs:
                 offset_tolerance = kwargs["offset_tolerance"]
@@ -1717,6 +1860,19 @@ class ImagingEpoch(Epoch):
         if do_psf_diagnostics:
             self.psf_diagnostics(images=images)
 
+        # Transfer psf stuff from
+        if self.did_local_background_subtraction():
+            for img_type in ("coadded_subtracted_patch", "coadded_subtracted"):
+                images_subbed = self._get_images(img_type)
+                for fil, img_subbed in images_subbed.items():
+                    img = images[fil]
+                    img_subbed.clone_diagnostics(other=img)
+                    if img_type == "coadded_subtracted_patch":
+                        img_subbed.source_extraction_psf(
+                            output_dir=output_dir,
+                            phot_autoparams=f"{configs['kron_factor']},{configs['kron_radius_min']}"
+                        )
+
     def proc_photometric_calibration(self, output_dir: str, **kwargs):
         if "image_type" in kwargs and kwargs["image_type"] is not None:
             image_type = kwargs["image_type"]
@@ -1729,7 +1885,6 @@ class ImagingEpoch(Epoch):
             kwargs["snr_min"] = 3.
         if "suppress_select" not in kwargs:
             kwargs["suppress_select"] = True
-
 
         image_dict = self._get_images(image_type=image_type)
         for fil in image_dict:
@@ -1760,14 +1915,16 @@ class ImagingEpoch(Epoch):
         for fil in image_dict:
             if self.coadded_unprojected[fil] is not None and self.coadded_unprojected[fil] is not image_dict[fil]:
                 img = self.coadded_unprojected[fil]
-                img.zeropoints = image_dict[fil].zeropoints
-                img.zeropoint_best = image_dict[fil].zeropoint_best
-                img.update_output_file()
+                img.clone_zeropoints(image_dict[fil])
             if self.coadded_subtracted[fil] is not None:
                 img = self.coadded_subtracted[fil]
-                img.zeropoints = image_dict[fil].zeropoints
-                img.zeropoint_best = image_dict[fil].zeropoint_best
-                img.update_output_file()
+                img.clone_zeropoints(image_dict[fil])
+            if self.coadded_subtracted_trimmed[fil] is not None:
+                img = self.coadded_subtracted_trimmed[fil]
+                img.clone_zeropoints(image_dict[fil])
+            if self.coadded_subtracted_patch[fil] is not None:
+                img = self.coadded_subtracted_patch[fil]
+                img.clone_zeropoints(image_dict[fil])
 
         self.deepest_filter = deepest.filter_name
         self.deepest = deepest
@@ -1849,12 +2006,17 @@ class ImagingEpoch(Epoch):
 
     def proc_get_photometry(self, output_dir: str, **kwargs):
         if "image_type" in kwargs and isinstance(kwargs["image_type"], str):
-            image_type = kwargs["image_type"]
+            image_type = kwargs.pop("image_type")
         else:
             image_type = "final"
         u.debug_print(2, f"{self}.proc_get_photometry(): image_type ==:", image_type)
         # Run PATH on imaging if we're doing FRB stuff
-        if isinstance(self.field, fld.FRBField):
+
+        skip_path = False
+        if "skip_path" in kwargs:
+            skip_path = kwargs.pop("skip_path")
+
+        if not skip_path and isinstance(self.field, fld.FRBField):
             if 'path_kwargs' in kwargs:
                 path_kwargs = kwargs["path_kwargs"]
             else:
@@ -1862,24 +2024,88 @@ class ImagingEpoch(Epoch):
                     "priors": {"U": 0.1},
                     "config": {"radius": 10}
                 }
-            self.probabilistic_association(image_type=image_type, **path_kwargs)
-        self.get_photometry(output_dir, image_type=image_type)
+            image_type_path = image_type
+            if self.did_local_background_subtraction():
+                image_type_path = "coadded_subtracted_patch"
+            self.probabilistic_association(image_type=image_type_path, **path_kwargs)
+        self.get_photometry(output_dir, image_type=image_type, **kwargs)
+
+    def did_local_background_subtraction(self):
+        if "subtract_background_frames" in self.do_kwargs:
+            if "subtract_background_frames" in self.stage_params:
+                stage_params = self.stage_params["subtract_background_frames"]
+                if "method" not in stage_params or stage_params["method"] == "local":
+                    return True
+        return False
+
+    def best_for_path(
+            self,
+            image_type: str = "final",
+            exclude: list = ()
+    ):
+        print(f"best_for_path: {image_type=}")
+        image_dict = self._get_images(image_type=image_type)
+        r_sloan = filters.Filter.from_params("r", "sdss")
+        best_score = np.inf * units.angstrom
+        best_img = None
+        for fil_name, img in image_dict.items():
+            if fil_name in exclude:
+                continue
+            fil = img.filter
+            score = r_sloan.compare_wavelength_range(fil)
+            if score < best_score:
+                best_score = score
+                best_img = img
+        return best_img
 
     def probabilistic_association(
             self,
             image_type: str = "final",
             **path_kwargs
     ):
+        if not isinstance(self.field, fld.FRBField):
+            raise TypeError(
+                f"To run probabilistic_association, {self.name}.field must be an FRBField, not {type(self.field)}")
         image_dict = self._get_images(image_type=image_type)
         self.field.frb.load_output_file()
+
+        failed = []
         for fil in image_dict:
             img = image_dict[fil]
-            self.field.frb.probabilistic_association(
-                img=img,
-                **path_kwargs
-            )
-        self.field.frb.consolidate_candidate_tables()
-        self.field.objects.extend(self.field.frb.host_candidates)
+            try:
+                self.field.frb.probabilistic_association(
+                    img=img,
+                    do_plot=True,
+                    **path_kwargs
+                )
+            except ValueError:
+                print(f"PATH failed on {fil} image.")
+                failed.append(fil)
+
+        best_img = self.best_for_path(image_type=image_type, exclude=failed)
+
+        self.field.frb.consolidate_candidate_tables(
+            sort_by="P_Ox",
+            reverse_sort=True,
+            p_ox_assign=best_img.name
+        )
+        for obj in self.field.frb.host_candidates:
+            if isinstance(obj, objects.TransientHostCandidate):
+                print(obj.name, obj.P_Ox)
+                if obj.P_Ox is not None and obj.P_Ox > 0.1:
+                    self.field.add_object(obj)
+
+        # yaml_dict = {}
+        #
+        # for i, o in enumerate(path_cat_02):
+        #     obj_name = f"HC{o['id']}-20210912A"
+        #     obj_dict = objects.Galaxy.default_params()
+        #     obj_dict["name"] = obj_name
+        #     obj_dict["position"]["alpha"]["decimal"] = o["ra"].value
+        #     obj_dict["position"]["delta"]["decimal"] = o["dec"].value
+        #     yaml_dict[obj_name] = obj_dict
+        #
+        # p.save_params(os.path.join(output_path, "PATH", "host_candidates.yaml"), yaml_dict)
 
     def get_photometry(
             self,
@@ -1887,9 +2113,11 @@ class ImagingEpoch(Epoch):
             image_type: str = "final",
             dual: bool = False,
             match_tolerance: units.Quantity = 1 * units.arcsec,
+            **kwargs
     ):
         """
         Retrieve photometric properties of key objects and write to disk.
+
         :param path: Path to which to write the data products.
         :return:
         """
@@ -1904,6 +2132,10 @@ class ImagingEpoch(Epoch):
             p.data_dir,
             "Finalised"
         )
+
+        skip_plots = False
+        if "skip_plots" in kwargs:
+            skip_plots = kwargs["skip_plots"]
 
         image_dict = self._get_images(image_type=image_type)
         u.mkdir_check(path)
@@ -1930,7 +2162,19 @@ class ImagingEpoch(Epoch):
             else:
                 depth = img.depth["secure"]["SNR_AUTO"][f"5-sigma"]
 
-            for obj in self.field.objects:
+            img.load_data()
+
+            if not skip_plots:
+                self.field.plot_host(
+                    img=img,
+                    frame=10 * units.arcsec,
+                    centre=self.field.frb.position,
+                    output_path=os.path.join(fil_output_path, "plot_quick.pdf")
+                )
+
+            for obj_name, obj in self.field.objects_dict.items():
+                if not obj.optical:
+                    continue
                 # obj.load_output_file()
                 plt.close()
                 # Get nearest Source-Extractor object:
@@ -1944,6 +2188,11 @@ class ImagingEpoch(Epoch):
                 print()
                 print(obj.name)
                 print("FILTER:", fil)
+
+                if self.did_local_background_subtraction():
+                    good_image_path = self.coadded_subtracted[fil].output_file
+                else:
+                    good_image_path = self.coadded_unprojected[fil].output_file
 
                 if separation > match_tolerance:
                     obj.add_photometry(
@@ -1975,7 +2224,7 @@ class ImagingEpoch(Epoch):
                         snr_psf=-999.,
                         image_depth=depth,
                         image_path=img.path,
-                        good_image_path=self.coadded_unprojected[fil].output_file,
+                        good_image_path=good_image_path,
                         do_mask=img.mask_nearby()
                     )
                     print(f"No object detected at position.")
@@ -2039,36 +2288,33 @@ class ImagingEpoch(Epoch):
                         snr_psf=snr_psf,
                         image_depth=depth,
                         image_path=img.path,
-                        good_image_path=self.coadded_unprojected[fil].output_file,
+                        good_image_path=good_image_path,
                         do_mask=img.mask_nearby()
                     )
 
-                    if isinstance(self.field, fld.FRBField):
+                    if isinstance(self.field, fld.FRBField) and not skip_plots:
+
                         frames = [
                             img.nice_frame(row=obj.cat_row),
                             10 * units.arcsec,
                             20 * units.arcsec,
                             40 * units.arcsec,
-                            None
                         ]
                         if "frame" in obj.plotting_params and obj.plotting_params["frame"] is not None:
                             frames.append(obj.plotting_params["frame"])
-
-                        normalisations = [
-
-                        ]
 
                         normalize_kwargs = {}
                         if fil in obj.plotting_params:
                             if "normalize" in obj.plotting_params[fil]:
                                 normalize_kwargs = obj.plotting_params[fil]["normalize"]
-
                         for frame in frames:
                             for stretch in ["log", "sqrt"]:
+                                print(f"\nPlotting {frame=}, {stretch=}")
                                 normalize_kwargs["stretch"] = stretch
                                 centre = obj.position_from_cat_row()
+
                                 fig = plt.figure(figsize=(6, 5))
-                                ax, fig, _ = self.field.plot_host(
+                                ax, fig, other = self.field.plot_host(
                                     img=img,
                                     fig=fig,
                                     centre=centre,
@@ -2082,8 +2328,9 @@ class ImagingEpoch(Epoch):
                                     },
                                     normalize_kwargs=normalize_kwargs
                                 )
-                                output_path = os.path.join(fil_output_path,
-                                                           f"{obj.name_filesys}_{fil}_{str(frame).replace(' ', '-')}_{stretch}")
+                                output_path = os.path.join(
+                                    fil_output_path,
+                                    f"{obj.name_filesys}_{fil}_{str(frame).replace(' ', '-')}_{stretch}")
                                 name = obj.name
                                 img.extract_filter()
                                 if img.filter is None:
@@ -2093,8 +2340,11 @@ class ImagingEpoch(Epoch):
                                 ax.set_title(f"{name}, {f_name}")
                                 fig.savefig(output_path + ".pdf")
                                 fig.savefig(output_path + ".png")
-                                plt.close(fig)
+                                ax.clear()
+                                fig.clf()
+                                plt.close("all")
                                 pl.latex_off()
+                                del ax, fig, other
 
             tbl = table.vstack(rows)
             tbl.add_column(names, name="NAME")
@@ -2104,15 +2354,19 @@ class ImagingEpoch(Epoch):
 
             tbl.write(
                 os.path.join(fil_output_path, f"{self.field.name}_{self.name}_{fil}.ecsv"),
-                format="ascii.ecsv")
+                format="ascii.ecsv",
+                overwrite=True
+            )
             tbl.write(
                 os.path.join(fil_output_path, f"{self.field.name}_{self.name}_{fil}.csv"),
-                format="ascii.csv")
+                format="ascii.csv",
+                overwrite=True
+            )
 
         for fil in self.coadded_unprojected:
 
             img = self.coadded_unprojected[fil]
-            img_projected = image_dict[fil]
+            img_prime = image_dict[fil]
 
             if img is None:
                 continue
@@ -2129,38 +2383,15 @@ class ImagingEpoch(Epoch):
 
             nice_name = f"{self.field.name}_{inst_name}_{fil.replace('_', '-')}_{date}.fits"
 
-            astm_rms = img_projected.extract_astrometry_err().value
-            psf_fwhm = img_projected.extract_header_item(key="PSF_FWHM")
-            psf_fwhm_err = img_projected.extract_header_item(key="PSF_FWHM_ERR")
-
-            if img != img_projected:
-                img.set_header_items(
-                    items={
-                        # 'ASTM_RMS': astm_rms,
-                        # 'RA_RMS': img_projected.extract_header_item(key="RA_RMS"),
-                        # 'DEC_RMS': img_projected.extract_header_item(key="DEC_RMS"),
-                        # 'PSF_FWHM': psf_fwhm,
-                        # 'PSF_FWHM_ERR': psf_fwhm_err,
-                        'ZP': img_projected.extract_header_item(key="ZP"),
-                        'ZP_ERR': img_projected.extract_header_item(key="ZP_ERR"),
-                        'ZPCAT': str(img_projected.extract_header_item(key="ZPCAT"))
-                    },
-                    write=True,
-                )
-            if self.coadded_subtracted[fil] is not None:
-                img.set_header_items(
-                    items={
-                        'ASTM_RMS': astm_rms,
-                        'RA_RMS': img_projected.extract_header_item(key="RA_RMS"),
-                        'DEC_RMS': img_projected.extract_header_item(key="DEC_RMS"),
-                        'PSF_FWHM': psf_fwhm,
-                        'PSF_FWHM_ERR': psf_fwhm_err,
-                        'ZP': img_projected.extract_header_item(key="ZP"),
-                        'ZP_ERR': img_projected.extract_header_item(key="ZP_ERR"),
-                        'ZPCAT': str(img_projected.extract_header_item(key="ZPCAT"))
-                    },
-                    write=True,
-                )
+            # Make sure various common properties are transferred to image derivatives.
+            if img != img_prime:
+                img.clone_diagnostics(img_prime)
+            if isinstance(self.coadded_subtracted[fil], image.CoaddedImage):
+                self.coadded_subtracted[fil].clone_diagnostics(img_prime)
+            if isinstance(self.coadded_subtracted_trimmed[fil], image.CoaddedImage):
+                self.coadded_subtracted_trimmed[fil].clone_diagnostics(img_prime)
+            if isinstance(self.coadded_subtracted_patch[fil], image.CoaddedImage):
+                self.coadded_subtracted_patch[fil].clone_diagnostics(img_prime)
 
             img.copy_with_outputs(os.path.join(
                 self.data_path,
@@ -2243,9 +2474,6 @@ class ImagingEpoch(Epoch):
             stats["file_path"] = img.path
             self.astrometry_stats[fil] = stats
 
-            # if fil in self.coadded_subtracted and self.coadded_subtracted[fil] is not None:
-            #     self.coadded_subtracted[fil].astrometry_stats
-
         self.add_log(
             "Ran astrometry diagnostics.",
             method=self.astrometry_diagnostics,
@@ -2292,6 +2520,10 @@ class ImagingEpoch(Epoch):
             image_dict = self.coadded_unprojected
         elif image_type in ["coadded_subtracted", "subtracted"]:
             image_dict = self.coadded_subtracted
+        elif image_type in ["coadded_subtracted_trimmed", "subtracted_trimmed"]:
+            image_dict = self.coadded_subtracted_trimmed
+        elif image_type in ["coadded_subtracted_patch", "subtracted_patch"]:
+            image_dict = self.coadded_subtracted_patch
         elif image_type in ["coadded_astrometry", "astrometry"]:
             image_dict = self.coadded_astrometry
         else:
@@ -2359,6 +2591,8 @@ class ImagingEpoch(Epoch):
             "coadded_unprojected": _output_img_dict_single(self.coadded_unprojected),
             "coadded_astrometry": _output_img_dict_single(self.coadded_astrometry),
             "coadded_subtracted": _output_img_dict_single(self.coadded_subtracted),
+            "coadded_subtracted_trimmed": _output_img_dict_single(self.coadded_subtracted_trimmed),
+            "coadded_subtracted_patch": _output_img_dict_single(self.coadded_subtracted_patch),
             "std_pointings": self.std_pointings,
             "frames_final": self.frames_final,
             "frames_raw": _output_img_list(self.frames_raw),
@@ -2386,7 +2620,7 @@ class ImagingEpoch(Epoch):
             coadd_class = image.CoaddedImage.select_child_class(instrument_name=self.instrument_name, mode='imaging')
             if self.date is None:
                 if "date" in outputs:
-                    self.date = outputs["date"]
+                    self.set_date(outputs["date"])
             if "filters" in outputs:
                 self.filters = outputs["filters"]
             if self._check_output_file_path("deepest", outputs):
@@ -2461,6 +2695,22 @@ class ImagingEpoch(Epoch):
                 for fil in outputs["coadded_subtracted"]:
                     if outputs["coadded_subtracted"][fil] is not None:
                         self.add_coadded_subtracted_image(img=outputs["coadded_subtracted"][fil], key=fil, **kwargs)
+            if "coadded_subtracted_trimmed" in outputs:
+                for fil in outputs["coadded_subtracted_trimmed"]:
+                    if outputs["coadded_subtracted_trimmed"][fil] is not None:
+                        self.add_coadded_subtracted_trimmed_image(
+                            img=outputs["coadded_subtracted_trimmed"][fil],
+                            key=fil,
+                            **kwargs
+                        )
+            if "coadded_subtracted_patch" in outputs:
+                for fil in outputs["coadded_subtracted_patch"]:
+                    if outputs["coadded_subtracted_patch"][fil] is not None:
+                        self.add_coadded_subtracted_patch_image(
+                            img=outputs["coadded_subtracted_patch"][fil],
+                            key=fil,
+                            **kwargs
+                        )
             if "coadded_trimmed" in outputs:
                 for fil in outputs["coadded_trimmed"]:
                     if outputs["coadded_trimmed"][fil] is not None:
@@ -2485,11 +2735,13 @@ class ImagingEpoch(Epoch):
             self,
             cat_name="gaia",
             correct_to_epoch: bool = True,
-            force: bool = False
+            force: bool = False,
+            delete_others: bool = True
     ):
         """
         Generates astrometry indices using astrometry.net and the specified catalogue, unless they have been generated
         before; in which case it simply copies them to the main index directory (overwriting those of other epochs there).
+
         :param cat_name:
         :param correct_to_epoch:
         :param force:
@@ -2498,7 +2750,16 @@ class ImagingEpoch(Epoch):
         if not isinstance(self.field, fld.Field):
             raise ValueError("field has not been set for this observation.")
 
+        do_indices = False
         if force or not self.astrometry_indices:
+            do_indices = True
+        else:
+            for path in self.astrometry_indices:
+                if not os.path.isdir(path):
+                    do_indices = True
+                    break
+
+        if do_indices:
             epoch_index_path = os.path.join(self.data_path, "astrometry_indices")
             self.field.retrieve_catalogue(cat_name=cat_name)
 
@@ -2530,6 +2791,10 @@ class ImagingEpoch(Epoch):
         u.mkdir_check(index_path)
         cat_index_path = os.path.join(index_path, cat_name)
         astm.astrometry_net.add_index_directory(cat_index_path)
+        if delete_others:
+            for file in os.listdir(cat_index_path):
+                file_path = os.path.join(cat_index_path, file)
+                u.rm_check(file_path)
         for index_path in self.astrometry_indices:
             shutil.copy(index_path, cat_index_path)
         self.update_output_file()
@@ -2616,6 +2881,12 @@ class ImagingEpoch(Epoch):
     def add_coadded_subtracted_image(self, img: Union[str, image.Image], key: str, **kwargs):
         return self._add_coadded(img=img, key=key, image_dict=self.coadded_subtracted)
 
+    def add_coadded_subtracted_trimmed_image(self, img: Union[str, image.Image], key: str, **kwargs):
+        return self._add_coadded(img=img, key=key, image_dict=self.coadded_subtracted_trimmed)
+
+    def add_coadded_subtracted_patch_image(self, img: Union[str, image.Image], key: str, **kwargs):
+        return self._add_coadded(img=img, key=key, image_dict=self.coadded_subtracted_patch)
+
     def add_coadded_astrometry_image(self, img: Union[str, image.Image], key: str, **kwargs):
         return self._add_coadded(img=img, key=key, image_dict=self.coadded_astrometry)
 
@@ -2666,6 +2937,10 @@ class ImagingEpoch(Epoch):
                 self.coadded_unprojected[fil] = None
             if fil not in self.coadded_subtracted:
                 self.coadded_subtracted[fil] = None
+            if fil not in self.coadded_subtracted_patch:
+                self.coadded_subtracted_patch[fil] = None
+            if fil not in self.coadded_subtracted_trimmed:
+                self.coadded_subtracted_trimmed[fil] = None
             if fil not in self.coadded_astrometry:
                 self.coadded_astrometry[fil] = None
             if fil not in self.exp_time_mean:
@@ -2787,21 +3062,16 @@ class ImagingEpoch(Epoch):
             name: str,
             instrument: str,
             field: Union['fld.Field', str] = None,
-            old_format: bool = False,
             quiet: bool = False
     ):
         if name in active_epochs:
             return active_epochs[name]
         instrument = instrument.lower()
         field_name, field = cls._from_params_setup(name=name, field=field)
-        if old_format:
-            instrument = instrument.split("-")[-1]
-            path = os.path.join(p.param_dir, f"epochs_{instrument}", name)
-        else:
-            path = cls.build_param_path(
-                instrument_name=instrument,
-                field_name=field_name,
-                epoch_name=name)
+        path = cls.build_param_path(
+            instrument_name=instrument,
+            field_name=field_name,
+            epoch_name=name)
         return cls.from_file(param_file=path, field=field, quiet=quiet)
 
     @classmethod
@@ -2817,8 +3087,9 @@ class ImagingEpoch(Epoch):
             name: str,
             date: Time = None
     ):
+        date = u.check_time(date)
         if date is not None:
-            name_str = f"{date.isot}-{name}"
+            name_str = f"{date.strftime('%Y-%m-%d')}-{name}"
         else:
             name_str = name
 
@@ -2828,7 +3099,6 @@ class ImagingEpoch(Epoch):
     def from_file(
             cls,
             param_file: Union[str, dict],
-            old_format: bool = False,
             field: 'fld.Field' = None,
             quiet: bool = False
     ):
@@ -2842,10 +3112,7 @@ class ImagingEpoch(Epoch):
 
         pdict_backup = param_dict.copy()
 
-        if old_format:
-            instrument = "vlt-fors2"
-        else:
-            instrument = param_dict.pop("instrument").lower()
+        instrument = param_dict.pop("instrument").lower()
 
         fld_from_dict = param_dict.pop("field")
         if field is None:
@@ -2853,43 +3120,51 @@ class ImagingEpoch(Epoch):
         # else:
         #     param_dict.pop("field")
 
+        data_path = None
+        if "data_path" in param_dict:
+            data_path = param_dict.pop('data_path')
+        if not data_path:
+            data_path = cls.build_data_path_absolute(
+                field=field,
+                instrument_name=instrument,
+                name=name,
+                date=param_dict["date"]
+            )
+
+        p.join_data_dir(data_path)
+
+        if "name" in param_dict:
+            param_dict.pop("name")
+        if "param_path" in param_dict:
+            param_dict.pop("param_path")
+
         sub_cls = cls.select_child_class(instrument=instrument)
         u.debug_print(1, sub_cls)
-        if sub_cls is ImagingEpoch:
-            return cls(
-                name=name,
-                field=field,
-                param_path=param_file,
-                data_path=os.path.join(config["top_data_dir"], param_dict.pop('data_path')),
-                instrument=instrument,
-                date=param_dict.pop('date'),
-                program_id=param_dict.pop("program_id"),
-                target=param_dict.pop("target"),
-                source_extractor_config=param_dict.pop('sextractor'),
-                quiet=quiet,
-                **param_dict
-            )
-        elif sub_cls is FORS2ImagingEpoch:
-            return sub_cls.from_file(param_dict, name=name, old_format=old_format, field=field)
-        else:
-            return sub_cls.from_file(pdict_backup, name=name, field=field)
+        return sub_cls(
+            name=name,
+            field=field,
+            param_path=param_file,
+            data_path=data_path,
+            instrument=instrument,
+            date=param_dict.pop('date'),
+            program_id=param_dict.pop("program_id"),
+            target=param_dict.pop("target"),
+            source_extractor_config=param_dict.pop('sextractor'),
+            quiet=quiet,
+            **param_dict
+        )
 
     @classmethod
     def default_params(cls):
         default_params = super().default_params()
-
         default_params.update({
-            "astrometry":
-                {"tweak": True
-                 },
-            "coadd":
-                {"frames": "astrometry"},
             "sextractor":
-                {"dual_mode": False,
-                 "threshold": 1.5,
-                 "kron_factor": 2.5,
-                 "kron_radius_min": 3.5
-                 },
+                {
+                    "dual_mode": False,
+                    "threshold": 1.5,
+                    "kron_factor": 2.5,
+                    "kron_radius_min": 3.5
+                },
             # "background_subtraction":
             #     {"renormalise_centre": objects.position_dictionary.copy(),
             #      "test_synths":
@@ -2917,10 +3192,11 @@ class ImagingEpoch(Epoch):
             child_class = HubbleImagingEpoch
         elif instrument == "decam":
             child_class = DESEpoch
-        elif instrument in p.instruments_imaging:
-            child_class = ImagingEpoch
+        # elif instrument in p.instruments_imaging:
         else:
-            raise ValueError(f"Unrecognised instrument {instrument}")
+            child_class = ImagingEpoch
+        # else:
+        # raise ValueError(f"Unrecognised instrument {instrument}")
         u.debug_print(2, f"field.select_child_class(): instrument ==", instrument, "child_class ==", child_class)
         return child_class
 
@@ -2974,7 +3250,7 @@ class FORS2StandardEpoch(StandardEpoch, ImagingEpoch):
             distance_tolerance: units.Quantity = None,
             snr_min: float = 3.,
             star_class_tolerance: float = 0.9,
-            suppress_select: bool = False,
+            suppress_select: bool = True,
             **kwargs
     ):
 
@@ -3429,7 +3705,7 @@ class HubbleImagingEpoch(ImagingEpoch):
                 self.instrument_name = img.instrument_name
             fil = img.extract_filter()
             img.extract_date_obs()
-            self.date = img.date
+            self.set_date(img.date)
             self.exp_time_mean[fil] = img.extract_header_item('TEXPTIME') * units.second / img.extract_ncombine()
             img.set_header_item('INTTIME', img.extract_header_item('TEXPTIME'))
             self.add_coadded_image(img, key=fil)
@@ -3606,7 +3882,6 @@ class SurveyImagingEpoch(ImagingEpoch):
         super()._pipeline_init()
         self.coadded_final = "coadded"
         self.paths["download"] = os.path.join(self.data_path, "0-download")
-        # self.frames_final = "coadded"
 
     # TODO: Automatic cutout download; don't worry for now.
     def proc_download(self, output_dir: str, **kwargs):
@@ -3628,7 +3903,7 @@ class SurveyImagingEpoch(ImagingEpoch):
 
     def proc_get_photometry(self, output_dir: str, **kwargs):
         self.load_output_file()
-        self.get_photometry(output_dir, image_type="coadded")
+        self.get_photometry(output_dir, image_type="coadded", **kwargs)
 
     def _initial_setup(self, output_dir: str, **kwargs):
         download_dir = self.paths["download"]
@@ -3794,7 +4069,11 @@ class PanSTARRS1ImagingEpoch(SurveyImagingEpoch):
         pass
 
 
-def _retrieve_eso_epoch(epoch: Union['ESOImagingEpoch', 'ESOSpectroscopyEpoch'], path: str):
+def _retrieve_eso_epoch(
+        epoch: Union['ESOImagingEpoch', 'ESOSpectroscopyEpoch'],
+        path: str
+):
+    from .spectroscopy import ESOSpectroscopyEpoch
     epoch_date = None
     if epoch.date is not None:
         epoch_date = epoch.date
@@ -3958,6 +4237,7 @@ class ESOImagingEpoch(ImagingEpoch):
     def retrieve(self, output_dir: str):
         """
         Check ESO archive for the epoch raw frames, and download those frames and associated files.
+
         :return:
         """
         r = []
@@ -4303,6 +4583,8 @@ class ESOImagingEpoch(ImagingEpoch):
                 edged = True
 
             for i, frame in enumerate(self.frames_esoreflex_backgrounds[fil]):
+                if self.is_excluded(frame):
+                    continue
                 new_path = os.path.join(
                     fil_path_back,
                     frame.filename.replace(".fits", "_trim.fits")
@@ -4321,6 +4603,8 @@ class ESOImagingEpoch(ImagingEpoch):
             # Repeat for science images
 
             for i, frame in enumerate(self.frames_reduced[fil]):
+                if self.is_excluded(frame):
+                    continue
                 # Split the files into upper CCD and lower CCD
                 new_file = frame.filename.replace(".fits", "_trim.fits")
                 new_path = os.path.join(fil_path_science, new_file)
@@ -4380,6 +4664,8 @@ class ESOImagingEpoch(ImagingEpoch):
             u.mkdir_check(fil_path_science)
             u.mkdir_check(fil_path_back)
             for frame in self.frames_trimmed[fil]:
+                if self.is_excluded(frame):
+                    continue
                 do = True
                 if upper_only:
                     if frame.extract_chip_number() != 1:
@@ -4446,7 +4732,9 @@ class ESOImagingEpoch(ImagingEpoch):
             field: 'fld.Field' = None
     ):
 
-        name, param_file, param_dict = p.params_init(param_file)
+        print(param_file)
+        print(name)
+        name, param_file, param_dict = p.params_init(param_file, name=name)
         if param_dict is None:
             raise FileNotFoundError(f"No parameter file found at {param_file}.")
 
@@ -4818,7 +5106,8 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
         super()._pipeline_init()
         self.frames_final = "astrometry"
         # If told not to correct astrometry on frames:
-        if "correct_astrometry_frames" in self.do_kwargs and not self.do_kwargs["correct_astrometry_frames"]:
+        if not self.combined_epoch and (
+                "correct_astrometry_frames" in self.do_kwargs and not self.do_kwargs["correct_astrometry_frames"]):
             self.frames_final = "normalised"
             # If told to register frames
             if "register_frames" in self.do_kwargs and self.do_kwargs["register_frames"]:
@@ -4936,10 +5225,18 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
         # With the FORS2 substructure we want to search every subdirectory
         return False
 
-    def correct_astrometry_frames(self, output_dir: str, frames: dict = None, **kwargs):
+    def correct_astrometry_frames(
+            self,
+            output_dir: str,
+            frames: dict = None,
+            **kwargs
+    ):
         """
+        Uses `astrometry.net` with Gaia DR3 indices to correct the WCS of a set of individual exposures associated with
+        this epoch.
 
         :param output_dir:
+        :param frames: A "frames" dictionary ({"filter_name": [image_objects]}) containing the images to solve.
         :param kwargs:
             method: method with which to solve astrometry of epoch. Allowed values are:
                 individual: each frame, including separate chips in the same exposure, will be passed to astrometry.net
@@ -4952,6 +5249,7 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
                     unsolved chip.
                 propagate_from_single: Each upper-chip image is passed to astrometry.net until a solution is found; this
                     solution is then propagated to all other upper-chip images. The same is repeated for the lower chip.
+                    THIS CAN GIVE COARSE RESULTS ONLY.
         :return:
         """
         self.frames_astrometry = {}
@@ -5151,7 +5449,8 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
             fitter = fitting.LevMarLSQFitter()
 
             try:
-                model = fitter(model_init, np.array(lambdas_known), np.array(extinctions_known), weights=1 / extinctions_known_err)
+                model = fitter(model_init, np.array(lambdas_known), np.array(extinctions_known),
+                               weights=1 / extinctions_known_err)
                 curve_err = u.root_mean_squared_error(model_values=model(lambdas_known), obs_values=extinctions_known)
                 results_tbl["curve_err"].append(curve_err)
                 extinctions_find = model(lambdas_find)
@@ -5160,7 +5459,7 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
                 plt.plot(lambda_eff_fit, model(lambda_eff_fit))
                 plt.scatter(lambdas_known, extinctions_known, label="Known")
                 for j, m in enumerate(mjds):
-                    plt.text(lambdas_known[j], extinctions_known[j], m)
+                    plt.text(lambdas_known[j], extinctions_known[j], fils_known[j])
                 plt.scatter(lambdas_find, extinctions_find, label="fitted")
                 plt.xlabel("$\lambda_{eff}$ (Ang)")
                 plt.ylabel("Extinction (mag)")
@@ -5237,7 +5536,7 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
                 # For each chip, generate a master bias image
                 try:
                     master_bias = esorex.fors_bias(
-                        bias_frames=list(map(lambda b: b.output_file, bias_set)),
+                        bias_frames=list(map(lambda b: b.path, bias_set)),
                         output_dir=output_path,
                         output_filename=f"master_bias_{chip}.fits",
                         sof_name=f"bias_{chip}.sof"
@@ -5252,7 +5551,7 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
                     img = image_dict[fil]
                     if "calib_pipeline" in img.zeropoints:
                         img.zeropoints.pop("calib_pipeline")
-                    flat_set = list(map(lambda b: b.output_file, flat_sets[fil][i]))
+                    flat_set = list(map(lambda b: b.path, flat_sets[fil][i]))
                     fil_dir = os.path.join(output_path, fil)
                     u.mkdir_check(fil_dir)
                     try:
@@ -5291,7 +5590,7 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
                             std_dir = os.path.join(fil_dir, std.name)
                             u.mkdir_check(std_dir)
                             aligned_phot, std_reduced = esorex.fors_zeropoint(
-                                standard_img=std.output_file,
+                                standard_img=std.path,
                                 master_bias=master_bias,
                                 master_sky_flat_img=master_sky_flat_img,
                                 output_dir=std_dir,
@@ -5401,15 +5700,10 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
                     zeropoints[fil][cat] = {}
                 zeropoints[fil][cat][self.date_str()] = img.zeropoints[cat]
 
-            # Transfer derived zeropoints to the unprojected versions (if they exist and are distinct)
-            if self.coadded_unprojected[fil] is not None and self.coadded_unprojected[fil] is not img:
-                self.coadded_unprojected[fil].zeropoints = img.zeropoints
-                self.coadded_unprojected[fil].zeropoint_best = img.zeropoint_best
-                self.coadded_unprojected[fil].update_output_file()
-            if self.coadded_subtracted[fil] is not None:
-                self.coadded_subtracted[fil].zeropoints = img.zeropoints
-                self.coadded_subtracted[fil].zeropoint_best = img.zeropoint_best
-                self.coadded_subtracted[fil].update_output_file()
+            # Transfer derived zeropoints to other versions (if they exist and are distinct)
+            for coadded_dict in self.coadded_derivatives:
+                if isinstance(coadded_dict[fil], image.CoaddedImage) and coadded_dict[fil] is not img:
+                    coadded_dict[fil].clone_zeropoints(img)
 
         p.save_params(zeropoint_yaml, zeropoints)
 
@@ -5459,1000 +5753,6 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
             cls,
             param_file: Union[str, dict],
             name: str = None,
-            old_format: bool = False,
             field: 'fld.Field' = None
     ):
-
-        if old_format:
-            if name is None:
-                raise ValueError("name must be provided for old_format=True.")
-            param_file = cls.convert_old_params(old_epoch_name=name)
-
         return super().from_file(param_file=param_file, name=name, field=field)
-
-    @classmethod
-    def convert_old_params(cls, old_epoch_name: str):
-        new_params = cls.new_yaml(name=old_epoch_name, path=None)
-        old_params = p.object_params_fors2(old_epoch_name)
-
-        new_epoch_name = f"FRB20{old_epoch_name[3:]}"
-
-        old_field = old_epoch_name[:old_epoch_name.find('_')]
-        new_field = new_epoch_name[:new_epoch_name.find('_')]
-
-        old_data_dir = old_params["data_dir"]
-        i = old_data_dir.find("MJD")
-        mjd = old_data_dir[i + 3:i + 8]
-        t = Time(mjd, format="mjd")
-        date = t.strftime("%Y-%m-%d")
-        new_data_dir = os.path.join(p.config['top_data_dir'], new_field, "imaging", "vlt-fors2",
-                                    f"{date}-{new_epoch_name}")
-
-        new_params["instrument"] = "vlt-fors2"
-        new_params["data_path"] = new_data_dir
-        new_params["field"] = new_field
-        new_params["name"] = new_epoch_name
-        new_params["date"] = date
-
-        new_params["sextractor"]["aperture_diameters"] = old_params["photometry_apertures"]
-        new_params["sextractor"]["dual_mode"] = old_params["do_dual_mode"]
-        new_params["sextractor"]["threshold"] = old_params["threshold"]
-        new_params["sextractor"]["kron_factor"] = old_params["sextractor_kron_radius"]
-        new_params["sextractor"]["kron_radius_min"] = old_params["sextractor_min_radius"]
-
-        filters = filter(lambda k: k.endswith("_star_class_tol"), old_params)
-        filters = list(map(lambda f: f[0], filters))
-
-        new_params["background_subtraction"]["renormalise_centre"]["dec"] = old_params["renormalise_centre_dec"]
-        new_params["background_subtraction"]["renormalise_centre"]["ra"] = old_params["renormalise_centre_ra"]
-        new_params["background_subtraction"]["test_synths"] = []
-        if old_params["test_synths"]["ra"]:
-            for i, _ in enumerate(old_params["test_synths"]):
-                synth_dict = {"position": {}}
-                synth_dict["position"]["ra"] = old_params["test_synths"]["ra"][i]
-                synth_dict["position"]["dec"] = old_params["test_synths"]["dec"][i]
-                synth_dict["mags"] = {}
-                synth_dict["mags"]["g"] = old_params["test_synths"]["g_mag"][i]
-                synth_dict["mags"]["I"] = old_params["test_synths"]["I_mag"][i]
-                new_params["background_subtraction"]["test_synths"].append(synth_dict)
-
-        new_params["skip"]["esoreflex_copy"] = old_params["skip_copy"]
-        new_params["skip"]["sextractor_individual"] = not old_params["do_sextractor_individual"]
-        new_params["skip"]["astrometry_net"] = old_params["skip_astrometry"]
-        new_params["skip"]["sextractor"] = not old_params["do_sextractor"]
-        new_params["skip"]["esorex"] = old_params["skip_esorex"]
-
-        instrument_path = os.path.join(p.param_dir, "fields", new_field, "imaging", "vlt-fors2")
-        u.mkdir_check(instrument_path)
-        output_path = os.path.join(instrument_path, new_epoch_name)
-        p.save_params(file=output_path,
-                      dictionary=new_params)
-
-        return output_path
-
-
-class SpectroscopyEpoch(Epoch):
-    instrument_name = "dummy-instrument"
-    mode = "spectrocopy"
-    grisms = {}
-    frame_class = image.Spectrum
-    coadded_class = image.Coadded1DSpectrum
-
-    def __init__(self,
-                 param_path: str = None,
-                 name: str = None,
-                 field: Union[str, 'fld.Field'] = None,
-                 data_path: str = None,
-                 instrument: str = None,
-                 date: Union[str, Time] = None,
-                 program_id: str = None,
-                 target: str = None,
-                 grism: str = None,
-                 decker: str = None
-                 ):
-        super().__init__(param_path=param_path, name=name, field=field, data_path=data_path, instrument=instrument,
-                         date=date, program_id=program_id, target=target)
-
-        self.decker = decker
-        self.decker_std = decker
-        self.grism = grism
-        if grism is None or grism not in self.grisms:
-            warnings.warn("grism not configured.")
-
-        self.obj = target
-
-        self._path_2_pypeit()
-        self.standards_raw = []
-        self._instrument_pypeit = self.instrument_name.replace('-', '_')
-
-        self._pypeit_file = None
-        self._pypeit_sorted_file = None
-        self._pypeit_coadd1d_file = None
-
-    def _path_0_raw(self):
-        if self.data_path is not None and "raw_dir" not in self.paths:
-            self.paths["raw_dir"] = os.path.join(self.data_path, epoch_stage_dirs["0-download"])
-
-    def proc_pypeit_flux(self, no_query: bool = False, **kwargs):
-        if no_query or self.query_stage("Do fluxing with PypeIt?", stage_name='4-pypeit_flux_calib'):
-            self._pypeit_flux()
-            self.stages_complete['4-pypeit_flux_calib'] = Time.now()
-            self.update_output_file()
-
-    def _pypeit_flux(self):
-        pypeit_run_dir = self.get_path("pypeit_run_dir")
-        pypeit_science_dir = os.path.join(pypeit_run_dir, "Science")
-        std_reduced_filename = filter(lambda f: "spec1d" in f and "STD,FLUX" in f and f.endswith(".fits"),
-                                      os.listdir(pypeit_science_dir)).__next__()
-        std_reduced_path = os.path.join(pypeit_science_dir, std_reduced_filename)
-        if not self.quiet:
-            print(f"Using {std_reduced_path} for fluxing.")
-
-        sensfunc_path = os.path.join(pypeit_run_dir, "sens.fits")
-        # Generate sensitivity function from standard observation
-        spec.pypeit_sensfunc(spec1dfile=std_reduced_path, outfile=sensfunc_path)
-        # Generate flux setup file.
-        spec.pypeit_flux_setup(sci_path=pypeit_science_dir, run_dir=pypeit_run_dir)
-        flux_setup_path = os.path.join(pypeit_run_dir, self.pypeit_flux_title())
-        # Insert name of sensitivity file to flux setup file.
-        with open(flux_setup_path, "r") as flux_setup:
-            flux_lines = flux_setup.readlines()
-        file_first = flux_lines.index("flux read\n") + 1
-        flux_lines[file_first] = flux_lines[file_first][:-1] + " " + sensfunc_path + "\n"
-        # Write back to file.
-        u.write_list_to_file(path=flux_setup_path, file=flux_lines)
-        # Run pypeit_flux_calib
-        os.system(f"pypeit_flux_calib {flux_setup_path}")
-
-        self.set_path("pypeit_sensitivity_file", sensfunc_path)
-        self.set_path("pypeit_std_reduced", std_reduced_path)
-        self.set_path("pypeit_science_dir", pypeit_science_dir)
-        self.set_path("pypeit_flux_setup", flux_setup_path)
-
-    def pypeit_flux_title(self):
-        return f"{self._instrument_pypeit}.flux"
-
-    def read_pypeit_sorted_file(self):
-        if "pypeit_setup_dir" in self.paths and self.paths["pypeit_setup_dir"] is not None:
-            setup_files = self.paths["pypeit_setup_dir"]
-            sorted_path = os.path.join(setup_files,
-                                       filter(lambda f: f.endswith(".sorted"), os.listdir(setup_files)).__next__())
-            with open(sorted_path) as sorted_file:
-                self._pypeit_sorted_file = sorted_file.readlines()
-        else:
-            raise KeyError("pypeit_setup_dir has not been set.")
-
-    def setup_info(self, setup: str):
-        """
-        Pulls setup info from a pypeit .sorted file.
-        :param setup:
-        :return:
-        """
-        file = self._get_pypeit_sorted_file()
-        # Find start of setup description
-        setup_start = file.index(f"Setup {setup}\n")
-        setup_dict = {}
-        i = setup_start + 1
-        line = file[i]
-        # Assemble a dictionary of the setup parameters.
-        while line != "#---------------------------------------------------------\n":
-            while line[0] == " ":
-                line = line[1:]
-            line = line[:-1]
-            key, value = line.split(": ")
-            setup_dict[key] = value
-            i += 1
-            line = file[i]
-        return setup_dict
-
-    def _read_pypeit_file(self, filename):
-        pypeit_run_dir = os.path.join(self.paths['pypeit_dir'], filename)
-        self.set_path("pypeit_run_dir", pypeit_run_dir)
-        self.set_path("pypeit_file", os.path.join(pypeit_run_dir, f"{filename}.pypeit"))
-        # Retrieve text from .pypeit file
-        with open(self.get_path("pypeit_file"), 'r') as pypeit_file:
-            pypeit_lines = pypeit_file.readlines()
-            self._set_pypeit_file(pypeit_lines)
-        f_start = pypeit_lines.index("data read\n") + 3
-        f_end = pypeit_lines.index("data end\n")
-        for line in pypeit_lines[f_start:f_end]:
-            raw = image.RawSpectrum.from_pypeit_line(line=line, pypeit_raw_path=self.paths["raw_dir"])
-            self.add_frame_raw(raw)
-        return pypeit_lines
-
-    def read_pypeit_file(self, setup: str):
-        if "pypeit_dir" in self.paths and self.paths["pypeit_dir"] is not None:
-            filename = f"{self._instrument_pypeit}_{setup}"
-            self._read_pypeit_file(filename=filename)
-            return self._pypeit_file
-        else:
-            raise KeyError("pypeit_run_dir has not been set.")
-
-    def write_pypeit_file_science(self):
-        """
-        Rewrites the stored .pypeit file to disk at its original path.
-        :return: path of .pypeit file.
-        """
-        pypeit_lines = self._get_pypeit_file()
-        if pypeit_lines is not None:
-            pypeit_file_path = self.get_path("pypeit_file")
-            u.write_list_to_file(path=pypeit_file_path, file=pypeit_lines)
-        else:
-            raise ValueError("pypeit_file has not yet been read.")
-        return pypeit_file_path
-
-    def add_pypeit_user_param(self, param: list, value: str, file_type: str = "pypeit"):
-        """
-        Inserts a parameter for the PypeIt run at the correct point in the stored .pypeit file.
-        :param param: For m
-        :param value:
-        :return:
-        """
-        if file_type == "pypeit":
-            pypeit_file = self._get_pypeit_file()
-        elif file_type == "coadd1d":
-            pypeit_file = self._get_pypeit_coadd1d_file()
-        else:
-            raise ValueError(f"file_type {file_type} not recognised.")
-
-        if pypeit_file is not None:
-            # Build the final line of the setting specially.
-            setting = "\t" * (len(param) - 1) + f"{param.pop()} = {value}\n"
-            p_start = pypeit_file.index("# User-defined execution parameters\n") + 1
-            insert_here = False
-            # For each level of the param list, look to see if it's already there.
-            for i, line in pypeit_file[p_start]:
-                if param[0] in line:
-                    p_start = i
-                    break
-
-            for i, par in enumerate(param):
-                # Encase each level of the parameter in the correct number of square brackets and tabs.
-                par = "\t" * i + "[" * (i + 1) + par + "]" * (i + 1) + "\n"
-                # First, check if param sub-headings are already there:
-                if par in pypeit_file and not insert_here:
-                    p_start = pypeit_file.index(par) + 1
-                else:
-                    # Insert the line at correct position.
-                    pypeit_file.insert(p_start, par)
-                    p_start += 1
-                    insert_here = True
-            # Insert the final line.
-            pypeit_file.insert(p_start, setting)
-
-            if file_type == "pypeit":
-                self._set_pypeit_file(lines=pypeit_file)
-            elif file_type == "coadd1d":
-                self._set_pypeit_coadd1d_file(lines=pypeit_file)
-
-        else:
-            raise ValueError("pypeit_file has not yet been read.")
-
-    def add_pypeit_file_lines(self, lines: list):
-        if self._get_pypeit_file() is not None:
-            # Remove last two lines of file ("data end")
-            pypeit_lines = self._pypeit_file[:-2]
-            # Insert desired lines
-            pypeit_lines += lines
-            # Reinsert last two lines.
-            pypeit_lines += ["data end\n", "\n"]
-            self._pypeit_file = pypeit_lines
-        else:
-            raise ValueError("pypeit_file has not yet been read.")
-
-    def _output_dict(self):
-        output_dict = super()._output_dict()
-        output_dict.update({"binning": self.binning,
-                            "decker": self.decker})
-        return output_dict
-
-    def proc_pypeit_setup(self, no_query: bool = False, **kwargs):
-        if no_query or self.query_stage("Do PypeIt setup?", stage_name='2-pypeit_setup'):
-            pass
-
-    def proc_pypeit_run(self, no_query: bool = False, do_not_reuse_masters=False, **kwargs):
-        if no_query or self.query_stage("Run PypeIt?", stage_name='3-pypeit_run'):
-            pass
-
-    def proc_pypeit_coadd(self, no_query: bool = False, **kwargs):
-        pass
-
-    def proc_convert_to_marz_format(self, no_query: bool = False, **kwargs):
-        if no_query or self.query_stage("Convert co-added 1D spectra to Marz format?", stage_name='6-marz-format'):
-            pass
-
-    def _path_2_pypeit(self):
-        if self.data_path is not None and "pypeit_dir" not in self.paths:
-            self.paths["pypeit_dir"] = os.path.join(self.data_path, epoch_stage_dirs["2-pypeit"])
-
-    def find_science_attributes(self):
-        frames = self.get_frames_science()
-        if frames:
-            frame = frames[0]
-            self.set_binning(frame.binning)
-            self.set_decker(frame.decker)
-        else:
-            raise ValueError(f"Science frames list is empty.")
-        return frame
-
-    def find_std_attributes(self):
-        frames = self.get_frames_standard()
-        if frames:
-            frame = frames[0]
-            self.set_binning_std(frame.binning)
-            self.set_decker_std(frame.decker)
-        else:
-            raise ValueError(f"Standard frames list is empty.")
-        return frame
-
-    def get_frames_science(self):
-        return self.frames_science
-
-    def get_frames_standard(self):
-        return self.frames_standard
-
-    def get_decker(self):
-        return self.decker
-
-    def set_decker(self, decker: str):
-        self.decker = decker
-        return decker
-
-    def get_decker_std(self):
-        return self.decker_std
-
-    def set_decker_std(self, decker: str):
-        self.decker_std = decker
-        return decker
-
-    def _set_pypeit_file(self, lines: list):
-        self._pypeit_file = lines
-
-    def _get_pypeit_file(self):
-        return self._pypeit_file
-
-    def _set_pypeit_coadd1d_file(self, lines: list):
-        self._pypeit_coadd1d_file = lines
-
-    def _get_pypeit_coadd1d_file(self):
-        return self._pypeit_coadd1d_file
-
-    def _get_pypeit_sorted_file(self):
-        return self._pypeit_sorted_file
-
-    @classmethod
-    def stages(cls):
-        param_dict = super().stages()
-        param_dict.update({
-            "2-pypeit_setup": None,
-            "3-pypeit_run": None,
-            "4-pypeit_flux_calib": None
-        })
-        return param_dict
-
-    @classmethod
-    def select_child_class(cls, instrument: str):
-        instrument = instrument.lower()
-        if instrument == "vlt-fors2":
-            return FORS2SpectroscopyEpoch
-        elif instrument == "vlt-xshooter":
-            return XShooterSpectroscopyEpoch
-        elif instrument in p.instruments_spectroscopy:
-            return SpectroscopyEpoch
-        else:
-            raise ValueError(f"Unrecognised instrument {instrument}")
-
-    @classmethod
-    def from_file(
-            cls,
-            param_file: Union[str, dict],
-            field: 'fld.Field' = None
-    ):
-        name, param_file, param_dict = p.params_init(param_file)
-        if param_dict is None:
-            raise FileNotFoundError(f"No parameter file found at {param_file}.")
-        instrument = param_dict["instrument"].lower()
-        if field is None:
-            field = param_dict.pop("field")
-        if 'target' in param_dict:
-            target = param_dict.pop('target')
-        else:
-            target = None
-        sub_cls = cls.select_child_class(instrument=instrument)
-        # if sub_cls is SpectroscopyEpoch:
-        return sub_cls(
-            name=name,
-            field=field,
-            param_path=param_file,
-            data_path=os.path.join(config["top_data_dir"], param_dict['data_path']),
-            instrument=instrument,
-            date=param_dict["date"],
-            program_id=param_dict["program_id"],
-            target=target,
-            **param_dict
-        )
-        # else:
-        # return sub_cls.from_file(param_file=param_file, field=field)
-
-    @classmethod
-    def from_params(
-            cls,
-            name: str,
-            field: Union['fld.Field', str] = None,
-            instrument: str = None
-    ):
-        if name in active_epochs:
-            return active_epochs[name]
-        print("Initializing epoch...")
-        instrument = instrument.lower()
-        field_name, field = cls._from_params_setup(name=name, field=field)
-        path = cls.build_param_path(
-            field_name=field_name,
-            instrument_name=instrument,
-            epoch_name=name)
-        return cls.from_file(param_file=path, field=field)
-
-    @classmethod
-    def build_param_path(cls, field_name: str, instrument_name: str, epoch_name: str):
-        return os.path.join(p.param_dir, "fields", field_name, "spectroscopy", instrument_name, epoch_name)
-
-
-class ESOSpectroscopyEpoch(SpectroscopyEpoch):
-    def __init__(self,
-                 param_path: str = None,
-                 name: str = None,
-                 field: Union[str, 'fld.Field'] = None,
-                 data_path: str = None,
-                 instrument: str = None,
-                 date: Union[str, Time] = None,
-                 program_id: str = None,
-                 grism: str = None
-                 ):
-        super().__init__(param_path=param_path,
-                         name=name,
-                         field=field,
-                         data_path=data_path,
-                         instrument=instrument,
-                         date=date,
-                         program_id=program_id,
-                         grism=grism)
-        # Data reduction paths
-
-    def pipeline(self, **kwargs):
-        super().pipeline(**kwargs)
-        if "do_not_reuse_masters" in kwargs:
-            do_not_reuse_masters = kwargs["do_not_reuse_masters"]
-        else:
-            do_not_reuse_masters = False
-        self.proc_raw()
-        self.proc_initial_setup()
-        self.proc_pypeit_setup()
-        self.proc_pypeit_run(do_not_reuse_masters=do_not_reuse_masters)
-        self.proc_pypeit_flux()
-        self.proc_pypeit_coadd()
-        self.proc_convert_to_marz_format()
-
-    def proc_raw(self, no_query: bool = False, **kwargs):
-        if no_query or self.query_stage("Download raw data from ESO archive?", stage_name='0-download'):
-            self._path_0_raw()
-            r = self.retrieve()
-            if r:
-                self.stages_complete['0-download'] = Time.now()
-                self.update_output_file()
-
-    def _initial_setup(self):
-        self._path_0_raw()
-        m_path = os.path.join(self.paths["raw_dir"], "M")
-        u.mkdir_check(m_path)
-        os.system(f"mv {os.path.join(self.paths['raw_dir'], 'M.')}* {m_path}")
-        image.fits_table_all(input_path=self.paths["raw_dir"],
-                             output_path=os.path.join(self.data_path, f"{self.name}_fits_table_science.csv"))
-        image.fits_table_all(input_path=self.paths["raw_dir"],
-                             output_path=os.path.join(self.data_path, f"{self.name}_fits_table_all.csv"),
-                             science_only=False)
-
-    def retrieve(self):
-        """
-        Check ESO archive for the epoch raw frames, and download those frames and associated files.
-        :return:
-        """
-        r = []
-        if "raw_dir" in self.paths:
-            r = _retrieve_eso_epoch(self, path=self.paths["raw_dir"])
-        else:
-            warnings.warn("raw_dir has not been set. Retrieve could not be run.")
-        return r
-
-    @classmethod
-    def stages(cls):
-        param_dict = super().stages()
-        param_dict.update({"0-download": None})
-        return param_dict
-
-
-class FORS2SpectroscopyEpoch(ESOSpectroscopyEpoch):
-    instrument_name = "vlt-fors2"
-    _instrument_pypeit = "vlt_fors2"
-    grisms = {
-        "GRIS_300I": {
-            "lambda_min": 6000 * units.angstrom,
-            "lambda_max": 11000 * units.angstrom
-        }}
-
-    def pipeline(self, **kwargs):
-        super().pipeline(**kwargs)
-
-    def proc_pypeit_setup(self, no_query: bool = False, **kwargs):
-        if no_query or self.query_stage("Do PypeIt setup?", stage_name='2-pypeit_setup'):
-            self._path_2_pypeit()
-            setup_files = os.path.join(self.paths["pypeit_dir"], 'setup_files', '')
-            self.paths["pypeit_setup_dir"] = setup_files
-            os.system(f"rm {setup_files}*")
-            # Generate .sorted file and others
-            spec.pypeit_setup(root=self.paths['raw_dir'], output_path=self.paths['pypeit_dir'],
-                              spectrograph=self._instrument_pypeit)
-            # Generate files to use for run. Set cfg_split to "A" because that corresponds to Chip 1, which is the only
-            # one we need to worry about.
-            spec.pypeit_setup(root=self.paths['raw_dir'], output_path=self.paths['pypeit_dir'],
-                              spectrograph=self._instrument_pypeit, cfg_split="A")
-            # Read .sorted file
-            self.read_pypeit_sorted_file()
-            # Retrieve bias files from .sorted file.
-            bias_lines = list(filter(lambda s: "bias" in s and "CHIP1" in s, self._pypeit_sorted_file))
-            # Find line containing information for standard observation.
-            std_line = filter(lambda s: "standard" in s and "CHIP1" in s, self._pypeit_sorted_file).__next__()
-            std_raw = image.RawSpectrum.from_pypeit_line(std_line, pypeit_raw_path=self.paths['raw_dir'])
-            self.standards_raw.append(std_raw)
-            std_start_index = self._pypeit_sorted_file.index(std_line)
-            # Find last line of the std-obs configuration (encapsulating the required calibration files)
-            std_end_index = self._pypeit_sorted_file[std_start_index:].index(
-                "##########################################################\n") + std_start_index
-            std_lines = self._pypeit_sorted_file[std_start_index:std_end_index]
-            # Read in .pypeit file
-            self.read_pypeit_file(setup="A")
-            # Add lines to set slit prediction to "nearest" in .pypeit file.
-            self.add_pypeit_user_param(param=["calibrations", "slitedges", "sync_predict"], value="nearest")
-            # Insert bias lines from .sorted file
-            self.add_pypeit_file_lines(lines=bias_lines + std_lines)
-            # Write modified .pypeit file back to disk.
-            self.write_pypeit_file_science()
-
-            self.stages_complete['2-pypeit_setup'] = Time.now()
-            self.update_output_file()
-
-    def proc_pypeit_run(self, no_query: bool = False, do_not_reuse_masters: bool = False, **kwargs):
-        if no_query or self.query_stage("Run PypeIt?", stage_name='3-pypeit_run'):
-            spec.run_pypeit(pypeit_file=self.paths['pypeit_file'],
-                            redux_path=self.paths['pypeit_run_dir'],
-                            do_not_reuse_masters=do_not_reuse_masters)
-            self.stages_complete['3-pypeit_run'] = Time.now()
-            self.update_output_file()
-
-    def proc_pypeit_coadd(self, no_query: bool = False, **kwargs):
-        if no_query or self.query_stage(
-                "Do coaddition with PypeIt?\nYou should first inspect the 2D spectra to determine which objects to co-add.",
-                stage_name='5-pypeit_coadd'):
-            for file in filter(lambda f: "spec1d" in f, os.listdir(self.paths["pypeit_science_dir"])):
-                path = os.path.join(self.paths["pypeit_science_dir"], file)
-                os.system(f"pypeit_show_1dspec {path}")
-
-
-class XShooterSpectroscopyEpoch(ESOSpectroscopyEpoch):
-    _instrument_pypeit = "vlt_xshooter"
-    grisms = {'uvb': {"lambda_min": 300 * units.nm,
-                      "lambda_max": 550 * units.nm},
-              "vis": {"lambda_min": 550 * units.nm,
-                      "lambda_max": 1000 * units.nm},
-              "nir": {"lambda_min": 1000 * units.nm,
-                      "lambda_max": 2500 * units.nm}}
-
-    def __init__(self,
-                 param_path: str = None,
-                 name: str = None,
-                 field: Union[str, 'craftutils.observation.field.Field'] = None,
-                 data_path: str = None,
-                 instrument: str = None,
-                 date: Union[str, Time] = None,
-                 program_id: str = None,
-                 ):
-
-        super().__init__(
-            param_path=param_path,
-            name=name,
-            field=field,
-            data_path=data_path,
-            instrument=instrument,
-            date=date,
-            program_id=program_id
-        )
-
-        self.frames_raw = {"uvb": [],
-                           "vis": [],
-                           "nir": []}
-        self.frames_bias = {"uvb": [],
-                            "vis": [],
-                            "nir": []}
-        self.frames_standard = {"uvb": [],
-                                "vis": [],
-                                "nir": []}
-        self.frames_science = {"uvb": [],
-                               "vis": [],
-                               "nir": []}
-        self.frames_dark = {"uvb": [],
-                            "vis": [],
-                            "nir": []}
-        self._pypeit_file = {"uvb": None,
-                             "vis": None,
-                             "nir": None}
-        self._pypeit_file_std = {"uvb": None,
-                                 "vis": None,
-                                 "nir": None}
-        self._pypeit_sorted_file = {"uvb": None,
-                                    "vis": None,
-                                    "nir": None}
-        self._pypeit_coadd1d_file = {"uvb": None,
-                                     "vis": None,
-                                     "nir": None}
-        self._pypeit_user_param_start = {"uvb": None,
-                                         "vis": None,
-                                         "nir": None}
-        self._pypeit_user_param_end = {"uvb": None,
-                                       "vis": None,
-                                       "nir": None}
-
-        self.binning = {"uvb": None,
-                        "vis": None,
-                        "nir": None}
-        self.binning_std = {"uvb": None,
-                            "vis": None,
-                            "nir": None}
-        self.decker = {"uvb": None,
-                       "vis": None,
-                       "nir": None}
-        self.decker_std = {"uvb": None,
-                           "vis": None,
-                           "nir": None}
-
-        self._cfg_split_letters = {"uvb": None,
-                                   "vis": None,
-                                   "nir": None}
-
-        self.load_output_file()
-        self._current_arm = None
-
-    def pipeline(self, **kwargs):
-        super().pipeline(**kwargs)
-        # self.proc_pypeit_coadd()
-
-    def proc_pypeit_setup(self, no_query: bool = False, **kwargs):
-        if no_query or self.query_stage("Do PypeIt setup?", stage_name='2-pypeit_setup'):
-            self._path_2_pypeit()
-            setup_files = os.path.join(self.paths["pypeit_dir"], 'setup_files', '')
-            self.paths["pypeit_setup_dir"] = setup_files
-            os.system(f"rm {setup_files}*")
-            for arm in self.grisms:
-                self._current_arm = arm
-                spec.pypeit_setup(root=self.paths['raw_dir'], output_path=self.paths['pypeit_dir'],
-                                  spectrograph=f"{self._instrument_pypeit}_{arm}")
-                # Read .sorted file
-                self.read_pypeit_sorted_file()
-                setup = self._cfg_split_letters[arm]
-                spec.pypeit_setup(root=self.paths['raw_dir'], output_path=self.paths['pypeit_dir'],
-                                  spectrograph=f"{self._instrument_pypeit}_{arm}", cfg_split=setup)
-                # Retrieve text from .pypeit file
-                self.read_pypeit_file(setup=setup)
-                # Add parameter to use dark frames for NIR reduction.
-                if arm == "nir":
-                    self.add_pypeit_user_param(param=["calibrations", "pixelflatframe", "process", "use_darkimage"],
-                                               value="True")
-                    self.add_pypeit_user_param(param=["calibrations", "illumflatframe", "process", "use_darkimage"],
-                                               value="True")
-                    self.add_pypeit_user_param(param=["calibrations", "traceframe", "process", "use_darkimage"],
-                                               value="True")
-                self.find_science_attributes()
-                # For X-Shooter, we need to reduce the standards separately due to the habit of observing them with
-                # different decker (who knows)
-                self.find_std_attributes()
-                # Remove incompatible binnings and frametypes
-                if not self.quiet:
-                    print(f"\nRemoving incompatible files for {arm} arm:")
-                pypeit_file = self._get_pypeit_file()
-                # pypeit_file_std = pypeit_file.copy()
-                decker = self.get_decker()
-                binning = self.get_binning()
-                decker_std = self.get_decker_std()
-                for raw_frame in self.frames_raw[arm]:
-                    # Remove all frames with frame_type "None" from both science and standard lists.
-                    if raw_frame.frame_type == "None":
-                        pypeit_file.remove(raw_frame.pypeit_line)
-                        # pypeit_file_std.remove(raw_frame.pypeit_line)
-                    else:
-                        # Remove files with incompatible binnings from science reduction list.
-                        if raw_frame.binning != binning \
-                                or raw_frame.decker not in ["Pin_row", decker, decker_std]:
-                            pypeit_file.remove(raw_frame.pypeit_line)
-                    # Special behaviour for NIR arm
-                    if arm == "nir":
-                        # For the NIR arm, PypeIt only works if you use the Science frames for the arc, tilt calib.
-                        if raw_frame.frame_type in ["arc,tilt", "tilt,arc"]:
-                            pypeit_file.remove(raw_frame.pypeit_line)
-                            # pypeit_file_std.remove(raw_frame.pypeit_line)
-                        elif raw_frame.frame_type == "science":
-                            raw_frame.frame_type = "science,arc,tilt"
-                            # Find original line in PypeIt file
-                            to_replace = pypeit_file.index(raw_frame.pypeit_line)
-                            # Rewrite pypeit line.
-                            raw_frame.pypeit_line = raw_frame.pypeit_line.replace("science", "science,arc,tilt")
-                            pypeit_file[to_replace] = raw_frame.pypeit_line
-                        elif raw_frame.frame_type == "standard":
-                            raw_frame.frame_type = "standard,arc,tilt"
-                            # Find original line in PypeIt file
-                            to_replace = pypeit_file.index(raw_frame.pypeit_line)
-                            # Rewrite pypeit line.
-                            raw_frame.pypeit_line = raw_frame.pypeit_line.replace("standard", "standard,arc,tilt")
-                            pypeit_file[to_replace] = raw_frame.pypeit_line
-                self._set_pypeit_file(pypeit_file)
-                # self._set_pypeit_file_std(pypeit_file_std)
-                self.write_pypeit_file_science()
-                # std_path = os.path.join(self.paths["pypeit_dir"], self.get_path("pypeit_run_dir"), "Flux_Standards")
-                # u.mkdir_check(std_path)
-                # self.set_path("pypeit_dir_std", std_path)
-                # self.set_path("pypeit_file_std",
-                #              os.path.join(self.get_path("pypeit_run_dir"), f"vlt_xshooter_{arm}_std.pypeit"))
-                # self.write_pypeit_file_std()
-            self._current_arm = None
-            self.stages_complete['2-pypeit_setup'] = Time.now()
-            self.update_output_file()
-
-    def proc_pypeit_run(self, no_query: bool = False, do_not_reuse_masters: bool = False, **kwargs):
-        for i, arm in enumerate(self.grisms):
-            # UVB not yet implemented in PypeIt, so we skip.
-            if arm == "uvb":
-                continue
-            self._current_arm = arm
-            if no_query or self.query_stage(f"Run PypeIt for {arm.upper()} arm?",
-                                            stage_name=f'3.{i + 1}-pypeit_run_{arm}'):
-                spec.run_pypeit(pypeit_file=self.get_path('pypeit_file'),
-                                redux_path=self.get_path('pypeit_run_dir'),
-                                do_not_reuse_masters=do_not_reuse_masters)
-                self.stages_complete[f'3.{i + 1}-pypeit_run_{arm}'] = Time.now()
-                self.update_output_file()
-            # if arm != "nir" and self.query_stage(f"Run PypeIt on flux standards for {arm.upper()} arm?",
-            #                                      stage=f'3.{i + 1}-pypeit_run_{arm}_std'):
-            #     print(self.get_path('pypeit_file_std'))
-            #     spec.run_pypeit(pypeit_file=self.get_path('pypeit_file_std'),
-            #                     redux_path=self.get_path('pypeit_dir_std'),
-            #                     do_not_reuse_masters=do_not_reuse_masters)
-            #     self.stages_complete[f'3.{i + 1}-pypeit_run_{arm}'] = Time.now()
-            #     self.update_output_file()
-        self._current_arm = None
-
-    def proc_pypeit_flux(self, no_query: bool = False, **kwargs):
-        for i, arm in enumerate(self.grisms):
-            # UVB not yet implemented in PypeIt, so we skip.
-            if arm == "uvb":
-                continue
-            self._current_arm = arm
-            if no_query or self.query_stage(f"Do PypeIt fluxing for {arm.upper()} arm?",
-                                            stage_name=f'4.{i + 1}-pypeit_flux_calib_{arm}'):
-                self._current_arm = arm
-                self._pypeit_flux()
-            self.stages_complete[f'4.{i + 1}-pypeit_flux_calib_{arm}'] = Time.now()
-        self._current_arm = None
-        self.update_output_file()
-
-    def proc_pypeit_coadd(self, no_query: bool = False, **kwargs):
-        for i, arm in enumerate(self.grisms):
-            # UVB not yet implemented in PypeIt, so we skip.
-            if arm == "uvb":
-                continue
-            self._current_arm = arm
-            if no_query or self.query_stage(f"Do PypeIt coaddition for {arm.upper()} arm?",
-                                            stage_name=f'5.{i + 1}-pypeit_coadd_{arm}'):
-                run_dir = self.get_path("pypeit_run_dir")
-                coadd_file_path = os.path.join(run_dir, f"{self._instrument_pypeit}_{arm}.coadd1d")
-                self.set_path("pypeit_coadd1d_file", coadd_file_path)
-                with open(coadd_file_path) as file:
-                    coadd_file_lines = file.readlines()
-                output_path = os.path.join(run_dir, f"{self.name}_{arm}_coadded.fits")
-                sensfunc_path = self.get_path("pypeit_sensitivity_file")
-                # Remove non-science files
-                for line in coadd_file_lines[coadd_file_lines.index("coadd1d read\n"):]:
-                    if "STD,FLUX" in line or "STD,TELLURIC" in line:
-                        coadd_file_lines.remove(line)
-
-                self._set_pypeit_coadd1d_file(coadd_file_lines)
-                # Re-insert parameter lines
-                self.add_pypeit_user_param(param=["coadd1d", "coaddfile"], value=output_path, file_type="coadd1d")
-                self.add_pypeit_user_param(param=["coadd1d", "sensfuncfile"], value=sensfunc_path, file_type="coadd1d")
-                self.add_pypeit_user_param(param=["coadd1d", "wave_method"], value="velocity", file_type="coadd1d")
-                u.write_list_to_file(coadd_file_path, self._get_pypeit_coadd1d_file())
-                spec.pypeit_coadd_1dspec(coadd1d_file=coadd_file_path)
-                self.add_coadded_image(coadd_file_path, key=arm)
-
-            self.stages_complete[f'5.{i + 1}-pypeit_coadd_{arm}'] = Time.now()
-
-        self._current_arm = None
-
-    def proc_convert_to_marz_format(self, no_query: bool = False, **kwargs):
-        if no_query or self.query_stage("Convert co-added 1D spectra to Marz format?",
-                                        stage_name='6-convert_to_marz_format'):
-            for arm in self.coadded:
-                self.coadded[arm].convert_to_marz_format()
-            self.stages_complete[f'6-convert_to_marz_format'] = Time.now()
-
-    def add_coadded_image(self, img: Union[str, image.Coadded1DSpectrum], **kwargs):
-        arm = kwargs["key"]
-        if isinstance(img, str):
-            img = image.from_path(
-                path=img,
-                grism=arm,
-                cls=image.Coadded1DSpectrum
-            )
-        img.epoch = self
-        self.coadded[arm] = img
-        return img
-
-    def add_frame_raw(self, raw_frame: image.Image):
-        arm = self._get_current_arm()
-        self.frames_raw[arm].append(raw_frame)
-        self.sort_frame(raw_frame)
-
-    def sort_frame(self, frame: image.Image):
-        arm = self._get_current_arm()
-        if frame.frame_type == "bias":
-            self.frames_bias[arm].append(frame)
-        elif frame.frame_type == "science":
-            self.frames_science[arm].append(frame)
-        elif frame.frame_type == "standard":
-            self.frames_standard[arm].append(frame)
-        elif frame.frame_type == "dark":
-            self.frames_dark[arm].append(frame)
-
-    def read_pypeit_sorted_file(self):
-        arm = self._get_current_arm()
-        if "pypeit_setup_dir" in self.paths and self.paths["pypeit_setup_dir"] is not None:
-            setup_files = self.paths["pypeit_setup_dir"]
-            sorted_path = os.path.join(setup_files,
-                                       filter(lambda f: f"vlt_xshooter_{arm}" in f and f.endswith(".sorted"),
-                                              os.listdir(setup_files)).__next__())
-            with open(sorted_path) as sorted_file:
-                file = sorted_file.readlines()
-            self._pypeit_sorted_file[arm] = file
-            for setup in ["A", "B", "C"]:
-                info = self.setup_info(setup=setup)
-                arm_this = info["arm"].lower()
-                self._cfg_split_letters[arm_this] = setup
-        else:
-            raise KeyError("pypeit_setup_dir has not been set.")
-
-    def read_pypeit_file(self, setup: str):
-        if "pypeit_dir" in self.paths and self.paths["pypeit_dir"] is not None:
-            arm = self._get_current_arm()
-            filename = f"{self._instrument_pypeit}_{arm}_{setup}"
-            self._read_pypeit_file(filename=filename)
-            return self._pypeit_file[arm]
-        else:
-            raise KeyError("pypeit_run_dir has not been set.")
-
-    def pypeit_flux_title(self):
-        return f"{self._instrument_pypeit}_{self._get_current_arm()}.flux"
-
-    def get_path(self, key):
-        key = self._get_key_arm(key)
-        return self.paths[key]
-
-    def set_path(self, key: str, value: str):
-        key = self._get_key_arm(key)
-        self.paths[key] = value
-
-    def get_frames_science(self):
-        return self.frames_science[self._get_current_arm()]
-
-    def get_frames_standard(self):
-        return self.frames_standard[self._get_current_arm()]
-
-    def get_binning(self):
-        return self.binning[self._get_current_arm()]
-
-    def set_binning(self, binning: str):
-        self.binning[self._get_current_arm()] = binning
-        return binning
-
-    def get_binning_std(self):
-        return self.binning_std[self._get_current_arm()]
-
-    def set_binning_std(self, binning: str):
-        self.binning_std[self._get_current_arm()] = binning
-        return binning
-
-    def get_decker(self):
-        return self.decker[self._get_current_arm()]
-
-    def set_decker(self, decker: str):
-        self.decker[self._get_current_arm()] = decker
-        return decker
-
-    def get_decker_std(self):
-        return self.decker_std[self._get_current_arm()]
-
-    def set_decker_std(self, decker: str):
-        self.decker_std[self._get_current_arm()] = decker
-        return decker
-
-    def _get_current_arm(self):
-        if self._current_arm is not None:
-            return self._current_arm
-        else:
-            raise ValueError("self._current_arm is not set (no arm currently active).")
-
-    def _set_pypeit_file(self, lines: list):
-        self._pypeit_file[self._get_current_arm()] = lines
-
-    def _get_pypeit_file(self):
-        return self._pypeit_file[self._get_current_arm()]
-
-    def _get_pypeit_sorted_file(self):
-        return self._pypeit_sorted_file[self._get_current_arm()]
-
-    def _set_pypeit_file_std(self, lines: list):
-        self._pypeit_file_std[self._get_current_arm()] = lines
-
-    def _get_pypeit_file_std(self):
-        return self._pypeit_file_std[self._get_current_arm()]
-
-    def _set_pypeit_coadd1d_file(self, lines: list):
-        self._pypeit_coadd1d_file[self._get_current_arm()] = lines
-
-    def _get_pypeit_coadd1d_file(self):
-        return self._pypeit_coadd1d_file[self._get_current_arm()]
-
-    def _get_key_arm(self, key):
-        arm = self._get_current_arm()
-        key = f"{arm}_{key}"
-        return key
-
-    @classmethod
-    def stages(cls):
-        param_dict = super().stages()
-        param_dict.update({
-            "2-pypeit_setup": None,
-            "3.1-pypeit_run_uvb": None,
-            "3.2-pypeit_run_vis": None,
-            "3.3-pypeit_run_nir": None,
-            "4.1-pypeit_flux_calib_uvb": None,
-            "4.2-pypeit_flux_calib_vis": None,
-            "4.3-pypeit_flux_calib_nir": None,
-            "5.1-pypeit_coadd_uvb": None,
-            "5.2-pypeit_coadd_vis": None,
-            "5.3-pypeit_coadd_nir": None,
-            "6-convert_to_marz_format": None
-        })
-        return param_dict
-
-    def _output_dict(self):
-        return {
-            "stages": self.stages_complete,
-            "paths": self.paths,
-        }
-
-    def load_output_file(self, **kwargs):
-        outputs = super().load_output_file(mode="spectroscopy", **kwargs)
-        if outputs not in [None, True, False]:
-            self.stages_complete.update(outputs["stages"])
-            if "paths" in outputs:
-                self.paths.update(outputs[f"paths"])
-        return outputs
-
-    def write_pypeit_file_std(self):
-        """
-        Rewrites the stored .pypeit file to disk.
-        :return: path of .pypeit file.
-        """
-        pypeit_lines = self._get_pypeit_file_std()
-        if pypeit_lines is not None:
-            pypeit_file_path = os.path.join(self.get_path("pypeit_file_std"), )
-            u.write_list_to_file(path=pypeit_file_path, file=pypeit_lines)
-        else:
-            raise ValueError("pypeit_file_std has not yet been read.")
-        return pypeit_file_path

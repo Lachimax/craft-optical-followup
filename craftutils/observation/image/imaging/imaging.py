@@ -1,844 +1,63 @@
-# Code by Lachlan Marnoch, 2021
-import copy
-import math
 import os
 import shutil
-import string
-from copy import deepcopy
 from typing import Union, Tuple, List
+import copy
 
-import astropy.io.fits as fits
-import astropy.table as table
+import numpy as np
+import matplotlib.pyplot as plt
+from matplotlib.patches import Ellipse, Rectangle
+
 import astropy.units as units
 import astropy.wcs as wcs
-import astropy.cosmology as cosmo
-import matplotlib.pyplot as plt
-import numpy as np
-from astroalign import register
+import astropy.table as table
+import astropy.io.fits as fits
 from astropy.coordinates import SkyCoord
-from astropy.modeling import models, fitting
-from astropy.stats import SigmaClip
-from astropy.time import Time
-from astropy.visualization import (
-    ImageNormalize, LogStretch, SqrtStretch, MinMaxInterval, ZScaleInterval)
 from astropy.visualization import quantity_support
-from matplotlib.patches import Ellipse
+from astropy.stats import SigmaClip
+from astropy.modeling import models, fitting
+from astropy.visualization import (
+    ImageNormalize,
+    LogStretch,
+    SqrtStretch,
+    MinMaxInterval,
+    ZScaleInterval
+)
+
+from astroalign import register
 
 try:
     import photutils
 except ModuleNotFoundError:
     print("photutils not installed; some photometry-related functionality will be unavailable.")
-
 try:
     import sep
 except ModuleNotFoundError:
     print("sep not installed; some photometry-related functionality will be unavailable.")
 
 import craftutils.utils as u
-import craftutils.astrometry as astm
-import craftutils.fits_files as ff
-import craftutils.photometry as ph
 import craftutils.params as p
+import craftutils.photometry as ph
+import craftutils.fits_files as ff
+import craftutils.astrometry as astm
 import craftutils.plotting as pl
+from craftutils.retrieve import cat_columns, cat_instruments
+from craftutils.stats import gaussian_distributed_point
 
-import craftutils.observation.log as log
+import craftutils.observation.catalogue as catalog
 import craftutils.observation.objects as objects
 import craftutils.observation.instrument as inst
-import craftutils.observation.catalogue as catalog
 
-from craftutils.stats import gaussian_distributed_point
 import craftutils.wrap.source_extractor as se
 import craftutils.wrap.psfex as psfex
 import craftutils.wrap.galfit as galfit
 from craftutils.wrap.astrometry_net import solve_field
-from craftutils.retrieve import cat_columns, cat_instruments
 
-__all__ = []
+from ..image import Image
 
-quantity_support()
 
-# This contains the names as in the header as keys and the names as used in this project as values.
-instrument_header = {
-    "FORS2": "vlt-fors2",
-    "HAWKI": "vlt-hawki",
-    "PS1": "panstarrs1"
-}
+# __all__ = []
 
-active_images = {}
-
-gain_unit = units.electron / units.ct
-noise_read_unit = units.electron / units.pixel
-
-
-# TODO: Make this list all fits files, then write wrapper that eliminates non-science images and use that in scripts.
-@u.export
-def fits_table(input_path: str, output_path: str = "", science_only: bool = True):
-    """
-    Produces and writes to disk a table of .fits files in the given path, with the vital statistics of each. Intended
-    only for use with raw ESO data.
-
-    :param input_path:
-    :param output_path:
-    :param science_only: If True, we are writing a list for a folder that also contains calibration files, which we want
-     to ignore.
-    :return:
-    """
-
-    # If there's no trailing slash in the paths, add one.
-    input_path = u.check_trailing_slash(input_path)
-
-    if output_path == "":
-        output_path = input_path + "fits_table.csv"
-    elif output_path[-4:] != ".csv":
-        if output_path[-1] == "/":
-            output_path = output_path + "fits_table.csv"
-        else:
-            output_path = output_path + ".csv"
-
-    print('Writing table of fits files to: \n', output_path)
-
-    files = os.listdir(input_path)
-    files.sort()
-    files_fits = []
-
-    # Keep only the relevant fits files
-
-    for f in files:
-        if f.endswith(".fits") and not f.startswith("M."):
-            files_fits.append(f)
-
-    # Create list of dictionaries to be used as the output data
-    output = []
-
-    ids = string.ascii_lowercase
-    if len(ids) < len(files_fits):
-        ids = ids + string.ascii_uppercase
-    if len(ids) < len(files_fits):
-        ids = ids + string.digits
-
-    for i, f in enumerate(files_fits):
-        data = {'identifier': f}
-        file_path = os.path.join(input_path, f)
-        instrument = detect_instrument(file_path)
-        cls = ImagingImage.select_child_class(instrument)
-        image = cls.from_fits(path=file_path)
-        header = image.load_headers()[0]
-        if science_only:
-            frame_type = image.extract_frame_type()
-            if frame_type not in ("science", "science_reduced"):
-                continue
-        if len(ids) >= len(files_fits):
-            data['id'] = ids[i]
-        if "OBJECT" in header:
-            data['object'] = header["OBJECT"]
-        if "ESO OBS NAME" in header:
-            data['obs_name'] = header["ESO OBS NAME"]
-        if "EXPTIME" in header:
-            data['exp_time'] = header["EXPTIME"]
-        if "AIRMASS" in header:
-            data['airmass'] = header["AIRMASS"]
-        elif "ESO TEL AIRM START" in header and "ESO TEL AIRM END":
-            data['airmass'] = (header["ESO TEL AIRM START"] + header["ESO TEL AIRM END"]) / 2
-        if "CRVAL1" in header:
-            data['ref_ra'] = header["CRVAL1"]
-        if "CRVAL2" in header:
-            data['ref_dec'] = header["CRVAL2"]
-        if "CRPIX1" in header:
-            data['ref_pix_x'] = header["CRPIX1"]
-        if "CRPIX2" in header:
-            data['ref_pix_y'] = header["CRPIX2"]
-        if "EXTNAME" in header:
-            data['chip'] = header["EXTNAME"]
-        elif "ESO DET CHIP1 ID" in header:
-            if header["ESO DET CHIP1 ID"] == 'CCID20-14-5-3':
-                data['chip'] = 'CHIP1'
-            if header["ESO DET CHIP1 ID"] == 'CCID20-14-5-6':
-                data['chip'] = 'CHIP2'
-        if "GAIN" in header:
-            data['gain'] = header["GAIN"]
-        if "INSTRUME" in header:
-            data['instrument'] = header["INSTRUME"]
-        if "ESO TEL AIRM START" in header:
-            data['airmass_start'] = header["ESO TEL AIRM START"]
-        if "ESO TEL AIRM END" in header:
-            data['airmass_end'] = header["ESO TEL AIRM END"]
-        if "ESO INS OPTI3 NAME" in header:
-            data['collimater'] = header["ESO INS OPTI3 NAME"]
-        if "ESO INS OPTI5 NAME" in header:
-            data['filter1'] = header["ESO INS OPTI5 NAME"]
-        if "ESO INS OPTI6 NAME" in header:
-            data['filter2'] = header["ESO INS OPTI6 NAME"]
-        if "ESO INS OPTI7 NAME" in header:
-            data['filter3'] = header["ESO INS OPTI7 NAME"]
-        if "ESO INS OPTI9 NAME" in header:
-            data['filter4'] = header["ESO INS OPTI9 NAME"]
-        if "ESO INS OPTI10 NAME" in header:
-            data['filter5'] = header["ESO INS OPTI10 NAME"]
-        if "ESO INS OPTI8 NAME" in header:
-            data['camera'] = header["ESO INS OPTI8 NAME"]
-        if "NAXIS1" in header:
-            data['pixels_x'] = header["NAXIS1"]
-        if "NAXIS2" in header:
-            data['pixels_y'] = header["NAXIS2"]
-        if "SATURATE" in header:
-            data['saturate'] = header["SATURATE"]
-        if "MJD-OBS" in header:
-            data['mjd_obs'] = header["MJD-OBS"]
-        output.append(data)
-
-    out_file = table.Table(output)
-    out_file.write(output_path, format="ascii.csv", overwrite=True)
-
-    return out_file
-
-
-def fits_table_all(
-        input_path: str,
-        output_path: str = "",
-        science_only: bool = True
-):
-    """
-    Produces and writes to disk a table of .fits files in the given path, with the vital statistics of each. Intended
-    only for use with raw ESO data.
-    :param input_path:
-    :param output_path:
-    :param science_only: If True, we are writing a list for a folder that also contains calibration files, which we want
-     to ignore.
-    :return:
-    """
-
-    if output_path == "":
-        output_path = os.path.join(input_path, "fits_table.csv")
-
-    if os.path.isdir(output_path):
-        output_path = output_path + "fits_table.csv"
-    else:
-        output_path = u.sanitise_file_ext(filename=output_path, ext="csv")
-
-    print('Writing table of fits files to: \n', output_path)
-
-    files = os.listdir(input_path)
-    files.sort()
-    files_fits = list(filter(lambda x: x.endswith('.fits'), files))
-
-    # Create list of dictionaries to be used as the output data
-    output = []
-
-    for i, f in enumerate(files_fits):
-        data = {}
-        data["FILENAME"] = f
-        file_path = os.path.join(input_path, f)
-        instrument = detect_instrument(file_path, fail_quietly=True)
-        if instrument is None:
-            print(f"Instrument could not be detected for {file_path}.")
-            continue
-        cls = ImagingImage.select_child_class(instrument_name=instrument)
-        image = cls.from_fits(path=file_path)
-        if science_only:
-            frame_type = image.extract_frame_type()
-            if frame_type not in ("science", "science_reduced"):
-                continue
-        header = image.load_headers()[0]
-        for key in header:
-            # Remove comments.
-            if key not in ["COMMENT", "HISTORY", '']:
-                data[key] = header[key]
-        if 'ESO TEL AIRM END' in data and 'ESO TEL AIRM START' in data:
-            data['AIRMASS'] = (float(data['ESO TEL AIRM END']) + float(data['ESO TEL AIRM START'])) / 2
-        output.append(data)
-        data["PATH"] = file_path
-
-    out_file = table.Table(output)
-    out_file.write(output_path, format="ascii.csv", overwrite=True)
-
-    return out_file
-
-
-def detect_instrument(path: str, ext: int = 0, fail_quietly: bool = False):
-    try:
-        with fits.open(path) as file:
-            if "INSTRUME" in file[ext].header:
-                inst_str = file[ext].header["INSTRUME"]
-                if "WFC3" in inst_str:
-                    det_str = file[ext].header["DETECTOR"]
-                    if "UVIS" in det_str:
-                        return "hst-wfc3_uvis2"
-                    elif "IR" in det_str:
-                        return "hst-wfc3_ir"
-                if "FORS2" in inst_str:
-                    return "vlt-fors2"
-                elif "HAWKI" in inst_str:
-                    return "vlt-hawki"
-            elif "FPA.TELESCOPE" in file[ext].header:
-                inst_str = file[ext].header["FPA.TELESCOPE"]
-                if "PS1" in inst_str:
-                    return "panstarrs1"
-            else:
-                if not fail_quietly:
-                    raise ValueError(f"Could not establish instrument from file header on {path}.")
-                else:
-                    return None
-    except OSError:
-        if fail_quietly:
-            print(f"The file {path} is missing the SIMPLE card and may be corrupt.")
-            return None
-        else:
-            raise OSError(f"The file {path} is missing the SIMPLE card and may be corrupt.")
-
-
-def from_path(path: str, cls: type = None, **kwargs):
-    """
-    To be used when there may already be an image instance for this path floating around in memory, and it's okay
-    (or better) to access this one instead of creating a new instance.
-    When the image may have overwritten a previous file, instantiating the image directly is better.
-    :param path:
-    :param cls:
-    :param kwargs:
-    :return:
-    """
-    u.debug_print(3, "image.from_path(): path ==", path)
-    if path in active_images:
-        return active_images[path]
-    if cls is not None:
-        return cls(path, **kwargs)
-
-
-def expunge():
-    for img_path in active_images:
-        del active_images[img_path]
-
-
-@u.export
-class Image:
-    instrument_name = "dummy"
-    num_chips = 1
-    class_dict = {}
-
-    def __init__(
-            self,
-            path: str,
-            frame_type: str = None,
-            instrument_name: str = None,
-            logg: log.Log = None,
-    ):
-
-        if not os.path.isfile(path):
-            raise FileNotFoundError(f"The image file {path} does not exist.")
-        active_images[path] = self
-        if path.endswith("_outputs.yaml"):
-            self.output_file = path
-            self.path = path.replace("_outputs.yaml", ".fits")
-        elif path.endswith(".fits"):
-            self.path = path
-            self.output_file = path.replace(".fits", "_outputs.yaml")
-
-        self.data_path, self.filename = os.path.split(self.path)
-        self.name = self.get_id()
-        self.hdu_list = None
-        self.frame_type = frame_type
-        self.headers = None
-        self.data = None
-        self.date = None
-        if instrument_name is not None:
-            self.instrument_name = instrument_name
-        try:
-            u.debug_print(1, f"Image.__init__(): {self}.instrument_name ==", self.instrument_name)
-            self.instrument = inst.Instrument.from_params(instrument_name=self.instrument_name)
-
-        except FileNotFoundError:
-            u.debug_print(1, f"Image.__init__(): FileNotFoundError")
-            self.instrument = None
-        u.debug_print(
-            1, f"Image.__init__(): {self}.instrument ==", self.instrument,
-            self.instrument_name)
-        self.epoch = None
-
-        # Header attributes
-        self.exposure_time = None
-        self.gain = None
-        self.noise_read = None
-        self.date_obs = None
-        self.mjd_obs = None
-        self.n_x = None
-        self.n_y = None
-        self.n_pix = None
-        self.object = None
-        self.pointing = None
-        self.saturate = None
-        self.chip_number = None
-        self.airmass = None
-        self.airmass_err = 0.0
-
-        self.derived_from = None
-
-        if logg is None:
-            self.log = log.Log()
-        u.debug_print(2, f"Image.__init__(): {self}.log.log.keys() ==", self.log.log.keys())
-
-    def __eq__(self, other):
-        if not isinstance(other, Image):
-            raise TypeError("Can only compare Image instance to another Image instance.")
-        return self.path == other.path
-
-    def __str__(self):
-        return self.filename
-
-    def copy_headers(
-            self,
-            other: 'Image'
-    ):
-        other.load_headers()
-        self.headers = other.headers
-        self.write_fits_file()
-
-    def add_log(
-            self, action: str,
-            method=None,
-            input_path: str = None,
-            output_path: str = None,
-            packages: List[str] = None,
-            ext: int = 0,
-            ancestors: List['Image'] = None,
-            **method_kwargs,
-    ):
-
-        if ancestors is not None:
-            new_dict = {}
-            for img in ancestors:
-                new_dict[img.name] = img.log
-            ancestors = new_dict
-
-        self.log.add_log(
-            action=action,
-            method=method,
-            input_path=input_path,
-            output_path=output_path,
-            packages=packages,
-            ancestor_logs=ancestors,
-            method_args=method_kwargs
-        )
-        self.add_history(note=action, ext=ext)
-        # self.update_output_file()
-
-    def open(self, mode: str = "readonly"):
-        u.debug_print(1, f"Image.open() 1: {self}.hdu_list:", self.hdu_list)
-        if self.path is not None and self.hdu_list is None:
-            self.hdu_list = fits.open(self.path, mode=mode)
-            u.debug_print(1, f"Image.open() 2: {self}.hdu_list:", self.hdu_list)
-        elif self.path is None:
-            print("The FITS file could not be loaded because path has not been set.")
-
-    def close(self):
-        if self.hdu_list is not None:
-            self.hdu_list.close()
-            self.hdu_list = None
-
-    def new_image(self, path: str):
-        c = self.__class__
-        new_image = c(path=path)
-        new_image.log = self.log.copy()
-        new_image.add_log(
-            f"Derived from {self.path}.",
-            method=self.new_image,
-            input_path=self.path,
-            output_path=path
-        )
-        return new_image
-
-    def copy(self, destination: str):
-        """
-        A note to future me: do copy, THEN make changes, or be prepared to suffer the consequences.
-        :param destination:
-        :return:
-        """
-        u.debug_print(1, "Copying", self.path, "to", destination)
-        if os.path.isdir(destination):
-            destination = os.path.join(destination, self.filename)
-        u.mkdir_check_nested(destination)
-        shutil.copy(self.path, destination)
-        new_image = self.new_image(path=destination)
-        new_image.load_headers(force=True)
-        new_image.load_data(force=True)
-        new_image.log = self.log.copy()
-        u.debug_print(2, f"Image.copy(): {new_image}.log.log.keys() ==", new_image.log.log.keys())
-        new_image.add_log(
-            f"Copied from {self.path} to {destination}.",
-            method=self.copy,
-            input_path=self.path,
-            output_path=destination
-        )
-        return new_image
-
-    def copy_with_outputs(self, destination: str):
-        new_image = self.copy(destination)
-        self.update_output_file()
-        shutil.copy(self.output_file, destination.replace(".fits", "_outputs.yaml"))
-        new_image.load_output_file()
-        return new_image
-
-    def load_output_file(self):
-        outputs = p.load_output_file(self)
-        if outputs is not None:
-            if "frame_type" in outputs:
-                self.frame_type = outputs["frame_type"]
-            if "log" in outputs:
-                self.log = log.Log(outputs["log"])
-        return outputs
-
-    def update_output_file(self):
-        p.update_output_file(self)
-
-    def _output_dict(self):
-        return {
-            "frame_type": self.frame_type,
-            "log": self.log.to_dict(),
-        }
-
-    def load_headers(self, force: bool = False, **kwargs):
-        if self.headers is None or force:
-            self.open()
-            self.headers = list(map(lambda h: h.header, self.hdu_list))
-            self.close()
-        else:
-            u.debug_print(2, "Headers already loaded.")
-        return self.headers
-
-    def load_data(self, force: bool = False):
-        if self.data is None or force:
-            unit = self.extract_units()
-            self.open()
-            u.debug_print(1, f"Image.load_data() 1: {self}.hdu_list:", self.hdu_list)
-
-            self.data = []
-            for i, h in enumerate(self.hdu_list):
-                if unit[i] is not None:
-                    try:
-                        this_unit = units.Unit(unit[i])
-                    except ValueError:
-                        this_unit = units.ct
-                else:
-                    this_unit = units.ct
-                if h.data is not None:
-                    try:
-                        self.data.append(h.data * this_unit)
-                    except TypeError or ValueError:
-                        # If unit could not be parsed, assume counts
-                        self.data.append(h.data * units.ct)
-                else:
-                    self.data.append(None)
-
-            self.close()
-        else:
-            u.debug_print(1, "Data already loaded.")
-        return self.data
-
-    def to_ccddata(self, unit: Union[str, units.Unit]):
-        from ccdproc import CCDData
-        if unit is None:
-            return CCDData.read(self.path)
-        else:
-            return CCDData.read(self.path, unit=unit)
-
-    # @classmethod
-    # def from_ccddata(self, ccddata: 'ccdproc.CCDData', path: str):
-    #     pass
-
-    def get_id(self):
-        return self.filename[:self.filename.find(".fits")]
-
-    def set_header_items(self, items: dict, ext: int = 0, write: bool = True):
-        for key in items:
-            self.set_header_item(
-                key=key,
-                value=items[key],
-                ext=ext,
-                write=False
-            )
-        if write:
-            self.write_fits_file()
-
-    def set_header_item(self, key: str, value, ext: int = 0, write: bool = False):
-        self.load_headers()
-        value = u.dequantify(value)
-
-        if key in self.headers[ext]:
-            old_value = self.headers[ext][key]
-            action = f"Changed FITS header item {key} from {old_value} to {value} on ext {ext}."
-        else:
-            action = f"Created new FITS header item {key} with value {value} on ext {ext}."
-
-        u.debug_print(1, "Image.set_header_item(): key, value ==", key, value)
-        self.headers[ext][key] = value
-        # self.close()
-
-        self.add_log(
-            action=action, method=self.set_header_item, ext=ext
-        )
-        if write:
-            self.write_fits_file()
-
-    def add_history(self, note: str, ext: int = 0):
-        self.load_headers()
-        self.headers[ext]["HISTORY"] = str(Time.now().strftime("%Y-%m-%dT%H:%M:%S")) + ": " + note
-        # self.write_fits_file()
-
-    def _extract_header_item(self, key: str, ext: int = 0):
-        self.load_headers()
-        if key in self.headers[ext]:
-            return self.headers[ext][key]
-        else:
-            return None
-
-    def extract_header_item(self, key: str, ext: int = 0, accept_absent: bool = False):
-        # Check in the given HDU, then check all headers.
-        value = self._extract_header_item(key=key, ext=ext)
-        u.debug_print(2, "")
-        u.debug_print(2, "Image.extract_header_item():")
-        u.debug_print(2, f"\t{self}.path ==", self.path)
-        u.debug_print(2, f"\t key ==", key)
-        u.debug_print(2, f"\t value ==", value)
-        u.debug_print(2, "")
-        if value is None and not accept_absent:
-            for ext in range(len(self.headers)):
-                value = self._extract_header_item(key=key, ext=ext)
-                if value is not None:
-                    return value
-            # Then, if we get to the end of the loop, the item clearly doesn't exist.
-            return None
-        else:
-            return value
-
-    def extract_chip_number(self, ext: int = 0):
-        chip = 1
-        self.chip_number = chip
-        return chip
-
-    def extract_unit(self, astropy: bool = False):
-        key = self.header_keys()["unit"]
-        unit = self.extract_header_item(key)
-        if astropy:
-            if unit is not None:
-                unit = units.Unit(unit)
-            else:
-                unit = units.ct
-        return unit
-
-    def extract_units(self):
-        key = self.header_keys()["unit"]
-        un = []
-        for i, header in enumerate(self.headers):
-            un.append(self.extract_header_item(key, ext=i, accept_absent=True))
-        return un
-
-    def extract_program_id(self):
-        key = self.header_keys()["program_id"]
-        return str(self.extract_header_item(key))
-
-    def extract_gain(self):
-        self.gain = self.extract_header_item("GAIN")
-        if self.gain is None:
-            key = self.header_keys()["gain"]
-            u.debug_print(2, f"Image.extract_gain(): type({self})", type(self), key)
-            self.gain = self.extract_header_item(key) * gain_unit
-        if self.gain is not None:
-            self.gain = u.check_quantity(self.gain, gain_unit)
-        return self.gain
-
-    def extract_date_obs(self):
-        key = self.header_keys()["date-obs"]
-        self.date_obs = self.extract_header_item(key)
-        key = self.header_keys()["mjd-obs"]
-        self.mjd_obs = self.extract_header_item(key)
-        if self.date_obs is None and self.mjd_obs is not None:
-            self.date = Time(self.mjd_obs, format="mjd")
-            self.date_obs = self.date.strftime("%Y-%m-%dT%H:%M:%S")
-        elif self.mjd_obs is None and self.date_obs is not None:
-            self.date = Time(self.date_obs)
-            self.mjd_obs = self.date.mjd
-        else:
-            self.date = Time(self.date_obs)
-        return self.date_obs
-
-    def extract_exposure_time(self):
-        key = self.header_keys()["exposure_time"]
-        self.exposure_time = self.extract_header_item(key) * units.second
-        return self.exposure_time
-
-    def extract_noise_read(self):
-        key = self.header_keys()["noise_read"]
-        noise = self.extract_header_item(key)
-        if noise is not None:
-            self.noise_read = self.extract_header_item(key) * noise_read_unit
-        else:
-            raise KeyError(f"{key} not present in header.")
-        return self.noise_read
-
-    def extract_object(self):
-        key = self.header_keys()["object"]
-        self.object = self.extract_header_item(key)
-
-        return self.object
-
-    def extract_n_pix(self, ext: int = 0):
-        self.load_data()
-        self.n_y, self.n_x = self.data[ext].shape
-        self.n_pix = self.n_y * self.n_x
-        return self.n_pix
-
-    def extract_pixel_edges(self):
-        """
-        Using the FITS convention of origin = 1, 1, returns the pixel coordinates of the edges.
-        :return: tuple: left, right, bottom, top
-        """
-        self.extract_n_pix()
-        return 1, self.n_x, 1, self.n_y
-
-    def extract_saturate(self, data_ext: int = 0):
-        key = self.header_keys()["saturate"]
-        saturate = self.extract_header_item(key)
-        if saturate is None:
-            saturate = 65535
-        unit = self.extract_unit(astropy=True)
-        self.saturate = saturate * unit
-        return self.saturate
-
-    def remove_extra_extensions(self, ext: int = 0):
-        self.load_headers()
-        self.load_data()
-        self.headers = [self.headers[ext]]
-        self.data = [self.data[ext]]
-        self.write_fits_file()
-
-    def write_fits_file(self):
-        self.open()
-        for i in range(len(self.headers)):
-            if i >= len(self.hdu_list):
-                self.hdu_list.append(fits.ImageHDU())
-            if self.data is not None:
-                unit = self.data[i].unit
-                self.hdu_list[i].data = u.dequantify(self.data[i])
-                self.set_header_item(
-                    key=self.header_keys()["unit"],
-                    value=str(unit),
-                    ext=i
-                )
-            if self.headers is not None:
-                self.hdu_list[i].header = self.headers[i]
-
-        while len(self.hdu_list) > len(self.headers):
-            self.hdu_list.pop(-1)
-
-        self.hdu_list.writeto(self.path, overwrite=True)
-
-        self.close()
-
-    @classmethod
-    def header_keys(cls):
-        header_keys = {
-            "integration_time": "INTTIME",
-            "exposure_time": "EXPTIME",
-            "exposure_time_old": "OLD_EXPTIME",
-            "noise_read": "RON",
-            "noise_read_old": "OLD_RON",
-            "gain": "GAIN",
-            "gain_old": "OLD_GAIN",
-            "date-obs": "DATE-OBS",
-            "mjd-obs": "MJD-OBS",
-            "object": "OBJECT",
-            "instrument": "INSTRUME",
-            "unit": "BUNIT",
-            "saturate": "SATURATE",
-            "saturate_old": "OLD_SATURATE",
-            "program_id": "PROG_ID"
-        }
-        return header_keys
-
-    @classmethod
-    def from_fits(cls, path: str, mode: str = "imaging"):
-        # Load fits file
-        hdu_list = fits.open(path)
-        # First, check for instrument information in each header.
-        instrument = None
-        i = 0
-        # Will need to add cases to the below instruments as you deal with new instruments.
-        while instrument is None and i < len(hdu_list):
-            header = hdu_list[i].header
-            if "INSTRUME" in header:
-                instrument = header["INSTRUME"]
-            elif "FPA.TELESCOPE" in header:
-                instrument = header["FPA.TELESCOPE"]
-            i += 1
-
-        if instrument is None:
-            print("Instrument could not be determined from header.")
-            child = ImagingImage
-        else:
-            # Look for standard instrument name in list
-            if instrument in instrument_header:
-                instrument = instrument_header[instrument]
-                child = cls.select_child_class(instrument_name=instrument, mode=mode)
-            else:
-                child = ImagingImage
-        u.debug_print(2, "Image.from_fits(): instrument ==", instrument)
-        img = child(path=path, instrument_name=instrument)
-        img.instrument_name = instrument
-        return img
-
-    @classmethod
-    def select_child_class(cls, instrument: str, **kwargs):
-        instrument = instrument.lower()
-        if 'mode' in kwargs:
-            mode = kwargs['mode']
-            if mode == 'imaging':
-                return ImagingImage.select_child_class(instrument_name=instrument, **kwargs)
-            elif mode == 'spectroscopy':
-                return Spectrum.select_child_class(instrument_name=instrument, **kwargs)
-            else:
-                raise ValueError(f"Unrecognised mode {mode}")
-        else:
-            raise KeyError(f"mode must be provided for {cls}.select_child_class()")
-
-    def split_fits(self, output_dir: str = None):
-        if output_dir is None:
-            output_dir = self.data_path
-        self.open()
-        new_files = {}
-
-        if self.hdu_list[0].data is None:
-            update_header = self.hdu_list[0].header
-        else:
-            update_header = {}
-
-        for hdu in self.hdu_list:
-            if hdu.data is None or isinstance(hdu, fits.BinTableHDU):
-                continue
-            new_hdu_list = fits.HDUList(fits.PrimaryHDU(hdu.data, hdu.header))
-            new_hdu_list[0].header.update(update_header)
-            new_path = os.path.join(output_dir, self.filename.replace(".fits", f"_{hdu.name}.fits"))
-            new_hdu_list.writeto(
-                new_path,
-                overwrite=True
-            )
-            new_img = self.__class__(new_path)
-            new_files[hdu.name] = new_img
-        self.close()
-        return new_files
-
-
-class ESOImage(Image):
-    """
-    Generic parent class for ESO images, both spectra and imaging
-    """
-
-    @classmethod
-    def header_keys(cls):
-        header_keys = super().header_keys()
-        header_keys.update({
-            "mode": "HIERARCH ESO INS MODE",
-        })
-        return header_keys
-
-
+# @u.export
 class ImagingImage(Image):
 
     def __init__(
@@ -846,11 +65,17 @@ class ImagingImage(Image):
             path: str,
             frame_type: str = None,
             instrument_name: str = None,
-            load_outputs: bool = True
+            load_outputs: bool = True,
+            **kwargs
     ):
-        super().__init__(path=path, frame_type=frame_type, instrument_name=instrument_name)
+        super().__init__(
+            path=path,
+            frame_type=frame_type,
+            instrument_name=instrument_name,
+            **kwargs
+        )
 
-        self.wcs = None
+        self.wcs = []
 
         self.filter_name = None
         self.filter_short = None
@@ -1075,6 +300,131 @@ class ImagingImage(Image):
         else:
             return psfex.load_psfex_oversampled(model=self.psfex_path, x=x, y=y)
 
+    def clone_diagnostics(
+            self,
+            other: 'ImagingImage',
+            ext: int = 0
+    ):
+        """
+        The intent behind this function is to use it when it is a derived image that should have the same
+        characteristics (eg PSF, astrometry, zeropoint) as the original or other derivative, and to transfer
+        those properties across.
+
+        :param other:
+        :param ext:
+        :return:
+        """
+
+        self.load_headers()
+        other.load_headers()
+        self.clone_psf(other=other, ext=ext)
+        self.clone_zeropoints(other=other, ext=ext)
+        self.clone_astrometry_info(other=other, ext=ext)
+
+        self.update_output_file()
+        self.write_fits_file()
+
+    def clone_astrometry_info(
+            self,
+            other: 'ImagingImage',
+            ext: int = 0
+    ):
+        self.astrometry_stats = other.astrometry_stats
+        self.astrometry_err = other.astrometry_err
+        self.ra_err = other.ra_err
+        self.dec_err = other.dec_err
+        astm_rms = other.extract_header_item(key="ASTM_RMS", accept_absent=True)
+        if astm_rms:
+            self.set_header_item(
+                key="ASTM_RMS",
+                value=astm_rms,
+                ext=ext
+            )
+        ra_rms = other.extract_header_item(key="RA_RMS", accept_absent=True)
+        if ra_rms:
+            self.set_header_item(
+                key="RA_RMS",
+                value=ra_rms,
+                ext=ext
+            )
+        dec_rms = other.extract_header_item(key="DEC_RMS", accept_absent=True)
+        if dec_rms:
+            self.set_header_item(
+                key="DEC_RMS",
+                value=dec_rms,
+                ext=ext
+            )
+
+    def clone_zeropoints(
+            self,
+            other: 'ImagingImage',
+            ext: int = 0
+    ):
+        self.zeropoints = other.zeropoints.copy()
+        self.zeropoint_best = other.zeropoint_best
+        zp = other.extract_header_item(key="ZP", accept_absent=True)
+        if zp:
+            self.set_header_item(
+                key="ZP",
+                value=zp,
+                ext=ext
+            )
+        zp_err = other.extract_header_item(key="ZP_ERR", accept_absent=True)
+        if zp_err:
+            self.set_header_item(
+                key="ZP_ERR",
+                value=zp_err,
+                ext=ext
+            )
+        zp_cat = other.extract_header_item(key="ZPCAT", accept_absent=True)
+        if zp_cat:
+            self.set_header_item(
+                key="ZPCAT",
+                value=zp_cat,
+                ext=ext
+            )
+
+    def clone_psf(
+            self,
+            other: 'ImagingImage',
+            ext: int = 0
+    ):
+        self.load_headers()
+
+        self.psfex_path = other.psfex_path
+        self.fwhm_pix_psfex = other.fwhm_pix_psfex
+        self.fwhm_psfex = other.fwhm_psfex
+        self.psfex_successful = other.psfex_successful
+        self.psfex_output = other.psfex_output
+        self.psf_stats = other.psf_stats
+
+        self.fwhm_median_gauss = other.fwhm_median_gauss
+        self.fwhm_max_gauss = other.fwhm_max_gauss
+        self.fwhm_min_gauss = other.fwhm_min_gauss
+        self.fwhm_sigma_gauss = other.fwhm_sigma_gauss
+        self.fwhm_rms_gauss = other.fwhm_rms_gauss
+
+        self.fwhm_median_moffat = other.fwhm_median_moffat
+        self.fwhm_max_moffat = other.fwhm_max_moffat
+        self.fwhm_min_moffat = other.fwhm_min_moffat
+        self.fwhm_sigma_moffat = other.fwhm_sigma_moffat
+        self.fwhm_rms_moffat = other.fwhm_rms_moffat
+
+        psf_fwhm = other.extract_header_item(key="PSF_FWHM", ext=ext, accept_absent=True)
+        if psf_fwhm:
+            self.set_header_item(
+                key="PSF_FWHM",
+                value=psf_fwhm,
+                ext=ext
+            )
+        psf_fwhm_err = other.extract_header_item(key="PSF_FWHM_ERR", ext=ext, accept_absent=True)
+        if psf_fwhm_err:
+            self.set_header_item(
+                key="PSF_FWHM_ERR",
+                value=psf_fwhm_err,
+                ext=ext
+            )
+
     def source_extraction_psf(
             self,
             output_dir: str,
@@ -1161,7 +511,12 @@ class ImagingImage(Image):
         print()
         self.update_output_file()
 
-    def world_to_pixel(self, coord: SkyCoord, origin: int = 0, ext: int = 0) -> np.ndarray:
+    def world_to_pixel(
+            self,
+            coord: SkyCoord,
+            origin: int = 0,
+            ext: int = 0
+    ) -> Tuple[np.ndarray]:
         """
         Turns a sky coordinate into image pixel coordinates;
         :param coord: SkyCoord object to convert to pixel coordinates; essentially a wrapper for SkyCoord.to_pixel()
@@ -1190,11 +545,53 @@ class ImagingImage(Image):
         y = u.dequantify(y, unit=units.pix)
         return SkyCoord.from_pixel(x, y, wcs=self.wcs[ext], origin=origin)
 
+    def plot_ellipse(
+            self,
+            ax: plt.Axes,
+            coord: SkyCoord,
+            a: units.Quantity,
+            b: units.Quantity = None,
+            theta: units.Quantity = None,
+            plot_centre: bool = False,
+            centre_kwargs: dict = {},
+            **kwargs
+    ):
+        if b is None:
+            b = a
+        if theta is None:
+            theta = 0 * units.deg
+        if "edgecolor" not in kwargs:
+            kwargs["edgecolor"] = "white"
+        if "facecolor" not in kwargs:
+            kwargs["facecolor"] = "none"
+        x, y = self.world_to_pixel(coord, 0)
+        e = Ellipse(
+            xy=(x, y),
+            width=2 * a.to(units.pix, self.pixel_scale_y).value,
+            height=2 * b.to(units.pix, self.pixel_scale_y).value,
+            angle=theta.value,
+            **kwargs
+        )
+        # e.set_edgecolor(color)
+        ax.add_artist(e)
+        if plot_centre:
+            if "c" not in centre_kwargs:
+                if "edgecolor" in kwargs:
+                    centre_kwargs["c"] = kwargs["edgecolor"]
+                else:
+                    centre_kwargs["c"] = "white"
+            if "marker" not in centre_kwargs:
+                centre_kwargs["marker"] = "x"
+            ax.scatter(x, y, **centre_kwargs)
+        return ax
+
     def load_data(self, force: bool = False):
-        super().load_data()
-        self.data_sub_bkg = [None] * len(self.data)
-        self.sep_background = [None] * len(self.data)
-        self.pu_background = [None] * len(self.data)
+        reset = force or not self.data
+        super().load_data(force=force)
+        if reset:
+            self.data_sub_bkg = [None] * len(self.data)
+            self.sep_background = [None] * len(self.data)
+            self.pu_background = [None] * len(self.data)
         return self.data
 
     def get_source_cat(self, dual: bool, force: bool = False):
@@ -1267,10 +664,11 @@ class ImagingImage(Image):
             self.synth_cat.write(self.synth_cat_path, format="ascii.ecsv", overwrite=True)
 
     def load_wcs(self) -> List[wcs.WCS]:
-        self.load_headers()
-        self.wcs = []
-        for ext in range(len(self.headers)):
-            self.wcs.append(wcs.WCS(header=self.headers[ext]))
+        if not self.wcs:
+            self.load_headers()
+            self.wcs = []
+            for ext in range(len(self.headers)):
+                self.wcs.append(wcs.WCS(header=self.headers[ext]))
         return self.wcs
 
     def extract_astrometry_err(self):
@@ -1288,9 +686,23 @@ class ImagingImage(Image):
             self.dec_err *= units.arcsec
         return self.astrometry_err
 
+    def extract_psf_fwhm(self):
+        key = self.header_keys()["psf_fwhm"]
+        psf = self.extract_header_item(key)
+        if psf:
+            psf = psf * units.arcsec
+        return psf
+
     def extract_rotation_angle(self, ext: int = 0):
-        self.load_headers()
-        return ff.get_rotation_angle(header=self.headers[ext], astropy_units=True)
+        self.load_wcs()
+        matrix = self.wcs[ext].pixel_scale_matrix
+        theta = np.arctan2(matrix[1, 1], matrix[1, 0]) * 180 / np.pi - 90
+        return theta * units.deg
+
+    def extract_y_sense(self, ext: int = 0):
+        self.load_wcs()
+        matrix = self.wcs[ext].pixel_scale_matrix
+        return np.sign(matrix[1, 1])
 
     def extract_wcs_footprint(self, ext: int = 0):
         """
@@ -1298,6 +710,7 @@ class ImagingImage(Image):
         :return: tuple of SkyCoords, (top_left, top_right, bottom_left, bottom_right)
         """
         self.load_wcs()
+        print("Calculating footprint.")
         return self.wcs[ext].calc_footprint()
 
     def _pixel_scale(self, ext: int = 0):
@@ -1425,9 +838,11 @@ class ImagingImage(Image):
                 self.source_cat = catalog.SECatalogue(path=outputs["source_cat_path"], image=self)
             if "synth_cat_path" in outputs:
                 self.synth_cat_path = outputs["synth_cat_path"]
-            if "source_cat_dual_path" in outputs and outputs["source_cat_dual_path"] is not None and os.path.exists(
-                    outputs["source_cat_dual_path"]):
-                self.source_cat_dual = catalog.SECatalogue(path=outputs["source_cat_dual_path"], image=self)
+            if "source_cat_dual_path" in outputs:
+                if isinstance(outputs["source_cat_dual_path"], tuple):
+                    outputs["source_cat_dual_path"] = outputs["source_cat_dual_path"][0]
+                if outputs["source_cat_dual_path"] is not None and os.path.exists(outputs["source_cat_dual_path"]):
+                    self.source_cat_dual = catalog.SECatalogue(path=outputs["source_cat_dual_path"], image=self)
             if "fwhm_psfex" in outputs:
                 self.fwhm_psfex = outputs["fwhm_psfex"]
             if "fwhm_psfex" in outputs:
@@ -1496,7 +911,8 @@ class ImagingImage(Image):
                                    f"{row['n_matches']} stars, " \
                                    f"from {row['image_name']}"
                         zps[pick_str] = self.zeropoints[row['catalogue']][row['image_name']]
-                    _, zeropoint_best = u.select_option(message="Select best zeropoint:", options=zps)
+                    _, zeropoint_best = u.select_option(message="Select best zeropoint:", options=zps,
+                                                        include_exit=False)
                     best_cat = zeropoint_best["catalogue"]
             self.zeropoint_best = zeropoint_best
 
@@ -1764,6 +1180,8 @@ class ImagingImage(Image):
 
         self.extract_exposure_time()
         zp_dict = self.get_zeropoint(cat_name=zeropoint_name)
+        if zp_dict is None:
+            raise ValueError(f"No zeropoint found for {self.name}.")
         cat.calibrate_magnitudes(
             zeropoint_dict=zp_dict,
             mag_name=f"ZP_{zeropoint_name}",
@@ -2070,9 +1488,10 @@ class ImagingImage(Image):
             output_dir: str = None,
             cat: table.Table = None,
             ext: int = 0,
-            cat_name: str = None
+            cat_name: str = None,
+            **diag_kwargs
     ):
-        if self.source_cat.table is None:
+        if self.source_cat is None or self.source_cat.table is None:
             self.source_extraction_psf(output_dir=output_dir)
 
         if cat is None:
@@ -2082,7 +1501,7 @@ class ImagingImage(Image):
                 raise ValueError(f"If image epoch is not assigned, cat must be provided.")
         diagnostics = self.astrometry_diagnostics(
             reference_cat=cat,
-            offset_tolerance=3 * units.arcsec
+            **diag_kwargs
         )
         new_path = os.path.join(output_dir, self.filename.replace(".fits", "_astrometry.fits"))
         new = self.copy(new_path)
@@ -2090,11 +1509,15 @@ class ImagingImage(Image):
         ra_scale, dec_scale = self.extract_world_scale(ext=ext)
 
         new.load_headers()
+
         if not np.isnan(diagnostics["median_offset_x"].value) and not np.isnan(diagnostics["median_offset_y"].value):
 
+            delta_ra = diagnostics["median_offset_x"].to(units.deg, ra_scale).value
+            delta_dec = -diagnostics["median_offset_y"].to(units.deg, dec_scale).value
+
             new.shift_wcs(
-                delta_ra=diagnostics["median_offset_x"].to(units.deg, ra_scale).value,
-                delta_dec=diagnostics["median_offset_y"].to(units.deg, dec_scale).value
+                delta_ra=delta_ra,
+                delta_dec=delta_dec
             )
 
             new.add_log(
@@ -2107,7 +1530,7 @@ class ImagingImage(Image):
             if cat_name.lower() == 'gaia':
                 new.set_header_item("GAIA", True)
             new.write_fits_file()
-            return new
+            return new, {"delta_ra": delta_ra, "delta_dec": delta_dec}
         else:
             u.rm_check(new_path)
             return None
@@ -2126,7 +1549,10 @@ class ImagingImage(Image):
     def transfer_wcs(self, other_image: 'ImagingImage', ext: int = 0):
         other_image.load_headers()
         self.load_headers()
-        self.headers[ext] = ff.wcs_transfer(header_template=other_image.headers[ext], header_update=self.headers[ext])
+        self.headers[ext] = ff.wcs_transfer(
+            header_template=other_image.headers[ext],
+            header_update=self.headers[ext]
+        )
         self.add_log(
             f"Changed WCS information to match {other_image}.",
             method=self.transfer_wcs
@@ -2552,6 +1978,7 @@ class ImagingImage(Image):
             output_path: str = None,
             ext: int = 0
     ):
+
         left = u.dequantify(left, unit=units.pix)
         right = u.dequantify(right, unit=units.pix)
         bottom = u.dequantify(bottom, unit=units.pix)
@@ -2571,6 +1998,8 @@ class ImagingImage(Image):
             left=left, right=right, bottom=bottom, top=top,
             return_margins=True
         )
+
+        left, right, bottom, top = margins
 
         crpix1 = header['CRPIX1'] - left
         crpix2 = header['CRPIX2'] - bottom
@@ -2733,7 +2162,6 @@ class ImagingImage(Image):
         data = self.data[ext].value
         pix_mags = self.pixel_magnitudes()
 
-
     def reproject(
             self,
             other_image: 'ImagingImage',
@@ -2744,6 +2172,19 @@ class ImagingImage(Image):
             method: str = 'exact',
             mask_mode: bool = False
     ):
+        """
+
+
+        :param other_image:
+        :param ext:
+        :param output_path:
+        :param include_footprint:
+        :param write_footprint:
+        :param method:
+        :param mask_mode: If you are reprojecting a mask, the values will change slightly, so set this to True to round
+            them back to the correct numbers.
+        :return:
+        """
         import reproject as rp
         if output_path is None:
             output_path = self.path.replace(".fits", "_reprojected.fits")
@@ -2978,18 +2419,6 @@ class ImagingImage(Image):
             print("Sky background already estimated.")
         return self.sky_background
 
-    def plot_apertures(self, dual=False, output: str = None, show: bool = False):
-        cat = self.get_source_cat(dual=dual).table
-
-        if cat is not None:
-            pl.plot_all_params(image=self.path, cat=cat, kron=True, show=False)
-            plt.title(self.filter_name)
-            if output is None:
-                output = os.path.join(self.data_path, f"{self.name}_source_cat_dual-{dual}.pdf")
-            plt.savefig(output)
-            if show:
-                plt.show()
-
     def find_object(self, coord: SkyCoord, dual: bool = True):
         cat = self.get_source_cat(dual=dual)
         u.debug_print(2, f"{self}.find_object(): dual ==", dual)
@@ -3009,297 +2438,6 @@ class ImagingImage(Image):
         source_cat = self.get_source_cat(dual=dual)
         i, _ = u.find_nearest(source_cat["NUMBER"], index)
         return source_cat[i], i
-
-    def plot_subimage(
-            self,
-            centre: SkyCoord = None,
-            frame: units.Quantity = None,
-            corners: Tuple[SkyCoord] = None,
-            ext: int = 0,
-            fig: plt.Figure = None,
-            ax: plt.Axes = None,
-            n: int = 1, n_x: int = 1, n_y: int = 1,
-            show_grid: bool = False,
-            show_coords: bool = True,
-            imshow_kwargs: dict = None,  # Can include cmap
-            normalize_kwargs: dict = None,  # Can include vmin, vmax
-            output_path: str = None,
-            mask: np.ndarray = None,
-            scale_bar_object: objects.Extragalactic = None,
-            scale_bar_kwargs: dict = None,
-            data: str = "image",
-            **kwargs,
-    ) -> Tuple[plt.Axes, plt.Figure, dict]:
-
-        if data == "image":
-            self.load_data()
-            data = self.data[ext].value * 1.0
-        elif data == "background":
-            _, data = self.model_background_photometry(**kwargs)
-        elif data == "background_subtracted_image":
-            self.model_background_photometry(**kwargs)
-            data = self.data_sub_bkg[ext]
-        elif data == "pixel_magnitudes":
-            data, _, _, _ = self.pixel_magnitudes(**kwargs)
-        elif isinstance(data, np.ndarray):
-            data = data
-        else:
-            raise ValueError(
-                f"data_type {data} not recognised; this can be 'image', 'background', or 'background_subtracted_image'")
-
-        _, scale = self.extract_pixel_scale()
-
-        other_args = {}
-        if centre is not None and frame is not None:
-            x, y = self.world_to_pixel(centre, 0)
-            if "z" in kwargs:
-                z = kwargs["z"]
-            else:
-                z = None
-            if "obj" in kwargs:
-                obj = kwargs["obj"]
-            else:
-                obj = None
-            frame = self.pixel(
-                value=frame,
-                z=z,
-                obj=obj
-            )
-            other_args["x"] = x
-            other_args["y"] = y
-            left, right, bottom, top = u.frame_from_centre(frame.value, x, y, data)
-        elif corners is not None:
-            x_0, y_0 = self.world_to_pixel(corners[0], 0)
-            x_1, y_1 = self.world_to_pixel(corners[1], 0)
-            xs = x_1, x_0
-            left = int(min(xs))
-            right = int(max(xs))
-            ys = y_1, y_0
-            bottom = int(min(ys))
-            top = int(max(ys))
-
-        else:
-            left = 0
-            right = data.shape[1]
-            bottom = 0
-            top = data.shape[0]
-
-        # print(type(data), data[bottom:top, left:right])
-        if mask is not None:
-            data_masked = data * np.invert(mask.astype(bool)).astype(int)
-            data_masked += mask * np.nanmedian(data[bottom:top, left:right])
-            data = data_masked
-        u.debug_print(1, "ImagingImage.plot_subimage(): frame ==", frame)
-
-        if fig is None:
-            fig = plt.figure()
-
-        if normalize_kwargs is None:
-            normalize_kwargs = {}
-        if imshow_kwargs is None:
-            imshow_kwargs = {}
-
-        if "stretch" not in normalize_kwargs:
-            normalize_kwargs["stretch"] = SqrtStretch()
-        elif normalize_kwargs["stretch"] == "sqrt":
-            normalize_kwargs["stretch"] = SqrtStretch()
-        elif normalize_kwargs["stretch"] == "log":
-            normalize_kwargs["stretch"] = LogStretch()
-
-        if "interval" not in normalize_kwargs:
-            normalize_kwargs["interval"] = MinMaxInterval()
-        elif normalize_kwargs["interval"] == "minmax":
-            normalize_kwargs["interval"] = MinMaxInterval()
-        elif normalize_kwargs["interval"] == "zscale":
-            normalize_kwargs["interval"] = ZScaleInterval()
-
-        if "origin" not in imshow_kwargs:
-            imshow_kwargs["origin"] = "lower"
-
-        if ax is None:
-            if show_coords:
-                projection = self.wcs[ext]
-            else:
-                projection = None
-
-            ax = fig.add_subplot(n_y, n_x, n, projection=projection)
-
-        if not show_coords:
-            frame1 = plt.gca()
-            frame1.axes.get_xaxis().set_visible(False)
-            frame1.axes.set_yticks([])
-            frame1.axes.invert_yaxis()
-
-        # scaling_data = data[bottom:top, left:right]
-        # sigma_clip = SigmaClip(sigma=3.)
-        # data_clipped = sigma_clip(scaling_data, masked=False)
-
-        # if "vmin" not in normalize_kwargs:
-        #     normalize_kwargs["vmin"] = np.median(data[bottom:top, left:right]) #np.median(scaling_data)
-
-        other_args["mapping"] = ax.imshow(
-            data,
-            norm=ImageNormalize(
-                data[bottom:top, left:right],
-                **normalize_kwargs
-            ),
-            interpolation="none",
-            **imshow_kwargs
-        )
-        ax.set_xlim(left, right)
-        ax.set_ylim(bottom, top)
-
-        ax.set_xlabel(" ")
-        ax.set_ylabel(" ")
-        ax.set_xlabel("Right Ascension (J2000)", size=16)
-        ax.set_ylabel("Declination (J2000)", size=16, rotation=-90)
-        # ax.tick_params(labelsize=14)
-        # ax.yaxis.set_label_position("right")
-
-        # plt.tight_layout()
-
-        if scale_bar_object is not None:
-            if scale_bar_kwargs is None:
-                scale_bar_kwargs = {}
-            print(scale_bar_kwargs)
-            self.scale_bar(
-                obj=scale_bar_object,
-                ax=ax,
-                fig=fig,
-                **scale_bar_kwargs
-            )
-
-        if output_path is not None:
-            fig.savefig(output_path)
-
-        return ax, fig, other_args
-
-    def scale_bar(
-            self,
-            obj: objects.Extragalactic,
-            ax: plt.Axes,
-            fig: plt.Figure,
-            size: units.Quantity = 1 * units.arcsec,
-            spread_factor: float = 0.5,
-            x_ax: float = 0.1,
-            y_ax: float = 0.1,
-            line_kwargs: dict = None,
-            text_kwargs: dict = None,
-            ext: int = 0,
-            extra_height_top_factor: float = 2.
-    ):
-        self.extract_pixel_scale(ext=ext)
-        if line_kwargs is None:
-            line_kwargs = {}
-        if text_kwargs is None:
-            text_kwargs = {}
-
-        if "fontsize" not in text_kwargs:
-            text_kwargs["fontsize"] = 12
-        if "color" not in text_kwargs:
-            text_kwargs["color"] = "white"
-
-        if "color" not in line_kwargs:
-            line_kwargs["color"] = "white"
-        if "lw" not in line_kwargs:
-            line_kwargs["lw"] = 3
-
-        # if isinstance(x, units.Quantity):
-        #     if x.decompose().unit == units.rad:
-        #         x = x.to(units.pix, self.pixel_scale_x)
-        # if isinstance(x, units.Quantity):
-        #     if x.decompose().unit == units.rad:
-        #         x = x.to(units.pix, self.pixel_scale_x)
-
-        if not isinstance(size, units.Quantity):
-            size = size * units.pix
-        if size.decompose().unit == units.pix:
-            size_pix = size
-            size_ang = size_pix.to(units.arcsec, self.pixel_scale_x)
-            size_proj = obj.projected_size(size_ang)
-        elif size.decompose().unit == units.meter:
-            size_proj = size
-            size_ang = obj.angular_size(distance=size)
-            size_pix = size_ang.to(units.pix, self.pixel_scale_x)
-        elif size.decompose().unit == units.rad:
-            size_ang = size
-            size_pix = size_ang.to(units.pix, self.pixel_scale_x)
-            size_proj = obj.projected_size(size_ang)
-        else:
-            raise ValueError(f"The units of provided size, {size.unit}, cannot be parsed as a pixel, angular or "
-                             f"physical distance.")
-
-        if "solid_capstyle" not in line_kwargs:
-            line_kwargs["solid_capstyle"] = "butt"
-
-        # Draw angular size text in axes coordinates
-        text_ang = ax.text(
-            x_ax,
-            y_ax,
-            size_ang.round(1),
-            transform=ax.transAxes,
-            **text_kwargs
-        )
-        # The below seems complicated, but is made necessary by the fact that you only seem to be able to get the text
-        # width out of matplotlib in Display coordinates (ie, rendered pixels), and the zero point (0, 0) of this
-        # differs from both the Axes coordinates (0, 0) and the Data coordinates (0, 0), but in different ways.
-
-        # Get the size of the text on the canvas
-        r = fig.canvas.get_renderer()
-        bb = text_ang.get_window_extent(r)
-        # Transform the x and y axis coordinates to Display coordinates
-        x_disp, y_ang_disp = ax.transAxes.transform((x_ax, y_ax))
-        # Get the rightmost point of the text by adding the bounding box width (we don't actually use this right now,
-        # but I'm leaving it here in case I make changes later and forget how this works)
-        x_ang_disp_right = x_disp + bb.width
-        # Get the topmost point of the text by adding bounding box height
-        y_ang_disp_up = y_ang_disp + bb.height
-        # Space the bar upwards by half the height of the text.
-        y_bar_disp = y_ang_disp_up + bb.height * spread_factor
-        # Transform the left bar coordinates back to Axes coordinates.
-        x_ax, y_bar_ax = ax.transAxes.inverted().transform((x_disp, y_bar_disp))
-        # Now, to get the bar's right points, we need to work in Data coordinates, because that's what the size is in
-        # (that is, in DATA pixels).
-        # Transform our left point from Display coordinates to Data coordinates.
-        x_data, y_bar_data = ax.transData.inverted().transform((x_disp, y_bar_disp))
-        # Add the width of the bar.
-        x_bar_data_right = x_data + size_pix.value
-        # Transform right point back to Display coordinates.
-        x_bar_disp_right, y_bar_disp = ax.transData.transform((x_bar_data_right, y_bar_data))
-        # Transform right point to Axes coordinates.
-        x_bar_ax_right, y_bar_ax = ax.transAxes.inverted().transform((x_bar_disp_right, y_bar_disp))
-        # Draw the bar.
-        ax.plot(
-            (x_ax, x_bar_ax_right),
-            (y_bar_ax, y_bar_ax),
-            transform=ax.transAxes,
-            **line_kwargs
-        )
-        # Add a text height to get where we draw the projected distance text (since the font size is the same, no
-        # need to do any more nasty conversions)
-        y_proj_disp = y_bar_disp + extra_height_top_factor * bb.height * spread_factor
-        # Except for this one, where we transform the final text coordinates back to Axes coordinates
-        x_ax, y_proj_ax = ax.transAxes.inverted().transform((x_disp, y_proj_disp))
-        # Draw the projected size text.
-        ax.text(
-            x_ax,
-            y_proj_ax,
-            size_proj.round(1),
-            transform=ax.transAxes,
-            **text_kwargs
-        )
-
-        # I am a matplotlib god.
-
-        return ax
-
-    # def pixel(self, value: Union[float, int, units.Quantity], ext: int = 0):
-    #     if not isinstance(value, units.Quantity):
-    #         value *= units.pix
-    #     else:
-    #         self.extract_pixel_scale(ext)
-    #         value = value.to(units.pix, self.pixel_scale_y)
-    #     return value
 
     def pixel(
             self,
@@ -3401,6 +2539,324 @@ class ImagingImage(Image):
             kron_a.to(units.pixel, pix_scale), frame)  # + 5 * units.pix,
         u.debug_print(1, "ImagingImage.nice_frame(): this_frame ==", this_frame)
         return this_frame
+
+    def plot_apertures(self, dual=False, output: str = None, show: bool = False):
+        cat = self.get_source_cat(dual=dual).table
+
+        if cat is not None:
+            pl.plot_all_params(image=self.path, cat=cat, kron=True, show=False)
+            plt.title(self.filter_name)
+            if output is None:
+                output = os.path.join(self.data_path, f"{self.name}_source_cat_dual-{dual}.pdf")
+            plt.savefig(output)
+            if show:
+                plt.show()
+
+    def plot_subimage(
+            self,
+            centre: SkyCoord = None,
+            frame: units.Quantity = None,
+            corners: Tuple[SkyCoord] = None,
+            ext: int = 0,
+            fig: plt.Figure = None,
+            ax: plt.Axes = None,
+            n: int = 1, n_x: int = 1, n_y: int = 1,
+            show_grid: bool = False,
+            show_coords: bool = True,
+            imshow_kwargs: dict = None,  # Can include cmap
+            normalize_kwargs: dict = None,  # Can include vmin, vmax
+            output_path: str = None,
+            mask: np.ndarray = None,
+            scale_bar_object: objects.Extragalactic = None,
+            scale_bar_kwargs: dict = None,
+            data: str = "image",
+            clip_data: bool = False,
+            **kwargs,
+    ) -> Tuple[plt.Axes, plt.Figure, dict]:
+
+        if data == "image":
+            self.load_data()
+            data = self.data[ext].value
+        elif data == "background":
+            _, data = self.model_background_photometry(**kwargs)
+        elif data == "background_subtracted_image":
+            self.model_background_photometry(**kwargs)
+            data = self.data_sub_bkg[ext]
+        elif data == "pixel_magnitudes":
+            data, _, _, _ = self.pixel_magnitudes(**kwargs)
+        elif isinstance(data, np.ndarray):
+            data = data
+        else:
+            raise ValueError(
+                f"data_type {data} not recognised; this can be 'image', 'background', or 'background_subtracted_image'")
+
+        _, scale = self.extract_pixel_scale()
+
+        other_args = {}
+        if centre is not None and frame is not None:
+            x, y = self.world_to_pixel(centre, 0)
+            if "z" in kwargs:
+                z = kwargs["z"]
+            else:
+                z = None
+            if "obj" in kwargs:
+                obj = kwargs["obj"]
+            else:
+                obj = None
+            frame = self.pixel(
+                value=frame,
+                z=z,
+                obj=obj
+            )
+            other_args["x"] = x
+            other_args["y"] = y
+            left, right, bottom, top = u.frame_from_centre(frame.value, x, y, data)
+        elif corners is not None:
+            x_0, y_0 = self.world_to_pixel(corners[0], 0)
+            x_1, y_1 = self.world_to_pixel(corners[1], 0)
+            xs = x_1, x_0
+            left = int(min(xs))
+            right = int(max(xs))
+            ys = y_1, y_0
+            bottom = int(min(ys))
+            top = int(max(ys))
+
+        else:
+            left = 0
+            right = data.shape[1]
+            bottom = 0
+            top = data.shape[0]
+
+        # print(type(data), data[bottom:top, left:right])
+        if mask is not None:
+            data_masked = data * np.invert(mask.astype(bool)).astype(int)
+            data_masked += mask * np.nanmedian(data[bottom:top, left:right])
+            data = data_masked
+        u.debug_print(1, "ImagingImage.plot_subimage(): frame ==", frame)
+
+        if fig is None:
+            fig = plt.figure()
+        if normalize_kwargs is None:
+            normalize_kwargs = {}
+        if imshow_kwargs is None:
+            imshow_kwargs = {}
+
+        if "stretch" not in normalize_kwargs:
+            normalize_kwargs["stretch"] = SqrtStretch()
+        elif normalize_kwargs["stretch"] == "sqrt":
+            normalize_kwargs["stretch"] = SqrtStretch()
+        elif normalize_kwargs["stretch"] == "log":
+            normalize_kwargs["stretch"] = LogStretch()
+
+        if "interval" not in normalize_kwargs:
+            normalize_kwargs["interval"] = MinMaxInterval()
+        elif normalize_kwargs["interval"] == "minmax":
+            normalize_kwargs["interval"] = MinMaxInterval()
+        elif normalize_kwargs["interval"] == "zscale":
+            normalize_kwargs["interval"] = ZScaleInterval()
+
+        if "origin" not in imshow_kwargs:
+            imshow_kwargs["origin"] = "lower"
+
+        if ax is None:
+            if show_coords:
+                projection = self.wcs[ext]
+            else:
+                projection = None
+
+            ax = fig.add_subplot(n_y, n_x, n, projection=projection)
+
+        if not show_coords:
+            frame1 = plt.gca()
+            frame1.axes.get_xaxis().set_visible(False)
+            frame1.axes.set_yticks([])
+            frame1.axes.invert_yaxis()
+
+        if "data" not in normalize_kwargs:
+            scaling_data = data[bottom:top, left:right]
+            if clip_data:
+                sigma_clip = SigmaClip(sigma_lower=2., sigma_upper=np.inf)
+                scaling_data = sigma_clip(scaling_data, masked=False)
+        else:
+            scaling_data = normalize_kwargs.pop("data")
+
+        if "cmap" not in imshow_kwargs:
+            if self.filter and self.filter.cmap:
+                imshow_kwargs["cmap"] = self.filter.cmap
+
+        # if "vmin" not in normalize_kwargs:
+        #     normalize_kwargs["vmin"] = np.min(data_clipped)
+
+        mapping = ax.imshow(
+            data,
+            norm=ImageNormalize(
+                scaling_data,
+                **normalize_kwargs
+            ),
+            interpolation="none",
+            **imshow_kwargs
+        )
+
+        other_args["mapping"] = mapping
+        ax.set_xlim(left, right)
+        ax.set_ylim(bottom, top)
+
+        ax.set_xlabel(" ")
+        ax.set_ylabel(" ")
+        ax.set_xlabel("Right Ascension (J2000)", size=16)
+        ax.set_ylabel("Declination (J2000)", size=16, rotation=-90)
+        # ax.tick_params(labelsize=14)
+        # ax.yaxis.set_label_position("right")
+
+        # plt.tight_layout()
+
+        if scale_bar_object is not None:
+            if scale_bar_kwargs is None:
+                scale_bar_kwargs = {}
+            print(scale_bar_kwargs)
+            self.scale_bar(
+                obj=scale_bar_object,
+                ax=ax,
+                fig=fig,
+                **scale_bar_kwargs
+            )
+        if output_path is not None:
+            fig.savefig(output_path)
+
+        del data
+
+        return ax, fig, other_args
+
+    def scale_bar(
+            self,
+            obj: objects.Extragalactic,
+            ax: plt.Axes,
+            fig: plt.Figure,
+            size: units.Quantity = 1 * units.arcsec,
+            spread_factor: float = 0.5,
+            x_ax: float = 0.1,
+            y_ax: float = 0.1,
+            line_kwargs: dict = None,
+            text_kwargs: dict = None,
+            ext: int = 0,
+            extra_height_top_factor: float = 2.,
+            bold: bool = False,
+            precision_ang: int = 1,
+            precision_spc: int = 1
+    ):
+        self.extract_pixel_scale(ext=ext)
+        if line_kwargs is None:
+            line_kwargs = {}
+        if text_kwargs is None:
+            text_kwargs = {}
+
+        if "fontsize" not in text_kwargs:
+            text_kwargs["fontsize"] = 12
+        if "color" not in text_kwargs:
+            text_kwargs["color"] = "white"
+
+        if "color" not in line_kwargs:
+            line_kwargs["color"] = "white"
+        if "lw" not in line_kwargs:
+            line_kwargs["lw"] = 3
+
+        # if isinstance(x, units.Quantity):
+        #     if x.decompose().unit == units.rad:
+        #         x = x.to(units.pix, self.pixel_scale_x)
+        # if isinstance(x, units.Quantity):
+        #     if x.decompose().unit == units.rad:
+        #         x = x.to(units.pix, self.pixel_scale_x)
+
+        if not isinstance(size, units.Quantity):
+            size = size * units.pix
+        if size.decompose().unit == units.pix:
+            size_pix = size
+            size_ang = size_pix.to(units.arcsec, self.pixel_scale_x)
+            size_proj = obj.projected_size(size_ang)
+        elif size.decompose().unit == units.meter:
+            size_proj = size
+            size_ang = obj.angular_size(distance=size)
+            size_pix = size_ang.to(units.pix, self.pixel_scale_x)
+        elif size.decompose().unit == units.rad:
+            size_ang = size
+            size_pix = size_ang.to(units.pix, self.pixel_scale_x)
+            size_proj = obj.projected_size(size_ang)
+        else:
+            raise ValueError(f"The units of provided size, {size.unit}, cannot be parsed as a pixel, angular or "
+                             f"physical distance.")
+
+        if "solid_capstyle" not in line_kwargs:
+            line_kwargs["solid_capstyle"] = "butt"
+
+        if bold:
+            str_ang = f"\\textbf{{{size_ang.round(precision_ang)}}}"
+        else:
+            str_ang = size_ang.round(precision_ang)
+
+        # Draw angular size text in axes coordinates
+        text_ang = ax.text(
+            x_ax,
+            y_ax,
+            str_ang,
+            transform=ax.transAxes,
+            **text_kwargs
+        )
+        # The below seems complicated, but is made necessary by the fact that you only seem to be able to get the text
+        # width out of matplotlib in Display coordinates (ie, rendered pixels), and the zero point (0, 0) of this
+        # differs from both the Axes coordinates (0, 0) and the Data coordinates (0, 0), but in different ways.
+
+        # Get the size of the text on the canvas
+        r = fig.canvas.get_renderer()
+        bb = text_ang.get_window_extent(r)
+        # Transform the x and y axis coordinates to Display coordinates
+        x_disp, y_ang_disp = ax.transAxes.transform((x_ax, y_ax))
+        # Get the rightmost point of the text by adding the bounding box width (we don't actually use this right now,
+        # but I'm leaving it here in case I make changes later and forget how this works)
+        x_ang_disp_right = x_disp + bb.width
+        # Get the topmost point of the text by adding bounding box height
+        y_ang_disp_up = y_ang_disp + bb.height
+        # Space the bar upwards by half the height of the text.
+        y_bar_disp = y_ang_disp_up + bb.height * spread_factor
+        # Transform the left bar coordinates back to Axes coordinates.
+        x_ax, y_bar_ax = ax.transAxes.inverted().transform((x_disp, y_bar_disp))
+        # Now, to get the bar's right points, we need to work in Data coordinates, because that's what the size is in
+        # (that is, in DATA pixels).
+        # Transform our left point from Display coordinates to Data coordinates.
+        x_data, y_bar_data = ax.transData.inverted().transform((x_disp, y_bar_disp))
+        # Add the width of the bar.
+        x_bar_data_right = x_data + size_pix.value
+        # Transform right point back to Display coordinates.
+        x_bar_disp_right, y_bar_disp = ax.transData.transform((x_bar_data_right, y_bar_data))
+        # Transform right point to Axes coordinates.
+        x_bar_ax_right, y_bar_ax = ax.transAxes.inverted().transform((x_bar_disp_right, y_bar_disp))
+        # Draw the bar.
+        ax.plot(
+            (x_ax, x_bar_ax_right),
+            (y_bar_ax, y_bar_ax),
+            transform=ax.transAxes,
+            **line_kwargs
+        )
+        # Add a text height to get where we draw the projected distance text (since the font size is the same, no
+        # need to do any more nasty conversions)
+        y_proj_disp = y_bar_disp + extra_height_top_factor * bb.height * spread_factor
+        # Except for this one, where we transform the final text coordinates back to Axes coordinates
+        x_ax, y_proj_ax = ax.transAxes.inverted().transform((x_disp, y_proj_disp))
+        # Draw the projected size text.
+        if bold:
+            str_spc = f"\\textbf{{{size_proj.round(precision_spc)}}}"
+        else:
+            str_spc = size_proj.round(precision_spc)
+        ax.text(
+            x_ax,
+            y_proj_ax,
+            str_spc,
+            transform=ax.transAxes,
+            **text_kwargs
+        )
+
+        # I am a matplotlib god.
+
+        return ax
 
     def plot_source_extractor_object(
             self,
@@ -3529,6 +2985,64 @@ class ImagingImage(Image):
         u.debug_print(2, f"{self}.plot_catalogue(): len(cat):", len(cat))
 
         return ax, fig
+
+    def plot_coords(
+            self,
+            ax: plt.Axes,
+            coord: Union[SkyCoord, List[SkyCoord]],
+            **kwargs
+    ):
+        coord = u.check_iterable(coord)
+        for i, c in enumerate(coord):
+            coord[i] = astm.attempt_skycoord(c)
+        coord = SkyCoord(coord)
+        x, y = self.world_to_pixel(coord=coord)
+        if "marker" not in kwargs:
+            kwargs["marker"] = "x"
+        if "c" not in kwargs:
+            kwargs["c"] = "white"
+        ax.scatter(
+            x, y, **kwargs
+        )
+        return ax
+
+    def plot_slit(
+            self,
+            ax: plt.Axes,
+            centre: SkyCoord,
+            width: units.Quantity,
+            length: units.Quantity,
+            position_angle: units.Quantity,
+            **kwargs
+    ):
+        # Multiplying by the "y-sense" (the 1,1 entry on the wcs pixel scale matrix) accounts for images where the
+        # y-axis is reversed wrt north (eg certain GMOS images)
+        position_angle = u.check_quantity(
+            position_angle,
+            units.deg) * self.extract_y_sense() + self.extract_rotation_angle()
+        centre_x, centre_y = self.world_to_pixel(centre)
+        slit_width = self.pixel(width).value
+        slit_length = self.pixel(length).value
+        # Do some trigonometry to determine pixel coordinates for the Rectangle badge (which uses the corner as its origin. Thanks, matplotlib.)
+        rec_x = centre_x + np.sin(position_angle) * slit_length / 2 - np.cos(position_angle) * slit_width / 2
+        rec_y = centre_y - np.cos(position_angle) * slit_length / 2 - np.sin(position_angle) * slit_width / 2
+
+        default_kwargs = dict(
+            linewidth=2,
+            edgecolor='white',
+            facecolor='none'
+        )
+        default_kwargs.update(kwargs)
+
+        rect = Rectangle(
+            (rec_x, rec_y),
+            slit_width,
+            slit_length,
+            angle=position_angle.value,
+            **default_kwargs
+        )
+        ax.add_artist(rect)
+        return ax
 
     def insert_synthetic_sources(
             self,
@@ -3717,12 +3231,19 @@ class ImagingImage(Image):
     def test_limit_location(
             self,
             coord: SkyCoord,
-            ap_radius: units.Quantity = 2 * units.arcsec,
+            ap_radius: units.Quantity = None,
             ext: int = 0,
             sigma_min: int = 1,
             sigma_max: int = 10,
             **kwargs
     ):
+
+        if ap_radius is None:
+            psf = self.extract_header_item("PSF_FWHM", ext=ext)
+            if not psf:
+                ap_radius = 2 * units.arcsec
+            else:
+                ap_radius = 2 * psf * units.arcsec
 
         self.load_wcs()
         _, pix_scale = self.extract_pixel_scale()
@@ -3742,7 +3263,9 @@ class ImagingImage(Image):
             limits.append({
                 "sigma": i,
                 "flux": n_sigma_flux[0],
-                "mag": limit[0]
+                "mag": limit[0],
+                "aperture_radius": ap_radius,
+                "aperture_radius_pix": ap_radius_pix
             })
         return table.QTable(limits)
 
@@ -3868,8 +3391,36 @@ class ImagingImage(Image):
             generate_mask: bool = True,
             mask_ellipses: List[dict] = None,
             mask_kwargs: dict = {},
-            saturate_factor: float = 0.5
+            saturate_factor: float = 0.5,
     ):
+        """
+        Models and subtracts the background of a specified part of the image.
+        A mask can be generated using either `sep` or `photutils`, automatically excluding objects from the background
+        fit. Negative and saturated or near-saturated pixels, above `saturate_factor * header["SATURATE"]`, will also be masked
+        regardless of `generate_mask`.
+
+        :param centre: the centre of the mask region, as a SkyCoord.
+        :param frame: the size of the region to fit, from `centre` to the edge, in pixels or units of on-sky angle.
+            Currently only a square region is supported.
+        :param ext: FITS extension of image to model.
+        :param model_type: an `astropy` model to use for the background.
+        :param fitter_type: an `astropy` Fitter to use.
+        :param init_params: the initial parameters to give to the model.
+        :param write: path to write the modelled background to disk, as a FITS file. If None, no file is written.
+        :param write_subbed: path to write the subtracted image to, as a FITS file. If None, no file is written.
+        :param generate_mask: whether to generate a mask or not.
+        :param mask_ellipses: a set of ellipses to mask. If a mask is generated, will be added to it.
+        :param mask_kwargs: keyword arguments to pass to `generate_mask()`.
+        :param saturate_factor: pixels with values greater than `saturate_factor * header["SATURATE"] will be masked.
+        :return: Tuple of:
+            `model`: the fitted model.
+            `model_eval`: the pixel values of the model.
+            `data`: the original data.
+            `subbed_data`: the full image with the model subtracted from the window.
+            `mask`: the final mask used for fitting.
+            `weights`: the weights used for fitting, the inverse of the image error.
+        """
+
         margins = left, right, bottom, top = self.frame_from_coord(
             frame=frame,
             centre=centre,
@@ -3879,7 +3430,7 @@ class ImagingImage(Image):
         print("")
         print(self.filename)
 
-        data = self.data[ext] * 1  # [bottom:top, left:right]
+        data = self.data[ext] * 1  # [bottom:top, left:right] * 1
 
         if generate_mask:
             mask = self.generate_mask(
@@ -3889,10 +3440,11 @@ class ImagingImage(Image):
             )
             mask = mask  # [bottom:top, left:right]
             mask = mask.astype(bool)
-            mask += data < 0
-            mask += data > self.extract_saturate() * saturate_factor
         else:
             mask = np.zeros(data.shape, dtype=bool)
+
+        mask += data < 0
+        mask += data > self.extract_saturate() * saturate_factor
 
         if mask_ellipses:
             for ellipse_dict in mask_ellipses:
@@ -3912,8 +3464,10 @@ class ImagingImage(Image):
                 rad_cc = (xct ** 2 / (a / 2.) ** 2) + (yct ** 2 / (b / 2.) ** 2)
                 mask += rad_cc <= 1
 
-        data -= np.median(self.data[ext])
+        median = np.median(self.data[ext])
+        data -= median
 
+        # Instead of using a cutout of the data, we use the mask to set the weights to zero outside of it.
         mask[:, :left] = True
         mask[:, right:] = True
         mask[:bottom, :] = True
@@ -3927,8 +3481,11 @@ class ImagingImage(Image):
             weights[i, j] = 0.  # np.invert(mask).astype(float)
 
         model_init = model_type(**init_params)
-        fitter = fitter_type(True)
+        fitter = fitter_type(calc_uncertainties=False)
         y, x = np.mgrid[:data.shape[0], :data.shape[1]]
+        plt.imshow(weights[bottom - 10:top + 10, left - 10:right + 10])
+        plt.colorbar()
+        plt.show()
         model = fitter(
             model_init,
             x, y,
@@ -3937,11 +3494,11 @@ class ImagingImage(Image):
         )
         model_eval = model(x, y)
         subbed_all = data.value - model_eval
-        subbed_window = data
-        subbed_window[bottom:top, left:right] = subbed_all[bottom:top, left:right] * data.unit
+        subbed = data.copy() + median
+        subbed[bottom:top, left:right] = subbed_all[bottom:top, left:right] * data.unit + median
 
         if isinstance(write, str):
-            back_file = self.copy(write)
+            back_file = self.copy(write, suffix="background_local")
             back_file.load_data()
             back_file.load_headers()
             back_file.data[ext] = model_eval * data.unit
@@ -3981,10 +3538,10 @@ class ImagingImage(Image):
             mask_file.write_fits_file()
 
         if isinstance(write_subbed, str):
-            subbed_file = self.copy(write_subbed)
+            subbed_file = self.copy(write_subbed, suffix="background-subtracted_local")
             subbed_file.load_data()
             subbed_file.load_headers()
-            subbed_file.data[ext] = subbed_window
+            subbed_file.data[ext] = subbed
             subbed_file.add_log(
                 action=f"Background modelled and subtracted.",
                 method=self.model_background_photometry,
@@ -3994,7 +3551,7 @@ class ImagingImage(Image):
             )
             subbed_file.write_fits_file()
 
-        return model, model_eval, data, subbed_window, mask, weights
+        return model, model_eval, data, subbed, mask, weights
 
     def model_background_photometry(
             self, ext: int = 0,
@@ -4047,14 +3604,14 @@ class ImagingImage(Image):
             raise ValueError(f"Unrecognised method {method}.")
 
         if isinstance(write, str):
-            back_file = self.copy(write)
+            back_file = self.copy(write, suffix=f"background_{method}")
             back_file.load_data()
             back_file.load_headers()
             back_file.data[ext] = bkg_data
             back_file.write_fits_file()
 
         if isinstance(write_subbed, str):
-            subbed_file = self.copy(write_subbed)
+            subbed_file = self.copy(write_subbed, suffix=f"background-subtracted_{method}")
             subbed_file.load_data()
             subbed_file.load_headers()
             subbed_file.data[ext] = self.data[ext] - bkg_data
@@ -4132,7 +3689,7 @@ class ImagingImage(Image):
 
     def generate_mask(
             self,
-            unmasked: SkyCoord = (),
+            do_not_mask: SkyCoord = (),
             ext: int = 0,
             threshold: float = 4,
             method: str = "sep",
@@ -4142,12 +3699,13 @@ class ImagingImage(Image):
     ):
         """
         Uses a segmentation map to produce a mask covering field objects.
-        :param unmasked: SkyCoord list of objects to keep unmasked; if any
+
+        :param do_not_mask: SkyCoord list of objects to keep unmasked; if any
         :param ext:
         :param threshold:
         :param method:
-        :param obj_value: For GALFIT masks, should be 1.
-        :param back_value: For GALFIT masks, should be 0.
+        :param obj_value: The value to set object pixels to. For GALFIT masks, should be 1.
+        :param back_value: The value to set non-object pixels to. For GALFIT masks, should be 0.
         :param margins: If only part of the image is to be masked, provide (left, right, bottom, top) in pixel
             coordinates as tuple.
         :return:
@@ -4161,7 +3719,7 @@ class ImagingImage(Image):
         )
         self.load_wcs()
 
-        unmasked = u.check_iterable(unmasked)
+        do_not_mask = u.check_iterable(do_not_mask)
 
         if segmap is None:
             mask = np.zeros(data.shape)
@@ -4170,13 +3728,16 @@ class ImagingImage(Image):
             mask = np.ones(data.shape, dtype=bool)
             # This sets all the background pixels to False
             mask[segmap == 0] = False
-            for coord in unmasked:
-                x_unmasked, y_unmasked = self.wcs[ext].all_world2pix(coord.ra, coord.dec, 0)
-                # obj_id is the integer representing that object in the segmap
-                obj_id = segmap[int(np.round(y_unmasked)), int(np.round(x_unmasked))]
-                # If obj_id is zero, then our work here is already done (ie, the segmap routine read it as background anyway)
-                if obj_id != 0:
-                    mask[segmap == obj_id] = False
+            for coord in do_not_mask:
+                if self.wcs[ext].footprint_contains(coord):
+                    x_unmasked, y_unmasked = self.world_to_pixel(coord=coord, ext=ext)
+                    x_unmasked = int(np.round(x_unmasked))
+                    y_unmasked = int(np.round(y_unmasked))
+                    # obj_id is the integer representing that object in the segmap
+                    obj_id = segmap[y_unmasked, x_unmasked]
+                    # If obj_id is zero, then our work here is already done (ie, the segmap routine read it as background anyway)
+                    if obj_id != 0:
+                        mask[segmap == obj_id] = False
 
         # Convert to integer (from bool)
         mask = mask.astype(int)
@@ -4208,6 +3769,7 @@ class ImagingImage(Image):
         """
         Generates and writes a source mask to a FITS file.
         Any argument accepted by generate_mask() can be passed as a keyword.
+
         :param output_path: path to write the mask file to.
         :param ext: FITS extension to modify.
         :return:
@@ -4236,7 +3798,8 @@ class ImagingImage(Image):
         return True
 
     def sep_aperture_photometry(
-            self, x: float, y: float,
+            self,
+            x: float, y: float,
             aperture_radius: units.Quantity = 2.0 * units.arcsec,
             ext: int = 0,
             sub_background: bool = True
@@ -4253,7 +3816,8 @@ class ImagingImage(Image):
             x, y,
             pixel_radius.value,
             err=self.sep_background[ext].rms(),
-            gain=self.extract_gain().value)
+            gain=self.extract_gain().value
+        )
         return flux, fluxerr, flag
 
     def sep_elliptical_photometry(
@@ -4297,7 +3861,7 @@ class ImagingImage(Image):
             mask = mask_nearby.data[0].value
         elif mask_nearby:
             mask = self.write_mask(
-                unmasked=centre,
+                do_not_mask=centre,
                 ext=ext,
                 method="sep",
                 output_path=segmap_output
@@ -4676,7 +4240,7 @@ class ImagingImage(Image):
         margins_max = u.frame_from_centre(frame_upper + 1, x, y, data)
         mask = new.write_mask(
             output_path=mask_path,
-            unmasked=list(map(lambda m: m["position"], model_guesses)),
+            do_not_mask=list(map(lambda m: m["position"], model_guesses)),
             ext=ext,
             method="sep",
             obj_value=1,
@@ -4819,7 +4383,8 @@ class ImagingImage(Image):
         if instrument_name in cls.class_dict:
             subclass = cls.class_dict[instrument_name]
         else:
-            raise ValueError(f"Unrecognised instrument {instrument_name}")
+            subclass = ImagingImage
+            # raise ValueError(f"Unrecognised instrument {instrument_name}")
         return subclass
 
     @classmethod
@@ -4837,7 +4402,8 @@ class ImagingImage(Image):
             "airmass_err": "AIRMASS_ERR",
             "astrometry_err": "ASTM_RMS",
             "ra_err": "RA_RMS",
-            "dec_err": "DEC_RMS"
+            "dec_err": "DEC_RMS",
+            "psf_fwhm": "PSF_FWHM"
         })
         return header_keys
 
@@ -4876,890 +4442,6 @@ class ImagingImage(Image):
         return list(differences.keys()), list(differences.values())
 
 
-class CoaddedImage(ImagingImage):
-    def __init__(
-            self,
-            path: str,
-            frame_type: str = None,
-            instrument_name: str = None,
-    ):
-        super().__init__(
-            path=path,
-            frame_type=frame_type,
-            instrument_name=instrument_name,
-            load_outputs=False
-        )
-
-        self.area_file = None
-
-        self.load_output_file()
-
-        if self.area_file is None:
-            self.area_file = self.path.replace(".fits", "_area.fits")
-
-    def trim(
-            self,
-            left: Union[int, units.Quantity] = None,
-            right: Union[int, units.Quantity] = None,
-            bottom: Union[int, units.Quantity] = None,
-            top: Union[int, units.Quantity] = None,
-            output_path: str = None
-    ):
-        # Let the super method take care of this image
-        trimmed = super().trim(left=left, right=right, bottom=bottom, top=top, output_path=output_path)
-        # Trim the area file in the same way.
-        if output_path is None:
-            output_path = trimmed.path
-        new_area_path = output_path.replace(".fits", "_area.fits")
-
-        if os.path.isfile(self.area_file):
-            ff.trim_file(
-                path=self.area_file,
-                left=left, right=right, bottom=bottom, top=top,
-                new_path=new_area_path
-            )
-            trimmed.area_file = new_area_path
-            trimmed.add_log(
-                action=f"Trimmed area file to margins left={left}, right={right}, bottom={bottom}, top={top}",
-                method=self.trim,
-                output_path=new_area_path
-            )
-            trimmed.update_output_file()
-        return trimmed
-
-    def trim_from_area(self, output_path: str = None):
-        left, right, bottom, top = ff.detect_edges_area(self.area_file)
-        trimmed = self.trim(left=left, right=right, bottom=bottom, top=top, output_path=output_path)
-        return trimmed
-
-    def register(
-            self,
-            target: 'ImagingImage',
-            output_path: str,
-            ext: int = 0,
-            trim: bool = True,
-            **kwargs
-    ):
-        new_img = super().register(
-            target=target,
-            output_path=output_path,
-            ext=ext,
-            trim=trim,
-            **kwargs
-        )
-        import reproject as rp
-        area = new_img.copy(new_img.path.replace(".fits", "_area.fits"))
-        area.load_data()
-        reprojected, footprint = rp.reproject_exact(self.area_file, new_img.headers[ext], parallel=True)
-        area.data[ext] = reprojected * area.data[ext].unit
-        area.area_file = None
-        area.write_fits_file()
-
-        new_img.area_file = area.path
-        return new_img
-
-    def _output_dict(self):
-        outputs = super()._output_dict()
-        outputs.update({
-            "area_file": self.area_file
-        })
-        return outputs
-
-    def load_output_file(self):
-        outputs = super().load_output_file()
-        if outputs is not None:
-            if "area_file" in outputs:
-                self.area_file = outputs["area_file"]
-        return outputs
-
-    def correct_astrometry(self, output_dir: str = None, tweak: bool = True, **kwargs):
-        new_image = super().correct_astrometry(
-            output_dir=output_dir,
-            tweak=tweak,
-            **kwargs
-        )
-        if new_image is not None:
-            new_image.area_file = self.area_file
-            new_image.update_output_file()
-        return new_image
-
-    def copy(self, destination: str):
-        new_image = super().copy(destination)
-        new_image.area_file = self.area_file
-        new_image.update_output_file()
-        return new_image
-
-    @classmethod
-    def header_keys(cls):
-        header_keys = super().header_keys()
-        header_keys.update({
-            "ncombine": "NCOMBINE"
-        })
-        return header_keys
-
-    def extract_ncombine(self):
-        key = self.header_keys()["ncombine"]
-        return self.extract_header_item(key)
-
-
-class F4CoaddedImage(CoaddedImage):
-    def zeropoint(self, **kwargs):
-        self.zeropoint_best = self.add_zeropoint(
-            catalogue=self.extract_header_item("ZPTFILE"),
-            zeropoint=self.extract_header_item("ZPTMAG") * units.mag,
-            zeropoint_err=self.extract_header_item("ZPTMUCER") * units.mag,
-            extinction=0.0 * units.mag,
-            extinction_err=0.0 * units.mag,
-            airmass=0.0,
-            airmass_err=0.0
-        )
-        return self.zeropoint_best
-
-
-class SurveyCutout(CoaddedImage):
-    def do_subtract_background(self):
-        return False
-
-
-class WISECutout(SurveyCutout):
-    instrument_name = "wise"
-
-    def extract_filter(self):
-        key = self.header_keys()["filter"]
-        band_n = self.extract_header_item(key)
-        self.filter_name = f"W{band_n}"
-        if self.filter_name is not None:
-            self.filter_short = self.filter_name
-        self._filter_from_name()
-        return self.filter_name
-
-    def extract_gain(self):
-        """
-        I couldn't find any effective gain in FITS headers or in WISE documentation, so we'll assume this.
-
-        :return:
-        """
-        self.gain = 1. * gain_unit
-        return self.gain
-
-    def extract_exposure_time(self):
-        """
-        I couldn't find any effective exposure time in FITS headers or in WISE documentation, so we'll assume this.
-
-        :return:
-        """
-        self.exposure_time = 1 * units.second
-        return self.exposure_time
-
-    def zeropoint(
-            self,
-            **kwargs
-    ):
-        self.zeropoint_best = self.add_zeropoint(
-            catalogue="calib_pipeline",
-            zeropoint=self.extract_header_item("MAGZP"),
-            zeropoint_err=self.extract_header_item("MAGZPUNC"),
-            extinction=0.0 * units.mag,
-            extinction_err=0.0 * units.mag,
-            airmass=0.0,
-            airmass_err=0.0
-        )
-        return self.zeropoint_best
-
-    @classmethod
-    def header_keys(cls):
-        header_keys = super().header_keys()
-        header_keys.update({
-            "filter": "BAND"
-        })
-        return header_keys
-
-
-class DESCutout(SurveyCutout):
-    instrument_name = "decam"
-
-    def zeropoint(
-            self,
-            **kwargs
-    ):
-        self.add_zeropoint(
-            catalogue="calib_pipeline",
-            zeropoint=self.extract_header_item("MAGZERO"),  # - 2.5 * np.log10(exptime)) * units.mag,
-            zeropoint_err=0.0 * units.mag,
-            extinction=0.0 * units.mag,
-            extinction_err=0.0 * units.mag,
-            airmass=0.0,
-            airmass_err=0.0
-        )
-        zp = super().zeropoint(
-            **kwargs
-        )
-
-        return zp
-
-    def extract_unit(self, astropy: bool = False):
-        unit = "ct / s"
-        if astropy:
-            unit = units.ct / units.s
-        return unit
-
-    def extract_exposure_time(self):
-        self.exposure_time = 1. * units.second
-        return self.exposure_time
-
-    def extract_noise_read(self):
-        self.noise_read = 0. * noise_read_unit
-        return self.noise_read
-
-    def extract_integration_time(self):
-        return self.extract_header_item("EXPTIME") * units.second
-
-    def extract_filter(self):
-        key = self.header_keys()["filter"]
-        fil_string = self.extract_header_item(key)
-        self.filter_name = fil_string[:fil_string.find(" ")]
-        self.filter_short = self.filter_name
-
-        self._filter_from_name()
-
-        return self.filter_name
-
-    def extract_ncombine(self):
-        return 1
-
-
-class PanSTARRS1Cutout(SurveyCutout):
-    instrument_name = "panstarrs1"
-
-    def __init__(self, path: str, **kwargs):
-        super().__init__(path=path)
-        # self.instrument_name = "panstarrs1"
-        self.extract_filter()
-        self.exposure_time = None
-        self.extract_exposure_time()
-
-    def mask_nearby(self):
-        return True
-
-    def detection_threshold(self):
-        return 10.
-
-    def extract_filter(self):
-        key = self.header_keys()["filter"]
-        fil_string = self.extract_header_item(key)
-        self.filter_name = fil_string[:fil_string.find(".")]
-        self.filter_short = self.filter_name
-
-        self._filter_from_name()
-
-        return self.filter_name
-
-    def extract_integration_time(self):
-        return self.extract_exposure_time()
-
-    def zeropoint(
-            self,
-            **kwargs
-    ):
-        """
-        According to the reference below, the PS1 cutouts are scaled to zeropoint 25.
-        https://outerspace.stsci.edu/display/PANSTARRS/PS1+Stack+images
-        :return:
-        """
-
-        self.load_headers()
-
-        self.add_zeropoint(
-            catalogue="calib_pipeline",
-            zeropoint=self.extract_header_item("FPA.ZP"),
-            zeropoint_err=0.0 * units.mag,
-            extinction=0.0 * units.mag,
-            extinction_err=0.0 * units.mag,
-            airmass=0.0,
-            airmass_err=0.0
-        )
-
-        zp = super().zeropoint(
-            **kwargs
-        )
-        return zp
-
-    # self.select_zeropoint(True)
-
-    # I only wrote this function below because I couldn't find the EXPTIME key in the PS1 cutouts. It is, however, there.
-    # def extract_exposure_time(self):
-    #     # self.load_headers()
-    #     # exp_time_keys = filter(lambda k: k.startswith("EXP_"), self.headers[0])
-    #     # exp_time = 0.
-    #     # exp_times = []
-    #     # for key in exp_time_keys:
-    #     #     exp_time += self.headers[0][key]
-    #     # #    exp_times.append(self.headers[0][key])
-    #     #
-    #     # self.exposure_time = exp_time * units.second  # np.mean(exp_times)
-    #     self.exposure_time = 1.0 * units.second
-    #     return self.exposure_time
-
-    @classmethod
-    def header_keys(cls):
-        header_keys = super().header_keys()
-        header_keys.update({
-            "noise_read": "HIERARCH CELL.READNOISE",
-            "filter": "HIERARCH FPA.FILTERID",
-            "gain": "HIERARCH CELL.GAIN",
-            "ncombine": "NINPUTS"
-        })
-        return header_keys
-
-
-class ESOImagingImage(ImagingImage, ESOImage):
-    def extract_frame_type(self):
-        obj = self.extract_object()
-        category = self.extract_header_item("ESO DPR CATG")
-        if category is None:
-            category = self.extract_header_item("ESO PRO CATG")
-        if obj == "BIAS":
-            self.frame_type = "bias"
-        elif "FLAT" in obj:
-            self.frame_type = "flat"
-        elif obj == "STD":
-            self.frame_type = "standard"
-        elif obj == "DARK":
-            self.frame_type = "dark"
-        elif category == "SCIENCE":
-            self.frame_type = "science"
-        elif category == "SCIENCE_REDUCED_IMG":
-            self.frame_type = "science_reduced"
-        u.debug_print(2, f"ESOImagingImage.extract_frame_type(): {obj=}, {category=}, {self.frame_type=}")
-        return self.frame_type
-
-    def extract_airmass(self):
-        key = self.header_keys()["airmass"]
-        self.airmass = self.extract_header_item(key)
-        u.debug_print(1, f"{self.name}.airmass", self.airmass)
-        if self.airmass is None:
-            airmass_start = self.extract_header_item("ESO TEL AIRM START")
-            airmass_end = self.extract_header_item("ESO TEL AIRM END")
-            self.airmass = (airmass_start + airmass_end) / 2
-        u.debug_print(1, f"{self.name}.airmass", self.airmass)
-        return self.airmass
-
-    @classmethod
-    def count_exposures(cls, image_paths: list):
-        # Counts only chip 1 images
-        n = 0
-        for path in image_paths:
-            image = cls(path=path)
-            chip = image.extract_chip_number()
-            if chip == 1:
-                n += 1
-        return n
-
-    @classmethod
-    def header_keys(cls) -> dict:
-        header_keys = super().header_keys()
-        header_keys.update(ESOImage.header_keys())
-        header_keys.update({
-            "noise_read": "HIERARCH ESO DET OUT1 RON",
-            "filter": "HIERARCH ESO INS FILT1 NAME",
-            "gain": "HIERARCH ESO DET OUT1 GAIN",
-            "program_id": "HIERARCH ESO OBS PROG ID",
-        })
-        return header_keys
-
-
-class HAWKIImage(ESOImagingImage):
-    instrument_name = "vlt-hawki"
-
-    @classmethod
-    def header_keys(cls) -> dict:
-        header_keys = super().header_keys()
-        header_keys.update(ESOImage.header_keys())
-        header_keys.update({
-            "gain": "GAIN",
-            "noise_read": "READNOIS"
-        })
-        return header_keys
-
-    def extract_chip_number(self, ext: int = 0):
-        return int(self.extract_header_item("HIERARCH ESO DET CHIP NO", ext=ext))
-
-
-class HAWKICoaddedImage(CoaddedImage):
-    num_chips = 4
-    instrument_name = "vlt-hawki"
-
-    def extract_chip_number(self, ext: int = 0):
-        return 0
-
-    def extract_exposure_time(self):
-        return 1 * units.s
-
-    def extract_filter(self):
-        key = self.header_keys()["filter"]
-        self.filter_name = self.extract_header_item(key)
-        if self.filter_name is None:
-            key = super().header_keys()["filter"]
-            self.filter_name = self.extract_header_item(key)
-        if self.filter_name is not None:
-            self.filter_short = self.filter_name[0]
-
-        self._filter_from_name()
-
-        return self.filter_name
-
-    def zeropoint(
-            self,
-            **kwargs
-    ):
-        print(self.filter_name)
-
-        self.set_header_items(
-            {
-                "EXPTIME": 1 * units.s,
-                "INTTIME": self.extract_header_item("TEXPTIME") * units.s,
-            }
-        )
-        # self.load_data(force=True)
-
-        # self.add_zeropoint(
-        #     catalogue="calib_pipeline",
-        #     zeropoint=self.extract_header_item("PHOTZP") * units.mag + self.filter.vega_magnitude_offset(),
-        #     zeropoint_err=self.extract_header_item("PHOTZPER"),
-        #     extinction=0.0 * units.mag,
-        #     extinction_err=0.0 * units.mag,
-        #     airmass=0.0,
-        #     airmass_err=0.0
-        # )
-
-        zp = super().zeropoint(
-            **kwargs
-        )
-
-        return zp
-
-        # self.select_zeropoint(True)
-        # return self.zeropoint_best
-
-    @classmethod
-    def header_keys(cls):
-        header_keys = super().header_keys()
-        header_keys.update({
-            "gain": "GAIN",
-            "filter": "HIERARCH ESO INS FILT1 NAME"
-        })
-        return header_keys
-
-
-class FORS2Image(ESOImagingImage):
-    instrument_name = "vlt-fors2"
-    num_chips = 2
-
-    def __init__(self, path: str, frame_type: str = None, **kwargs):
-        super().__init__(path=path, frame_type=frame_type, instrument_name=self.instrument_name)
-        self.other_chip = None
-        self.chip_number = None
-
-    def extract_chip_number(self, ext: int = 0):
-        chip_string = self.extract_header_item(key='HIERARCH ESO DET CHIP1 ID', ext=ext)
-        chip = 0
-        if chip_string == 'CCID20-14-5-3':
-            chip = 1
-        elif chip_string == 'CCID20-14-5-6':
-            chip = 2
-        self.chip_number = chip
-        return chip
-
-    def _output_dict(self):
-        outputs = super()._output_dict()
-        if self.other_chip is not None:
-            other_chip = self.other_chip.output_file
-        else:
-            other_chip = None
-        outputs.update({
-            "other_chip": other_chip,
-        })
-        return outputs
-
-    def load_output_file(self):
-        outputs = super().load_output_file()
-        if outputs is not None:
-            if "other_chip" in outputs:
-                self.other_chip = outputs["other_chip"]
-        return outputs
-
-    @classmethod
-    def header_keys(cls) -> dict:
-        header_keys = super().header_keys()
-        header_keys.update(ESOImage.header_keys())
-        header_keys.update({
-            "noise_read": "HIERARCH ESO DET OUT1 RON",
-            "gain": "HIERARCH ESO DET OUT1 GAIN",
-            "program_id": "HIERARCH ESO OBS PROG ID",
-            "filter": "HIERARCH ESO INS FILT1 NAME"
-        })
-        return header_keys
-
-
-class FORS2CoaddedImage(CoaddedImage):
-    instrument_name = "vlt-fors2"
-
-    def __init__(
-            self,
-            path: str,
-            frame_type: str = None,
-            **kwargs
-    ):
-        super().__init__(
-            path=path,
-            frame_type=frame_type,
-            instrument_name=self.instrument_name,
-        )
-
-    def zeropoint(
-            self,
-            **kwargs
-    ):
-
-        skip_zp = False
-        zp = {}
-        if self.filter.calib_retrievable():
-            zp = self.calibration_from_qc1()
-            skip_retrievable = True
-            if "skip_retrievable" in kwargs:
-                skip_retrievable = kwargs.pop("skip_retrievable")
-            u.debug_print(1, "skip_retrievable:", skip_retrievable)
-            if skip_retrievable:
-                skip_zp = True
-            u.debug_print(2, "skip_zp:", skip_zp)
-        u.debug_print(2, "skip_zp:", skip_zp)
-        if not skip_zp:
-            zp = super().zeropoint(
-                **kwargs
-            )
-        return zp
-
-    def calibration_from_qc1(self):
-        """
-        Use the FORS2 QC1 archive to retrieve calibration parameters.
-        :return:
-        """
-        self.extract_filter()
-        u.debug_print(
-            1, f"FORS2CoaddedImage.calibration_from_qc1(): {self}.instrument ==", self.instrument,
-            self.instrument_name)
-        fil = self.instrument.filters[self.filter_name]
-        fil.retrieve_calibration_table()
-        if fil.calibration_table is not None:
-            self.extract_date_obs()
-            row = fil.get_nearest_calib_row(mjd=self.mjd_obs)
-
-            if self.epoch is not None and self.epoch.airmass_err is not None:
-                airmass_err = self.epoch.airmass_err[self.filter_name]
-            else:
-                airmass_err = 0.0
-
-            zp = self.add_zeropoint(
-                zeropoint=row["zeropoint"],
-                zeropoint_err=row["zeropoint_err"],
-                airmass=self.extract_airmass(),
-                airmass_err=airmass_err,
-                extinction=row["extinction"],
-                extinction_err=row["extinction_err"],
-                mjd_measured=row["mjd_obs"],
-                delta_t=row["mjd_obs"] - self.mjd_obs,
-                n_matches=None,
-                catalogue="instrument_archive"
-            )
-
-            self.extinction_atmospheric = row["extinction"]
-            self.extinction_atmospheric_err = row["extinction_err"]
-
-            self.add_log(
-                action=f"Retrieved calibration values from ESO QC1 archive.",
-                method=self.calibration_from_qc1,
-            )
-            self.update_output_file()
-
-            return zp
-        else:
-            return None
-
-
-class GSAOIImage(CoaddedImage):
-    instrument_name = "gs-aoi"
-
-    def extract_pixel_scale(self, ext: int = 1, force: bool = False):
-        return super().extract_pixel_scale(ext=ext, force=force)
-
-    def extract_pointing(self):
-        # GSAOI images keep the WCS information in the second HDU header.
-        key = self.header_keys()["ra"]
-        ra = self.extract_header_item(key, 1)
-        key = self.header_keys()["dec"]
-        dec = self.extract_header_item(key, 1)
-        self.pointing = SkyCoord(ra, dec, unit=units.deg)
-        return self.pointing
-
-
-class HubbleImage(CoaddedImage):
-    instrument_name = "hst-dummy"
-
-    def __init__(
-            self,
-            path: str,
-            frame_type: str = None,
-            instrument_name: str = None
-    ):
-        if instrument_name is None:
-            instrument_name = detect_instrument(path)
-        super().__init__(
-            path=path,
-            frame_type=frame_type,
-            instrument_name=instrument_name,
-        )
-
-    def extract_exposure_time(self):
-        self.exposure_time = 1.0 * units.second
-        return self.exposure_time
-
-    def extract_noise_read(self):
-        self.noise_read = 0.0 * noise_read_unit
-        return self.noise_read
-
-    def zeropoint(self, **kwargs):
-        """
-        Returns the AB magnitude zeropoint of the image, according to
-        https://www.stsci.edu/hst/instrumentation/acs/data-analysis/zeropoints
-        :return:
-        """
-        photflam = self.extract_header_item("PHOTFLAM")
-        photplam = self.extract_header_item("PHOTPLAM")
-
-        zeropoint = (-2.5 * math.log10(photflam) - 5 * math.log10(photplam) - 2.408) * units.mag
-
-        self.add_zeropoint(
-            catalogue="calib_pipeline",
-            zeropoint=zeropoint,
-            zeropoint_err=0.0 * units.mag,
-            extinction=0.0 * units.mag,
-            extinction_err=0.0 * units.mag,
-            airmass=0.0,
-            airmass_err=0.0,
-            image_name="self"
-        )
-        self.select_zeropoint(True)
-        self.update_output_file()
-        self.add_log(
-            action=f"Calculated zeropoint {zeropoint} from PHOTFLAM and PHOTPLAM header keys.",
-            method=self.trim,
-        )
-        self.update_output_file()
-        return self.zeropoint_best
-
-    def mask_nearby(self):
-        if self.instrument_name == "hst-wfc3_uvis2":
-            mask = False
-        else:
-            mask = True
-        u.debug_print(2, "mask_nearby", self.instrument_name, mask, type(self))
-        return mask
-
-    def detection_threshold(self):
-        if self.instrument_name == "hst-wfc3_uvis2":
-            thresh = 5.
-        else:
-            thresh = 5.
-        return thresh
-
-    def do_subtract_background(self):
-        return False
-
-    @classmethod
-    def header_keys(cls):
-        header_keys = super().header_keys()
-        header_keys.update({
-            "gain": "CCDGAIN",
-            "mjd-obs": "EXPSTART"
-        })
-        return header_keys
-
-
-class Spectrum(Image):
-    def __init__(self, path: str = None, frame_type: str = None, decker: str = None, binning: str = None,
-                 grism: str = None):
-        super().__init__(path=path, frame_type=frame_type)
-        self.decker = decker
-        self.binning = binning
-        self.grism = grism
-
-        self.lambda_min = None
-        self.lambda_max = None
-
-    def get_lambda_range(self):
-        if self.epoch is not None:
-            self.lambda_min = self.epoch.grisms[self.grism]["lambda_min"]
-            self.lambda_max = self.epoch.grisms[self.grism]["lambda_max"]
-        else:
-            print("self.epoch not set; could not determine lambda range")
-
-    @classmethod
-    def select_child_class(cls, instrument_name: str, **kwargs):
-        if 'frame_type' in kwargs:
-            frame_type = kwargs['frame_type']
-            if frame_type == "coadded":
-                return Coadded1DSpectrum
-            elif frame_type == "raw":
-                return RawSpectrum
-        else:
-            raise KeyError("frame_type is required.")
-
-
-class RawSpectrum(Spectrum):
-    frame_type = "raw"
-
-    def __init__(self, path: str = None, frame_type: str = None, decker: str = None, binning: str = None):
-        super().__init__(path=path, frame_type=frame_type, decker=decker, binning=binning)
-        self.pypeit_line = None
-
-    @classmethod
-    def from_pypeit_line(cls, line: str, pypeit_raw_path: str):
-        attributes = line.split('|')
-        attributes = list(map(lambda at: at.replace(" ", ""), attributes))
-        inst = from_path(
-            path=os.path.join(pypeit_raw_path, attributes[1]),
-            frame_type=attributes[2],
-            decker=attributes[7],
-            binning=attributes[8],
-            cls=RawSpectrum
-        )
-        inst.pypeit_line = line
-        return inst
-
-
-class Coadded1DSpectrum(Spectrum):
-    def __init__(self, path: str = None, grism: str = None):
-        super().__init__(path=path, grism=grism)
-        self.marz_format_path = None
-        self.trimmed_path = None
-
-    def trim(self, output: str = None, lambda_min: units.Quantity = None, lambda_max: units.Quantity = None):
-        if lambda_min is None:
-            lambda_min = self.lambda_min
-        if lambda_max is None:
-            lambda_max = self.lambda_max
-
-        lambda_min = lambda_min.to(units.angstrom)
-        lambda_max = lambda_max.to(units.angstrom)
-
-        if output is None:
-            output = self.path.replace(".fits", f"_trimmed_{lambda_min.value}-{lambda_max.value}.fits")
-
-        self.open()
-        hdu_list = deepcopy(self.hdu_list)
-        data = hdu_list[1].data
-        i_min = np.abs(lambda_min.to(units.angstrom).value - data['wave']).argmin()
-        i_max = np.abs(lambda_max.to(units.angstrom).value - data['wave']).argmin()
-        data = data[i_min:i_max]
-        hdu_list[1].data = data
-        hdu_list.writeto(output, overwrite=True)
-        self.trimmed_path = output
-
-    def convert_to_marz_format(self, output: str = None, version: str = "main"):
-        """
-        Extracts the 1D spectrum from the PypeIt-generated file and rearranges it into the format accepted by Marz.
-        :param output:
-        :param lambda_min:
-        :param lambda_max:
-        :return:
-        """
-        self.get_lambda_range()
-
-        if version == "main":
-            path = self.path
-        elif version == "trimmed":
-            path = self.trimmed_path
-
-        hdu_list = fits.open(path)
-
-        data = hdu_list[1].data
-        header = hdu_list[1].header.copy()
-        header.update(hdu_list[0].header)
-
-        del header["TTYPE1"]
-        del header["TTYPE2"]
-        del header["TTYPE3"]
-        del header["TTYPE4"]
-        del header["TFORM1"]
-        del header["TFORM2"]
-        del header["TFORM3"]
-        del header["TFORM4"]
-        del header["TFIELDS"]
-        del header['XTENSION']
-
-        i_min = np.abs(self.lambda_min.to(units.angstrom).value - data['wave']).argmin()
-        i_max = np.abs(self.lambda_max.to(units.angstrom).value - data['wave']).argmin()
-        data = data[i_min:i_max]
-
-        primary = fits.PrimaryHDU(data['flux'])
-        primary.header.update(header)
-        primary.header["NAXIS"] = 1
-        primary.header["NAXIS1"] = len(data)
-        del primary.header["NAXIS2"]
-
-        variance = fits.ImageHDU(data['ivar'])
-        variance.name = 'VARIANCE'
-        primary.header["NAXIS"] = 1
-        primary.header["NAXIS1"] = len(data)
-
-        wavelength = fits.ImageHDU(data['wave'])
-        wavelength.name = 'WAVELENGTH'
-        primary.header["NAXIS"] = 1
-        primary.header["NAXIS1"] = len(data)
-
-        new_hdu_list = fits.HDUList([primary, variance, wavelength])
-
-        if output is None:
-            output = self.path.replace(".fits", "_marz.fits")
-        new_hdu_list.writeto(output, overwrite=True)
-        self.marz_format_path = output
-        hdu_list.close()
-        self.update_output_file()
-
-    def _output_dict(self):
-        outputs = super()._output_dict()
-        outputs.update({
-            "marz_format_path": self.marz_format_path,
-            "trimmed_paths": self.trimmed_path
-        })
-        return outputs
-
-
-ImagingImage.class_dict = {
-    "none": ImagingImage,
-    "decam": DESCutout,
-    "gs-aoi": GSAOIImage,
-    "hst-wfc3_uvis2": HubbleImage,
-    "hst-wfc3_ir": HubbleImage,
-    "panstarrs1": PanSTARRS1Cutout,
-    "vlt-fors2": FORS2Image,
-    "vlt-hawki": HAWKIImage,
-    "wise": WISECutout
-}
-
-CoaddedImage.class_dict = {
-    "none": CoaddedImage,
-    "decam": DESCutout,
-    "gs-aoi": GSAOIImage,
-    "hst-wfc3_uvis2": HubbleImage,
-    "hst-wfc3_ir": HubbleImage,
-    "panstarrs1": PanSTARRS1Cutout,
-    "vlt-fors2": FORS2CoaddedImage,
-    "vlt-hawki": HAWKICoaddedImage,
-    "wise": WISECutout
-}
-
-
 def deepest(
         img_1: ImagingImage,
         img_2: ImagingImage,
@@ -5773,6 +4455,26 @@ def deepest(
     else:
         return img_2
 
-# def pypeit_str(self):
-#     header = self.hdu[0].header
-#     string = f"| {self.filename} | "
+
+def _set_class_dict():
+    from .__init__ import (
+        DESCutout,
+        GSAOIImage,
+        HubbleImage,
+        FORS2Image,
+        PanSTARRS1Cutout,
+        HAWKIImage,
+        WISECutout
+    )
+
+    ImagingImage.class_dict = {
+        "none": ImagingImage,
+        "decam": DESCutout,
+        "gs-aoi": GSAOIImage,
+        "hst-wfc3_uvis2": HubbleImage,
+        "hst-wfc3_ir": HubbleImage,
+        "panstarrs1": PanSTARRS1Cutout,
+        "vlt-fors2": FORS2Image,
+        "vlt-hawki": HAWKIImage,
+        "wise": WISECutout
+    }

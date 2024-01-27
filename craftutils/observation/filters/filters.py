@@ -16,10 +16,10 @@ import craftutils.photometry as ph
 
 active_filters = {}
 
-__all__ = []
+# __all__ = []
 
 
-@u.export
+# @u.export
 class Filter:
 
     def __init__(self, **kwargs):
@@ -35,6 +35,10 @@ class Filter:
             self.band_name = kwargs["band_name"]
         elif self.name is not None:
             self.band_name = self.name[0]
+
+        self.frb_repo_name = None
+        if "frb_repo_name" in kwargs:
+            self.frb_repo_name = kwargs["frb_repo_name"]
 
         self.svo_id = []
         self.svo_instrument = None
@@ -68,6 +72,10 @@ class Filter:
         if "instrument" in kwargs:
             self.instrument = kwargs["instrument"]
 
+        self.cmap = None
+        if "cmap" in kwargs:
+            self.cmap = kwargs["cmap"]
+
         self.lambda_eff = None
         self.lambda_fwhm = None
         self.vega_zeropoint = None
@@ -99,6 +107,12 @@ class Filter:
             self,
             transmission: table.QTable = None
     ):
+        """
+
+
+        :param transmission:
+        :return:
+        """
         if transmission is None:
             transmission, _ = self.select_transmission_table()
         return ph.flux_from_band(
@@ -109,17 +123,19 @@ class Filter:
         )
 
     def ab_flux(self, transmission: table.QTable = None):
+        """
+        Calculates the total integrated flux of the flat AB source (3631 Jy) as seen through the filter.
+
+        :param transmission: transmission table to use. If `None`, `select_transmission_table()` will be used to select
+            the 'best' one.
+        :return:
+        """
         if transmission is None:
             transmission, _ = self.select_transmission_table()
         return ph.flux_ab(
             transmission=transmission["Transmission"],
             frequency=transmission["Frequency"],
         )
-
-        #     np.trapz(
-        #     y=3631 * units.Jy * transmission["Transmission"],
-        #     x=transmission["Wavelength"]
-        # )
 
     def compare_transmissions(self, other: 'Filter'):
         tbl_self, tbl_other = self.find_comparable_table(other)
@@ -182,6 +198,12 @@ class Filter:
         )
 
     def compare_wavelength_range(self, other: 'Filter'):
+        """
+
+        :param other:
+        :return:
+        """
+
         tbl_self, tbl_other = self.find_comparable_table(other)
         self_wavelength = tbl_self["Wavelength"]
         other_wavelength = tbl_other["Wavelength"]
@@ -436,3 +458,4 @@ class Filter:
             ),
             f"{filter_name}_photometry.ecsv"
         )
+

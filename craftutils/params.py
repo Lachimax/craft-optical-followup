@@ -137,8 +137,18 @@ def save_params(file: str, dictionary: dict):
         for key in dictionary:
             print(key, type(dictionary[key]), dictionary[key])
 
-    with open(file, 'w') as f:
-        yaml.dump(dictionary, f)
+    file_backup = file.replace(".yaml", "_backup.yaml")
+    if os.path.exists(file):
+        shutil.copy(file, file_backup)
+
+    from yaml.representer import RepresenterError
+    try:
+        with open(file, 'w') as f:
+            yaml.dump(dictionary, f)
+    except RepresenterError as err:
+        if os.path.exists(file_backup):
+            shutil.copy(file_backup, file)
+        raise err
 
 
 def select_coords(dictionary):
@@ -309,6 +319,7 @@ def set_config_path(key: str, path: str, write: bool = True):
 
 
 def get_project_git_hash(short: bool = False):
+    global project_dir
     return u.get_git_hash(directory=project_dir, short=short)
 
 
@@ -455,14 +466,19 @@ def ingest_eso_filter_properties(path: str, instrument: str, update: bool = Fals
     save_params(file=param_dir + f'filters/{instrument}-{name}', dictionary=params)
 
 
-def ingest_filter_transmission(path: str, fil_name: str, instrument: str,
-                               instrument_response: bool = False, atmosphere: bool = False,
-                               lambda_eff: units.Quantity = None,
-                               fwhm: float = None,
-                               source: str = None,
-                               wavelength_unit: units.Unit = units.Angstrom,
-                               percentage: bool = False,
-                               quiet: bool = False):
+def ingest_filter_transmission(
+        path: str,
+        fil_name: str,
+        instrument: str,
+        instrument_response: bool = False,
+        atmosphere: bool = False,
+        lambda_eff: units.Quantity = None,
+        fwhm: float = None,
+        source: str = None,
+        wavelength_unit: units.Unit = units.Angstrom,
+        percentage: bool = False,
+        quiet: bool = False
+):
     """
 
     :param path:
@@ -946,18 +962,23 @@ def path_to_source_extractor():
     return os.path.join(project_dir, "craftutils", "param", "sextractor")
 
 
-def params_init(param_file: Union[str, dict]):
+def params_init(
+        param_file: Union[str, dict],
+        name: str = None
+):
     if type(param_file) is str:
         # Load params from .yaml at path.
         param_file = u.sanitise_file_ext(filename=param_file, ext="yaml")
         param_dict = load_params(file=param_file)
         if param_dict is None:
             return None, param_file, None  # raise FileNotFoundError(f"No parameter file found at {param_file}.")
-        name = u.get_filename(path=param_file, include_ext=False)
+        if name is None:
+            name = u.get_filename(path=param_file, include_ext=False)
         param_dict["param_path"] = param_file
     else:
         param_dict = param_file
-        name = param_dict["name"]
+        if name is None:
+            name = param_dict["name"]
         param_file = param_dict["param_path"]
 
     return name, param_file, param_dict

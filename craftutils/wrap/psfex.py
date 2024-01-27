@@ -65,7 +65,11 @@ def psfex(catalog: str, output_name: str = None, output_dir: str = None, **kwarg
     if output_name is None:
         cat_name = os.path.split(catalog)[-1]
         output_name = cat_name.replace(".fits", ".psf")
-    system_command(command="psfex", arguments=[catalog], force_single_dash=True, **kwargs)
+    system_command(
+        command="psfex",
+        arguments=[catalog],
+        force_single_dash=True, **kwargs
+    )
     os.chdir(old_dir)
     psfex_path = os.path.join(output_dir, output_name)
     return psfex_path

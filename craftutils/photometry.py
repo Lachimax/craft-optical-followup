@@ -1,4 +1,4 @@
-# Code by Lachlan Marnoch, 2019-2021
+# Code by Lachlan Marnoch, 2019-2023
 import copy
 import os
 import math
@@ -171,21 +171,31 @@ def image_psf_diagnostics(
         fitter = fitting.LevMarLSQFitter()
         try:
             model = fitter(model_init, x, y, data)
-        except fitting.NonFiniteValueError:
-            continue
-        fwhm = (model.fwhm * units.pixel).to(units.arcsec, scale)
-        star["MOFFAT_FWHM_FITTED"] = fwhm
-        star["MOFFAT_GAMMA_FITTED"] = model.gamma.value
-        star["MOFFAT_ALPHA_FITTED"] = model.alpha.value
+            # print("fit_info:", fitter.fit_info)
+            # If astropy thinks that the fit is bad, who are we to argue?
+            if "Number of calls to function has reached maxfev = 100" in fitter.fit_info['message']:
+                star["MOFFAT_FWHM_FITTED"] = np.nan
+                star["MOFFAT_GAMMA_FITTED"] = np.nan
+                star["MOFFAT_ALPHA_FITTED"] = np.nan
+            else:
+                fwhm = (model.fwhm * units.pixel).to(units.arcsec, scale)
+                star["MOFFAT_FWHM_FITTED"] = fwhm
+                star["MOFFAT_GAMMA_FITTED"] = model.gamma.value
+                star["MOFFAT_ALPHA_FITTED"] = model.alpha.value
 
-        if debug_plots and output is not None:
-            fig = plt.figure()
-            ax_data_moffat = fig.add_subplot(2, 3, 1)
-            ax_data_moffat.imshow(data)
-            ax_model_moffat = fig.add_subplot(2, 3, 2)
-            ax_model_moffat.imshow(model(x, y))
-            ax_residuals_moffat = fig.add_subplot(2, 3, 3)
-            ax_residuals_moffat.imshow(data - model(x, y))
+                if debug_plots and output is not None:
+                    fig = plt.figure()
+                    ax_data_moffat = fig.add_subplot(2, 3, 1)
+                    ax_data_moffat.imshow(data)
+                    ax_model_moffat = fig.add_subplot(2, 3, 2)
+                    ax_model_moffat.imshow(model(x, y))
+                    ax_residuals_moffat = fig.add_subplot(2, 3, 3)
+                    ax_residuals_moffat.imshow(data - model(x, y))
+
+        except fitting.NonFiniteValueError:
+            star["MOFFAT_FWHM_FITTED"] = np.nan
+            star["MOFFAT_GAMMA_FITTED"] = np.nan
+            star["MOFFAT_ALPHA_FITTED"] = np.nan
 
         # Then a good-old-fashioned Gaussian, with the x and y axes tied together.
         model_init = models.Gaussian2D(x_mean=frame, y_mean=frame)
@@ -424,7 +434,17 @@ def flux_ab(
         frequency: units.Quantity = None,
 ):
     """
-    For calculating the denominator of the AB Magnitude formula for a given filter.
+    Calculates the total integrated flux of the flat AB source (3631 Jy) as seen through a given filter;
+    that is, the denominator of the AB Magnitude formula.
+    `transmission` and `frequency`, whether provided in `tbl` or as separate arguments, must be the same length and
+    correspond 1-to-1.
+
+    :param tbl: an astropy `Table` with `transmission` and/or `frequency` as columns; when these columns are provided,
+        their respective arguments can be ignored, but if either is missing from the table it must be provided in an
+        argument.
+    :param transmission: the filter profile as an array of transmission fractions as a function of frequency.
+    :param frequency: the corresponding frequency coordinates for the transmission argument.
+    :return: The integrated AB flux.
     """
 
     if tbl is None:
@@ -457,13 +477,16 @@ def flux_from_band(
         use_quantum_factor: bool = True
 ):
     """
-    All three arguments must be of the same length, with entries corresponding 1-to-1.
+    Calculates the integrated flux of an object with an SED `flux` as a function of `frequency`, as seen through a
+    filter with transmission profile `transmission`.
+    `flux`, `transmission` and `frequency` must all be of the same length, with entries corresponding 1-to-1.
+
     :param flux: flux per unit frequency.
-    :param transmission:
-    :param frequency:
+    :param transmission: the filter profile as an array of transmission fractions as a function of frequency.
+    :param frequency: the corresponding frequency coordinates for the transmission argument.
     :param use_quantum_factor: For use if flux is in energy-related units (eg, Jy, erg/s, etc.) to convert to photon
         counts. If you are passing an SED flux, then you should set this to True.
-    :return:
+    :return: Integrated flux in the bandpass.
     """
     if not isinstance(flux, table.Table):
         if transmission is None:
@@ -505,15 +528,18 @@ def magnitude_AB(
         flux: units.Quantity,
         transmission: Union[np.ndarray, units.Quantity],
         frequency: units.Quantity,
-        use_quantum_factor: bool = True
+        use_quantum_factor: bool = True,
+        mag_unit: bool = False
 
 ):
     """
-    All three arguments must be of the same length, with entries corresponding 1-to-1.
-    :param flux:
-    :param transmission:
-    :param frequency:
-    :return:
+    `flux`, `transmission` and `frequency` must all be of the same length, with entries corresponding 1-to-1.
+
+        :param flux: flux per unit frequency.
+    :param transmission: the filter profile as an array of transmission fractions as a function of frequency.
+    :param frequency: the corresponding frequency coordinates for the transmission argument.
+    :param use_quantum_factor: For use if flux is in energy-related units (eg, Jy, erg/s, etc.) to convert to photon
+        counts. If you are passing an SED flux, then you should set this to True.
     """
     flux_tbl = table.QTable(
         data={
@@ -526,8 +552,10 @@ def magnitude_AB(
 
     flux_band = flux_from_band(flux=flux_tbl, use_quantum_factor=use_quantum_factor)
     flux_ab_this = flux_ab(flux_tbl)
-
-    return -2.5 * np.log10(flux_band / flux_ab_this)
+    val = -2.5 * np.log10(flux_band / flux_ab_this)
+    if mag_unit:
+        val *= units.mag
+    return val
 
 
 def magnitude_absolute_from_luminosity(
@@ -982,8 +1010,13 @@ def determine_zeropoint_sextractor(
 
     # Plot remaining matches
     plt.imshow(image[0].data, origin='lower', norm=plotting.nice_norm(image[0].data))
-    plt.scatter(matches_clean[sex_x_col], matches_clean[sex_y_col], label='SExtractor',
-                c=matches_clean[star_class_col], cmap="plasma")
+    plt.scatter(
+        u.dequantify(matches_clean[sex_x_col]),
+        u.dequantify(matches_clean[sex_y_col]),
+        label='SExtractor',
+        c=matches_clean[star_class_col],
+        cmap="plasma"
+    )
     plt.colorbar()
     plt.legend()
     plt.title('Matches with ' + cat_name + ' Catalogue against image (Using SExtractor)')
@@ -1237,10 +1270,10 @@ def determine_zeropoint_sextractor(
         dof_correction=2
     )
 
-    plt.plot(x, line_free, c='red', label='Line of best fit')
-    plt.scatter(x, y, c='blue')
+    plt.plot(u.dequantify(x), line_free, c='red', label='Line of best fit')
+    plt.scatter(u.dequantify(x), u.dequantify(y), c='blue')
     #    plt.errorbar(x, y, yerr=y_uncertainty, linestyle="None")
-    plt.plot(x, line_fixed, c='green', label='Fixed slope = 1')
+    plt.plot(u.dequantify(x), u.dequantify(line_fixed), c='green', label='Fixed slope = 1')
     plt.legend()
     plt.suptitle("Magnitude Comparisons")
     plt.xlabel("Magnitude in " + cat_name)
@@ -1319,10 +1352,10 @@ def determine_zeropoint_sextractor(
         dof_correction=2
     )
 
-    plt.plot(x_clipped, line_free_clipped, c='red', label='Line of best fit')
-    plt.scatter(x_clipped, y_clipped, c='blue')
+    plt.plot(u.dequantify(x_clipped), u.dequantify(line_free_clipped), c='red', label='Line of best fit')
+    plt.scatter(u.dequantify(x_clipped), u.dequantify(y_clipped), c='blue')
     # plt.errorbar(x_clipped, y_clipped, yerr=y_uncertainty_clipped, linestyle="None")
-    plt.plot(x_clipped, line_fixed_clipped, c='green', label='Fixed slope = 1')
+    plt.plot(u.dequantify(x_clipped), u.dequantify(line_fixed_clipped), c='green', label='Fixed slope = 1')
     plt.legend()
     plt.suptitle("Magnitude Comparisons")
     plt.xlabel("Magnitude in " + cat_name)
@@ -1417,8 +1450,15 @@ def determine_zeropoint_sextractor(
     return params
 
 
-def single_aperture_photometry(data: np.ndarray, aperture: ph.Aperture, annulus: ph.Aperture, exp_time: float = 1.0,
-                               zeropoint: float = 0.0, extinction: float = 0.0, airmass: float = 0.0):
+def single_aperture_photometry(
+        data: np.ndarray,
+        aperture: ph.Aperture,
+        annulus: ph.Aperture,
+        exp_time: float = 1.0,
+        zeropoint: float = 0.0,
+        extinction: float = 0.0,
+        airmass: float = 0.0
+):
     # Use background annulus to obtain a median sky background
     mask = annulus.to_mask()
     annulus_data = mask.multiply(data)[mask.data > 0]
@@ -1430,13 +1470,14 @@ def single_aperture_photometry(data: np.ndarray, aperture: ph.Aperture, annulus:
     # Correct:
     flux_photutils = cat_photutils['aperture_sum'] - subtract_flux
     # Convert to magnitude, with uncertainty propagation:
-    mag_photutils, _, _ = magnitude_instrumental(flux=flux_photutils,
-                                                 # flux_err=cat_photutils['aperture_sum_err'],
-                                                 exp_time=exp_time,  # exp_time_err=exp_time_err,
-                                                 zeropoint=zeropoint,  # zeropoint_err=zeropoint_err,
-                                                 ext=extinction,  # ext_err=extinction_err,
-                                                 airmass=airmass,  # airmass_err=airmass_err
-                                                 )
+    mag_photutils, _, _ = magnitude_instrumental(
+        flux=flux_photutils,
+        # flux_err=cat_photutils['aperture_sum_err'],
+        exp_time=exp_time,  # exp_time_err=exp_time_err,
+        zeropoint=zeropoint,  # zeropoint_err=zeropoint_err,
+        ext=extinction,  # ext_err=extinction_err,
+        airmass=airmass,  # airmass_err=airmass_err
+    )
 
     return mag_photutils, flux_photutils, subtract_flux, median
 
