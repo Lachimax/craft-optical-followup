@@ -2173,7 +2173,7 @@ class ImagingEpoch(Epoch):
                 )
 
             for obj_name, obj in self.field.objects_dict.items():
-                if not obj.optical:
+                if not obj.optical or obj.position is None:
                     continue
                 # obj.load_output_file()
                 plt.close()
@@ -2184,10 +2184,6 @@ class ImagingEpoch(Epoch):
                 separations.append(separation.to(units.arcsec))
                 ra_target.append(obj.position.ra)
                 dec_target.append(obj.position.dec)
-
-                print()
-                print(obj.name)
-                print("FILTER:", fil)
 
                 if self.did_local_background_subtraction():
                     good_image_path = self.coadded_subtracted[fil].output_file
@@ -2346,22 +2342,24 @@ class ImagingEpoch(Epoch):
                                 pl.latex_off()
                                 del ax, fig, other
 
-            tbl = table.vstack(rows)
-            tbl.add_column(names, name="NAME")
-            tbl.add_column(separations, name="OFFSET_FROM_TARGET")
-            tbl.add_column(ra_target, name="RA_TARGET")
-            tbl.add_column(dec_target, name="DEC_TARGET")
+            if len(rows) > 0:
+                tbl = table.vstack(rows)
+                tbl.add_column(names, name="NAME")
+                tbl.add_column(separations, name="OFFSET_FROM_TARGET")
+                tbl.add_column(ra_target, name="RA_TARGET")
+                tbl.add_column(dec_target, name="DEC_TARGET")
 
-            tbl.write(
-                os.path.join(fil_output_path, f"{self.field.name}_{self.name}_{fil}.ecsv"),
-                format="ascii.ecsv",
-                overwrite=True
-            )
-            tbl.write(
-                os.path.join(fil_output_path, f"{self.field.name}_{self.name}_{fil}.csv"),
-                format="ascii.csv",
-                overwrite=True
-            )
+                tbl.write(
+                    os.path.join(fil_output_path, f"{self.field.name}_{self.name}_{fil}.ecsv"),
+                    format="ascii.ecsv",
+                    overwrite=True
+                )
+                tbl.write(
+                    os.path.join(fil_output_path, f"{self.field.name}_{self.name}_{fil}.csv"),
+                    format="ascii.csv",
+                    overwrite=True
+                )
+
 
         for fil in self.coadded_unprojected:
 

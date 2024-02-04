@@ -390,8 +390,11 @@ class Object:
             return object_from_index(obj_name, tolerate_missing=tolerate_missing)
 
     def set_name_filesys(self):
-        if self.name is not None:
-            self.name_filesys = self.name.replace(" ", "-")
+        if self.name is None and self.position is not None:
+            self.name = self.jname()
+        if not isinstance(self.name, str):
+            self.name = str(self.name)
+        self.name_filesys = self.name.replace(" ", "-")
 
     def position_from_cat_row(self, cat_row: table.Row = None):
         if cat_row is not None:
@@ -669,6 +672,8 @@ class Object:
     def check_data_path(self):
         if self.field is not None:
             u.debug_print(2, "", self.name)
+            if self.name_filesys is None:
+                self.set_name_filesys()
             self.data_path = os.path.join(self.field.data_path, "objects", self.name_filesys)
             u.mkdir_check(self.data_path)
             self.output_file = os.path.join(self.data_path, f"{self.name_filesys}_outputs.yaml")
