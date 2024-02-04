@@ -51,7 +51,6 @@ default_data_release = {
     "des": 2,
     "panstarrs1": 2,
     "panstarrs": 2,
-
 }
 
 
@@ -69,6 +68,7 @@ def cat_columns(cat, f: str = None):
     if f == "rank":
         f = {
             "delve": "r",
+            "decaps": "r",
             "des": "r",
             "sdss": "r",
             "skymapper": "r",
@@ -175,6 +175,46 @@ cat_instruments = {
 cat_systems = {
     "2mass": "vega"
 }
+
+
+def download_file(
+        file_url: str,
+        output_dir: str,
+        filename: str = None,
+        overwrite: bool = False,
+        headers: dict = None
+):
+    response = requests.get(file_url, stream=True, headers=headers)
+
+    if filename is None:
+        content_disposition = response.headers.get('Content-Disposition')
+        if content_disposition is not None:
+            value, params = cgi.parse_header(content_disposition)
+            filename = params["filename"]
+
+        if filename is None:
+            # last chance: get anything after the last '/'
+            filename = file_url[file_url.rindex('/') + 1:]
+
+        if filename is None:
+            _, filename = os.path.split(output_dir)
+
+    path = os.path.join(output_dir, filename.replace(":", "_"))
+    if os.path.exists(path) and not overwrite:
+        print(f"{path} already exists. Skipping.")
+    elif response.status_code == 200:
+        print(f"Writing asset to {path}...")
+        total_size_in_bytes = int(response.headers.get('content-length', 0))
+        block_size = 1024  # 1 Kibibyte
+        progress_bar = tqdm(total=total_size_in_bytes, unit='iB', unit_scale=True)
+        with open(path, 'wb') as f:
+            for chunk in response.iter_content(chunk_size=block_size):
+                progress_bar.update(len(chunk))
+                f.write(chunk)
+    else:
+        response = None
+
+    return response
 
 
 def svo_filter_id(facility_name: str, instrument_name: str, filter_name: str) -> str:
@@ -327,39 +367,21 @@ def save_eso_asset(
 ):
     print("Downloading asset from:")
     print(file_url)
-    headers = None
+
     token = login_eso()
     if token is not None:
         headers = {"Authorization": "Bearer " + keys["eso_auth_token"]}
-        response = requests.get(file_url, stream=True, headers=headers)
     else:
         # Trying to download anonymously
-        response = requests.get(file_url, stream=True, headers=headers)
+        headers = None
 
-    if filename is None:
-        content_disposition = response.headers.get('Content-Disposition')
-        if content_disposition is not None:
-            value, params = cgi.parse_header(content_disposition)
-            filename = params["filename"]
-
-        if filename is None:
-            # last chance: get anything after the last '/'
-            filename = file_url[file_url.rindex('/') + 1:]
-
-    path = os.path.join(output, filename.replace(":", "_"))
-    if os.path.exists(path) and not overwrite:
-        print(f"{path} already exists. Skipping.")
-    elif response.status_code == 200:
-        print(f"Writing asset to {path}...")
-        total_size_in_bytes = int(response.headers.get('content-length', 0))
-        block_size = 1024  # 1 Kibibyte
-        progress_bar = tqdm(total=total_size_in_bytes, unit='iB', unit_scale=True)
-        with open(path, 'wb') as f:
-            for chunk in response.iter_content(chunk_size=block_size):
-                progress_bar.update(len(chunk))
-                f.write(chunk)
-    else:
-        response = None
+    response = download_file(
+        file_url=file_url,
+        output_dir=output,
+        filename=filename,
+        overwrite=overwrite,
+        headers=headers
+    )
 
     return response
 
@@ -423,10 +445,11 @@ def print_eso_calselector_info(description: str, mode_requested: str):
 
 def save_eso_raw_data_and_calibs(
         output: str,
-        program_id: str,
         date_obs: Union[str, Time],
         instrument: str,
         mode: str,
+        fil: str = None,
+        program_id: str = None,
         obj: str = None,
         coord_tol: units.Quantity = 1.0 * units.arcmin,
         data_type: str = "science"
@@ -448,12 +471,14 @@ def save_eso_raw_data_and_calibs(
 
     query = query_eso_raw(
         program_id=program_id,
-        date_obs=date_obs, obj=obj,
+        date_obs=date_obs,
+        obj=obj,
         instrument=instrument,
         mode=mode,
         coord_tol=coord_tol,
         dp_cat=dp_cat,
-        dp_type=dp_type
+        dp_type=dp_type,
+        fil=fil
     )
     raw_frames = get_eso_raw_frame_list(query=query)
     print("Found science frames:")
@@ -1270,7 +1295,7 @@ def retrieve_des_photometry(
             f"DEC BETWEEN {dec - radius} and {dec + radius} and " \
             f"ROWNUM < 10000 "
     print('Submitting query job...')
-    response = submit_job_des(query)
+    response = submit_query_job_des(query)
     # Store the unique job ID for the new job
     job_id = response['jobid']
     print(f'New job submitted: {job_id}')
