@@ -1121,7 +1121,7 @@ class Object:
 
     def select_deepest(self, local_output: bool = True):
         self.get_photometry_table(output=local_output, best=False)
-        if "snr" not in self.photometry_tbl.colnames:
+        if self.photometry_tbl is None or "snr" not in self.photometry_tbl.colnames:
             return None
         idx = np.argmax(self.photometry_tbl["snr"])
         row = self.photometry_tbl[idx]
