@@ -656,6 +656,8 @@ class Field:
             self.add_object_from_dict(obj)
         if obj not in self.objects:
             self.objects.append(obj)
+        if obj.name in self.objects_dict:
+            warnings.warn("An object with this name already exists here; it is being overwritten.")
         self.objects_dict[obj.name] = obj
         obj.field = self
 
@@ -919,32 +921,40 @@ class Field:
                         message=f"Is '{field_name}' the TNS name of the FRB?",
                 ):
                     tns_name = field_name
-                else:
-                    tns_name = u.user_input(
-                        message=f"Please enter the FRB TNS name, if it has one. Otherwise, leave blank.",
-                    )
-                    if tns_name in ["", " ", 'None']:
-                        tns_name = None
-            if ra_err is None:
-                ra_err = 0.
-            if dec_err is None:
-                dec_err = 0.
+            if tns_name is None:
+                tns_name = u.user_input(
+                    message=f"Please enter the FRB TNS name, if it has one. Otherwise, leave blank.",
+                )
+                if tns_name in ["", " ", 'None']:
+                    tns_name = None
+
+            dm = u.user_input(
+                "If you know the burst DM, please enter that now in units of pc / cm^3. Otherwise, leave blank.",
+                input_type=float
+            )
+            if dm in ["", " ", 'None']:
+                dm = 0 * objects.dm_units
+            else:
+                dm *= objects.dm_units
+
             date = u.user_input(
                 "If you have a precise FRB arrival time, please enter that now; otherwise, leave blank."
             )
             if date in ["", " ", 'None']:
-                date = objects.FRB._date_from_name(field_name)
+               date = objects.FRB._date_from_name(field_name)
 
             frb_dict = objects.FRB.default_params()
             host_dict = objects.FRB.default_host_params(
                 frb_name=field_name,
                 position=position
             )
+            print("host_dict:", host_dict)
 
             yaml_dict["frb"] = field_name
 
             frb_dict["name"] = field_name
             frb_dict["date"] = date
+            frb_dict["dm"] = dm
             frb_dict["position"] = position
             frb_dict["position_err"]["a"]["stat"] = float(ra_err)
             frb_dict["position_err"]["b"]["stat"] = float(dec_err)
@@ -956,7 +966,7 @@ class Field:
 
             p.save_params(field_param_path_yaml, yaml_dict)
             p.save_params(os.path.join(object_param_path_yaml, f"{field_name}.yaml"), frb_dict)
-            p.save_params(os.path.join(object_param_path_yaml, f"{host_name}.yaml"), frb_dict)
+            p.save_params(os.path.join(object_param_path_yaml, f"{host_name}.yaml"), host_dict)
 
         print(f"Template parameter file created at '{field_param_path_yaml}'")
         input("Please edit this file before proceeding, then press Enter to continue.")

@@ -1953,10 +1953,10 @@ class FRB(Transient, Extragalactic):
             img,
             include_img_err: bool = True,
             prior_set: Union[str, dict] = "adopted",
-            priors: dict = {},
-            offset_priors: dict = {"scale": 0.5},
-            config: dict = {},
-            associate_kwargs={},
+            priors: dict = None,
+            offset_priors: dict = None,
+            config: dict = None,
+            associate_kwargs=None,
             do_plot: bool = False,
             output_dir: str = None,
             show: bool = False,
@@ -1974,6 +1974,14 @@ class FRB(Transient, Extragalactic):
         import astropath.path as path
         from craftutils.observation.field import FRBField
         astm_rms = 0.
+        if config is None:
+            config = {}
+        if priors is None:
+            priors = {}
+        if offset_priors is None:
+            offset_priors = {"scale": 0.5}
+        if associate_kwargs is None:
+            associate_kwargs = {"extinction_correct": True}
         if include_img_err:
             astm_rms = img.extract_astrometry_err()
         if astm_rms is None:
@@ -2050,7 +2058,7 @@ class FRB(Transient, Extragalactic):
                 config=config,
                 FRB=x_frb,
                 prior=prior_set,
-                **associate_kwargs
+                **associate_kwargs,
                 # extinction_correct=True
             )
             p_ux = ass.P_Ux
