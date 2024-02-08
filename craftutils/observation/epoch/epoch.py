@@ -5235,7 +5235,7 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
             "sort_reduced": eso_stages["sort_reduced"],
             "trim_reduced": eso_stages["trim_reduced"],
             "convert_to_cs": eso_stages["convert_to_cs"],
-            "defringe": ie_stages["defringe"],
+            # "defringe": ie_stages["defringe"],
             "register_frames": ie_stages["register_frames"],
             "correct_astrometry_frames": ie_stages["correct_astrometry_frames"],
             "frame_diagnostics": ie_stages["frame_diagnostics"],
