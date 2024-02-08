@@ -4,7 +4,7 @@ channels:
   - astropy
   - conda-forge
 dependencies:
-  - python>=3.5
+#  - python>=3.5
   - astroalign>=2.4
   - astromatic-source-extractor
   - astrometry>0.92

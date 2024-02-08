@@ -5,4 +5,4 @@
 [project]
 name = "craft-optical-followup"
 authors = [{name = "Lachlan Marnoch", email = "lachlan.marnoch@gmail.com"}]
-dynamic = ["version", "description"]
+version = "0.9.0"
