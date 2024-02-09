@@ -1,0 +1,6 @@
+band_name: null
+data_path: instruments/skymapper/filters/r
+formatted_name: null
+instrument: skymapper
+name: r
+svo_service: {filter_id: r, instrument: SkyMapper}

@@ -1,0 +1,4 @@
+data_path: instruments/skymapper
+formatted_name: SkyMapper
+name: skymapper
+svo_service: {facility: SkyMapper, instrument: SkyMapper}

@@ -1,0 +1,5 @@
+data_path: /home/lachlan/Data/instruments/wise/filters/W2
+instrument: wise
+name: W2
+band_name: W2
+svo_service: {id: W2, instrument: null}

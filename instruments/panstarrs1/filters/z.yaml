@@ -1,0 +1,4 @@
+data_path: /home/lachlan/Data/instruments/panstarrs1/filters/z
+instrument: panstarrs1
+name: z
+svo_service: {id: z, instrument: null}

@@ -1,0 +1,6 @@
+data_path: /home/lachlan/Data/instruments/vlt-fors2/filters/g_HIGH
+instrument: vlt-fors2
+name: g_HIGH
+svo_service: {id: ESO1115, instrument: FORS1}
+formatted_name: $g_\mathrm{high}$
+cmap: viridis

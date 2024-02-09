@@ -1,0 +1,8 @@
+band_name: null
+data_path: instruments/sdss/filters/r
+formatted_name: null
+instrument: sdss
+name: r
+svo_service:
+  filter_id: [r, rprime_filter]
+  instrument: SDSS

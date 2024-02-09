@@ -1,0 +1,8 @@
+band_name: null
+data_path: instruments/sdss/filters/g
+formatted_name: null
+instrument: sdss
+name: g
+svo_service:
+  filter_id: [g, gprime_filter]
+  instrument: SDSS
