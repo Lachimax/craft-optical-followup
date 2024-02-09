@@ -1,4 +1,4 @@
-# Code by Lachlan Marnoch, 2019-2021
+# Code by Lachlan Marnoch, 2019-2023
 import copy
 import os
 import math
@@ -83,11 +83,14 @@ def image_psf_diagnostics(
     # stars = u.trim_to_class(cat=cat, modify=True, allowed=np.arange(0, star_class_tol + 1))
     stars = cat[cat["CLASS_STAR"] >= star_class_tol]
     print(f"Initial num stars:", len(stars))
-    stars = stars[stars["MAG_PSF"] < mag_max]
-    print(f"Num stars with MAG_PSF < {mag_max}:", len(stars))
-    print(stars["MAG_PSF"].max(), stars["MAG_PSF"].mean(), mag_max, mag_min)
-    stars = stars[stars["MAG_PSF"] > mag_min]
-    print(f"Num stars with MAG_PSF > {mag_min}:", len(stars))
+    if "MAG_PSF" in stars.colnames:
+        mag_col = "MAG_PSF"
+    else:
+        mag_col = "MAG_AUTO"
+    stars = stars[stars[mag_col] < mag_max]
+    print(f"Num stars with {mag_col} < {mag_max}:", len(stars))
+    stars = stars[stars[mag_col] > mag_min]
+    print(f"Num stars with {mag_col} > {mag_min}:", len(stars))
 
     if near_radius is not None:
         header = hdu[ext].header
@@ -133,7 +136,6 @@ def image_psf_diagnostics(
             stars["MOFFAT_FWHM_FITTED"] *= units.arcsec
 
     print()
-    print("STARS")
 
     for j, star in enumerate(stars):
         ra = star[ra_col]
@@ -169,21 +171,31 @@ def image_psf_diagnostics(
         fitter = fitting.LevMarLSQFitter()
         try:
             model = fitter(model_init, x, y, data)
-        except fitting.NonFiniteValueError:
-            continue
-        fwhm = (model.fwhm * units.pixel).to(units.arcsec, scale)
-        star["MOFFAT_FWHM_FITTED"] = fwhm
-        star["MOFFAT_GAMMA_FITTED"] = model.gamma.value
-        star["MOFFAT_ALPHA_FITTED"] = model.alpha.value
+            # print("fit_info:", fitter.fit_info)
+            # If astropy thinks that the fit is bad, who are we to argue?
+            if "Number of calls to function has reached maxfev = 100" in fitter.fit_info['message']:
+                star["MOFFAT_FWHM_FITTED"] = np.nan
+                star["MOFFAT_GAMMA_FITTED"] = np.nan
+                star["MOFFAT_ALPHA_FITTED"] = np.nan
+            else:
+                fwhm = (model.fwhm * units.pixel).to(units.arcsec, scale)
+                star["MOFFAT_FWHM_FITTED"] = fwhm
+                star["MOFFAT_GAMMA_FITTED"] = model.gamma.value
+                star["MOFFAT_ALPHA_FITTED"] = model.alpha.value
 
-        if debug_plots and output is not None:
-            fig = plt.figure()
-            ax_data_moffat = fig.add_subplot(2, 3, 1)
-            ax_data_moffat.imshow(data)
-            ax_model_moffat = fig.add_subplot(2, 3, 2)
-            ax_model_moffat.imshow(model(x, y))
-            ax_residuals_moffat = fig.add_subplot(2, 3, 3)
-            ax_residuals_moffat.imshow(data - model(x, y))
+                if debug_plots and output is not None:
+                    fig = plt.figure()
+                    ax_data_moffat = fig.add_subplot(2, 3, 1)
+                    ax_data_moffat.imshow(data)
+                    ax_model_moffat = fig.add_subplot(2, 3, 2)
+                    ax_model_moffat.imshow(model(x, y))
+                    ax_residuals_moffat = fig.add_subplot(2, 3, 3)
+                    ax_residuals_moffat.imshow(data - model(x, y))
+
+        except fitting.NonFiniteValueError:
+            star["MOFFAT_FWHM_FITTED"] = np.nan
+            star["MOFFAT_GAMMA_FITTED"] = np.nan
+            star["MOFFAT_ALPHA_FITTED"] = np.nan
 
         # Then a good-old-fashioned Gaussian, with the x and y axes tied together.
         model_init = models.Gaussian2D(x_mean=frame, y_mean=frame)
@@ -214,35 +226,24 @@ def image_psf_diagnostics(
 
     # print()
 
-    clipped = sigma_clip(stars["MOFFAT_FWHM_FITTED"], masked=True, sigma=2)
-    stars_clip_moffat = stars[~clipped.mask]
-    stars_clip_moffat = stars_clip_moffat[np.isfinite(stars_clip_moffat["MOFFAT_FWHM_FITTED"])]
-    stars_clip_moffat = stars_clip_moffat[stars_clip_moffat["MOFFAT_FWHM_FITTED"] > 0.1 * units.arcsec]
-    print(f"Num stars after sigma clipping w. astropy Moffat PSF:", len(stars_clip_moffat))
+    cols_check = ("MOFFAT_FWHM_FITTED", "GAUSSIAN_FWHM_FITTED", "FWHM_WORLD")
+    clip_dict = {}
 
-    clipped = sigma_clip(stars["GAUSSIAN_FWHM_FITTED"], masked=True, sigma=2)
-    stars_clip_gauss = stars[~clipped.mask]
-    stars_clip_gauss = stars_clip_gauss[np.isfinite(stars_clip_gauss["GAUSSIAN_FWHM_FITTED"])]
-    stars_clip_gauss = stars_clip_gauss[stars_clip_gauss["GAUSSIAN_FWHM_FITTED"] > 0.1 * units.arcsec]
-    print(f"Num stars after sigma clipping w. astropy Gaussian PSF:", len(stars_clip_gauss))
-
-    clipped = sigma_clip(stars["FWHM_WORLD"], masked=True, sigma=2)
-    stars_clip_sex = stars[~clipped.mask]
-    stars_clip_sex = stars_clip_sex[np.isfinite(stars_clip_sex["FWHM_WORLD"])]
-    print(f"Num stars after sigma clipping w. Sextractor PSF:", len(stars_clip_sex))
+    for col in cols_check:
+        if col in stars.colnames:
+            clipped = sigma_clip(stars[col], masked=True, sigma=2)
+            stars_clip = stars[~clipped.mask]
+            stars_clip = stars_clip[np.isfinite(stars_clip[col])]
+            stars_clip = stars_clip[stars_clip[col] > 0.1 * units.arcsec]
+            clip_dict[col] = stars_clip
+            print(f"Num stars after sigma clipping {col}:", len(stars_clip))
 
     plt.close()
     u.debug_print(2, f"image_psf_diagnostics(): {output=}")
     if output is not None:
 
         with quantity_support():
-            tmp_dict = {
-                "MOFFAT_FWHM_FITTED": stars_clip_moffat,
-                "GAUSSIAN_FWHM_FITTED": stars_clip_gauss,
-                "FWHM_WORLD": stars_clip_sex
-            }
-
-            for colname in ["MOFFAT_FWHM_FITTED", "GAUSSIAN_FWHM_FITTED", "FWHM_WORLD"]:
+            for colname in clip_dict:
                 fig, ax = plt.subplots()
                 ax.hist(
                     stars[colname][np.isfinite(stars[colname])].to(units.arcsec),
@@ -254,7 +255,7 @@ def image_psf_diagnostics(
 
                 fig, ax = plt.subplots()
                 ax.hist(
-                    tmp_dict[colname][colname].to(units.arcsec),
+                    clip_dict[colname][colname].to(units.arcsec),
                     edgecolor='black',
                     linewidth=1.2,
                     label="Sigma-clipped",
@@ -264,7 +265,7 @@ def image_psf_diagnostics(
                 ax.legend()
                 fig.savefig(os.path.join(output, f"{plot_file_prefix}_psf_histogram_{colname}_clipped.png"))
 
-    return stars_clip_moffat, stars_clip_gauss, stars_clip_sex
+    return clip_dict
 
 
 def get_median_background(image: Union[str, fits.HDUList], ra: float = None, dec: float = None, frame: int = 100,
@@ -427,76 +428,194 @@ def redshift_flux_lambda(
     return flux * ((1 + z) * d_l ** 2) / ((1 + z_new) * d_l_shift ** 2)
 
 
-def magnitude_AB(
-        flux: units.Quantity,
-        band_transmission: Union[np.ndarray, units.Quantity],
-        frequency: units.Quantity,
+def flux_ab(
+        tbl: table.QTable = None,
+        transmission: Union[np.ndarray, units.Quantity] = None,
+        frequency: units.Quantity = None,
+):
+    """
+    Calculates the total integrated flux of the flat AB source (3631 Jy) as seen through a given filter;
+    that is, the denominator of the AB Magnitude formula.
+    `transmission` and `frequency`, whether provided in `tbl` or as separate arguments, must be the same length and
+    correspond 1-to-1.
+
+    :param tbl: an astropy `Table` with `transmission` and/or `frequency` as columns; when these columns are provided,
+        their respective arguments can be ignored, but if either is missing from the table it must be provided in an
+        argument.
+    :param transmission: the filter profile as an array of transmission fractions as a function of frequency.
+    :param frequency: the corresponding frequency coordinates for the transmission argument.
+    :return: The integrated AB flux.
+    """
+
+    if tbl is None:
+        if transmission is None:
+            raise ValueError(
+                "If `tbl` is not provided (with transmission included as column 'transmission'), `transmission` must be provided.")
+
+        if frequency is None:
+            raise ValueError(
+                "If `tbl` is not provided (with frequency included as column 'frequency'), `frequency` must be provided.")
+
+        tbl = table.QTable(
+            data={
+                "frequency": frequency,
+                "transmission": transmission,
+            }
+        )
+    tbl["flux"] = np.ones(len(tbl)) * AB_zeropoint
+
+    return flux_from_band(
+        tbl,
+        use_quantum_factor=True
+    )
+
+
+def flux_from_band(
+        flux: Union[units.Quantity, table.QTable],
+        transmission: Union[np.ndarray, units.Quantity] = None,
+        frequency: units.Quantity = None,
         use_quantum_factor: bool = True
 ):
     """
-    All three arguments must be of the same length, with entries corresponding 1-to-1.
-    :param flux:
-    :param band_transmission:
-    :param frequency:
-    :return:
+    Calculates the integrated flux of an object with an SED `flux` as a function of `frequency`, as seen through a
+    filter with transmission profile `transmission`.
+    `flux`, `transmission` and `frequency` must all be of the same length, with entries corresponding 1-to-1.
+
+    :param flux: flux per unit frequency.
+    :param transmission: the filter profile as an array of transmission fractions as a function of frequency.
+    :param frequency: the corresponding frequency coordinates for the transmission argument.
+    :param use_quantum_factor: For use if flux is in energy-related units (eg, Jy, erg/s, etc.) to convert to photon
+        counts. If you are passing an SED flux, then you should set this to True.
+    :return: Integrated flux in the bandpass.
     """
-    flux_tbl = table.QTable(
-        data={
-            "nu": frequency,
-            "e": band_transmission,
-            "f": flux
-        }
-    )
-    flux_tbl.sort("nu")
+    if not isinstance(flux, table.Table):
+        if transmission is None:
+            raise ValueError(
+                "If `flux` is not a table (with transmission included as column 'transmission'), `band_transmission` must be provided.")
+        if frequency is None:
+            raise ValueError(
+                "If `flux` is not a table (with frequency included as column 'frequency'), `frequency` must be provided.")
+        if not u.is_iterable(flux):
+            flux = flux * np.ones(len(frequency))
+        flux_tbl = table.QTable(
+            data={
+                "frequency": frequency,
+                "transmission": transmission,
+                "flux": flux
+            }
+        )
+    else:
+        if "frequency" not in flux.colnames:
+            raise ValueError("If `flux` is a table, frequency must be included as column `frequency`")
+        if "transmission" not in flux.colnames:
+            raise ValueError("If `flux` is a table, transmission must be included as column `transmission`")
+        flux_tbl = flux
+
+    flux_tbl.sort("frequency")
 
     if use_quantum_factor:
-        quantum_factor = (constants.h * flux_tbl["nu"]) ** -1
+        quantum_factor = (constants.h * flux_tbl["frequency"]) ** -1
     else:
         quantum_factor = 1
 
-    flux_band = np.trapz(
-        y=flux_tbl["f"] * quantum_factor * flux_tbl["e"],
-        x=flux_tbl["nu"]
-    )
-    flux_ab = np.trapz(
-        y=AB_zeropoint * quantum_factor * flux_tbl["e"],
-        x=flux_tbl["nu"]
+    return np.trapz(
+        y=flux_tbl["flux"] * quantum_factor * flux_tbl["transmission"],
+        x=flux_tbl["frequency"]
     )
 
-    return -2.5 * np.log10(flux_band / flux_ab)
+
+def magnitude_AB(
+        flux: units.Quantity,
+        transmission: Union[np.ndarray, units.Quantity],
+        frequency: units.Quantity,
+        use_quantum_factor: bool = True,
+        mag_unit: bool = False
+
+):
+    """
+    `flux`, `transmission` and `frequency` must all be of the same length, with entries corresponding 1-to-1.
+
+        :param flux: flux per unit frequency.
+    :param transmission: the filter profile as an array of transmission fractions as a function of frequency.
+    :param frequency: the corresponding frequency coordinates for the transmission argument.
+    :param use_quantum_factor: For use if flux is in energy-related units (eg, Jy, erg/s, etc.) to convert to photon
+        counts. If you are passing an SED flux, then you should set this to True.
+    """
+    flux_tbl = table.QTable(
+        data={
+            "frequency": frequency,
+            "transmission": transmission,
+            "flux": flux
+        }
+    )
+    flux_tbl.sort("frequency")
+
+    flux_band = flux_from_band(flux=flux_tbl, use_quantum_factor=use_quantum_factor)
+    flux_ab_this = flux_ab(flux_tbl)
+    val = -2.5 * np.log10(flux_band / flux_ab_this)
+    if mag_unit:
+        val *= units.mag
+    return val
 
 
 def magnitude_absolute_from_luminosity(
         luminosity_nu: units.Quantity,
-        band_transmission: Union[np.ndarray, units.Quantity],
+        transmission: Union[np.ndarray, units.Quantity],
         frequency: units.Quantity,
-        use_quantum_factor: bool = True
+):
+    """
+    Derived from Equation (5) of Hogg et al 2002 (https://arxiv.org/abs/astro-ph/0210394v1)
+    :param luminosity_nu:
+    :param transmission:
+    :param frequency:
+    :return:
+    """
+    lum_tbl = table.QTable(
+        data={
+            "frequency": frequency,
+            "transmission": transmission,
+            "luminosity_nu": luminosity_nu
+        }
+    )
+    lum_tbl.sort("frequency")
+
+    luminosity_band = np.trapz(
+        y=lum_tbl["luminosity_nu"] * lum_tbl["transmission"] / lum_tbl["frequency"],
+        x=lum_tbl["frequency"]
+    )
+
+    ab = np.trapz(
+        y=AB_zeropoint * lum_tbl["transmission"] / lum_tbl["frequency"],
+        x=lum_tbl["frequency"]
+    )
+
+    return -2.5 * np.log10(luminosity_band / (ab * 4 * np.pi * 100 * units.pc ** 2))
+
+
+def luminosity_in_band(
+        luminosity_nu: units.Quantity,
+        transmission: Union[np.ndarray, units.Quantity],
+        frequency: units.Quantity,
+        use_quantum_factor: bool = False
 ):
     lum_tbl = table.QTable(
         data={
-            "nu": frequency,
-            "e": band_transmission,
-            "L": luminosity_nu
+            "frequency": frequency,
+            "transmission": transmission,
+            "luminosity_nu": luminosity_nu
         }
     )
-    lum_tbl.sort("nu")
+    lum_tbl.sort("frequency")
 
     if use_quantum_factor:
-        quantum_factor = (constants.h * lum_tbl["nu"]) ** -1
+        quantum_factor = (constants.h * lum_tbl["frequency"]) ** -1
     else:
         quantum_factor = 1
 
-    luminosity_band = np.trapz(
-        y=lum_tbl["L"] * lum_tbl["e"] * quantum_factor / lum_tbl["nu"],
-        x=lum_tbl["nu"]
+    return np.trapz(
+        y=lum_tbl["luminosity_nu"] * lum_tbl["transmission"] * quantum_factor,
+        x=lum_tbl["frequency"]
     )
-
-    luminosity_ab = np.trapz(
-        y=AB_zeropoint * lum_tbl["e"] * quantum_factor / lum_tbl["nu"],
-        x=lum_tbl["nu"]
-    )
-
-    return -2.5 * np.log10(luminosity_band / (luminosity_ab * 4 * np.pi * 100 * units.pc ** 2))
 
 
 def magnitude_instrumental(
@@ -585,7 +704,7 @@ def distance_modulus(distance: units.Quantity):
 
 def determine_zeropoint_sextractor(
         sextractor_cat: Union[str, table.QTable],
-        cat_path: str,
+        cat: str,
         image: Union[str, fits.HDUList],
         output_path: str,
         cat_name: str = 'Catalogue',
@@ -661,7 +780,6 @@ def determine_zeropoint_sextractor(
     if isinstance(sextractor_cat, str):
         print('SExtractor catalogue path:', sextractor_cat)
     print('Image path:', path)
-    print('Catalogue path:', cat_path)
     print('Output:', output_path)
     print()
 
@@ -679,22 +797,32 @@ def determine_zeropoint_sextractor(
         tolerance = dist_tol
 
     # Import the catalogue of the sky region.
-    if cat_type != 'sextractor':
-        cat = table.QTable.read(cat_path, format='ascii.csv')
-        if cat_mag_col not in cat.colnames:
-            print(f"{cat_mag_col} not found in {cat_name}; is this band included?")
-            p.save_params(file=output_path + 'parameters.yaml', dictionary=params)
-            return None
-        cat = cat.filled(fill_value=-999.)
-        cat[cat_ra_col] *= units.deg
-        cat[cat_dec_col] *= units.deg
-        cat[cat_mag_col] *= units.mag
+
+    if isinstance(cat, str):
+        cat_path = cat
+        if cat_type != 'sextractor':
+            cat = table.QTable.read(cat, format='ascii.csv')
+            if cat_mag_col not in cat.colnames:
+                print(f"{cat_mag_col} not found in {cat}; is this band included?")
+                p.save_params(file=output_path + 'parameters.yaml', dictionary=params)
+                return None
+            cat = cat.filled(fill_value=-999.)
+        else:
+            cat = table.QTable.read(cat, format="ascii.sextractor")
+
+    elif isinstance(cat, table.QTable):
+        cat_path = None
 
     else:
-        cat = table.QTable.read(cat_path, format="ascii.sextractor")
+        cat_path = None
+        cat = table.QTable(cat)
 
     if len(cat) == 0:
         raise ValueError("The reference catalogue is empty.")
+
+    cat[cat_ra_col] = u.check_quantity(cat[cat_ra_col], units.deg)
+    cat[cat_dec_col] = u.check_quantity(cat[cat_dec_col], units.deg)
+    cat[cat_mag_col] = u.check_quantity(cat[cat_mag_col], units.mag)
 
     params['time'] = str(time.Time.now())
     params['catalogue'] = str(cat_name)
@@ -891,8 +1019,13 @@ def determine_zeropoint_sextractor(
 
     # Plot remaining matches
     plt.imshow(image[0].data, origin='lower', norm=plotting.nice_norm(image[0].data))
-    plt.scatter(matches_clean[sex_x_col], matches_clean[sex_y_col], label='SExtractor',
-                c=matches_clean[star_class_col], cmap="plasma")
+    plt.scatter(
+        u.dequantify(matches_clean[sex_x_col]),
+        u.dequantify(matches_clean[sex_y_col]),
+        label='SExtractor',
+        c=matches_clean[star_class_col],
+        cmap="plasma"
+    )
     plt.colorbar()
     plt.legend()
     plt.title('Matches with ' + cat_name + ' Catalogue against image (Using SExtractor)')
@@ -1146,10 +1279,10 @@ def determine_zeropoint_sextractor(
         dof_correction=2
     )
 
-    plt.plot(x, line_free, c='red', label='Line of best fit')
-    plt.scatter(x, y, c='blue')
+    plt.plot(u.dequantify(x), line_free, c='red', label='Line of best fit')
+    plt.scatter(u.dequantify(x), u.dequantify(y), c='blue')
     #    plt.errorbar(x, y, yerr=y_uncertainty, linestyle="None")
-    plt.plot(x, line_fixed, c='green', label='Fixed slope = 1')
+    plt.plot(u.dequantify(x), u.dequantify(line_fixed), c='green', label='Fixed slope = 1')
     plt.legend()
     plt.suptitle("Magnitude Comparisons")
     plt.xlabel("Magnitude in " + cat_name)
@@ -1228,10 +1361,10 @@ def determine_zeropoint_sextractor(
         dof_correction=2
     )
 
-    plt.plot(x_clipped, line_free_clipped, c='red', label='Line of best fit')
-    plt.scatter(x_clipped, y_clipped, c='blue')
+    plt.plot(u.dequantify(x_clipped), u.dequantify(line_free_clipped), c='red', label='Line of best fit')
+    plt.scatter(u.dequantify(x_clipped), u.dequantify(y_clipped), c='blue')
     # plt.errorbar(x_clipped, y_clipped, yerr=y_uncertainty_clipped, linestyle="None")
-    plt.plot(x_clipped, line_fixed_clipped, c='green', label='Fixed slope = 1')
+    plt.plot(u.dequantify(x_clipped), u.dequantify(line_fixed_clipped), c='green', label='Fixed slope = 1')
     plt.legend()
     plt.suptitle("Magnitude Comparisons")
     plt.xlabel("Magnitude in " + cat_name)
@@ -1326,8 +1459,15 @@ def determine_zeropoint_sextractor(
     return params
 
 
-def single_aperture_photometry(data: np.ndarray, aperture: ph.Aperture, annulus: ph.Aperture, exp_time: float = 1.0,
-                               zeropoint: float = 0.0, extinction: float = 0.0, airmass: float = 0.0):
+def single_aperture_photometry(
+        data: np.ndarray,
+        aperture: ph.Aperture,
+        annulus: ph.Aperture,
+        exp_time: float = 1.0,
+        zeropoint: float = 0.0,
+        extinction: float = 0.0,
+        airmass: float = 0.0
+):
     # Use background annulus to obtain a median sky background
     mask = annulus.to_mask()
     annulus_data = mask.multiply(data)[mask.data > 0]
@@ -1339,13 +1479,14 @@ def single_aperture_photometry(data: np.ndarray, aperture: ph.Aperture, annulus:
     # Correct:
     flux_photutils = cat_photutils['aperture_sum'] - subtract_flux
     # Convert to magnitude, with uncertainty propagation:
-    mag_photutils, _, _ = magnitude_instrumental(flux=flux_photutils,
-                                                 # flux_err=cat_photutils['aperture_sum_err'],
-                                                 exp_time=exp_time,  # exp_time_err=exp_time_err,
-                                                 zeropoint=zeropoint,  # zeropoint_err=zeropoint_err,
-                                                 ext=extinction,  # ext_err=extinction_err,
-                                                 airmass=airmass,  # airmass_err=airmass_err
-                                                 )
+    mag_photutils, _, _ = magnitude_instrumental(
+        flux=flux_photutils,
+        # flux_err=cat_photutils['aperture_sum_err'],
+        exp_time=exp_time,  # exp_time_err=exp_time_err,
+        zeropoint=zeropoint,  # zeropoint_err=zeropoint_err,
+        ext=extinction,  # ext_err=extinction_err,
+        airmass=airmass,  # airmass_err=airmass_err
+    )
 
     return mag_photutils, flux_photutils, subtract_flux, median
 

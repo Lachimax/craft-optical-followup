@@ -6,18 +6,20 @@ from typing import Union
 import astropy.table as table
 import astropy.io.votable as votable
 import astropy.units as units
+import astropy.constants as constants
 
 import craftutils.utils as u
 import craftutils.params as p
 from craftutils.retrieve import save_svo_filter
 import craftutils.observation.instrument as instrument
+import craftutils.photometry as ph
 
 active_filters = {}
 
-__all__ = []
+# __all__ = []
 
 
-@u.export
+# @u.export
 class Filter:
 
     def __init__(self, **kwargs):
@@ -33,6 +35,10 @@ class Filter:
             self.band_name = kwargs["band_name"]
         elif self.name is not None:
             self.band_name = self.name[0]
+
+        self.frb_repo_name = None
+        if "frb_repo_name" in kwargs:
+            self.frb_repo_name = kwargs["frb_repo_name"]
 
         self.svo_id = []
         self.svo_instrument = None
@@ -66,6 +72,10 @@ class Filter:
         if "instrument" in kwargs:
             self.instrument = kwargs["instrument"]
 
+        self.cmap = None
+        if "cmap" in kwargs:
+            self.cmap = kwargs["cmap"]
+
         self.lambda_eff = None
         self.lambda_fwhm = None
         self.vega_zeropoint = None
@@ -85,18 +95,47 @@ class Filter:
             self,
             transmission: table.QTable = None
     ):
-        zp_ab = 3631 * units.Jy
-        zp_vega = self.vega_zeropoint
+        if transmission is None:
+            transmission, _ = self.select_transmission_table()
         delta_mag = 2.5 * np.log10(
-            np.trapz(
-                y=zp_ab * transmission["Transmission"],
-                x=transmission["Wavelength"]
-            ) / np.trapz(
-                y=zp_vega * transmission["Transmission"],
-                x=transmission["Wavelength"]
-            )
+            self.ab_flux(transmission=transmission) /
+            self.vega_flux(transmission=transmission)
         )
         return delta_mag * units.mag
+
+    def vega_flux(
+            self,
+            transmission: table.QTable = None
+    ):
+        """
+
+
+        :param transmission:
+        :return:
+        """
+        if transmission is None:
+            transmission, _ = self.select_transmission_table()
+        return ph.flux_from_band(
+            flux=self.vega_zeropoint,
+            transmission=transmission["Transmission"],
+            frequency=transmission["Frequency"],
+            use_quantum_factor=True
+        )
+
+    def ab_flux(self, transmission: table.QTable = None):
+        """
+        Calculates the total integrated flux of the flat AB source (3631 Jy) as seen through the filter.
+
+        :param transmission: transmission table to use. If `None`, `select_transmission_table()` will be used to select
+            the 'best' one.
+        :return:
+        """
+        if transmission is None:
+            transmission, _ = self.select_transmission_table()
+        return ph.flux_ab(
+            transmission=transmission["Transmission"],
+            frequency=transmission["Frequency"],
+        )
 
     def compare_transmissions(self, other: 'Filter'):
         tbl_self, tbl_other = self.find_comparable_table(other)
@@ -158,10 +197,13 @@ class Filter:
             fp=tbl["Transmission"].value
         )
 
-
-
-
     def compare_wavelength_range(self, other: 'Filter'):
+        """
+
+        :param other:
+        :return:
+        """
+
         tbl_self, tbl_other = self.find_comparable_table(other)
         self_wavelength = tbl_self["Wavelength"]
         other_wavelength = tbl_other["Wavelength"]
@@ -265,12 +307,15 @@ class Filter:
             if path is None:
                 continue
             elif not os.path.isfile(path):
-                path = self.transmission_table_paths[table_name] = None
+                self.transmission_table_paths[table_name] = None
                 continue
             if force:
                 self.transmission_tables[table_name] = None
             if table_name not in self.transmission_tables or self.transmission_tables[table_name] is None:
-                self.transmission_tables[table_name] = table.QTable.read(path)
+                tbl = table.QTable.read(path)
+                tbl["Frequency"] = (constants.c / tbl["Wavelength"]).to(units.Hz)
+                self.transmission_tables[table_name] = tbl
+
         return self.transmission_tables
 
     def transmission_by_usefulness(self):
@@ -413,3 +458,4 @@ class Filter:
             ),
             f"{filter_name}_photometry.ecsv"
         )
+

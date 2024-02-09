@@ -1,0 +1,7 @@
+band_name: Ks
+data_path: instruments/2mass/filters/Ks
+formatted_name: null
+instrument: 2mass
+name: Ks
+svo_service: {filter_id: Ks, instrument: null}
+cmap: cmr.ember

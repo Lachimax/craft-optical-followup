@@ -1,0 +1,5 @@
+cigale_name: null
+data_path: instruments/vlt-hawki
+formatted_name: VLT/HAWK-I
+name: vlt-hawki
+svo_service: {facility: Paranal, instrument: HAWKI}

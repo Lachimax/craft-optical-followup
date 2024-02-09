@@ -58,7 +58,7 @@ def generate_astrometry_indices(
         index_output_dir: str,
         fits_cat_output: str = None,
         add_path: bool = True,
-        p_lower: int = -1, p_upper: int = 2):
+        p_lower: int = -2, p_upper: int = 2):
     u.mkdir_check(index_output_dir)
     if add_path:
         astrometry_net.add_index_directory(index_output_dir)
@@ -95,20 +95,27 @@ def generate_astrometry_indices(
     return index_paths
 
 
-def attempt_skycoord(coord: Union[coordinates.SkyCoord, str, tuple, list, np.ndarray]):
-    if type(coord) is coordinates.SkyCoord:
+def attempt_skycoord(
+        coord: Union[coordinates.SkyCoord, str, tuple, list, np.ndarray]
+):
+    if isinstance(coord, coordinates.SkyCoord):
         return coord
-    elif type(coord) is str:
+    elif isinstance(coord, str):
         return coordinates.SkyCoord(coord)
-    elif type(coord) in [tuple, list, np.ndarray]:
-        if isinstance(coord[0], float):
-            coord = (coord[0] * units.deg, coord[1] * units.deg)
-        elif isinstance(coord[0], str):
-            if coord[0][-1].isnumeric():
-                coord = (coord[0] + "d", coord[1] + "d")
+    elif isinstance(coord, (tuple, list, np.ndarray)):
+        coord_mod = []
+        for i, n in enumerate(coord):
+            if isinstance(n, float):
+                n = n * units.deg
+            elif isinstance(n, str):
+                if n[-1].isnumeric():
+                    n = n + "d"
+            coord_mod.append(n)
+        coord = coord_mod
         return coordinates.SkyCoord(coord[0], coord[1])
     else:
-        raise TypeError(f"coord is {type(coord)}; must be of type coordinates.SkyCoord, str, tuple, list, or numpy array")
+        raise TypeError(
+            f"coord is {type(coord)}; must be of type coordinates.SkyCoord, str, tuple, list, or numpy array")
 
 
 def coord_string(coord: coordinates.SkyCoord):
@@ -141,12 +148,14 @@ def calculate_error_ellipse(frb: Union[str, dict], error: str = 'quadrature'):
             ra_sys = frb['burst_err_sys_ra']
             ra = np.sqrt(ra_stat ** 2 + ra_sys ** 2)
 
-            a = coordinates.SkyCoord(f'0h0m0s {dec_frb}d').separation(coordinates.SkyCoord(f'0h0m{ra}s {dec_frb}d')).value
+            a = coordinates.SkyCoord(f'0h0m0s {dec_frb}d').separation(
+                coordinates.SkyCoord(f'0h0m{ra}s {dec_frb}d')).value
 
             dec_stat = frb['burst_err_stat_dec'] / 3600
             dec_sys = frb['burst_err_sys_dec'] / 3600
             dec = np.sqrt(dec_stat ** 2 + dec_sys ** 2)
-            b = coordinates.SkyCoord(f'{ra_frb}d {dec_frb}d').separation(coordinates.SkyCoord(f'{ra_frb}d {dec_frb + dec}d')).value
+            b = coordinates.SkyCoord(f'{ra_frb}d {dec_frb}d').separation(
+                coordinates.SkyCoord(f'{ra_frb}d {dec_frb + dec}d')).value
 
             theta = 0.0
 
@@ -171,10 +180,12 @@ def calculate_error_ellipse(frb: Union[str, dict], error: str = 'quadrature'):
 
             ra_sys = frb['burst_err_sys_ra']
 
-            a = coordinates.SkyCoord(f'0h0m0s {dec_frb}d').separation(coordinates.SkyCoord(f'0h0m{ra_sys}s {dec_frb}d')).value
+            a = coordinates.SkyCoord(f'0h0m0s {dec_frb}d').separation(
+                coordinates.SkyCoord(f'0h0m{ra_sys}s {dec_frb}d')).value
 
             dec_sys = frb['burst_err_sys_dec'] / 3600
-            b = coordinates.SkyCoord(f'{ra_frb}d {dec_frb}d').separation(coordinates.SkyCoord(f'{ra_frb}d {dec_frb + dec_sys}d')).value
+            b = coordinates.SkyCoord(f'{ra_frb}d {dec_frb}d').separation(
+                coordinates.SkyCoord(f'{ra_frb}d {dec_frb + dec_sys}d')).value
 
             theta = 0.0
 
@@ -192,10 +203,12 @@ def calculate_error_ellipse(frb: Union[str, dict], error: str = 'quadrature'):
 
             ra_stat = frb['burst_err_stat_ra']
 
-            a = coordinates.SkyCoord(f'0h0m0s {dec_frb}d').separation(coordinates.SkyCoord(f'0h0m{ra_stat}s {dec_frb}d')).value
+            a = coordinates.SkyCoord(f'0h0m0s {dec_frb}d').separation(
+                coordinates.SkyCoord(f'0h0m{ra_stat}s {dec_frb}d')).value
 
             dec_stat = frb['burst_err_stat_dec'] / 3600
-            b = coordinates.SkyCoord(f'{ra_frb}d {dec_frb}d').separation(coordinates.SkyCoord(f'{ra_frb}d {dec_frb + dec_stat}d')).value
+            b = coordinates.SkyCoord(f'{ra_frb}d {dec_frb}d').separation(
+                coordinates.SkyCoord(f'{ra_frb}d {dec_frb + dec_stat}d')).value
 
             theta = 0.0
 
@@ -239,7 +252,10 @@ def offset_astrometry(hdu: fits.hdu, offset_ra: float, offset_dec: float, output
     return hdu
 
 
-def find_nearest(coord: coordinates.SkyCoord, search_coords: coordinates.SkyCoord):
+def find_nearest(
+        coord: coordinates.SkyCoord,
+        search_coords: coordinates.SkyCoord
+):
     separations = coord.separation(search_coords)
     match_id = np.argmin(separations)
     return match_id, separations[match_id]

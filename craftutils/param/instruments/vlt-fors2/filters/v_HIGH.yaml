@@ -1,0 +1,4 @@
+data_path: /home/lachlan/Data/instruments/vlt-fors2/filters/v_HIGH
+instrument: vlt-fors2
+name: v_HIGH
+svo_service: {id: ESO1114, instrument: FORS1}

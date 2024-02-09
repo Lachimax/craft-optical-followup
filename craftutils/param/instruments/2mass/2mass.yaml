@@ -1,0 +1,5 @@
+cigale_name: null
+data_path: instruments/2mass
+formatted_name: 2MASS
+name: 2mass
+svo_service: {facility: 2MASS, instrument: 2MASS}
