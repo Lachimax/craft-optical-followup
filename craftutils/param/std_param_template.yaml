@@ -1,0 +1,4 @@
+mag_range_lower: 18.0
+mag_range_upper: 21.5
+star_class_tol: 0.95
+use_sex_star_class: True

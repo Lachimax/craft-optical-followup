@@ -1,0 +1,25 @@
+type_ia: [nugent-sn1a, nugent-sn91t, nugent-sn91bg, hsiao, hsiao-subsampled, salt2, salt2-extended, salt2-extended-h17,
+          snf-2011fe, snemo2, snemo7, snemo15, mlcs2k2]
+
+type_ib: [nugent-sn1bc, nugent-hyper, s11-2005hl, s11-2005hm, s11-2006jo, snana-2004gv, snana-2006ep, snana-2007y,
+          snana-2004ib, snana-2005hm, snana-2006jo, snana-2007nc, snana-2004gv, snana-2006ep, snana-2007y, snana-2004ib,
+          snana-2005hm, snana-2006jo, snana-2007nc]
+
+type_ic: [nugent-sn1bc, nugent-hyper, s11-2006fo, snana-2004fe, snana-2004gq, snana-sdss004012, snana-2006fo,
+          snana-sdss014475, snana-2006lc, snana-04d1la, snana-04d4jv, snana-2004fe, snana-2004gq, snana-sdss004012,
+          snana-2006fo, snana-sdss014475, snana-2006lc, snana-04d1la, snana-04d4jv]
+
+type_iin: [nugent-sn2n, snana-2006ez, snana-2006ix]
+
+type_iil: [nugent-sn2l, s11-2004hx]
+
+type_iip: [nugent-sn2p, s11-2004hx, s11-2005lc, s11-2005gi, s11-2006jl, snana-2004hx, snana-2005gi, snana-2006gq,
+           snana-2006kn, snana-2006jl, snana-2006iw, snana-2006kv, snana-2006ns, snana-2007iz, snana-2007nr,
+           snana-2007kw, snana-2007ky, snana-2007lj, snana-2007lb, snana-2007ll, snana-2007nw, snana-2007ld,
+           snana-2007md, snana-2007lz, snana-2007lx, snana-2007og, snana-2007ny, snana-2007nv, snana-2007pg,
+           snana-2004hx, snana-2005gi, snana-2006gq, snana-2006kn, snana-2006jl, snana-2006iw, snana-2006kv,
+           snana-2006ns, snana-2007iz, snana-2007nr, snana-2007kw, snana-2007ky, snana-2007lj, snana-2007lb,
+           snana-2007ll, snana-2007nw, snana-2007ld, snana-2007md, snana-2007lz, snana-2007lx,
+           snana-2007ny, snana-2007nv, snana-2007pg]
+
+type_ii_pec: [snana-2007ms]
