@@ -458,7 +458,10 @@ class Epoch:
             in which case it will perform only those stages without query no matter what no_query is.
         :return:
         """
-        self._pipeline_init()
+        skip_cats = False
+        if "skip_cats" in kwargs:
+            skip_cats = kwargs["skip_cats"]
+        self._pipeline_init(skip_cats=skip_cats)
         # u.debug_print(2, "Epoch.pipeline(): kwargs ==", kwargs)
 
         # Loop through stages list specified in self.stages()
@@ -534,13 +537,14 @@ class Epoch:
 
         return last_complete
 
-    def _pipeline_init(self):
+    def _pipeline_init(self, skip_cats: bool = False):
         if self.data_path is not None:
             u.debug_print(2, f"{self}._pipeline_init(): self.data_path ==", self.data_path)
             u.mkdir_check_nested(self.data_path)
         else:
             raise ValueError(f"data_path has not been set for {self}")
-        self.field.retrieve_catalogues()
+        if not skip_cats:
+            self.field.retrieve_catalogues()
         self.do = _check_do_list(self.do, stages=list(self.stages().keys()))
         if not self.quiet and self.do:
             print(f"Doing stages {self.do}")
@@ -3838,8 +3842,8 @@ class HubbleImagingEpoch(ImagingEpoch):
         }
         return stages
 
-    def _pipeline_init(self):
-        super()._pipeline_init()
+    def _pipeline_init(self, skip_cats: bool = False):
+        super()._pipeline_init(skip_cats=skip_cats)
         self.coadded_final = "coadded"
         self.paths["download"] = os.path.join(self.data_path, "0-download")
 
@@ -4030,8 +4034,8 @@ class SurveyImagingEpoch(ImagingEpoch):
         }
         return stages
 
-    def _pipeline_init(self):
-        super()._pipeline_init()
+    def _pipeline_init(self, skip_cats: bool = False):
+        super()._pipeline_init(skip_cats=skip_cats)
         self.coadded_final = "coadded"
         self.paths["download"] = os.path.join(self.data_path, "0-download")
 
@@ -5012,8 +5016,8 @@ class HAWKIImagingEpoch(ESOImagingEpoch):
                         for frame in outputs["frames_split"][fil]:
                             self.add_frame_split(frame=frame)
 
-    def _pipeline_init(self):
-        super()._pipeline_init()
+    def _pipeline_init(self, skip_cats: bool = False):
+        super()._pipeline_init(skip_cats=skip_cats)
         self.coadded_final = "coadded_astrometry"
         self.frames_final = "frames_split"
 
@@ -5256,8 +5260,8 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
         u.debug_print(2, f"FORS2ImagingEpoch.stages(): stages ==", stages)
         return stages
 
-    def _pipeline_init(self):
-        super()._pipeline_init()
+    def _pipeline_init(self, skip_cats: bool = False):
+        super()._pipeline_init(skip_cats=skip_cats)
         self.frames_final = "astrometry"
         # If told not to correct astrometry on frames:
         if not self.combined_epoch and (

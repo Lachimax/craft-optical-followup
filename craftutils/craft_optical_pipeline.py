@@ -23,6 +23,7 @@ def main(
         furby_path: str,
         do: str,
         debug_level: int,
+        skip_cats: bool
 ):
     if not p.param_dir:
         param_dir = u.user_input(
@@ -157,7 +158,7 @@ def main(
 
     u.debug_print(2, "pipeline.py: type(epoch) ==", type(epoch))
     epoch.do = do
-    epoch.pipeline()
+    epoch.pipeline(skip_cats=skip_cats)
 
 
 def parse_args():
@@ -211,6 +212,11 @@ def parse_args():
              "those for FORS2 data retrieval and reduction. Overrides --epoch, --field, -i and -s.",
         type=str
     )
+    parser.add_argument(
+        "--skip_cats",
+        help="Skips initial catalogue retrieval.",
+        action="store_true"
+    )
 
     # Load arguments
 
@@ -229,4 +235,5 @@ def parse_args():
         do=args.do,
         debug_level=args.d,
         furby_path=fp,
+        skip_cats=args.skip_cats
     )
