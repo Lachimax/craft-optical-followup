@@ -160,7 +160,7 @@ def main(
     epoch.pipeline()
 
 
-if __name__ == '__main__':
+def parse_args():
     import argparse
 
     parser = argparse.ArgumentParser(

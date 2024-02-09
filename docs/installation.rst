@@ -7,6 +7,7 @@ Prequisites
 Some packages are not required for primary functionality but are necessary for certain features.
 
 * `FRB <https://github.com/FRBs/FRB>`_ is used by :class:`craftutils.observation.objects.FRB` for some modelling to do with FRB propagation.
+* `ESOReflex <https://www.eso.org/sci/software/esoreflex/>`_ is still required by the FORS2 pipeline, for the initial reduction.
 
 Installing
 ----------

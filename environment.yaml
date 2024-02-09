@@ -4,21 +4,21 @@ channels:
   - astropy
   - conda-forge
 dependencies:
-#  - python>=3.5
-  - astroalign>=2.4
+  - python>=3.5
+  - astroalign
   - astromatic-source-extractor
-  - astrometry>0.92
-  - astropy>=5.0
-  - astroquery>=0.4
-  - ccdproc>=2.3
-  - cmasher>=1.6
-  - libgsl>=2.7
-  - matplotlib>=3.0
-  - numpy=1.23
-  - photutils>=1.5
-  - PyYAML>=5.3
-  - reproject>=0.9.1
+  - astrometry
+  - astropy
+  - astroquery
+  - ccdproc
+  - cmasher
+#  - libgsl>=2.7
+  - matplotlib
+  - numpy
+  - photutils
+  - PyYAML
+  - reproject
   - requests
-  - sep>=1.0
-  - setuptools>=65.0
+  - sep
+#  - setuptools
   - tqdm
