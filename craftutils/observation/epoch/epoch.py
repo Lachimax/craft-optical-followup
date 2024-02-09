@@ -5250,7 +5250,7 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
             # "get_photometry_all": ie_stages["get_photometry_all"]
         }
 
-        stages["defringe"]["default"] = True
+        # stages["defringe"]["default"] = True
         stages["photometric_calibration"]["keywords"]["skip_retrievable"] = True
 
         u.debug_print(2, f"FORS2ImagingEpoch.stages(): stages ==", stages)
