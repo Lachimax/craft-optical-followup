@@ -6,5 +6,5 @@
 
 
 
-.. python-apigen-entity-page::  craftutils.observation.objects.Transient.default_params
+.. python-apigen-entity-page::  craftutils.observation.filters.Filter.machine_name
 
