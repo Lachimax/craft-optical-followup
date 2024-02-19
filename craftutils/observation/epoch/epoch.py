@@ -1002,8 +1002,8 @@ class ImagingEpoch(Epoch):
 
         # self.load_output_file(mode="imaging")
 
-    def _pipeline_init(self):
-        super()._pipeline_init()
+    def _pipeline_init(self, skip_cats: bool = False):
+        super()._pipeline_init(skip_cats=skip_cats)
         for fil in self.filters:
             self.check_filter(fil)
 
