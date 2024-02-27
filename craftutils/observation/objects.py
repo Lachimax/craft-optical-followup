@@ -366,7 +366,7 @@ class Object:
 
         self.photometry_args = None
         if "photometry_args_manual" in kwargs and kwargs["photometry_args_manual"]["a"] != 0 and \
-                kwargs["photometry_args_manual"]["b"]:
+                kwargs["photometry_args_manual"]["b"] is not None:
             self.photometry_args = kwargs["photometry_args_manual"]
             self.a = self.photometry_args["a"]
             self.b = self.photometry_args["b"]
@@ -1911,9 +1911,9 @@ class FRB(Transient, Extragalactic):
         if "nu_scattering" in kwargs:
             self.nu_scattering = u.check_quantity(kwargs["nu_scattering"], units.GHz)
 
-        if not self.width_total and self.width_int and self.tau:
+        if self.width_total is None and self.width_int is not None and self.tau is not None:
             self.width_total = self.width_int + self.tau
-            if self.width_int_err and self.tau_err:
+            if self.width_int_err is not None and self.tau_err is not None:
                 self.width_total_err = np.sqrt(self.tau_err ** 2 + self.width_int_err ** 2)
 
         # Detection parameters
