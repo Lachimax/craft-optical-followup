@@ -212,6 +212,7 @@ def download_file(
                 progress_bar.update(len(chunk))
                 f.write(chunk)
     else:
+        print(f"No file retrieved from {file_url}")
         response = None
 
     return response
