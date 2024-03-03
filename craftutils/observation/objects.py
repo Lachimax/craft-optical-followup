@@ -227,10 +227,8 @@ class PositionUncertainty:
         if not ellipse:
             ra = position.ra
             dec = position.dec
-            print(ra_err_sys, ra_err_stat)
             a_sys = ra_err_sys * np.cos(dec)
             a_stat = ra_err_stat * np.cos(dec)
-            print(a_sys, a_stat)
             b_sys = dec_err_sys
             b_stat = dec_err_stat
             if b_sys > a_sys:
@@ -238,7 +236,6 @@ class PositionUncertainty:
             else:
                 theta = 0. * units.degree
             a_sys, b_sys = max(a_sys, b_sys), min(a_sys, b_sys)
-            print(a_sys, a_stat)
             a_stat, b_stat = max(a_stat, b_stat), min(a_stat, b_stat)
         # Or use ellipse parameters as given.
         else:

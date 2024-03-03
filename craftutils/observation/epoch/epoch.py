@@ -5835,7 +5835,6 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
         self.build_standard_epochs(output_dir=output_path)
 
         for fil in image_dict:
-            print("\nimage_dict", image_dict)
             std_chips = self.sort_by_chip(self.frames_standard[fil])
             img = image_dict[fil]
             if "calib_pipeline" in img.zeropoints:

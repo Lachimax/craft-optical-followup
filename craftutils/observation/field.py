@@ -672,12 +672,10 @@ class Field:
 
     def object_properties(self):
         self.objects.sort(key=lambda o: o.name, reverse=True)
-        print(self.objects)
         n_phot = 0
         for obj in self.objects:
             if not obj.optical:
                 continue
-            print(obj.name)
             obj.load_output_file()
             obj.update_output_file()
             obj.push_to_table(select=True)
@@ -948,8 +946,6 @@ class Field:
                 frb_name=field_name,
                 position=position
             )
-            print("host_dict:", host_dict)
-
             yaml_dict["frb"] = field_name
 
             frb_dict["name"] = field_name
