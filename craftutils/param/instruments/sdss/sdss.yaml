@@ -1,0 +1,4 @@
+data_path: instruments/sdss
+formatted_name: SDSS
+name: sdss
+svo_service: {facility: SLOAN, instrument: SDSS}

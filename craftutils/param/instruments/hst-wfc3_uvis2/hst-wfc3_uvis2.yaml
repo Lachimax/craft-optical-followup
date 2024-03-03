@@ -1,0 +1,5 @@
+data_path: /home/lachlan/Data/instruments/hst-wfc3_uvis2
+name: hst-wfc3_uvis2
+svo_service: {facility: HST, instrument: WFC3_UVIS2}
+formatted_name: HST/WFC3-UVis
+cigale_name: WFC3

@@ -1,0 +1,5 @@
+cigale_name: null
+data_path: instruments/keck-deimos
+formatted_name: null
+name: keck-deimos
+svo_service: {facility: SLOAN, instrument: SDSS}

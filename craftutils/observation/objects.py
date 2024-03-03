@@ -227,10 +227,8 @@ class PositionUncertainty:
         if not ellipse:
             ra = position.ra
             dec = position.dec
-            print(ra_err_sys, ra_err_stat)
             a_sys = ra_err_sys * np.cos(dec)
             a_stat = ra_err_stat * np.cos(dec)
-            print(a_sys, a_stat)
             b_sys = dec_err_sys
             b_stat = dec_err_stat
             if b_sys > a_sys:
@@ -238,7 +236,6 @@ class PositionUncertainty:
             else:
                 theta = 0. * units.degree
             a_sys, b_sys = max(a_sys, b_sys), min(a_sys, b_sys)
-            print(a_sys, a_stat)
             a_stat, b_stat = max(a_stat, b_stat), min(a_stat, b_stat)
         # Or use ellipse parameters as given.
         else:
@@ -366,7 +363,7 @@ class Object:
 
         self.photometry_args = None
         if "photometry_args_manual" in kwargs and kwargs["photometry_args_manual"]["a"] != 0 and \
-                kwargs["photometry_args_manual"]["b"]:
+                kwargs["photometry_args_manual"]["b"] is not None:
             self.photometry_args = kwargs["photometry_args_manual"]
             self.a = self.photometry_args["a"]
             self.b = self.photometry_args["b"]
@@ -419,6 +416,8 @@ class Object:
         self.estimate_galactic_extinction()
         deepest_dict = self.select_deepest()
         deepest_path = deepest_dict["good_image_path"]
+
+        print("Deepest image determined to be", deepest_path)
 
         cls = image.CoaddedImage.select_child_class(instrument_name=deepest_dict["instrument"])
         deepest_img = cls(path=deepest_path)
@@ -1909,9 +1908,9 @@ class FRB(Transient, Extragalactic):
         if "nu_scattering" in kwargs:
             self.nu_scattering = u.check_quantity(kwargs["nu_scattering"], units.GHz)
 
-        if not self.width_total and self.width_int and self.tau:
+        if self.width_total is None and self.width_int is not None and self.tau is not None:
             self.width_total = self.width_int + self.tau
-            if self.width_int_err and self.tau_err:
+            if self.width_int_err is not None and self.tau_err is not None:
                 self.width_total_err = np.sqrt(self.tau_err ** 2 + self.width_int_err ** 2)
 
         # Detection parameters
@@ -1953,10 +1952,10 @@ class FRB(Transient, Extragalactic):
             img,
             include_img_err: bool = True,
             prior_set: Union[str, dict] = "adopted",
-            priors: dict = {},
-            offset_priors: dict = {"scale": 0.5},
-            config: dict = {},
-            associate_kwargs={},
+            priors: dict = None,
+            offset_priors: dict = None,
+            config: dict = None,
+            associate_kwargs=None,
             do_plot: bool = False,
             output_dir: str = None,
             show: bool = False,
@@ -1974,6 +1973,14 @@ class FRB(Transient, Extragalactic):
         import astropath.path as path
         from craftutils.observation.field import FRBField
         astm_rms = 0.
+        if config is None:
+            config = {}
+        if priors is None:
+            priors = {}
+        if offset_priors is None:
+            offset_priors = {"scale": 0.5}
+        if associate_kwargs is None:
+            associate_kwargs = {"extinction_correct": True}
         if include_img_err:
             astm_rms = img.extract_astrometry_err()
         if astm_rms is None:
@@ -2050,7 +2057,7 @@ class FRB(Transient, Extragalactic):
                 config=config,
                 FRB=x_frb,
                 prior=prior_set,
-                **associate_kwargs
+                **associate_kwargs,
                 # extinction_correct=True
             )
             p_ux = ass.P_Ux

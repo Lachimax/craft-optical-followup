@@ -1,0 +1,5 @@
+data_path: /home/lachlan/Data/instruments/vlt-fors2
+name: vlt-fors2
+svo_service: {facility: Paranal, instrument: FORS2}
+formatted_name: VLT/FORS2
+cigale_name: VLT_FORS2

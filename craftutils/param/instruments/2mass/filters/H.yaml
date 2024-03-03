@@ -1,0 +1,7 @@
+band_name: H
+data_path: instruments/2mass/filters/H
+formatted_name: null
+instrument: 2mass
+name: H
+svo_service: {filter_id: H, instrument: null}
+cmap: cmr.sunburst

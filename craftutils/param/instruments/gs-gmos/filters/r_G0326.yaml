@@ -1,0 +1,7 @@
+band_name: null
+data_path: instruments/gs-gmos/filters/r_G0326
+formatted_name: null
+instrument: gs-gmos
+name: r_G0326
+frb_repo_name: GMOS_S_r
+svo_service: {filter_id: r, instrument: null}
