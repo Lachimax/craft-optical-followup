@@ -116,7 +116,7 @@ class Survey:
         u.debug_print(1, "Survey.from_file(): name ==", name)
         u.debug_print(1, "Survey.from_file(): param_dict ==", param_dict)
         if param_dict is None:
-            raise FileNotFoundError("Param file missing!")
+            raise FileNotFoundError(f"Param file missing: {param_file}")
         return cls(**param_dict)
 
     @classmethod
