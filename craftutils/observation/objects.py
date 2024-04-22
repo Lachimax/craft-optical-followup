@@ -1837,8 +1837,7 @@ class Transient(Object):
             self.tns_name = kwargs["tns_name"]
 
     def get_host(self) -> Galaxy:
-        """
-        If `self.host_galaxy` is a string, checks for a host galaxy with that in the FRB's field and sets
+        """If `self.host_galaxy` is a string, checks for a host galaxy with that in the FRB's field and sets
         `self.host_galaxy` to that object.
         If `self.host_galaxy` is `None`, sets it to an empty `TransientHostCandidate` with the same `z` and `z_err`.
 
@@ -1852,6 +1851,7 @@ class Transient(Object):
             )
         elif isinstance(self.host_galaxy, str) and self.field:
             self.host_galaxy = self._get_object(self.host_galaxy)
+
         return self.host_galaxy
 
 
@@ -2278,6 +2278,12 @@ class FRB(Transient, Extragalactic):
         else:
             print("Date could not be resolved from object name.")
             return None
+
+    def get_host(self) -> Galaxy:
+        super().get_host()
+        if self.z is None and self.host_galaxy is not None:
+            self.set_z(self.host_galaxy.z)
+        return self.host_galaxy
 
     def date_from_name(self):
         date_str = self._date_from_name(self.name)
