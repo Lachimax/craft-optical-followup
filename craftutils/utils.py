@@ -499,17 +499,13 @@ def mkdir_check(*paths: str):
     :param paths: each argument is a path to check and create.
     """
     for path in paths:
-        if not os.path.isdir(path):
-            debug_print(2, f"Making directory {path}")
-            os.mkdir(path)
-        else:
-            debug_print(2, f"Directory {path} already exists, doing nothing.")
+        os.makedirs(path, exist_ok=True)
 
 
 def mkdir_check_nested(
         path: str,
         remove_last: bool = True
-):
+) -> str:
     """
     Does mkdir_check, but for all parent directories of the given path.
     That is, for all of the levels of the given path, a directory will be created if it doesn't exist.
@@ -518,16 +514,11 @@ def mkdir_check_nested(
         Useful if the path will in fact be that of a file that you just want to create a directory for.
     :return:
     """
-    levels = []
-    while len(path) > 1:
-        path, end = os.path.split(path)
-        levels.append(end)
-    levels.append(path)
-    levels.reverse()
+
     if remove_last:
-        levels.pop()
-    debug_print(2, "utils.mkdir_check_nested(): levels ==", levels)
-    mkdir_check_args(*levels)
+        path, end = os.path.split(path)
+    os.makedirs(path, exist_ok=True)
+    return path
 
 
 def move_check(origin: str, destination: str):
@@ -773,7 +764,8 @@ def root_mean_squared_error(
 
 def detect_problem_table(
         tbl: table.Table,
-        fmt: str = "ascii.ecsv"
+        fmt: str = "ascii.ecsv",
+        remove_output: bool = True
 ) -> table.Row:
     """
     This function iterates through the rows of an astropy Table and attempts to write each one to disk;
@@ -784,11 +776,13 @@ def detect_problem_table(
     :return: index, row
     """
     for i, row in enumerate(tbl):
+        print(f"Writing up to row {i}")
         tbl_this = tbl[:i + 1]
         try:
             writepath = os.path.join(os.path.expanduser("~"), f"test.{fmt}")
             tbl_this.write(writepath, overwrite=True, format=fmt)
-            os.remove(writepath)
+            if remove_output:
+                os.remove(writepath)
         except NotImplementedError:
             print("Problem row:")
             print(i, row)
