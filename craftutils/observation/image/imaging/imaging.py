@@ -2687,16 +2687,8 @@ class ImagingImage(Image):
         else:
             scaling_data = normalize_kwargs.pop("data")
 
-        if "cmap" not in imshow_kwargs:
-            print(None)
-            if self.filter and self.filter.cmap:
+        if "cmap" not in imshow_kwargs and self.filter and self.filter.cmap:
                 imshow_kwargs["cmap"] = self.filter.cmap
-        else:
-            print(imshow_kwargs["cmap"])
-
-        print(self.filter, self.filter.cmap)
-        print(imshow_kwargs["cmap"])
-
 
         # if "vmin" not in normalize_kwargs:
         #     normalize_kwargs["vmin"] = np.min(data_clipped)
@@ -3497,9 +3489,17 @@ class ImagingImage(Image):
         model_init = model_type(**init_params)
         fitter = fitter_type(calc_uncertainties=False)
         y, x = np.mgrid[:data.shape[0], :data.shape[1]]
+
+
+
         plt.imshow(weights[bottom - 10:top + 10, left - 10:right + 10])
         plt.colorbar()
-        plt.show()
+        if isinstance(write, str):
+            u.mkdir_check_nested(write)
+            plt.savefig(write.replace(".fits", "_plot.png"))
+        else:
+            plt.show()
+        plt.close()
         model = fitter(
             model_init,
             x, y,

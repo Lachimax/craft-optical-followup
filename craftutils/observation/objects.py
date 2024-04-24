@@ -341,6 +341,9 @@ class Object:
         self.photometry_tbl = None
         self.data_path = None
         self.output_file = None
+        self.param_path = None
+        if "param_path" in kwargs:
+            self.param_path = kwargs["param_path"]
         self.field = field
         self.irsa_extinction_path = None
         self.irsa_extinction = None
@@ -859,7 +862,7 @@ class Object:
 
         if output is not False:
             for fmt in fmts:
-                u.detect_problem_table(photometry_tbl, fmt="csv")
+                # u.detect_problem_table(photometry_tbl, fmt="csv")
                 photometry_tbl.write(output.replace(".ecsv", fmt[fmt.find("."):]), format=fmt, overwrite=True)
         return photometry_tbl
 
@@ -1221,6 +1224,16 @@ class Object:
             else:
                 row["transient_tns_name"] = "N/A"
 
+            if self.P_Ox is not None:
+                row["path_pox"] = self.P_Ox
+            else:
+                row["path_pox"] = "N/A"
+
+            if self.probabilistic_association_img:
+                row["path_img"] = self.probabilistic_association_img
+            else:
+                row["path_img"] = "N/A"
+
         for instrument in self.photometry:
             for fil in self.photometry[instrument]:
 
@@ -1305,6 +1318,24 @@ class Object:
             "other_names": [],
         }
         return default_params
+
+    def to_param_dict(self):
+        dictionary = self.default_params()
+        dictionary.update({
+            "name": self.name,
+            "position": self.position,
+        })
+        if self.field is not None:
+            dictionary["field"] = self.field.name
+        return dictionary
+
+    def to_param_yaml(self, path: str = None):
+        dictionary = self.to_param_dict()
+        if path is None and self.field is not None:
+            path = os.path.join(self.field._obj_path(), self.name)
+
+        p.save_params(file=path, dictionary=dictionary)
+        return dictionary
 
     @classmethod
     def from_dict(cls, dictionary: dict, **kwargs) -> 'Object':
@@ -1486,6 +1517,15 @@ class Extragalactic(Object):
         distance = u.check_quantity(distance, unit=units.kpc)
         theta = (distance * units.rad / self.D_A).to(units.arcsec)
         return theta
+
+    @classmethod
+    def default_params(cls):
+        default_params = super().default_params()
+        default_params.update({
+            "z": None,
+            "z_err": None,
+        })
+        return default_params
 
 
 @u.export
@@ -1737,9 +1777,7 @@ class Galaxy(Extragalactic):
     def default_params(cls):
         default_params = super().default_params()
         default_params.update({
-            "z": None,
-            "z_err": None,
-            "type": "galaxy"
+            "type": "Galaxy"
         })
         return default_params
 
@@ -1757,6 +1795,8 @@ class TransientHostCandidate(Galaxy):
             **kwargs
         )
         self.transient = transient
+        if isinstance(self.transient, str) and self.field is not None:
+            self.transient = self.field.get_object(self.transient)
 
         self.P_O = None
         if "P_O" in kwargs:
@@ -1767,6 +1807,9 @@ class TransientHostCandidate(Galaxy):
         self.P_Ox = None
         if "P_Ox" in kwargs:
             self.P_Ox = kwargs["P_Ox"]
+        self.probabilistic_association_img = None
+        if "probabilistic_association_img" in kwargs:
+            self.probabilistic_association_img = kwargs["probabilistic_association_img"]
 
     def get_transient(self, tolerate_missing: bool = False):
         if self.transient is None:
@@ -1790,9 +1833,25 @@ class TransientHostCandidate(Galaxy):
             "transient": None,
             "P_O": None,
             "P_xO": None,
-            "P_Ox": None
+            "P_Ox": None,
+            "probabilistic_association_img": None
         })
         return default_params
+
+    def to_param_dict(self):
+        dictionary = self.default_params()
+        dictionary.update(super().to_param_dict())
+        dictionary.update({
+            "P_O": self.P_O,
+            "P_xO": self.P_xO,
+            "P_Ox": self.P_Ox,
+            "probabilistic_association_img": self.probabilistic_association_img
+        })
+        if isinstance(self.transient, str):
+            dictionary["transient"] = self.transient
+        else:
+            dictionary["transient"] = self.transient.name
+        return dictionary
 
 
 dm_units = units.parsec * units.cm ** -3
@@ -1854,6 +1913,18 @@ class Transient(Object):
 
         return self.host_galaxy
 
+    def update_param_file(self, param: str):
+        p_dict = {
+            "host_galaxy": self.host_galaxy.name,
+        }
+        if param not in p_dict:
+            raise ValueError(f"Either {param} is not a valid parameter, or it has not been configured.")
+        if self.param_path is None:
+            raise ValueError("param_path has not been set.")
+        else:
+            params = p.load_params(self.param_path)
+        params[param] = p_dict[param]
+        p.save_params(file=self.param_path, dictionary=params)
 
 @u.export
 class FRB(Transient, Extragalactic):
@@ -1959,10 +2030,9 @@ class FRB(Transient, Extragalactic):
             do_plot: bool = False,
             output_dir: str = None,
             show: bool = False,
-            max_radius: units.Quantity = None
+            max_radius: units.Quantity = None,
     ):
-        """
-        Performs a customised PATH run on an image.
+        """Performs a customised PATH run on an image.
 
         :param img: The image on which to run PATH.
         :param include_img_err: If set to True, the image astrometry RMS (from img.extract_astrometry_err()) will be
@@ -2047,7 +2117,9 @@ class FRB(Transient, Extragalactic):
 
         print("P(U) ==", prior_set["U"])
         print()
-        print("priors:", prior_set)
+        print("Priors:", prior_set)
+        print("Config:", config)
+        print()
 
         if "show" not in associate_kwargs:
             associate_kwargs["show"] = show
@@ -2166,11 +2238,12 @@ class FRB(Transient, Extragalactic):
                 position=SkyCoord(row["ra"], row["dec"]),
                 field=self.field,
                 name=f"HC{row['id_str']}_{idn}",
-                P_Ox=row[f"P_Ox_{p_ox_assign}"]
+                P_Ox=row[f"P_Ox_{p_ox_assign}"],
+                probabilistic_association_img=p_ox_assign
             )
             self.host_candidates.append(host_candidate)
-            if i == best_i and row[f"P_Ox_{p_ox_assign}"] > 0.9:
-                self.host_galaxy = host_candidate
+            # if i == best_i and row[f"P_Ox_{p_ox_assign}"] > 0.9:
+            #     self.host_galaxy = host_candidate
         self.update_output_file()
         return path_cat
 
@@ -2240,6 +2313,18 @@ class FRB(Transient, Extragalactic):
         })
         return default_params
 
+    def to_param_dict(self):
+        dictionary = self.default_params()
+        dictionary.update(super().to_param_dict())
+        dictionary.update({
+            "host_galaxy": self.host_galaxy.name,
+        })
+        if isinstance(self.transient, str):
+            dictionary["transient"] = self.transient
+        else:
+            dictionary["transient"] = self.transient.name
+        return dictionary
+
     @classmethod
     def host_name(cls, frb_name: str):
         if "FRB" in frb_name:
@@ -2247,6 +2332,16 @@ class FRB(Transient, Extragalactic):
         else:
             host_name = frb_name + " Host"
         return host_name
+
+    def hg_name(self):
+        return self.host_name(frb_name=self.name)
+
+    def set_host(self, host_galaxy: TransientHostCandidate):
+        hg_name = self.hg_name()
+        print(f"Assigning {host_galaxy.name} as host of {self.name} and relabelling as {hg_name}")
+        host_galaxy.name = hg_name
+        self.host_galaxy = host_galaxy
+        self.update_param_file("host_galaxy")
 
     @classmethod
     def default_host_params(cls, frb_name: str, position=None, **kwargs):
@@ -2356,7 +2451,6 @@ class FRB(Transient, Extragalactic):
             method=method
         )
         return dm, tau
-
 
     def dm_mw_ism(
             self,

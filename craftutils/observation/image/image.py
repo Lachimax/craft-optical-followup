@@ -243,6 +243,8 @@ def fits_table_all(
 def detect_instrument(path: str, ext: int = 0, fail_quietly: bool = False):
     if not os.path.exists(path) or not os.path.isfile(path):
         raise FileNotFoundError(f"No image found at {path}")
+    elif path.endswith("_outputs.yaml"):
+        path = path.replace("_outputs.yaml", ".fits")
 
     try:
         with fits.open(path) as file:

@@ -698,9 +698,11 @@ class Epoch:
         self.paths[key] = value
 
     def update_param_file(self, param: str):
-        p_dict = {"program_id": self.program_id,
-                  "date": self.date,
-                  "target": self.target}
+        p_dict = {
+            "program_id": self.program_id,
+            "date": self.date,
+            "target": self.target
+        }
         if param not in p_dict:
             raise ValueError(f"Either {param} is not a valid parameter, or it has not been configured.")
         if self.param_path is None:
@@ -1886,9 +1888,9 @@ class ImagingEpoch(Epoch):
             if not self.quiet:
                 print()
                 print("Coadded Image Path:")
-                print(img.output_file)
+                print(img.path)
             output_path = os.path.join(output_dir, img.filename.replace(".fits", "_trimmed.fits"))
-            u.debug_print(2, "trim_coadded img.path:", img.output_file)
+            u.debug_print(2, "trim_coadded img.path:", img.path)
             u.debug_print(2, "trim_coadded img.area_file:", img.area_file)
             trimmed = img.trim_from_area(output_path=output_path)
             # trimmed.write_fits_file()
@@ -2137,17 +2139,19 @@ class ImagingEpoch(Epoch):
             skip_path = kwargs.pop("skip_path")
 
         if not skip_path and isinstance(self.field, fld.FRBField):
+            path_kwargs = {
+                "priors": {"U": 0.1},
+                "config": {"radius": 10}
+            }
             if 'path_kwargs' in kwargs:
-                path_kwargs = kwargs["path_kwargs"]
-            else:
-                path_kwargs = {
-                    "priors": {"U": 0.1},
-                    "config": {"radius": 10}
-                }
+                path_kwargs.update(kwargs["path_kwargs"])
             image_type_path = image_type
             if self.did_local_background_subtraction():
                 image_type_path = "coadded_subtracted_patch"
-            self.probabilistic_association(image_type=image_type_path, **path_kwargs)
+            self.probabilistic_association(
+                image_type=image_type_path,
+                **path_kwargs
+            )
         self.get_photometry(output_dir, image_type=image_type, **kwargs)
 
     def did_local_background_subtraction(self):
@@ -2163,7 +2167,6 @@ class ImagingEpoch(Epoch):
             image_type: str = "final",
             exclude: list = ()
     ):
-        print(f"best_for_path: {image_type=}")
         image_dict = self._get_images(image_type=image_type)
         r_sloan = filters.Filter.from_params("r", "sdss")
         best_score = np.inf * units.angstrom
@@ -2176,6 +2179,7 @@ class ImagingEpoch(Epoch):
             if score < best_score:
                 best_score = score
                 best_img = img
+        print(f"Best image for PATH is {best_img.filter.name}")
         return best_img
 
     def probabilistic_association(
@@ -2209,11 +2213,18 @@ class ImagingEpoch(Epoch):
             reverse_sort=True,
             p_ox_assign=best_img.name
         )
+        # Add the candidates to the field's object list.
         for obj in self.field.frb.host_candidates:
             if isinstance(obj, objects.TransientHostCandidate):
                 print(obj.name, obj.P_Ox)
-                if obj.P_Ox is not None and obj.P_Ox > 0.1:
-                    self.field.add_object(obj)
+                if obj.P_Ox is not None:
+                    if obj.P_Ox > 0.9:
+                        self.field.frb.set_host(obj)
+                    if obj.P_Ox > 0.1:
+                        self.field.add_object(obj)
+                        obj.to_param_yaml()
+
+        self.field.cull_objects()
 
         # yaml_dict = {}
         #
@@ -2292,11 +2303,13 @@ class ImagingEpoch(Epoch):
                     output_path=os.path.join(fil_output_path, "plot_quick.pdf")
                 )
 
+            img.extract_astrometry_err()
+            tolerance_eff = match_tolerance + img.astrometry_err
+
             for obj_name, obj in self.field.objects_dict.items():
-                if obj is None or obj.position is None:
+                if obj is None or obj.position is None or not obj.optical:
                     continue
-                if not obj.optical:
-                    continue
+                print(f"Looking for matches to {obj_name} ({obj.position.to_string('hmsdms')})")
                 # obj.load_output_file()
                 plt.close()
                 # Get nearest Source-Extractor object:
@@ -2308,11 +2321,11 @@ class ImagingEpoch(Epoch):
                 dec_target.append(obj.position.dec)
 
                 if self.did_local_background_subtraction():
-                    good_image_path = self.coadded_subtracted[fil].output_file
+                    good_image_path = self.coadded_subtracted[fil].path
                 else:
-                    good_image_path = self.coadded_unprojected[fil].output_file
-
-                if separation > match_tolerance:
+                    good_image_path = self.coadded_unprojected[fil].path
+                # If the nearest object is outside tolerance, declare that no match was found.
+                if separation > tolerance_eff:
                     obj.add_photometry(
                         instrument=self.instrument_name,
                         fil=fil,
@@ -2345,7 +2358,8 @@ class ImagingEpoch(Epoch):
                         good_image_path=good_image_path,
                         do_mask=img.mask_nearby()
                     )
-                    print(f"No object detected at position.")
+                    print(
+                        f"No object detected at position (nearest match at {nearest['RA']}, {nearest['DEC']}, separation {separation.to('arcsec')}).")
                     print()
                 else:
                     u.debug_print(2, "ImagingImage.get_photometry(): nearest.colnames ==", nearest.colnames)
@@ -2481,7 +2495,6 @@ class ImagingEpoch(Epoch):
                     format="ascii.csv",
                     overwrite=True
                 )
-
 
         for fil in self.coadded_unprojected:
 

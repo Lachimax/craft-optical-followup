@@ -167,8 +167,15 @@ class Field:
     def __repr__(self):
         return self.__str__()
 
-    def objects_pipeline(self):
-        if u.select_yn_exit("Update photometry from all epochs?"):
+    def objects_pipeline(
+            self,
+            do_update: bool = None,
+            do_path: bool = None,
+            do_properties: bool = None,
+    ):
+        if do_update is None:
+            do_update = u.select_yn_exit("Update photometry from all epochs?")
+        if do_update:
             epochs = self.gather_epochs_imaging()
             for epoch_name in epochs:
                 epoch = ep.epoch_from_directory(epoch_name)
@@ -179,10 +186,16 @@ class Field:
                 epoch.param_file["get_photometry"]["skip_path"] = True
                 # Run only the last stage of each epoch pipeline
                 epoch.pipeline()
+
         if isinstance(self, FRBField):
-            if u.select_yn_exit("Run PATH on imaging?"):
+            if do_path is None:
+                do_path = u.select_yn_exit("Run PATH on imaging?")
+            if do_path:
                 pass
-        if u.select_yn_exit("Refine photometry?"):
+
+        if do_properties is None:
+            do_properties = u.select_yn_exit("Refine photometry?")
+        if do_properties:
             self.object_properties()
 
     def mkdir(self):
