@@ -2346,6 +2346,9 @@ class FRB(Transient, Extragalactic):
             distance: Union[units.Quantity, float] = np.inf * units.kpc,
     ):
         import pygedm
+        if distance > 100 * units.kpc or np.isnan(distance):
+            distance = 100 * units.kpc
+        print(distance, self.name)
         dm, tau = pygedm.dist_to_dm(
             self.position.galactic.l,
             self.position.galactic.b,

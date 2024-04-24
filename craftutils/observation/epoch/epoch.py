@@ -2459,7 +2459,7 @@ class ImagingEpoch(Epoch):
                                 fig.savefig(output_path + ".pdf")
                                 fig.savefig(output_path + ".png")
                                 ax.clear()
-                                fig.clf()
+                                fig.clear()
                                 plt.close("all")
                                 pl.latex_off()
                                 del ax, fig, other
@@ -3880,7 +3880,7 @@ class HubbleImagingEpoch(ImagingEpoch):
             self.deepest = image_dict[fil]
 
     def proc_get_photometry(self, output_dir: str, **kwargs):
-        self.get_photometry(output_dir, image_type="coadded", dual=False)
+        self.get_photometry(output_dir, image_type="coadded", dual=False, **kwargs)
 
     def psf_diagnostics(
             self,
