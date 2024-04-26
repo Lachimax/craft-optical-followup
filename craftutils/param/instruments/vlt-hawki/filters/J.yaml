@@ -1,0 +1,7 @@
+band_name: J
+data_path: instruments/vlt-hawki/filters/J
+formatted_name: null
+instrument: vlt-hawki
+name: J
+svo_service: {filter_id: J, instrument: null}
+cmap: cmr.fall

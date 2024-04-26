@@ -101,7 +101,11 @@ def solve_field(
     if am_flags is None:
         am_flags = []
     am_params["o"] = base_filename
+    if odds_to_tune_up is None:
+        odds_to_tune_up = 1e3
     am_params["odds-to-tune-up"] = odds_to_tune_up
+    if odds_to_solve is None:
+        odds_to_solve = 1e5
     am_params["odds-to-solve"] = odds_to_solve
     if time_limit is not None:
         am_params["l"] = check_quantity(time_limit, units.second).value

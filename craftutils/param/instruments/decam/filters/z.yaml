@@ -1,0 +1,10 @@
+band_name: null
+data_path: instruments/decam/filters/z
+formatted_name: null
+frb_repo_name: DECam_z
+instrument: decam
+name: z
+svo_service:
+  id: [z, z_filter]
+  instrument: DECam
+cmap: cmr.ghostlight

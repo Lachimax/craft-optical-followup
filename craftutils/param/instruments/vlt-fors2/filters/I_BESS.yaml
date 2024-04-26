@@ -1,0 +1,6 @@
+data_path: /home/lachlan/Data/instruments/vlt-fors2/filters/I_BESS
+instrument: vlt-fors2
+name: I_BESS
+svo_service: {id: ESO1077, instrument: null}
+formatted_name: $I_\mathrm{Bess}$
+cmap: cividis

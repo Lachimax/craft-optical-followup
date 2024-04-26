@@ -51,7 +51,6 @@ default_data_release = {
     "des": 2,
     "panstarrs1": 2,
     "panstarrs": 2,
-
 }
 
 
@@ -69,6 +68,7 @@ def cat_columns(cat, f: str = None):
     if f == "rank":
         f = {
             "delve": "r",
+            "decaps": "r",
             "des": "r",
             "sdss": "r",
             "skymapper": "r",
@@ -175,6 +175,47 @@ cat_instruments = {
 cat_systems = {
     "2mass": "vega"
 }
+
+
+def download_file(
+        file_url: str,
+        output_dir: str,
+        filename: str = None,
+        overwrite: bool = False,
+        headers: dict = None
+):
+    response = requests.get(file_url, stream=True, headers=headers)
+
+    if filename is None:
+        content_disposition = response.headers.get('Content-Disposition')
+        if content_disposition is not None:
+            value, params = cgi.parse_header(content_disposition)
+            filename = params["filename"]
+
+        if filename is None:
+            # last chance: get anything after the last '/'
+            filename = file_url[file_url.rindex('/') + 1:]
+
+        if filename is None:
+            _, filename = os.path.split(output_dir)
+
+    path = os.path.join(output_dir, filename.replace(":", "_"))
+    if os.path.exists(path) and not overwrite:
+        print(f"{path} already exists. Skipping.")
+    elif response.status_code == 200:
+        print(f"Writing asset to {path}...")
+        total_size_in_bytes = int(response.headers.get('content-length', 0))
+        block_size = 1024  # 1 Kibibyte
+        progress_bar = tqdm(total=total_size_in_bytes, unit='iB', unit_scale=True)
+        with open(path, 'wb') as f:
+            for chunk in response.iter_content(chunk_size=block_size):
+                progress_bar.update(len(chunk))
+                f.write(chunk)
+    else:
+        print(f"No file retrieved from {file_url}")
+        response = None
+
+    return response
 
 
 def svo_filter_id(facility_name: str, instrument_name: str, filter_name: str) -> str:
@@ -327,39 +368,21 @@ def save_eso_asset(
 ):
     print("Downloading asset from:")
     print(file_url)
-    headers = None
+
     token = login_eso()
     if token is not None:
         headers = {"Authorization": "Bearer " + keys["eso_auth_token"]}
-        response = requests.get(file_url, stream=True, headers=headers)
     else:
         # Trying to download anonymously
-        response = requests.get(file_url, stream=True, headers=headers)
+        headers = None
 
-    if filename is None:
-        content_disposition = response.headers.get('Content-Disposition')
-        if content_disposition is not None:
-            value, params = cgi.parse_header(content_disposition)
-            filename = params["filename"]
-
-        if filename is None:
-            # last chance: get anything after the last '/'
-            filename = file_url[file_url.rindex('/') + 1:]
-
-    path = os.path.join(output, filename.replace(":", "_"))
-    if os.path.exists(path) and not overwrite:
-        print(f"{path} already exists. Skipping.")
-    elif response.status_code == 200:
-        print(f"Writing asset to {path}...")
-        total_size_in_bytes = int(response.headers.get('content-length', 0))
-        block_size = 1024  # 1 Kibibyte
-        progress_bar = tqdm(total=total_size_in_bytes, unit='iB', unit_scale=True)
-        with open(path, 'wb') as f:
-            for chunk in response.iter_content(chunk_size=block_size):
-                progress_bar.update(len(chunk))
-                f.write(chunk)
-    else:
-        response = None
+    response = download_file(
+        file_url=file_url,
+        output_dir=output,
+        filename=filename,
+        overwrite=overwrite,
+        headers=headers
+    )
 
     return response
 
@@ -422,25 +445,63 @@ def print_eso_calselector_info(description: str, mode_requested: str):
 
 
 def save_eso_raw_data_and_calibs(
-        output: str, program_id: str, date_obs: Union[str, Time],
-        instrument: str, mode: str,
+        output: str,
+        date_obs: Union[str, Time],
+        instrument: str,
+        mode: str,
+        fil: str = None,
+        program_id: str = None,
         obj: str = None,
-        coord_tol: units.Quantity = 1.0 * units.arcmin
+        coord_tol: units.Quantity = 1.0 * units.arcmin,
+        data_type: str = "science"
 ):
     u.mkdir_check(output)
     instrument = instrument.lower()
     login_eso()
     print(f"Querying the ESO TAP service at {eso_tap_url}")
+    data_type = data_type.lower()
+    dp_cat = {
+        "science": "SCIENCE",
+        "standard": "CALIB"
+    }[data_type]
+
+    dp_type = {
+        "science": None,
+        "standard": "STD"
+    }[data_type]
+
     query = query_eso_raw(
-        program_id=program_id, date_obs=date_obs, obj=obj, instrument=instrument, mode=mode, coord_tol=coord_tol
+        program_id=program_id,
+        date_obs=date_obs,
+        obj=obj,
+        instrument=instrument,
+        mode=mode,
+        coord_tol=coord_tol,
+        dp_cat=dp_cat,
+        dp_type=dp_type,
+        fil=fil
     )
     raw_frames = get_eso_raw_frame_list(query=query)
+    print("Found science frames:")
+    for frame in raw_frames["url"]:
+        print("\t", frame)
     calib_urls = get_eso_calib_associations_all(raw_frames=raw_frames)
+    print("Found calibrations frames:")
+    for frame in calib_urls:
+        print("\t", frame)
     urls = list(raw_frames['url']) + calib_urls
+    urls.sort(reverse=True)
+    print("All frames:")
+    for frame in urls:
+        print("\t", frame)
+    for frame in calib_urls:
+        print("\t", frame)
     if not urls:
         print("No data was found in the raw ESO archive for the given parameters.")
     for url in urls:
-        save_eso_asset(file_url=url, output=output)
+        response = save_eso_asset(file_url=url, output=output)
+        if not response:
+            print(f"Could not retrieve following file; do you have permission, and are you logged in?", "\n", url)
     return urls
 
 
@@ -481,7 +542,11 @@ def query_eso_raw(
         obj: Union[str, SkyCoord] = None,
         coord_tol: units.Quantity = 1.0 * units.arcmin,
         instrument: str = "fors2",
-        mode: str = "imaging"):
+        mode: str = "imaging",
+        dp_cat: str = "science",
+        dp_type: str = None,
+        fil: str = None
+):
     instrument = instrument.lower()
     mode = mode.lower()
     if mode not in ["imaging", "spectroscopy"]:
@@ -502,7 +567,7 @@ def query_eso_raw(
         date_obs = Time(date_obs)
     query = f"""SELECT {select}
 FROM dbo.raw
-WHERE dp_cat='SCIENCE'
+WHERE dp_cat='{dp_cat.upper()}'
 AND instrument='{instrument}'
 AND {mode_str}
 """
@@ -511,6 +576,10 @@ AND {mode_str}
     if date_obs is not None:
         query += f"AND date_obs>='{(date_obs - 0.5).to_datetime().date()}'\n" \
                  f"AND date_obs<='{(date_obs + 1).to_datetime().date()}'\n"
+    if dp_type is not None:
+        query += f"AND dp_type='{dp_type.upper()}'\n"
+    if fil is not None:
+        query += f"AND filter_path='{fil.upper()}'"
     if obj is not None:
         if isinstance(obj, str):
             query += f"AND target='{obj}'\n"
@@ -872,7 +941,7 @@ def retrieve_sdss_photometry(
     query += f"WHERE ra BETWEEN {ra - radius} AND {ra + radius} "
     query += f"AND dec BETWEEN {dec - radius} AND {dec + radius} "
     print(f"Retrieving photometry from SDSS DR{data_release} via SciServer for field at {ra}, {dec}...")
-    print(query)
+    # print(query)
     try:
         df = CasJobs.executeQuery(sql=query, context=f'DR{data_release}')
     except requests.exceptions.ChunkedEncodingError:
@@ -972,7 +1041,8 @@ def retrieve_delve_photometry(
 ):
     if data_release is None:
         data_release = default_data_release["delve"]
-    print(f"\nQuerying DELVE DR{data_release} archive for field centring on RA={ra}, DEC={dec} with radius {radius} deg")
+    print(
+        f"\nQuerying DELVE DR{data_release} archive for field centring on RA={ra}, DEC={dec} with radius {radius} deg")
     radius = u.dequantify(radius, unit=units.deg)
     url = f"http://datalab.noirlab.edu/tap/sync?REQUEST=doQuery&lang=ADQL&FORMAT=csv&QUERY=SELECT%20q3c_dist" \
           f"%28ra%2Cdec%2C%20247.725%2C-0.972%29%2A3600%20AS%20dist%2C%20%2A%20FROM%20delve_dr{data_release}.objects%20WHERE%20%27t" \

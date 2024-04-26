@@ -167,8 +167,15 @@ class Field:
     def __repr__(self):
         return self.__str__()
 
-    def objects_pipeline(self):
-        if u.select_yn_exit("Update photometry from all epochs?"):
+    def objects_pipeline(
+            self,
+            do_update: bool = None,
+            do_path: bool = None,
+            do_properties: bool = None,
+    ):
+        if do_update is None:
+            do_update = u.select_yn_exit("Update photometry from all epochs?")
+        if do_update:
             epochs = self.gather_epochs_imaging()
             for epoch_name in epochs:
                 epoch = ep.epoch_from_directory(epoch_name)
@@ -179,10 +186,16 @@ class Field:
                 epoch.param_file["get_photometry"]["skip_path"] = True
                 # Run only the last stage of each epoch pipeline
                 epoch.pipeline()
+
         if isinstance(self, FRBField):
-            if u.select_yn_exit("Run PATH on imaging?"):
+            if do_path is None:
+                do_path = u.select_yn_exit("Run PATH on imaging?")
+            if do_path:
                 pass
-        if u.select_yn_exit("Refine photometry?"):
+
+        if do_properties is None:
+            do_properties = u.select_yn_exit("Refine photometry?")
+        if do_properties:
             self.object_properties()
 
     def mkdir(self):
@@ -656,6 +669,8 @@ class Field:
             self.add_object_from_dict(obj)
         if obj not in self.objects:
             self.objects.append(obj)
+        if obj.name in self.objects_dict:
+            warnings.warn("An object with this name already exists here; it is being overwritten.")
         self.objects_dict[obj.name] = obj
         obj.field = self
 
@@ -670,12 +685,10 @@ class Field:
 
     def object_properties(self):
         self.objects.sort(key=lambda o: o.name, reverse=True)
-        print(self.objects)
         n_phot = 0
         for obj in self.objects:
             if not obj.optical:
                 continue
-            print(obj.name)
             obj.load_output_file()
             obj.update_output_file()
             obj.push_to_table(select=True)
@@ -919,32 +932,38 @@ class Field:
                         message=f"Is '{field_name}' the TNS name of the FRB?",
                 ):
                     tns_name = field_name
-                else:
-                    tns_name = u.user_input(
-                        message=f"Please enter the FRB TNS name, if it has one. Otherwise, leave blank.",
-                    )
-                    if tns_name in ["", " ", 'None']:
-                        tns_name = None
-            if ra_err is None:
-                ra_err = 0.
-            if dec_err is None:
-                dec_err = 0.
+            if tns_name is None:
+                tns_name = u.user_input(
+                    message=f"Please enter the FRB TNS name, if it has one. Otherwise, leave blank.",
+                )
+                if tns_name in ["", " ", 'None']:
+                    tns_name = None
+
+            dm = u.user_input(
+                "If you know the burst DM, please enter that now in units of pc / cm^3. Otherwise, leave blank.",
+                input_type=float
+            )
+            if dm in ["", " ", 'None']:
+                dm = 0 * objects.dm_units
+            else:
+                dm *= objects.dm_units
+
             date = u.user_input(
                 "If you have a precise FRB arrival time, please enter that now; otherwise, leave blank."
             )
             if date in ["", " ", 'None']:
-                date = objects.FRB._date_from_name(field_name)
+               date = objects.FRB._date_from_name(field_name)
 
             frb_dict = objects.FRB.default_params()
             host_dict = objects.FRB.default_host_params(
                 frb_name=field_name,
                 position=position
             )
-
             yaml_dict["frb"] = field_name
 
             frb_dict["name"] = field_name
             frb_dict["date"] = date
+            frb_dict["dm"] = dm
             frb_dict["position"] = position
             frb_dict["position_err"]["a"]["stat"] = float(ra_err)
             frb_dict["position_err"]["b"]["stat"] = float(dec_err)
@@ -956,7 +975,7 @@ class Field:
 
             p.save_params(field_param_path_yaml, yaml_dict)
             p.save_params(os.path.join(object_param_path_yaml, f"{field_name}.yaml"), frb_dict)
-            p.save_params(os.path.join(object_param_path_yaml, f"{host_name}.yaml"), frb_dict)
+            p.save_params(os.path.join(object_param_path_yaml, f"{host_name}.yaml"), host_dict)
 
         print(f"Template parameter file created at '{field_param_path_yaml}'")
         input("Please edit this file before proceeding, then press Enter to continue.")
@@ -1162,12 +1181,12 @@ class FRBField(Field):
             # ticks: int = None, interval: str = 'minmax',
             # font_size: int = 12,
             # reverse_y=False,
-            frb_kwargs: dict = {},
-            imshow_kwargs: dict = {},
-            normalize_kwargs: dict = {},
+            frb_kwargs: dict = None,
+            imshow_kwargs: dict = None,
+            normalize_kwargs: dict = None,
             output_path: str = None,
             show_legend: bool = False,
-            latex_kwargs: dict = {},
+            latex_kwargs: dict = None,
             do_latex_setup: bool = True,
             draw_scale_bar: bool = False,
             scale_bar_kwargs: dict = {},
@@ -1195,12 +1214,21 @@ class FRBField(Field):
         :param kwargs:
         :return: ax, figure
         """
+        if imshow_kwargs is None:
+            imshow_kwargs = {}
+        if frb_kwargs is None:
+            frb_kwargs = {}
+        if latex_kwargs is None:
+            latex_kwargs = {}
+
         if do_latex_setup:
             pl.latex_setup(**latex_kwargs)
         if not isinstance(self.frb, objects.FRB):
             raise TypeError("self.frb has not been set properly for this FRBField.")
         if centre is None:
             centre = self.frb.host_galaxy.position
+        if centre is None:
+            centre = self.frb.position
 
         if draw_scale_bar:
             kwargs["scale_bar_object"] = self.frb.host_galaxy

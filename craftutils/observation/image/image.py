@@ -243,6 +243,8 @@ def fits_table_all(
 def detect_instrument(path: str, ext: int = 0, fail_quietly: bool = False):
     if not os.path.exists(path) or not os.path.isfile(path):
         raise FileNotFoundError(f"No image found at {path}")
+    elif path.endswith("_outputs.yaml"):
+        path = path.replace("_outputs.yaml", ".fits")
 
     try:
         with fits.open(path) as file:
@@ -321,14 +323,26 @@ class Image:
         if not ignore_missing_path and not os.path.isfile(path):
             raise FileNotFoundError(f"The image file {path} does not exist.")
         active_images[path] = self
+
         if path.endswith("_outputs.yaml"):
             self.output_file = path
             self.path = path.replace("_outputs.yaml", ".fits")
         elif path.endswith(".fits"):
             self.path = path
             self.output_file = path.replace(".fits", "_outputs.yaml")
+        elif path.endswith(".fits.fz"):
+            self.path = path
+            self.output_file = path.replace(".fits.fz", "_outputs.yaml")
         else:
-            raise ValueError(f"Not a valid fits file: {path}")
+            self.path = path
+            self.output_file = path.replace(
+                os.path.splitext(path)[-1],
+                "_outputs.yaml"
+            )
+
+        # Attempt opening the fits file to test whether it's valid; let astropy handle the error.
+        test = fits.open(self.path, "readonly")
+        test.close()
 
         self.data_path, self.filename = os.path.split(self.path)
         self.name = self.get_id()

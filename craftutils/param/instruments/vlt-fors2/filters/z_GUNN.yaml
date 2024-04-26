@@ -1,0 +1,4 @@
+data_path: /home/lachlan/Data/instruments/vlt-fors2/filters/z_GUNN
+instrument: vlt-fors2
+name: z_GUNN
+svo_service: {id: Gunn_z, instrument: null}

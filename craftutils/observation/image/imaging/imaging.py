@@ -939,7 +939,7 @@ class ImagingImage(Image):
 
     def zeropoint(
             self,
-            cat_path: str,
+            cat: Union[str, table.QTable],
             output_path: str,
             cat_name: str,
             cat_zeropoint: units.Quantity = 0.0 * units.mag,
@@ -993,7 +993,7 @@ class ImagingImage(Image):
         zp_dict = ph.determine_zeropoint_sextractor(
             sextractor_cat=self.source_cat.table,
             image=self.path,
-            cat_path=cat_path,
+            cat=cat,
             cat_name=cat_name,
             output_path=output_path,
             image_name=image_name,
@@ -1042,11 +1042,18 @@ class ImagingImage(Image):
             image_name="self",
             **zp_dict
         )
-        self.zeropoint_output_paths[cat_name.lower()] = output_path
+        if isinstance(output_path, str):
+            self.zeropoint_output_paths[cat_name.lower()] = output_path
+            path = output_path
+        else:
+            path = None
+
+        print()
+
         self.add_log(
             action=f"Calculated zeropoint as {zp_dict['zeropoint_img']} +/- {zp_dict['zeropoint_img_err']}, from {zp_dict['catalogue']}.",
             method=self.zeropoint,
-            output_path=output_path
+            output_path=path
         )
         self.update_output_file()
         return zp_dict
@@ -1236,7 +1243,7 @@ class ImagingImage(Image):
         mag_no_ext_corr, mag_no_ext_corr_err = ph.magnitude_instrumental(
             flux=flux,
             flux_err=flux_err,
-            exp_time=self.extract_exposure_time(),
+            exp_time=kwargs["exp_time"],
             exp_time_err=0.0 * units.second,
             zeropoint=zp_dict['zeropoint'],
             zeropoint_err=zp_dict['zeropoint_err'],
@@ -2680,8 +2687,7 @@ class ImagingImage(Image):
         else:
             scaling_data = normalize_kwargs.pop("data")
 
-        if "cmap" not in imshow_kwargs:
-            if self.filter and self.filter.cmap:
+        if "cmap" not in imshow_kwargs and self.filter and self.filter.cmap:
                 imshow_kwargs["cmap"] = self.filter.cmap
 
         # if "vmin" not in normalize_kwargs:
@@ -3483,9 +3489,17 @@ class ImagingImage(Image):
         model_init = model_type(**init_params)
         fitter = fitter_type(calc_uncertainties=False)
         y, x = np.mgrid[:data.shape[0], :data.shape[1]]
+
+
+
         plt.imshow(weights[bottom - 10:top + 10, left - 10:right + 10])
         plt.colorbar()
-        plt.show()
+        if isinstance(write, str):
+            u.mkdir_check_nested(write)
+            plt.savefig(write.replace(".fits", "_plot.png"))
+        else:
+            plt.show()
+        plt.close()
         model = fitter(
             model_init,
             x, y,

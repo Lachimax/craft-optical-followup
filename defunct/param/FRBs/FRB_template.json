@@ -1,1 +1,0 @@
-{"data_dir": "/home/lachlan/Data/FRBxxxxxx/FORS2/", "f_template_dir": "/home/lachlan/Data/FRBxxxxxx/FORS2/MJDxxxxx/", "f_template_epoch": 2, "f_template_image": "/home/lachlan/Data/FRBxxxxxx/FORS2/MJDxxxxx/A-no_back_subtract/8-astrometry/g_astrometry.fits", "filters": ["g_HIGH"], "mjd_burst": 58000, "z": 0.3}
