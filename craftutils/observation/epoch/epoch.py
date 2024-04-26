@@ -21,6 +21,7 @@ import ccdproc
 import craftutils.astrometry as astm
 import craftutils.fits_files as ff
 import craftutils.observation as obs
+import craftutils.observation.pipeline as ppl
 import craftutils.observation.field as fld
 import craftutils.observation.filters.eso.vlt_fors2
 import craftutils.observation.objects as objects
@@ -264,7 +265,7 @@ def _output_img_dict_list(dictionary: dict):
     return out_dict
 
 
-class Epoch:
+class Epoch(ppl.Pipeline):
     instrument_name = "dummy-instrument"
     mode = "dummy_mode"
     frame_class = image.Image
@@ -283,21 +284,18 @@ class Epoch:
             **kwargs
     ):
 
-        self.quiet = False
-        if "quiet" in kwargs:
-            self.quiet = kwargs["quiet"]
+        super().__init__(
+            param_path=param_path,
+            name=name,
+            data_path=data_path,
+            do_stages=do_stages,
+            **kwargs
+        )
 
         # Input attributes
-        self.param_path = param_path
-        self.name = name
+
         self.field = field
-        self.data_path = None
-        self.data_path_relative = None
-        if data_path is not None:
-            self.data_path = os.path.join(p.data_dir, data_path)
-            self.data_path_relative = data_path
-        if data_path is not None:
-            u.mkdir_check_nested(self.data_path)
+
         u.debug_print(2, f"__init__(): {self.name}.data_path ==", self.data_path)
         self.instrument_name = instrument
         try:
@@ -315,18 +313,8 @@ class Epoch:
         self.program_id = program_id
         self.target = target
 
-        self.do = do_stages
-
-        # Written attributes
-        self.output_file = None  # This will be set during the load_output_file call
-        self.stages_complete = {}
-        self.log = log.Log()
-
         self.binning = None
         self.binning_std = None
-
-        # Data reduction paths
-        self.paths = {}
 
         # Frames
         self.frames_raw = []
@@ -345,15 +333,6 @@ class Epoch:
 
         self.coadded = {}
 
-        u.debug_print(2, f"Epoch.__init__(): kwargs ==", kwargs)
-
-        self.do_kwargs = {}
-        u.debug_print(2, "do" in kwargs)
-        if "do" in kwargs:
-            self.do_kwargs = kwargs["do"]
-
-        u.debug_print(2, f"Epoch.__init__(): {self}.do_kwargs ==", self.do_kwargs)
-
         dkwargs = {}
         if "filters" in self.__dict__:
             dkwargs["bands"] = self.__dict__["filters"]
@@ -366,17 +345,11 @@ class Epoch:
             **dkwargs
         )
 
-        self.param_file = kwargs
-
         self.combined_from = []
 
         self.combined_epoch = False
         if "combined_epoch" in kwargs:
             self.combined_epoch = kwargs["combined_epoch"]
-
-        # self.load_output_file()
-
-        self.stage_params: dict = {}
 
         self.exclude_frames: list = []
         if "exclude_frames" in kwargs and isinstance(kwargs["exclude_frames"], list):
@@ -397,6 +370,9 @@ class Epoch:
     def __str__(self):
         return str(self.name)
 
+    def __repr__(self):
+        return str(self)
+
     def date_str(self, include_time: bool = False):
         if not isinstance(self.date, Time):
             return str(self.date)
@@ -410,22 +386,6 @@ class Epoch:
             return 0.
         else:
             return self.date.mjd
-
-    def add_log(
-            self,
-            action: str,
-            method=None,
-            method_args=None,
-            path: str = None,
-            packages: List[str] = None,
-    ):
-        self.log.add_log(
-            action=action,
-            method=method,
-            method_args=method_args,
-            output_path=path,
-            packages=packages)
-        # self.update_output_file()
 
     @classmethod
     def stages(cls):
@@ -442,113 +402,6 @@ class Epoch:
         }
 
         return stages
-
-    @classmethod
-    def enumerate_stages(cls, show: bool = True):
-        stages = list(enumerate(cls.stages()))
-        if show:
-            for i, stage in stages:
-                print(f"{i}. {stage}")
-        return stages
-
-    def pipeline(self, no_query: bool = False, **kwargs):
-        """
-        Performs the pipeline methods given in stages() for this Epoch.
-        :param no_query: If True, skips the query stage and performs all stages (unless "do" was provided on __init__),
-            in which case it will perform only those stages without query no matter what no_query is.
-        :return:
-        """
-        skip_cats = False
-        if "skip_cats" in kwargs:
-            skip_cats = kwargs["skip_cats"]
-        self._pipeline_init(skip_cats=skip_cats)
-        # u.debug_print(2, "Epoch.pipeline(): kwargs ==", kwargs)
-
-        # Loop through stages list specified in self.stages()
-        stages = self.stages()
-        u.debug_print(1, f"Epoch.pipeline(): type(self) ==", type(self))
-        u.debug_print(2, f"Epoch.pipeline(): stages ==", stages)
-        last_complete = None
-        for n, name in enumerate(stages):
-            stage = stages[name]
-            message = stage["message"]
-            # If default is present, then it defines whether the stage should be performed by default. If True, it
-            # must be switched off by the do_key to skip the step; if False, then do_key must be set to True to perform
-            # the step. This should work.
-            if "default" in stage:
-                do_this = stage["default"]
-            else:
-                do_this = True
-
-            # Check if name is in "do" dict. If it is, defer to that setting; if not, defer to default.
-            if name in self.do_kwargs:
-                do_this = self.do_kwargs[name]
-
-            u.debug_print(2, f"Epoch.pipeline(): {self}.stages_complete ==", self.stages_complete)
-
-            if name in self.param_file:
-                stage_kwargs = self.param_file[name]
-            else:
-                stage_kwargs = {}
-
-            # Check if we should do this stage
-            if do_this and (no_query or self.query_stage(
-                    message=message,
-                    n=n,
-                    stage_name=name,
-                    stage_kwargs=stage_kwargs
-            )):
-                self.stage_params[name] = stage_kwargs.copy()
-                if not self.quiet:
-                    print(f"Performing processing step {n}: {name} with keywords:\n", stage_kwargs)
-                # Construct path; if dir_name is None then the step is pathless.
-                dir_name = f"{n}-{name}"
-                output_dir = os.path.join(self.data_path, dir_name)
-                output_dir_backup = output_dir + "_backup"
-                u.rmtree_check(output_dir_backup)
-                u.move_check(output_dir, output_dir_backup)
-                u.mkdir_check_nested(output_dir, remove_last=False)
-                self.set_path(name, output_dir)
-
-                if stage["method"](self, output_dir=output_dir, **stage_kwargs) is not False:
-                    self.stages_complete[name] = {
-                        "status": "complete",
-                        "time": Time.now(),
-                        "kwargs": stage_kwargs
-                    }
-
-                    if "log_message" in stage and stage["log_message"] is not None:
-                        log_message = stage["log_message"]
-                    else:
-                        log_message = f"Performed processing step {dir_name}."
-                    self.add_log(log_message, method=stage["method"], path=output_dir, method_args=stage_kwargs)
-
-                    u.rmtree_check(output_dir_backup)
-
-                last_complete = dir_name
-                self.update_output_file()
-
-            elif not do_this:
-                self.stages_complete[name] = {
-                    "status": "skipped",
-                    "time": Time.now(),
-                    "kwargs": {}
-                }
-
-        return last_complete
-
-    def _pipeline_init(self, skip_cats: bool = False):
-        if self.data_path is not None:
-            u.debug_print(2, f"{self}._pipeline_init(): self.data_path ==", self.data_path)
-            u.mkdir_check_nested(self.data_path)
-        else:
-            raise ValueError(f"data_path has not been set for {self}")
-        if not skip_cats:
-            self.field.retrieve_catalogues()
-        self.do = _check_do_list(self.do, stages=list(self.stages().keys()))
-        if not self.quiet and self.do:
-            print(f"Doing stages {self.do}")
-        self.paths["download"] = os.path.join(self.data_path, "0-download")
 
     def proc_initial_setup(self, output_dir: str, **kwargs):
         self._initial_setup(output_dir=output_dir, **kwargs)

@@ -15,6 +15,7 @@ from astropy.visualization import make_lupton_rgb
 
 import craftutils.astrometry as astm
 import craftutils.observation as obs
+import craftutils.observation.pipeline as ppl
 import craftutils.observation.objects as objects
 import craftutils.observation.image as image
 import craftutils.observation.instrument as inst
@@ -70,7 +71,7 @@ def list_fields(include_std: bool = False):
 
 
 @u.export
-class Field:
+class Field(ppl.Pipeline):
     def __init__(
             self,
             name: str = None,
@@ -167,25 +168,53 @@ class Field:
     def __repr__(self):
         return self.__str__()
 
+    @classmethod
+    def stages(cls):
+        return {
+            "update_photometry": {
+                "method": cls.pipe_update_photometry,
+                "message": "Update photometry from all epochs?"
+            }
+        }
+
+    # def pipeline(self, no_query: bool = False, **kwargs):
+    #     """
+    #
+    #     :param no_query:
+    #     :param kwargs:
+    #     :return:
+    #     """
+    #     stages = self.stages()
+    #     last_complete = None
+    #     for n, (name, stage) in enumerate(stages.items()):
+    #         if "default" in stage:
+    #             do_this = stage["default"]
+    #         else:
+    #             do_this = True
+    #
+    #         # Check if name is in "do" dict. If it is, defer to that setting; if not, defer to default.
+    #         if name in self.do_kwargs:
+    #             do_this = self.do_kwargs[name]
+    #
+    #
+    # def pipe_update_photometry(self, **kwargs):
+    #     epochs = self.gather_epochs_imaging()
+    #     for epoch_name in epochs:
+    #         epoch = ep.epoch_from_directory(epoch_name)
+    #         epoch.do = [-1]
+    #         if "get_photometry" not in epoch.param_file:
+    #             epoch.param_file["get_photometry"] = {}
+    #         epoch.param_file["get_photometry"]["skip_plots"] = True
+    #         epoch.param_file["get_photometry"]["skip_path"] = True
+    #         # Run only the last stage of each epoch pipeline
+    #         epoch.pipeline()
+
     def objects_pipeline(
             self,
             do_update: bool = None,
             do_path: bool = None,
             do_properties: bool = None,
     ):
-        if do_update is None:
-            do_update = u.select_yn_exit("Update photometry from all epochs?")
-        if do_update:
-            epochs = self.gather_epochs_imaging()
-            for epoch_name in epochs:
-                epoch = ep.epoch_from_directory(epoch_name)
-                epoch.do = [-1]
-                if "get_photometry" not in epoch.param_file:
-                    epoch.param_file["get_photometry"] = {}
-                epoch.param_file["get_photometry"]["skip_plots"] = True
-                epoch.param_file["get_photometry"]["skip_path"] = True
-                # Run only the last stage of each epoch pipeline
-                epoch.pipeline()
 
         if isinstance(self, FRBField):
             if do_path is None:
@@ -952,7 +981,7 @@ class Field:
                 "If you have a precise FRB arrival time, please enter that now; otherwise, leave blank."
             )
             if date in ["", " ", 'None']:
-               date = objects.FRB._date_from_name(field_name)
+                date = objects.FRB._date_from_name(field_name)
 
             frb_dict = objects.FRB.default_params()
             host_dict = objects.FRB.default_host_params(
