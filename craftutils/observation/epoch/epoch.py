@@ -1123,6 +1123,14 @@ class ImagingEpoch(Epoch):
                 "message": "Do source extraction in dual-mode, using deepest image as footprint?",
                 "default": False,
             },
+            "finalise": {
+                "method": cls.proc_finalise,
+                "message": "Finalise science files?",
+                "default": True,
+                "keywords": {
+
+                }
+            },
             "get_photometry": {
                 "method": cls.proc_get_photometry,
                 "message": "Get photometry?",
@@ -2126,7 +2134,94 @@ class ImagingEpoch(Epoch):
                 template=self.deepest
             )
 
-    def proc_get_photometry(self, output_dir: str, **kwargs):
+    def proc_finalise(
+            self,
+            output_dir: str,
+            **kwargs
+    ):
+
+        self.finalise(**kwargs)
+
+    def finalise(
+            self,
+            image_type: str = "final",
+            **kwargs
+    ):
+        """Performs a number of wrap-up actions:
+        - Ensures final fits files have correct header information
+        - Renames and copies final files to appropriate paths
+        - Updates epoch tables
+
+        :return:
+        """
+
+        staging_dir = os.path.join(
+            p.data_dir,
+            "Finalised"
+        )
+
+        image_dict = self._get_images(image_type=image_type)
+
+        for fil in self.coadded_unprojected:
+
+            img = self.coadded_unprojected[fil]
+            img_prime = image_dict[fil]
+
+            if img is None:
+                continue
+
+            if isinstance(self.instrument, inst.Instrument):
+                inst_name = self.instrument.nice_name().replace('/', '-')
+            else:
+                inst_name = self.instrument_name
+
+            if self.combined_epoch:
+                date = "combined"
+            else:
+                date = self.date_str()
+
+            nice_name = f"{self.field.name}_{inst_name}_{fil.replace('_', '-')}_{date}.fits"
+
+            # Make sure various common properties are transferred to image derivatives.
+            if img != img_prime:
+                img.clone_diagnostics(img_prime)
+            if isinstance(self.coadded_subtracted[fil], image.CoaddedImage):
+                self.coadded_subtracted[fil].clone_diagnostics(img_prime)
+            if isinstance(self.coadded_subtracted_trimmed[fil], image.CoaddedImage):
+                self.coadded_subtracted_trimmed[fil].clone_diagnostics(img_prime)
+            if isinstance(self.coadded_subtracted_patch[fil], image.CoaddedImage):
+                self.coadded_subtracted_patch[fil].clone_diagnostics(img_prime)
+
+            img.copy_with_outputs(os.path.join(
+                self.data_path,
+                nice_name)
+            )
+
+            img.copy_with_outputs(
+                os.path.join(
+                    staging_dir,
+                    nice_name
+                )
+            )
+
+            if isinstance(self.field.survey, survey.Survey):
+                refined_path = self.field.survey.refined_stage_path
+
+                if refined_path is not None:
+                    img.copy_with_outputs(
+                        os.path.join(
+                            refined_path,
+                            nice_name
+                        )
+                    )
+
+        self.push_to_table()
+
+    def proc_get_photometry(
+            self,
+            output_dir: str,
+            **kwargs
+    ):
         if "image_type" in kwargs and isinstance(kwargs["image_type"], str):
             image_type = kwargs.pop("image_type")
         else:
@@ -2246,12 +2341,16 @@ class ImagingEpoch(Epoch):
             match_tolerance: units.Quantity = 1 * units.arcsec,
             **kwargs
     ):
-        """
-        Retrieve photometric properties of key objects and write to disk.
+        """Retrieve photometric properties of key objects and write to disk.
 
         :param path: Path to which to write the data products.
+        :param image_type:
+        :param dual:
+        :param match_tolerance:
+        :param kwargs:
         :return:
         """
+
         if not self.quiet:
             print(f"Getting finalised photometry for key objects, in {image_type}.")
 
@@ -2259,29 +2358,28 @@ class ImagingEpoch(Epoch):
 
         obs.load_master_objects_table()
 
-        staging_dir = os.path.join(
-            p.data_dir,
-            "Finalised"
-        )
-
         skip_plots = False
         if "skip_plots" in kwargs:
             skip_plots = kwargs["skip_plots"]
 
         image_dict = self._get_images(image_type=image_type)
         u.mkdir_check(path)
+
         # Loop through filters
-        for fil in image_dict:
+        for fil, img in image_dict.items():
+
             fil_output_path = os.path.join(path, fil)
             u.mkdir_check(fil_output_path)
-            img = image_dict[fil]
 
             if "secure" not in img.depth:
                 img.estimate_depth()
             if not self.quiet:
                 print("Getting photometry for", img)
 
+            # Transform source extractor magnitudes using zeropoint.
             img.calibrate_magnitudes(zeropoint_name="best", dual=dual, force=True)
+
+            # Set up lists for matches to turn into a subset of the SE catalogue
             rows = []
             names = []
             separations = []
@@ -2303,17 +2401,22 @@ class ImagingEpoch(Epoch):
                     output_path=os.path.join(fil_output_path, "plot_quick.pdf")
                 )
 
+            # Get astrometric uncertainty from images
             img.extract_astrometry_err()
-            tolerance_eff = match_tolerance + img.astrometry_err
+            # Add that to the matching tolerance in quadrature (seems like the right thing to do?)
+            tolerance_eff = np.sqrt(match_tolerance ** 2 + img.astrometry_err ** 2)
 
+            # Loop through this field's 'objects' dictionary and try to match them with the SE catalogue
             for obj_name, obj in self.field.objects_dict.items():
+                # If the object is not expected to be visible in the optical/NIR, skip it.
                 if obj is None or obj.position is None or not obj.optical:
                     continue
                 print(f"Looking for matches to {obj_name} ({obj.position.to_string('hmsdms')})")
                 # obj.load_output_file()
                 plt.close()
-                # Get nearest Source-Extractor object:
+                # Get nearest Source-Extractor object
                 nearest, separation = img.find_object(obj.position, dual=dual)
+                # Stick it in the table lists
                 names.append(obj.name)
                 rows.append(nearest)
                 separations.append(separation.to(units.arcsec))
@@ -2324,7 +2427,8 @@ class ImagingEpoch(Epoch):
                     good_image_path = self.coadded_subtracted[fil].path
                 else:
                     good_image_path = self.coadded_unprojected[fil].path
-                # If the nearest object is outside tolerance, declare that no match was found.
+                # If the nearest object is outside tolerance, declare that no match was found and send a dummy entry to
+                # the object's photometry table.
                 if separation > tolerance_eff:
                     obj.add_photometry(
                         instrument=self.instrument_name,
@@ -2361,6 +2465,7 @@ class ImagingEpoch(Epoch):
                     print(
                         f"No object detected at position (nearest match at {nearest['RA']}, {nearest['DEC']}, separation {separation.to('arcsec')}).")
                     print()
+                # Otherwise,  send the match's information to the object's photometry table (and make plots).
                 else:
                     u.debug_print(2, "ImagingImage.get_photometry(): nearest.colnames ==", nearest.colnames)
                     err = nearest[f'MAGERR_AUTO_ZP_best']
@@ -2424,6 +2529,7 @@ class ImagingEpoch(Epoch):
                         do_mask=img.mask_nearby()
                     )
 
+                    # Do more plots with FRB ellipses if this is an FRBField
                     if isinstance(self.field, fld.FRBField) and not skip_plots:
 
                         frames = [
@@ -2478,6 +2584,7 @@ class ImagingEpoch(Epoch):
                                 pl.latex_off()
                                 del ax, fig, other
 
+            # Make the subset SE table
             if len(rows) > 0:
                 tbl = table.vstack(rows)
                 tbl.add_column(names, name="NAME")
@@ -2495,61 +2602,6 @@ class ImagingEpoch(Epoch):
                     format="ascii.csv",
                     overwrite=True
                 )
-
-        for fil in self.coadded_unprojected:
-
-            img = self.coadded_unprojected[fil]
-            img_prime = image_dict[fil]
-
-            if img is None:
-                continue
-
-            if isinstance(self.instrument, inst.Instrument):
-                inst_name = self.instrument.nice_name().replace('/', '-')
-            else:
-                inst_name = self.instrument_name
-
-            if self.combined_epoch:
-                date = "combined"
-            else:
-                date = self.date_str()
-
-            nice_name = f"{self.field.name}_{inst_name}_{fil.replace('_', '-')}_{date}.fits"
-
-            # Make sure various common properties are transferred to image derivatives.
-            if img != img_prime:
-                img.clone_diagnostics(img_prime)
-            if isinstance(self.coadded_subtracted[fil], image.CoaddedImage):
-                self.coadded_subtracted[fil].clone_diagnostics(img_prime)
-            if isinstance(self.coadded_subtracted_trimmed[fil], image.CoaddedImage):
-                self.coadded_subtracted_trimmed[fil].clone_diagnostics(img_prime)
-            if isinstance(self.coadded_subtracted_patch[fil], image.CoaddedImage):
-                self.coadded_subtracted_patch[fil].clone_diagnostics(img_prime)
-
-            img.copy_with_outputs(os.path.join(
-                self.data_path,
-                nice_name)
-            )
-
-            img.copy_with_outputs(
-                os.path.join(
-                    staging_dir,
-                    nice_name
-                )
-            )
-
-            if isinstance(self.field.survey, survey.Survey):
-                refined_path = self.field.survey.refined_stage_path
-
-                if refined_path is not None:
-                    img.copy_with_outputs(
-                        os.path.join(
-                            refined_path,
-                            nice_name
-                        )
-                    )
-
-        self.push_to_table()
 
         for obj in self.field.objects:
             obj.update_output_file()
@@ -5263,6 +5315,7 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
             "source_extraction": ie_stages["source_extraction"],
             "photometric_calibration": ie_stages["photometric_calibration"],
             "dual_mode_source_extraction": ie_stages["dual_mode_source_extraction"],
+            "finalise": ie_stages["finalise"],
             "get_photometry": ie_stages["get_photometry"],
             # "get_photometry_all": ie_stages["get_photometry_all"]
         }
