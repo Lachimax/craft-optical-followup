@@ -152,7 +152,7 @@ class SpectroscopyEpoch(Epoch):
         file_first = flux_lines.index(header_line) + 1
         line = flux_lines[file_first]
         i_tab = line.find("|")
-        line_new = line[:i_tab+1] + " " + sensfunc_path + "\n"
+        line_new = line[:i_tab + 1] + " " + sensfunc_path + "\n"
         flux_lines[file_first] = line_new
         # Write back to file.
         u.write_list_to_file(path=flux_setup_path, file=flux_lines)
@@ -493,7 +493,8 @@ class SpectroscopyEpoch(Epoch):
             cls,
             name: str,
             field: Union['fld.Field', str] = None,
-            instrument: str = None
+            instrument: str = None,
+            quiet: bool = False
     ):
         if name in active_epochs:
             return active_epochs[name]
@@ -503,7 +504,8 @@ class SpectroscopyEpoch(Epoch):
         path = cls.build_param_path(
             field_name=field_name,
             instrument_name=instrument,
-            epoch_name=name)
+            epoch_name=name
+        )
         epoch = cls.from_file(param_file=path, field=field)
         print("In from_params:", epoch)
         return epoch

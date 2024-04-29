@@ -247,7 +247,7 @@ def detect_frame_value(file: Union['fits.HDUList', 'str'], ext: int = 0):
 
     return value
 
-
+@u.export
 def detect_edges(file: Union['fits.HDUList', 'str'], value: float = 0.0, ext: int = 0):
     """
     Detects the edges of a rectangular non-zero block, where the frame consists of a single value. For use with

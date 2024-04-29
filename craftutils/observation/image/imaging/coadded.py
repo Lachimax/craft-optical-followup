@@ -8,7 +8,7 @@ from astropy.coordinates import SkyCoord
 import craftutils.utils as u
 import craftutils.fits_files as ff
 
-from .imaging import ImagingImage
+from .image import ImagingImage
 from ..image import noise_read_unit, detect_instrument
 
 

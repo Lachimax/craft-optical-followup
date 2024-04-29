@@ -1,17 +1,21 @@
 import os
 from typing import Union, List
 
+from astropy.time import Time
+import astropy.units as units
+
 import craftutils.params as p
 import craftutils.utils as u
 import craftutils.observation.log as log
+from craftutils.observation.generic import Generic
 
 
-class Pipeline:
+class Pipeline(Generic):
 
     def __init__(
             self,
-            param_path: str = None,
             name: str = None,
+            param_path: str = None,
             data_path: str = None,
             do_stages: Union[list, str] = None,
             **kwargs
@@ -63,8 +67,14 @@ class Pipeline:
             method=method,
             method_args=method_args,
             output_path=path,
-            packages=packages)
-        # self.update_output_file()
+            packages=packages
+        )
+
+    def set_path(self, key: str, value: str):
+        self.paths[key] = value
+
+    def update_output_file(self):
+        p.update_output_file(self)
 
     @classmethod
     def stages(cls):
@@ -78,7 +88,53 @@ class Pipeline:
                 print(f"{i}. {stage}")
         return stages
 
-    def pipeline(self, no_query: bool = False, **kwargs):
+    def query_stage(self, message: str, stage_name: str, n: float, stage_kwargs: dict = None):
+        """
+        Helper method for asking the user if we need to do this stage of processing.
+        If self.do is True, skips the query and returns True.
+        :param message: Message to display.
+        :param stage_name: code-friendly name of stage, eg "coadd" or "initial_setup"
+        :param n: Stage number
+        :return:
+        """
+        # Check if n is an integer, and if so cast to int.
+        if n == int(n):
+            n = int(n)
+        if self.do is not None:
+            if stage_name in self.do:
+                return True
+        else:
+            message = f"{self.name} {n}. {message}"
+            done = self.check_done(stage=stage_name)
+            u.debug_print(2, "Epoch.query_stage(): done ==", done)
+            if done is not None:
+                time_since = (Time.now() - done).sec * units.second
+                time_since = u.relevant_timescale(time_since)
+                message += f" (last performed at {done.isot}, {time_since.round(1)} ago)"
+                if stage_kwargs:
+                    message += f"\nSpecified config keywords:\n{stage_kwargs}"
+            return u.select_yn_exit(message=message)
+
+    def check_done(self, stage: str):
+        u.debug_print(2, "Epoch.check_done(): stage ==", stage)
+        u.debug_print(2, f"Epoch.check_done(): {self}.stages_complete ==", self.stages_complete)
+        if stage not in self.stages():
+            raise ValueError(f"{stage} is not a valid stage for this Epoch.")
+        if stage in self.stages_complete:
+            if isinstance(self.stages_complete[stage], Time):
+                return self.stages_complete[stage]
+            elif self.stages_complete[stage]["status"] == "skipped":
+                return None
+            else:
+                return self.stages_complete[stage]["time"]
+        else:
+            return None
+
+    def pipeline(
+            self,
+            no_query: bool = False,
+            **kwargs
+    ):
         """Performs the pipeline methods given in stages() for this instance.
 
         :param no_query: If True, skips the query stage and performs all stages (unless "do" was provided on __init__),
@@ -151,7 +207,8 @@ class Pipeline:
 
                     u.rmtree_check(output_dir_backup)
 
-                last_complete = dir_name
+                    last_complete = dir_name
+
                 self.update_output_file()
 
             elif not do_this:
@@ -169,9 +226,36 @@ class Pipeline:
             u.mkdir_check_nested(self.data_path)
         else:
             raise ValueError(f"data_path has not been set for {self}")
-        if not skip_cats:
-            self.field.retrieve_catalogues()
+
         self.do = _check_do_list(self.do, stages=list(self.stages().keys()))
         if not self.quiet and self.do:
             print(f"Doing stages {self.do}")
-        self.paths["download"] = os.path.join(self.data_path, "0-download")
+
+
+def _check_do_list(
+        do: Union[list, str],
+        stages
+):
+    if isinstance(do, str):
+        try:
+            do = [int(do)]
+        except ValueError:
+            if " " in do:
+                char = " "
+            elif "," in do:
+                char = ","
+            else:
+                raise ValueError("do string is not correctly formatted.")
+            do = list(map(int, do.split(char)))
+
+    if isinstance(do, list):
+        do_nu = []
+        for n in do:
+            if isinstance(n, int):
+                do_nu.append(stages[n])
+            elif isinstance(n, str):
+                if n in stages:
+                    do_nu.append(n)
+        do = do_nu
+
+    return do

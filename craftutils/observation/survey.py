@@ -5,12 +5,7 @@ from typing import Union
 import craftutils.params as p
 import craftutils.utils as u
 
-# TODO: Parent class for all param loading etc, with children Instrument, Survey etc.
 
-__all__ = []
-
-
-@u.export
 class Survey:
     def __init__(self, **kwargs):
         self.name = None

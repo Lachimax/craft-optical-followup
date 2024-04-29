@@ -1,4 +1,4 @@
-from .imaging import *
+from .image import *
 from .coadded import *
 from .eso import *
 from .survey import *

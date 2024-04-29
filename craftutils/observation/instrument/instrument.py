@@ -7,10 +7,6 @@ import craftutils.observation.filters as filters
 
 active_instruments = {}
 
-__all__ = []
-
-
-@u.export
 class Instrument:
 
     def __init__(self, **kwargs):
