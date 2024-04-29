@@ -11,7 +11,7 @@ from craftutils.observation.generic import Generic
 
 
 class Pipeline(Generic):
-
+    stage_output_dirs = True
     def __init__(
             self,
             name: str = None,
@@ -156,7 +156,7 @@ class Pipeline(Generic):
             message = stage["message"]
             # If default is present, then it defines whether the stage should be performed by default. If True, it
             # must be switched off by the do_key to skip the step; if False, then do_key must be set to True to perform
-            # the step. This should work.
+            # the step.
             if "default" in stage:
                 do_this = stage["default"]
             else:
@@ -185,11 +185,13 @@ class Pipeline(Generic):
                     print(f"Performing processing step {n}: {name} with keywords:\n", stage_kwargs)
                 # Construct path; if dir_name is None then the step is pathless.
                 dir_name = f"{n}-{name}"
+
                 output_dir = os.path.join(self.data_path, dir_name)
                 output_dir_backup = output_dir + "_backup"
-                u.rmtree_check(output_dir_backup)
-                u.move_check(output_dir, output_dir_backup)
-                u.mkdir_check_nested(output_dir, remove_last=False)
+                if self.stage_output_dirs:
+                    u.rmtree_check(output_dir_backup)
+                    u.move_check(output_dir, output_dir_backup)
+                    u.mkdir_check_nested(output_dir, remove_last=False)
                 self.set_path(name, output_dir)
 
                 if stage["method"](self, output_dir=output_dir, **stage_kwargs) is not False:
@@ -259,3 +261,5 @@ def _check_do_list(
         do = do_nu
 
     return do
+
+

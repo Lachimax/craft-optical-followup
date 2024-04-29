@@ -1306,6 +1306,9 @@ class ImagingEpoch(Epoch):
 
             nice_name = f"{self.field.name}_{inst_name}_{fil.replace('_', '-')}_{date}.fits"
 
+            img.select_depth()
+            img.write_fits_file()
+
             # Make sure various common properties are transferred to image derivatives.
             if img != img_prime:
                 img.clone_diagnostics(img_prime)
@@ -1316,7 +1319,7 @@ class ImagingEpoch(Epoch):
             if isinstance(self.coadded_subtracted_patch[fil], image.CoaddedImage):
                 self.coadded_subtracted_patch[fil].clone_diagnostics(img_prime)
 
-            img.copy_with_outputs(os.path.join(
+            img_final = img.copy_with_outputs(os.path.join(
                 self.data_path,
                 nice_name)
             )
@@ -1338,6 +1341,8 @@ class ImagingEpoch(Epoch):
                             nice_name
                         )
                     )
+
+            self.field.add_image(img_final)
 
         self.push_to_table()
 
@@ -1387,19 +1392,8 @@ class ImagingEpoch(Epoch):
             exclude: list = ()
     ):
         image_dict = self._get_images(image_type=image_type)
-        r_sloan = Filter.from_params("r", "sdss")
-        best_score = np.inf * units.angstrom
-        best_img = None
-        for fil_name, img in image_dict.items():
-            if fil_name in exclude:
-                continue
-            fil = img.filter
-            score = r_sloan.compare_wavelength_range(fil)
-            if score < best_score:
-                best_score = score
-                best_img = img
-        print(f"Best image for PATH is {best_img.filter.name}")
-        return best_img
+        return image.best_for_path(image_dict, exclude=exclude)
+
 
     def probabilistic_association(
             self,

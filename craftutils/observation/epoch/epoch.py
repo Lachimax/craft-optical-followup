@@ -383,6 +383,7 @@ class Epoch(Pipeline):
                 for frame in set(outputs["frames_bias"]):
                     if os.path.isfile(frame):
                         self.add_frame_raw(raw_frame=frame)
+            import craftutils.observation.objects as objects
             if "log" in outputs:
                 self.log = log.Log(outputs["log"])
             if "stage_params" in outputs and isinstance(outputs["stage_params"], dict):
@@ -393,6 +394,7 @@ class Epoch(Pipeline):
         return outputs
 
     def _output_dict(self):
+
         return {
             "combined_from": self.combined_from,
             "coadded": _output_img_dict_single(self.coadded),

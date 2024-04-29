@@ -1,7 +1,7 @@
 # Code by Lachlan Marnoch, 2021 - 2024
 import os
 import warnings
-from typing import Union, List, Dict, Tuple
+from typing import Union, List
 
 import numpy as np
 
@@ -12,6 +12,7 @@ import astropy.table as table
 import astropy.io.fits as fits
 
 import craftutils.observation.objects as objects
+import craftutils.observation.image as image
 import craftutils.observation.instrument as inst
 import craftutils.observation.epoch as ep
 import craftutils.observation.survey as survey
@@ -69,6 +70,7 @@ def list_fields(include_std: bool = False):
 
 @u.export
 class Field(Pipeline):
+    stage_output_dirs = False
     def __init__(
             self,
             centre_coords: Union[SkyCoord, str] = None,
@@ -114,6 +116,8 @@ class Field(Pipeline):
         self.epochs_imaging = {}
         self.epochs_imaging_loaded = {}
         self.epochs_loaded = {}
+
+        self.imaging = {}
 
         self.paths = {}
 
@@ -163,6 +167,10 @@ class Field(Pipeline):
     @classmethod
     def stages(cls):
         return {
+            "finalise_imaging": {
+                "method": cls.proc_finalise_imaging,
+                "message": "Finalise imaging from all epochs?"
+            },
             "update_photometry": {
                 "method": cls.proc_update_photometry,
                 "message": "Pull photometry from all epochs?"
@@ -174,20 +182,34 @@ class Field(Pipeline):
 
         }
 
+    def proc_finalise_imaging(self, output_dir: str, **kwargs):
+        self.force_stage_all_epochs(
+            stage="finalise",
+            **kwargs
+        )
+
     def proc_update_photometry(self, output_dir: str, **kwargs):
+        self.force_stage_all_epochs(
+            stage="get_photometry",
+            skip_plots=True,
+            skip_path=True,
+            **kwargs
+        )
+
+    def force_stage_all_epochs(self, stage: str, **kwargs):
         epochs = self.gather_epochs_imaging()
         for epoch_name in epochs:
             epoch = ep.epoch_from_directory(epoch_name)
-            epoch.do = [-1, -2]
-            if "get_photometry" not in epoch.param_file:
-                epoch.param_file["get_photometry"] = {}
-            epoch.param_file["get_photometry"]["skip_plots"] = True
-            epoch.param_file["get_photometry"]["skip_path"] = True
-            # Run only the last stage of each epoch pipeline
+            epoch.do_kwargs = {}
+            epoch.do = [stage]
+            if stage not in epoch.param_file:
+                epoch.param_file[stage] = {}
+            epoch.param_file[stage].update(kwargs)
+            # Run only this stage of each epoch pipeline
             print()
-            print("GETTING PHOTOMETRY FROM EPOCH", epoch_name)
-            print("="*30)
-            epoch.pipeline()
+            print(f"RUNNING {stage} FOR EPOCH", epoch_name)
+            print("=" * 30)
+            epoch.pipeline(skip_cats=True)
 
     def proc_refine_photometry(self, output_dir: str, **kwargs):
         self.objects.sort(key=lambda o: o.name, reverse=True)
@@ -654,13 +676,31 @@ class Field(Pipeline):
         if outputs is not None:
             if "cats" in outputs:
                 self.cats.update(outputs["cats"])
+            if "imaging" in outputs:
+                self.imaging = outputs["imaging"]
         return outputs
 
     def _output_dict(self):
         return {
             "paths": self.paths,
             "cats": self.cats,
+            "imaging": self.imaging
         }
+
+    def add_image(
+            self,
+            img: image.ImagingImage,
+    ):
+        fil_name = img.extract_filter()
+        fil = img.filter
+        depth = img.select_depth()
+        if fil_name is not None:
+            if fil_name not in self.imaging:
+                self.imaging[fil_name] = []
+            self.imaging[fil_name].append({
+                "path": img.path,
+                "depth": depth
+            })
 
     def add_object(self, obj: objects.Object):
         if isinstance(obj, dict):
@@ -812,13 +852,14 @@ class Field(Pipeline):
                 **param_dict
             )
         elif field_type == "FRBField":
-            from .frb_field import FRBField
+            from .frb import FRBField
             return FRBField(
                 centre_coords=coord_str,
                 objs=objs,
                 **param_dict
             )
         elif field_type == "StandardField":
+            from .std import StandardField
             return StandardField(
                 centre_coords=coord_str,
                 **param_dict
@@ -853,7 +894,8 @@ class Field(Pipeline):
 
     @classmethod
     def new_params_from_input(cls, field_name: str, field_param_path: str):
-        from .frb_field import FRBField
+        from .frb import FRBField
+        from .std import StandardField
         _, field_class = u.select_option(
             message="Which type of field would you like to create?",
             options={
@@ -966,35 +1008,3 @@ class Field(Pipeline):
 
         print(f"Template parameter file created at '{field_param_path_yaml}'")
         input("Please edit this file before proceeding, then press Enter to continue.")
-
-
-class StandardField(Field):
-    def __init__(
-            self,
-            centre_coords: Union[SkyCoord, str] = None,
-            **kwargs
-    ):
-        jname = astm.jname(
-            coord=centre_coords,
-            ra_precision=0,
-            dec_precision=0
-        )
-        name = f"STD-{jname}"
-
-        param_path = os.path.join(p.param_dir, "fields", name, f"{name}.yaml")
-        if not os.path.isfile(param_path):
-            u.mkdir_check_nested(param_path)
-            self.new_yaml(
-                name=name,
-                path=param_path,
-                centre=objects.skycoord_to_position_dict(centre_coords)
-            )
-
-        super().__init__(
-            name=name,
-            centre_coords=centre_coords,
-            data_path=os.path.join(p.data_dir, name),
-            param_path=param_path
-        )
-
-        self.retrieve_catalogues()

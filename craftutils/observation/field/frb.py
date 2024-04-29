@@ -311,17 +311,31 @@ class FRBField(Field):
     def stages(cls):
         field_stages = super().stages()
         stages = {
-            "update_photometry": field_stages["update_photometry"],
+            "finalise_imaging": field_stages["finalise_imaging"],
             "probabilistic_association": {
                 "method": cls.proc_probabilistic_association,
                 "message": "Run PATH on available imaging?"
             },
+            "update_photometry": field_stages["update_photometry"],
             "refine_photometry": field_stages["refine_photometry"]
         }
         return stages
 
     def proc_probabilistic_association(self, output_dir: str, **kwargs):
-        pass
+        self.probabilistic_association()
+
+    def probabilistic_association(self):
+        epochs = self.gather_epochs_imaging()
+
+
+    def best_for_path(
+            self,
+            exclude: list = ()
+    ):
+        images =
+        img = image.best_for_path(self.imaging, exclude=exclude)
+
+
 
     @classmethod
     def default_params(cls):

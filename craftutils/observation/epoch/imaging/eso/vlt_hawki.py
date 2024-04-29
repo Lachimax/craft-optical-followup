@@ -47,6 +47,7 @@ class HAWKIImagingEpoch(ESOImagingEpoch):
             "correct_astrometry_coadded": ie_stages["correct_astrometry_coadded"],
             "source_extraction": ie_stages["source_extraction"],
             "photometric_calibration": ie_stages["photometric_calibration"],
+            "finalise": ie_stages["finalise"],
             "get_photometry": ie_stages["get_photometry"]
         }
         stages["coadd"]["default"] = False

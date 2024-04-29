@@ -1,6 +1,6 @@
 import os
 import shutil
-from typing import Union, Tuple, List
+from typing import Union, Tuple, List, Dict
 import copy
 
 import numpy as np
@@ -320,9 +320,30 @@ class ImagingImage(Image):
         self.clone_psf(other=other, ext=ext)
         self.clone_zeropoints(other=other, ext=ext)
         self.clone_astrometry_info(other=other, ext=ext)
+        self.clone_depth(other=other, ext=ext)
 
         self.update_output_file()
         self.write_fits_file()
+
+    def clone_depth(
+            self,
+            other: 'ImagingImage',
+            ext: int = 0
+    ):
+        self.depth = other.depth
+        self.select_depth(ext=ext)
+
+    def select_depth(self, ext: int = 0):
+        if "SNR_PSF" in self.depth["secure"]:
+            depth = self.depth["secure"]["SNR_PSF"][f"5-sigma"]
+        else:
+            depth = self.depth["secure"]["SNR_AUTO"][f"5-sigma"]
+        self.set_header_item(
+            key="DEPTH",
+            value=depth.value,
+            ext=ext
+        )
+        return depth
 
     def clone_astrometry_info(
             self,
@@ -606,10 +627,7 @@ class ImagingImage(Image):
         for i, row in enumerate(source_cat):
             print(f"Pushing row {i} of {len(source_cat)}")
             obj = objects.Object(row=row, field=self.epoch.field)
-            if "SNR_PSF" in self.depth["secure"]:
-                depth = self.depth["secure"]["SNR_PSF"][f"5-sigma"]
-            else:
-                depth = self.depth["secure"]["SNR_AUTO"][f"5-sigma"]
+            depth = self.select_depth()
             obj.add_photometry(
                 instrument=self.instrument_name,
                 fil=self.filter_name,
@@ -736,7 +754,7 @@ class ImagingImage(Image):
         dec_scale = units.pixel_scale(y / units.pix)
         return ra_scale, dec_scale
 
-    def extract_filter(self):
+    def extract_filter(self) -> str:
         key = self.header_keys()["filter"]
         self.filter_name = self.extract_header_item(key)
         if self.filter_name is not None:
@@ -1330,6 +1348,8 @@ class ImagingImage(Image):
                 self.depth["secure"][f"SNR_{snr_key}"][f"{sigma}-sigma"] = src_lim[f"MAG_{snr_key}_ZP_{zeropoint_name}"]
 
                 self.update_output_file()
+
+        self.select_depth()
 
         source_cat.sort("NUMBER")
         self.add_log(
@@ -4492,3 +4512,5 @@ def _set_class_dict():
         "vlt-hawki": HAWKIImage,
         "wise": WISECutout
     }
+
+

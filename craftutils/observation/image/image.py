@@ -843,3 +843,5 @@ class Image:
             new_files[hdu.name] = new_img
         self.close()
         return new_files
+
+
