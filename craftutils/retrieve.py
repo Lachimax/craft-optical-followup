@@ -218,7 +218,11 @@ def download_file(
     return response
 
 
-def svo_filter_id(facility_name: str, instrument_name: str, filter_name: str) -> str:
+def svo_filter_id(
+        facility_name: str,
+        instrument_name: str,
+        filter_name: str
+) -> str:
     return f"{facility_name}/{instrument_name}.{filter_name}"
 
 

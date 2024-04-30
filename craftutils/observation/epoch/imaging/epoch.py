@@ -1228,7 +1228,7 @@ class ImagingEpoch(Epoch):
 
             zeropoint, cat = img.select_zeropoint(suppress_select, preferred=preferred)
 
-            img.estimate_depth(zeropoint_name="best")
+            img.estimate_depth(zeropoint_name="best", output_dir=output_path)
 
             deepest = image.deepest(deepest, img)
 
@@ -1392,8 +1392,7 @@ class ImagingEpoch(Epoch):
             exclude: list = ()
     ):
         image_dict = self._get_images(image_type=image_type)
-        return image.best_for_path(image_dict, exclude=exclude)
-
+        return best_for_path(image_dict, exclude=exclude)
 
     def probabilistic_association(
             self,
@@ -2510,3 +2509,15 @@ class ImagingEpoch(Epoch):
         # raise ValueError(f"Unrecognised instrument {instrument}")
         u.debug_print(2, f"field.select_child_class(): instrument ==", instrument, "child_class ==", child_class)
         return child_class
+
+
+def best_for_path(
+        image_dict: Dict[str, image.ImagingImage],
+        exclude: list = ()
+):
+    from craftutils.observation.filters import best_for_path
+    filter_list = list(map(lambda k: image_dict[k].name(), image_dict))
+    best_fil = best_for_path(filter_list, exclude=exclude)
+    best_img = image_dict[best_fil.name]
+    print(f"Best image for PATH is {best_img.name}")
+    return best_img

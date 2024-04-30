@@ -71,6 +71,7 @@ def list_fields(include_std: bool = False):
 @u.export
 class Field(Pipeline):
     stage_output_dirs = False
+
     def __init__(
             self,
             centre_coords: Union[SkyCoord, str] = None,
@@ -183,6 +184,10 @@ class Field(Pipeline):
         }
 
     def proc_finalise_imaging(self, output_dir: str, **kwargs):
+        self.force_stage_all_epochs(
+            stage="photometric_calibration",
+            **kwargs
+        )
         self.force_stage_all_epochs(
             stage="finalise",
             **kwargs
@@ -677,30 +682,48 @@ class Field(Pipeline):
             if "cats" in outputs:
                 self.cats.update(outputs["cats"])
             if "imaging" in outputs:
-                self.imaging = outputs["imaging"]
+                self.imaging.update(outputs["imaging"])
         return outputs
 
+    def load_imaging(self):
+        filter_list = []
+        for img_name, img_dict in self.imaging.items():
+            cls = image.CoaddedImage.select_child_class(
+                instrument_name=img_dict["instrument"]
+            )
+            img = image.from_path(path=img_dict["path"], cls=cls)
+            img_dict["image"] = img
+            img.extract_filter()
+            filter_list.append(img.filter)
+        return filter_list
+
     def _output_dict(self):
+        imaging = self.imaging.copy()
+        for img_dict in imaging.values():
+            if "image" in img_dict:
+                img_dict.pop("image")
         return {
             "paths": self.paths,
             "cats": self.cats,
-            "imaging": self.imaging
+            "imaging": imaging
         }
 
     def add_image(
             self,
             img: image.ImagingImage,
     ):
-        fil_name = img.extract_filter()
+        img.extract_filter()
+        img.filter.load_instrument()
         fil = img.filter
+        fil_name = img.filter.machine_name()
         depth = img.select_depth()
-        if fil_name is not None:
-            if fil_name not in self.imaging:
-                self.imaging[fil_name] = []
-            self.imaging[fil_name].append({
-                "path": img.path,
-                "depth": depth
-            })
+        self.imaging[img.name] = {
+            "path": img.path,
+            "depth": depth,
+            "instrument": fil.instrument.name,
+            "filter": fil.name,
+            "name": img.name
+        }
 
     def add_object(self, obj: objects.Object):
         if isinstance(obj, dict):

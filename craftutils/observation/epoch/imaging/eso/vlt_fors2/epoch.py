@@ -406,7 +406,7 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
             n: int = 10,
             output: str = None
     ):
-        mjd = self.date.mjdZ
+        mjd = self.date.mjd
         fils_known = []
         tbls_known = {}
 

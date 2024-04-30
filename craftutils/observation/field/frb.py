@@ -13,8 +13,8 @@ import astropy.units as units
 import craftutils.observation as obs
 import craftutils.observation.objects as objects
 import craftutils.observation.image as image
+import craftutils.observation.filters as filters
 import craftutils.astrometry as astm
-
 import craftutils.plotting as pl
 import craftutils.utils as u
 import craftutils.params as p
@@ -325,17 +325,31 @@ class FRBField(Field):
         self.probabilistic_association()
 
     def probabilistic_association(self):
-        epochs = self.gather_epochs_imaging()
-
+        self.load_imaging()
+        path_dict = self.best_for_path()
+        path_img = path_dict["image"]
 
     def best_for_path(
             self,
             exclude: list = ()
     ):
-        images =
-        img = image.best_for_path(self.imaging, exclude=exclude)
-
-
+        filter_list = self.load_imaging()
+        best_fil = filters.best_for_path(filter_list, exclude=exclude)
+        img_list = list(
+            filter(
+                lambda d: d["filter"] == best_fil.name and d["instrument"] == best_fil.instrument.name,
+                self.imaging.values()
+            )
+        )
+        img_list.sort(key=lambda d: d["depth"])
+        path_dict = img_list[0]
+        path_img = path_dict["image"]
+        print()
+        for img_dict in img_list:
+            print(img_dict["name"], img_dict["depth"])
+        print()
+        print(f"The image selected for PATH is {path_img.name}, with depth {path_dict['depth']}")
+        return path_dict
 
     @classmethod
     def default_params(cls):
@@ -360,8 +374,7 @@ class FRBField(Field):
 
     @classmethod
     def new_yaml(cls, name: str, path: str = None, **kwargs) -> dict:
-        """
-        Generates a new parameter .yaml file for an FRBField.
+        """Generates a new parameter .yaml file for an FRBField.
 
         :param name: Name of the field.
         :param path: Path to write .yaml to.

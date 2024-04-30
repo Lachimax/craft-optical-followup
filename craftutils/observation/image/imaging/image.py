@@ -333,11 +333,11 @@ class ImagingImage(Image):
         self.depth = other.depth
         self.select_depth(ext=ext)
 
-    def select_depth(self, ext: int = 0):
-        if "SNR_PSF" in self.depth["secure"]:
-            depth = self.depth["secure"]["SNR_PSF"][f"5-sigma"]
+    def select_depth(self, ext: int = 0, sigma: int = 10):
+        if "SNR_PSF" in self.depth["secure"] and np.isfinite(self.depth["secure"]["SNR_PSF"][f"{sigma}-sigma"]):
+            depth = self.depth["secure"]["SNR_PSF"][f"{sigma}-sigma"]
         else:
-            depth = self.depth["secure"]["SNR_AUTO"][f"5-sigma"]
+            depth = self.depth["secure"]["SNR_AUTO"][f"{sigma}-sigma"]
         self.set_header_item(
             key="DEPTH",
             value=depth.value,
@@ -759,7 +759,6 @@ class ImagingImage(Image):
         self.filter_name = self.extract_header_item(key)
         if self.filter_name is not None:
             self.filter_short = self.filter_name[0]
-
         self._filter_from_name()
 
         return self.filter_name
@@ -1281,15 +1280,19 @@ class ImagingImage(Image):
             dual: bool = False,
             stars_only: bool = False,
             star_tolerance: float = 0.9,
-            do_magnitude_calibration: bool = True
+            do_magnitude_calibration: bool = True,
+            output_dir: str = None
     ):
-        """
-        Use various measures of S/N to estimate image depth at a range of sigmas.
+        """Use various measures of S/N to estimate image depth at a range of sigmas.
+
         :param zeropoint_name:
         :param dual:
+        :param stars_only:
+        :param star_tolerance:
+        :param do_magnitude_calibration:
+        :param output_dir:
         :return:
         """
-
         # self.signal_to_noise_ccd(dual=dual)
 
         self.signal_to_noise_measure(dual=dual)
@@ -1300,8 +1303,8 @@ class ImagingImage(Image):
 
         # "max" stores the magnitude of the faintest object with S/N > x sigma
         self.depth = {"max": {}, "secure": {}}
-        # "secure" finds the brightest object with S/N < x sigma, then increments to the
-        # overall; thus giving the faintest magnitude at which we can be confident of a detection
+        # "secure" finds the brightest object with S/N < x sigma, then increments up one;
+        # thus giving the faintest magnitude at which we can be confident of an x-sigma detection
 
         if stars_only:
             source_cat = source_cat[source_cat["CLASS_STAR"] >= star_tolerance]
@@ -1310,6 +1313,7 @@ class ImagingImage(Image):
             # We do this to ensure that, in the "secure" step, object i+1 is the next-brightest in the catalogue
             if f"FLUX_{snr_key}" not in source_cat.colnames:
                 continue
+
             source_cat_key = source_cat.copy()
             source_cat_key.sort(f"FLUX_{snr_key}")
             self.depth["max"][f"SNR_{snr_key}"] = {}
@@ -1318,17 +1322,29 @@ class ImagingImage(Image):
             source_cat_key = source_cat_key[np.invert(np.isinf(source_cat_key[f"MAG_{snr_key}"]))]
             source_cat_key = source_cat_key[np.invert(np.isinf(source_cat_key[f"SNR_{snr_key}"]))]
             source_cat_key = source_cat_key[source_cat_key[f"MAG_{snr_key}"] < 100 * units.mag]
+            source_cat_key =source_cat_key[source_cat_key[f"SNR_{snr_key}"] > 0]
             source_cat_key.sort(f"FLUX_{snr_key}")
-            for sigma in range(1, 6):
+
+            plt.scatter(source_cat_key[f"MAG_{snr_key}"], source_cat_key[f"SNR_{snr_key}"])
+            plt.savefig(os.path.join(output_dir, f"mag_{snr_key}-v-snr.png"), dpi=200)
+            plt.close()
+
+            plt.hist(source_cat_key[f"SNR_{snr_key}"][source_cat_key[f"SNR_{snr_key}"] < 10])
+            plt.savefig(os.path.join(output_dir, f"snr_{snr_key}-hist.png"), dpi=200)
+            plt.close()
+
+            for sigma in (5, 10, 20):
                 source_cat_sigma = source_cat_key.copy()
-                u.debug_print(1, "ImagingImage.estimate_depth(): snr_key, sigma ==", snr_key, sigma)
                 # Faintest source at x-sigma:
-                u.debug_print(
-                    1, f"ImagingImage.estimate_depth(): source_cat[SNR_{snr_key}].unit ==",
-                    source_cat_sigma[f"SNR_{snr_key}"].unit)
                 cat_more_xsigma = source_cat_sigma[source_cat_sigma[f"SNR_{snr_key}"] > sigma]
+
+                plt.scatter(source_cat_sigma[f"MAG_{snr_key}"], source_cat_sigma[f"SNR_{snr_key}"])
+                plt.savefig(os.path.join(output_dir, f"mag_{snr_key}-v-snr-{sigma}sig.png"), dpi=200)
+                plt.close()
+
                 self.depth["max"][f"SNR_{snr_key}"][f"{sigma}-sigma"] = np.max(
-                    cat_more_xsigma[f"MAG_{snr_key}_ZP_{zeropoint_name}"])
+                    cat_more_xsigma[f"MAG_{snr_key}_ZP_{zeropoint_name}"]
+                )
 
                 # Brightest source less than x-sigma (kind of)
                 # Get the sources with SNR less than x-sigma
@@ -2708,7 +2724,7 @@ class ImagingImage(Image):
             scaling_data = normalize_kwargs.pop("data")
 
         if "cmap" not in imshow_kwargs and self.filter and self.filter.cmap:
-                imshow_kwargs["cmap"] = self.filter.cmap
+            imshow_kwargs["cmap"] = self.filter.cmap
 
         # if "vmin" not in normalize_kwargs:
         #     normalize_kwargs["vmin"] = np.min(data_clipped)
@@ -3509,8 +3525,6 @@ class ImagingImage(Image):
         model_init = model_type(**init_params)
         fitter = fitter_type(calc_uncertainties=False)
         y, x = np.mgrid[:data.shape[0], :data.shape[1]]
-
-
 
         plt.imshow(weights[bottom - 10:top + 10, left - 10:right + 10])
         plt.colorbar()
@@ -4479,7 +4493,7 @@ class ImagingImage(Image):
 def deepest(
         img_1: ImagingImage,
         img_2: ImagingImage,
-        sigma: int = 3,
+        sigma: int = 5,
         depth_type: str = "secure",
         snr_type: str = "SNR_PSF"
 ):
@@ -4512,5 +4526,3 @@ def _set_class_dict():
         "vlt-hawki": HAWKIImage,
         "wise": WISECutout
     }
-
-
