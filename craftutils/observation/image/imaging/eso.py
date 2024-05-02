@@ -203,11 +203,8 @@ class FORS2CoaddedImage(CoaddedImage):
             skip_retrievable = True
             if "skip_retrievable" in kwargs:
                 skip_retrievable = kwargs.pop("skip_retrievable")
-            u.debug_print(1, "skip_retrievable:", skip_retrievable)
             if skip_retrievable:
                 skip_zp = True
-            u.debug_print(2, "skip_zp:", skip_zp)
-        u.debug_print(2, "skip_zp:", skip_zp)
         if not skip_zp:
             zp = super().zeropoint(
                 **kwargs

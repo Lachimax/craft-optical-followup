@@ -534,7 +534,8 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
     def generate_master_flats(
             self,
             output_dir: str = None,
-            force: bool = False
+            force: bool = False,
+            skip_retrievable: bool = False
     ):
         from craftutils.wrap import esorex
 
@@ -578,6 +579,7 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
             image_dict: dict = None,
             pointings_dict: dict = None,
             epochs_dict: dict = None,
+            skip_retrievable: bool = False,
             output_dir: str = None
     ):
         if image_dict is None:
@@ -588,9 +590,11 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
             epochs_dict = self.std_epochs
 
         self.generate_master_biases()
-        self.generate_master_flats()
+        self.generate_master_flats(skip_retrievable=skip_retrievable)
 
         for fil, images in image_dict.items():
+            if skip_retrievable and fil in FORS2Filter.qc1_retrievable:
+                continue
             for std in images:
                 print("\nProcessing std", std.name)
                 # generate or load an appropriate StandardEpoch
@@ -639,9 +643,14 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
         # Do esorex reduction of standard images, and attempt esorex zeropoints if there are enough different
         # observations
         # image_dict = self._get_images(image_type)
-        self.build_standard_epochs(output_dir=output_path)
+        self.build_standard_epochs(
+            output_dir=output_path,
+            skip_retrievable=skip_retrievable
+        )
 
         for fil in image_dict:
+            if skip_retrievable and fil in FORS2Filter.qc1_retrievable:
+                continue
             std_chips = self.sort_by_chip(self.frames_standard[fil])
             img = image_dict[fil]
             if "calib_pipeline" in img.zeropoints:
@@ -667,6 +676,8 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
             chip_dir = os.path.join(output_path, f"chip_{chip}")
             u.mkdir_check(chip_dir)
             for fil in aligned_phots[chip]:
+                if skip_retrievable and fil in FORS2Filter.qc1_retrievable:
+                    continue
                 fil_dir = os.path.join(chip_dir, fil)
                 u.mkdir_check(fil_dir)
                 aligned_phots_this = list(set(aligned_phots[chip][fil]))
@@ -682,8 +693,6 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
                         )
 
                         phot_coeff_table = fits.open(phot_coeff_table)[1].data
-
-                        # u.debug_print(1, f"Chip {chip}, zeropoint {phot_coeff_table['ZPOINT'][0] * units.mag}")
 
                         # The intention here is that a chip 1 zeropoint override a chip 2 zeropoint, but
                         # if chip 1 doesn't work a chip 2 one will do.
@@ -719,12 +728,11 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
             print("Estimating zeropoints from standard observations...")
         for jname in self.std_epochs:
             std_epoch = self.std_epochs[jname]
-            std_epoch.photometric_calibration()
+            std_epoch.photometric_calibration(skip_retrievable=skip_retrievable)
             for fil in image_dict:
                 img = image_dict[fil]
                 # We save time by only bothering with non-qc1-obtainable zeropoints.
-                from craftutils.observation.filters import FORS2Filter
-                if fil in std_epoch.frames_reduced and fil not in FORS2Filter.qc1_retrievable:
+                if fil in std_epoch.frames_reduced and not (skip_retrievable and img.filter.calib_retrievable()):
                     for std in std_epoch.frames_reduced[fil]:
                         img.add_zeropoint_from_other(std)
 
@@ -746,8 +754,11 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
         skip_retrievable = False
         if "skip_retrievable" in kwargs and kwargs["skip_retrievable"] is not None:
             skip_retrievable = kwargs.pop("skip_retrievable")
+        skip_standards = False
+        if "skip_standards" in kwargs and kwargs["skip_standards"] is not None:
+            skip_standards = kwargs.pop("skip_standards")
 
-        if not self.combined_epoch:
+        if not self.combined_epoch and not skip_standards:
             self.photometric_calibration_from_standards(
                 image_dict=image_dict,
                 output_path=output_path,

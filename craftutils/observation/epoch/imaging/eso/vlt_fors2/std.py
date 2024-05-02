@@ -3,9 +3,11 @@ import os
 import astropy.units as units
 
 import craftutils.utils as u
+import craftutils.retrieve as retrieve
 import craftutils.observation.image as image
 from ...epoch import ImagingEpoch
 from ....epoch import StandardEpoch
+
 
 class FORS2StandardEpoch(StandardEpoch, ImagingEpoch):
     frame_class = image.FORS2Image
@@ -59,6 +61,7 @@ class FORS2StandardEpoch(StandardEpoch, ImagingEpoch):
     def photometric_calibration(
             self,
             output_path: str = None,
+            skip_retrievable: bool = False,
             **kwargs
     ):
         self.load_output_file()
@@ -71,7 +74,8 @@ class FORS2StandardEpoch(StandardEpoch, ImagingEpoch):
 
         self.source_extraction(
             output_dir=output_path,
-            do_diagnostics=False
+            do_diagnostics=False,
+            skip_retrievable=skip_retrievable
         )
 
         self.zeropoint(
@@ -79,6 +83,7 @@ class FORS2StandardEpoch(StandardEpoch, ImagingEpoch):
             output_path=output_path,
             suppress_select=True,
             zp_dict=zeropoints,
+            skip_retrievable=skip_retrievable,
             **kwargs
         )
         self.update_output_file()
@@ -93,15 +98,22 @@ class FORS2StandardEpoch(StandardEpoch, ImagingEpoch):
             suppress_select: bool = True,
             **kwargs
     ):
+        from craftutils.observation.filters import FORS2Filter
 
         if "zp_dict" in kwargs:
             zp_dict = kwargs["zp_dict"]
         else:
             zp_dict = {}
 
+        skip_retrievable = False
+        if "skip_retrievable" in kwargs:
+            skip_retrievable = kwargs["skip_retrievable"]
+
         zp_dict[1] = {}
         zp_dict[2] = {}
         for fil in self.filters:
+            if skip_retrievable and fil in FORS2Filter.qc1_retrievable:
+                continue
             for img in image_dict[fil]:
                 cats = retrieve.photometry_catalogues
                 # cats.append("eso_calib_cats")

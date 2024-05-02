@@ -971,7 +971,7 @@ class ImagingImage(Image):
             mag_range_sex_lower: units.Quantity = -100. * units.mag,
             mag_range_sex_upper: units.Quantity = 100. * units.mag,
             dist_tol: units.Quantity = None,
-            snr_cut=3.,
+            snr_cut=5.,
             iterate_uncertainty: bool = True,
             do_x_shift: bool = True,
             vega: bool = False,

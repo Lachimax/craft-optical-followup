@@ -96,8 +96,7 @@ class Field(Pipeline):
 
         # Input attributes
 
-        self.objects = []
-        self.objects_dict = {}
+        self.objects = {}
 
         if centre_coords is None:
             if objs is not None:
@@ -185,10 +184,6 @@ class Field(Pipeline):
 
     def proc_finalise_imaging(self, output_dir: str, **kwargs):
         self.force_stage_all_epochs(
-            stage="photometric_calibration",
-            **kwargs
-        )
-        self.force_stage_all_epochs(
             stage="finalise",
             **kwargs
         )
@@ -217,9 +212,10 @@ class Field(Pipeline):
             epoch.pipeline(skip_cats=True)
 
     def proc_refine_photometry(self, output_dir: str, **kwargs):
-        self.objects.sort(key=lambda o: o.name, reverse=True)
+        object_list = list(self.objects.values())
+        object_list.sort(key=lambda o: o.name, reverse=True)
         n_phot = 0
-        for obj in self.objects:
+        for obj in object_list:
             if not obj.optical:
                 continue
             obj.load_output_file()
@@ -725,18 +721,21 @@ class Field(Pipeline):
             "name": img.name
         }
 
-    def add_object(self, obj: objects.Object):
+    def add_object(self, obj: Union[dict, objects.Object]):
         if isinstance(obj, dict):
             self.add_object_from_dict(obj)
-        if obj not in self.objects:
-            self.objects.append(obj)
-        if obj.name in self.objects_dict:
+        if obj.name in self.objects:
             warnings.warn("An object with this name already exists here; it is being overwritten.")
-        self.objects_dict[obj.name] = obj
+        self.objects[obj.name] = obj
         obj.field = self
 
-    def cull_objects(self):
-        self.objects = list(set(self.objects))
+    def remove_object(self, obj: Union[objects.Object, str]):
+        if isinstance(obj, str):
+            name = obj
+        else:
+            name = obj.name
+        if name in self.objects:
+            obj = self.objects.pop(name)
 
     def add_object_from_dict(self, obj_dict: dict):
         obj_dict["field"] = self
@@ -806,10 +805,10 @@ class Field(Pipeline):
         results_tbl = table.QTable(results[1].data)
 
         for i, obj_name in enumerate(results_tbl["id"]):
-            if obj_name in self.objects_dict:
+            if obj_name in self.objects:
                 model_path = os.path.join(cigale_dir, f"{obj_name}_best_model.fits")
                 sfh_path = os.path.join(cigale_dir, f"{obj_name}_SFH.fits")
-                obj = self.objects_dict[obj_name]
+                obj = self.objects[obj_name]
                 obj.load_output_file()
                 obj.cigale_results = p.sanitise_yaml_dict(dict(results_tbl[i]))
                 obj.mass_stellar = obj.cigale_results["bayes.stellar.m_star"] * units.solMass
@@ -823,20 +822,23 @@ class Field(Pipeline):
                 obj.update_output_file()
 
     def load_all_objects(self):
-        for obj in self.objects:
+        for obj in self.objects.values():
             obj.load_output_file()
 
-    def get_object(self, name: str) -> objects.Object:
+    def get_object(self, name: str, allow_missing: bool) -> objects.Object:
         """
         Retrieves the named object from the field's object dictionary.
 
         :param name: Name of object.
+        :param allow_missing: return None for a missing object instead of throwing an error.
         :return: Requested object.
         """
-        if name in self.objects_dict:
-            return self.objects_dict[name]
-        else:
+        if name in self.objects:
+            return self.objects[name]
+        elif not allow_missing:
             raise ValueError(f"No object with name '{name}' found in field '{self.name}'.")
+        else:
+            return None
 
     @classmethod
     def default_params(cls):

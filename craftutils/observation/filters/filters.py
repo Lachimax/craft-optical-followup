@@ -21,18 +21,14 @@ active_filters = {}
 
 def best_for_path(
         filter_list: List['Filter'],
-        exclude: list = ()
+        exclude: list = (),
 ):
     r_sloan = Filter.from_params("r", "sdss")
     best_score = np.inf * units.angstrom
-    best_fil = None
-    for fil in filter_list:
-        if fil in exclude:
-            continue
-        score = r_sloan.compare_wavelength_range(fil)
-        if score < best_score:
-            best_score = score
-            best_fil = fil
+
+    filter_list.sort(key=lambda f: r_sloan.compare_wavelength_range(f))
+    best_fil = filter_list[0]
+
     print(f"Best filter for PATH is {best_fil.instrument.name}/{best_fil.name}")
     return best_fil
 

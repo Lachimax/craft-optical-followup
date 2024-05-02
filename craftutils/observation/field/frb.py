@@ -14,6 +14,7 @@ import craftutils.observation as obs
 import craftutils.observation.objects as objects
 import craftutils.observation.image as image
 import craftutils.observation.filters as filters
+import craftutils.observation.instrument as inst
 import craftutils.astrometry as astm
 import craftutils.plotting as pl
 import craftutils.utils as u
@@ -51,7 +52,7 @@ class FRBField(Field):
         self.frb = frb
         if self.frb is not None:
             if isinstance(self.frb, str):
-                self.frb = self.objects_dict[self.frb]
+                self.frb = self.objects[self.frb]
             if isinstance(self.frb, dict):
                 self.frb = objects.FRB.from_dict(self.frb)
             self.frb.field = self
@@ -322,34 +323,141 @@ class FRBField(Field):
         return stages
 
     def proc_probabilistic_association(self, output_dir: str, **kwargs):
-        self.probabilistic_association()
+        path_kwargs = {
+            "config": {"radius": 10}
+        }
+        if 'path_kwargs' in kwargs:
+            path_kwargs.update(kwargs["path_kwargs"])
+        self.probabilistic_association(**path_kwargs)
 
-    def probabilistic_association(self):
+    def probabilistic_association(self, **path_kwargs):
         self.load_imaging()
-        path_dict = self.best_for_path()
-        path_img = path_dict["image"]
+        # filter_list = self.get_filters()
+        # failed = []
+        if "priors" not in path_kwargs:
+            path_kwargs["priors"] = {}
+        fil_list = self.best_fil_for_path()
+        pl.latex_setup()
 
-    def best_for_path(
+        images = list(map(lambda f: self.deepest_in_band(fil=f)["image"], fil_list))
+
+        max_p_ox = None
+        while max_p_ox in (None, 0.) and images:
+            path_img = images.pop(0)
+            vals, tbl, z_lost = self.frb.host_probability_unseen(
+                img=path_img,
+                sample="Gordon+2023",
+                n_z=50
+            )
+            p_u = float(vals["P(U)"]["step"])
+            if vals is not None:
+                path_kwargs["priors"]["U"] = p_u
+                cand_tbl, max_p_ox, p_ux, prior_set, config_n = self.frb.probabilistic_association(
+                    img=path_img,
+                    do_plot=True,
+                    **path_kwargs
+                )
+                path_cat = self.frb.consolidate_candidate_tables(
+                    sort_by="P_Ox",
+                    reverse_sort=True,
+                    p_ox_assign=path_img.name,
+                    p_u=p_u
+                )
+
+        self.add_path_candidates()
+
+        p_us = [0., 0.1, 0.2]
+
+        if max_p_ox is None:
+            path_img = images[0]
+
+        images = list(map(lambda f: self.deepest_in_band(fil=f)["image"], fil_list))
+
+        for p_u in p_us:
+            for img in images:
+                path_kwargs["priors"]["U"] = p_u
+                self.frb.probabilistic_association(
+                    img=img,
+                    do_plot=True,
+                    **path_kwargs
+                )
+
+            path_cat = self.frb.consolidate_candidate_tables(
+                sort_by="P_Ox",
+                reverse_sort=True,
+                p_ox_assign=path_img.name,
+                p_u=p_u
+            )
+
+    def add_path_candidates(self):
+        for obj in self.frb.host_candidates:
+            if isinstance(obj, objects.TransientHostCandidate):
+                if obj.P_Ox is not None:
+                    P_Ox = obj.P_Ox
+                    if P_Ox > 0.9:
+                        self.frb.set_host(obj)
+                    if P_Ox > 0.1:
+                        self.add_object(obj)
+                        obj.to_param_yaml()
+
+    def deepest_in_band(
+            self,
+            fil: Union[str, filters.Filter],
+            instrument: Union[str, inst.Instrument] = None
+    ):
+        img_list = self.get_images_band(fil, instrument=instrument)
+        img_list.sort(key=lambda d: d["depth"])
+        for img_dict in img_list:
+            print(img_dict["name"], img_dict["depth"])
+        img_dict = img_list[-1]
+        return img_dict
+
+    def get_filters(self):
+        self.load_imaging()
+        all_filters = list(map(lambda i: (i["filter"], i["instrument"]), self.imaging.values()))
+        fil_list = list(set(all_filters))
+        fil_list_2 = []
+        for fil, instr in fil_list:
+            fil = filters.Filter.from_params(filter_name=fil, instrument_name=instr)
+            fil_list_2.append(fil)
+        return fil_list_2
+
+    def get_images_band(
+            self,
+            fil: Union[str, filters.Filter],
+            instrument: Union[str, inst.Instrument] = None
+    ):
+        if isinstance(fil, str):
+            if isinstance(instrument, inst.Instrument):
+                instrument = instrument.name
+            elif not isinstance(instrument, str):
+                raise TypeError(
+                    f"If fil is provided as a string, instrument must also be provided as str or Instrument, not {type(instrument)}")
+            fil = filters.Filter.from_params(
+                instrument_name=instrument,
+                filter_name=fil
+            )
+
+        return list(
+            filter(
+                lambda d: d["filter"] == fil.name and d["instrument"] == fil.instrument.name,
+                self.imaging.values()
+            )
+        )
+
+    def best_fil_for_path(
             self,
             exclude: list = ()
     ):
         filter_list = self.load_imaging()
+        print("filter_list", filter_list)
         best_fil = filters.best_for_path(filter_list, exclude=exclude)
-        img_list = list(
-            filter(
-                lambda d: d["filter"] == best_fil.name and d["instrument"] == best_fil.instrument.name,
-                self.imaging.values()
-            )
-        )
-        img_list.sort(key=lambda d: d["depth"])
-        path_dict = img_list[0]
-        path_img = path_dict["image"]
-        print()
-        for img_dict in img_list:
-            print(img_dict["name"], img_dict["depth"])
-        print()
-        print(f"The image selected for PATH is {path_img.name}, with depth {path_dict['depth']}")
-        return path_dict
+        print("filter_list", filter_list)
+        # path_dict = self.deepest_in_band(fil=best_fil)
+        # path_img = path_dict["image"]
+        # print()
+        # print(f"The image selected for PATH is {path_img.name}, with depth {path_dict['depth']}")
+        return filter_list
 
     @classmethod
     def default_params(cls):

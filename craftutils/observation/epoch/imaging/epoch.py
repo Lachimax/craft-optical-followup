@@ -17,7 +17,6 @@ import ccdproc
 import craftutils.observation as obs
 import craftutils.observation.image as image
 import craftutils.observation.field as fld
-import craftutils.observation.objects as objects
 import craftutils.wrap.montage as montage
 import craftutils.plotting as pl
 import craftutils.retrieve as retrieve
@@ -26,7 +25,6 @@ import craftutils.params as p
 import craftutils.astrometry as astm
 from craftutils.observation.instrument import Instrument
 from craftutils.observation.survey import Survey
-from craftutils.observation.filters import Filter
 from ..epoch import Epoch, active_epochs
 
 
@@ -240,20 +238,18 @@ class ImagingEpoch(Epoch):
                     "image_type": "final",
                     "preferred_zeropoint": {},
                     "suppress_select": True
-                }
-            },
-            "dual_mode_source_extraction": {
-                "method": cls.proc_dual_mode_source_extraction,
-                "message": "Do source extraction in dual-mode, using deepest image as footprint?",
-                "default": False,
+                },
             },
             "finalise": {
                 "method": cls.proc_finalise,
                 "message": "Finalise science files?",
                 "default": True,
-                "keywords": {
-
-                }
+                "keywords": {},
+            },
+            "dual_mode_source_extraction": {
+                "method": cls.proc_dual_mode_source_extraction,
+                "message": "Do source extraction in dual-mode, using deepest image as footprint?",
+                "default": False,
             },
             "get_photometry": {
                 "method": cls.proc_get_photometry,
@@ -385,8 +381,8 @@ class ImagingEpoch(Epoch):
             do_not_mask = kwargs.pop("do_not_mask")
             for i, obj in enumerate(do_not_mask):
                 if isinstance(obj, str):
-                    if obj in self.field.objects_dict:
-                        obj = self.field.objects_dict[obj].position
+                    if obj in self.field.objects:
+                        obj = self.field.objects[obj].position
                     elif not isinstance(obj, SkyCoord):
                         obj = astm.attempt_skycoord(obj)
                 do_not_mask[i] = obj
@@ -1160,7 +1156,7 @@ class ImagingEpoch(Epoch):
     ):
         u.mkdir_check(output_path)
 
-        deepest = self.zeropoint(
+        self.zeropoint(
             image_dict=image_dict,
             output_path=output_path,
             **kwargs
@@ -1180,8 +1176,6 @@ class ImagingEpoch(Epoch):
                 img = self.coadded_subtracted_patch[fil]
                 img.clone_zeropoints(image_dict[fil])
 
-        self.deepest_filter = deepest.filter_name
-        self.deepest = deepest
         if not self.quiet:
             print("DEEPEST FILTER:", self.deepest_filter, self.deepest.depth["secure"]["SNR_PSF"]["5-sigma"])
 
@@ -1196,7 +1190,6 @@ class ImagingEpoch(Epoch):
             **kwargs
     ):
 
-        deepest = image_dict[self.filters[0]]
         for fil in self.filters:
             img = image_dict[fil]
             for cat_name in retrieve.photometry_catalogues:
@@ -1228,12 +1221,6 @@ class ImagingEpoch(Epoch):
 
             zeropoint, cat = img.select_zeropoint(suppress_select, preferred=preferred)
 
-            img.estimate_depth(zeropoint_name="best", output_dir=output_path)
-
-            deepest = image.deepest(deepest, img)
-
-        return deepest
-
     def proc_dual_mode_source_extraction(self, output_dir: str, **kwargs):
         if "image_type" in kwargs and isinstance(kwargs["image_type"], str):
             image_type = kwargs["image_type"]
@@ -1264,11 +1251,12 @@ class ImagingEpoch(Epoch):
             **kwargs
     ):
 
-        self.finalise(**kwargs)
+        self.finalise(output_path=output_dir, **kwargs)
 
     def finalise(
             self,
             image_type: str = "final",
+            output_path: str = None,
             **kwargs
     ):
         """Performs a number of wrap-up actions:
@@ -1286,6 +1274,7 @@ class ImagingEpoch(Epoch):
 
         image_dict = self._get_images(image_type=image_type)
 
+        deepest = image_dict[self.filters[0]]
         for fil in self.coadded_unprojected:
 
             img = self.coadded_unprojected[fil]
@@ -1305,6 +1294,8 @@ class ImagingEpoch(Epoch):
                 date = self.date_str()
 
             nice_name = f"{self.field.name}_{inst_name}_{fil.replace('_', '-')}_{date}.fits"
+
+            img.estimate_depth(zeropoint_name="best", output_dir=output_path)
 
             img.select_depth()
             img.write_fits_file()
@@ -1342,9 +1333,14 @@ class ImagingEpoch(Epoch):
                         )
                     )
 
+            deepest = image.deepest(deepest, img)
             self.field.add_image(img_final)
 
+        self.deepest_filter = deepest.filter_name
+        self.deepest = deepest
+
         self.push_to_table()
+        return deepest
 
     def proc_get_photometry(
             self,
@@ -1358,24 +1354,24 @@ class ImagingEpoch(Epoch):
         u.debug_print(2, f"{self}.proc_get_photometry(): image_type ==:", image_type)
         # Run PATH on imaging if we're doing FRB stuff
 
-        skip_path = False
-        if "skip_path" in kwargs:
-            skip_path = kwargs.pop("skip_path")
-
-        if not skip_path and isinstance(self.field, fld.FRBField):
-            path_kwargs = {
-                "priors": {"U": 0.1},
-                "config": {"radius": 10}
-            }
-            if 'path_kwargs' in kwargs:
-                path_kwargs.update(kwargs["path_kwargs"])
-            image_type_path = image_type
-            if self.did_local_background_subtraction():
-                image_type_path = "coadded_subtracted_patch"
-            self.probabilistic_association(
-                image_type=image_type_path,
-                **path_kwargs
-            )
+        # skip_path = False
+        # if "skip_path" in kwargs:
+        #     skip_path = kwargs.pop("skip_path")
+        #
+        # if not skip_path and isinstance(self.field, fld.FRBField):
+        #     path_kwargs = {
+        #         "priors": {"U": 0.1},
+        #         "config": {"radius": 10}
+        #     }
+        #     if 'path_kwargs' in kwargs:
+        #         path_kwargs.update(kwargs["path_kwargs"])
+        #     image_type_path = image_type
+        #     if self.did_local_background_subtraction():
+        #         image_type_path = "coadded_subtracted_patch"
+        #     self.probabilistic_association(
+        #         image_type=image_type_path,
+        #         **path_kwargs
+        #     )
         self.get_photometry(output_dir, image_type=image_type, **kwargs)
 
     def did_local_background_subtraction(self):
@@ -1426,17 +1422,7 @@ class ImagingEpoch(Epoch):
             p_ox_assign=best_img.name
         )
         # Add the candidates to the field's object list.
-        for obj in self.field.frb.host_candidates:
-            if isinstance(obj, objects.TransientHostCandidate):
-                print(obj.name, obj.P_Ox)
-                if obj.P_Ox is not None:
-                    if obj.P_Ox > 0.9:
-                        self.field.frb.set_host(obj)
-                    if obj.P_Ox > 0.1:
-                        self.field.add_object(obj)
-                        obj.to_param_yaml()
-
-        self.field.cull_objects()
+        # self.field.add_path_candidates()
 
         # yaml_dict = {}
         #
@@ -1467,6 +1453,8 @@ class ImagingEpoch(Epoch):
         :param kwargs:
         :return:
         """
+
+        print(self.field.objects.keys())
 
         if not self.quiet:
             print(f"Getting finalised photometry for key objects, in {image_type}.")
@@ -1524,7 +1512,7 @@ class ImagingEpoch(Epoch):
             tolerance_eff = np.sqrt(match_tolerance ** 2 + img.astrometry_err ** 2)
 
             # Loop through this field's 'objects' dictionary and try to match them with the SE catalogue
-            for obj_name, obj in self.field.objects_dict.items():
+            for obj_name, obj in self.field.objects.items():
                 # If the object is not expected to be visible in the optical/NIR, skip it.
                 if obj is None or obj.position is None or not obj.optical:
                     continue
@@ -1720,7 +1708,7 @@ class ImagingEpoch(Epoch):
                     overwrite=True
                 )
 
-        for obj in self.field.objects:
+        for obj in self.field.objects.values():
             obj.update_output_file()
             # obj.push_to_table(select=True)
             # obj.write_plot_photometry()
