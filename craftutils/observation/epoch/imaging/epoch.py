@@ -1176,9 +1176,6 @@ class ImagingEpoch(Epoch):
                 img = self.coadded_subtracted_patch[fil]
                 img.clone_zeropoints(image_dict[fil])
 
-        if not self.quiet:
-            print("DEEPEST FILTER:", self.deepest_filter, self.deepest.depth["secure"]["SNR_PSF"]["5-sigma"])
-
     def zeropoint(
             self,
             image_dict: dict,
@@ -1274,8 +1271,8 @@ class ImagingEpoch(Epoch):
 
         image_dict = self._get_images(image_type=image_type)
 
-        deepest = image_dict[self.filters[0]]
-        for fil in self.coadded_unprojected:
+        deepest = list(self.coadded_unprojected.values())[0]
+        for fil, img in self.coadded_unprojected.items():
 
             img = self.coadded_unprojected[fil]
             img_prime = image_dict[fil]
@@ -1509,7 +1506,10 @@ class ImagingEpoch(Epoch):
             # Get astrometric uncertainty from images
             img.extract_astrometry_err()
             # Add that to the matching tolerance in quadrature (seems like the right thing to do?)
-            tolerance_eff = np.sqrt(match_tolerance ** 2 + img.astrometry_err ** 2)
+            if img.astrometry_err is None:
+                tolerance_eff = match_tolerance
+            else:
+                tolerance_eff = np.sqrt(match_tolerance ** 2 + img.astrometry_err ** 2)
 
             # Loop through this field's 'objects' dictionary and try to match them with the SE catalogue
             for obj_name, obj in self.field.objects.items():

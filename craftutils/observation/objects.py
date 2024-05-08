@@ -1346,7 +1346,7 @@ class Object:
         return dictionary
 
     @classmethod
-    def from_dict(cls, dictionary: dict, **kwargs) -> 'Object':
+    def from_dict(cls, dictionary: dict, **kwargs):
         """
         Construct an Object or appropriate child class (FRB, Galaxy...) from a passed dict.
 
@@ -2078,7 +2078,7 @@ class FRB(Transient, Extragalactic):
         if priors is None:
             priors = {}
         if offset_priors is None:
-            offset_priors = {"scale": 0.5}
+            offset_priors = {"scale": 0.5}  # As per Shannon+2024
         if associate_kwargs is None:
             associate_kwargs = {"extinction_correct": True}
         if include_img_err:
@@ -2187,23 +2187,6 @@ class FRB(Transient, Extragalactic):
                 self.host_candidate_tables[p_u_rnd] = {}
             self.host_candidate_tables[p_u_rnd][img.name] = cand_tbl
             self.update_output_file()
-            if output_dir:
-                for fmt in ("csv", "ecsv"):
-                    cand_tbl.write(
-                        os.path.join(output_dir, f"{self.name}_PATH_{img.name}_PU_{p_u}.{fmt}"),
-                        format=f"ascii.{fmt}",
-                        overwrite=True
-                    )
-                write_dict = {
-                    "priors": prior_set,
-                    "config": config_n,
-                    "max_P(O|x_i)": max_p_ox,
-                    "P(U|x)": p_ux
-                }
-                p.save_params(
-                    os.path.join(output_dir, f"{self.name}_PATH_{img.name}_PU_{p_u}.yaml"),
-                    write_dict
-                )
 
             if do_plot and isinstance(self.field, FRBField) and (show or output_dir):
                 fig = plt.figure(figsize=(12, 12))
@@ -2221,12 +2204,31 @@ class FRB(Transient, Extragalactic):
                     fig.savefig(os.path.join(output_dir, f"{self.name}_PATH_{img.name}_PU_{p_u}.pdf"))
                 plt.close(fig)
 
+            if output_dir:
+                for fmt in ("csv", "ecsv"):
+                    cand_tbl.write(
+                        os.path.join(output_dir, f"{self.name}_PATH_{img.name}_PU_{p_u}.{fmt}"),
+                        format=f"ascii.{fmt}",
+                        overwrite=True
+                    )
+                write_dict = {
+                    "priors": prior_set,
+                    "config": config_n,
+                    "max_P(O|x_i)": max_p_ox,
+                    "P(U|x)": p_ux,
+
+                }
+                p.save_params(
+                    os.path.join(output_dir, f"{self.name}_PATH_{img.name}_PU_{p_u}.yaml"),
+                    write_dict
+                )
+
         except IndexError:
             cand_tbl = None
             max_p_ox = None
             p_ux = None
 
-        return cand_tbl, max_p_ox, p_ux, prior_set, config_n
+        return cand_tbl, write_dict
 
     def consolidate_candidate_tables(
             self,
@@ -2269,7 +2271,8 @@ class FRB(Transient, Extragalactic):
                     matched["matched"]]
 
             for row in matched[np.invert(matched["matched"])]:
-                print(f'Adding label {row["label"]} from {tbl_name} table. ra={row["ra"]}, dec={row["dec"]}, {sort_by}_{p_ox_assign}')
+                print(
+                    f'Adding label {row["label"]} from {tbl_name} table. ra={row["ra"]}, dec={row["dec"]}, {sort_by}_{p_ox_assign}')
                 path_cat.add_row(row[path_cat.colnames])
 
         # path_cat["coord"] = SkyCoord(path_cat["ra"], path_cat["dec"])
@@ -3196,7 +3199,7 @@ class FRB(Transient, Extragalactic):
         return command
 
     @classmethod
-    def from_dict(cls, dictionary: dict, **kwargs):
+    def from_dict(cls, dictionary: dict, **kwargs) -> 'FRB':
         frb = super().from_dict(dictionary=dictionary, **kwargs)
         # if "dm" in dictionary:
         #     frb.dm = u.check_quantity(dictionary["dm"], dm_units)

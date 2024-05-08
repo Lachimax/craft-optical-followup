@@ -333,11 +333,11 @@ class ImagingImage(Image):
         self.depth = other.depth
         self.select_depth(ext=ext)
 
-    def select_depth(self, ext: int = 0, sigma: int = 10):
-        if "SNR_PSF" in self.depth["secure"] and np.isfinite(self.depth["secure"]["SNR_PSF"][f"{sigma}-sigma"]):
-            depth = self.depth["secure"]["SNR_PSF"][f"{sigma}-sigma"]
+    def select_depth(self, ext: int = 0, sigma: int = 10, depth_type: str = "max"):
+        if "SNR_PSF" in self.depth[depth_type] and np.isfinite(self.depth[depth_type]["SNR_PSF"][f"{sigma}-sigma"]):
+            depth = self.depth[depth_type]["SNR_PSF"][f"{sigma}-sigma"]
         else:
-            depth = self.depth["secure"]["SNR_AUTO"][f"{sigma}-sigma"]
+            depth = self.depth[depth_type]["SNR_AUTO"][f"{sigma}-sigma"]
         self.set_header_item(
             key="DEPTH",
             value=depth.value,
@@ -1322,14 +1322,14 @@ class ImagingImage(Image):
             source_cat_key = source_cat_key[np.invert(np.isinf(source_cat_key[f"MAG_{snr_key}"]))]
             source_cat_key = source_cat_key[np.invert(np.isinf(source_cat_key[f"SNR_{snr_key}"]))]
             source_cat_key = source_cat_key[source_cat_key[f"MAG_{snr_key}"] < 100 * units.mag]
-            source_cat_key =source_cat_key[source_cat_key[f"SNR_{snr_key}"] > 0]
+            source_cat_key = source_cat_key[source_cat_key[f"SNR_{snr_key}"] > 0]
             source_cat_key.sort(f"FLUX_{snr_key}")
 
             plt.scatter(source_cat_key[f"MAG_{snr_key}"], source_cat_key[f"SNR_{snr_key}"])
             plt.savefig(os.path.join(output_dir, f"mag_{snr_key}-v-snr.png"), dpi=200)
             plt.close()
 
-            plt.hist(source_cat_key[f"SNR_{snr_key}"][source_cat_key[f"SNR_{snr_key}"] < 10])
+            plt.hist(source_cat_key[f"SNR_{snr_key}"][source_cat_key[f"SNR_{snr_key}"] < 20])
             plt.savefig(os.path.join(output_dir, f"snr_{snr_key}-hist.png"), dpi=200)
             plt.close()
 
@@ -1362,6 +1362,8 @@ class ImagingImage(Image):
                     src_lim = source_cat_sigma[source_cat_sigma[f"SNR_{snr_key}"].argmin()]
 
                 self.depth["secure"][f"SNR_{snr_key}"][f"{sigma}-sigma"] = src_lim[f"MAG_{snr_key}_ZP_{zeropoint_name}"]
+
+                # ["limit test"]
 
                 self.update_output_file()
 
@@ -4494,9 +4496,12 @@ def deepest(
         img_1: ImagingImage,
         img_2: ImagingImage,
         sigma: int = 5,
-        depth_type: str = "secure",
+        depth_type: str = "max",
         snr_type: str = "SNR_PSF"
 ):
+    print(img_1.name, img_1.depth.keys())
+    print(img_2.name, img_2.depth.keys())
+
     if img_1.depth[depth_type][snr_type][f"{sigma}-sigma"] > \
             img_2.depth[depth_type][snr_type][f"{sigma}-sigma"]:
         return img_1

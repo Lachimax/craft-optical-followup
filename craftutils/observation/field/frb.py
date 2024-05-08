@@ -342,21 +342,26 @@ class FRBField(Field):
         images = list(map(lambda f: self.deepest_in_band(fil=f)["image"], fil_list))
 
         max_p_ox = None
+        print("Got here 1")
         while max_p_ox in (None, 0.) and images:
             path_img = images.pop(0)
             vals, tbl, z_lost = self.frb.host_probability_unseen(
                 img=path_img,
                 sample="Gordon+2023",
-                n_z=50
+                n_z=500
             )
-            p_u = float(vals["P(U)"]["step"])
+            print("Got here 2", vals)
+
             if vals is not None:
+                print("Got here 3")
+                p_u = float(vals["P(U)"]["step"])
                 path_kwargs["priors"]["U"] = p_u
                 cand_tbl, max_p_ox, p_ux, prior_set, config_n = self.frb.probabilistic_association(
                     img=path_img,
                     do_plot=True,
                     **path_kwargs
                 )
+                print("Got here 4", max_p_ox)
                 path_cat = self.frb.consolidate_candidate_tables(
                     sort_by="P_Ox",
                     reverse_sort=True,
@@ -369,7 +374,10 @@ class FRBField(Field):
         p_us = [0., 0.1, 0.2]
 
         if max_p_ox is None:
-            path_img = images[0]
+            if images:
+                path_img = images[0]
+            else:
+                path_img = None
 
         images = list(map(lambda f: self.deepest_in_band(fil=f)["image"], fil_list))
 
@@ -381,7 +389,8 @@ class FRBField(Field):
                     do_plot=True,
                     **path_kwargs
                 )
-
+            if path_img is None:
+                path_img = images[0]
             path_cat = self.frb.consolidate_candidate_tables(
                 sort_by="P_Ox",
                 reverse_sort=True,
