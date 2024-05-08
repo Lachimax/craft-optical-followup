@@ -1514,6 +1514,7 @@ class ImagingEpoch(Epoch):
             # Loop through this field's 'objects' dictionary and try to match them with the SE catalogue
             for obj_name, obj in self.field.objects.items():
                 # If the object is not expected to be visible in the optical/NIR, skip it.
+                print(type(obj), obj.position, obj.optical)
                 if obj is None or obj.position is None or not obj.optical:
                     continue
                 print(f"Looking for matches to {obj_name} ({obj.position.to_string('hmsdms')})")

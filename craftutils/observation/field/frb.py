@@ -60,6 +60,8 @@ class FRBField(Field):
             if self.frb.host_galaxy not in self.objects and self.frb.host_galaxy is not None:
                 self.add_object(self.frb.host_galaxy)
         self.epochs_imaging_old = {}
+        self.path_runs = {}
+        self.best_path_img = None
 
     def plot_host_colour(
             self,
@@ -342,7 +344,7 @@ class FRBField(Field):
         images = list(map(lambda f: self.deepest_in_band(fil=f)["image"], fil_list))
 
         max_p_ox = None
-        print("Got here 1")
+        path_img = None
         while max_p_ox in (None, 0.) and images:
             path_img = images.pop(0)
             vals, tbl, z_lost = self.frb.host_probability_unseen(
@@ -350,28 +352,30 @@ class FRBField(Field):
                 sample="Gordon+2023",
                 n_z=500
             )
-            print("Got here 2", vals)
-
             if vals is not None:
-                print("Got here 3")
                 p_u = float(vals["P(U)"]["step"])
                 path_kwargs["priors"]["U"] = p_u
-                cand_tbl, max_p_ox, p_ux, prior_set, config_n = self.frb.probabilistic_association(
+                cand_tbl, write_dict = self.frb.probabilistic_association(
                     img=path_img,
                     do_plot=True,
                     **path_kwargs
                 )
-                print("Got here 4", max_p_ox)
-                path_cat = self.frb.consolidate_candidate_tables(
-                    sort_by="P_Ox",
-                    reverse_sort=True,
-                    p_ox_assign=path_img.name,
-                    p_u=p_u
-                )
+                max_p_ox = write_dict["max_P(O|x_i)"]
+                if cand_tbl is not None:
+                    path_cat = self.frb.consolidate_candidate_tables(
+                        sort_by="P_Ox",
+                        reverse_sort=True,
+                        p_ox_assign=path_img.name,
+                        p_u=p_u
+                    )
+                if path_img.name not in self.path_runs:
+                    self.path_runs[path_img.name] = {}
+                self.path_runs[path_img.name]["calculated"] = write_dict
+        if max_p_ox is not None:
+            self.add_path_candidates()
 
-        self.add_path_candidates()
-
-        p_us = [0., 0.1, 0.2]
+        # Do 0.1 first so that we get it as the default set of host candidates in case the above failed
+        p_us = [0.1, 0., 0.2]
 
         if max_p_ox is None:
             if images:
@@ -384,11 +388,14 @@ class FRBField(Field):
         for p_u in p_us:
             for img in images:
                 path_kwargs["priors"]["U"] = p_u
-                self.frb.probabilistic_association(
+                cand_tbl, write_dict = self.frb.probabilistic_association(
                     img=img,
                     do_plot=True,
                     **path_kwargs
                 )
+                if img.name not in self.path_runs:
+                    self.path_runs[img.name] = {}
+                self.path_runs[img.name][p_u] = write_dict
             if path_img is None:
                 path_img = images[0]
             path_cat = self.frb.consolidate_candidate_tables(
@@ -397,17 +404,29 @@ class FRBField(Field):
                 p_ox_assign=path_img.name,
                 p_u=p_u
             )
+            # If the custom P(U) run was unsuccessful, use the results for P(U) = 0.1
+            if p_u == 0.1 and max_p_ox is None:
+                self.add_path_candidates()
+
+        self.best_path_img = path_img.name
 
     def add_path_candidates(self):
-        for obj in self.frb.host_candidates:
-            if isinstance(obj, objects.TransientHostCandidate):
-                if obj.P_Ox is not None:
-                    P_Ox = obj.P_Ox
-                    if P_Ox > 0.9:
-                        self.frb.set_host(obj)
-                    if P_Ox > 0.1:
-                        self.add_object(obj)
-                        obj.to_param_yaml()
+        host_candidates = list(
+            filter(
+                lambda o: isinstance(o, objects.TransientHostCandidate) and o.P_Ox is not None,
+                self.frb.host_candidates
+            )
+        )
+        if len(host_candidates) > 0:
+            max_pox = np.max(list(map(lambda o: o.P_Ox, host_candidates)))
+            for obj in self.frb.host_candidates:
+                P_Ox = obj.P_Ox
+                if P_Ox >= max_pox:
+                    self.frb.set_host(obj)
+                    obj.to_param_yaml()
+                elif P_Ox > 0.1:
+                    self.add_object(obj)
+                    obj.to_param_yaml()
 
     def deepest_in_band(
             self,
@@ -459,14 +478,26 @@ class FRBField(Field):
             exclude: list = ()
     ):
         filter_list = self.load_imaging()
-        print("filter_list", filter_list)
         best_fil = filters.best_for_path(filter_list, exclude=exclude)
-        print("filter_list", filter_list)
         # path_dict = self.deepest_in_band(fil=best_fil)
         # path_img = path_dict["image"]
         # print()
         # print(f"The image selected for PATH is {path_img.name}, with depth {path_dict['depth']}")
         return filter_list
+
+    def _output_dict(self):
+        output_dict = super()._output_dict()
+        output_dict["path_runs"] = self.path_runs
+        output_dict["best_path_img"] = self.best_path_img
+        return output_dict
+
+    def load_output_file(self, **kwargs):
+        output_dict = super().load_output_file(**kwargs)
+        if "path_runs" in output_dict and isinstance(output_dict["path_runs"], dict):
+            self.path_runs = output_dict["path_runs"]
+        if "best_path_img" in output_dict and isinstance(output_dict["best_path_img"], str):
+            self.best_path_img = output_dict["best_path_img"]
+        return output_dict
 
     @classmethod
     def default_params(cls):

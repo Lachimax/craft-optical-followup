@@ -698,11 +698,13 @@ class Field(Pipeline):
         for img_dict in imaging.values():
             if "image" in img_dict:
                 img_dict.pop("image")
-        return {
-            "paths": self.paths,
+
+        output_dict = super()._output_dict()
+        output_dict.update({
             "cats": self.cats,
             "imaging": imaging
-        }
+        })
+        return output_dict
 
     def add_image(
             self,
@@ -732,8 +734,10 @@ class Field(Pipeline):
     def remove_object(self, obj: Union[objects.Object, str]):
         if isinstance(obj, str):
             name = obj
-        else:
+        elif isinstance(obj, objects.Object):
             name = obj.name
+        else:
+            name = None
         if name in self.objects:
             obj = self.objects.pop(name)
 

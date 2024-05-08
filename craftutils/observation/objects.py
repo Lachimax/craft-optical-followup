@@ -312,24 +312,24 @@ class Object:
         self.field = field
         self.name = None
         self.name_filesys = None
-        self.set_name(name=name)
-
-        if self.name:
-            object_to_index(self, allow_overwrite=True)
-
-        self.cat_row = row
+        self.cat_row = None
         self.position = None
         self.position_err = None
-
-        if self.cat_row is not None:
-            self.position_from_cat_row()
-        elif position is not None:
+        if position is not None:
             self.position = astm.attempt_skycoord(position)
             if type(position_err) is not PositionUncertainty:
                 self.position_err = PositionUncertainty(uncertainty=position_err, position=self.position)
             self.position_galactic = None
             if isinstance(self.position, SkyCoord):
                 self.position_galactic = self.position.transform_to("galactic")
+
+        self.set_name(name=name)
+
+        if self.name:
+            object_to_index(self, allow_overwrite=True)
+
+        if self.cat_row is not None:
+            self.position_from_cat_row()
 
         self.position_photometry = copy.deepcopy(self.position)
         self.position_photometry_err = copy.deepcopy(self.position_err)
@@ -840,6 +840,8 @@ class Object:
 
                 if best:
                     phot_dict, _ = self.select_photometry_sep(fil=filter_name, instrument=instrument_name)
+                    if phot_dict is None:
+                        return None
                     phot_dict["band"] = filter_name
                     phot_dict["instrument"] = instrument_name
                     phot_dict["lambda_eff"] = u.check_quantity(
@@ -1095,6 +1097,9 @@ class Object:
         self.get_photometry_table(output=local_output, best=False)
         fil_photom = self.photometry_tbl[self.photometry_tbl["band"] == fil]
         fil_photom = fil_photom[fil_photom["instrument"] == instrument]
+        if "snr_sep" not in fil_photom.colnames:
+            print("It looks like this object is missing SEP photometry; try running refine_photometry for this field.")
+            return None, None
         row = fil_photom[np.argmax(fil_photom["snr_sep"])]
         photom_dict = self.photometry[instrument][fil][row["epoch_name"]]
 
@@ -1162,7 +1167,7 @@ class Object:
 
     def select_deepest_sep(self, local_output: bool = True):
         self.get_photometry_table(output=local_output, best=True)
-        if not self.photometry_tbl_best or "snr_sep" not in self.photometry_tbl_best.colnames:
+        if not isinstance(self.photometry_tbl_best, table.Table) or "snr_sep" not in self.photometry_tbl_best.colnames:
             print(f"No photometry found for {self.name}")
             return None
         idx = np.argmax(self.photometry_tbl_best["snr_sep"])
@@ -1338,6 +1343,7 @@ class Object:
         return dictionary
 
     def to_param_yaml(self, path: str = None):
+        print(f"Writing param yaml for {self.name}")
         dictionary = self.to_param_dict()
         if path is None and self.field is not None:
             path = os.path.join(self.field._obj_path(), self.name)
@@ -1512,6 +1518,8 @@ class Extragalactic(Object):
         :param angle: Angular size. If not provided as a quantity, must be in arcseconds.
         :return: Projected physical size, with units kpc
         """
+        if self.D_A is None:
+            raise ValueError(f"The object {self.name} has no angular size distance defined; is it missing a redshift?")
         angle = u.check_quantity(angle, unit=units.arcsec).to(units.rad).value
         dist = angle * self.D_A
         return dist.to(units.kpc)
@@ -2051,9 +2059,8 @@ class FRB(Transient, Extragalactic):
             output_dir: str = None,
             show: bool = False,
             max_radius: units.Quantity = None,
-    ):
-        """
-        Performs a customised PATH run on an image.
+    ) -> (table.QTable, dict):
+        """Performs a customised PATH run on an image.
 
         :param img: The image on which to run PATH.
         :param include_img_err: If set to True, the image astrometry RMS (from img.extract_astrometry_err()) will be
@@ -2204,6 +2211,14 @@ class FRB(Transient, Extragalactic):
                     fig.savefig(os.path.join(output_dir, f"{self.name}_PATH_{img.name}_PU_{p_u}.pdf"))
                 plt.close(fig)
 
+            write_dict = {
+                "priors": prior_set,
+                "config": config_n,
+                "max_P(O|x_i)": max_p_ox,
+                "P(U|x)": p_ux,
+                "output_dir": output_dir,
+            }
+
             if output_dir:
                 for fmt in ("csv", "ecsv"):
                     cand_tbl.write(
@@ -2211,22 +2226,21 @@ class FRB(Transient, Extragalactic):
                         format=f"ascii.{fmt}",
                         overwrite=True
                     )
-                write_dict = {
-                    "priors": prior_set,
-                    "config": config_n,
-                    "max_P(O|x_i)": max_p_ox,
-                    "P(U|x)": p_ux,
 
-                }
                 p.save_params(
                     os.path.join(output_dir, f"{self.name}_PATH_{img.name}_PU_{p_u}.yaml"),
                     write_dict
                 )
 
         except IndexError:
+            write_dict = {
+                "priors": prior_set,
+                "config": config_n,
+                "max_P(O|x_i)": None,
+                "P(U|x)": None,
+                "output_dir": output_dir,
+            }
             cand_tbl = None
-            max_p_ox = None
-            p_ux = None
 
         return cand_tbl, write_dict
 
@@ -2241,7 +2255,6 @@ class FRB(Transient, Extragalactic):
         # Build a shared catalogue of host candidates.
         path_cat = None
         p_u = float(np.round(p_u, 4))
-        print(self.host_candidate_tables.keys())
         for tbl_name in self.host_candidate_tables[p_u]:
             if tbl_name == "consolidated":
                 continue
@@ -2411,10 +2424,10 @@ class FRB(Transient, Extragalactic):
         self.host_galaxy = host_galaxy
         self.update_param_file("host_galaxy")
         from craftutils.observation.field import Field
-        if isinstance(self.field, Field) and old_name in self.field.objects:
+        if isinstance(self.field, Field):
             self.field.remove_object(old_name)
             self.field.remove_object(old_host)
-            self.field.add_object(self.host_galaxy)
+        self.field.add_object(self.host_galaxy)
 
     @classmethod
     def default_host_params(cls, frb_name: str, position=None, **kwargs):

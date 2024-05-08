@@ -394,8 +394,8 @@ class Epoch(Pipeline):
         return outputs
 
     def _output_dict(self):
-
-        return {
+        output_dict = super()._output_dict()
+        output_dict.update({
             "combined_from": self.combined_from,
             "coadded": _output_img_dict_single(self.coadded),
             "date": self.date,
@@ -407,10 +407,8 @@ class Epoch(Pipeline):
             "log": self.log.to_dict(),
             "master_biases": self.master_biases,
             "master_flats": self.master_flats,
-            "paths": self.paths,
-            "stages": self.stages_complete,
-            "stage_params": self.stage_params
-        }
+        })
+        return output_dict
 
     # def set_survey(self):
 

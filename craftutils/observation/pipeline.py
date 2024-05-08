@@ -89,9 +89,9 @@ class Pipeline(Generic):
         return stages
 
     def query_stage(self, message: str, stage_name: str, n: float, stage_kwargs: dict = None):
-        """
-        Helper method for asking the user if we need to do this stage of processing.
+        """Helper method for asking the user if we need to do this stage of processing.
         If self.do is True, skips the query and returns True.
+
         :param message: Message to display.
         :param stage_name: code-friendly name of stage, eg "coadd" or "initial_setup"
         :param n: Stage number
@@ -111,8 +111,8 @@ class Pipeline(Generic):
                 time_since = (Time.now() - done).sec * units.second
                 time_since = u.relevant_timescale(time_since)
                 message += f" (last performed at {done.isot}, {time_since.round(1)} ago)"
-                if stage_kwargs:
-                    message += f"\nSpecified config keywords:\n{stage_kwargs}"
+            if stage_kwargs:
+                message += f"\nSpecified config keywords:\n{stage_kwargs}"
             return u.select_yn_exit(message=message)
 
     def check_done(self, stage: str):
@@ -232,6 +232,13 @@ class Pipeline(Generic):
         self.do = _check_do_list(self.do, stages=list(self.stages().keys()))
         if not self.quiet and self.do:
             print(f"Doing stages {self.do}")
+
+    def _output_dict(self):
+        return {
+            "paths": self.paths,
+            "stages": self.stages_complete,
+            "stage_params": self.stage_params
+        }
 
 
 def _check_do_list(
