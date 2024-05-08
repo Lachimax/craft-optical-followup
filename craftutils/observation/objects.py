@@ -1519,7 +1519,7 @@ class Extragalactic(Object):
         :return: Projected physical size, with units kpc
         """
         if self.D_A is None:
-            raise ValueError(f"The object {self.name} has no angular size distance defined; is it missing a redshift?")
+            return None
         angle = u.check_quantity(angle, unit=units.arcsec).to(units.rad).value
         dist = angle * self.D_A
         return dist.to(units.kpc)

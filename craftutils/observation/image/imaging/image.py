@@ -2810,7 +2810,8 @@ class ImagingImage(Image):
         # if isinstance(x, units.Quantity):
         #     if x.decompose().unit == units.rad:
         #         x = x.to(units.pix, self.pixel_scale_x)
-
+        if obj.z is None:
+            return None
         if not isinstance(size, units.Quantity):
             size = size * units.pix
         if size.decompose().unit == units.pix:
