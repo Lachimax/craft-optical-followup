@@ -1,7 +1,7 @@
 import os
 
 import numpy as np
-from typing import Union
+from typing import Union, Dict, List
 
 import astropy.table as table
 import astropy.io.votable as votable
@@ -16,12 +16,26 @@ import craftutils.photometry as ph
 
 active_filters = {}
 
+
 # __all__ = []
+
+def best_for_path(
+        filter_list: List['Filter'],
+        exclude: list = (),
+):
+    r_sloan = Filter.from_params("r", "sdss")
+    best_score = np.inf * units.angstrom
+
+    filter_list.sort(key=lambda f: r_sloan.compare_wavelength_range(f))
+    best_fil = filter_list[0]
+
+    print(f"Best filter for PATH is {best_fil.instrument.name}/{best_fil.name}")
+    return best_fil
 
 
 # @u.export
 class Filter:
-
+    # TODO: Consider refactoring to Band instead of Filter?
     def __init__(self, **kwargs):
 
         self.name = None
@@ -243,6 +257,7 @@ class Filter:
         return name
 
     def machine_name(self):
+        self.load_instrument()
         return f"{self.instrument.name}_{self.name.replace('_', '-')}"
 
     def load_instrument(self):
@@ -458,4 +473,3 @@ class Filter:
             ),
             f"{filter_name}_photometry.ecsv"
         )
-

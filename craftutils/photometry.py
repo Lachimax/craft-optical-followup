@@ -738,18 +738,19 @@ def determine_zeropoint_sextractor(
         iterate_uncertainty: bool = True,
         do_x_shift: bool = True
 ):
-    """
-    This function expects your catalogue to be a .csv.
+    """This function expects your catalogue to be a .csv.
+
     :param sextractor_cat:
-    :param cat_path:
+    :param cat:
     :param image:
+    :param output_path:
     :param cat_name:
     :param image_name:
-    :param output_path:
     :param show:
     :param cat_ra_col:
     :param cat_dec_col:
     :param cat_mag_col:
+    :param cat_mag_col_err:
     :param sex_ra_col:
     :param sex_dec_col:
     :param sex_x_col:
@@ -760,10 +761,19 @@ def determine_zeropoint_sextractor(
     :param mag_range_sex_upper:
     :param mag_range_sex_lower:
     :param stars_only:
+    :param star_class_tol:
+    :param star_class_type:
+    :param star_class_kwargs:
     :param exp_time:
     :param y_lower:
     :param y_upper:
     :param cat_type:
+    :param cat_zeropoint:
+    :param cat_zeropoint_err:
+    :param snr_cut:
+    :param snr_col:
+    :param iterate_uncertainty:
+    :param do_x_shift:
     :return:
     """
 
@@ -803,7 +813,7 @@ def determine_zeropoint_sextractor(
         if cat_type != 'sextractor':
             cat = table.QTable.read(cat, format='ascii.csv')
             if cat_mag_col not in cat.colnames:
-                print(f"{cat_mag_col} not found in {cat}; is this band included?")
+                print(f"{cat_mag_col} not found in {cat_name}; is this band included?")
                 p.save_params(file=output_path + 'parameters.yaml', dictionary=params)
                 return None
             cat = cat.filled(fill_value=-999.)

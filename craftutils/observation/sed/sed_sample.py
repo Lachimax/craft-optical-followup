@@ -461,8 +461,8 @@ class SEDSample:
             ax_m_z.set_xlim(min_z, max_z)
             ax_m_z.invert_yaxis()
             ax_m_z.set_xlabel("$z$", fontsize=axis_fontsize)
-
-            ax_m_z.set_ylabel(f"$m_\mathrm{{{band.nice_name()}}}$", fontsize=axis_fontsize)
+            #\mathrm{{{band.nice_name()}}}
+            ax_m_z.set_ylabel(f"$m$", fontsize=axis_fontsize)
 
             ax_pdf.tick_params(bottom=False, labelsize=tick_fontsize)
             ax_pdf.xaxis.set_ticks([])
@@ -527,11 +527,12 @@ class SEDSample:
     @classmethod
     def from_file(cls, path: str, name: str = None, **kwargs):
         param_dict = p.load_params(path)
-        if name is None and path.endswith(".yaml"):
-            _, name = os.path.split(path)
-            name, _ = os.path.splitext(name)
-        else:
-            raise ValueError("A valid name could not be determined for the SED Sample. Try pointing directly to the .yaml file.")
+        if name is None:
+            if path.endswith(".yaml"):
+                _, name = os.path.split(path)
+                name, _ = os.path.splitext(name)
+            else:
+                raise ValueError("A valid name could not be determined for the SED Sample. Try pointing directly to the .yaml file.")
 
         sample = cls(name=name)
 
@@ -549,6 +550,7 @@ class SEDSample:
     @classmethod
     def from_params(cls, name: str, **kwargs):
         path = os.path.join(p.param_dir, "sed_samples", name, name + ".yaml")
+        print(path)
         if "name" in kwargs:
             name = kwargs.pop("name")
         return cls.from_file(path=path, name=name, **kwargs)

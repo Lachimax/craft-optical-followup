@@ -137,7 +137,7 @@ def main(
     mode = mode.lower()
 
     if mode == "objects":
-        field.objects_pipeline()
+        field.pipeline()
         exit()
     else:
         if epoch_name is None:
@@ -237,3 +237,7 @@ def parse_args():
         furby_path=fp,
         skip_cats=args.skip_cats
     )
+
+
+if __name__ == "__main__":
+    parse_args()
