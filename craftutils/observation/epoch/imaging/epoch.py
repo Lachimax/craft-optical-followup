@@ -1116,7 +1116,8 @@ class ImagingEpoch(Epoch):
                 images_subbed = self._get_images(img_type)
                 for fil, img_subbed in images_subbed.items():
                     img = images[fil]
-                    img_subbed.clone_diagnostics(other=img)
+                    img_subbed.clone_psf(other=img)
+                    img_subbed.clone_astrometry_info(other=img)
                     if img_type == "coadded_subtracted_patch":
                         img_subbed.source_extraction_psf(
                             output_dir=output_dir,
@@ -1274,7 +1275,6 @@ class ImagingEpoch(Epoch):
         deepest = list(self.coadded_unprojected.values())[0]
         for fil, img in self.coadded_unprojected.items():
 
-            img = self.coadded_unprojected[fil]
             img_prime = image_dict[fil]
 
             if img is None:
@@ -1331,7 +1331,12 @@ class ImagingEpoch(Epoch):
                     )
 
             deepest = image.deepest(deepest, img)
-            self.field.add_image(img_final)
+            print("Did local background subtraction?", self.did_local_background_subtraction())
+            if self.did_local_background_subtraction():
+                img_subbed = self.coadded_subtracted_patch[fil]
+                self.field.add_image(img_subbed)
+            else:
+                self.field.add_image(img_final)
 
         self.deepest_filter = deepest.filter_name
         self.deepest = deepest
@@ -1496,12 +1501,16 @@ class ImagingEpoch(Epoch):
             img.load_data()
 
             if not skip_plots:
-                self.field.plot_host(
+                ax, fig, vals = self.field.plot_host(
                     img=img,
                     frame=10 * units.arcsec,
                     centre=self.field.frb.position,
-                    output_path=os.path.join(fil_output_path, "plot_quick.pdf")
                 )
+                for obj_name, obj in self.field.objects.items():
+                    x, y = img.world_to_pixel(obj.position)
+                    plt.scatter(x, y, marker="x", label=obj_name)
+                plt.legend(loc=(1.0, 0.))
+                fig.savefig(os.path.join(fil_output_path, "plot_quick.pdf"))
 
             # Get astrometric uncertainty from images
             img.extract_astrometry_err()

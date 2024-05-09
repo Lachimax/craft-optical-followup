@@ -213,13 +213,6 @@ class Pipeline(Generic):
 
                 self.update_output_file()
 
-            elif not do_this:
-                self.stages_complete[name] = {
-                    "status": "skipped",
-                    "time": Time.now(),
-                    "kwargs": {}
-                }
-
         return last_complete
 
     def _pipeline_init(self, skip_cats: bool = False):
