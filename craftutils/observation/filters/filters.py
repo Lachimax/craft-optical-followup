@@ -1,7 +1,7 @@
 import os
 
 import numpy as np
-from typing import Union
+from typing import Union, Dict, List
 
 import astropy.table as table
 import astropy.io.votable as votable
@@ -16,12 +16,26 @@ import craftutils.photometry as ph
 
 active_filters = {}
 
-__all__ = []
+
+# __all__ = []
+
+def best_for_path(
+        filter_list: List['Filter'],
+        exclude: list = (),
+):
+    r_sloan = Filter.from_params("r", "sdss")
+    best_score = np.inf * units.angstrom
+
+    filter_list.sort(key=lambda f: r_sloan.compare_wavelength_range(f))
+    best_fil = filter_list[0]
+
+    print(f"Best filter for PATH is {best_fil.instrument.name}/{best_fil.name}")
+    return best_fil
 
 
-@u.export
+# @u.export
 class Filter:
-
+    # TODO: Consider refactoring to Band instead of Filter?
     def __init__(self, **kwargs):
 
         self.name = None
@@ -35,6 +49,10 @@ class Filter:
             self.band_name = kwargs["band_name"]
         elif self.name is not None:
             self.band_name = self.name[0]
+
+        self.frb_repo_name = None
+        if "frb_repo_name" in kwargs:
+            self.frb_repo_name = kwargs["frb_repo_name"]
 
         self.svo_id = []
         self.svo_instrument = None
@@ -68,6 +86,10 @@ class Filter:
         if "instrument" in kwargs:
             self.instrument = kwargs["instrument"]
 
+        self.cmap = None
+        if "cmap" in kwargs:
+            self.cmap = kwargs["cmap"]
+
         self.lambda_eff = None
         self.lambda_fwhm = None
         self.vega_zeropoint = None
@@ -99,6 +121,12 @@ class Filter:
             self,
             transmission: table.QTable = None
     ):
+        """
+
+
+        :param transmission:
+        :return:
+        """
         if transmission is None:
             transmission, _ = self.select_transmission_table()
         return ph.flux_from_band(
@@ -109,17 +137,19 @@ class Filter:
         )
 
     def ab_flux(self, transmission: table.QTable = None):
+        """
+        Calculates the total integrated flux of the flat AB source (3631 Jy) as seen through the filter.
+
+        :param transmission: transmission table to use. If `None`, `select_transmission_table()` will be used to select
+            the 'best' one.
+        :return:
+        """
         if transmission is None:
             transmission, _ = self.select_transmission_table()
         return ph.flux_ab(
             transmission=transmission["Transmission"],
             frequency=transmission["Frequency"],
         )
-
-        #     np.trapz(
-        #     y=3631 * units.Jy * transmission["Transmission"],
-        #     x=transmission["Wavelength"]
-        # )
 
     def compare_transmissions(self, other: 'Filter'):
         tbl_self, tbl_other = self.find_comparable_table(other)
@@ -182,6 +212,12 @@ class Filter:
         )
 
     def compare_wavelength_range(self, other: 'Filter'):
+        """
+
+        :param other:
+        :return:
+        """
+
         tbl_self, tbl_other = self.find_comparable_table(other)
         self_wavelength = tbl_self["Wavelength"]
         other_wavelength = tbl_other["Wavelength"]
@@ -221,6 +257,7 @@ class Filter:
         return name
 
     def machine_name(self):
+        self.load_instrument()
         return f"{self.instrument.name}_{self.name.replace('_', '-')}"
 
     def load_instrument(self):

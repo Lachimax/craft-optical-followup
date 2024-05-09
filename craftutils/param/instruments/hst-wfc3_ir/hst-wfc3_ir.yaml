@@ -1,0 +1,5 @@
+data_path: instruments/hst-wfc3_ir
+name: hst-wfc3_ir
+svo_service: {facility: HST, instrument: WFC3_IR}
+formatted_name: HST/WFC3-IR
+cigale_name: WFC3

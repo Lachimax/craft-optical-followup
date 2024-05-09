@@ -1,0 +1,5 @@
+data_path: instruments/hst-wfc3_ir/filters/F160W
+instrument: hst-wfc3_ir
+name: F160W
+svo_service: {id: F160W, instrument: null}
+cmap: cmr.sunburst

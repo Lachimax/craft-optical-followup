@@ -21,6 +21,7 @@ import craftutils.retrieve as r
 import craftutils.observation as obs
 import craftutils.observation.instrument as inst
 import craftutils.observation.filters as filters
+import craftutils.observation.sed as sed
 from craftutils.photometry import distance_modulus
 
 cosmology = cosmo.Planck18
@@ -43,6 +44,35 @@ uncertainty_dict = {
 }
 
 __all__ = []
+
+object_index = {}
+
+
+def object_from_index(
+        name: str,
+        tolerate_missing: bool = False
+):
+    if name in object_index:
+        return object_index[name]
+    elif tolerate_missing:
+        return None
+    else:
+        raise ValueError(f"Object with name {name} is not found in object_index.")
+
+
+def object_to_index(
+        obj: 'Object',
+        allow_overwrite: bool = False
+):
+    # print(object_index)
+    u.debug_print(1, f"Adding {str(type(obj))} {obj.name} to object index.")
+    if not isinstance(obj, Object):
+        raise TypeError(f"obj {obj} is not an Object.")
+    name = obj.name
+    if not allow_overwrite and name in object_index:
+        raise ValueError(f"Object with name {name} already exists in object_index.")
+    object_index[name] = obj
+    return obj
 
 
 def set_cosmology(cos: Union[str, cosmo.Cosmology]):
@@ -114,6 +144,7 @@ class PositionUncertainty:
         :param theta:
         :param sigma: The confidence interval (expressed in multiples of sigma) of the uncertainty ellipse.
         """
+
         self.sigma = sigma
         # Assign values from dictionary, if provided.
         if type(uncertainty) is dict:
@@ -127,11 +158,11 @@ class PositionUncertainty:
                 if "sys" in uncertainty[ra_key] and uncertainty[ra_key]["sys"] is not None:
                     ra_err_sys = uncertainty[ra_key]["sys"]
                     if isinstance(ra_err_sys, str):
-                        ra_err_sys = (Longitude(ra_err_sys) * np.cos(position.dec)).to("arcsec")
+                        ra_err_sys = Longitude(ra_err_sys).to("arcsec")
                 if "stat" in uncertainty[ra_key] and uncertainty[ra_key]["stat"] is not None:
                     ra_err_stat = uncertainty[ra_key]["stat"]
                     if isinstance(ra_err_stat, str):
-                        ra_err_stat = (Longitude(ra_err_stat) * np.cos(position.dec)).to("arcsec")
+                        ra_err_stat = Longitude(ra_err_stat).to("arcsec")
 
             dec_key = None
             if "dec" in uncertainty and uncertainty["dec"] is not None:
@@ -166,13 +197,13 @@ class PositionUncertainty:
             b_sys = 0.0 * units.arcsec
             theta = 0.0 * units.deg
 
-        if ra_err_stat is None and "alpha_err_stat" in kwargs:
-            ra_err_stat = kwargs["alpha_err_stat"]
-        if ra_err_sys is None and "alpha_err_sys" in kwargs:
-            ra_err_sys = kwargs["alpha_err_sys"]
-        if dec_err_stat is None and "delta_err_stat" in kwargs:
+        if ra_err_stat is None and "alpha_err_stat" in kwargs and kwargs["alpha_err_stat"] is not None:
+            ra_err_stat = (kwargs["alpha_err_stat"] / np.cos(position.dec)).to("arcsec")
+        if ra_err_sys is None and "alpha_err_sys" in kwargs and kwargs["alpha_err_sys"] is not None:
+            ra_err_sys = (kwargs["alpha_err_sys"] / np.cos(position.dec)).to("arcsec")
+        if dec_err_stat is None and "delta_err_stat" in kwargs and kwargs["delta_err_stat"] is not None:
             dec_err_stat = kwargs["delta_err_stat"]
-        if dec_err_sys is None and "delta_err_sys" in kwargs:
+        if dec_err_sys is None and "delta_err_sys" in kwargs and kwargs["delta_err_sys"] is not None:
             dec_err_sys = kwargs["delta_err_sys"]
 
         # Check whether we're specifying uncertainty using equatorial coordinates or ellipse parameters.
@@ -196,17 +227,16 @@ class PositionUncertainty:
         if not ellipse:
             ra = position.ra
             dec = position.dec
-            a_sys = ra_err_sys
-            # SkyCoord(0.0 * units.degree, dec).separation(SkyCoord(ra_err_sys, dec))
-            a_stat = ra_err_stat
-            # SkyCoord(0.0 * units.degree, dec).separation(SkyCoord(ra_err_stat, dec))
+            a_sys = ra_err_sys * np.cos(dec)
+            a_stat = ra_err_stat * np.cos(dec)
             b_sys = dec_err_sys
-            # SkyCoord(ra, dec).separation(SkyCoord(ra, dec + dec_err_sys))
             b_stat = dec_err_stat
-            # SkyCoord(ra, dec).separation(SkyCoord(ra, dec + dec_err_stat))
-            # a_sys, b_sys = max(a_sys, b_sys), min(a_sys, b_sys)
-            # a_stat, b_stat = max(a_stat, b_stat), min(a_stat, b_stat)
-            theta = 0.0 * units.degree
+            if b_sys > a_sys:
+                theta = 90. * units.deg
+            else:
+                theta = 0. * units.degree
+            a_sys, b_sys = max(a_sys, b_sys), min(a_sys, b_sys)
+            a_stat, b_stat = max(a_stat, b_stat), min(a_stat, b_stat)
         # Or use ellipse parameters as given.
         else:
             a_sys = u.check_quantity(number=a_sys, unit=units.arcsec)
@@ -230,7 +260,9 @@ class PositionUncertainty:
         return f"PositionUncertainty: a_stat={self.a_stat}, b_stat={self.b_stat}; a_sys={self.a_sys}, b_sys={self.b_sys}"
 
     def uncertainty_quadrature(self):
-        return np.sqrt(self.a_sys ** 2 + self.a_stat ** 2), np.sqrt(self.b_sys ** 2 + self.b_stat ** 2)
+        a_quad = np.sqrt(self.a_sys ** 2 + self.a_stat ** 2)
+        b_quad = np.sqrt(self.b_sys ** 2 + self.b_stat ** 2)
+        return max(a_quad, b_quad), min(a_quad, b_quad)
 
     def uncertainty_quadrature_equ(self):
         return np.sqrt(self.ra_sys ** 2 + self.ra_stat ** 2), np.sqrt(self.dec_sys ** 2 + self.dec_stat ** 2)
@@ -265,6 +297,8 @@ class PositionUncertainty:
 
 @u.export
 class Object:
+    optical = False
+
     def __init__(
             self,
             name: str = None,
@@ -275,15 +309,13 @@ class Object:
             plotting: dict = None,
             **kwargs
     ):
-        self.name = name
-
-        self.cat_row = row
+        self.field = field
+        self.name = None
+        self.name_filesys = None
+        self.cat_row = None
         self.position = None
         self.position_err = None
-
-        if self.cat_row is not None:
-            self.position_from_cat_row()
-        elif position is not None:
+        if position is not None:
             self.position = astm.attempt_skycoord(position)
             if type(position_err) is not PositionUncertainty:
                 self.position_err = PositionUncertainty(uncertainty=position_err, position=self.position)
@@ -291,12 +323,17 @@ class Object:
             if isinstance(self.position, SkyCoord):
                 self.position_galactic = self.position.transform_to("galactic")
 
+        self.set_name(name=name)
+
+        if self.name:
+            object_to_index(self, allow_overwrite=True)
+
+        if self.cat_row is not None:
+            self.position_from_cat_row()
+
         self.position_photometry = copy.deepcopy(self.position)
         self.position_photometry_err = copy.deepcopy(self.position_err)
 
-        if self.name is None:
-            self.jname()
-        self.name_filesys = None
         self.set_name_filesys()
 
         self.photometry = {}
@@ -304,7 +341,9 @@ class Object:
         self.photometry_tbl = None
         self.data_path = None
         self.output_file = None
-        self.field = field
+        self.param_path = None
+        if "param_path" in kwargs:
+            self.param_path = kwargs["param_path"]
         self.irsa_extinction_path = None
         self.irsa_extinction = None
         self.ebv_sandf = None
@@ -326,16 +365,43 @@ class Object:
 
         self.photometry_args = None
         if "photometry_args_manual" in kwargs and kwargs["photometry_args_manual"]["a"] != 0 and \
-                kwargs["photometry_args_manual"]["b"]:
+                kwargs["photometry_args_manual"]["b"] is not None:
             self.photometry_args = kwargs["photometry_args_manual"]
             self.a = self.photometry_args["a"]
             self.b = self.photometry_args["b"]
             self.theta = self.photometry_args["theta"]
             self.kron = self.photometry_args["kron_radius"]
 
+    def __str__(self):
+        return self.name
+
+    def __repr__(self):
+        return f"{str(type(self))} {self.name} at {self.position.to_string('hmsdms')}"
+
+    def set_name(self, name: str = None):
+        if name is None:
+            name = self.jname()
+        self.name = name
+        self.set_name_filesys()
+        return self.name
+
+    def _get_object(
+            self,
+            obj_name: str,
+            tolerate_missing: bool = True,
+    ):
+        if self.field is not None and obj_name in self.field.objects:
+            return self.field.objects[obj_name]
+        else:
+            return object_from_index(obj_name, tolerate_missing=tolerate_missing)
+
     def set_name_filesys(self):
-        if self.name is not None:
-            self.name_filesys = self.name.replace(" ", "-")
+        if self.name is None and self.position is not None:
+            self.name = self.jname()
+        if not isinstance(self.name, str):
+            self.name = str(self.name)
+        self.name_filesys = self.name.replace(" ", "-")
+        self.check_data_path(make=False)
 
     def position_from_cat_row(self, cat_row: table.Row = None):
         if cat_row is not None:
@@ -361,6 +427,8 @@ class Object:
         deepest_dict = self.select_deepest()
         deepest_path = deepest_dict["good_image_path"]
 
+        print("Deepest image determined to be", deepest_path)
+
         cls = image.CoaddedImage.select_child_class(instrument_name=deepest_dict["instrument"])
         deepest_img = cls(path=deepest_path)
         deep_mask = deepest_img.write_mask(
@@ -369,7 +437,7 @@ class Object:
                 f"{self.name_filesys}_master-mask_{deepest_dict['instrument']}_{deepest_dict['filter']}_{deepest_dict['epoch_name']}.fits",
             ),
             method="sep",
-            unmasked=self.position_photometry
+            do_not_mask=self.position_photometry
         )
 
         mag_results = deepest_img.sep_elliptical_magnitude(
@@ -578,7 +646,12 @@ class Object:
         pos_phot_err = None
         if self.position_photometry_err is not None:
             pos_phot_err = self.position_photometry_err.to_dict()
+        pos_err = None
+        if self.position_err is not None:
+            pos_err = self.position_err.to_dict()
         return {
+            "position_input": self.position,
+            "position_input_err": pos_err,
             "position_photometry": self.position_photometry,
             "position_photometry_err": pos_phot_err,
             "photometry": self.photometry,
@@ -605,11 +678,14 @@ class Object:
                     self.irsa_extinction_path = outputs["irsa_extinction_path"]
             return outputs
 
-    def check_data_path(self):
+    def check_data_path(self, make: bool = True):
         if self.field is not None:
             u.debug_print(2, "", self.name)
-            self.data_path = os.path.join(self.field.data_path, "objects", self.name_filesys)
-            u.mkdir_check(self.data_path)
+            if self.name_filesys is None:
+                self.set_name_filesys()
+            self.data_path = str(os.path.join(self.field.data_path, "objects", self.name_filesys))
+            if make:
+                u.mkdir_check(self.data_path)
             self.output_file = os.path.join(self.data_path, f"{self.name_filesys}_outputs.yaml")
             return True
         else:
@@ -625,6 +701,13 @@ class Object:
         :param output: Path to write plot.
         :return: matplotlib ax object containing plot info
         """
+
+        if not self.photometry:
+            self.load_output_file()
+            if not self.photometry:
+                print(f"No photometry found for {self.name}")
+                return
+
         if output is None:
             output = os.path.join(self.data_path, f"{self.name_filesys}_photometry.pdf")
 
@@ -652,6 +735,13 @@ class Object:
         :param kwargs:
         :return: matplotlib ax object containing plot info
         """
+
+        if not self.photometry:
+            self.load_output_file()
+            if not self.photometry:
+                print(f"No photometry found for {self.name}")
+                return
+
         if ax is None:
             fig, ax = plt.subplots()
         if "ls" not in kwargs:
@@ -733,6 +823,12 @@ class Object:
         :return:
         """
 
+        if not self.photometry:
+            self.load_output_file()
+            if not self.photometry:
+                print(f"No photometry found for {self.name}")
+                return
+
         if output is None:
             output = self.build_photometry_table_path()
 
@@ -744,6 +840,8 @@ class Object:
 
                 if best:
                     phot_dict, _ = self.select_photometry_sep(fil=filter_name, instrument=instrument_name)
+                    if phot_dict is None:
+                        return None
                     phot_dict["band"] = filter_name
                     phot_dict["instrument"] = instrument_name
                     phot_dict["lambda_eff"] = u.check_quantity(
@@ -774,7 +872,7 @@ class Object:
 
         if output is not False:
             for fmt in fmts:
-                u.detect_problem_table(photometry_tbl, fmt="csv")
+                # u.detect_problem_table(photometry_tbl, fmt="csv")
                 photometry_tbl.write(output.replace(".ecsv", fmt[fmt.find("."):]), format=fmt, overwrite=True)
         return photometry_tbl
 
@@ -786,33 +884,66 @@ class Object:
     #     extinction.fitzpatrick99(tbl["lambda_eff"], a_v, r_v) * units.mag
     #     pass
 
+    def galactic_extinction_fm07(
+            self,
+            lambda_eff: units.Quantity,
+            r_v: float = 3.1
+    ):
+        import extinction
+        lambda_eff = u.dequantify(lambda_eff, unit=units.Angstrom)
+        lambda_eff = np.array(u.check_iterable(lambda_eff))
+        self.retrieve_extinction_table()
+        a_v = (r_v * self.ebv_sandf).value
+        return extinction.fm07(lambda_eff, a_v, unit="aa") * units.mag
+
     def estimate_galactic_extinction(
             self,
             ax=None,
             r_v: float = 3.1,
             **kwargs
     ):
-        import extinction
+
         if ax is None:
             fig, ax = plt.subplots()
         if "marker" not in kwargs:
             kwargs["marker"] = "x"
 
         self.retrieve_extinction_table()
-        lambda_eff_tbl = self.irsa_extinction["LamEff"].to(
-            units.Angstrom)
-        power_law = models.PowerLaw1D()
-        fitter = fitting.LevMarLSQFitter()
-        fitted = fitter(power_law, lambda_eff_tbl, self.irsa_extinction["A_SandF"].value)
 
         tbl = self.photometry_to_table(fmts=["ascii.ecsv", "ascii.csv"])
 
         x = np.linspace(0, 80000, 1000) * units.Angstrom
 
-        a_v = (r_v * self.ebv_sandf).value
+        lambda_eff_tbl = self.irsa_extinction["LamEff"].to(
+            units.Angstrom)
+        power_law = models.PowerLaw1D()
+        fitter = fitting.LevMarLSQFitter()
+        try:
+            fitted = fitter(power_law, lambda_eff_tbl, self.irsa_extinction["A_SandF"].value)
+            tbl["ext_gal_pl"] = fitted(tbl["lambda_eff"]) * units.mag
+            ax.plot(
+                x, fitted(x),
+                label=f"power law fit to IRSA",
+                # , \\alpha={fitted.alpha.value}; $x_0$={fitted.x_0.value}; A={fitted.amplitude.value}",
+                c="blue"
+            )
+            self.extinction_power_law = {
+                "amplitude": fitted.amplitude.value * fitted.amplitude.unit,
+                "x_0": fitted.x_0.value,
+                "alpha": fitted.alpha.value
+            }
+        except fitting.NonFiniteValueError:
+            fitted = None
+            tbl["ext_gal_pl"] = -999. * units.mag
 
-        tbl["ext_gal_sandf"] = extinction.fitzpatrick99(tbl["lambda_eff"], a_v, r_v) * units.mag
-        tbl["ext_gal_pl"] = fitted(tbl["lambda_eff"]) * units.mag
+        if not self.photometry:
+            self.load_output_file()
+            if not self.photometry:
+                print(f"No photometry found for {self.name}")
+                return
+
+        tbl["ext_gal_sandf"] = self.galactic_extinction_fm07(lambda_eff=tbl["lambda_eff"], r_v=r_v)
+
         tbl["ext_gal_interp"] = np.interp(
             tbl["lambda_eff"],
             lambda_eff_tbl,
@@ -820,15 +951,9 @@ class Object:
         ) * units.mag
 
         ax.plot(
-            x, extinction.fitzpatrick99(x, a_v, r_v),
+            x, self.galactic_extinction_fm07(x, r_v=r_v).value,
             label="S\&F + F99 extinction law",
             c="red"
-        )
-        ax.plot(
-            x, fitted(x),
-            label=f"power law fit to IRSA",
-            # , \\alpha={fitted.alpha.value}; $x_0$={fitted.x_0.value}; A={fitted.amplitude.value}",
-            c="blue"
         )
         ax.scatter(
             lambda_eff_tbl, self.irsa_extinction["A_SandF"].value,
@@ -857,11 +982,6 @@ class Object:
         ax.legend()
         plt.savefig(os.path.join(self.data_path, f"{self.name_filesys}_irsa_extinction.pdf"))
         plt.close()
-        self.extinction_power_law = {
-            "amplitude": fitted.amplitude.value * fitted.amplitude.unit,
-            "x_0": fitted.x_0.value,
-            "alpha": fitted.alpha.value
-        }
 
         for row in tbl:
             instrument = row["instrument"]
@@ -927,13 +1047,14 @@ class Object:
                 ra_precision=2,
                 dec_precision=1
             )
-            if self.name is None:
-                self.name = name
             return name
 
     def get_photometry_table(self, output: bool = False, best: bool = False, force: bool = False):
         if not self.photometry:
             self.load_output_file()
+            if not self.photometry:
+                print(f"No photometry found for {self.name}")
+                return
         if output is True:
             output = None
         tbl = None
@@ -976,6 +1097,9 @@ class Object:
         self.get_photometry_table(output=local_output, best=False)
         fil_photom = self.photometry_tbl[self.photometry_tbl["band"] == fil]
         fil_photom = fil_photom[fil_photom["instrument"] == instrument]
+        if "snr_sep" not in fil_photom.colnames:
+            print("It looks like this object is missing SEP photometry; try running refine_photometry for this field.")
+            return None, None
         row = fil_photom[np.argmax(fil_photom["snr_sep"])]
         photom_dict = self.photometry[instrument][fil][row["epoch_name"]]
 
@@ -1010,7 +1134,7 @@ class Object:
 
     def select_deepest(self, local_output: bool = True):
         self.get_photometry_table(output=local_output, best=False)
-        if "snr" not in self.photometry_tbl.colnames:
+        if self.photometry_tbl is None or "snr" not in self.photometry_tbl.colnames:
             return None
         idx = np.argmax(self.photometry_tbl["snr"])
         row = self.photometry_tbl[idx]
@@ -1043,13 +1167,20 @@ class Object:
 
     def select_deepest_sep(self, local_output: bool = True):
         self.get_photometry_table(output=local_output, best=True)
-        if "snr_sep" not in self.photometry_tbl_best.colnames:
+        if not isinstance(self.photometry_tbl_best, table.Table) or "snr_sep" not in self.photometry_tbl_best.colnames:
+            print(f"No photometry found for {self.name}")
             return None
         idx = np.argmax(self.photometry_tbl_best["snr_sep"])
         row = self.photometry_tbl_best[idx]
         return self.photometry[row["instrument"]][row["band"]][row["epoch_name"]]
 
-    def push_to_table(self, select: bool = False, local_output: bool = True):
+    def push_to_table(
+            self,
+            select: bool = False,
+            local_output: bool = True
+    ):
+        if not self.photometry:
+            return
 
         jname = self.jname()
 
@@ -1097,7 +1228,24 @@ class Object:
             row["mu"] = self.mu
 
         if isinstance(self, TransientHostCandidate):
-            row["transient_tns_name"] = self.transient.tns_name
+            if not isinstance(self.transient, Transient):
+                self.get_transient()
+            if isinstance(self.transient.tns_name, str):
+                row["transient_tns_name"] = self.transient.tns_name
+            else:
+                row["transient_tns_name"] = "N/A"
+
+            if self.P_Ox is not None:
+                row[f"path_pox"] = self.P_Ox
+            if self.P_U is not None:
+                row[f"path_pu"] = self.P_U
+            if self.P_Ux is not None:
+                row[f"path_pu"] = self.P_Ux
+
+            if self.probabilistic_association_img:
+                row["path_img"] = self.probabilistic_association_img
+            else:
+                row["path_img"] = "N/A"
 
         for instrument in self.photometry:
             for fil in self.photometry[instrument]:
@@ -1149,6 +1297,7 @@ class Object:
             object_name=self.name,
             entry=row,
         )
+        print()
         obs.write_master_objects_table()
 
     # def plot_ellipse(
@@ -1177,21 +1326,53 @@ class Object:
                 {
                     "frame": None
                 },
-            "publication_doi": None
+            "publication_doi": None,
+            "field": None,
+            "other_names": [],
         }
         return default_params
 
+    def to_param_dict(self):
+        dictionary = self.default_params()
+        dictionary.update({
+            "name": self.name,
+            "position": self.position,
+        })
+        if self.field is not None:
+            dictionary["field"] = self.field.name
+        return dictionary
+
+    def to_param_yaml(self, path: str = None):
+        print(f"Writing param yaml for {self.name}")
+        dictionary = self.to_param_dict()
+        if path is None and self.field is not None:
+            path = os.path.join(self.field._obj_path(), self.name)
+
+        p.save_params(file=path, dictionary=dictionary)
+        return dictionary
+
     @classmethod
-    def from_dict(cls, dictionary: dict, field=None) -> 'Object':
+    def from_dict(cls, dictionary: dict, **kwargs):
         """
         Construct an Object or appropriate child class (FRB, Galaxy...) from a passed dict.
+
         :param dictionary: dict with keys:
             'position': position dictionary as given by position_dictionary
             'position_err':
         :return: Object reflecting dictionary.
         """
+        dictionary.update(kwargs)
         dict_pristine = dictionary.copy()
-        ra, dec = p.select_coords(dictionary.pop("position"))
+        position = dictionary.pop("position")
+        if isinstance(position, dict):
+            ra, dec = p.select_coords(position)
+            position = f"{ra} {dec}"
+        elif isinstance(position, str):
+            astm.attempt_skycoord(position)
+        elif not isinstance(position, SkyCoord):
+            raise TypeError(f"position type {type(position)} not recognised. "
+                            f"Can be SkyCoord, string (hms dms), or dictionary (see objects.position_dictionary)")
+
         if "position_err" in dictionary:
             position_err = dictionary.pop("position_err")
         else:
@@ -1212,17 +1393,13 @@ class Object:
         else:
             name = None
 
-        if selected in (Object, FRB):
-            return selected(
-                name=name,
-                position=f"{ra} {dec}",
-                position_err=position_err,
-                field=field,
-                plotting=plotting,
-                **dictionary
-            )
-        else:
-            return selected.from_dict(dictionary=dict_pristine, field=field)
+        return selected(
+            name=name,
+            position=position,
+            position_err=position_err,
+            plotting=plotting,
+            **dictionary
+        )
 
     @classmethod
     def select_child_class(cls, obj_type: str):
@@ -1232,7 +1409,9 @@ class Object:
         elif obj_type == "frb":
             return FRB
         elif obj_type == "star":
-            return Object
+            return Star
+        elif obj_type == "transienthostcandidate":
+            return TransientHostCandidate
         else:
             raise ValueError(f"Didn't recognise obj_type '{obj_type}'")
 
@@ -1262,11 +1441,14 @@ class Object:
 
 @u.export
 class Star(Object):
+    optical = True
     pass
 
 
 @u.export
 class Extragalactic(Object):
+    optical = True
+
     def __init__(
             self,
             z: float = None,
@@ -1279,17 +1461,18 @@ class Extragalactic(Object):
         self.z_err = None
         self.D_A = None
         self.D_L = None
+        self.D_comoving = None
         self.mu = None
         self.set_z(z, **kwargs)
 
     def set_z(self, z: float, **kwargs):
         self.z = z
-        if z is not None:
-            if "z_err" in kwargs:
-                self.z_err = kwargs["z_err"]
-            self.D_A = self.angular_size_distance()
-            self.D_L = self.luminosity_distance()
-            self.mu = self.distance_modulus()
+        if "z_err" in kwargs:
+            self.z_err = kwargs["z_err"]
+        self.D_A = self.angular_size_distance()
+        self.D_L = self.luminosity_distance()
+        self.D_comoving = self.comoving_distance()
+        self.mu = self.distance_modulus()
 
     def angular_size_distance(self):
         if self.z is not None:
@@ -1335,6 +1518,8 @@ class Extragalactic(Object):
         :param angle: Angular size. If not provided as a quantity, must be in arcseconds.
         :return: Projected physical size, with units kpc
         """
+        if self.D_A is None:
+            return None
         angle = u.check_quantity(angle, unit=units.arcsec).to(units.rad).value
         dist = angle * self.D_A
         return dist.to(units.kpc)
@@ -1349,9 +1534,20 @@ class Extragalactic(Object):
         theta = (distance * units.rad / self.D_A).to(units.arcsec)
         return theta
 
+    @classmethod
+    def default_params(cls):
+        default_params = super().default_params()
+        default_params.update({
+            "z": None,
+            "z_err": None,
+        })
+        return default_params
+
 
 @u.export
 class Galaxy(Extragalactic):
+    optical = True
+
     def __init__(
             self,
             z: float = None,
@@ -1404,6 +1600,8 @@ class Galaxy(Extragalactic):
         self.halo_mb15 = None
         self.halo_mb04 = None
 
+        self.sed_models = {}
+
         self.cigale_model_path = None
         self.cigale_model = None
 
@@ -1413,7 +1611,31 @@ class Galaxy(Extragalactic):
         self.cigale_results_path = None
         self.cigale_results = None
 
+    def sed_model_path(self):
+        path = os.path.join(self.data_path, "sed_models")
+        u.mkdir_check(path)
+        return path
+
+    def add_sed_model(
+            self,
+            path: str,
+            name: str,
+            model_type: type = sed.SEDModel,
+            **kwargs
+    ):
+        sed_path = os.path.join(self.sed_model_path(), name)
+        u.mkdir_check(sed_path)
+        self.sed_models[name] = model_type(
+            z=self.z,
+            path=path,
+            output_dir=sed_path,
+            name=name,
+            **kwargs
+        )
+        return self.sed_models[name]
+
     def load_cigale_model(self, force: bool = False):
+        # TODO: incorporate into SEDModel
         if self.cigale_model_path is None:
             print(f"Cannot load CIGALE model; {self}.cigale_model_path has not been set.")
         elif force or self.cigale_model is None:
@@ -1445,8 +1667,10 @@ class Galaxy(Extragalactic):
         if outputs is not None:
             if "mass_stellar" in outputs and outputs["mass_stellar"] is not None:
                 self.mass_stellar = outputs["mass_stellar"]
-            if "mass_stellar_err" in outputs and outputs["mass_stellar_err"] is not None:
-                self.mass_stellar_err = outputs["mass_stellar_err"]
+            if "mass_stellar_err_plus" in outputs and outputs["mass_stellar_err_plus"] is not None:
+                self.mass_stellar_err_plus = outputs["mass_stellar_err_plus"]
+            if "mass_stellar_err_minus" in outputs and outputs["mass_stellar_err_minus"] is not None:
+                self.mass_stellar_err_minus = outputs["mass_stellar_err_minus"]
             if "sfr" in outputs and outputs["sfr"] is not None:
                 self.sfr = outputs["sfr"]
             if "sfr_err" in outputs and outputs["sfr_err"] is not None:
@@ -1569,28 +1793,9 @@ class Galaxy(Extragalactic):
     def default_params(cls):
         default_params = super().default_params()
         default_params.update({
-            "z": None,
-            "z_err": None,
-            "type": "galaxy"
+            "type": "Galaxy"
         })
         return default_params
-
-    # TODO: There do not need to be separate methods per class for this. Just pass dictionary as a **kwargs and be done with it
-    @classmethod
-    def from_dict(cls, dictionary: dict, field=None):
-        ra, dec = p.select_coords(dictionary.pop("position"))
-        if "position_err" in dictionary:
-            position_err = dictionary.pop("position_err")
-        else:
-            position_err = PositionUncertainty.default_params()
-        return cls(
-            name=dictionary.pop("name"),
-            position=f"{ra} {dec}",
-            position_err=position_err,
-            z=dictionary.pop("z"),
-            field=field,
-            **dictionary
-        )
 
 
 @u.export
@@ -1606,16 +1811,73 @@ class TransientHostCandidate(Galaxy):
             **kwargs
         )
         self.transient = transient
+        if isinstance(self.transient, str) and self.field is not None:
+            transient = self.field.get_object(self.transient, allow_missing=True)
+            if transient is not None:
+                self.transient = transient
 
         self.P_O = None
         if "P_O" in kwargs:
             self.P_O = kwargs["P_O"]
-        self.P_xO = None
-        if "P_xO" in kwargs:
-            self.P_xO = kwargs["P_xO"]
+        self.p_xO = None
+        if "p_xO" in kwargs:
+            self.p_xO = kwargs["p_xO"]
         self.P_Ox = None
         if "P_Ox" in kwargs:
             self.P_Ox = kwargs["P_Ox"]
+        self.P_U = None
+        if "P_U" in kwargs:
+            self.P_U = kwargs["P_U"]
+        self.P_Ux = None
+        if "P_U" in kwargs:
+            self.P_Ux = kwargs["P_Ux"]
+        self.probabilistic_association_img = None
+        if "probabilistic_association_img" in kwargs:
+            self.probabilistic_association_img = kwargs["probabilistic_association_img"]
+
+    def get_transient(self, tolerate_missing: bool = False):
+        if self.transient is None:
+            self.transient = Transient(
+                host_galaxy=self,
+                z=self.z,
+                z_err=self.z_err
+            )
+        elif isinstance(self.transient, str):
+            self.transient = self._get_object(self.transient, tolerate_missing=tolerate_missing)
+        elif not isinstance(self.transient, Transient):
+            raise ValueError(f"{self.name}.transient is not set correctly ({self.transient})")
+
+        return self.transient
+
+    @classmethod
+    def default_params(cls):
+        default_params = super().default_params()
+        default_params.update({
+            "type": "TransientHostCandidate",
+            "transient": None,
+            "P_O": None,
+            "p_xO": None,
+            "P_Ox": None,
+            "probabilistic_association_img": None
+        })
+        return default_params
+
+    def to_param_dict(self):
+        dictionary = self.default_params()
+        dictionary.update(super().to_param_dict())
+        dictionary.update({
+            "P_O": self.P_O,
+            "p_xO": self.p_xO,
+            "P_Ox": self.P_Ox,
+            "P_U": self.P_U,
+            "P_Ux": self.P_Ux,
+            "probabilistic_association_img": self.probabilistic_association_img
+        })
+        if isinstance(self.transient, str):
+            dictionary["transient"] = self.transient
+        else:
+            dictionary["transient"] = self.transient.name
+        return dictionary
 
 
 dm_units = units.parsec * units.cm ** -3
@@ -1628,6 +1890,8 @@ dm_host_median = {
 
 @u.export
 class Transient(Object):
+    optical = False
+
     def __init__(
             self,
             host_galaxy: TransientHostCandidate = None,
@@ -1637,6 +1901,16 @@ class Transient(Object):
         super().__init__(
             **kwargs
         )
+        if isinstance(host_galaxy, str):
+            hg = self._get_object(host_galaxy)
+            if hg:
+                host_galaxy = hg
+        self.z = None
+        self.z_err = None
+        if "z" in kwargs:
+            self.z = kwargs["z"]
+        if "z_err" in kwargs:
+            self.z_err = kwargs["z"]
         self.host_galaxy = host_galaxy
         self.host_candidate_tables = {}
         self.host_candidates = []
@@ -1647,9 +1921,43 @@ class Transient(Object):
         if "tns_name" in kwargs:
             self.tns_name = kwargs["tns_name"]
 
+    def get_host(self, name: str = None) -> Galaxy:
+        """If `self.host_galaxy` is a string, checks for a host galaxy with that in the FRB's field and sets
+        `self.host_galaxy` to that object.
+        If `self.host_galaxy` is `None`, sets it to an empty `TransientHostCandidate` with the same `z` and `z_err`.
+
+        :return: The Galaxy or TransientHostCandidate object.
+        """
+        if self.host_galaxy is None:
+            self.host_galaxy = TransientHostCandidate(
+                transient=self,
+                z=self.z,
+                z_err=self.z_err,
+                name=name
+            )
+        elif isinstance(self.host_galaxy, str) and self.field:
+            self.host_galaxy = self._get_object(self.host_galaxy)
+
+        return self.host_galaxy
+
+    def update_param_file(self, param: str):
+        p_dict = {
+            "host_galaxy": self.host_galaxy.name,
+        }
+        if param not in p_dict:
+            raise ValueError(f"Either {param} is not a valid parameter, or it has not been configured.")
+        if self.param_path is None:
+            raise ValueError("param_path has not been set.")
+        else:
+            params = p.load_params(self.param_path)
+        params[param] = p_dict[param]
+        p.save_params(file=self.param_path, dictionary=params)
+
 
 @u.export
-class FRB(Transient):
+class FRB(Transient, Extragalactic):
+    optical = False
+
     def __init__(
             self,
             dm: Union[float, units.Quantity] = None,
@@ -1681,6 +1989,12 @@ class FRB(Transient):
         self.width_int_err = None
         if "width_int_err" in kwargs:
             self.width_int_err = u.check_quantity(kwargs["width_int_err"], units.ms)
+        self.width_total = None
+        if "width" in kwargs:
+            self.width_total = u.check_quantity(kwargs["width"], units.ms)
+        self.width_total_err = None
+        if "width_err" in kwargs:
+            self.width_total_err = u.check_quantity(kwargs["width_err"], units.ms)
         # Scattering timescale, exponent of exponential model
         self.tau = None
         if "tau" in kwargs:
@@ -1693,9 +2007,32 @@ class FRB(Transient):
         if "nu_scattering" in kwargs:
             self.nu_scattering = u.check_quantity(kwargs["nu_scattering"], units.GHz)
 
+        if self.width_total is None and self.width_int is not None and self.tau is not None:
+            self.width_total = self.width_int + self.tau
+            if self.width_int_err is not None and self.tau_err is not None:
+                self.width_total_err = np.sqrt(self.tau_err ** 2 + self.width_int_err ** 2)
+
+        # Detection parameters
+        # ====================
+        self.instrument: str = None
+        if "instrument" in kwargs:
+            self.snr = kwargs["instrument"]
+        self.survey: str = None
+        if "survey" in kwargs:
+            self.survey = kwargs["survey"]
+        self.snr = None
+        if "snr" in kwargs:
+            self.snr = kwargs["snr"]
+
         # DM components
         self._dm_mw_ism_ne2001 = None
         self._dm_mw_ism_ymw16 = None
+
+        # Tau components
+        self._tau_mw_ism_ne2001 = None
+        self._tau_mw_ism_ymw16 = None
+
+        self.zdm_table: table.QTable = None
 
         # Placeholder for an associated `frb.frb.FRB` object
         self.x_frb = None
@@ -1714,23 +2051,51 @@ class FRB(Transient):
             img,
             include_img_err: bool = True,
             prior_set: Union[str, dict] = "adopted",
-            priors: dict = {},
-            offset_priors: dict = {"scale": 0.5},
-            config: dict = {},
-    ):
-        """
-        Performs a customised PATH run on an image.
+            priors: dict = None,
+            offset_priors: dict = None,
+            config: dict = None,
+            associate_kwargs=None,
+            do_plot: bool = False,
+            output_dir: str = None,
+            show: bool = False,
+            max_radius: units.Quantity = None,
+    ) -> (table.QTable, dict):
+        """Performs a customised PATH run on an image.
 
         :param img: The image on which to run PATH.
+        :param include_img_err: If set to True, the image astrometry RMS (from img.extract_astrometry_err()) will be
+            added to the transient localisation error in quadrature.
+        :param prior_set:
+        :param priors:
+        :param offset_priors:
+        :param config:
+        :param associate_kwargs:
+        :param do_plot:
+        :param output_dir:
+        :param show:
+        :param max_radius:
         :return:
         """
         import frb.associate.frbassociate as associate
         import astropath.path as path
+        from craftutils.observation.field import FRBField
         astm_rms = 0.
+        if config is None:
+            config = {}
+        if priors is None:
+            priors = {}
+        if offset_priors is None:
+            offset_priors = {"scale": 0.5}  # As per Shannon+2024
+        if associate_kwargs is None:
+            associate_kwargs = {"extinction_correct": True}
         if include_img_err:
             astm_rms = img.extract_astrometry_err()
         if astm_rms is None:
             astm_rms = 0.
+        if output_dir is None:
+            self.check_data_path()
+            output_dir = str(os.path.join(self.data_path, "PATH", img.name))
+            u.mkdir_check(output_dir)
         a, b = self.position_err.uncertainty_quadrature()
         a = np.sqrt(a ** 2 + astm_rms ** 2)
         b = np.sqrt(b ** 2 + astm_rms ** 2)
@@ -1743,20 +2108,31 @@ class FRB(Transient):
         )
         #     img.load_output_file()
         img.extract_pixel_scale()
-        instname = img.instrument.name.replace("-", "_").upper()
-        filname = f'{instname}_{img.filter.band_name}'
-        # TODO: subtract Galactic extinction from zeropoint
+        if img.filter.frb_repo_name is None:
+            instname = img.instrument.name.replace("-", "_").upper()
+            filname = f'{instname}_{img.filter.band_name}'
+        else:
+            filname = img.filter.frb_repo_name
+        # TODO: subtract Galactic extinction from zeropoint?
+
+        if max_radius is not None:
+            max_radius = u.dequantify(max_radius, unit=units.arcsec)
+        elif "max_radius" in config:
+            max_radius = config["max_radius"]
+        else:
+            max_radius = 20.
+
         config_n = dict(
-            max_radius=10,
+            max_radius=int(max_radius),
             skip_bayesian=False,
             npixels=9,
             image_file=img.path,
-            cut_size=30.,
+            cut_size=max_radius * 2,
             filter=filname,
             ZP=img.zeropoint_best["zeropoint_img"].value,
             deblend=True,
             cand_bright=17.,
-            cand_separation=10 * units.arcsec,
+            cand_separation=max_radius * units.arcsec,
             plate_scale=(1 * units.pix).to(units.arcsec, img.pixel_scale_y),
         )
         config_n.update(config)
@@ -1777,21 +2153,35 @@ class FRB(Transient):
         prior_set["theta"].update(offset_priors)
         prior_set.update(priors)
 
-        print("P(U) ==", prior_set["U"])
+        p_u = prior_set["U"] = float(prior_set["U"])
+
+        print("P(U) ==", p_u)
         print()
-        print("priors:", prior_set)
+        print("Priors:", prior_set)
+        print("Config:", config)
+        print()
+
+        if "show" not in associate_kwargs:
+            associate_kwargs["show"] = show
+
         try:
             ass = associate.run_individual(
                 config=config,
                 FRB=x_frb,
                 prior=prior_set,
+                **associate_kwargs,
                 # extinction_correct=True
             )
             p_ux = ass.P_Ux
             print("P(U|x) ==", p_ux)
+            if np.isnan(p_ux):
+                p_ux = None
             cand_tbl = table.QTable.from_pandas(ass.candidates)
-            p_ox = cand_tbl[0]["P_Ox"]
-            print("Max P(O|x_i) ==", p_ox)
+            cand_tbl["P_U"] = [p_u] * len(cand_tbl)
+            max_p_ox = cand_tbl[0]["P_Ox"]
+            print("Max P(O|x_i) ==", max_p_ox)
+            if np.ma.is_masked(max_p_ox):
+                max_p_ox = None
             print("\n\n")
             cand_tbl["ra"] *= units.deg
             cand_tbl["dec"] *= units.deg
@@ -1799,27 +2189,79 @@ class FRB(Transient):
             cand_tbl["x"], cand_tbl["y"] = img.world_to_pixel(coord=coord)
             cand_tbl["separation"] *= units.arcsec
             cand_tbl[filname] *= units.mag
-            self.host_candidate_tables[img.name] = cand_tbl
+            p_u_rnd = np.round(p_u, 4)
+            if p_u_rnd not in self.host_candidate_tables:
+                self.host_candidate_tables[p_u_rnd] = {}
+            self.host_candidate_tables[p_u_rnd][img.name] = cand_tbl
             self.update_output_file()
-        except IndexError:
-            cand_tbl = None
-            p_ox = None
-            p_ux = None
 
-        return cand_tbl, p_ox, p_ux
+            if do_plot and isinstance(self.field, FRBField) and (show or output_dir):
+                fig = plt.figure(figsize=(12, 12))
+                ax, fig, _ = self.field.plot_host(
+                    img=img,
+                    fig=fig,
+                    frame=cand_tbl["separation"].max(),
+                    centre=self.position
+                )
+                c = ax.scatter(cand_tbl["x"], cand_tbl["y"], marker="x", c=cand_tbl["P_Ox"], cmap="bwr")
+                fig.colorbar(c)
+                if show:
+                    plt.show(fig)
+                if output_dir:
+                    fig.savefig(os.path.join(output_dir, f"{self.name}_PATH_{img.name}_PU_{p_u}.pdf"))
+                plt.close(fig)
+
+            write_dict = {
+                "priors": prior_set,
+                "config": config_n,
+                "max_P(O|x_i)": max_p_ox,
+                "P(U|x)": p_ux,
+                "output_dir": output_dir,
+            }
+
+            if output_dir:
+                for fmt in ("csv", "ecsv"):
+                    cand_tbl.write(
+                        os.path.join(output_dir, f"{self.name}_PATH_{img.name}_PU_{p_u}.{fmt}"),
+                        format=f"ascii.{fmt}",
+                        overwrite=True
+                    )
+
+                p.save_params(
+                    os.path.join(output_dir, f"{self.name}_PATH_{img.name}_PU_{p_u}.yaml"),
+                    write_dict
+                )
+
+        except IndexError:
+            write_dict = {
+                "priors": prior_set,
+                "config": config_n,
+                "max_P(O|x_i)": None,
+                "P(U|x)": None,
+                "output_dir": output_dir,
+            }
+            cand_tbl = None
+
+        return cand_tbl, write_dict
 
     def consolidate_candidate_tables(
             self,
             sort_by: str = "separation",
-            reverse_sort: bool = True
+            reverse_sort: bool = False,
+            p_ox_assign: str = None,
+            p_u: float = 0.1,
+            output_path: str = None
     ):
         # Build a shared catalogue of host candidates.
         path_cat = None
-        for tbl_name in self.host_candidate_tables:
+        p_u = float(np.round(p_u, 4))
+        for tbl_name in self.host_candidate_tables[p_u]:
             if tbl_name == "consolidated":
                 continue
-            print(tbl_name)
-            cand_tbl = self.host_candidate_tables[tbl_name]
+            if p_ox_assign is None:
+                p_ox_assign = tbl_name
+            # print(tbl_name)
+            cand_tbl = self.host_candidate_tables[p_u][tbl_name]
             if path_cat is None:
                 path_cat = cand_tbl["label", "ra", "dec", "separation"]
             path_cat, matched, dist = astm.match_catalogs(
@@ -1829,10 +2271,9 @@ class FRB(Transient):
                 tolerance=0.7 * units.arcsec
             )
 
-            for prefix in ["label", "P_Ox", "mag"]:
-
+            for prefix in ["label", "P_c", "P_Ox", "P_O", "p_xO", "P_Ux", "mag"]:
                 if f"{prefix}_{tbl_name}" not in matched.colnames:
-                    print(f"{prefix}_{tbl_name}")
+                    # print(f"{prefix}_{tbl_name}")
                     matched[f"{prefix}_{tbl_name}"] = matched[prefix]
 
                 for col in list(filter(lambda c: c.startswith(prefix + "_"), path_cat.colnames)):
@@ -1843,49 +2284,60 @@ class FRB(Transient):
                     matched["matched"]]
 
             for row in matched[np.invert(matched["matched"])]:
-                print(f'Adding label {row["label"]} from {tbl_name} table. ra={row["ra"]}, dec={row["dec"]}')
+                print(
+                    f'Adding label {row["label"]} from {tbl_name} table. ra={row["ra"]}, dec={row["dec"]}, {sort_by}_{p_ox_assign}')
                 path_cat.add_row(row[path_cat.colnames])
 
         # path_cat["coord"] = SkyCoord(path_cat["ra"], path_cat["dec"])
+        if sort_by == "P_Ox":
+            sort_by = f"P_Ox_{p_ox_assign}"
         path_cat.sort(sort_by, reverse=reverse_sort)
-        path_cat["id"] = np.zeros(len(path_cat), dtype=str)
+        ids = []
+        id_strs = []
         for i, row in enumerate(path_cat):
-            row["id"] = chr(65 + i)
-        self.host_candidate_tables["consolidated"] = path_cat
-        for row in path_cat:
+            ids.append(i)
+            id_strs.append(str(i).zfill(int(np.ceil(np.log10(len(path_cat))))))
+        path_cat["id"] = ids
+        path_cat["id_str"] = id_strs
+        self.host_candidate_tables[p_u]["consolidated"] = path_cat
+        best_i = np.argmax(path_cat[f"P_Ox_{p_ox_assign}"])
+        for i, row in enumerate(path_cat):
             idn = self.name.replace("FRB", "")
-            host_candidate = Galaxy(
+            host_candidate = TransientHostCandidate(
                 z=None,
+                transient=self,
                 position=SkyCoord(row["ra"], row["dec"]),
                 field=self.field,
-                name=f"HC{row['id']}_{idn}"
+                name=f"HC{row['id_str']}_{idn}",
+                P_O=row[f"P_O_{p_ox_assign}"],
+                p_xO=row[f"p_xO_{p_ox_assign}"],
+                P_Ox=row[f"P_Ox_{p_ox_assign}"],
+                P_U=p_u,
+                P_Ux=row[f"P_Ux_{p_ox_assign}"],
+                probabilistic_association_img=p_ox_assign
             )
             self.host_candidates.append(host_candidate)
+            # if i == best_i and row[f"P_Ox_{p_ox_assign}"] > 0.9:
+            #     self.host_galaxy = host_candidate
+
         self.update_output_file()
         return path_cat
 
     def write_candidate_tables(self):
         table_paths = {}
-        for img_name in self.host_candidate_tables:
-            cand_tbl = self.host_candidate_tables[img_name]
-            write_path = os.path.join(self.data_path, f"PATH_table_{img_name}.ecsv")
-            if "coords" in cand_tbl.colnames:
-                cand_tbl.remove_column("coords")
-            cand_tbl.write(write_path, overwrite=True)
-            table_paths[img_name] = p.split_data_dir(write_path)
+        for p_u in self.host_candidate_tables:
+            for img_name in self.host_candidate_tables[p_u]:
+                cand_tbl = self.host_candidate_tables[p_u][img_name]
+                write_path = os.path.join(self.data_path, "PATH", f"PATH_table_{img_name}_PU_{p_u}.ecsv")
+                if "coords" in cand_tbl.colnames:
+                    cand_tbl.remove_column("coords")
+                cand_tbl.write(write_path, overwrite=True)
+                table_paths[img_name] = p.split_data_dir(write_path)
         return table_paths
 
     def _output_dict(self):
         output = super()._output_dict()
-        cand_list = []
-        for obj in self.host_candidates:
-            new_dict = Galaxy.default_params()
-            new_dict.update({
-                "name": obj.name,
-                "position": obj.position,
-                "z": obj.z,
-            })
-            cand_list.append(new_dict)
+        cand_list = list(map(lambda o: str(o), self.host_candidates))
 
         output.update({
             "host_candidate_tables": self.write_candidate_tables(),
@@ -1897,40 +2349,96 @@ class FRB(Transient):
         outputs = super().load_output_file()
         if outputs is not None:
             if "host_candidate_tables" in outputs:
-                tables = outputs["host_candidate_tables"]
-                for table_name in tables:
-                    tbl_path = tables[table_name]
-                    tbl_path = p.join_data_dir(tbl_path)
-                    if os.path.isfile(tbl_path):
-                        try:
-                            tbl = table.QTable.read(tbl_path)
-                            self.host_candidate_tables[table_name] = tbl
-                        except StopIteration:
-                            continue
+                p_us = outputs["host_candidate_tables"]
+                for p_u in p_us:
+                    tables = outputs[p_u]["host_candidate_tables"]
+                    for table_name in tables:
+                        tbl_path = tables[table_name]
+                        tbl_path = p.join_data_dir(tbl_path)
+                        if os.path.isfile(tbl_path):
+                            try:
+                                tbl = table.QTable.read(tbl_path)
+                                self.host_candidate_tables[p_u][table_name] = tbl
+                            except StopIteration:
+                                continue
 
             if "host_candidates" in outputs:
-                for obj in outputs["host_candidates"]:
-                    self.host_candidates.append(
-                        Galaxy(
-                            z=obj["z"],
-                            position=obj["position"],
-                            name=obj["name"],
-                            field=self.field
-                        )
-                    )
+                for obj_dict in outputs["host_candidates"]:
+                    if isinstance(obj_dict, str):
+                        obj_name = obj_dict
+                    else:
+                        obj_name = obj_dict["name"]
+                    obj = object_from_index(obj_name, tolerate_missing=True)
+                    if obj is None:
+                        obj = obj_name
+                    self.host_candidates.append(obj)
 
     @classmethod
     def default_params(cls):
         default_params = super().default_params()
         default_params.update({
-            "host_galaxy": Galaxy.default_params(),
+            "type": "FRB",
+            "dm": 0.0 * dm_units,
+            "snr": 0.0,
+            "host_galaxy": None,
             "date": "0000-01-01",
             "tau": None,
             "tau_err": None,
             "width_intrinsic": None,
             "width_intrinsic_err": None,
+            "width_total": None,
+            "width_total_err": None,
             "tns_name": None
         })
+        return default_params
+
+    def to_param_dict(self):
+        dictionary = self.default_params()
+        dictionary.update(super().to_param_dict())
+        dictionary.update({
+            "host_galaxy": self.host_galaxy.name,
+        })
+        if isinstance(self.transient, str):
+            dictionary["transient"] = self.transient
+        else:
+            dictionary["transient"] = self.transient.name
+        return dictionary
+
+    @classmethod
+    def host_name(cls, frb_name: str):
+        if "FRB" in frb_name:
+            host_name = frb_name.replace("FRB", "HG")
+        else:
+            host_name = frb_name + " Host"
+        return host_name
+
+    def hg_name(self):
+        return self.host_name(frb_name=self.name)
+
+    def set_host(self, host_galaxy: TransientHostCandidate):
+        hg_name = self.hg_name()
+        old_name = host_galaxy.name
+        old_host = self.host_galaxy
+        print(f"Assigning {old_name} as host of {self.name} and relabelling as {hg_name}")
+        host_galaxy.set_name(name=hg_name)
+        self.host_galaxy = host_galaxy
+        self.update_param_file("host_galaxy")
+        from craftutils.observation.field import Field
+        if isinstance(self.field, Field):
+            self.field.remove_object(old_name)
+            self.field.remove_object(old_host)
+        self.field.add_object(self.host_galaxy)
+
+    @classmethod
+    def default_host_params(cls, frb_name: str, position=None, **kwargs):
+        default_params = TransientHostCandidate.default_params()
+        host_name = cls.host_name(frb_name)
+
+        default_params["name"] = host_name
+        default_params["transient"] = frb_name
+        if position:
+            default_params["position"] = position
+        default_params.update(**kwargs)
         return default_params
 
     @classmethod
@@ -1952,6 +2460,14 @@ class FRB(Transient):
             print("Date could not be resolved from object name.")
             return None
 
+    def get_host(self, name: str = None) -> Galaxy:
+        if name is None:
+            name = self.hg_name()
+        super().get_host(name=name)
+        if self.z is None and self.host_galaxy is not None:
+            self.set_z(self.host_galaxy.z)
+        return self.host_galaxy
+
     def date_from_name(self):
         date_str = self._date_from_name(self.name)
         try:
@@ -1961,44 +2477,68 @@ class FRB(Transient):
         except ValueError:
             return date_str
 
-    def dm_mw_ism_ne2001(
+    def dm_mw_ism_ne2001_baror(
             self,
-            distance: Union[units.Quantity, float] = 100. * units.kpc,
-            force: bool = False
-    ):
+            distance: Union[units.Quantity, float] = 200 * units.kpc,
+    ) -> units.Quantity:
         """
-        Borrowed from frb.mw
-        :param distance:
+        Derives the ISM component of the DM using the Bar-Or, Prochaska implementation of NE2001:
+        https://github.com/FRBs/ne2001
+
+        :param distance: Distance to object; for extragalactic objects, use a value greater than 100 kpc.
         :return:
         """
         # from frb.mw import ismDM
+        from ne2001 import density
+        distance = u.dequantify(distance, unit=units.kpc)
+        ne = density.ElectronDensity()
+        dm_ism = ne.DM(
+            self.position.galactic.l.value,
+            self.position.galactic.b.value,
+            distance
+        )
+        return dm_ism
+
+    def dm_mw_ism_ne2001(
+            self,
+            distance: Union[units.Quantity, float] = np.inf * units.kpc,
+            force: bool = False
+    ) -> units.Quantity['pc cm-3']:
         if self._dm_mw_ism_ne2001 is None or force:
-            from ne2001 import density
-            distance = u.dequantify(distance, unit=units.kpc)
-            ne = density.ElectronDensity()
-            dm_ism = ne.DM(
-                self.position.galactic.l.value,
-                self.position.galactic.b.value,
-                distance
+            self._dm_mw_ism_ne2001, self._tau_mw_ism_ne2001 = self._dm_mw_ism_pygedm(
+                method="ne2001",
+                distance=distance
             )
-            self._dm_mw_ism_ne2001 = dm_ism
         return self._dm_mw_ism_ne2001
 
     def dm_mw_ism_ymw16(
             self,
-            distance: Union[units.Quantity, float] = 50. * units.kpc,
+            distance: Union[units.Quantity, float] = 50 * units.kpc,
             force: bool = False
     ):
         if self._dm_mw_ism_ymw16 is None or force:
-            import pygedm
-            dm, tau = pygedm.dist_to_dm(
-                self.position.galactic.l,
-                self.position.galactic.b,
-                distance,
-                method="ymw16"
+            self._dm_mw_ism_ymw16, self._tau_mw_ism_ymw16 = self._dm_mw_ism_pygedm(
+                method="ymw16",
+                distance=distance
             )
-            self._dm_mw_ism_ymw16 = dm
         return self._dm_mw_ism_ymw16
+
+    def _dm_mw_ism_pygedm(
+            self,
+            method: str,
+            distance: Union[units.Quantity, float] = np.inf * units.kpc,
+    ):
+        import pygedm
+        if distance > 100 * units.kpc or np.isnan(distance):
+            distance = 100 * units.kpc
+        print(distance, self.name)
+        dm, tau = pygedm.dist_to_dm(
+            self.position.galactic.l,
+            self.position.galactic.b,
+            distance,
+            method=method
+        )
+        return dm, tau
 
     def dm_mw_ism(
             self,
@@ -2159,7 +2699,10 @@ class FRB(Transient):
         from frb.dm.igm import average_DM
         if z_max is None:
             z_max = self.host_galaxy.z
-        return average_DM(z_max, cosmo=cosmology, **kwargs)
+        if z_max <= 0:
+            return 0 * dm_units
+        else:
+            return average_DM(z_max, cosmo=cosmology, **kwargs)
 
     def dm_halos_avg(self, z_max: float = None, **kwargs):
         import frb.halos.hmf as hmf
@@ -2167,7 +2710,10 @@ class FRB(Transient):
         hmf.init_hmf()
         if z_max is None:
             z_max = self.host_galaxy.z
-        return average_DMhalos(z_max, cosmo=cosmology, **kwargs)
+        if z_max <= 0:
+            return 0 * dm_units
+        else:
+            return average_DMhalos(z_max, cosmo=cosmology, **kwargs)
 
     # def estimate_dm_excess(self):
     #     dm_ism = self.estimate_dm_mw_ism()
@@ -2193,8 +2739,16 @@ class FRB(Transient):
         """
         if z_host is None:
             z_host = self.host_galaxy.z
-        nu = u.check_quantity(self.nu_scattering, units.MHz)
-        tau = u.check_quantity(self.tau * 1., units.ms)
+        if z_host is None:
+            return 0 * dm_units
+        if self.nu_scattering:
+            nu = u.check_quantity(self.nu_scattering, units.MHz)
+        else:
+            return 0 * dm_units
+        if self.tau:
+            tau = u.check_quantity(self.tau * 1., units.ms)
+        else:
+            return 0 * dm_units
         if subtract_mw:
             tau_mw = self.tau_mw()
             tau -= tau_mw
@@ -2261,7 +2815,7 @@ class FRB(Transient):
             foreground_objects = list(
                 filter(
                     lambda o: isinstance(o, Galaxy) and o.z <= self.host_galaxy.z and o.mass_stellar is not None,
-                    self.field.objects
+                    self.field.objects.values()
                 )
             )
         if host not in foreground_objects and host.z is not None:
@@ -2579,21 +3133,90 @@ class FRB(Transient):
 
         return outputs
 
+    def host_probability_unseen(
+            self,
+            img: 'image.ImagingImage',
+            sample: Union[str, sed.SEDSample] = "Gordon+2023",
+            **kwargs
+    ):
+        """Uses the Marnoch+2023 method to estimate the probability that this FRB's host galaxy is unseen in the given
+        image.
+
+        :param img:
+        :param sample:
+        :param kwargs:
+        :return:
+        """
+
+        if self.read_p_z_dm() is None:
+            return None, None, None
+        if isinstance(sample, str):
+            sample = sed.SEDSample.from_params("Gordon+2023")
+        if "save_memory" not in kwargs:
+            kwargs["save_memory"] = True
+        if "n_z" not in kwargs:
+            kwargs["n_z"] = 500
+        if "z_max" not in kwargs:
+            kwargs["z_max"] = 5  # (self.dm / 1000).value * 2
+        sample.z_displace_sample(
+            bands=[img.filter],
+            **kwargs
+        )
+        psf = img.extract_psf_fwhm()
+        limits = img.test_limit_location(self.position, ap_radius=2 * psf)
+        lim_5sigma = limits["mag"][4]
+        a_z = self.galactic_extinction_fm07(img.filter.lambda_eff)
+        lim_w_ext = lim_5sigma - a_z[0]
+        print("Using limit", lim_w_ext)
+        vals, tbl, z_lost = sample.probability_unseen(
+            band=img.filter,
+            limit=lim_w_ext,
+            obj=self,
+            # show=True,
+            plot=True,
+            output=os.path.join(self.data_path, "PATH", "p_u")
+        )
+        return vals, tbl, z_lost
+
+    def read_p_z_dm(self, path: str = None):
+        if path is None:
+            path = os.path.join(p.data_dir, "zdm", f"{self.name}_pzgdm.npz")
+        if not os.path.isfile(path):
+            return None
+        zdm_np = np.load(path)
+        self.zdm_table = table.QTable(
+            {
+                "z": zdm_np["zvals"],
+                "p(z|DM)_best": zdm_np["all_pzgdm"][0]
+            }
+        )
+        for i, zdm in enumerate(zdm_np["all_pzgdm"][1:]):
+            self.zdm_table[f"p(z|DM)_90_{i}"] = zdm
+        return self.zdm_table
+
+    def _p_z_dm_command(self):
+        dm_ism = self.dm_mw_ism_ne2001().value
+        command = f"python pz_given_dm.py -d {self.dm.value} -i {dm_ism} -s CRAFT/ICS -H 40 -o {self.name_filesys}_pzgdm "
+        if self.snr is not None:
+            command += f"-S {self.snr} "
+        if self.width_total is not None:
+            command += f"-w {self.width_total.value} "
+
+        z = None
+        if self.z:
+            z = self.z
+        elif self.host_galaxy and self.host_galaxy.z:
+            z = self.host_galaxy.z
+        if z is not None:
+            command += f"-z {z} "
+        return command
+
     @classmethod
-    def from_dict(cls, dictionary: dict, name: str = None, field=None):
-        frb = super().from_dict(dictionary=dictionary)
+    def from_dict(cls, dictionary: dict, **kwargs) -> 'FRB':
+        frb = super().from_dict(dictionary=dictionary, **kwargs)
         # if "dm" in dictionary:
         #     frb.dm = u.check_quantity(dictionary["dm"], dm_units)
         dictionary["host_galaxy"]["transient"] = frb
-        host_galaxy = TransientHostCandidate.from_dict(dictionary=dictionary["host_galaxy"], field=field)
+        host_galaxy = TransientHostCandidate.from_dict(dictionary=dictionary["host_galaxy"])
         frb.host_galaxy = host_galaxy
         return frb
-
-    @classmethod
-    def default_params(cls):
-        default_params = super().default_params()
-        default_params.update({
-            "dm": 0.0 * dm_units,
-            "snr": 0.0,
-        })
-        return default_params

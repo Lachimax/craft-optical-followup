@@ -1,0 +1,7 @@
+data_path: /home/lachlan/Data/instruments/vlt-fors2/filters/R_SPECIAL
+instrument: vlt-fors2
+name: R_SPECIAL
+svo_service: {id: ESO1076, instrument: null}
+formatted_name: $R_\mathrm{special}$
+band_name: R
+cmap: plasma

@@ -7,10 +7,6 @@ import craftutils.observation.filters as filters
 
 active_instruments = {}
 
-__all__ = []
-
-
-@u.export
 class Instrument:
 
     def __init__(self, **kwargs):
@@ -42,9 +38,12 @@ class Instrument:
     def __str__(self):
         return str(self.name)
 
+    def __index__(self, key: str):
+        return self.filters[key]
+
     def gather_filters(self):
         filter_dir = self.guess_filter_dir()
-        for file in filter(lambda f: f.endswith(".yaml"), os.listdir(filter_dir)):
+        for file in filter(lambda f: f.endswith(".yaml") and not f.endswith("backup.yaml"), os.listdir(filter_dir)):
             u.debug_print(1, "Instrument.gather_filters(): file == ", file)
             fil = filters.Filter.from_params(filter_name=file[:-5], instrument_name=self.name)
             fil.instrument = self
@@ -166,4 +165,3 @@ class Instrument:
     @classmethod
     def filter_class(cls):
         return filters.Filter
-

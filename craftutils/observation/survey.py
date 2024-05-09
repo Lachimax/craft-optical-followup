@@ -5,12 +5,7 @@ from typing import Union
 import craftutils.params as p
 import craftutils.utils as u
 
-# TODO: Parent class for all param loading etc, with children Instrument, Survey etc.
 
-__all__ = []
-
-
-@u.export
 class Survey:
     def __init__(self, **kwargs):
         self.name = None
@@ -116,7 +111,7 @@ class Survey:
         u.debug_print(1, "Survey.from_file(): name ==", name)
         u.debug_print(1, "Survey.from_file(): param_dict ==", param_dict)
         if param_dict is None:
-            raise FileNotFoundError("Param file missing!")
+            raise FileNotFoundError(f"Param file missing: {param_file}")
         return cls(**param_dict)
 
     @classmethod

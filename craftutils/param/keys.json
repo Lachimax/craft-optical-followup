@@ -1,9 +1,9 @@
 {
   "astrometry": "xxxxxxxxxxxxx",
-  "des_user": "xxxxxxxxxxxx",
-  "des_pwd": "xxxxxxxxxx",
-  "eso_user": "xxxxxxxxx",
-  "eso_pwd": "xxxxxxxx",
+  "des_user": "xxxxxxx",
+  "des_pwd": "xxxxxxx",
+  "eso_user": "xxxxxxx",
+  "eso_pwd": "xxxxxxx",
   "gemini_user": "xxxxxxx",
   "gemini_pwd": "xxxxxxx",
   "sciserver_user": "xxxxxxxxxxxx",

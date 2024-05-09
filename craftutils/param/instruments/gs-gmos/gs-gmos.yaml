@@ -1,0 +1,5 @@
+data_path: instruments/gs-gmos
+name: gs-gmos
+svo_service: {facility: Gemini, instrument: GMOS-S}
+formatted_name: Gemini South/GMOS
+#cigale_name: WFC3

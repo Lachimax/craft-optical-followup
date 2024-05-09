@@ -1,0 +1,3 @@
+data_path: /home/lachlan/Data/instruments/wise
+name: wise
+svo_service: {facility: WISE, instrument: WISE}

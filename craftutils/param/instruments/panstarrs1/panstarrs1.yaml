@@ -1,0 +1,4 @@
+data_path: /home/lachlan/Data/instruments/panstarrs1
+name: panstarrs1
+svo_service: {facility: PAN-STARRS, instrument: PS1}
+cigale_name: Pan-STARRS

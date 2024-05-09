@@ -11,10 +11,11 @@ import craftutils.utils as u
 
 from .sed import SEDModel
 
-__all__ = []
+
+# __all__ = []
 
 
-@u.export
+# @u.export
 class GordonProspectorModel(SEDModel):
     """
     The `GordonProspectorModel` uses the data model established by [GordonProspector]_.
@@ -28,7 +29,7 @@ class GordonProspectorModel(SEDModel):
             path = kwargs["path"]
 
         self.model_flux_path = None
-        expect = path + '_spectrum.txt'
+        expect = path + '_model_spectrum_FM07.txt'
         if "model_flux_path" in kwargs:
             self.model_flux_path = kwargs["model_flux_path"]
         elif path != "" and os.path.isfile(expect):
@@ -37,7 +38,7 @@ class GordonProspectorModel(SEDModel):
         #     raise ValueError("model_flux_path not given, and no file found at", expect)
 
         self.model_wavelength_path = None
-        expect = path + '_wavelengths.txt'
+        expect = path + '_model_wavelengths_FM07.txt'
         if "model_wavelength_path" in kwargs:
             self.model_wavelength_path = kwargs["model_wavelength_path"]
         elif path != "" and os.path.isfile(expect):
@@ -46,16 +47,18 @@ class GordonProspectorModel(SEDModel):
         #     raise ValueError("model_wavelength_path not given, and no file found at", expect)
 
         self.observed_flux_path = None
+        expect = path + '_observed_spectrum_FM07.txt'
         if "observed_flux_path" in kwargs:
             self.observed_flux_path = kwargs["observed_flux_path"]
-        elif path != "" and os.path.isfile(path + '_obs_flux.txt'):
-            self.observed_flux_path = path + '_obs_flux.txt'
+        elif path != "" and os.path.isfile(path + expect):
+            self.observed_flux_path = path + expect
 
         self.observed_wavelength_path = None
+        expect = path + '_obsserved_wave_FM07.txt'
         if "observed_wavelength_path" in kwargs:
             self.observed_wavelength_path = kwargs["observed_wavelength_path"]
-        elif path != "" and os.path.isfile(path + '_obs_wave.txt'):
-            self.observed_wavelength_path = path + '_obs_wave.txt'
+        elif path != "" and os.path.isfile(path + expect):
+            self.observed_wavelength_path = path + expect
 
         self.observed_flux_err_path = None
         if "observed_flux_err_path" in kwargs:
@@ -90,6 +93,8 @@ class GordonProspectorModel(SEDModel):
         else:
             obs_flux_err = []
             self.observed_flux_err_path = None
+
+
 
         self.model_table = table.QTable(
             {

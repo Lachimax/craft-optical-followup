@@ -1,0 +1,10 @@
+band_name: null
+data_path: instruments/decam/filters/r
+formatted_name: null
+frb_repo_name: DECam_r
+instrument: decam
+name: r
+svo_service:
+  id: [r, r_filter]
+  instrument: DECam
+cmap: plasma
