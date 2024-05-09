@@ -727,7 +727,7 @@ class Field(Pipeline):
         if isinstance(obj, dict):
             self.add_object_from_dict(obj)
         if obj.name in self.objects:
-            warnings.warn("An object with this name already exists here; it is being overwritten.")
+            warnings.warn(f"An object with name {obj.name} already exists in field {self.name}; it is being overwritten.")
         self.objects[obj.name] = obj
         obj.field = self
 
