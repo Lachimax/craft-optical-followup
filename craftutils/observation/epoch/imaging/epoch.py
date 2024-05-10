@@ -2311,10 +2311,7 @@ class ImagingEpoch(Epoch):
                 self.exp_time_mean[fil] = np.mean(exp_times) * units.s
             frame_exp_time = self.exp_time_mean[fil].round()
 
-            if "SNR_PSF" in img.depth["secure"]:
-                depth = img.depth["secure"]["SNR_PSF"][f"5-sigma"]
-            else:
-                depth = img.depth["secure"]["SNR_AUTO"][f"5-sigma"]
+            depth = img.select_depth()
 
             entry = {
                 "field_name": self.field.name,
