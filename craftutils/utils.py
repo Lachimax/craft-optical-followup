@@ -1033,7 +1033,6 @@ def uncertainty_string(
     if uncertainty in limit_vals:
         if n_digits_lim:
             # Account for the decimal point
-            print(v_point, n_digits_lim)
             if v_point < n_digits_lim:
                 n_digits_lim += 1
                 x = 0
