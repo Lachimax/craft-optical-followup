@@ -1342,12 +1342,18 @@ class Object:
             dictionary["field"] = self.field.name
         return dictionary
 
-    def to_param_yaml(self, path: str = None):
+    def to_param_yaml(self, path: str = None, keep_old: bool = False):
         print(f"Writing param yaml for {self.name}")
         dictionary = self.to_param_dict()
+        default = self.default_params()
         if path is None and self.field is not None:
             path = os.path.join(self.field._obj_path(), self.name)
-
+        if os.path.isfile(path) and keep_old:
+            dict_old = p.load_params(path)
+            for key, value in dictionary.items():
+                if key not in default or default[key] != value:
+                    dict_old[key] = value
+            dictionary = dict_old
         p.save_params(file=path, dictionary=dictionary)
         return dictionary
 

@@ -200,7 +200,6 @@ class Field(Pipeline):
         epochs = self.gather_epochs_imaging()
         for epoch_name in epochs:
             epoch = ep.epoch_from_directory(epoch_name)
-            epoch.do_kwargs = {}
             epoch.do = [stage]
             if stage not in epoch.param_file:
                 epoch.param_file[stage] = {}
@@ -900,7 +899,7 @@ class Field(Pipeline):
             return active_fields[name]
         if not quiet:
             print("Initializing field...")
-        path = cls.build_param_path(field_name=name)
+        path = cls.build_param_path(field_name=name, mkdir=False)
         return cls.from_file(param_file=path)
 
     @classmethod
@@ -917,8 +916,10 @@ class Field(Pipeline):
         return param_dict
 
     @classmethod
-    def build_param_path(cls, field_name: str):
-        path = u.mkdir_check_args(p.param_dir, "fields", field_name)
+    def build_param_path(cls, field_name: str, mkdir: bool = True):
+        path = os.path.join(p.param_dir, "fields", field_name)
+        if mkdir:
+            os.makedirs(path, exist_ok=True)
         return os.path.join(path, f"{field_name}.yaml")
 
     @classmethod

@@ -137,6 +137,7 @@ def main(
     mode = mode.lower()
 
     if mode == "objects":
+        field.do = do
         field.pipeline()
         exit()
     else:
