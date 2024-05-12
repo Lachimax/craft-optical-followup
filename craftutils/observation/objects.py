@@ -1347,7 +1347,7 @@ class Object:
         dictionary = self.to_param_dict()
         default = self.default_params()
         if path is None and self.field is not None:
-            path = os.path.join(self.field._obj_path(), self.name)
+            path = os.path.join(self.field._obj_path(), self.name + ".yaml")
         if os.path.isfile(path) and keep_old:
             dict_old = p.load_params(path)
             for key, value in dictionary.items():
@@ -2433,7 +2433,7 @@ class FRB(Transient, Extragalactic):
         if isinstance(self.field, Field):
             self.field.remove_object(old_name)
             self.field.remove_object(old_host)
-        self.field.add_object(self.host_galaxy)
+        # self.field.add_object(self.host_galaxy)
 
     @classmethod
     def default_host_params(cls, frb_name: str, position=None, **kwargs):
