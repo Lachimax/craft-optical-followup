@@ -348,7 +348,7 @@ def write_master_table(
     tbl = copy.deepcopy(tbl)
     if "template" in tbl:
         tbl.pop("template")
-    tbl_list = list(map(lambda e: tbl[e], tbl))
+    tbl_list = list(tbl.values())
     tbl_astropy = table.QTable(tbl_list)
 
     # For FRB fields, try to make the field names match the TNS name (if it exists)
@@ -373,12 +373,17 @@ def write_master_table(
         tbl_names.insert(0, name)
     tbl_astropy = tbl_astropy[tbl_names]
     tbl_astropy.sort(sort_by)
+    for i, row in enumerate(tbl_astropy):
+        if None in row:
+            tbl_astropy.remove_row(i)
+    # colname, column = u.detect_problem_column(tbl_astropy)
+
     tbl_astropy.write(
         tbl_path.replace(".yaml", ".ecsv"),
         format="ascii.ecsv",
         overwrite=True
     )
-    # u.detect_problem_table(tbl_astropy)
+    # u.detect_problem_row(tbl_astropy)
     tbl_astropy.write(
         tbl_path.replace(".yaml", ".csv"),
         format="ascii.csv",

@@ -356,7 +356,7 @@ class ImagingEpoch(Epoch):
     def proc_subtract_background_frames(self, output_dir: str, **kwargs):
         self.frames_subtracted = {}
         if "frames" not in kwargs:
-            if "correct_astrometry_frames" in self.do_kwargs and self.do_kwargs["correct_astrometry_frames"]:
+            if "correct_astrometry_frames" in self.do_param and self.do_param["correct_astrometry_frames"]:
                 kwargs["frames"] = "astrometry"
             else:
                 kwargs["frames"] = "normalised"
@@ -554,7 +554,7 @@ class ImagingEpoch(Epoch):
 
         if "frames" in kwargs:
             frames = self._get_frames(frame_type=kwargs.pop("frames"))
-        elif "register_frames" in self.do_kwargs and self.do_kwargs["register_frames"]:
+        elif "register_frames" in self.do_param and self.do_param["register_frames"]:
             frames = self._get_frames(frame_type="registered")
         else:
             frames = self._get_frames(frame_type="normalised")
@@ -731,7 +731,7 @@ class ImagingEpoch(Epoch):
                     match_cat = frame.source_cat
                 offset_tolerance = 0.5 * units.arcsec
                 # If the frames haven't been astrometrically corrected, give some extra leeway
-                if "correct_astrometry_frames" in self.do_kwargs and not self.do_kwargs["correct_astrometry_frames"]:
+                if "correct_astrometry_frames" in self.do_param and not self.do_param["correct_astrometry_frames"]:
                     offset_tolerance = 1.0 * units.arcsec
                 frame_stats, stars_moffat, stars_gauss, stars_sex = frame.psf_diagnostics(
                     match_to=match_cat
@@ -989,7 +989,7 @@ class ImagingEpoch(Epoch):
                 self.coadded_subtracted[fil].area_file = self.coadded_astrometry[fil].area_file
 
     def proc_trim_coadded(self, output_dir: str, **kwargs):
-        if "correct_astrometry_coadded" in self.do_kwargs and self.do_kwargs["correct_astrometry_coadded"]:
+        if "correct_astrometry_coadded" in self.do_param and self.do_param["correct_astrometry_coadded"]:
             images = self.coadded_astrometry
         else:
             images = self.coadded
@@ -1377,7 +1377,7 @@ class ImagingEpoch(Epoch):
         self.get_photometry(output_dir, image_type=image_type, **kwargs)
 
     def did_local_background_subtraction(self):
-        if "subtract_background_frames" in self.do_kwargs:
+        if "subtract_background_frames" in self.do_param:
             if "subtract_background_frames" in self.stage_params:
                 stage_params = self.stage_params["subtract_background_frames"]
                 if "method" not in stage_params or stage_params["method"] == "local":

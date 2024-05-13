@@ -320,7 +320,8 @@ class FRBField(Field):
                 "message": "Run PATH on available imaging?"
             },
             "update_photometry": field_stages["update_photometry"],
-            "refine_photometry": field_stages["refine_photometry"]
+            "refine_photometry": field_stages["refine_photometry"],
+            "send_to_table": field_stages["send_to_table"]
         }
         return stages
 
