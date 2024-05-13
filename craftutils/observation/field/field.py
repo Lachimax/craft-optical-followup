@@ -234,8 +234,6 @@ class Field(Pipeline):
             print("Tabulating", obj.name)
             obj.load_output_file()
             row = obj.push_to_table(select=True)
-            if row is not None:
-                print("\t", row["a"], row["z"])
             obj.update_output_file()
 
     def mkdir(self):

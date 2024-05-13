@@ -373,8 +373,8 @@ class Epoch(Pipeline):
         :param kwargs: keyword arguments to pass to the add_coadded_image() method.
         :return: output file as a dict.
         """
-        outputs = p.load_output_file(self)
-        if type(outputs) is dict:
+        outputs = super().load_output_file(**kwargs)
+        if isinstance(outputs, dict):
             if "coadded" in outputs:
                 for fil in outputs["coadded"]:
                     if outputs["coadded"][fil] is not None:
@@ -383,14 +383,6 @@ class Epoch(Pipeline):
                 for frame in set(outputs["frames_bias"]):
                     if os.path.isfile(frame):
                         self.add_frame_raw(raw_frame=frame)
-            import craftutils.observation.objects as objects
-            if "log" in outputs:
-                self.log = log.Log(outputs["log"])
-            if "stage_params" in outputs and isinstance(outputs["stage_params"], dict):
-                self.stage_params = outputs["stage_params"]
-            if "stages" in outputs:
-                self.stages_complete.update(outputs["stages"])
-
         return outputs
 
     def _output_dict(self):

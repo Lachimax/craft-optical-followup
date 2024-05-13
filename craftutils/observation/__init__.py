@@ -1,2 +1,1 @@
-from .table import *
 

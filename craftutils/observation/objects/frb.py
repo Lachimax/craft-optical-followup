@@ -122,6 +122,30 @@ class FRB(Transient, Extragalactic):
         )
         return self.x_frb
 
+
+    def push_to_table(
+            self,
+            select: bool = True,
+            local_output: bool = True
+    ):
+        jname = self.jname()
+        self.estimate_galactic_extinction()
+        row = {
+            "jname": jname,
+            "field_name": self.field.name,
+            "object_name": self.name,
+            "ra": self.position.ra.to(units.degree),
+        }
+
+        import craftutils.observation.output.objects as output_objs
+        tbl = output_objs.load_objects_table("frb")
+        tbl.add_entry(
+            key=self.name,
+            entry=row
+        )
+        tbl.write_table()
+        return row
+
     def probabilistic_association(
             self,
             img,

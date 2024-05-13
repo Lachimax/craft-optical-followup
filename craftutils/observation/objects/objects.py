@@ -17,7 +17,6 @@ import craftutils.params as p
 import craftutils.astrometry as astm
 import craftutils.utils as u
 import craftutils.retrieve as r
-import craftutils.observation as obs
 import craftutils.observation.instrument as inst
 import craftutils.observation.filters as filters
 
@@ -964,7 +963,7 @@ class Object:
 
     def push_to_table(
             self,
-            select: bool = False,
+            select: bool = True,
             local_output: bool = True
     ):
         from .galaxy import Galaxy
@@ -983,7 +982,6 @@ class Object:
                 self.get_good_photometry()
             self.photometry_to_table()
             deepest = self.select_deepest_sep(local_output=local_output)
-            print(deepest)
         else:
             deepest = self.select_deepest(local_output=local_output)
 
@@ -1082,17 +1080,18 @@ class Object:
         #             row[colname] = tbl[0][colname]
 
         u.debug_print(2, "Object.push_to_table(): select ==", select)
-        if select:
-            tbl = obs.load_master_objects_table()
-        else:
-            tbl = obs.load_master_all_objects_table()
 
-        obs.add_photometry(
-            tbl=tbl,
-            object_name=self.name,
+        import craftutils.observation.output.objects as output_objs
+        # if select:
+        tbl = output_objs.load_objects_table("optical")
+        # else:
+            # tbl = obs.load_master_all_objects_table()
+
+        tbl.add_entry(
+            key=self.name,
             entry=row,
         )
-        obs.write_master_objects_table()
+        tbl.write_table()
         return row
 
     # def plot_ellipse(

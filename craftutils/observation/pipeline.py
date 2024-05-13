@@ -12,33 +12,21 @@ from craftutils.observation.generic import Generic
 
 class Pipeline(Generic):
     stage_output_dirs = True
+
     def __init__(
             self,
-            name: str = None,
-            param_path: str = None,
-            data_path: str = None,
             do_runtime: Union[list, str] = None,
             **kwargs
     ):
-        self.param_path = param_path
-        self.name = name
+        super().__init__(**kwargs)
 
         self.quiet = False
         if "quiet" in kwargs:
             self.quiet = kwargs["quiet"]
 
-        self.data_path = None
-        self.data_path_relative = None
-        if data_path is not None:
-            self.data_path = os.path.join(p.data_dir, data_path)
-            self.data_path_relative = data_path
-        if data_path is not None:
-            u.mkdir_check_nested(self.data_path)
-
         self.do_runtime = do_runtime
 
         # Written attributes
-        self.output_file = None  # This will be set during the load_output_file call
         self.stages_complete = {}
         self.log = log.Log()
 
@@ -49,8 +37,6 @@ class Pipeline(Generic):
         u.debug_print(2, "do" in kwargs)
         if "do" in kwargs:
             self.do_param = kwargs["do"]
-
-        self.param_file = kwargs
 
         self.stage_params: dict = {}
 
@@ -72,9 +58,6 @@ class Pipeline(Generic):
 
     def set_path(self, key: str, value: str):
         self.paths[key] = value
-
-    def update_output_file(self):
-        p.update_output_file(self)
 
     @classmethod
     def stages(cls):
@@ -233,12 +216,24 @@ class Pipeline(Generic):
             print(f"Doing stages {self.do_runtime}")
 
     def _output_dict(self):
-        return {
+        output_dict = super()._output_dict()
+        output_dict.update({
             "paths": self.paths,
             "stages": self.stages_complete,
             "stage_params": self.stage_params
-        }
+        })
+        return output_dict
 
+    def load_output_file(self, **kwargs):
+        outputs = super().load_output_file(**kwargs)
+        if isinstance(outputs, dict):
+            if "log" in outputs:
+                self.log = log.Log(outputs["log"])
+            if "stage_params" in outputs and isinstance(outputs["stage_params"], dict):
+                self.stage_params = outputs["stage_params"]
+            if "stages" in outputs:
+                self.stages_complete.update(outputs["stages"])
+        return outputs
 
 def _check_do_list(
         do: Union[list, str],
@@ -267,5 +262,3 @@ def _check_do_list(
         do = do_nu
 
     return do
-
-

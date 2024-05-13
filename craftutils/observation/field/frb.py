@@ -581,8 +581,10 @@ class FRBField(Field):
         coords["ra"]["hms"] = ra_str
         coords["dec"]["dms"] = dec_str
 
-        obs.load_furby_table()
-        row, _ = obs.get_row_furby(field_name)
+        from craftutils.observation.output.furby import furby_cat
+
+        furby_cat.load_table()
+        row, _ = furby_cat.get_row(colname="field_name", colval=field_name)
         if row is not None:
             frb["position_err"]["a"]["stat"] = row["sig_ra"]
             frb["position_err"]["b"]["stat"] = row["sig_dec"]

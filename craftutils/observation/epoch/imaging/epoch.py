@@ -14,7 +14,6 @@ from astropy.coordinates import SkyCoord
 
 import ccdproc
 
-import craftutils.observation as obs
 import craftutils.observation.image as image
 import craftutils.observation.field as fld
 import craftutils.wrap.montage as montage
@@ -1456,6 +1455,8 @@ class ImagingEpoch(Epoch):
         :return:
         """
 
+        from craftutils.observation.output.epoch import imaging_table
+
         print(self.field.objects.keys())
 
         if not self.quiet:
@@ -1463,7 +1464,7 @@ class ImagingEpoch(Epoch):
 
         match_tolerance = u.check_quantity(match_tolerance, unit=units.arcsec)
 
-        obs.load_master_objects_table()
+        imaging_table.load_table()
 
         skip_plots = False
         if "skip_plots" in kwargs:
@@ -1723,27 +1724,27 @@ class ImagingEpoch(Epoch):
             # obj.push_to_table(select=True)
             # obj.write_plot_photometry()
 
-    def proc_get_photometry_all(self, output_dir: str, **kwargs):
-        if "image_type" in kwargs and isinstance(kwargs["image_type"], str):
-            image_type = kwargs["image_type"]
-        else:
-            image_type = "final"
-        self.get_photometry_all(output_dir, image_type=image_type)
+    # def proc_get_photometry_all(self, output_dir: str, **kwargs):
+    #     if "image_type" in kwargs and isinstance(kwargs["image_type"], str):
+    #         image_type = kwargs["image_type"]
+    #     else:
+    #         image_type = "final"
+    #     self.get_photometry_all(output_dir, image_type=image_type)
 
-    def get_photometry_all(
-            self, path: str,
-            image_type: str = "coadded_trimmed",
-            dual: bool = False
-    ):
-        obs.load_master_all_objects_table()
-        image_dict = self._get_images(image_type=image_type)
-        u.mkdir_check(path)
-        # Loop through filters
-        for fil in image_dict:
-            fil_output_path = os.path.join(path, fil)
-            u.mkdir_check(fil_output_path)
-            img = image_dict[fil]
-            img.push_source_cat(dual=dual)
+    # def get_photometry_all(
+    #         self, path: str,
+    #         image_type: str = "coadded_trimmed",
+    #         dual: bool = False
+    # ):
+    #     obs.load_master_all_objects_table()
+    #     image_dict = self._get_images(image_type=image_type)
+    #     u.mkdir_check(path)
+    #     # Loop through filters
+    #     for fil in image_dict:
+    #         fil_output_path = os.path.join(path, fil)
+    #         u.mkdir_check(fil_output_path)
+    #         img = image_dict[fil]
+    #         img.push_source_cat(dual=dual)
 
     def astrometry_diagnostics(
             self,
@@ -2304,7 +2305,8 @@ class ImagingEpoch(Epoch):
 
     def push_to_table(self):
 
-        obs.load_master_imaging_table()
+        from craftutils.observation.output.epoch import imaging_table
+        imaging_table.load_table()
 
         # frames = self._get_frames("final")
         coadded = self._get_images("final")
@@ -2347,13 +2349,13 @@ class ImagingEpoch(Epoch):
             if isinstance(self.field, fld.FRBField) and self.field.frb.tns_name is not None:
                 entry["transient_tns_name"] = self.field.frb.tns_name
 
-            obs.add_epoch(
+            imaging_table.add_epoch(
                 epoch_name=self.name,
-                fil=fil,
+                fil_name=fil,
                 entry=entry
             )
 
-        obs.write_master_imaging_table()
+        imaging_table.write_table()
 
     @classmethod
     def from_params(
