@@ -72,12 +72,12 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
         self.frames_final = "astrometry"
         # If told not to correct astrometry on frames:
         if not self.combined_epoch and (
-                "correct_astrometry_frames" in self.do_kwargs and not self.do_kwargs["correct_astrometry_frames"]):
+                "correct_astrometry_frames" in self.do_param and not self.do_param["correct_astrometry_frames"]):
             self.frames_final = "normalised"
             # If told to register frames
-            if "register_frames" in self.do_kwargs and self.do_kwargs["register_frames"]:
+            if "register_frames" in self.do_param and self.do_param["register_frames"]:
                 self.frames_final = "registered"
-            if "frame_diagnostics" in self.do_kwargs and self.do_kwargs["frame_diagnostics"]:
+            if "frame_diagnostics" in self.do_param and self.do_param["frame_diagnostics"]:
                 self.frames_final = "diagnosed"
 
         self.coadded_final = "coadded_trimmed"

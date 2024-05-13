@@ -178,6 +178,10 @@ class Field(Pipeline):
             "refine_photometry": {
                 "method": cls.proc_refine_photometry,
                 "message": "Do matched photometry?"
+            },
+            "send_to_table": {
+                "method": cls.proc_push_to_table,
+                "message": "Send photometry and other properties to data tables?"
             }
 
         }
@@ -200,7 +204,7 @@ class Field(Pipeline):
         epochs = self.gather_epochs_imaging()
         for epoch_name in epochs:
             epoch = ep.epoch_from_directory(epoch_name)
-            epoch.do = [stage]
+            epoch.do_runtime = [stage]
             if stage not in epoch.param_file:
                 epoch.param_file[stage] = {}
             epoch.param_file[stage].update(kwargs)
@@ -211,18 +215,28 @@ class Field(Pipeline):
             epoch.pipeline(skip_cats=True)
 
     def proc_refine_photometry(self, output_dir: str, **kwargs):
-        object_list = list(self.objects.values())
+        object_list: List[objects.Object] = list(self.objects.values())
         object_list.sort(key=lambda o: o.name, reverse=True)
-        n_phot = 0
         for obj in object_list:
             if not obj.optical:
                 continue
             obj.load_output_file()
             obj.update_output_file()
-            obj.push_to_table(select=True)
+            obj.get_good_photometry()
+            # obj.push_to_table(select=True)
             obj.write_plot_photometry()
             obj.update_output_file()
         self.generate_cigale_photometry()
+
+    def proc_push_to_table(self, output_dir: str, **kwargs):
+        object_list: List[objects.Object] = list(self.objects.values())
+        for obj in object_list:
+            print("Tabulating", obj.name)
+            obj.load_output_file()
+            row = obj.push_to_table(select=True)
+            if row is not None:
+                print("\t", row["a"], row["z"])
+            obj.update_output_file()
 
     def mkdir(self):
         if self.data_path is not None:

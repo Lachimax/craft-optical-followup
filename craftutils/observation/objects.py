@@ -650,6 +650,10 @@ class Object:
         if self.position_err is not None:
             pos_err = self.position_err.to_dict()
         return {
+            "a": self.a,
+            "b": self.b,
+            "theta": self.theta,
+            "kron_radius": self.kron,
             "position_input": self.position,
             "position_input_err": pos_err,
             "position_photometry": self.position_photometry,
@@ -665,6 +669,14 @@ class Object:
         if self.data_path is not None:
             outputs = p.load_output_file(self)
             if outputs is not None:
+                if "a" in outputs and outputs["a"] is not None:
+                    self.a = outputs["a"]
+                if "b" in outputs and outputs["b"] is not None:
+                    self.b = outputs["b"]
+                if "theta" in outputs and outputs["theta"] is not None:
+                    self.theta = outputs["theta"]
+                if "kron_radius" in outputs and outputs["kron_radius"] is not None:
+                    self.kron_radius = outputs["kron_radius"]
                 if "position_photometry" in outputs and outputs["position_photometry"] is not None:
                     self.position_photometry = outputs["position_photometry"]
                 if "position_photometry_err" in outputs and outputs["position_photometry_err"] is not None:
@@ -872,7 +884,7 @@ class Object:
 
         if output is not False:
             for fmt in fmts:
-                # u.detect_problem_table(photometry_tbl, fmt="csv")
+                # u.detect_problem_row(photometry_tbl, fmt="csv")
                 photometry_tbl.write(output.replace(".ecsv", fmt[fmt.find("."):]), format=fmt, overwrite=True)
         return photometry_tbl
 
@@ -1180,15 +1192,18 @@ class Object:
             local_output: bool = True
     ):
         if not self.photometry:
-            return
+            return None
 
         jname = self.jname()
 
         self.estimate_galactic_extinction()
         if select:
-            self.get_good_photometry()
+            self.get_photometry_table(output=local_output, best=True)
+            if not isinstance(self.photometry_tbl_best, table.Table):
+                self.get_good_photometry()
             self.photometry_to_table()
             deepest = self.select_deepest_sep(local_output=local_output)
+            print(deepest)
         else:
             deepest = self.select_deepest(local_output=local_output)
 
@@ -1205,15 +1220,15 @@ class Object:
             "dec_err": deepest["dec_err"],
             "epoch_position": deepest["epoch_name"],
             "epoch_position_date": deepest["epoch_date"],
-            "a": self.a,
+            "a": deepest["a"],
             "a_err": deepest["a_err"],
-            "b": self.b,
+            "b": deepest["b"],
             "b_err": deepest["b_err"],
-            "theta": self.theta,
-            "kron_radius": self.kron,
+            "theta": deepest["theta"],
+            "theta_err": deepest["theta_err"],
+            "kron_radius": deepest["kron_radius"],
             "epoch_ellipse": deepest["epoch_name"],
             "epoch_ellipse_date": deepest["epoch_date"],
-            "theta_err": deepest["theta_err"],
             f"e_b-v": self.ebv_sandf,
             f"class_star": best_psf["class_star"],
             "spread_model": best_psf["spread_model"],
@@ -1292,13 +1307,14 @@ class Object:
         else:
             tbl = obs.load_master_all_objects_table()
 
+
         obs.add_photometry(
             tbl=tbl,
             object_name=self.name,
             entry=row,
         )
-        print()
         obs.write_master_objects_table()
+        return row
 
     # def plot_ellipse(
     #         self,

@@ -231,7 +231,7 @@ class Epoch(Pipeline):
             date: Union[str, Time] = None,
             program_id: str = None,
             target: str = None,
-            do_stages: Union[list, str] = None,
+            do_runtime: Union[list, str] = None,
             **kwargs
     ):
 
@@ -239,7 +239,7 @@ class Epoch(Pipeline):
             param_path=param_path,
             name=name,
             data_path=data_path,
-            do_stages=do_stages,
+            do_runtime=do_runtime,
             **kwargs
         )
 

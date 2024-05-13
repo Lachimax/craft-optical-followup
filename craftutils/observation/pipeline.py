@@ -17,7 +17,7 @@ class Pipeline(Generic):
             name: str = None,
             param_path: str = None,
             data_path: str = None,
-            do_stages: Union[list, str] = None,
+            do_runtime: Union[list, str] = None,
             **kwargs
     ):
         self.param_path = param_path
@@ -35,7 +35,7 @@ class Pipeline(Generic):
         if data_path is not None:
             u.mkdir_check_nested(self.data_path)
 
-        self.do = do_stages
+        self.do_runtime = do_runtime
 
         # Written attributes
         self.output_file = None  # This will be set during the load_output_file call
@@ -45,10 +45,10 @@ class Pipeline(Generic):
         # Data reduction paths
         self.paths = {}
 
-        self.do_kwargs = {}
+        self.do_param = {}
         u.debug_print(2, "do" in kwargs)
         if "do" in kwargs:
-            self.do_kwargs = kwargs["do"]
+            self.do_param = kwargs["do"]
 
         self.param_file = kwargs
 
@@ -100,8 +100,8 @@ class Pipeline(Generic):
         # Check if n is an integer, and if so cast to int.
         if n == int(n):
             n = int(n)
-        if self.do is not None:
-            if stage_name in self.do:
+        if self.do_runtime is not None:
+            if stage_name in self.do_runtime:
                 return True
         else:
             message = f"{self.name} {n}. {message}"
@@ -138,7 +138,8 @@ class Pipeline(Generic):
         """Performs the pipeline methods given in stages() for this instance.
 
         :param no_query: If True, skips the query stage and performs all stages (unless "do" was provided on __init__),
-            in which case it will perform only those stages without query no matter what no_query is.
+            in which case it will perform only those stages without query no matter what no_query is). This flag should
+            only be set to True if performing all specified steps, as it will override "do_runtime".
         :return:
         """
         skip_cats = False
@@ -146,6 +147,8 @@ class Pipeline(Generic):
             skip_cats = kwargs["skip_cats"]
         self._pipeline_init(skip_cats=skip_cats)
         # u.debug_print(2, "Epoch.pipeline(): kwargs ==", kwargs)
+
+        print("do_runtime", self.do_runtime)
 
         # Loop through stages list specified in self.stages()
         stages = self.stages()
@@ -162,9 +165,12 @@ class Pipeline(Generic):
             else:
                 do_this = True
 
+            # do_this indicates that this stage should be performed on this object at some point, but not necessarily in
+            # this run; ie, that we should give the option as a query.
+
             # Check if name is in "do" dict. If it is, defer to that setting; if not, defer to default.
-            if name in self.do_kwargs:
-                do_this = self.do_kwargs[name]
+            if name in self.do_param:
+                do_this = self.do_param[name]
 
             u.debug_print(2, f"Epoch.pipeline(): {self}.stages_complete ==", self.stages_complete)
 
@@ -222,9 +228,9 @@ class Pipeline(Generic):
         else:
             raise ValueError(f"data_path has not been set for {self}")
 
-        self.do = _check_do_list(self.do, stages=list(self.stages().keys()))
-        if not self.quiet and self.do:
-            print(f"Doing stages {self.do}")
+        self.do_runtime = _check_do_list(self.do_runtime, stages=list(self.stages().keys()))
+        if not self.quiet and self.do_runtime:
+            print(f"Doing stages {self.do_runtime}")
 
     def _output_dict(self):
         return {
