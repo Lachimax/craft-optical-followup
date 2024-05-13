@@ -827,12 +827,12 @@ class Object:
                 u.debug_print(1, "Loading irsa_extinction from", self.irsa_extinction_path)
                 self.irsa_extinction = table.QTable.read(self.irsa_extinction_path, format="ascii.ecsv")
 
-    def jname(self):
+    def jname(self, ra_precision=2, dec_precision=1):
         if self.position is not None:
             name = astm.jname(
                 coord=self.position,
-                ra_precision=2,
-                dec_precision=1
+                ra_precision=ra_precision,
+                dec_precision=dec_precision
             )
             return name
 
@@ -992,10 +992,11 @@ class Object:
             "jname": jname,
             "field_name": self.field.name,
             "object_name": self.name,
+            "position": self.position.to_string("hmsdms"),
             "ra": deepest["ra"],
-            "ra_err": deepest["ra_err"],
+            "ra_err": deepest["ra_err"].to("arcsec"),
             "dec": deepest["dec"],
-            "dec_err": deepest["dec_err"],
+            "dec_err": deepest["dec_err"].to("arcsec"),
             "epoch_position": deepest["epoch_name"],
             "epoch_position_date": deepest["epoch_date"],
             "a": deepest["a"],

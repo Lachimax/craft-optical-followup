@@ -23,13 +23,12 @@ class ObjectCatalogue(OutputCatalogue):
             "transient_tns_name": str,
             "object_name": str,
             "jname": str,
+            "position": str,
             "ra": units.deg,
-            "ra_err": units.deg,
+            "ra_err": units.arcsec,
             "dec": units.deg,
-            "dec_err": units.deg,
-            "a": units.arcsec,
-            "b": units.arcsec,
-            "theta": units.deg,
+            "dec_err": units.arcsec,
+            "e_b-v": units.mag,
         })
 
     @classmethod

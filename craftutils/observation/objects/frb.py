@@ -92,7 +92,7 @@ class FRB(Transient, Extragalactic):
         # ====================
         self.instrument: str = None
         if "instrument" in kwargs:
-            self.snr = kwargs["instrument"]
+            self.instrument = kwargs["instrument"]
         self.survey: str = None
         if "survey" in kwargs:
             self.survey = kwargs["survey"]
@@ -122,20 +122,37 @@ class FRB(Transient, Extragalactic):
         )
         return self.x_frb
 
-
     def push_to_table(
             self,
             select: bool = True,
             local_output: bool = True
     ):
-        jname = self.jname()
-        self.estimate_galactic_extinction()
+        jname = self.jname(4, 3)
+        self.retrieve_extinction_table()
+        ra_err, dec_err = self.position_err.uncertainty_quadrature()
         row = {
-            "jname": jname,
-            "field_name": self.field.name,
             "object_name": self.name,
+            "field_name": self.field.name,
+            "jname": jname,
+            "position": self.position.to_string("hmsdms"),
             "ra": self.position.ra.to(units.degree),
+            "ra_err": ra_err.to("arcsec"),
+            "dec": self.position.dec.to(units.degree),
+            "dec_err": dec_err.to("arcsec"),
+            "instrument": str(self.instrument),
+            "e_b-v": self.ebv_sandf
+            # "host_galaxy": self.host_galaxy.name
         }
+        if self.date is not None:
+            row["date"] = str(self.date)
+        if self.survey is not None:
+            row["survey"] = self.survey
+        if self.snr is not None and self.snr != 0.:
+            row["snr"] = float(self.snr)
+        if self.tns_name is not None:
+            row["tns_name"] = self.tns_name
+        if self.z is not None:
+            row["z"] = self.z
 
         import craftutils.observation.output.objects as output_objs
         tbl = output_objs.load_objects_table("frb")
@@ -527,6 +544,9 @@ class FRB(Transient, Extragalactic):
         if isinstance(self.field, Field):
             self.field.remove_object(old_name)
             self.field.remove_object(old_host)
+        if self.host_galaxy.z is not None:
+            self.set_z(self.host_galaxy.z)
+        self.update_param_file("z")
         # self.field.add_object(self.host_galaxy)
 
     @classmethod
