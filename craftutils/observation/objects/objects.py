@@ -428,7 +428,8 @@ class Object(Generic):
             "photometry": self.photometry,
             "irsa_extinction_path": self.irsa_extinction_path,
             "extinction_law": self.extinction_power_law,
-            "ebv_sandf": self.ebv_sandf
+            "ebv_sandf": self.ebv_sandf,
+            "jname": self.jname()
         })
         return output_dict
 
@@ -494,7 +495,7 @@ class Object(Generic):
         plt.close()
         for best in (False, True):
             ax, fig = self.plot_photometry(**kwargs, best=best)
-            ax.legend(loc=(1.0, 0.))
+            ax.legend(loc=(1.1, 0.))
             if best:
                 output = output.replace(".pdf", "_best.pdf")
             plt.savefig(output, bbox_inches="tight")
@@ -507,17 +508,18 @@ class Object(Generic):
                 extinction_corrected=ext_corr,
                 **kwargs
             )
-            ax.legend(loc=(1.0, 0.))
+            ax.legend(loc=(1.1, 0.))
             if ext_corr:
                 output_n = output_n.replace(".pdf", "_gal_ext.pdf")
             plt.savefig(output_n, bbox_inches="tight")
             plt.close(fig)
 
-
     def plot_photometry_time(
             self,
-            ax: plt.axes = None,
+            ax: plt.Axes = None,
+            fig: plt.Figure = None,
             extinction_corrected: bool = True,
+            mag_type: str = "sep",
             **kwargs
     ) -> plt.axes:
         if not self.photometry:
@@ -537,28 +539,30 @@ class Object(Generic):
 
         if extinction_corrected:
             self.estimate_galactic_extinction()
-            key = "mag_sep_ext_corrected"
+            key = f"mag_{mag_type}_ext_corrected"
         else:
-            key = "mag_sep"
+            key = f"mag_{mag_type}"
         photometry_tbl = self.photometry_to_table(
             output=self.build_photometry_table_path(best=False),
             fmts=["ascii.ecsv", "ascii.csv"],
             best=False,
-        )
+        ).copy()
 
         bands = list(set(photometry_tbl["band"]))
-        bands.sort()
+        bands.sort(key=lambda n: n.lower())
 
         with quantity_support():
 
             for i, band in enumerate(bands):
                 c = pl.colours[i]
+
                 valid = photometry_tbl[photometry_tbl["mag_sep"] > -990 * units.mag]
                 valid = valid[list(map(lambda row: "combined" not in row["epoch_name"], valid))]
                 valid = valid[valid["epoch_date"] != "None"]
                 valid["time_obj"] = time.Time(valid["epoch_date"], format="isot", scale="utc")
                 valid["time_obj"] = valid["time_obj"].mjd
                 in_band = valid[valid["band"] == band]
+
                 plot_limit = (-999 * units.mag == in_band["mag_sep_err"])
                 limits = in_band[plot_limit]
                 mags = in_band[np.invert(plot_limit)]
