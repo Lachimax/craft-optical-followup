@@ -461,6 +461,7 @@ class Epoch(Pipeline):
             "date": self.date,
             "target": self.target
         })
+        return p_dict
 
     @classmethod
     def sort_by_chip(cls, images: list):

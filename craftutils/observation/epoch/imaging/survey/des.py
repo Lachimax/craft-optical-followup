@@ -1,6 +1,7 @@
 import craftutils.observation.image as image
 from .epoch import SurveyImagingEpoch
 
+
 class DESEpoch(SurveyImagingEpoch):
     instrument_name = "decam"
     catalogue = "des"
@@ -39,4 +40,3 @@ class DESEpoch(SurveyImagingEpoch):
             "get_photometry": super_stages["get_photometry"]
         }
         return stages
-

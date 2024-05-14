@@ -43,9 +43,28 @@ textheights = {
     "PASA": 9.45
 }
 
+colours = [
+    "magenta",
+    "green",
+    "red",
+    "blue",
+    "cyan",
+    "purple",
+    "violet",
+    "darkorange",
+    "gray",
+    "lightblue",
+    "lime",
+    "gold",
+    "brown",
+    "maroon",
+    "pink",
+]
+
 tick_fontsize = 12
 axis_fontsize = 14
 lineweight = 1.5
+
 
 @u.export
 def plot_kron(fig: plt.Figure, data_title: str, instrument: str, f: str, index: Union[int, list], catalogue: str,
@@ -802,8 +821,6 @@ def plot_all_params(
 
     if path:
         image.close()
-
-
 
 
 def plot_lines(ax, z_shift, space: str = "wavelength", **kwargs):

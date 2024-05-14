@@ -656,7 +656,7 @@ class Image:
             self.gain = u.check_quantity(self.gain, gain_unit)
         return self.gain
 
-    def extract_date_obs(self):
+    def extract_date_obs(self) -> Time:
         key = self.header_keys()["date-obs"]
         self.date_obs = self.extract_header_item(key)
         key = self.header_keys()["mjd-obs"]
