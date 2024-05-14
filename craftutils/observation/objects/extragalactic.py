@@ -1,11 +1,29 @@
 from typing import Union
 
 import astropy.units as units
+import astropy.cosmology as cosmo
 
 import craftutils.utils as u
 from craftutils.photometry import distance_modulus
 
-from .objects import Object, cosmology
+from .objects import Object
+
+cosmology = cosmo.Planck18
+
+
+@u.export
+def set_cosmology(cos: Union[str, cosmo.Cosmology]):
+    global cosmology
+    if isinstance(cos, str):
+        if cos in cosmo.available:
+            cosmology = getattr(cosmo, cos)
+        else:
+            raise ValueError(f"Cosmology {cos} not found in `astropy.cosmology`. Available are: {cosmo.available}")
+    elif isinstance(cos, cosmo.Cosmology):
+        cosmology = cos
+    else:
+        raise TypeError("cos must be string or `astropy.cosmology.Cosmology`.")
+
 
 @u.export
 class Extragalactic(Object):

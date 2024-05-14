@@ -11,7 +11,6 @@ import astropy.table as table
 from astropy.modeling import models, fitting
 from astropy.visualization import quantity_support
 import astropy.time as time
-import astropy.cosmology as cosmo
 
 import craftutils.params as p
 import craftutils.astrometry as astm
@@ -25,21 +24,6 @@ from .position import PositionUncertainty, position_dictionary
 quantity_support()
 
 object_index = {}
-
-cosmology = cosmo.Planck18
-
-
-def set_cosmology(cos: Union[str, cosmo.Cosmology]):
-    global cosmology
-    if isinstance(cos, str):
-        if cos in cosmo.available:
-            cosmology = getattr(cosmo, cos)
-        else:
-            raise ValueError(f"Cosmology {cos} not found in `astropy.cosmology`. Available are: {cosmo.available}")
-    elif isinstance(cos, cosmo.Cosmology):
-        cosmology = cos
-    else:
-        raise TypeError("cos must be string or `astropy.cosmology.Cosmology`.")
 
 
 def object_from_index(
@@ -1086,7 +1070,7 @@ class Object:
         # if select:
         tbl = output_objs.load_objects_table("optical")
         # else:
-            # tbl = obs.load_master_all_objects_table()
+        # tbl = obs.load_master_all_objects_table()
 
         tbl.add_entry(
             key=self.name,

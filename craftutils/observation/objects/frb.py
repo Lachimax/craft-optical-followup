@@ -15,9 +15,9 @@ import craftutils.astrometry as astm
 import craftutils.utils as u
 import craftutils.observation.sed as sed
 
-from .objects import object_from_index, cosmology
+from .objects import object_from_index
 from .transient import Transient
-from .extragalactic import Extragalactic
+from .extragalactic import Extragalactic, cosmology
 from .transient_host import TransientHostCandidate
 
 quantity_support()

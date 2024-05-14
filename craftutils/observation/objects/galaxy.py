@@ -9,14 +9,14 @@ import astropy.io.fits as fits
 import craftutils.utils as u
 import craftutils.observation.sed as sed
 
-from .extragalactic import Extragalactic
-from .objects import cosmology
+from .extragalactic import Extragalactic, cosmology
 
 
 @u.export
 class Galaxy(Extragalactic):
     optical = True
     radio = True
+
     def __init__(
             self,
             z: float = None,
