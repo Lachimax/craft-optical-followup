@@ -2596,6 +2596,7 @@ class ImagingImage(Image):
             plt.savefig(output)
             if show:
                 plt.show()
+            plt.close()
 
     def plot_subimage(
             self,
@@ -4003,6 +4004,8 @@ class ImagingImage(Image):
 
                 fig.savefig(output + ".png")
 
+                plt.close(fig)
+
                 if subtract_background:
                     ax, fig, _ = self.plot_subimage(
                         centre=centre,
@@ -4018,6 +4021,8 @@ class ImagingImage(Image):
                     ax.set_title(f"{a[0], b[0], kron_radius[0], theta_plot}")
 
                     fig.savefig(output + "_back_sub.png")
+
+                    plt.close(fig)
 
         return flux, flux_err, flag, back
 

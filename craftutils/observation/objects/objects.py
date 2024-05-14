@@ -492,31 +492,27 @@ class Object(Generic):
             output = os.path.join(self.data_path, f"{self.name_filesys}_photometry.pdf")
 
         plt.close()
-        axes = []
         for best in (False, True):
-            ax = self.plot_photometry(**kwargs, best=best)
+            ax, fig = self.plot_photometry(**kwargs, best=best)
             ax.legend(loc=(1.0, 0.))
             if best:
                 output = output.replace(".pdf", "_best.pdf")
-            plt.savefig(output)
-            axes.append(ax)
-            plt.close()
+            plt.savefig(output, bbox_inches="tight")
+            plt.close(fig)
 
-        output = output.replace("_photometry_best.pdf", "_photometry_time.pdf")
+        output_n = output.replace("_photometry_best.pdf", "_photometry_time.pdf")
 
         for ext_corr in (False, True):
-            ax = self.plot_photometry_time(
+            ax, fig = self.plot_photometry_time(
                 extinction_corrected=ext_corr,
                 **kwargs
             )
             ax.legend(loc=(1.0, 0.))
             if ext_corr:
-                output = output.replace(".pdf", "_gal_ext.pdf")
-            plt.savefig(output)
-            axes.append(ax)
-            plt.close()
+                output_n = output_n.replace(".pdf", "_gal_ext.pdf")
+            plt.savefig(output_n, bbox_inches="tight")
+            plt.close(fig)
 
-        return axes
 
     def plot_photometry_time(
             self,
@@ -571,13 +567,13 @@ class Object(Generic):
                     mags["time_obj"],
                     mags[key],
                     yerr=mags["mag_sep_err"],
+                    label=f"{band}",
+                    color=c,
                     **kwargs,
                 )
                 ax.scatter(
                     limits["time_obj"],
                     limits[key],
-                    label=f"{band}",
-                    color=c,
                 )
                 ax.scatter(
                     limits["time_obj"],
@@ -587,9 +583,9 @@ class Object(Generic):
                 )
 
                 ax.set_ylabel("Apparent magnitude")
-                ax.set_xlabel("Date")
+                ax.set_xlabel("MJD")
                 ax.invert_yaxis()
-        return ax
+        return ax, fig
 
     def plot_photometry(
             self,
@@ -649,18 +645,18 @@ class Object(Generic):
                 mags["lambda_eff"],
                 mags["mag_sep_ext_corrected"],
                 color="orange",
-                label="Corrected for Galactic extinction"
+                label="Magnitude (extinction-corrected)"
             )
             ax.scatter(
                 limits["lambda_eff"],
                 limits["mag_sep_ext_corrected"],
-                label="Magnitude upper limit",
+                label="Magnitude upper limit (extinction-corrected)",
                 marker="v",
             )
             ax.set_ylabel("Apparent magnitude")
             ax.set_xlabel("$\lambda_\mathrm{eff}$ (\AA)")
             ax.invert_yaxis()
-        return ax
+        return ax, fig
 
     def build_photometry_table_path(self, best: bool = False):
         self.check_data_path()

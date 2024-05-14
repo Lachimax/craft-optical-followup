@@ -1330,7 +1330,6 @@ class ImagingEpoch(Epoch):
                     )
 
             deepest = image.deepest(deepest, img)
-            print("Did local background subtraction?", self.did_local_background_subtraction())
             if self.did_local_background_subtraction():
                 img_subbed = self.coadded_subtracted_patch[fil]
                 self.field.add_image(img_subbed)
@@ -1630,7 +1629,7 @@ class ImagingEpoch(Epoch):
                         dec_err=np.sqrt(nearest["ERRY2_WORLD"]),
                         kron_radius=nearest["KRON_RADIUS"],
                         separation_from_given=separation,
-                        epoch_date=img.extract_date_obs().,
+                        epoch_date=img.extract_date_obs(),
                         class_star=nearest["CLASS_STAR"],
                         spread_model=spread_model,
                         spread_model_err=spread_model_err,
