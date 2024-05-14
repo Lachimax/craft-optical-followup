@@ -702,6 +702,7 @@ class Field(Pipeline):
             img_dict["image"] = img
             img.extract_filter()
             filter_list.append(img.filter)
+        filter_list = list(set(filter_list))
         return filter_list
 
     def _output_dict(self):

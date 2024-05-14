@@ -454,20 +454,13 @@ class Epoch(Pipeline):
     def get_master_flat(self, chip: int, fil: str):
         return self.master_flats[chip][fil]
 
-    def update_param_file(self, param: str):
-        p_dict = {
+    def _updateable(self):
+        p_dict = super()._updateable()
+        p_dict.update({
             "program_id": self.program_id,
             "date": self.date,
             "target": self.target
-        }
-        if param not in p_dict:
-            raise ValueError(f"Either {param} is not a valid parameter, or it has not been configured.")
-        if self.param_path is None:
-            raise ValueError("param_path has not been set.")
-        else:
-            params = p.load_params(self.param_path)
-        params[param] = p_dict[param]
-        p.save_params(file=self.param_path, dictionary=params)
+        })
 
     @classmethod
     def sort_by_chip(cls, images: list):
@@ -662,9 +655,6 @@ class StandardEpoch(Epoch):
             return FORS2StandardEpoch
         else:
             return StandardEpoch
-
-
-
 
 
 def _retrieve_eso_epoch(

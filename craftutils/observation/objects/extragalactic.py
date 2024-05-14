@@ -114,6 +114,14 @@ class Extragalactic(Object):
         theta = (distance * units.rad / self.D_A).to(units.arcsec)
         return theta
 
+    def _updateable(self):
+        p_dict = super()._updateable()
+        p_dict.update({
+            "z": self.z,
+            "z_err": self.z_err
+        })
+        return p_dict
+
     @classmethod
     def default_params(cls):
         default_params = super().default_params()

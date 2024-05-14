@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 
 import astropy.table as table
 import astropy.units as units
-import astropy.cosmology as cosmology
+import astropy.cosmology as cosmo
 from astropy.modeling import models, fitting
 
 import craftutils.utils as u
@@ -14,13 +14,14 @@ import craftutils.params as p
 import craftutils.plotting as pl
 import craftutils.observation.filters as fil
 import craftutils.observation.objects as objects
+from craftutils.observation.objects.extragalactic import cosmology
 from craftutils.plotting import tick_fontsize, axis_fontsize, lineweight
 from craftutils.photometry import distance_modulus
 from craftutils.observation.sed import SEDModel
 
 
 class SEDSample:
-    default_cosmology = cosmology.Planck18
+    default_cosmology = cosmo.Planck18
     """
     A class representing a sample of SED models, for doing bulk population calculations.
     """
@@ -153,7 +154,7 @@ class SEDSample:
         # Calculate P(U|z) as the fraction of hosts that are unseen at a given redshift.
         tbl["P(U|z)"] = tbl["n>lim"] / len(columns)
         # Some extra values
-        tbl["d_L"] = cosmology.WMAP9.luminosity_distance(tbl["z"])
+        tbl["d_L"] = cosmo.WMAP9.luminosity_distance(tbl["z"])
         tbl["mu"] = distance_modulus(tbl["d_L"])
 
         if isinstance(output, str):
@@ -268,11 +269,11 @@ class SEDSample:
             ax.set_xlabel("$z$")
             ax.set_xlim(min_z, max_z)
             fig.savefig(
-                os.path.join(output, f"probability_{objects.cosmology.name}_{band_name}_steps_only.pdf"),
+                os.path.join(output, f"probability_{cosmology.name}_{band_name}_steps_only.pdf"),
                 bbox_inches="tight"
             )
             fig.savefig(
-                os.path.join(output, f"probability_{objects.cosmology.name}_{band_name}_steps_only.png"),
+                os.path.join(output, f"probability_{cosmology.name}_{band_name}_steps_only.png"),
                 bbox_inches="tight",
                 dpi=200
             )
@@ -290,11 +291,11 @@ class SEDSample:
                 loc=(leg_x, leg_y + 0.1),
             )
             fig.savefig(
-                os.path.join(output, f"probability_{objects.cosmology.name}_{band_name}_combined.pdf"),
+                os.path.join(output, f"probability_{cosmology.name}_{band_name}_combined.pdf"),
                 bbox_inches="tight"
             )
             fig.savefig(
-                os.path.join(output, f"probability_{objects.cosmology.name}_{band_name}_combined.png"),
+                os.path.join(output, f"probability_{cosmology.name}_{band_name}_combined.png"),
                 bbox_inches="tight",
                 dpi=200
             )
@@ -310,11 +311,11 @@ class SEDSample:
                 loc=(leg_x, leg_y + 0.1)
             )
             fig.savefig(
-                os.path.join(output, f"probability_{objects.cosmology.name}_{band_name}.pdf"),
+                os.path.join(output, f"probability_{cosmology.name}_{band_name}.pdf"),
                 bbox_inches="tight"
             )
             fig.savefig(
-                os.path.join(output, f"probability_{objects.cosmology.name}_{band_name}.png"),
+                os.path.join(output, f"probability_{cosmology.name}_{band_name}.png"),
                 bbox_inches="tight",
                 dpi=200
             )
@@ -332,11 +333,11 @@ class SEDSample:
                 fontsize=tick_fontsize
             )
             fig.savefig(
-                os.path.join(output, f"probability_{objects.cosmology.name}_{band_name}_gaussian.pdf"),
+                os.path.join(output, f"probability_{cosmology.name}_{band_name}_gaussian.pdf"),
                 bbox_inches="tight"
             )
             fig.savefig(
-                os.path.join(output, f"probability_{objects.cosmology.name}_{band_name}_gaussian.png"),
+                os.path.join(output, f"probability_{cosmology.name}_{band_name}_gaussian.png"),
                 bbox_inches="tight", dpi=200
             )
 
@@ -475,11 +476,11 @@ class SEDSample:
                 handles=legend_elements
             )
             fig.savefig(
-                os.path.join(output, f"mag-z+probability_{objects.cosmology.name}_{band_name}.pdf"),
+                os.path.join(output, f"mag-z+probability_{cosmology.name}_{band_name}.pdf"),
                 bbox_inches="tight"
             )
             fig.savefig(
-                os.path.join(output, f"mag-z+probability_{objects.cosmology.name}_{band_name}.png"),
+                os.path.join(output, f"mag-z+probability_{cosmology.name}_{band_name}.png"),
                 bbox_inches="tight", dpi=200
             )
 

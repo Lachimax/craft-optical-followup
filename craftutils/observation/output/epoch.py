@@ -1,8 +1,5 @@
-import os.path
-
 import astropy.units as units
 
-import craftutils.params as p
 from .output import OutputCatalogue
 
 

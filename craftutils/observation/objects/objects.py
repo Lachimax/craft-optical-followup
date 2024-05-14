@@ -19,6 +19,7 @@ import craftutils.retrieve as r
 import craftutils.observation.instrument as inst
 import craftutils.observation.filters as filters
 
+from craftutils.observation.generic import Generic
 from .position import PositionUncertainty, position_dictionary
 
 quantity_support()
@@ -54,7 +55,7 @@ def object_to_index(
 
 
 @u.export
-class Object:
+class Object(Generic):
     optical = False
     radio = False
 
@@ -68,6 +69,9 @@ class Object:
             plotting: dict = None,
             **kwargs
     ):
+        super().__init__(
+            **kwargs
+        )
         self.field = field
         self.name = None
         self.name_filesys = None
@@ -402,13 +406,16 @@ class Object:
         return cat[best_index], sep
 
     def _output_dict(self):
+
+        output_dict = super()._output_dict()
+
         pos_phot_err = None
         if self.position_photometry_err is not None:
             pos_phot_err = self.position_photometry_err.to_dict()
         pos_err = None
         if self.position_err is not None:
             pos_err = self.position_err.to_dict()
-        return {
+        output_dict.update({
             "a": self.a,
             "b": self.b,
             "theta": self.theta,
@@ -421,12 +428,13 @@ class Object:
             "irsa_extinction_path": self.irsa_extinction_path,
             "extinction_law": self.extinction_power_law,
             "ebv_sandf": self.ebv_sandf
-        }
+        })
+        return output_dict
 
     def load_output_file(self):
         self.check_data_path()
         if self.data_path is not None:
-            outputs = p.load_output_file(self)
+            outputs = super().load_output_file()
             if outputs is not None:
                 if "a" in outputs and outputs["a"] is not None:
                     self.a = outputs["a"]
@@ -464,7 +472,7 @@ class Object:
 
     def update_output_file(self):
         if self.check_data_path():
-            p.update_output_file(self)
+            super().update_output_file()
 
     def write_plot_photometry(self, output: str = None, **kwargs):
         """
@@ -1126,7 +1134,7 @@ class Object:
         dictionary = self.to_param_dict()
         default = self.default_params()
         if path is None and self.field is not None:
-            path = os.path.join(self.field._obj_path(), self.name + ".yaml")
+            path = str(os.path.join(self.field._obj_path(), self.name + ".yaml"))
         if os.path.isfile(path) and keep_old:
             dict_old = p.load_params(path)
             for key, value in dictionary.items():

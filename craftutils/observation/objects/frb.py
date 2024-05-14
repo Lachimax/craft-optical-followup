@@ -16,8 +16,7 @@ import craftutils.utils as u
 import craftutils.observation.sed as sed
 
 from .objects import object_from_index
-from .transient import Transient
-from .extragalactic import Extragalactic, cosmology
+from .extragalactic_transient import ExtragalacticTransient, cosmology
 from .transient_host import TransientHostCandidate
 
 quantity_support()
@@ -31,7 +30,7 @@ dm_host_median = {
 
 
 @u.export
-class FRB(Transient, Extragalactic):
+class FRB(ExtragalacticTransient):
     optical = False
 
     def __init__(
@@ -443,13 +442,14 @@ class FRB(Transient, Extragalactic):
     def write_candidate_tables(self):
         table_paths = {}
         for p_u in self.host_candidate_tables:
+            table_paths[p_u] = {}
             for img_name in self.host_candidate_tables[p_u]:
                 cand_tbl = self.host_candidate_tables[p_u][img_name]
                 write_path = os.path.join(self.data_path, "PATH", f"PATH_table_{img_name}_PU_{p_u}.ecsv")
                 if "coords" in cand_tbl.colnames:
                     cand_tbl.remove_column("coords")
                 cand_tbl.write(write_path, overwrite=True)
-                table_paths[img_name] = p.split_data_dir(write_path)
+                table_paths[p_u][img_name] = p.split_data_dir(write_path)
         return table_paths
 
     def _output_dict(self):
@@ -468,7 +468,7 @@ class FRB(Transient, Extragalactic):
             if "host_candidate_tables" in outputs:
                 p_us = outputs["host_candidate_tables"]
                 for p_u in p_us:
-                    tables = outputs[p_u]["host_candidate_tables"]
+                    tables = outputs["host_candidate_tables"][p_u]
                     for table_name in tables:
                         tbl_path = tables[table_name]
                         tbl_path = p.join_data_dir(tbl_path)

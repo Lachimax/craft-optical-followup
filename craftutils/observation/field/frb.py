@@ -351,6 +351,7 @@ class FRBField(Field):
             img_fixed = True
             path_img = self.imaging[path_img]["image"]
 
+        print("fil_list", len(fil_list))
         images = list(map(lambda f: self.deepest_in_band(fil=f)["image"], fil_list))
 
         max_p_ox = None
@@ -395,6 +396,7 @@ class FRBField(Field):
             else:
                 path_img = None
 
+        print("fil_list", len(fil_list))
         images = list(map(lambda f: self.deepest_in_band(fil=f)["image"], fil_list))
 
         for p_u in p_us:
@@ -446,6 +448,7 @@ class FRBField(Field):
     ):
         img_list = self.get_images_band(fil, instrument=instrument)
         img_list.sort(key=lambda d: d["depth"])
+        print(len(img_list))
         for img_dict in img_list:
             print(img_dict["name"], img_dict["depth"])
         img_dict = img_list[-1]
@@ -489,6 +492,7 @@ class FRBField(Field):
             exclude: list = ()
     ):
         filter_list = self.load_imaging()
+        print("filter_list", len(filter_list))
         best_fil = filters.best_for_path(filter_list, exclude=exclude)
         # path_dict = self.deepest_in_band(fil=best_fil)
         # path_img = path_dict["image"]
