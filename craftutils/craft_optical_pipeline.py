@@ -137,6 +137,7 @@ def main(
     mode = mode.lower()
 
     if mode == "objects":
+        field.do_runtime = do
         field.pipeline()
         exit()
     else:
@@ -157,7 +158,7 @@ def main(
             epoch.field = field
 
     u.debug_print(2, "pipeline.py: type(epoch) ==", type(epoch))
-    epoch.do = do
+    epoch.do_runtime = do
     epoch.pipeline(skip_cats=skip_cats)
 
 

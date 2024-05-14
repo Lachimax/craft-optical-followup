@@ -697,7 +697,7 @@ def magnitude_uncertainty(
     error = u.uncertainty_log10(arg=flux_per_sec, uncertainty_arg=error_fps, a=-2.5) * units.mag
     return mag, error
 
-
+@u.export
 def distance_modulus(distance: units.Quantity):
     return (5 * np.log10(distance / units.pc) - 5) * units.mag
 

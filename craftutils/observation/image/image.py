@@ -749,7 +749,7 @@ class Image:
         header_keys = {
             "integration_time": "INTTIME",
             "exposure_time": "EXPTIME",
-            "exposure_time_old": "OLD_EXPTIME",
+            "exposure_time_old": "HIERARCH OLD_EXPTIME",
             "noise_read": "RON",
             "noise_read_old": "OLD_RON",
             "gain": "GAIN",
@@ -760,7 +760,7 @@ class Image:
             "instrument": "INSTRUME",
             "unit": "BUNIT",
             "saturate": "SATURATE",
-            "saturate_old": "OLD_SATURATE",
+            "saturate_old": "HIERARCH OLD_SATURATE",
             "program_id": "PROG_ID"
         }
         return header_keys

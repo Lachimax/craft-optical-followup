@@ -14,7 +14,6 @@ from astropy.coordinates import SkyCoord
 
 import ccdproc
 
-import craftutils.observation as obs
 import craftutils.observation.image as image
 import craftutils.observation.field as fld
 import craftutils.wrap.montage as montage
@@ -356,7 +355,7 @@ class ImagingEpoch(Epoch):
     def proc_subtract_background_frames(self, output_dir: str, **kwargs):
         self.frames_subtracted = {}
         if "frames" not in kwargs:
-            if "correct_astrometry_frames" in self.do_kwargs and self.do_kwargs["correct_astrometry_frames"]:
+            if "correct_astrometry_frames" in self.do_param and self.do_param["correct_astrometry_frames"]:
                 kwargs["frames"] = "astrometry"
             else:
                 kwargs["frames"] = "normalised"
@@ -554,7 +553,7 @@ class ImagingEpoch(Epoch):
 
         if "frames" in kwargs:
             frames = self._get_frames(frame_type=kwargs.pop("frames"))
-        elif "register_frames" in self.do_kwargs and self.do_kwargs["register_frames"]:
+        elif "register_frames" in self.do_param and self.do_param["register_frames"]:
             frames = self._get_frames(frame_type="registered")
         else:
             frames = self._get_frames(frame_type="normalised")
@@ -731,7 +730,7 @@ class ImagingEpoch(Epoch):
                     match_cat = frame.source_cat
                 offset_tolerance = 0.5 * units.arcsec
                 # If the frames haven't been astrometrically corrected, give some extra leeway
-                if "correct_astrometry_frames" in self.do_kwargs and not self.do_kwargs["correct_astrometry_frames"]:
+                if "correct_astrometry_frames" in self.do_param and not self.do_param["correct_astrometry_frames"]:
                     offset_tolerance = 1.0 * units.arcsec
                 frame_stats, stars_moffat, stars_gauss, stars_sex = frame.psf_diagnostics(
                     match_to=match_cat
@@ -989,7 +988,7 @@ class ImagingEpoch(Epoch):
                 self.coadded_subtracted[fil].area_file = self.coadded_astrometry[fil].area_file
 
     def proc_trim_coadded(self, output_dir: str, **kwargs):
-        if "correct_astrometry_coadded" in self.do_kwargs and self.do_kwargs["correct_astrometry_coadded"]:
+        if "correct_astrometry_coadded" in self.do_param and self.do_param["correct_astrometry_coadded"]:
             images = self.coadded_astrometry
         else:
             images = self.coadded
@@ -1116,7 +1115,8 @@ class ImagingEpoch(Epoch):
                 images_subbed = self._get_images(img_type)
                 for fil, img_subbed in images_subbed.items():
                     img = images[fil]
-                    img_subbed.clone_diagnostics(other=img)
+                    img_subbed.clone_psf(other=img)
+                    img_subbed.clone_astrometry_info(other=img)
                     if img_type == "coadded_subtracted_patch":
                         img_subbed.source_extraction_psf(
                             output_dir=output_dir,
@@ -1274,7 +1274,6 @@ class ImagingEpoch(Epoch):
         deepest = list(self.coadded_unprojected.values())[0]
         for fil, img in self.coadded_unprojected.items():
 
-            img = self.coadded_unprojected[fil]
             img_prime = image_dict[fil]
 
             if img is None:
@@ -1331,7 +1330,12 @@ class ImagingEpoch(Epoch):
                     )
 
             deepest = image.deepest(deepest, img)
-            self.field.add_image(img_final)
+            print("Did local background subtraction?", self.did_local_background_subtraction())
+            if self.did_local_background_subtraction():
+                img_subbed = self.coadded_subtracted_patch[fil]
+                self.field.add_image(img_subbed)
+            else:
+                self.field.add_image(img_final)
 
         self.deepest_filter = deepest.filter_name
         self.deepest = deepest
@@ -1372,7 +1376,7 @@ class ImagingEpoch(Epoch):
         self.get_photometry(output_dir, image_type=image_type, **kwargs)
 
     def did_local_background_subtraction(self):
-        if "subtract_background_frames" in self.do_kwargs:
+        if "subtract_background_frames" in self.do_param:
             if "subtract_background_frames" in self.stage_params:
                 stage_params = self.stage_params["subtract_background_frames"]
                 if "method" not in stage_params or stage_params["method"] == "local":
@@ -1451,6 +1455,8 @@ class ImagingEpoch(Epoch):
         :return:
         """
 
+        from craftutils.observation.output.epoch import imaging_table
+
         print(self.field.objects.keys())
 
         if not self.quiet:
@@ -1458,7 +1464,7 @@ class ImagingEpoch(Epoch):
 
         match_tolerance = u.check_quantity(match_tolerance, unit=units.arcsec)
 
-        obs.load_master_objects_table()
+        imaging_table.load_table()
 
         skip_plots = False
         if "skip_plots" in kwargs:
@@ -1496,12 +1502,16 @@ class ImagingEpoch(Epoch):
             img.load_data()
 
             if not skip_plots:
-                self.field.plot_host(
+                ax, fig, vals = self.field.plot_host(
                     img=img,
                     frame=10 * units.arcsec,
                     centre=self.field.frb.position,
-                    output_path=os.path.join(fil_output_path, "plot_quick.pdf")
                 )
+                for obj_name, obj in self.field.objects.items():
+                    x, y = img.world_to_pixel(obj.position)
+                    plt.scatter(x, y, marker="x", label=obj_name)
+                plt.legend(loc=(1.0, 0.))
+                fig.savefig(os.path.join(fil_output_path, "plot_quick.pdf"))
 
             # Get astrometric uncertainty from images
             img.extract_astrometry_err()
@@ -1714,27 +1724,27 @@ class ImagingEpoch(Epoch):
             # obj.push_to_table(select=True)
             # obj.write_plot_photometry()
 
-    def proc_get_photometry_all(self, output_dir: str, **kwargs):
-        if "image_type" in kwargs and isinstance(kwargs["image_type"], str):
-            image_type = kwargs["image_type"]
-        else:
-            image_type = "final"
-        self.get_photometry_all(output_dir, image_type=image_type)
+    # def proc_get_photometry_all(self, output_dir: str, **kwargs):
+    #     if "image_type" in kwargs and isinstance(kwargs["image_type"], str):
+    #         image_type = kwargs["image_type"]
+    #     else:
+    #         image_type = "final"
+    #     self.get_photometry_all(output_dir, image_type=image_type)
 
-    def get_photometry_all(
-            self, path: str,
-            image_type: str = "coadded_trimmed",
-            dual: bool = False
-    ):
-        obs.load_master_all_objects_table()
-        image_dict = self._get_images(image_type=image_type)
-        u.mkdir_check(path)
-        # Loop through filters
-        for fil in image_dict:
-            fil_output_path = os.path.join(path, fil)
-            u.mkdir_check(fil_output_path)
-            img = image_dict[fil]
-            img.push_source_cat(dual=dual)
+    # def get_photometry_all(
+    #         self, path: str,
+    #         image_type: str = "coadded_trimmed",
+    #         dual: bool = False
+    # ):
+    #     obs.load_master_all_objects_table()
+    #     image_dict = self._get_images(image_type=image_type)
+    #     u.mkdir_check(path)
+    #     # Loop through filters
+    #     for fil in image_dict:
+    #         fil_output_path = os.path.join(path, fil)
+    #         u.mkdir_check(fil_output_path)
+    #         img = image_dict[fil]
+    #         img.push_source_cat(dual=dual)
 
     def astrometry_diagnostics(
             self,
@@ -2295,7 +2305,8 @@ class ImagingEpoch(Epoch):
 
     def push_to_table(self):
 
-        obs.load_master_imaging_table()
+        from craftutils.observation.output.epoch import imaging_table
+        imaging_table.load_table()
 
         # frames = self._get_frames("final")
         coadded = self._get_images("final")
@@ -2311,10 +2322,7 @@ class ImagingEpoch(Epoch):
                 self.exp_time_mean[fil] = np.mean(exp_times) * units.s
             frame_exp_time = self.exp_time_mean[fil].round()
 
-            if "SNR_PSF" in img.depth["secure"]:
-                depth = img.depth["secure"]["SNR_PSF"][f"5-sigma"]
-            else:
-                depth = img.depth["secure"]["SNR_AUTO"][f"5-sigma"]
+            depth = img.select_depth()
 
             entry = {
                 "field_name": self.field.name,
@@ -2341,13 +2349,13 @@ class ImagingEpoch(Epoch):
             if isinstance(self.field, fld.FRBField) and self.field.frb.tns_name is not None:
                 entry["transient_tns_name"] = self.field.frb.tns_name
 
-            obs.add_epoch(
+            imaging_table.add_epoch(
                 epoch_name=self.name,
-                fil=fil,
+                fil_name=fil,
                 entry=entry
             )
 
-        obs.write_master_imaging_table()
+        imaging_table.write_table()
 
     @classmethod
     def from_params(

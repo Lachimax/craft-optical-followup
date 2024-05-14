@@ -178,6 +178,10 @@ class Field(Pipeline):
             "refine_photometry": {
                 "method": cls.proc_refine_photometry,
                 "message": "Do matched photometry?"
+            },
+            "send_to_table": {
+                "method": cls.proc_push_to_table,
+                "message": "Send photometry and other properties to data tables?"
             }
 
         }
@@ -200,8 +204,7 @@ class Field(Pipeline):
         epochs = self.gather_epochs_imaging()
         for epoch_name in epochs:
             epoch = ep.epoch_from_directory(epoch_name)
-            epoch.do_kwargs = {}
-            epoch.do = [stage]
+            epoch.do_runtime = [stage]
             if stage not in epoch.param_file:
                 epoch.param_file[stage] = {}
             epoch.param_file[stage].update(kwargs)
@@ -212,18 +215,26 @@ class Field(Pipeline):
             epoch.pipeline(skip_cats=True)
 
     def proc_refine_photometry(self, output_dir: str, **kwargs):
-        object_list = list(self.objects.values())
+        object_list: List[objects.Object] = list(self.objects.values())
         object_list.sort(key=lambda o: o.name, reverse=True)
-        n_phot = 0
         for obj in object_list:
             if not obj.optical:
                 continue
             obj.load_output_file()
             obj.update_output_file()
-            obj.push_to_table(select=True)
+            obj.get_good_photometry()
+            # obj.push_to_table(select=True)
             obj.write_plot_photometry()
             obj.update_output_file()
         self.generate_cigale_photometry()
+
+    def proc_push_to_table(self, output_dir: str, **kwargs):
+        object_list: List[objects.Object] = list(self.objects.values())
+        for obj in object_list:
+            print("Tabulating", obj.name)
+            obj.load_output_file()
+            row = obj.push_to_table(select=True)
+            obj.update_output_file()
 
     def mkdir(self):
         if self.data_path is not None:
@@ -691,6 +702,7 @@ class Field(Pipeline):
             img_dict["image"] = img
             img.extract_filter()
             filter_list.append(img.filter)
+        filter_list = list(set(filter_list))
         return filter_list
 
     def _output_dict(self):
@@ -900,7 +912,7 @@ class Field(Pipeline):
             return active_fields[name]
         if not quiet:
             print("Initializing field...")
-        path = cls.build_param_path(field_name=name)
+        path = cls.build_param_path(field_name=name, mkdir=False)
         return cls.from_file(param_file=path)
 
     @classmethod
@@ -917,8 +929,10 @@ class Field(Pipeline):
         return param_dict
 
     @classmethod
-    def build_param_path(cls, field_name: str):
-        path = u.mkdir_check_args(p.param_dir, "fields", field_name)
+    def build_param_path(cls, field_name: str, mkdir: bool = True):
+        path = os.path.join(p.param_dir, "fields", field_name)
+        if mkdir:
+            os.makedirs(path, exist_ok=True)
         return os.path.join(path, f"{field_name}.yaml")
 
     @classmethod

@@ -320,7 +320,8 @@ class FRBField(Field):
                 "message": "Run PATH on available imaging?"
             },
             "update_photometry": field_stages["update_photometry"],
-            "refine_photometry": field_stages["refine_photometry"]
+            "refine_photometry": field_stages["refine_photometry"],
+            "send_to_table": field_stages["send_to_table"]
         }
         return stages
 
@@ -330,9 +331,13 @@ class FRBField(Field):
         }
         if 'path_kwargs' in kwargs:
             path_kwargs.update(kwargs["path_kwargs"])
-        self.probabilistic_association(**path_kwargs)
+        if 'path_img' in kwargs:
+            path_img = kwargs["path_img"]
+        else:
+            path_img = None
+        self.probabilistic_association(path_img=path_img, **path_kwargs)
 
-    def probabilistic_association(self, **path_kwargs):
+    def probabilistic_association(self, path_img: str = None, **path_kwargs):
         self.load_imaging()
         # filter_list = self.get_filters()
         # failed = []
@@ -341,12 +346,18 @@ class FRBField(Field):
         fil_list = self.best_fil_for_path()
         pl.latex_setup()
 
+        img_fixed = False
+        if path_img is not None:
+            img_fixed = True
+            path_img = self.imaging[path_img]["image"]
+
+        print("fil_list", len(fil_list))
         images = list(map(lambda f: self.deepest_in_band(fil=f)["image"], fil_list))
 
         max_p_ox = None
-        path_img = None
         while max_p_ox in (None, 0.) and images:
-            path_img = images.pop(0)
+            if not img_fixed:
+                path_img = images.pop(0)
             vals, tbl, z_lost = self.frb.host_probability_unseen(
                 img=path_img,
                 sample="Gordon+2023",
@@ -361,6 +372,8 @@ class FRBField(Field):
                     **path_kwargs
                 )
                 max_p_ox = write_dict["max_P(O|x_i)"]
+                if max_p_ox is None:
+                    img_fixed = False
                 if cand_tbl is not None:
                     path_cat = self.frb.consolidate_candidate_tables(
                         sort_by="P_Ox",
@@ -383,6 +396,7 @@ class FRBField(Field):
             else:
                 path_img = None
 
+        print("fil_list", len(fil_list))
         images = list(map(lambda f: self.deepest_in_band(fil=f)["image"], fil_list))
 
         for p_u in p_us:
@@ -421,12 +435,11 @@ class FRBField(Field):
             max_pox = np.max(list(map(lambda o: o.P_Ox, host_candidates)))
             for obj in self.frb.host_candidates:
                 P_Ox = obj.P_Ox
-                if P_Ox >= max_pox:
-                    self.frb.set_host(obj)
-                    obj.to_param_yaml()
-                elif P_Ox > 0.1:
+                if P_Ox > 0.1:
+                    if P_Ox >= max_pox:
+                        self.frb.set_host(obj)
                     self.add_object(obj)
-                    obj.to_param_yaml()
+                    obj.to_param_yaml(keep_old=True)
 
     def deepest_in_band(
             self,
@@ -435,6 +448,7 @@ class FRBField(Field):
     ):
         img_list = self.get_images_band(fil, instrument=instrument)
         img_list.sort(key=lambda d: d["depth"])
+        print(len(img_list))
         for img_dict in img_list:
             print(img_dict["name"], img_dict["depth"])
         img_dict = img_list[-1]
@@ -478,6 +492,7 @@ class FRBField(Field):
             exclude: list = ()
     ):
         filter_list = self.load_imaging()
+        print("filter_list", len(filter_list))
         best_fil = filters.best_for_path(filter_list, exclude=exclude)
         # path_dict = self.deepest_in_band(fil=best_fil)
         # path_img = path_dict["image"]
@@ -570,8 +585,10 @@ class FRBField(Field):
         coords["ra"]["hms"] = ra_str
         coords["dec"]["dms"] = dec_str
 
-        obs.load_furby_table()
-        row, _ = obs.get_row_furby(field_name)
+        from craftutils.observation.output.furby import furby_cat
+
+        furby_cat.load_table()
+        row, _ = furby_cat.get_row(colname="field_name", colval=field_name)
         if row is not None:
             frb["position_err"]["a"]["stat"] = row["sig_ra"]
             frb["position_err"]["b"]["stat"] = row["sig_dec"]

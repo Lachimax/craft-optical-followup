@@ -762,19 +762,22 @@ def root_mean_squared_error(
     return np.sqrt(mse)
 
 
-def detect_problem_table(
+def detect_problem_row(
         tbl: table.Table,
         fmt: str = "ascii.ecsv",
         remove_output: bool = True
-) -> table.Row:
+) -> Tuple[int, table.Row]:
     """
     This function iterates through the rows of an astropy Table and attempts to write each one to disk;
     if it fails on one, the row's index and the row itself are returned.
 
     :param tbl: The Table (or subclass) to check.
     :param fmt: The format to attempt to write; different formats may have trouble with different data types.
+    :param remove_output: auto-delete output tables.
     :return: index, row
     """
+    i = None
+    row = None
     for i, row in enumerate(tbl):
         print(f"Writing up to row {i}")
         tbl_this = tbl[:i + 1]
@@ -784,13 +787,55 @@ def detect_problem_table(
             if remove_output:
                 os.remove(writepath)
         except NotImplementedError:
-            print("Problem row:")
+            print("Problem column (NotImplementedError):")
             print(i, row)
+            _problem_row(i, row, tbl)
             return i, row
         except ValueError:
-            print("Problem row:")
+            print("Problem column (ValueError):")
             print(i, row)
+            _problem_row(i, row, tbl)
             return i, row
+
+
+def _problem_row(i, row, tbl):
+    problem_values = {}
+    j = i - 1
+    other_row = tbl[j]
+    print(tbl[[i, j]])
+    for col in tbl.colnames:
+        if type(other_row[col]) is not type(row[col]):
+            problem_values[col] = (row[col], other_row[col])
+    print(len(problem_values))
+    for name, (val, other_val) in problem_values.items():
+        print(name, val, type(val), other_val, type(other_val))
+
+def detect_problem_column(
+        tbl: table.Table,
+        fmt: str = "ascii.ecsv",
+        remove_output: bool = True
+):
+    print(type(tbl))
+    colnames = tbl.colnames
+    for i, col in enumerate(colnames):
+        colnames_trunc = colnames[:i]
+        tbl_this = tbl[colnames_trunc]
+        try:
+            writepath = os.path.join(os.path.expanduser("~"), f"test.{fmt}")
+            tbl_this.write(writepath, overwrite=True, format=fmt)
+            if remove_output:
+                os.remove(writepath)
+        except NotImplementedError:
+            print(tbl_this)
+            print("Problem column (NotImplementedError):")
+            print(col, tbl[col])
+            return col, tbl[col]
+        except ValueError:
+            print(tbl_this)
+            print("Problem column (ValueError):")
+            print(col, tbl[col])
+            return col, tbl[col]
+
 
 
 def mode(lst: list):
@@ -1033,7 +1078,6 @@ def uncertainty_string(
     if uncertainty in limit_vals:
         if n_digits_lim:
             # Account for the decimal point
-            print(v_point, n_digits_lim)
             if v_point < n_digits_lim:
                 n_digits_lim += 1
                 x = 0

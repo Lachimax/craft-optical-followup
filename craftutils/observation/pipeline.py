@@ -12,45 +12,31 @@ from craftutils.observation.generic import Generic
 
 class Pipeline(Generic):
     stage_output_dirs = True
+
     def __init__(
             self,
-            name: str = None,
-            param_path: str = None,
-            data_path: str = None,
-            do_stages: Union[list, str] = None,
+            do_runtime: Union[list, str] = None,
             **kwargs
     ):
-        self.param_path = param_path
-        self.name = name
+        super().__init__(**kwargs)
 
         self.quiet = False
         if "quiet" in kwargs:
             self.quiet = kwargs["quiet"]
 
-        self.data_path = None
-        self.data_path_relative = None
-        if data_path is not None:
-            self.data_path = os.path.join(p.data_dir, data_path)
-            self.data_path_relative = data_path
-        if data_path is not None:
-            u.mkdir_check_nested(self.data_path)
-
-        self.do = do_stages
+        self.do_runtime = do_runtime
 
         # Written attributes
-        self.output_file = None  # This will be set during the load_output_file call
         self.stages_complete = {}
         self.log = log.Log()
 
         # Data reduction paths
         self.paths = {}
 
-        self.do_kwargs = {}
+        self.do_param = {}
         u.debug_print(2, "do" in kwargs)
         if "do" in kwargs:
-            self.do_kwargs = kwargs["do"]
-
-        self.param_file = kwargs
+            self.do_param = kwargs["do"]
 
         self.stage_params: dict = {}
 
@@ -72,9 +58,6 @@ class Pipeline(Generic):
 
     def set_path(self, key: str, value: str):
         self.paths[key] = value
-
-    def update_output_file(self):
-        p.update_output_file(self)
 
     @classmethod
     def stages(cls):
@@ -100,8 +83,8 @@ class Pipeline(Generic):
         # Check if n is an integer, and if so cast to int.
         if n == int(n):
             n = int(n)
-        if self.do is not None:
-            if stage_name in self.do:
+        if self.do_runtime is not None:
+            if stage_name in self.do_runtime:
                 return True
         else:
             message = f"{self.name} {n}. {message}"
@@ -138,7 +121,8 @@ class Pipeline(Generic):
         """Performs the pipeline methods given in stages() for this instance.
 
         :param no_query: If True, skips the query stage and performs all stages (unless "do" was provided on __init__),
-            in which case it will perform only those stages without query no matter what no_query is.
+            in which case it will perform only those stages without query no matter what no_query is). This flag should
+            only be set to True if performing all specified steps, as it will override "do_runtime".
         :return:
         """
         skip_cats = False
@@ -146,6 +130,8 @@ class Pipeline(Generic):
             skip_cats = kwargs["skip_cats"]
         self._pipeline_init(skip_cats=skip_cats)
         # u.debug_print(2, "Epoch.pipeline(): kwargs ==", kwargs)
+
+        print("do_runtime", self.do_runtime)
 
         # Loop through stages list specified in self.stages()
         stages = self.stages()
@@ -162,9 +148,12 @@ class Pipeline(Generic):
             else:
                 do_this = True
 
+            # do_this indicates that this stage should be performed on this object at some point, but not necessarily in
+            # this run; ie, that we should give the option as a query.
+
             # Check if name is in "do" dict. If it is, defer to that setting; if not, defer to default.
-            if name in self.do_kwargs:
-                do_this = self.do_kwargs[name]
+            if name in self.do_param:
+                do_this = self.do_param[name]
 
             u.debug_print(2, f"Epoch.pipeline(): {self}.stages_complete ==", self.stages_complete)
 
@@ -213,13 +202,6 @@ class Pipeline(Generic):
 
                 self.update_output_file()
 
-            elif not do_this:
-                self.stages_complete[name] = {
-                    "status": "skipped",
-                    "time": Time.now(),
-                    "kwargs": {}
-                }
-
         return last_complete
 
     def _pipeline_init(self, skip_cats: bool = False):
@@ -229,17 +211,29 @@ class Pipeline(Generic):
         else:
             raise ValueError(f"data_path has not been set for {self}")
 
-        self.do = _check_do_list(self.do, stages=list(self.stages().keys()))
-        if not self.quiet and self.do:
-            print(f"Doing stages {self.do}")
+        self.do_runtime = _check_do_list(self.do_runtime, stages=list(self.stages().keys()))
+        if not self.quiet and self.do_runtime:
+            print(f"Doing stages {self.do_runtime}")
 
     def _output_dict(self):
-        return {
+        output_dict = super()._output_dict()
+        output_dict.update({
             "paths": self.paths,
             "stages": self.stages_complete,
             "stage_params": self.stage_params
-        }
+        })
+        return output_dict
 
+    def load_output_file(self, **kwargs):
+        outputs = super().load_output_file(**kwargs)
+        if isinstance(outputs, dict):
+            if "log" in outputs:
+                self.log = log.Log(outputs["log"])
+            if "stage_params" in outputs and isinstance(outputs["stage_params"], dict):
+                self.stage_params = outputs["stage_params"]
+            if "stages" in outputs:
+                self.stages_complete.update(outputs["stages"])
+        return outputs
 
 def _check_do_list(
         do: Union[list, str],
@@ -268,5 +262,3 @@ def _check_do_list(
         do = do_nu
 
     return do
-
-

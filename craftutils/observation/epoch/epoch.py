@@ -231,7 +231,7 @@ class Epoch(Pipeline):
             date: Union[str, Time] = None,
             program_id: str = None,
             target: str = None,
-            do_stages: Union[list, str] = None,
+            do_runtime: Union[list, str] = None,
             **kwargs
     ):
 
@@ -239,7 +239,7 @@ class Epoch(Pipeline):
             param_path=param_path,
             name=name,
             data_path=data_path,
-            do_stages=do_stages,
+            do_runtime=do_runtime,
             **kwargs
         )
 
@@ -373,8 +373,8 @@ class Epoch(Pipeline):
         :param kwargs: keyword arguments to pass to the add_coadded_image() method.
         :return: output file as a dict.
         """
-        outputs = p.load_output_file(self)
-        if type(outputs) is dict:
+        outputs = super().load_output_file(**kwargs)
+        if isinstance(outputs, dict):
             if "coadded" in outputs:
                 for fil in outputs["coadded"]:
                     if outputs["coadded"][fil] is not None:
@@ -383,14 +383,6 @@ class Epoch(Pipeline):
                 for frame in set(outputs["frames_bias"]):
                     if os.path.isfile(frame):
                         self.add_frame_raw(raw_frame=frame)
-            import craftutils.observation.objects as objects
-            if "log" in outputs:
-                self.log = log.Log(outputs["log"])
-            if "stage_params" in outputs and isinstance(outputs["stage_params"], dict):
-                self.stage_params = outputs["stage_params"]
-            if "stages" in outputs:
-                self.stages_complete.update(outputs["stages"])
-
         return outputs
 
     def _output_dict(self):
@@ -462,20 +454,13 @@ class Epoch(Pipeline):
     def get_master_flat(self, chip: int, fil: str):
         return self.master_flats[chip][fil]
 
-    def update_param_file(self, param: str):
-        p_dict = {
+    def _updateable(self):
+        p_dict = super()._updateable()
+        p_dict.update({
             "program_id": self.program_id,
             "date": self.date,
             "target": self.target
-        }
-        if param not in p_dict:
-            raise ValueError(f"Either {param} is not a valid parameter, or it has not been configured.")
-        if self.param_path is None:
-            raise ValueError("param_path has not been set.")
-        else:
-            params = p.load_params(self.param_path)
-        params[param] = p_dict[param]
-        p.save_params(file=self.param_path, dictionary=params)
+        })
 
     @classmethod
     def sort_by_chip(cls, images: list):
@@ -670,9 +655,6 @@ class StandardEpoch(Epoch):
             return FORS2StandardEpoch
         else:
             return StandardEpoch
-
-
-
 
 
 def _retrieve_eso_epoch(
