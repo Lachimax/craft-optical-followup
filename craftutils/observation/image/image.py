@@ -1,18 +1,13 @@
 # Code by Lachlan Marnoch, 2021
-import copy
-import math
+
 import os
 import shutil
 import string
-from typing import Union, Tuple, List
-
-import numpy as np
-import matplotlib.pyplot as plt
+from typing import Union, List
 
 import astropy.io.fits as fits
 import astropy.table as table
 import astropy.units as units
-from astropy.coordinates import SkyCoord
 from astropy.time import Time
 
 from astropy.visualization import quantity_support
@@ -656,7 +651,7 @@ class Image:
             self.gain = u.check_quantity(self.gain, gain_unit)
         return self.gain
 
-    def extract_date_obs(self):
+    def extract_date_obs(self) -> str:
         key = self.header_keys()["date-obs"]
         self.date_obs = self.extract_header_item(key)
         key = self.header_keys()["mjd-obs"]

@@ -16,6 +16,7 @@ import craftutils.params as p
 import craftutils.astrometry as astm
 import craftutils.utils as u
 import craftutils.retrieve as r
+import craftutils.plotting as pl
 import craftutils.observation.instrument as inst
 import craftutils.observation.filters as filters
 
@@ -427,7 +428,8 @@ class Object(Generic):
             "photometry": self.photometry,
             "irsa_extinction_path": self.irsa_extinction_path,
             "extinction_law": self.extinction_power_law,
-            "ebv_sandf": self.ebv_sandf
+            "ebv_sandf": self.ebv_sandf,
+            "jname": self.jname()
         })
         return output_dict
 
@@ -475,8 +477,8 @@ class Object(Generic):
             super().update_output_file()
 
     def write_plot_photometry(self, output: str = None, **kwargs):
-        """
-        Plots available photometry (mag v lambda_eff) and writes to disk.
+        """Plots available photometry (mag v lambda_eff) and writes to disk.
+
         :param output: Path to write plot.
         :return: matplotlib ax object containing plot info
         """
@@ -491,23 +493,110 @@ class Object(Generic):
             output = os.path.join(self.data_path, f"{self.name_filesys}_photometry.pdf")
 
         plt.close()
-        axes = []
         for best in (False, True):
-            ax = self.plot_photometry(**kwargs, best=best)
-            ax.legend()
+            ax, fig = self.plot_photometry(**kwargs, best=best)
+            ax.legend(loc=(1.1, 0.))
             if best:
                 output = output.replace(".pdf", "_best.pdf")
-            plt.savefig(output)
-            axes.append(ax)
-            plt.close()
-        return axes
+            plt.savefig(output, bbox_inches="tight")
+            plt.close(fig)
+
+        output_n = output.replace("_photometry_best.pdf", "_photometry_time.pdf")
+
+        for ext_corr in (False, True):
+            ax, fig = self.plot_photometry_time(
+                extinction_corrected=ext_corr,
+                **kwargs
+            )
+            ax.legend(loc=(1.1, 0.))
+            if ext_corr:
+                output_n = output_n.replace(".pdf", "_gal_ext.pdf")
+            plt.savefig(output_n, bbox_inches="tight")
+            plt.close(fig)
+
+    def plot_photometry_time(
+            self,
+            ax: plt.Axes = None,
+            fig: plt.Figure = None,
+            extinction_corrected: bool = True,
+            mag_type: str = "sep",
+            **kwargs
+    ) -> plt.axes:
+        if not self.photometry:
+            self.load_output_file()
+            if not self.photometry:
+                print(f"No photometry found for {self.name}")
+                return
+
+        if ax is None:
+            fig, ax = plt.subplots()
+        if "ls" not in kwargs:
+            kwargs["ls"] = ""
+        if "marker" not in kwargs:
+            kwargs["marker"] = "x"
+        if "ecolor" not in kwargs:
+            kwargs["ecolor"] = "black"
+
+        if extinction_corrected:
+            self.estimate_galactic_extinction()
+            key = f"mag_{mag_type}_ext_corrected"
+        else:
+            key = f"mag_{mag_type}"
+        photometry_tbl = self.photometry_to_table(
+            output=self.build_photometry_table_path(best=False),
+            fmts=["ascii.ecsv", "ascii.csv"],
+            best=False,
+        ).copy()
+
+        bands = list(set(photometry_tbl["band"]))
+        bands.sort(key=lambda n: n.lower())
+
+        with quantity_support():
+
+            for i, band in enumerate(bands):
+                c = pl.colours[i]
+
+                valid = photometry_tbl[photometry_tbl["mag_sep"] > -990 * units.mag]
+                valid = valid[list(map(lambda row: "combined" not in row["epoch_name"], valid))]
+                valid = valid[valid["epoch_date"] != "None"]
+                valid["time_obj"] = time.Time(valid["epoch_date"], format="isot", scale="utc")
+                valid["time_obj"] = valid["time_obj"].mjd
+                in_band = valid[valid["band"] == band]
+
+                plot_limit = (-999 * units.mag == in_band["mag_sep_err"])
+                limits = in_band[plot_limit]
+                mags = in_band[np.invert(plot_limit)]
+
+                ax.errorbar(
+                    mags["time_obj"],
+                    mags[key],
+                    yerr=mags["mag_sep_err"],
+                    label=f"{band}",
+                    color=c,
+                    **kwargs,
+                )
+                ax.scatter(
+                    limits["time_obj"],
+                    limits[key],
+                )
+                ax.scatter(
+                    limits["time_obj"],
+                    limits[key],
+                    marker="v",
+                    color=c,
+                )
+
+                ax.set_ylabel("Apparent magnitude")
+                ax.set_xlabel("MJD")
+                ax.invert_yaxis()
+        return ax, fig
 
     def plot_photometry(
             self,
-            ax=None,
+            ax: plt.axes = None,
             best: bool = False,
             **kwargs
-    ):
+    ) -> plt.axes:
         """
         Plots available photometry (mag v lambda_eff).
         :param ax: matplotlib ax object to plot with. A new object is generated if none is provided.
@@ -548,7 +637,6 @@ class Object(Generic):
                 mags["lambda_eff"],
                 mags["mag_sep"],
                 yerr=mags["mag_sep_err"],
-                label="Magnitude",
                 **kwargs,
             )
             ax.scatter(
@@ -561,18 +649,18 @@ class Object(Generic):
                 mags["lambda_eff"],
                 mags["mag_sep_ext_corrected"],
                 color="orange",
-                label="Corrected for Galactic extinction"
+                label="Magnitude (extinction-corrected)"
             )
             ax.scatter(
                 limits["lambda_eff"],
                 limits["mag_sep_ext_corrected"],
-                label="Magnitude upper limit",
+                label="Magnitude upper limit (extinction-corrected)",
                 marker="v",
             )
             ax.set_ylabel("Apparent magnitude")
             ax.set_xlabel("$\lambda_\mathrm{eff}$ (\AA)")
             ax.invert_yaxis()
-        return ax
+        return ax, fig
 
     def build_photometry_table_path(self, best: bool = False):
         self.check_data_path()

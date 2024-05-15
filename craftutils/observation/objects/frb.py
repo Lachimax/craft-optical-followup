@@ -319,8 +319,9 @@ class FRB(ExtragalacticTransient):
                     frame=cand_tbl["separation"].max(),
                     centre=self.position
                 )
-                c = ax.scatter(cand_tbl["x"], cand_tbl["y"], marker="x", c=cand_tbl["P_Ox"], cmap="bwr")
-                fig.colorbar(c)
+                c = ax.scatter(cand_tbl["x"], cand_tbl["y"], marker="x", c=np.log10(cand_tbl["P_Ox"]), cmap="bwr_r")
+                cbar = fig.colorbar(c)
+                cbar.set_label("$P(O|x)_i$")
                 if show:
                     plt.show(fig)
                 if output_dir:
@@ -468,6 +469,8 @@ class FRB(ExtragalacticTransient):
             if "host_candidate_tables" in outputs:
                 p_us = outputs["host_candidate_tables"]
                 for p_u in p_us:
+                    if p_u not in self.host_candidate_tables:
+                        self.host_candidate_tables[p_u] = {}
                     tables = outputs["host_candidate_tables"][p_u]
                     for table_name in tables:
                         tbl_path = tables[table_name]
