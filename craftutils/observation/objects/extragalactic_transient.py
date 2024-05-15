@@ -7,7 +7,7 @@ class ExtragalacticTransient(Transient, Extragalactic):
 
     def __init__(
             self,
-            host_galaxy: TransientHostCandidate,
+            host_galaxy: TransientHostCandidate = None,
             **kwargs
     ):
 
