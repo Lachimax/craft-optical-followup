@@ -1046,6 +1046,7 @@ def uncertainty_string(
         value: Union[float, units.Quantity],
         uncertainty: Union[float, units.Quantity],
         n_digits_err: int = 1,
+        n_digits_no_err: int = 1,
         n_digits_lim: int = None,
         unit: units.Unit = None,
         brackets: bool = True,
@@ -1053,6 +1054,7 @@ def uncertainty_string(
         limit_type: str = "upper",
         nan_string: str = "--",
 ):
+
     limit_vals = (limit_val, -99, -999, -999.)
     value = float(dequantify(value, unit))
     if value in limit_vals or np.ma.is_masked(value):
@@ -1101,7 +1103,9 @@ def uncertainty_string(
         value_str = f"{value:.{m}f}"
 
     if uncertainty == 0.:
-        return f"${np.round(float(value_str), n_digits_err)}$", value, uncertainty
+        if isinstance(n_digits_no_err, int):
+            value_str = f"${np.round(float(value_str), n_digits_err)}$"
+        return value_str, value, uncertainty
 
     # Find the decimal point in the uncertainty.
     u_point = uncertainty_str.find(".")

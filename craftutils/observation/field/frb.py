@@ -179,7 +179,7 @@ class FRBField(Field):
             self.frb_ellipse_to_plot(ext=ext[0], frb_kwargs=frb_kwargs, img=red_trimmed, ax=ax)
 
         fig.savefig(output_path)
-        return ax, fig, colour
+        return fig, ax, colour
 
     def plot_host(
             self,
@@ -228,7 +228,7 @@ class FRBField(Field):
         if draw_scale_bar:
             kwargs["scale_bar_object"] = self.frb.host_galaxy
 
-        ax, fig, other_args = img.plot_subimage(
+        fig, ax, other_args = img.plot_subimage(
             centre=centre,
             frame=frame,
             ext=ext,
@@ -256,7 +256,7 @@ class FRBField(Field):
         if output_path is not None:
             fig.savefig(output_path)
 
-        return ax, fig, other_args
+        return fig, ax, other_args
 
     def frb_ellipse_to_plot(
             self,

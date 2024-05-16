@@ -494,7 +494,7 @@ class Object(Generic):
 
         plt.close()
         for best in (False, True):
-            ax, fig = self.plot_photometry(**kwargs, best=best)
+            fig, ax = self.plot_photometry(**kwargs, best=best)
             ax.legend(loc=(1.1, 0.))
             if best:
                 output = output.replace(".pdf", "_best.pdf")
@@ -504,7 +504,7 @@ class Object(Generic):
         output_n = output.replace("_photometry_best.pdf", "_photometry_time.pdf")
 
         for ext_corr in (False, True):
-            ax, fig = self.plot_photometry_time(
+            fig, ax = self.plot_photometry_time(
                 extinction_corrected=ext_corr,
                 **kwargs
             )
@@ -589,7 +589,7 @@ class Object(Generic):
                 ax.set_ylabel("Apparent magnitude")
                 ax.set_xlabel("MJD")
                 ax.invert_yaxis()
-        return ax, fig
+        return fig, ax
 
     def plot_photometry(
             self,
@@ -660,7 +660,7 @@ class Object(Generic):
             ax.set_ylabel("Apparent magnitude")
             ax.set_xlabel("$\lambda_\mathrm{eff}$ (\AA)")
             ax.invert_yaxis()
-        return ax, fig
+        return fig, ax
 
     def build_photometry_table_path(self, best: bool = False):
         self.check_data_path()

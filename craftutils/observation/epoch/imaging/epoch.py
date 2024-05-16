@@ -1501,7 +1501,7 @@ class ImagingEpoch(Epoch):
             img.load_data()
 
             if not skip_plots:
-                ax, fig, vals = self.field.plot_host(
+                fig, ax, vals = self.field.plot_host(
                     img=img,
                     frame=10 * units.arcsec,
                     centre=self.field.frb.position,
@@ -1666,7 +1666,7 @@ class ImagingEpoch(Epoch):
                                 centre = obj.position_from_cat_row()
 
                                 fig = plt.figure(figsize=(6, 5))
-                                ax, fig, other = self.field.plot_host(
+                                fig, ax, other = self.field.plot_host(
                                     img=img,
                                     fig=fig,
                                     centre=centre,
@@ -1696,7 +1696,7 @@ class ImagingEpoch(Epoch):
                                 fig.clear()
                                 plt.close("all")
                                 pl.latex_off()
-                                del ax, fig, other
+                                del fig, ax, other
 
             # Make the subset SE table
             if len(rows) > 0:

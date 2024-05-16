@@ -313,7 +313,7 @@ class FRB(ExtragalacticTransient):
 
             if do_plot and isinstance(self.field, FRBField) and (show or output_dir):
                 fig = plt.figure(figsize=(12, 12))
-                ax, fig, _ = self.field.plot_host(
+                fig, ax, _ = self.field.plot_host(
                     img=img,
                     fig=fig,
                     frame=cand_tbl["separation"].max(),

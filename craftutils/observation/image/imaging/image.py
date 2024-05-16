@@ -537,7 +537,7 @@ class ImagingImage(Image):
             coord: SkyCoord,
             origin: int = 0,
             ext: int = 0
-    ) -> Tuple[np.ndarray]:
+    ) -> Tuple[np.ndarray, np.ndarray]:
         """
         Turns a sky coordinate into image pixel coordinates;
         :param coord: SkyCoord object to convert to pixel coordinates; essentially a wrapper for SkyCoord.to_pixel()
@@ -1328,10 +1328,12 @@ class ImagingImage(Image):
             plt.scatter(source_cat_key[f"MAG_{snr_key}"], source_cat_key[f"SNR_{snr_key}"])
             plt.savefig(os.path.join(output_dir, f"mag_{snr_key}-v-snr.png"), dpi=200)
             plt.close()
+            plt.clf()
 
             plt.hist(source_cat_key[f"SNR_{snr_key}"][source_cat_key[f"SNR_{snr_key}"] < 20])
             plt.savefig(os.path.join(output_dir, f"snr_{snr_key}-hist.png"), dpi=200)
             plt.close()
+            plt.clf()
 
             for sigma in (5, 10, 20):
                 source_cat_sigma = source_cat_key.copy()
@@ -1341,6 +1343,7 @@ class ImagingImage(Image):
                 plt.scatter(source_cat_sigma[f"MAG_{snr_key}"], source_cat_sigma[f"SNR_{snr_key}"])
                 plt.savefig(os.path.join(output_dir, f"mag_{snr_key}-v-snr-{sigma}sig.png"), dpi=200)
                 plt.close()
+                plt.clf()
 
                 self.depth["max"][f"SNR_{snr_key}"][f"{sigma}-sigma"] = np.max(
                     cat_more_xsigma[f"MAG_{snr_key}_ZP_{zeropoint_name}"]
@@ -1721,6 +1724,7 @@ class ImagingImage(Image):
         u.debug_print(2, "ImagingImage.astrometry_diagnostics(): reference_cat ==", reference_cat)
 
         plt.close()
+        plt.clf()
 
         with quantity_support():
             plt.scatter(self.source_cat["RA"].value, self.source_cat["DEC"].value, marker='x')
@@ -1731,6 +1735,7 @@ class ImagingImage(Image):
                 plt.show()
             plt.savefig(os.path.join(output_path, f"{self.name}_sourcecat_sky.pdf"))
             plt.close()
+            plt.clf()
 
             plt.scatter(reference_cat[ra_col].value, reference_cat[dec_col].value, marker='x')
             plt.xlabel("Right Ascension (Catalogue)")
@@ -1740,6 +1745,7 @@ class ImagingImage(Image):
                 plt.show()
             plt.savefig(os.path.join(output_path, f"{self.name}_referencecat_sky.pdf"))
             plt.close()
+            plt.clf()
 
             self.load_wcs()
             ref_cat_coords = SkyCoord(reference_cat[ra_col], reference_cat[dec_col])
@@ -1762,6 +1768,7 @@ class ImagingImage(Image):
                 plt.show()
             plt.savefig(os.path.join(output_path, f"{self.name}_bothcats_sky.pdf"))
             plt.close()
+            plt.clf()
 
             matches_source_cat, matches_ext_cat, distance = self.match_to_cat(
                 cat=reference_cat,
@@ -1814,6 +1821,7 @@ class ImagingImage(Image):
                 plt.show()
             plt.savefig(os.path.join(output_path, f"{self.name}_astrometry_offset_v_ref.pdf"))
             plt.close()
+            plt.clf()
 
             plt.hist(
                 distance.to(units.arcsec).value,
@@ -1834,6 +1842,7 @@ class ImagingImage(Image):
                 plt.show()
             plt.savefig(os.path.join(output_path, f"{self.name}_astrometry_offset_hist.pdf"))
             plt.close()
+            plt.clf()
 
             plt.scatter(matches_ext_cat[ra_col], matches_ext_cat[dec_col], c=distance.to(units.arcsec), marker='x')
             plt.xlabel("Right Ascension (Catalogue)")
@@ -1843,6 +1852,7 @@ class ImagingImage(Image):
                 plt.show()
             plt.savefig(os.path.join(output_path, f"{self.name}_astrometry_offset_sky.pdf"))
             plt.close()
+            plt.clf()
 
             fig = plt.figure(figsize=(12, 12), dpi=1000)
             self.plot_catalogue(
@@ -2597,6 +2607,7 @@ class ImagingImage(Image):
             if show:
                 plt.show()
             plt.close()
+            plt.clf()
 
     def plot_subimage(
             self,
@@ -2618,7 +2629,7 @@ class ImagingImage(Image):
             data: str = "image",
             clip_data: bool = False,
             **kwargs,
-    ) -> Tuple[plt.Axes, plt.Figure, dict]:
+    ) -> Tuple[plt.Figure, plt.Axes, dict]:
 
         if data == "image":
             self.load_data()
@@ -2770,7 +2781,7 @@ class ImagingImage(Image):
 
         del data
 
-        return ax, fig, other_args
+        return fig, ax, other_args
 
     def scale_bar(
             self,
@@ -2916,6 +2927,7 @@ class ImagingImage(Image):
     ):
 
         plt.close()
+        plt.clf()
         fig = plt.figure()
         ax = fig.add_subplot()
 
@@ -2968,6 +2980,8 @@ class ImagingImage(Image):
             fig.show()
         self.close()
         plt.close(fig)
+        fig.clear()
+        plt.clf()
         return
 
     def plot(
@@ -2981,7 +2995,7 @@ class ImagingImage(Image):
         if fig is None:
             fig = plt.figure(figsize=(12, 12), dpi=1000)
         if ax is None:
-            ax, fig = self.wcs_axes(fig=fig, ext=ext)
+            fig, ax = self.wcs_axes(fig=fig, ext=ext)
         self.load_data()
         data = u.dequantify(self.data[ext])
         ax.imshow(
@@ -2994,7 +3008,7 @@ class ImagingImage(Image):
             ),
             origin='lower',
         )
-        return ax, fig
+        return fig, ax
 
     def wcs_axes(self, fig: plt.Figure = None, ext: int = 0):
         if fig is None:
@@ -3002,7 +3016,7 @@ class ImagingImage(Image):
         ax = fig.add_subplot(
             projection=self.load_wcs()[ext]
         )
-        return ax, fig
+        return fig, ax
 
     def plot_catalogue(
             self,
@@ -3022,7 +3036,7 @@ class ImagingImage(Image):
         else:
             c = "red"
 
-        ax, fig = self.plot(fig=fig, ext=ext, zorder=0, **kwargs)
+        fig, ax = self.plot(fig=fig, ext=ext, zorder=0, **kwargs)
         x, y = self.wcs[ext].all_world2pix(cat[ra_col], cat[dec_col], 0)
         pcm = plt.scatter(x, y, c=c, cmap="plasma", marker="x", zorder=10)
         if colour_column is not None:
@@ -3030,7 +3044,7 @@ class ImagingImage(Image):
 
         u.debug_print(2, f"{self}.plot_catalogue(): len(cat):", len(cat))
 
-        return ax, fig
+        return fig, ax
 
     def plot_coords(
             self,
@@ -3347,70 +3361,81 @@ class ImagingImage(Image):
         plt.ylabel("Fraction of flux recovered")
         plt.savefig(os.path.join(output_dir, "flux_recovered_psf.png"))
         plt.close()
+        plt.clf()
 
         plt.scatter(sources["mag_inserted"], sources["fraction_flux_recovered_auto"])
         plt.xlabel("Inserted magnitude")
         plt.ylabel("Fraction of flux recovered")
         plt.savefig(os.path.join(output_dir, "flux_recovered_auto.png"))
         plt.close()
+        plt.clf()
 
         plt.scatter(sources["mag_inserted"], sources["fraction_flux_recovered_sep"])
         plt.xlabel("Inserted magnitude")
         plt.ylabel("Fraction of flux recovered")
         plt.savefig(os.path.join(output_dir, "flux_recovered_sep.png"))
         plt.close()
+        plt.clf()
 
         plt.scatter(sources["mag_inserted"], sources["delta_mag_psf"])
         plt.xlabel("Inserted magnitude")
         plt.ylabel("Mag psf - mag inserted")
         plt.savefig(os.path.join(output_dir, "delta_mag_psf.png"))
         plt.close()
+        plt.clf()
 
         plt.scatter(sources["mag_inserted"], sources["delta_mag_auto"])
         plt.xlabel("Inserted magnitude")
         plt.ylabel("Mag auto - mag inserted")
         plt.savefig(os.path.join(output_dir, "delta_mag_auto.png"))
         plt.close()
+        plt.clf()
 
         plt.scatter(sources["mag_inserted"], sources["delta_mag_sep"])
         plt.xlabel("Inserted magnitude")
         plt.ylabel("Mag auto - mag inserted")
         plt.savefig(os.path.join(output_dir, "delta_mag_sep.png"))
         plt.close()
+        plt.clf()
 
         plt.scatter(sources["mag_inserted"], sources["CLASS_STAR"])
         plt.xlabel("Inserted magnitude")
         plt.ylabel("Class star")
         plt.savefig(os.path.join(output_dir, "class_star.png"))
         plt.close()
+        plt.clf()
 
         plt.scatter(sources["mag_inserted"], sources["SPREAD_MODEL"])
         plt.xlabel("Inserted magnitude")
         plt.ylabel("Spread Model")
         plt.savefig(os.path.join(output_dir, "spread_model.png"))
         plt.close()
+        plt.clf()
 
         plt.scatter(sources["mag_inserted"], sources["matching_dist"])
         plt.xlabel("Inserted magnitude")
         plt.ylabel("Matching distance (arcsec)")
         plt.savefig(os.path.join(output_dir, "matching_dist.png"))
         plt.close()
+        plt.clf()
 
         plt.scatter(sources["mag_inserted"], sources["snr_sep"])
         plt.xlabel("Inserted magnitude")
         plt.ylabel("S/N, measured by SEP")
         plt.savefig(os.path.join(output_dir, "matching_dist.png"))
         plt.close()
+        plt.clf()
 
         plt.scatter(sources["mag_inserted"], sources["SNR_PSF"])
         plt.xlabel("Inserted magnitude")
         plt.ylabel("S/N, measured by SEP")
         plt.savefig(os.path.join(output_dir, "matching_dist.png"))
         plt.close()
+        plt.clf()
 
         # TODO: S/N measure and plot
 
-        ax, fig = self.plot_catalogue(cat=sources, ra_col="ra_inserted", dec_col="dec_inserted")
+        fig, ax = self.plot_catalogue(cat=sources, ra_col="ra_inserted", dec_col="dec_inserted")
         fig.savefig(os.path.join(output_dir, "inserted_overplot.png"))
 
         sources.write(os.path.join(output_dir, "synth_cat_all.ecsv"), format="ascii.ecsv")
@@ -3538,6 +3563,7 @@ class ImagingImage(Image):
         else:
             plt.show()
         plt.close()
+        plt.clf()
         model = fitter(
             model_init,
             x, y,
@@ -3954,6 +3980,7 @@ class ImagingImage(Image):
             })
 
             plt.close()
+            plt.clf()
             with quantity_support():
 
                 theta_plot = (theta[0] * units.rad).to(units.deg).value
@@ -3987,7 +4014,7 @@ class ImagingImage(Image):
                 #     ax.add_artist(e)
                 #     ax.text(objects["x"][i], objects["y"][i], objects["theta"][i] * 180. / np.pi)
 
-                ax, fig, _ = self.plot_subimage(
+                fig, ax, _ = self.plot_subimage(
                     centre=centre,
                     frame=this_frame,
                     ext=ext,
@@ -4005,9 +4032,11 @@ class ImagingImage(Image):
                 fig.savefig(output + ".png")
 
                 plt.close(fig)
+                fig.clear()
+                plt.clf()
 
                 if subtract_background:
-                    ax, fig, _ = self.plot_subimage(
+                    fig, ax, _ = self.plot_subimage(
                         centre=centre,
                         frame=this_frame,
                         ext=ext,
@@ -4023,6 +4052,8 @@ class ImagingImage(Image):
                     fig.savefig(output + "_back_sub.png")
 
                     plt.close(fig)
+                    fig.clear()
+                    plt.clf()
 
         return flux, flux_err, flag, back
 
