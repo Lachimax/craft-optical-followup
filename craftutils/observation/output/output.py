@@ -59,6 +59,7 @@ class OutputCatalogue(Generic):
         self.units = None
         self.template = {}
 
+
     def build_table_path(self):
         return os.path.join(self.table_dir, self.filename)
 
@@ -66,11 +67,16 @@ class OutputCatalogue(Generic):
             self,
             force: bool = False,
     ):
+        self.load_output_file()
         if self.template is None:
             self.template = self.build_default()
+
         if force or self.table is None:
+            self.table = {}
             if os.path.isfile(self.table_path):
-                self.table = p.load_params(self.table_path)
+                tbl_dict = p.load_params(self.table_path)
+                for name, entry in tbl_dict.items():
+                    self.add_entry(key=name, entry=entry)
         if self.table is None:
             self.table = {}
         return self.table
@@ -122,6 +128,8 @@ class OutputCatalogue(Generic):
             self,
             sort_by: Union[str, list] = None,
     ):
+        self.load_output_file()
+        self.update_entries()
         tbl = self.table
         tbl_path = self.table_path
         if sort_by is None:
@@ -141,6 +149,14 @@ class OutputCatalogue(Generic):
             format="ascii.csv",
             overwrite=True
         )
+        self.update_output_file()
+
+    def update_entries(self):
+        for name, row in self.table.items():
+            for colname in self.template:
+                if name == "HG20190608B":
+                if colname not in row or row[colname] == 0.0:
+                    row[colname] = self.template[colname]
 
     def add_entry(
             self,
@@ -241,6 +257,11 @@ class OutputCatalogue(Generic):
             "template": self.template,
         })
         return output_dict
+
+    def load_output_file(self, **kwargs):
+        output = super().load_output_file(**kwargs)
+        if "template" in output:
+            self.template = output["template"]
 
     @classmethod
     def column_names(cls):

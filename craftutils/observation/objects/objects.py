@@ -637,24 +637,25 @@ class Object(Generic):
                 mags["lambda_eff"],
                 mags["mag_sep"],
                 yerr=mags["mag_sep_err"],
+                label="Measurement",
                 **kwargs,
             )
             ax.scatter(
                 limits["lambda_eff"],
                 limits["mag_sep"],
-                label="Magnitude upper limit",
+                label="Upper limit",
                 marker="v",
             )
             ax.scatter(
                 mags["lambda_eff"],
                 mags["mag_sep_ext_corrected"],
                 color="orange",
-                label="Magnitude (extinction-corrected)"
+                label="Extinction-corrected measurement"
             )
             ax.scatter(
                 limits["lambda_eff"],
                 limits["mag_sep_ext_corrected"],
-                label="Magnitude upper limit (extinction-corrected)",
+                label="Extinction-corrected upper limit",
                 marker="v",
             )
             ax.set_ylabel("Apparent magnitude")

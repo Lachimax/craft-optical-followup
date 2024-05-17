@@ -887,7 +887,7 @@ class ImagingImage(Image):
             return None, None
 
         ranking, diff = self.rank_photometric_cat(cats=self.zeropoints)
-        if preferred is not None:
+        if preferred is not None and preferred in self.zeropoints:
             ranking.insert(0, preferred)
 
         zps = []
@@ -1325,15 +1325,16 @@ class ImagingImage(Image):
             source_cat_key = source_cat_key[source_cat_key[f"SNR_{snr_key}"] > 0]
             source_cat_key.sort(f"FLUX_{snr_key}")
 
-            plt.scatter(source_cat_key[f"MAG_{snr_key}"], source_cat_key[f"SNR_{snr_key}"])
-            plt.savefig(os.path.join(output_dir, f"mag_{snr_key}-v-snr.png"), dpi=200)
-            plt.close()
-            plt.clf()
+            if output_dir is not None:
+                plt.scatter(source_cat_key[f"MAG_{snr_key}"], source_cat_key[f"SNR_{snr_key}"])
+                plt.savefig(os.path.join(output_dir, f"mag_{snr_key}-v-snr.png"), dpi=200)
+                plt.close()
+                plt.clf()
 
-            plt.hist(source_cat_key[f"SNR_{snr_key}"][source_cat_key[f"SNR_{snr_key}"] < 20])
-            plt.savefig(os.path.join(output_dir, f"snr_{snr_key}-hist.png"), dpi=200)
-            plt.close()
-            plt.clf()
+                plt.hist(source_cat_key[f"SNR_{snr_key}"][source_cat_key[f"SNR_{snr_key}"] < 20])
+                plt.savefig(os.path.join(output_dir, f"snr_{snr_key}-hist.png"), dpi=200)
+                plt.close()
+                plt.clf()
 
             for sigma in (5, 10, 20):
                 source_cat_sigma = source_cat_key.copy()

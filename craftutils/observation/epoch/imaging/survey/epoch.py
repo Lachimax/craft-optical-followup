@@ -126,7 +126,10 @@ class SurveyImagingEpoch(ImagingEpoch):
                 image_name=f"{self.catalogue}",
             )
             img.select_zeropoint(True, preferred=self.preferred_zeropoint)
-            img.estimate_depth(zeropoint_name=self.catalogue)  # , do_magnitude_calibration=False)
+            img.estimate_depth(
+                zeropoint_name=self.catalogue,
+                output_dir=output_path
+            )  # , do_magnitude_calibration=False)
             if deepest is not None:
                 deepest = image.deepest(deepest, img)
             else:
