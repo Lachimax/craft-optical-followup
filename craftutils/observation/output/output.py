@@ -59,7 +59,6 @@ class OutputCatalogue(Generic):
         self.units = None
         self.template = {}
 
-
     def build_table_path(self):
         return os.path.join(self.table_dir, self.filename)
 
@@ -154,7 +153,6 @@ class OutputCatalogue(Generic):
     def update_entries(self):
         for name, row in self.table.items():
             for colname in self.template:
-                if name == "HG20190608B":
                 if colname not in row or row[colname] == 0.0:
                     row[colname] = self.template[colname]
 
