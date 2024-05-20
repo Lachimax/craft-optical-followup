@@ -501,6 +501,11 @@ class FRBField(Field):
         # print(f"The image selected for PATH is {path_img.name}, with depth {path_dict['depth']}")
         return filter_list
 
+    def galfit(self, apply_filter: None, **kwargs):
+        if apply_filter is None:
+            apply_filter = lambda o: o.name.startwith("HG")
+        super().galfit(apply_filter=apply_filter)
+
     def _output_dict(self):
         output_dict = super()._output_dict()
         output_dict["path_runs"] = self.path_runs

@@ -233,9 +233,13 @@ class Field(Pipeline):
         self.generate_cigale_photometry()
 
     def proc_galfit(self, output_dir: str, **kwargs):
-        self.galfit()
+        self.galfit(**kwargs)
 
-    def galfit(self):
+    def galfit(self, apply_filter: None, **kwargs):
+        if apply_filter is None:
+            obj_list = self.objects.values()
+        else:
+            obj_list = list(filter(apply_filter, self.objects.values()))
         for obj in self.objects:
             if isinstance(obj, objects.Galaxy):
                 obj.galfit_best()
