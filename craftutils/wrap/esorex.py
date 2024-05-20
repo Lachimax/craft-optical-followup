@@ -6,18 +6,20 @@ from typing import List, Dict
 from astropy.table import Table
 
 import craftutils.params as p
-import craftutils.fits_files as ff
 import craftutils.utils as u
 
-eso_bin_path = os.path.join(p.config["eso_install_dir"], "bin", "esorex")
+eso_bin_path = None
+eso_calib_path = None
 
-eso_calib_path = os.path.join(p.config["eso_install_dir"], "calib")
-fors2_calib_path = os.path.join(
-    eso_calib_path,
-    filter(
-        lambda d: os.path.isdir(os.path.join(eso_calib_path, d)) and d.startswith("fors-"),
-        os.listdir(eso_calib_path)
-    ).__next__())
+if p.config["eso_install_dir"]:
+    eso_bin_path = os.path.join(p.config["eso_install_dir"], "bin", "esorex")
+    eso_calib_path = os.path.join(p.config["eso_install_dir"], "calib")
+    fors2_calib_path = os.path.join(
+        eso_calib_path,
+        filter(
+            lambda d: os.path.isdir(os.path.join(eso_calib_path, d)) and d.startswith("fors-"),
+            os.listdir(eso_calib_path)
+        ).__next__())
 
 
 def write_sof(

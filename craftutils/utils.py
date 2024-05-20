@@ -1,5 +1,5 @@
 # Code by Lachlan Marnoch, 2019-2022
-
+import datetime
 import math
 import os
 import shutil
@@ -22,11 +22,48 @@ from astropy.time import Time
 debug_level = 0
 
 
+def export(obj):
+    """
+    A function used for decorating those objects which may be exported from a file.
+    Taken from `a solution posted by mhostetter <https://github.com/jbms/sphinx-immaterial/issues/152>`_
+
+    :param obj: The object to be added to __all__
+    :return:
+    """
+    # Determine the private module that defined the object
+    module = sys.modules[obj.__module__]
+
+    # Set the object's module to the package name. This way the REPL will display the object
+    # as craftutils.obj and not craftutils._private_module.obj
+    obj.__module__ = "craftutils"
+
+    # Append this object to the private module's "all" list
+    public_members = getattr(module, "__all__", [])
+    public_members.append(obj.__name__)
+    setattr(module, "__all__", public_members)
+
+    return obj
+
+
+@export
 def pad_zeroes(n: int, length: int = 2):
+    """
+
+    :param n:
+    :param length:
+    :return:
+    """
     n_str = str(n)
     while len(n_str) < length:
         n_str = "0" + n_str
     return n_str
+
+
+def check_time(time, fmt: str = None):
+    if isinstance(time, datetime.date):
+        time = str(time)
+    time = Time(time, format=fmt)
+    return time
 
 
 def get_git_hash(directory: str, short: bool = False):
@@ -49,6 +86,23 @@ def get_git_hash(directory: str, short: bool = False):
 
 
 def frame_from_centre(frame, x, y, data):
+    """
+    Given the coordinates for a centre and the padding around that centre, generates the x coordinate for the left and
+    right and the y coordinate for the bottom and top of the described rectangular cutout of the data.
+    :param frame:
+    :param x:
+    :param y:
+    :param data:
+    :return: (x_left, x_right, y_bottom, y_top)
+    """
+
+    if x is None:
+        n_y, n_x = data.shape
+        x = int(dequantify(n_x / 2))
+    if y is None:
+        n_y, n_x = data.shape
+        y = int(dequantify(n_y / 2))
+
     left = x - frame
     right = x + frame
     bottom = y - frame
@@ -64,8 +118,8 @@ def check_margins(data, left=None, right=None, bottom=None, top=None, margins: t
     :param right:
     :param bottom:
     :param top:
-    :param margins: In the order left, right, bottom, top
-    :return:
+    :param margins: In the order x_left, x_right, y_bottom, y_top
+    :return: (x_left, x_right, y_bottom, y_top)
     """
     shape = data.shape
 
@@ -133,11 +187,17 @@ def trim_image(
 
 
 def check_iterable(obj):
-    try:
-        len(obj)
-    except TypeError:
+    if not is_iterable(obj):
         obj = [obj]
     return obj
+
+
+def is_iterable(obj):
+    try:
+        len(obj)
+        return True
+    except TypeError:
+        return False
 
 
 def theta_range(theta: units.Quantity):
@@ -267,7 +327,7 @@ def check_dict(
 
 def check_quantity(
         number: Union[float, int, units.Quantity],
-        unit: units.Unit,
+        unit: Union[str, units.Unit],
         allow_mismatch: bool = True,
         enforce_equivalency: bool = True,
         convert: bool = False,
@@ -280,12 +340,13 @@ def check_quantity(
 
     :param number: value (or not) to check.
     :param unit: Unit to check for.
+    :param enforce_equivalency: If `True`, and if `allow_mismatch` is True, a `units.UnitsError` will be raised if the
+        `number` has units that are not equivalent to `unit`.
+        That is, set this (and `allow_mismatch`) to `True` if you want to ensure `number` has the same
+        dimensionality as `unit`, but not necessarily the same units. Savvy?
+    :param convert: If `True`, convert compatible `Quantity` to units `unit`.
     :param allow_mismatch: If False, even compatible but mismatched units will not be allowed; ie, the unit of the
         quantity must match the one specified in the "unit" parameter.
-    :param enforce_equivalency: If True, an error will be raised if the unit is incompatible; otherwise, we let it
-        slide.
-    :param convert: If True, convert compatible Quantity to units unit.
-    :param equivalencies: List of Equivalency objects to pass to to() function if convert is True.
     :return: number as Quantity with specified unit.
     """
     if number is None:
@@ -415,6 +476,7 @@ def size_from_ang_size_distance(theta: float, ang_size_distance: float):
 def latex_sanitise(string: str):
     """
     Special thanks to https://stackoverflow.com/questions/2627135/how-do-i-sanitize-latex-input
+
     :param string:
     :return:
     """
@@ -446,35 +508,29 @@ def rmtree_check(path):
 def mkdir_check(*paths: str):
     """
     Checks if a directory exists; if not, creates it.
-    :param paths:
-    :return:
+    :param paths: each argument is a path to check and create.
     """
     for path in paths:
-        if not os.path.isdir(path):
-            debug_print(2, f"Making directory {path}")
-            os.mkdir(path)
-        else:
-            debug_print(2, f"Directory {path} already exists, doing nothing.")
+        os.makedirs(path, exist_ok=True)
 
 
-def mkdir_check_nested(path: str, remove_last: bool = True):
+def mkdir_check_nested(
+        path: str,
+        remove_last: bool = True
+) -> str:
     """
     Does mkdir_check, but for all parent directories of the given path.
-    :param path:
+    That is, for all of the levels of the given path, a directory will be created if it doesn't exist.
+    :param path: path to check and create
+    :param remove_last: If True, does not create the given path itself, only its parent directories.
+        Useful if the path will in fact be that of a file that you just want to create a directory for.
     :return:
     """
-    path_orig = path
-    levels = []
-    while len(path) > 1:
-        path, end = os.path.split(path)
-        levels.append(end)
-    levels.append(path)
-    levels.reverse()
+
     if remove_last:
-        levels.pop()
-    debug_print(2, "utils.mkdir_check_nested(): levels ==", levels)
-    mkdir_check_args(*levels)
-    # mkdir_check(path_orig)
+        path, end = os.path.split(path)
+    os.makedirs(path, exist_ok=True)
+    return path
 
 
 def move_check(origin: str, destination: str):
@@ -569,15 +625,12 @@ def uncertainty_func(arg, err, func=lambda x: np.log10(x), absolute=False):
     :return:
     """
     measurement = func(arg)
-    print("\narg", arg)
-    print("\nmeasurement", measurement)
     # One of these should come out negative - that becomes the minus error, and the positive the plus error.
     error_plus = func(arg + err) - measurement
     error_minus = func(arg - err) - measurement
 
     error_plus_actual = []
     error_minus_actual = []
-    print("\nerror_plus", error_plus)
     try:
         for i, _ in enumerate(error_plus):
             error_plus_actual.append(np.max([error_plus[i], error_minus[i]]))
@@ -600,7 +653,6 @@ def uncertainty_func_percent(arg, err, func=lambda x: np.log10(x)):
 def get_column_names(path, delimiter=','):
     with open(path) as f:
         names = f.readline().split(delimiter)
-    print(names)
     return names
 
 
@@ -614,7 +666,6 @@ def get_column_names_sextractor(path):
                 line_list.remove("")
             columns.append(line_list[2])
             line = f.readline()
-    print(columns)
     return columns
 
 
@@ -723,21 +774,80 @@ def root_mean_squared_error(
     return np.sqrt(mse)
 
 
-def detect_problem_table(tbl: table.Table, fmt: str = "ecsv"):
+def detect_problem_row(
+        tbl: table.Table,
+        fmt: str = "ascii.ecsv",
+        remove_output: bool = True
+) -> Tuple[int, table.Row]:
+    """
+    This function iterates through the rows of an astropy Table and attempts to write each one to disk;
+    if it fails on one, the row's index and the row itself are returned.
+
+    :param tbl: The Table (or subclass) to check.
+    :param fmt: The format to attempt to write; different formats may have trouble with different data types.
+    :param remove_output: auto-delete output tables.
+    :return: index, row
+    """
+    i = None
+    row = None
     for i, row in enumerate(tbl):
+        print(f"Writing up to row {i}")
         tbl_this = tbl[:i + 1]
         try:
             writepath = os.path.join(os.path.expanduser("~"), f"test.{fmt}")
             tbl_this.write(writepath, overwrite=True, format=fmt)
-            os.remove(writepath)
+            if remove_output:
+                os.remove(writepath)
         except NotImplementedError:
-            print("Problem row:")
+            print("Problem column (NotImplementedError):")
             print(i, row)
+            _problem_row(i, row, tbl)
             return i, row
         except ValueError:
-            print("Problem row:")
+            print("Problem column (ValueError):")
             print(i, row)
+            _problem_row(i, row, tbl)
             return i, row
+
+
+def _problem_row(i, row, tbl):
+    problem_values = {}
+    j = i - 1
+    other_row = tbl[j]
+    print(tbl[[i, j]])
+    for col in tbl.colnames:
+        if type(other_row[col]) is not type(row[col]):
+            problem_values[col] = (row[col], other_row[col])
+    print(len(problem_values))
+    for name, (val, other_val) in problem_values.items():
+        print(name, val, type(val), other_val, type(other_val))
+
+def detect_problem_column(
+        tbl: table.Table,
+        fmt: str = "ascii.ecsv",
+        remove_output: bool = True
+):
+    print(type(tbl))
+    colnames = tbl.colnames
+    for i, col in enumerate(colnames):
+        colnames_trunc = colnames[:i]
+        tbl_this = tbl[colnames_trunc]
+        try:
+            writepath = os.path.join(os.path.expanduser("~"), f"test.{fmt}")
+            tbl_this.write(writepath, overwrite=True, format=fmt)
+            if remove_output:
+                os.remove(writepath)
+        except NotImplementedError:
+            print(tbl_this)
+            print("Problem column (NotImplementedError):")
+            print(col, tbl[col])
+            return col, tbl[col]
+        except ValueError:
+            print(tbl_this)
+            print("Problem column (ValueError):")
+            print(col, tbl[col])
+            return col, tbl[col]
+
 
 
 def mode(lst: list):
@@ -802,6 +912,7 @@ def match_cat(x_match, y_match, x_cat, y_cat, tolerance=np.inf, world=False, ret
     """
     Matches a set of objects against a catalogue using their positions.
     Provides a list of matching ids
+
     :param x_match: Array of x-coordinates to find in the catalogue. Can be pixel coordinates or RA/DEC.
     :param y_match: Array of y-coordinates to find in the catalogue. Can be pixel coordinates or RA/DEC.
     :param x_cat: Array of catalogue x-coordinates. Can be pixel coordinates or RA/DEC.
@@ -902,26 +1013,14 @@ def numpy_to_list(arr):
     return ls
 
 
-def find_nearest(array, value, sorted: bool = False):
+def find_nearest(array, value):
     """
-    Thanks to this thread: https://stackoverflow.com/questions/2566412/find-nearest-value-in-numpy-array/2566508
     :param array:
     :param value:
     :return:
     """
-    if not sorted:
-        array.sort()
-
-    if value < array[0]:
-        return 0, array[0]
-    elif value > array[-1]:
-        return len(array) - 1, array[-1]
-
-    idx = np.searchsorted(array, value, side="left")
-    if idx == len(array) or math.fabs(value - array[idx - 1]) < math.fabs(value - array[idx]):
-        return idx - 1, array[idx - 1]
-    else:
-        return idx, array[idx]
+    idx = np.nanargmin(np.abs(array - value))
+    return idx, array[idx]
 
 
 def round_to_sig_fig(x: float, n: int) -> float:
@@ -931,7 +1030,7 @@ def round_to_sig_fig(x: float, n: int) -> float:
     :param n: Number of significant figures to round to.
     :return: Rounded number
     """
-
+    print(x, type(x))
     return round(x, (n - 1) - int(np.floor(np.log10(abs(x)))))
 
 
@@ -944,69 +1043,174 @@ def round_decimals_up(number: float, decimals: int = 2):
     if decimals < 0:
         raise ValueError(f"decimal places has to be 0 or more (received {decimals})")
     elif decimals == 0:
+        print(f"\t\t{decimals=}, returning {math.ceil(number)=}")
         return math.ceil(number)
-
-    factor = 10 ** decimals
-    return math.ceil(number * factor) / factor
+    elif number > 1:
+        print(f"\t\t{number=}>1, returning {np.round(number, decimals)=}")
+        return np.round(number, decimals)
+    else:
+        factor = 10 ** decimals
+        print(f"\t\t{number=}, factor={10 ** decimals=}, returning {math.ceil(number * factor) / factor=}")
+        return math.ceil(number * factor) / factor
 
 
 def uncertainty_string(
-        value: float,
-        uncertainty: float,
+        value: Union[float, units.Quantity],
+        uncertainty: Union[float, units.Quantity],
         n_digits_err: int = 1,
+        n_digits_no_err: int = 1,
+        n_digits_lim: int = None,
         unit: units.Unit = None,
         brackets: bool = True,
         limit_val: int = None,
         limit_type: str = "upper",
-        nan_string: str = "--"
+        nan_string: str = "--",
 ):
-    limit_vals = (limit_val, -99, -999)
-    value = dequantify(value, unit)
-    uncertainty = dequantify(uncertainty, unit)
+
+    limit_vals = (limit_val, -99, -999, -999.)
+    value = float(dequantify(value, unit))
+    if value in limit_vals or np.ma.is_masked(value):
+        return nan_string, value, uncertainty
+    if np.ma.is_masked(uncertainty):
+        uncertainty = 0.
+
+    uncertainty = float(dequantify(uncertainty, unit))
     if limit_type == "upper":
         limit_char = "<"
     else:
         limit_char = ">"
 
-    # If we have an upper limit, set uncertainty to blank
+    value_str = str(value)
+    uncertainty_str = str(abs(uncertainty))
+
+    # Find the decimal point in the value.
+    v_point = value_str.find(".")
+    # If there isn't one, there's an imaginary one at the end of the string.
+    if v_point == -1:
+        v_point = len(value_str)
+
     if uncertainty in limit_vals:
-        uncertainty = nan_string
-        precision = 1
-    else:
-        precision = np.log10(uncertainty)
-        if precision < 0:
-            precision = int(-precision + n_digits_err)
+        if n_digits_lim:
+            # Account for the decimal point
+            if v_point < n_digits_lim:
+                n_digits_lim += 1
+                x = 0
+            else:
+                x = v_point - n_digits_lim
+            value_str = value_str[:n_digits_lim] + "0" * x
+
+        return f"${limit_char} {value_str}$", value, uncertainty
+
+    if "e" in uncertainty_str:
+        if abs(uncertainty) < 1:
+            m = -int(np.log10(uncertainty) - 1)
         else:
-            precision = n_digits_err
-        uncertainty = round_decimals_up(uncertainty, abs(precision))
-
-    if value in limit_vals:
-        value = nan_string
-    else:
-        value = np.round(value, precision)
-
-    if uncertainty == nan_string:
-        if value != nan_string:
-            this_str = f"${limit_char} {value}$"
+            m = 10
+        uncertainty_str = f"{uncertainty:.{m}f}"
+    if "e" in value_str:
+        if abs(value) < 1:
+            m = -int(np.log10(value) - 1)
         else:
-            this_str = "--"
+            m = 10
+        value_str = f"{value:.{m}f}"
+
+    if uncertainty == 0.:
+        if isinstance(n_digits_no_err, int):
+            value_str = f"${np.round(float(value_str), n_digits_err)}$"
+        return value_str, value, uncertainty
+
+    # Find the decimal point in the uncertainty.
+    u_point = uncertainty_str.find(".")
+    if u_point == -1:
+        u_point = len(uncertainty_str)
+    # If the uncertainty is less than 1, we iterate along the string starting at the decimal place until we find a non-zero character.
+    if uncertainty < 1.:
+        i = u_point + 1
+        while uncertainty_str[i] == "0":
+            i += 1
+        # x is the number of digits after the decimal point to show.
+        x = i - u_point + n_digits_err
+        # Round appropriately
+        uncertainty_rnd = np.round(uncertainty, x - 1)
+        value_rnd = np.round(value, x - 1)
+        value_str = str(value_rnd)[:v_point + x]
+        uncertainty_str = str(uncertainty_rnd)[:u_point + x]
+
+        while len(uncertainty_str) < i + n_digits_err:
+            uncertainty_str += "0"
+        u_dp = len(uncertainty_str) - u_point
+        v_dp = len(value_str) - v_point
+        while v_dp < u_dp:
+            value_str += "0"
+            v_dp = len(value_str) - v_point
     else:
-        val_rnd = str(value)
-        while len(val_rnd[val_rnd.find("."):]) < precision + 1:
-            val_rnd += "0"
+        # Here x is the number of digits before the decimal point to set to zero.
+        if u_point < n_digits_err:
+            # Account for the decimal point
+            n_digits_err += 1
+        x = u_point - n_digits_err
+        uncertainty_rnd = np.round(uncertainty, -x)
+        value_rnd = np.round(value, -x)
+        value_str = str(value_rnd)[:v_point - x] + "0" * x
+        uncertainty_str = str(uncertainty_rnd)[:n_digits_err] + "0" * x
 
-        if brackets:
-            uncertainty_digit = str(uncertainty)[-n_digits_err:]
-            this_str = f"${val_rnd}({uncertainty_digit})$"
+    if brackets:
+        if uncertainty < 1:
+            uncertainty_str = uncertainty_str[-n_digits_err:]
         else:
-            this_str = f"${val_rnd} \\pm {uncertainty}$"
+            x = u_point - n_digits_err
+            uncertainty_str = uncertainty_str[:n_digits_err] + "0" * x
+        return f"${value_str}({uncertainty_str})$", value_rnd, uncertainty_rnd
+    else:
+        return f"${value_str} \pm {uncertainty_str}$", value_rnd, uncertainty_rnd
 
-    return this_str, value, uncertainty
+
+def uncertainty_str_coord(
+        coord: SkyCoord,
+        uncertainty_ra: Union[float, units.Quantity],
+        uncertainty_dec: Union[float, units.Quantity],
+        n_digits_err: int = 2,
+        brackets: bool = True
+
+):
+    ra = coord.ra
+    ra_s_str, ra_rounded, ra_unc_rounded = uncertainty_string(
+        value=coord.ra.hms.s,
+        uncertainty=uncertainty_ra,
+        n_digits_err=n_digits_err,
+        brackets=brackets
+    )
+    ra_s_str = ra_s_str.replace("$", "")
+    ra_str = ra.to_string("h", format="latex")
+    s_i = ra_str.find(r"{m}}") + 4
+    s_2 = ra_str[s_i:]
+    e_i = s_2.find("^") + s_i
+    ra_replace = ra_str[s_i:e_i]
+    ra_uncertainty_str = ra_str.replace(ra_replace, ra_s_str)
+
+    dec = coord.dec
+    dec_s_str, dec_rounded, dec_unc_rounded = uncertainty_string(
+        value=abs(coord.dec.dms.s),
+        uncertainty=uncertainty_dec,
+        n_digits_err=n_digits_err,
+        brackets=brackets
+    )
+    dec_s_str = dec_s_str.replace("$", "")
+
+    dec_str = dec.to_string(format="latex")
+    s_i = dec_str.find("\prime") + 6
+    s_2 = dec_str[s_i:]
+    e_i = s_2.find("{}^") + s_i
+    dec_replace = dec_str[s_i:e_i]
+    dec_uncertainty_str = dec_str.replace(dec_replace, dec_s_str)
+
+    return ra_uncertainty_str, dec_uncertainty_str
 
 
 def wcs_as_deg(ra: str, dec: str):
     """
     Using the same syntax as astropy.coordinates.SkyCoord, converts a string of WCS coordinates into degrees.
+
     :param ra:
     :param dec:
     :return:
@@ -1019,6 +1223,7 @@ def wcs_as_deg(ra: str, dec: str):
 def sanitise_file_ext(filename: str, ext: str):
     """
     Checks if the filename has the desired extension; adds it if not and returns the filename.
+
     :param filename: The filename.
     :param ext: The extension, eg '.fits'
     :return:
@@ -1085,7 +1290,11 @@ def unit_str_to_float(string: str):
     return value, units
 
 
-def option(options: list, default: str = None):
+def option(
+        options: list,
+        default: str = None,
+        allow_text_entry: bool = True
+):
     for i, opt in enumerate(options):
         print(i, opt)
 
@@ -1096,10 +1305,18 @@ def option(options: list, default: str = None):
         selection = input()
         if selection == "" and default is not None:
             selection = default
-        try:
+        if selection.isnumeric():
             selection = int(selection)
-        except ValueError:
-            print("Invalid response. Please enter an integer.")
+        # The user may type their option instead of making a numeric selection.
+        elif allow_text_entry and selection in options:
+            picked = selection
+            selection = options.index(picked)
+            return selection, picked
+        else:
+            if allow_text_entry:
+                print("Invalid response. Please enter an integer, or type a valid option.")
+            else:
+                print("Invalid response. Please enter an integer.")
             continue
         try:
             picked = options[selection]
@@ -1121,10 +1338,14 @@ def enter_time(message: str):
     return date
 
 
-def select_option(message: str,
-                  options: Union[List[str], dict],
-                  default: Union[str, int] = None,
-                  sort: bool = False) -> tuple:
+def select_option(
+        message: str,
+        options: Union[List[str], dict],
+        default: Union[str, int] = None,
+        sort: bool = False,
+        include_exit: bool = True,
+        allow_text_entry: bool = True
+) -> tuple:
     """
     Options can be a list of strings, or a dict in which the keys are the options to be printed and the values are the
     represented options. The returned object is a tuple, with the first entry being the number given by the user and
@@ -1132,6 +1353,7 @@ def select_option(message: str,
     dict value.
     :param message: Message to display before options.
     :param options: Options to display.
+
     :param default: Option to return if no user input is given.
     :param sort: Sort options?
     :return: Tuple containing (user input, selection)
@@ -1156,7 +1378,12 @@ def select_option(message: str,
 
     if sort:
         options_list.sort()
-    selection, picked = option(options=options_list, default=default)
+    if include_exit:
+        options_list.append("Exit")
+
+    selection, picked = option(options=options_list, default=default, allow_text_entry=allow_text_entry)
+    if include_exit and picked == "Exit":
+        exit()
     if dictionary:
         return selection, options[picked]
     else:
@@ -1190,38 +1417,36 @@ def select_yn(message: str, default: Union[str, bool] = None):
 
 
 def select_yn_exit(message: str):
-    options = ["No", "Yes", "Exit"]
-    opt, _ = select_option(message=message, options=options)
+    options = ["No", "Yes"]
+    opt, _ = select_option(message=message, options=options, include_exit=True)
     if opt == 0:
         return False
     if opt == 1:
         return True
-    if opt == 2:
-        exit(0)
 
 
-def user_input(message: str, typ: type = str, default=None):
+def user_input(message: str, input_type: type = str, default=None):
     inp = None
     if default is not None:
-        if type(default) is not typ:
+        if type(default) is not input_type:
             try:
-                default = typ(default)
+                default = input_type(default)
 
             except ValueError:
-                print(f"Default ({default}) could not be cast to {typ}. Proceeding without default value.")
+                print(f"Default ({default}) could not be cast to {input_type}. Proceeding without default value.")
 
         message += f" [default: {default}]"
 
     print(message)
-    while type(inp) is not typ:
+    while type(inp) is not input_type:
         inp = input()
         if inp == "":
             inp = default
-        if type(inp) is not typ:
+        if type(inp) is not input_type:
             try:
-                inp = typ(inp)
+                inp = input_type(inp)
             except ValueError:
-                print(f"Could not cast {inp} to {typ}. Try again:")
+                print(f"Could not cast {inp} to {input_type}. Try again:")
     print(f"You have entered {inp}.")
     return inp
 
@@ -1256,11 +1481,12 @@ def print_nested_dict(dictionary, level: int = 0):
 
 
 def system_command(
-        command: str, arguments: Union[str, list] = None,
+        command: str,
+        arguments: Union[str, list] = None,
         suppress_print: bool = False,
         error_on_exit_code: bool = True,
         force_single_dash: bool = False,
-        *flags,
+        flags: list = (),
         **params
 ):
     if command in [""]:
@@ -1285,6 +1511,8 @@ def system_command(
             sys_str += f" -{flag}"
         elif len(flag) > 1:
             sys_str += f" --{flag}"
+        else:
+            print(len(flag))
 
     return system_command_verbose(command=sys_str, suppress_print=suppress_print, error_on_exit_code=error_on_exit_code)
 
@@ -1293,8 +1521,28 @@ def system_command_verbose(
         command: str,
         suppress_print: bool = False,
         error_on_exit_code: bool = True,
-        suppress_path: bool = False
+        suppress_path: bool = False,
+        go_to_working_directory: str = None
 ):
+    """
+    A convenience function for executing terminal commands.
+
+    :param command: The full command to send to the terminal.
+    :param suppress_print: Do not print command, result, etc. This will not turn off stdout, so the command you run may
+        still print to terminal.
+    :param error_on_exit_code: If True, will raise a Python error on a non-0 exit code, ie if the command fails.
+        If False, the Python code can continue even if the terminal command fails.
+    :param suppress_path: If True, the working directory will not print even if `suppress_print` is False.
+        `suppress_print=True` overrides.
+    :param go_to_working_directory: The path to switch the working directory to while the command executes.
+        The old working directory will be returned to upon completion. Useful if, for example,  there are output files
+        that get written to the working directory.
+    :return:
+    """
+    cwd = ""
+    if go_to_working_directory is not None:
+        cwd = os.getcwd()
+        os.chdir(go_to_working_directory)
     if not suppress_print:
         print()
         if not suppress_path:
@@ -1311,6 +1559,8 @@ def system_command_verbose(
         print(command)
         print("With code", result)
         print()
+    if go_to_working_directory is not None:
+        os.chdir(cwd)
     return result
 
 

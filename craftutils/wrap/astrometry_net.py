@@ -1,19 +1,40 @@
 import os
 
+from distutils.spawn import find_executable
+
 import astropy.units as units
 from astropy.coordinates import SkyCoord
 
 from typing import Union
 
-from craftutils.utils import system_command, debug_print, check_quantity
+from craftutils.utils import system_command, debug_print, check_quantity, export
+
+__all__ = []
 
 
-# def add_index_directory(path: str):
-#     cfg_path = "/etc/astrometry.cfg"
-#     line = f"{}"
-#     with open(cfg_path, 'r') as cfg:
-#         cfg_file = cfg.readlines()
-#     cfg_file.index()
+@export
+def add_index_directory(path: str):
+    """
+    Adds a directory to `astrometry.cfg`, for `Astrometry.net` to check for indices.
+
+    :param path:
+    :return:
+    """
+    bin_path = os.path.dirname(find_executable("astrometry-engine"))
+    cfg_path = os.path.abspath(os.path.join(bin_path, "..", "etc", "astrometry.cfg"))
+    line = f"add_path {path}\n"
+    with open(cfg_path, 'r') as cfg:
+        cfg_file = cfg.readlines()
+    if line not in cfg_file:
+        path_lines = list(filter(lambda l: l.startswith("add_path"), cfg_file))
+        if path_lines:
+            path_start = cfg_file.index(path_lines[0])
+        else:
+            path_start = 29
+        cfg_file.insert(path_start, line)
+        with open(cfg_path, 'w') as cfg:
+            cfg.writelines(cfg_file)
+
 
 def build_astrometry_index(
         input_fits_catalog: str,
@@ -39,7 +60,15 @@ def build_astrometry_index(
     if scan_through_catalog:
         flags.append("E")
 
-    system_command("build-astrometry-index", None, False, True, *flags, **params)
+    system_command(
+        command="build-astrometry-index",
+        arguments=None,
+        suppress_print=False,
+        error_on_exit_code=True,
+        force_single_dash=False,
+        flags=flags,
+        **params
+    )
 
 
 def solve_field(
@@ -52,10 +81,11 @@ def solve_field(
         guess_scale: bool = True,
         time_limit: units.Quantity = None,
         verify: bool = True,
-        odds_to_tune_up: float = 1e6,
-        odds_to_solve: float = 1e9,
+        odds_to_tune_up: float = 1e3,
+        odds_to_solve: float = 1e5,
         am_flags: list = None,
         am_params: dict = None,
+        **kwargs
 ):
     """
     Returns True if successful (by checking whether the corrected file is generated); False if not.
@@ -71,7 +101,11 @@ def solve_field(
     if am_flags is None:
         am_flags = []
     am_params["o"] = base_filename
+    if odds_to_tune_up is None:
+        odds_to_tune_up = 1e3
     am_params["odds-to-tune-up"] = odds_to_tune_up
+    if odds_to_solve is None:
+        odds_to_solve = 1e5
     am_params["odds-to-solve"] = odds_to_solve
     if time_limit is not None:
         am_params["l"] = check_quantity(time_limit, units.second).value
@@ -92,7 +126,15 @@ def solve_field(
     if not verify:
         flags.append("y")
 
-    system_command("solve-field", image_files, False, True, False, *flags, **am_params)
+    system_command(
+        command="solve-field",
+        arguments=image_files,
+        suppress_print=False,
+        error_on_exit_code=True,
+        force_single_dash=False,
+        flags=flags,
+        **am_params
+    )
     if isinstance(image_files, list):
         image_path = image_files[0]
     else:

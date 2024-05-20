@@ -1,0 +1,10 @@
+band_name: g
+data_path: instruments/decam/filters/g
+formatted_name: null
+frb_repo_name: DECam_g
+instrument: decam
+name: g
+svo_service:
+  id: [g, g_filter]
+  instrument: DECam
+cmap: viridis

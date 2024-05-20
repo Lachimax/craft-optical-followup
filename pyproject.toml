@@ -1,0 +1,29 @@
+#[build-system]
+#requires = ["flit_core >=3.2,<4"]
+#build-backend = "flit_core.buildapi"
+
+[project]
+name = "craft-optical-followup"
+authors = [{ name = "Lachlan Marnoch", email = "lachlan.marnoch@gmail.com" }]
+version = "0.3.1"
+requires-python = ">=3.8"
+dependencies = [
+    "astroalign",
+    "astropy",
+    "astroquery",
+    "ccdproc",
+    "cmasher",
+    "matplotlib",
+    "photutils",
+    "requests",
+    "numpy",
+    "PyYAML",
+    "scipy",
+    "sep",
+    "tqdm"
+]
+license = { file = "LICENSE.md" }
+description = "Pipelines and other tools, initially intended for conducting optical followup of fast radio bursts."
+readme = "README.md"
+[project.scripts]
+craft_optical_followup = "craftutils.craft_optical_pipeline:parse_args"

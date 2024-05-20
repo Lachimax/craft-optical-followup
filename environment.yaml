@@ -1,0 +1,24 @@
+name: craft-optical-followup
+channels:
+  - defaults
+  - astropy
+  - conda-forge
+dependencies:
+  - python>=3.5
+  - astroalign
+  - astromatic-source-extractor
+  - astrometry
+  - astropy
+  - astroquery
+  - ccdproc
+  - cmasher
+#  - libgsl>=2.7
+  - matplotlib
+  - numpy
+  - photutils
+  - PyYAML
+  - reproject
+  - requests
+  - sep
+#  - setuptools
+  - tqdm

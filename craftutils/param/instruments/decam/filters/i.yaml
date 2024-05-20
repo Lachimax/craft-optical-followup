@@ -1,0 +1,9 @@
+band_name: i
+data_path: instruments/decam/filters/i
+formatted_name: null
+frb_repo_name: DECam_i
+instrument: decam
+name: i
+svo_service:
+  id: [i, i_filter]
+  instrument: DECam

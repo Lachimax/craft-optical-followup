@@ -1,9 +1,0 @@
-
-f_cat_path: # f_cat_sextractor; Path to the final, definitive SExtractor catalogue of the f-band FRB field image.
-f_individual: # % Path to the most-processed versions of the individual frames in f-band, ie in 4-background-subtracted/f/science/
-f_std_cat_sextractor: # Path to SExtractor catalogue of reduced FORS2 standard-star data.
-f_std_image: /home/lachlan/Data/FRB181112/FORS2/MJD58455/calibration/std_star/2-std_reduced/standard_reduced_img_up.fits
-f_subtraction_image: # Path of image for subtraction
-f_subtraction_image_synth_frb: # Path of image with synthetic point source inserted at FRB position
-f_subtraction_image_synth_random: # Path of image with synthetic point sources inserted at random.
-

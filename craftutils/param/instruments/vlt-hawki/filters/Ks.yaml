@@ -1,0 +1,7 @@
+band_name: Ks
+data_path: instruments/vlt-hawki/filters/Ks
+formatted_name: $K_\mathrm{S}$
+instrument: vlt-hawki
+name: Ks
+svo_service: {filter_id: Ks, instrument: null}
+cmap: cmr.ember

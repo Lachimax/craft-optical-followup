@@ -6,8 +6,6 @@ import craftutils.params as p
 import craftutils.utils as u
 
 
-# TODO: Parent class for all param loading etc, with children Instrument, Survey etc.
-
 class Survey:
     def __init__(self, **kwargs):
         self.name = None
@@ -20,11 +18,11 @@ class Survey:
         self.raw_stage_path = None
 
         if "raw_stage_path" in kwargs and isinstance(kwargs["raw_stage_path"], str):
-            self.raw_stage_path = u.make_absolute_path(p.data_path, kwargs["raw_stage_path"])
+            self.raw_stage_path = u.make_absolute_path(p.data_dir, kwargs["raw_stage_path"])
 
         self.refined_stage_path = None
         if "refined_stage_path" in kwargs and isinstance(kwargs["refined_stage_path"], str):
-            self.refined_stage_path = u.make_absolute_path(p.data_path, kwargs["refined_stage_path"])
+            self.refined_stage_path = u.make_absolute_path(p.data_dir, kwargs["refined_stage_path"])
 
         self.program_ids = {}
         if "program_ids" in kwargs:
@@ -86,7 +84,7 @@ class Survey:
             "raw_stage_path": None,
             "refined_stage_path": None,
             "program_ids": {},  # Dict should have instrument names as keys and a list of strings for each value.
-            "extra_commands": [] # Commands to be executed by shell at completion of last step (NOT YET IMPLEMENTED)
+            "extra_commands": []  # Commands to be executed by shell at completion of last step (NOT YET IMPLEMENTED)
         }
         return default_params
 
@@ -113,7 +111,7 @@ class Survey:
         u.debug_print(1, "Survey.from_file(): name ==", name)
         u.debug_print(1, "Survey.from_file(): param_dict ==", param_dict)
         if param_dict is None:
-            raise FileNotFoundError("Param file missing!")
+            raise FileNotFoundError(f"Param file missing: {param_file}")
         return cls(**param_dict)
 
     @classmethod
@@ -137,7 +135,6 @@ class Survey:
 
         return surveys
 
-
     @classmethod
     def new_param_from_input(cls):
         survey_name = u.user_input(
@@ -145,4 +142,3 @@ class Survey:
         )
         cls.new_param(survey_name)
         return survey_name
-

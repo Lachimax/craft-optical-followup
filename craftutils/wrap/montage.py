@@ -20,7 +20,10 @@ def image_table(input_directory: str, output_path: str = "images.tbl"):
     :return:
     """
     u.sanitise_file_ext(filename=output_path, ext=".tbl")
-    return u.system_command("mImgtbl", [input_directory, output_path])
+    return u.system_command(
+        command="mImgtbl",
+        arguments=[input_directory, output_path]
+    )
 
 
 def make_header(table_path: str, output_path: str):
@@ -31,18 +34,25 @@ def make_header(table_path: str, output_path: str):
     :return:
     """
     u.sanitise_file_ext(output_path, ".hdr")
-    return u.system_command("mMakeHdr", [table_path, output_path])
+    return u.system_command(
+        command="mMakeHdr",
+        arguments=[table_path, output_path]
+    )
 
 
 def check_input_images(input_directory: str,
                        **kwargs):
-    table = image.fits_table_all(input_directory, science_only=True)
+    table = image.fits_table_all(
+        input_directory, science_only=False)
+    if len(table) == 0:
+        raise FileNotFoundError(f"There appear to be no files in the input directory {input_directory}")
+
     table.sort("FILENAME")
 
     template = table[0]
     template_path = os.path.join(input_directory, template["FILENAME"])
     template_img = image.ImagingImage.select_child_class(
-        instrument=image.detect_instrument(path=template_path)
+        instrument_name=image.detect_instrument(path=template_path)
     )(template_path)
     keys = template_img.header_keys()
     exptime_key = keys["exposure_time"]
@@ -92,7 +102,6 @@ def inject_header(
         f"AIRMASS": airmass_mean,
         f"AIRMASS_ERR": max(np.nanmax(airmasses) - airmass_mean,
                             airmass_mean - np.nanmin(airmasses)),
-        f"SATURATE": np.nanmean(np.float64(table[important_keys['saturate']])),
         f"OBJECT": template.extract_object(),
         f"MJD-OBS": float(np.nanmin(np.float64(table[important_keys["mjd-obs"]]))),
         f"DATE-OBS": template.extract_date_obs(),
@@ -109,6 +118,10 @@ def inject_header(
 
     insert_dict["NCOMBINE"] = n_frames
 
+    if "TEXPTIME" in table.colnames:
+        insert_dict["TEXPTIME"] = np.sum(table["TEXPTIME"])
+    if important_keys['saturate'] in table.colnames:
+        insert_dict[f"SATURATE"] = np.nanmean(np.float64(table[important_keys['saturate']])),
     if "OLD_EXPTIME" in table.colnames:
         insert_dict["OLD_EXPTIME"] = np.nanmean(table["OLD_EXPTIME"])
         insert_dict["INTTIME"] = insert_dict["OLD_EXPTIME"] * n_frames
@@ -174,9 +187,12 @@ def project_execute(input_directory: str, table_path: str, header_path: str, pro
     table_path = u.sanitise_file_ext(filename=table_path, ext=".tbl")
     header_path = u.sanitise_file_ext(filename=header_path, ext=".hdr")
     stats_table_path = u.sanitise_file_ext(filename=stats_table_path, ext=".tbl")
-    return u.system_command(command="mProjExec",
-                            arguments=[table_path, header_path, proj_dir, stats_table_path],
-                            p=input_directory)
+    return u.system_command(
+        command="mProjExec",
+        arguments=[table_path, header_path, proj_dir, stats_table_path],
+        p=input_directory,
+        # s="mProjExec_status.txt"
+    )
 
 
 def overlaps(table_path: str, difference_table_path: str):
@@ -188,8 +204,10 @@ def overlaps(table_path: str, difference_table_path: str):
     """
     table_path = u.sanitise_file_ext(filename=table_path, ext=".tbl")
     difference_table_path = u.sanitise_file_ext(filename=difference_table_path, ext=".tbl")
-    return u.system_command(command="mOverlaps",
-                            arguments=[table_path, difference_table_path])
+    return u.system_command(
+        command="mOverlaps",
+        arguments=[table_path, difference_table_path]
+    )
 
 
 def difference_execute(input_directory: str, difference_table_path: str, header_path: str, diff_dir: str):
@@ -200,10 +218,11 @@ def difference_execute(input_directory: str, difference_table_path: str, header_
     """
     difference_table_path = u.sanitise_file_ext(filename=difference_table_path, ext=".tbl")
     header_path = u.sanitise_file_ext(filename=header_path, ext=".hdr")
-    return u.system_command(command="mDiffExec",
-                            arguments=[difference_table_path, header_path, diff_dir],
-                            p=input_directory,
-                            )
+    return u.system_command(
+        command="mDiffExec",
+        arguments=[difference_table_path, header_path, diff_dir],
+        p=input_directory,
+    )
 
 
 def fit_execute(difference_table_path: str, fit_table_path: str, diff_dir: str):
@@ -216,8 +235,10 @@ def fit_execute(difference_table_path: str, fit_table_path: str, diff_dir: str):
     """
     difference_table_path = u.sanitise_file_ext(filename=difference_table_path, ext=".tbl")
     fit_table_path = u.sanitise_file_ext(filename=fit_table_path, ext=".tbl")
-    return u.system_command(command="mFitExec",
-                            arguments=[difference_table_path, fit_table_path, diff_dir])
+    return u.system_command(
+        command="mFitExec",
+        arguments=[difference_table_path, fit_table_path, diff_dir]
+    )
 
 
 def background_model(table_path: str, fit_table_path: str, correction_table_path: str):
@@ -231,8 +252,10 @@ def background_model(table_path: str, fit_table_path: str, correction_table_path
     table_path = u.sanitise_file_ext(filename=table_path, ext=".tbl")
     fit_table_path = u.sanitise_file_ext(filename=fit_table_path, ext=".tbl")
     correction_table_path = u.sanitise_file_ext(filename=correction_table_path, ext=".tbl")
-    return u.system_command(command="mBgModel",
-                            arguments=[table_path, fit_table_path, correction_table_path])
+    return u.system_command(
+        command="mBgModel",
+        arguments=[table_path, fit_table_path, correction_table_path]
+    )
 
 
 def background_execute(input_directory: str, table_path: str, correction_table_path: str, corr_dir: str):
@@ -246,9 +269,11 @@ def background_execute(input_directory: str, table_path: str, correction_table_p
     """
     table_path = u.sanitise_file_ext(filename=table_path, ext=".tbl")
     correction_table_path = u.sanitise_file_ext(filename=correction_table_path, ext=".tbl")
-    return u.system_command(command="mBgExec",
-                            arguments=[table_path, correction_table_path, corr_dir],
-                            p=input_directory)
+    return u.system_command(
+        command="mBgExec",
+        arguments=[table_path, correction_table_path, corr_dir],
+        p=input_directory
+    )
 
 
 def add(input_directory: str, table_path: str,
@@ -265,9 +290,11 @@ def add(input_directory: str, table_path: str,
     table_path = u.sanitise_file_ext(filename=table_path, ext=".tbl")
     header_path = u.sanitise_file_ext(filename=header_path, ext=".hdr")
     output_path = u.sanitise_file_ext(filename=output_path, ext=".fits")
-    return u.system_command(command="mAdd",
-                            arguments=[table_path, header_path, output_path],
-                            p=input_directory, a=coadd_type)
+    return u.system_command(
+        command="mAdd",
+        arguments=[table_path, header_path, output_path],
+        p=input_directory, a=coadd_type
+    )
 
 
 def standard_script(

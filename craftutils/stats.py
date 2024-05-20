@@ -3,7 +3,9 @@ import numpy.random as rand
 
 import craftutils.utils as u
 
+__all__ = []
 
+@u.export
 def gaussian_distributed_point(
         x_0: float, y_0: float,
         sigma: float,
