@@ -185,8 +185,8 @@ class ImagingImage(Image):
             se_kwargs: dict = {},
             **kwargs
     ):
-        """
-        Run PSFEx on this image to obtain a PSF model.
+        """Run PSFEx on this image to obtain a PSF model. Also performs the prerequisite Source Extractor runs.
+
         :param output_dir: path to directory to write PSFEx outputs to.
         :param force: If False, and this object already has a PSF model, we just return the one that already exists.
         :param se_kwargs: arguments to pass to Source Extractor.
@@ -198,25 +198,74 @@ class ImagingImage(Image):
         psfex_output = None
 
         if force or self.psfex_path is None or not os.path.isfile(self.psfex_path):
+
             # Set up a list of photometric apertures to pass to SE as a string.
             _, scale = self.extract_pixel_scale()
             aper_arcsec = [
-                              # 50,
+                              10,
                               4.87,
                               3.9,
                               2.92
                           ] * units.arcsec
-            phot_aper = aper_arcsec.to(units.pix, scale).value
-            phot_aper_str = ""
-            for a in phot_aper:
-                phot_aper_str += f"{a},"
-            phot_aper_str = phot_aper_str[:-1]
-            se_kwargs["PHOT_APERTURES"] = phot_aper_str
-            kwargs["PHOTFLUX_KEY"] = '"FLUX_APER(1)"'
-            kwargs["PHOTFLUXERR_KEY"] = '"FLUXERR_APER(1)"'
+
+            def aperture_str(apertures_arcsec):
+                phot_aper = apertures_arcsec.to(units.pix, scale).value
+                phot_apers_str = ""
+                for a in phot_aper:
+                    phot_apers_str += f"{a},"
+                phot_apers_str = phot_apers_str[:-1]
+                print()
+                print("PHOT_APERTURES", phot_apers_str)
+                se_kwargs["PHOT_APERTURES"] = phot_apers_str
+                print("PHOT_APERTURES", se_kwargs["PHOT_APERTURES"])
+                return phot_apers_str
+
+            aperture_str(aper_arcsec)
 
             config = p.path_to_config_sextractor_config_pre_psfex()
             output_params = p.path_to_config_sextractor_param_pre_psfex()
+            out_tmp = os.path.join(output_dir, "preliminary")
+            os.makedirs(out_tmp, exist_ok=True)
+
+            cat_prelim_path = self.source_extraction(
+                configuration_file=config,
+                output_dir=out_tmp,
+                parameters_file=output_params,
+                catalog_name=f"{self.name}_pre-psfex.cat",
+                catalog_type="ASCII_HEAD",
+                **se_kwargs
+            )
+            print(cat_prelim_path)
+            cat_prelim = catalog.SECatalogue(se_path=cat_prelim_path, image=self)
+            cat = cat_prelim.table
+
+            self.open()
+
+            from astropy.stats import sigma_clip
+
+            col = "FWHM_WORLD"
+            stars = cat[cat["CLASS_STAR"] >= 0.95]
+            clipped = sigma_clip(stars[col], masked=True, sigma=2)
+            stars_clip = stars[~clipped.mask]
+            stars_clip = stars_clip[np.isfinite(stars_clip[col])]
+            stars_clip = stars_clip[stars_clip[col] > 0.1 * units.arcsec]
+
+            print(f"Num stars after sigma clipping {col}:", len(stars_clip))
+            fwhm_gauss = stars_clip[col]
+            print()
+            fwhm = np.nanmedian(fwhm_gauss).to(units.arcsec)
+            print(fwhm)
+            if fwhm > 5 * units.arcsec:
+                fwhm = 1.5 * units.arcsec
+
+            new_aperture_arcsec = 8 * fwhm
+            print("New aperture", new_aperture_arcsec)
+            aper_arcsec = [new_aperture_arcsec.value] * units.arcsec
+            print(aper_arcsec)
+            se_kwargs["PHOT_APERTURES"] = aperture_str(aper_arcsec)
+            print("PHOT_APERTURES", se_kwargs["PHOT_APERTURES"])
+            print()
+
             catalogue = self.source_extraction(
                 configuration_file=config,
                 output_dir=output_dir,
@@ -224,6 +273,9 @@ class ImagingImage(Image):
                 catalog_name=f"{self.name}_psfex.fits",
                 **se_kwargs
             )
+
+            kwargs["PHOTFLUX_KEY"] = '"FLUX_APER(1)"'
+            kwargs["PHOTFLUXERR_KEY"] = '"FLUXERR_APER(1)"'
 
             psfex_path = psfex.psfex(
                 catalog=catalogue,
@@ -1326,25 +1378,31 @@ class ImagingImage(Image):
             source_cat_key.sort(f"FLUX_{snr_key}")
 
             if output_dir is not None:
-                plt.scatter(source_cat_key[f"MAG_{snr_key}"], source_cat_key[f"SNR_{snr_key}"])
-                plt.savefig(os.path.join(output_dir, f"mag_{snr_key}-v-snr.png"), dpi=200)
                 plt.close()
                 plt.clf()
+                with quantity_support():
+                    fig, ax = plt.subplots()
+                    ax.scatter(source_cat_key[f"MAG_{snr_key}"], source_cat_key[f"SNR_{snr_key}"])
+                    fig.savefig(os.path.join(output_dir, f"mag_{snr_key}-v-snr.png"), dpi=200)
+                    plt.close(fig)
+                    plt.clf()
 
-                plt.hist(source_cat_key[f"SNR_{snr_key}"][source_cat_key[f"SNR_{snr_key}"] < 20])
-                plt.savefig(os.path.join(output_dir, f"snr_{snr_key}-hist.png"), dpi=200)
-                plt.close()
-                plt.clf()
+                    fig, ax = plt.subplots()
+                    ax.hist(source_cat_key[f"SNR_{snr_key}"][source_cat_key[f"SNR_{snr_key}"] < 20])
+                    fig.savefig(os.path.join(output_dir, f"snr_{snr_key}-hist.png"), dpi=200)
+                    plt.close(fig)
+                    plt.clf()
 
             for sigma in (5, 10, 20):
                 source_cat_sigma = source_cat_key.copy()
                 # Faintest source at x-sigma:
                 cat_more_xsigma = source_cat_sigma[source_cat_sigma[f"SNR_{snr_key}"] > sigma]
-
-                plt.scatter(source_cat_sigma[f"MAG_{snr_key}"], source_cat_sigma[f"SNR_{snr_key}"])
-                plt.savefig(os.path.join(output_dir, f"mag_{snr_key}-v-snr-{sigma}sig.png"), dpi=200)
-                plt.close()
-                plt.clf()
+                with quantity_support():
+                    fig, ax = plt.subplots()
+                    ax.scatter(source_cat_sigma[f"MAG_{snr_key}"], source_cat_sigma[f"SNR_{snr_key}"])
+                    fig.savefig(os.path.join(output_dir, f"mag_{snr_key}-v-snr-{sigma}sig.png"), dpi=200)
+                    plt.close(fig)
+                    plt.clf()
 
                 self.depth["max"][f"SNR_{snr_key}"][f"{sigma}-sigma"] = np.max(
                     cat_more_xsigma[f"MAG_{snr_key}_ZP_{zeropoint_name}"]
@@ -1359,7 +1417,8 @@ class ImagingImage(Image):
                     # Find its counterpart in the full catalogue
                     i, _ = u.find_nearest(source_cat["NUMBER"], source_less_sigma[i]["NUMBER"])
                     # Get the source that is next up in brightness (being brighter)
-                    i += 1
+                    if i < len(source_cat) - 1:
+                        i += 1
                     src_lim = source_cat[i]
 
                 else:
@@ -1922,7 +1981,7 @@ class ImagingImage(Image):
             mag_max: float = 0.0 * units.mag,
             mag_min: float = -50. * units.mag,
             match_to: table.Table = None,
-            star_class_tol: int = 0,
+            star_class_tol: float = 0.95,
             frame: float = None,
             ext: int = 0,
             target: SkyCoord = None,

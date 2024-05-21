@@ -205,7 +205,7 @@ class FRBField(Field):
             scale_bar_kwargs: dict = None,
             include_img_err: bool = True,
             **kwargs
-    ) -> Tuple[plt.Axes, plt.Figure, dict]:
+    ) -> Tuple[plt.Figure, plt.Axes, dict]:
 
         if imshow_kwargs is None:
             imshow_kwargs = {}

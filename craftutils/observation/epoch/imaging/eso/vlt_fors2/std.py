@@ -6,7 +6,7 @@ import craftutils.utils as u
 import craftutils.retrieve as retrieve
 import craftutils.observation.image as image
 from ...epoch import ImagingEpoch
-from ....epoch import StandardEpoch
+from ....std import StandardEpoch
 
 
 class FORS2StandardEpoch(StandardEpoch, ImagingEpoch):

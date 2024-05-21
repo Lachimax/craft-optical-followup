@@ -13,7 +13,8 @@ def source_extractor(
         catalog_name: str = None,
         copy_params: bool = True,
         template_image_path: str = None,
-        **configs):
+        **configs
+):
     """
     :param configs: Any source-extractor (sextractor) parameter, normally read via the config file but that can be
     overridden by passing to the shell command, can be given here.

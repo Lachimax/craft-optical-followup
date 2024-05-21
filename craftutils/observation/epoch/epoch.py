@@ -3,7 +3,7 @@
 import os
 import shutil
 import datetime
-from typing import Union, List, Dict
+from typing import Union
 
 from astropy.time import Time
 import astropy.units as units

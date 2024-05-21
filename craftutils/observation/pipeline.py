@@ -171,7 +171,9 @@ class Pipeline(Generic):
             )):
                 self.stage_params[name] = stage_kwargs.copy()
                 if not self.quiet:
+                    print()
                     print(f"Performing processing step {n}: {name} with keywords:\n", stage_kwargs)
+                    print("=" * 100)
                 # Construct path; if dir_name is None then the step is pathless.
                 dir_name = f"{n}-{name}"
 
@@ -234,6 +236,7 @@ class Pipeline(Generic):
             if "stages" in outputs:
                 self.stages_complete.update(outputs["stages"])
         return outputs
+
 
 def _check_do_list(
         do: Union[list, str],

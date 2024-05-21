@@ -258,8 +258,11 @@ class OutputCatalogue(Generic):
 
     def load_output_file(self, **kwargs):
         output = super().load_output_file(**kwargs)
-        if "template" in output:
+        if output is None:
+            return None
+        if "template" in output and output["template"] is not None:
             self.template = output["template"]
+        return output
 
     @classmethod
     def column_names(cls):
