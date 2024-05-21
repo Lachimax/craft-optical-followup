@@ -4543,6 +4543,9 @@ class ImagingImage(Image):
             model_guesses = [{
                 "object_type": "sersic"
             }]
+        if output_dir is None:
+            output_dir = os.path.join(obj.data_path, "GALFIT")
+        os.makedirs(output_dir, exist_ok=True)
 
         for model in model_guesses:
             if "position" not in model:

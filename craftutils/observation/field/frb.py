@@ -501,10 +501,16 @@ class FRBField(Field):
         # print(f"The image selected for PATH is {path_img.name}, with depth {path_dict['depth']}")
         return filter_list
 
-    def galfit(self, apply_filter: None, **kwargs):
+    def galfit(self, apply_filter=None, use_img=None, **kwargs):
+
         if apply_filter is None:
-            apply_filter = lambda o: o.name.startwith("HG")
-        super().galfit(apply_filter=apply_filter)
+            def hg_fil(o):
+                return o.name.startswith("HG")
+            apply_filter = hg_fil
+        if use_img is None and self.best_path_img is not None:
+            use_img = self.best_path_img
+
+        super().galfit(apply_filter=apply_filter, use_img=use_img)
 
     def _output_dict(self):
         output_dict = super()._output_dict()

@@ -237,14 +237,27 @@ class Field(Pipeline):
     def proc_galfit(self, output_dir: str, **kwargs):
         self.galfit(**kwargs)
 
-    def galfit(self, apply_filter: None, **kwargs):
+    def galfit(self, apply_filter=None, use_img=None, **kwargs):
         if apply_filter is None:
             obj_list = self.objects.values()
         else:
             obj_list = list(filter(apply_filter, self.objects.values()))
+
+        self.load_imaging()
+
         for obj in self.objects:
             if isinstance(obj, objects.Galaxy):
-                obj.galfit_best()
+                obj.load_output_file()
+                photom = obj.select_deepest_sep()
+
+                if use_img is None:
+                    pass
+                else:
+                    img = self.imaging[use_img]["image"]
+                    results = img.galfit_object(
+                        obj=obj,
+
+                    )
 
     def proc_push_to_table(self, output_dir: str, **kwargs):
         object_list: List[objects.Object] = list(self.objects.values())
