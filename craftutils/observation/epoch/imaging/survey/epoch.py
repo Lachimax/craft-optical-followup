@@ -29,7 +29,7 @@ class SurveyImagingEpoch(ImagingEpoch):
             param_path=param_path,
             data_path=data_path,
             source_extractor_config=source_extractor_config,
-            instrument=self.instrument_name
+            **kwargs
         )
         self.load_output_file(mode="imaging")
         # if isinstance(field, Field):
@@ -76,7 +76,7 @@ class SurveyImagingEpoch(ImagingEpoch):
 
     def proc_get_photometry(self, output_dir: str, **kwargs):
         self.load_output_file()
-        self.get_photometry(output_dir, image_type="coadded", **kwargs)
+        self.get_photometry(path=output_dir, image_type="coadded", **kwargs)
 
     def _initial_setup(self, output_dir: str, **kwargs):
         download_dir = self.paths["download"]

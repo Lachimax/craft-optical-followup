@@ -10,9 +10,6 @@ import craftutils.observation.image as image
 import craftutils.params as p
 import craftutils.utils as u
 
-from craftutils.photometry import signal_to_noise_ccd_equ
-
-
 class SECatalogue(Catalogue):
     """
     Catalogue subclass for handling Source Extractor output.

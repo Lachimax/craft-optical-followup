@@ -85,8 +85,8 @@ THETA_WORLD              #Position angle (CCW/world-x)                          
 #ERRX2_IMAGE              Variance of position along x                              [pixel**2]
 #ERRY2_IMAGE              Variance of position along y                              [pixel**2]
 #ERRXY_IMAGE              Covariance of position between x and y                    [pixel**2]
-#ERRX2_WORLD              Variance of position along X-WORLD (alpha)                [deg**2]
-#ERRY2_WORLD              Variance of position along Y-WORLD (delta)                [deg**2]
+ERRX2_WORLD              Variance of position along X-WORLD (alpha)                [deg**2]
+ERRY2_WORLD              Variance of position along Y-WORLD (delta)                [deg**2]
 #ERRXY_WORLD              Covariance of position X-WORLD/Y-WORLD                    [deg**2]
 #ERRCXX_IMAGE             Cxx error ellipse parameter                               [pixel**(-2)]
 #ERRCYY_IMAGE             Cyy error ellipse parameter                               [pixel**(-2)]
@@ -177,8 +177,8 @@ FLAGS                    #Extraction flags
 #NIMAFLAGS_ISO            Number of flagged pixels entering IMAFLAGS_ISO           
 #NLOWWEIGHT_ISO           Nb of pixels with low weight over the iso. profile       
 #NLOWDWEIGHT_ISO          Nb of pixels with low det. weight over the iso. profile  
-#FWHM_IMAGE               FWHM assuming a gaussian core                             [pixel]
-#FWHM_WORLD               FWHM assuming a gaussian core                             [deg]
+FWHM_IMAGE               #FWHM assuming a gaussian core                             [pixel]
+FWHM_WORLD               #FWHM assuming a gaussian core                             [deg]
 ELONGATION               #A_IMAGE/B_IMAGE
 #ELLIPTICITY              1 - B_IMAGE/A_IMAGE                                      
 #POLAR_IMAGE              (A_IMAGE^2 - B_IMAGE^2)/(A_IMAGE^2 + B_IMAGE^2)          

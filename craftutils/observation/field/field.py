@@ -215,7 +215,9 @@ class Field(Pipeline):
             # Run only this stage of each epoch pipeline
             print()
             print(f"RUNNING {stage} FOR EPOCH", epoch_name)
+            print(epoch.param_file[stage])
             print("=" * 30)
+
             epoch.pipeline(skip_cats=True)
 
     def proc_refine_photometry(self, output_dir: str, **kwargs):

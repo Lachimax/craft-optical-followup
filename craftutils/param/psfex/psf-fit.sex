@@ -46,7 +46,7 @@ FLAG_TYPE        OR             # flag pixel combination: OR, AND, MIN, MAX
 
 #------------------------------ Photometry -----------------------------------
  
-PHOT_APERTURES   7.72              # MAG_APER aperture diameter(s) in pixels
+PHOT_APERTURES   20.0              # MAG_APER aperture diameter(s) in pixels
 PHOT_AUTOPARAMS  2.5, 3.5       # MAG_AUTO parameters: <Kron_fact>,<min_radius>
 PHOT_PETROPARAMS 2.0, 3.5       # MAG_PETRO parameters: <Petrosian_fact>,
                                 # <min_radius>
