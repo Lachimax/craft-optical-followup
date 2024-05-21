@@ -1515,11 +1515,14 @@ class ImagingEpoch(Epoch):
             # Get astrometric uncertainty from images
             img.extract_astrometry_err()
             # Add that to the matching tolerance in quadrature (seems like the right thing to do?)
+
+            print("Specified tolerance:", match_tolerance)
+            print("Image astrometric uncertainty:", img.astrometry_err)
             if img.astrometry_err is None:
                 tolerance_eff = match_tolerance
             else:
                 tolerance_eff = np.sqrt(match_tolerance ** 2 + img.astrometry_err ** 2)
-
+            print("Effective tolerance:", tolerance_eff)
             # Loop through this field's 'objects' dictionary and try to match them with the SE catalogue
             for obj_name, obj in self.field.objects.items():
                 # If the object is not expected to be visible in the optical/NIR, skip it.

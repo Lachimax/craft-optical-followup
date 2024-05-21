@@ -1663,7 +1663,7 @@ def retrieve_mast_photometry(
         cat: str = "panstarrs1",
         data_release: int = None,
         table="stack",
-        radius: units.Quantity = 0.1 * units.deg
+        radius: units.Quantity = 1 * units.deg
 ):
     if data_release is None:
         data_release = default_data_release[cat]
