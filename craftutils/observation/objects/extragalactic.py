@@ -92,7 +92,7 @@ class Extragalactic(Object):
                     self.photometry[instrument][fil][epoch]["abs_mag"] = abs_mag
         self.update_output_file()
 
-    def projected_size(self, angle: Union[units.Quantity, float]) -> Union[units.Quantity, None]:
+    def projected_size(self, angle: Union[units.Quantity, float]) -> Union[units.Quantity[units.kpc], None]:
         """
         When given an angular size, calculates the projected physical size at the redshift of the galaxy.
         :param angle: Angular size. If not provided as a quantity, must be in arcseconds.

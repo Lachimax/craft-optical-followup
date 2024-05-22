@@ -216,6 +216,8 @@ class Object(Generic):
             ),
             mask_nearby=deep_mask
         )
+        deepest_img.close()
+        del deepest_img
         if mag_results is not None:
             deepest_dict["mag_sep"] = mag_results["mag"][0]
             deepest_dict["mag_sep_err"] = mag_results["mag_err"][0]
@@ -263,6 +265,10 @@ class Object(Generic):
                         output=os.path.join(self.data_path, f"{self.name_filesys}_{instrument}_{band}_{epoch}"),
                         mask_nearby=mask_rp
                     )
+                    deep_mask.close()
+                    del deep_mask
+                    img.close()
+                    del img
 
                     if mag_results is not None:
                         phot_dict["mag_sep"] = mag_results["mag"][0]
@@ -936,6 +942,9 @@ class Object(Generic):
         self.get_photometry_table(output=local_output, best=True)
         fil_photom = self.photometry_tbl_best[self.photometry_tbl_best["band"] == fil]
         fil_photom = fil_photom[fil_photom["instrument"] == instrument]
+        if len(fil_photom) == 0:
+            print(f"No photometry found for band {fil} in instrument {instrument}.")
+            return None, None
         row = fil_photom[np.argmax(fil_photom["snr"])]
         photom_dict = self.photometry[instrument][fil][row["epoch_name"]]
 
@@ -1122,6 +1131,23 @@ class Object(Generic):
             else:
                 row["path_img"] = "N/A"
 
+        if self.galfit_model is not None and "COMP_2" in self.galfit_model:
+            row["galfit_axis_ratio"] = self.galfit_model["axis_ratio"]
+            row["galfit_axis_ratio_err"] = self.galfit_model["axis_ratio_err"]
+            row["galfit_ra"] = self.galfit_model["ra"]
+            row["galfit_ra_err"] = self.galfit_model["ra_err"].to("arcsec")
+            row["galfit_dec"] = self.galfit_model["dec"]
+            row["galfit_dec_err"] = self.galfit_model["dec_err"].to("arcsec")
+            row["galfit_r_eff"] = self.galfit_model["r_eff"]
+            row["galfit_r_eff_err"] = self.galfit_model["r_eff_err"]
+            if "r_eff_proj" in self.galfit_model:
+                row["galfit_r_eff_proj"] = self.galfit_model["r_eff_proj"]
+                row["galfit_r_eff_proj_err"] = self.galfit_model["r_eff_proj_err"]
+            row["galfit_ra"] = self.galfit_model["ra"]
+            row["galfit_ra_err"] = self.galfit_model["ra_err"]
+            row["galfit_n"] = self.galfit_model["n"]
+            row["galfit_n_err"] = self.galfit_model["n_err"]
+
         for instrument in self.photometry:
             for fil in self.photometry[instrument]:
 
@@ -1183,9 +1209,6 @@ class Object(Generic):
     #         ext: int = 0,
     #         colour: str = "white",
     # ):
-
-    def galfit_best(self):
-        return self.select_deepest_sep()
 
     @classmethod
     def default_params(cls):

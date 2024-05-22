@@ -5,7 +5,9 @@ import numpy as np
 import astropy.units as units
 import astropy.table as table
 import astropy.io.fits as fits
+from astropy.coordinates import SkyCoord
 
+import craftutils
 import craftutils.utils as u
 import craftutils.observation.sed as sed
 
@@ -80,6 +82,8 @@ class Galaxy(Extragalactic):
         self.cigale_results_path = None
         self.cigale_results = None
 
+        self.galfit_model = None
+
     def sed_model_path(self):
         path = os.path.join(self.data_path, "sed_models")
         u.mkdir_check(path)
@@ -127,7 +131,8 @@ class Galaxy(Extragalactic):
             "sfr_err": self.sfr_err,
             "cigale_model_path": self.cigale_model_path,
             "cigale_sfh_path": self.cigale_sfh_path,
-            "cigale_results": self.cigale_results
+            "cigale_results": self.cigale_results,
+            "galfit_model": self.galfit_model
         })
         return output
 
@@ -150,6 +155,8 @@ class Galaxy(Extragalactic):
                 self.cigale_sfh_path = outputs["cigale_sfh_path"]
             if "cigale_results" in outputs and outputs["cigale_results"] is not None:
                 self.cigale_results = outputs["cigale_results"]
+            if "galfit_model" in outputs and outputs["galfit_model"] is not None:
+                self.galfit_model = outputs["galfit_model"]
         return outputs
 
     def h(self):
@@ -258,6 +265,41 @@ class Galaxy(Extragalactic):
             "DM": dm * dm_units / (1 + self.z),
         })
         return tbl
+
+    def galfit_guess_dict(self, img: 'craftutils.observation.image.ImagingImage'):
+        img.load_output_file()
+        fil = img.filter.name
+        instrument = img.instrument.name
+        photom, mean = self.select_photometry(
+            fil=fil,
+            instrument=instrument,
+            local_output=False
+        )
+
+        position = SkyCoord(photom["ra"], photom["dec"])
+        x, y = img.world_to_pixel(position)
+        r_e = img.pixel(photom["a"])
+
+        guesses = {
+            "object_type": "sersic",
+            "int_mag": photom["mag"].value,
+            "position": position,
+            "x": float(x),
+            "y": float(y),
+            "r_e": r_e,
+            "position_angle": photom["theta"],
+            "axis_ratio": photom["b"] / photom["a"],
+        }
+        img.extract_n_pix()
+        frame_lower = int(img.pixel(photom["a"] * photom["kron_radius"] * 2).value)
+        frame_upper = int(min(frame_lower * 4, img.n_x / 2, img.n_y / 2))
+
+        kwargs = {
+            "frame_lower": int(frame_lower),
+            "frame_upper": int(frame_upper)
+        }
+        print("Using frames", frame_lower, kwargs["frame_upper"])
+        return guesses, kwargs
 
     @classmethod
     def default_params(cls):

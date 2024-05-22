@@ -239,25 +239,34 @@ class Field(Pipeline):
 
     def galfit(self, apply_filter=None, use_img=None, **kwargs):
         if apply_filter is None:
-            obj_list = self.objects.values()
+            obj_list = list(self.objects.values())
         else:
             obj_list = list(filter(apply_filter, self.objects.values()))
 
         self.load_imaging()
 
-        for obj in self.objects:
+        for obj in obj_list:
             if isinstance(obj, objects.Galaxy):
                 obj.load_output_file()
-                photom = obj.select_deepest_sep()
 
                 if use_img is None:
-                    pass
+                    img = list(self.imaging.values())[0]["image"]
+                    print("You shouldn't be getting here right now.")
                 else:
                     img = self.imaging[use_img]["image"]
-                    results = img.galfit_object(
-                        obj=obj,
 
-                    )
+                print(f"Doing GALFIT with image {img.name}")
+
+                param_guesses, kwargs = obj.galfit_guess_dict(img=img)
+                print(param_guesses)
+
+                results = img.galfit_object(
+                    obj=obj,
+                    model_guesses=[param_guesses],
+                    output_prefix=obj.name,
+                    **kwargs
+                )
+            obj.update_output_file()
 
     def proc_push_to_table(self, output_dir: str, **kwargs):
         object_list: List[objects.Object] = list(self.objects.values())
@@ -769,7 +778,7 @@ class Field(Pipeline):
     def add_object(self, obj: Union[dict, objects.Object]):
         if isinstance(obj, dict):
             self.add_object_from_dict(obj)
-        if obj.name in self.objects:
+        elif obj.name in self.objects and self.objects[obj.name] is not obj:
             warnings.warn(
                 f"An object with name {obj.name} already exists in field {self.name}; it is being overwritten.")
         self.objects[obj.name] = obj

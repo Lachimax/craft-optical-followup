@@ -357,9 +357,9 @@ def check_quantity(
         if not allow_mismatch:
             raise units.UnitsError(
                 f"This is already a Quantity, but with units {number.unit}; units {unit} were specified.")
-        elif enforce_equivalency and not (number.unit.is_equivalent(unit)):
+        elif enforce_equivalency and not (number.unit.is_equivalent(unit)) and not equivalencies:
             raise units.UnitsError(
-                f"This number is already a Quantity, but with incompatible units ({number.unit}); units {unit} were specified.")
+                f"This number is already a Quantity, but with incompatible units ({number.unit}); units {unit} were specified. equivalencies ==", equivalencies)
         elif convert:
             number = number.to(unit, equivalencies=equivalencies)
     return number
@@ -368,7 +368,7 @@ def check_quantity(
 def dequantify(
         number: Union[float, int, units.Quantity],
         unit: units.Unit = None,
-        equivalencies: Union[List[Tuple], units.Equivalency] = (),
+        equivalencies: Union[List[Tuple], units.Equivalency, Tuple] = (),
 ) -> float:
     """
     Removes the unit from an astropy Quantity, or returns the number unchanged if it is not a Quantity.
@@ -1065,6 +1065,7 @@ def uncertainty_string(
         limit_val: int = None,
         limit_type: str = "upper",
         nan_string: str = "--",
+        include_uncertainty: bool = True
 ):
 
     limit_vals = (limit_val, -99, -999, -999.)
@@ -1154,15 +1155,19 @@ def uncertainty_string(
         value_str = str(value_rnd)[:v_point - x] + "0" * x
         uncertainty_str = str(uncertainty_rnd)[:n_digits_err] + "0" * x
 
-    if brackets:
+    if not include_uncertainty:
+        value_str = value_str
+    elif brackets:
         if uncertainty < 1:
             uncertainty_str = uncertainty_str[-n_digits_err:]
         else:
             x = u_point - n_digits_err
             uncertainty_str = uncertainty_str[:n_digits_err] + "0" * x
-        return f"${value_str}({uncertainty_str})$", value_rnd, uncertainty_rnd
+        value_str = f"${value_str}({uncertainty_str})$"
     else:
-        return f"${value_str} \pm {uncertainty_str}$", value_rnd, uncertainty_rnd
+        value_str = f"${value_str} \\pm {uncertainty_str}$"
+
+    return value_str, value_rnd, uncertainty_rnd
 
 
 def uncertainty_str_coord(

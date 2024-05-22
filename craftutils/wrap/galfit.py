@@ -3,12 +3,13 @@ import os
 from typing import Tuple, Union, List
 
 import numpy as np
+import matplotlib.pyplot as plt
 
 import astropy.io.fits as fits
 import astropy.units as units
 import astropy.table as table
+from astropy.visualization import LogStretch, ImageNormalize, SqrtStretch
 
-import craftutils.params as p
 import craftutils.utils as u
 
 
@@ -108,6 +109,7 @@ def feedme_sersic_model(
     :param pix_scale: pixel scale for conversion from angular sizes (eg arcsec) to pixels.
     :return: List of strings corresponding to lines in a .feedme input file, suitable for use with open().writelines().
     """
+    print("feedme_sersic_model", pix_scale)
     lines = feedme_model(
         "sersic",
         skip_in_output,
@@ -395,8 +397,8 @@ def galfit_feedme(
 
 
 def extract_fit_params(header: fits.Header):
-    """
-    Extract the fitted parameters for all components from a GALFIT imgblock header.
+    """Extract the fitted parameters for all components from a GALFIT imgblock header.
+
     :param header: the GALFIT-generated image header, as read by astropy.io.fits.
     :return: nested dict, with keys being the component name (COMP_1, COMP_2...) and values being another level of
         dicts; for this second level, keys are the model parameter names and values are the best-fitting values,
@@ -428,7 +430,7 @@ def extract_sersic_params(component_n: int, header: fits.Header):
     theta, theta_err = _strip_values(header[f"{component_n}_PA"])
 
     component = {
-        "object_type": header[f"COMP_{component_n}"],
+        "object_type": "sersic",
         "x": x * units.pix,
         "x_err": x_err * units.pix,
         "y": y * units.pix,
@@ -557,6 +559,8 @@ def sersic_best_row(tbl: table.Table):
     best_index = max(np.argmin(tbl["r_eff_err"]), np.argmin(tbl["n_err"]))
     best_row = tbl[best_index]
     best_dict = dict(best_row)
+    if "object_type" in best_dict:
+        best_dict["object_type"] = str(best_dict["object_type"])
     return best_index, best_dict
 
 
@@ -920,3 +924,77 @@ def spiral_from_model_dict(
         raise ValueError("power law spirals are not yet supported (but hopefully will be soon)")
     else:
         raise ValueError(f"Coordinate rotation type {rot_type} not recognised.")
+
+
+def imgblock_plot(img_block: Union[fits.HDUList, str], output: str = None):
+    if isinstance(img_block, str):
+        img_block = fits.open(img_block)
+
+    fitsect = img_block[2].header["FITSECT"][1:-1]
+    x_sect, y_sect = fitsect.split(",")
+    x_left, _ = x_sect.split(":")
+    x_left = int(x_left)
+    y_bottom, _ = y_sect.split(":")
+    y_bottom = int(y_bottom)
+
+    fig = plt.figure(figsize=(24, 12))
+
+    if len(img_block) > 4:
+        max_val = np.max(img_block[4].data)
+    else:
+        max_val = np.max(img_block[1].data)
+    min_val = np.min(img_block[3].data)
+
+    names = (
+        "?",
+        "Data",
+        "Model",
+        "Data - Model",
+        "Masked Data",
+        "Data - Model, Masked"
+    )
+
+    from matplotlib.patches import Ellipse
+
+    params = extract_fit_params(img_block[2].header)["COMP_2"]
+    x = params["x"].value - x_left
+    y = params["y"].value - y_bottom
+    r_eff = params["r_eff"].value
+    a = r_eff
+    b = r_eff * params["axis_ratio"]
+    theta = params["position_angle"].value
+
+    for i, im in enumerate(img_block):
+        if i == 0:
+            continue
+        if im.is_image:
+            ax = fig.add_subplot(1, len(img_block), i + 1)
+            ax.set_title(names[i])
+            ax.imshow(
+                im.data,
+                origin="lower",
+                norm=ImageNormalize(stretch=LogStretch()),
+                cmap="cmr.bubblegum"
+            )
+            ax.errorbar(
+                x, y,
+                marker="x",
+                xerr=params["x_err"].value,
+                yerr=params["y_err"].value,
+                c="black"
+            )
+            e = Ellipse(
+                xy=(x, y),
+                width=a,
+                height=b,
+                angle=-theta,
+                edgecolor="white",
+                facecolor="none",
+            )
+            ax.add_artist(e)
+
+
+    if isinstance(output, str):
+        fig.savefig(output, dpi=100, bbox_inches="tight")
+
+    return fig

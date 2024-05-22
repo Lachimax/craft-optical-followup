@@ -259,12 +259,8 @@ class ImagingImage(Image):
                 fwhm = 1.5 * units.arcsec
 
             new_aperture_arcsec = 8 * fwhm
-            print("New aperture", new_aperture_arcsec)
             aper_arcsec = [new_aperture_arcsec.value] * units.arcsec
-            print(aper_arcsec)
             se_kwargs["PHOT_APERTURES"] = aperture_str(aper_arcsec)
-            print("PHOT_APERTURES", se_kwargs["PHOT_APERTURES"])
-            print()
 
             catalogue = self.source_extraction(
                 configuration_file=config,
@@ -4429,7 +4425,7 @@ class ImagingImage(Image):
 
         self.extract_pixel_scale(ext)
 
-        for frame in range(frame_lower, frame_upper + 1):
+        for frame in range(frame_lower, frame_upper + 10, 5):
             margins = u.frame_from_centre(frame, x, y, data)
             print("Generating mask...")
             data_trim = u.trim_image(data, margins=margins)
@@ -4517,7 +4513,14 @@ class ImagingImage(Image):
                 img_block[idx].header.insert('OBJECT', ('PCOUNT', 0))
                 img_block[idx].header.insert('OBJECT', ('GCOUNT', 1))
 
+            galfit.imgblock_plot(
+                output=os.path.join(output_dir, f"galfit_plot_frame{frame}.png"),
+                img_block=img_block
+            )
             img_block.writeto(img_block_path, overwrite=True)
+            img_block.close()
+
+            gf_dicts["imgblock"] = img_block_path
 
         component_tables = {}
         for compname in gf_tbls:
@@ -4540,9 +4543,8 @@ class ImagingImage(Image):
         if "model_guesses" in kwargs:
             model_guesses = kwargs["model_guesses"]
         else:
-            model_guesses = [{
-                "object_type": "sersic"
-            }]
+            model_guesses, new_kwargs = obj.galfit_guess_dict(img=self)
+            kwargs.update(new_kwargs)
         if output_dir is None:
             output_dir = os.path.join(obj.data_path, "GALFIT")
         os.makedirs(output_dir, exist_ok=True)
@@ -4572,19 +4574,46 @@ class ImagingImage(Image):
         best_index, best_dict = galfit.sersic_best_row(model_tbls[f"COMP_{pivot_component}"])
         for component in model_tbls:
             if "r_eff_ang" in model_tbls[component].colnames:
-                r_eff_proj = obj.projected_distance(model_tbls[component]["r_eff_ang"]).to(
-                    "kpc")
-                model_dicts[component]["r_eff_proj"] = r_eff_proj
+                r_eff_proj = obj.projected_size(angle=model_tbls[component]["r_eff_ang"]).to("kpc")
                 model_tbls[component]["r_eff_proj"] = r_eff_proj
-                r_eff_proj_err = obj.projected_distance(model_tbls[component]["r_eff_ang_err"]).to("kpc")
-                model_dicts[component]["r_eff_proj_err"] = r_eff_proj_err
+                r_eff_proj_err = obj.projected_size(angle=model_tbls[component]["r_eff_ang_err"]).to("kpc")
                 model_tbls[component]["r_eff_proj_err"] = r_eff_proj_err
+                for d in model_dicts[component]:
+                    d["r_eff_proj"] = r_eff_proj
+                    d["r_eff_proj_err"] = r_eff_proj_err
+
+            for param in ("r_eff_ang", "axis_ratio", "n"):
+                if param in model_tbls[component].colnames:
+                    fig, ax = plt.subplots()
+                    ax.errorbar(
+                        model_tbls[component]["frame"],
+                        model_tbls[component][param],
+                        yerr=model_tbls[component][f"{param}_err"]
+                    )
+                    ax.set_xlabel("Frame (pix)")
+                    ax.set_ylabel(f"{param} ({model_tbls[component][param].unit})")
+                    fig.savefig(os.path.join(output_dir, f"{output_prefix}_frame_{param}.png"))
+                    plt.close(fig)
+                    plt.clf()
+                    del fig
+
             model_tbls[component].write(
                 os.path.join(output_dir, f"{output_prefix}_{component}_fits.ecsv"),
                 format="ascii.ecsv",
                 overwrite=True
             )
             best_params[component] = dict(model_tbls[component][best_index])
+            if "object_type" in best_params[component]:
+                best_params[component]["object_type"] = str(best_params[component]["object_type"])
+
+        print(best_params)
+        for k, v in best_params["COMP_2"].items():
+            print(k, v, type(v))
+        best_params["image"] = self.path
+        best_params["instrument"] = self.instrument_name
+        best_params["band"] = self.filter_name
+        p.save_params(os.path.join(output_dir, "best_model.yaml"), best_params)
+        obj.galfit_model = best_params
 
         return best_params
 
