@@ -4214,7 +4214,8 @@ class ImagingImage(Image):
     def make_galfit_version(
             self,
             output_path: str = None,
-            ext: int = 0
+            ext: int = 0,
+            force: bool = False
     ):
         """
         Generate a version of this file for use with GALFIT.
@@ -4226,17 +4227,23 @@ class ImagingImage(Image):
         """
         if output_path is None:
             output_path = self.path.replace(".fits", "_galfit.fits")
-        new = self.copy(output_path)
-        new.load_headers()
-        old_exptime = self.extract_header_item(key="OLD_EXPTIME", ext=ext)
-        old_gain = self.extract_header_item(key="OLD_GAIN", ext=ext)
-        if old_exptime is not None and old_gain is not None:
-            new.set_header_items(
-                {
-                    "GAIN": old_exptime * old_gain
-                }
-            )
-        new.write_fits_file()
+        if force or not os.path.isfile(output_path):
+            new = self.copy(output_path)
+            new.load_headers()
+            old_exptime = self.extract_header_item(key="OLD_EXPTIME", ext=ext)
+            old_gain = self.extract_header_item(key="OLD_GAIN", ext=ext)
+            if old_exptime is not None and old_gain is not None:
+                new.set_header_items(
+                    {
+                        "GAIN": old_exptime * old_gain
+                    }
+                )
+            new.write_fits_file()
+        else:
+            new = type(self)(path=output_path)
+            new.load_output_file()
+            new.load_headers()
+            new.load_psfex_output()
         return new
 
     def make_galfit_psf(
@@ -4574,6 +4581,7 @@ class ImagingImage(Image):
         best_index, best_dict = galfit.sersic_best_row(model_tbls[f"COMP_{pivot_component}"])
         for component in model_tbls:
             if "r_eff_ang" in model_tbls[component].colnames:
+                print(model_tbls[component]["r_eff_ang"])
                 r_eff_proj = obj.projected_size(angle=model_tbls[component]["r_eff_ang"]).to("kpc")
                 model_tbls[component]["r_eff_proj"] = r_eff_proj
                 r_eff_proj_err = obj.projected_size(angle=model_tbls[component]["r_eff_ang_err"]).to("kpc")

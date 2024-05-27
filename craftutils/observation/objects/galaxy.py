@@ -291,8 +291,8 @@ class Galaxy(Extragalactic):
             "axis_ratio": photom["b"] / photom["a"],
         }
         img.extract_n_pix()
-        frame_lower = int(img.pixel(photom["a"] * photom["kron_radius"] * 2).value)
-        frame_upper = int(min(frame_lower * 4, img.n_x / 2, img.n_y / 2))
+        frame_lower = 60 #int(img.pixel(photom["a"] * photom["kron_radius"] * 2).value)
+        frame_upper = 70 #int(min(frame_lower * 4, img.n_x / 2, img.n_y / 2))
 
         kwargs = {
             "frame_lower": int(frame_lower),

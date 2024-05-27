@@ -1,6 +1,10 @@
 Using the pipeline script
 =========================
 
+**WARNING:** take care when running more than one instance of the imaging pipeline on the same system, as they can interfere with each other on certain stages;
+for example, the astrometry-related stages.
+
+
 When the ``craft-optical-followup`` package has been properly installed (see :doc:`installation`), the script
 ``craft_optical_pipeline`` will be placed in the ``bin`` directory for the current environment, and thus should be
 callable from anywhere.

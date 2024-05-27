@@ -783,6 +783,7 @@ class Field(Pipeline):
                 f"An object with name {obj.name} already exists in field {self.name}; it is being overwritten.")
         self.objects[obj.name] = obj
         obj.field = self
+        return obj
 
     def remove_object(self, obj: Union[objects.Object, str]):
         if isinstance(obj, str):

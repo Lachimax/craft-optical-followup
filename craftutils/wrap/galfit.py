@@ -940,10 +940,11 @@ def imgblock_plot(img_block: Union[fits.HDUList, str], output: str = None):
     fig = plt.figure(figsize=(24, 12))
 
     if len(img_block) > 4:
-        max_val = np.max(img_block[4].data)
+        vimg = img_block[4].data
+
     else:
-        max_val = np.max(img_block[1].data)
-    min_val = np.min(img_block[3].data)
+        vimg = img_block[1].data
+    max_val = np.max(vimg) - np.median(vimg)
 
     names = (
         "?",
@@ -971,9 +972,13 @@ def imgblock_plot(img_block: Union[fits.HDUList, str], output: str = None):
             ax = fig.add_subplot(1, len(img_block), i + 1)
             ax.set_title(names[i])
             ax.imshow(
-                im.data,
+                im.data - np.median(im.data),
                 origin="lower",
-                norm=ImageNormalize(stretch=LogStretch()),
+                norm=ImageNormalize(
+                    vmax=max_val + np.median(im.data),
+                    vmin=np.median(im.data) - 2 * np.std(im.data),
+                    stretch=SqrtStretch()
+                ),
                 cmap="cmr.bubblegum"
             )
             ax.errorbar(
@@ -992,7 +997,6 @@ def imgblock_plot(img_block: Union[fits.HDUList, str], output: str = None):
                 facecolor="none",
             )
             ax.add_artist(e)
-
 
     if isinstance(output, str):
         fig.savefig(output, dpi=100, bbox_inches="tight")

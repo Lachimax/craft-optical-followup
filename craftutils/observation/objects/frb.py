@@ -319,7 +319,7 @@ class FRB(ExtragalacticTransient):
                     frame=cand_tbl["separation"].max(),
                     centre=self.position
                 )
-                c = ax.scatter(cand_tbl["x"], cand_tbl["y"], marker="x", c=np.log10(cand_tbl["P_Ox"]), cmap="bwr_r")
+                c = ax.scatter(cand_tbl["x"], cand_tbl["y"], marker="x", c=cand_tbl["P_Ox"], cmap="bwr_r")
                 cbar = fig.colorbar(c)
                 cbar.set_label("$P(O|x)_i$")
                 if show:
@@ -535,11 +535,23 @@ class FRB(ExtragalacticTransient):
     def hg_name(self):
         return self.host_name(frb_name=self.name)
 
-    def set_host(self, host_galaxy: TransientHostCandidate):
+    def set_host(self, host_galaxy: TransientHostCandidate, keep_params: list = None):
         hg_name = self.hg_name()
         old_name = host_galaxy.name
         old_host = self.host_galaxy
         print(f"Assigning {old_name} as host of {self.name} and relabelling as {hg_name}")
+        if keep_params is not None:
+            attributes = old_host.__dict__.copy()
+            print("Keeping attributes:")
+            for key in keep_params:
+                if key in attributes and attributes[key] is not None:
+                    print(f"{key}:", attributes[key])
+                    host_galaxy.__setattr__(key, attributes[key])
+                else:
+                    if key in attributes:
+                        print(f"{old_name}.{key} is None.")
+                    else:
+                        print(f"{key} not found in {old_name}.")
         host_galaxy.set_name(name=hg_name)
         self.host_galaxy = host_galaxy
         self.update_param_file("host_galaxy")
@@ -550,6 +562,7 @@ class FRB(ExtragalacticTransient):
         if self.host_galaxy.z is not None:
             self.set_z(self.host_galaxy.z)
         self.update_param_file("z")
+        self.update_param_file("other_names")
         # self.field.add_object(self.host_galaxy)
 
     @classmethod

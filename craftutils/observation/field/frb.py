@@ -432,15 +432,23 @@ class FRBField(Field):
                 self.frb.host_candidates
             )
         )
+        if isinstance(self.frb.host_galaxy, objects.Galaxy):
+            print()
+            print(f"Initial host {self.frb.host_galaxy.name}.z:", self.frb.host_galaxy.z)
+            print()
         if len(host_candidates) > 0:
             max_pox = np.max(list(map(lambda o: o.P_Ox, host_candidates)))
             for obj in self.frb.host_candidates:
                 P_Ox = obj.P_Ox
                 if P_Ox > 0.1:
                     if P_Ox >= max_pox:
-                        self.frb.set_host(obj)
+                        self.frb.set_host(obj, keep_params=["z", "z_err", "other_names"])
                     self.add_object(obj)
                     obj.to_param_yaml(keep_old=True)
+        print()
+        print(f"New host {self.frb.host_galaxy.name}.z:", self.frb.host_galaxy.z)
+        print()
+
 
     def deepest_in_band(
             self,

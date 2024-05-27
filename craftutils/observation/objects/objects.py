@@ -136,6 +136,8 @@ class Object(Generic):
             self.theta = self.photometry_args["theta"]
             self.kron = self.photometry_args["kron_radius"]
 
+        self.other_names: List[str] = []
+
     def __str__(self):
         return self.name
 
@@ -216,8 +218,7 @@ class Object(Generic):
             ),
             mask_nearby=deep_mask
         )
-        deepest_img.close()
-        del deepest_img
+
         if mag_results is not None:
             deepest_dict["mag_sep"] = mag_results["mag"][0]
             deepest_dict["mag_sep_err"] = mag_results["mag_err"][0]
@@ -265,10 +266,6 @@ class Object(Generic):
                         output=os.path.join(self.data_path, f"{self.name_filesys}_{instrument}_{band}_{epoch}"),
                         mask_nearby=mask_rp
                     )
-                    deep_mask.close()
-                    del deep_mask
-                    img.close()
-                    del img
 
                     if mag_results is not None:
                         phot_dict["mag_sep"] = mag_results["mag"][0]
@@ -311,6 +308,16 @@ class Object(Generic):
                         phot_dict["flux_sep_unmasked"] = -999.
                         phot_dict["flux_sep_unmasked_err"] = -999.
                         phot_dict["limit_threshold"] = -999.
+
+                    img.close()
+                    del img
+                    mask_rp.close()
+                    del mask_rp
+
+        deepest_img.close()
+        del deepest_img
+        deep_mask.close()
+        del deep_mask
 
         self.update_output_file()
 
@@ -477,6 +484,13 @@ class Object(Generic):
             return True
         else:
             return False
+
+    def _updateable(self):
+        p_dict = super()._updateable()
+        p_dict.update({
+            "other_names": self.other_names,
+        })
+        return p_dict
 
     def update_output_file(self):
         if self.check_data_path():
