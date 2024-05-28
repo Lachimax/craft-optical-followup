@@ -121,27 +121,23 @@ class FRB(ExtragalacticTransient):
         )
         return self.x_frb
 
-    def push_to_table(
+    def assemble_row(
             self,
-            select: bool = True,
-            local_output: bool = True
+            **kwargs
     ):
-        jname = self.jname(4, 3)
-        self.retrieve_extinction_table()
-        ra_err, dec_err = self.position_err.uncertainty_quadrature()
-        row = {
-            "object_name": self.name,
-            "field_name": self.field.name,
-            "jname": jname,
-            "position": self.position.to_string("hmsdms"),
-            "ra": self.position.ra.to(units.degree),
-            "ra_err": ra_err.to("arcsec"),
-            "dec": self.position.dec.to(units.degree),
-            "dec_err": dec_err.to("arcsec"),
-            "instrument": str(self.instrument),
-            "e_b-v": self.ebv_sandf
-            # "host_galaxy": self.host_galaxy.name
-        }
+        row, _ = super().assemble_row(**kwargs)
+        if isinstance(self.host_galaxy, TransientHostCandidate):
+            row["host_galaxy"] = self.host_galaxy.name
+            hg_row = self.host_galaxy.assemble_row()
+            if f"path_pox" in hg_row:
+                row["path_pox"] = hg_row["path_pox"]
+            if f"path_pu" in hg_row:
+                row["path_pu"] = hg_row["path_pu"]
+            if f"path_pux" in hg_row:
+                row["path_pux"] = hg_row["path_pux"]
+            if "path_img" in hg_row:
+                row["path_img"] = hg_row["path_img"]
+
         if self.date is not None:
             row["date"] = str(self.date)
         if self.survey is not None:
@@ -153,14 +149,7 @@ class FRB(ExtragalacticTransient):
         if self.z is not None:
             row["z"] = self.z
 
-        import craftutils.observation.output.objects as output_objs
-        tbl = output_objs.load_objects_table("frb")
-        tbl.add_entry(
-            key=self.name,
-            entry=row
-        )
-        tbl.write_table()
-        return row
+        return row, "frb"
 
     def probabilistic_association(
             self,

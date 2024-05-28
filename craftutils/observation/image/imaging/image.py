@@ -4253,7 +4253,7 @@ class ImagingImage(Image):
             y: float
     ):
         # We obtain an oversampled PSF, because GALFIT works best with one.
-        psfex_path = os.path.join(output_dir, f"{self.name}_galfit_psfex.psf")
+        psfex_path = os.path.join(output_dir, f"{self.name}_psfex.psf")
         if not os.path.isfile(psfex_path):
             self.psfex(
                 output_dir=output_dir,
@@ -4327,7 +4327,8 @@ class ImagingImage(Image):
             model_guesses: Union[dict, List[dict]] = None,
             psf_path: str = None,
             use_frb_galfit: bool = False,
-            feedme_kwargs: dict = {}
+            feedme_kwargs: dict = {},
+            position_tolerance: units.Quantity = 5 * units.arcsec
     ):
         """
 
@@ -4343,6 +4344,7 @@ class ImagingImage(Image):
         :param use_frb_galfit: Use the FRB repo frb.galaxies.galfit module. Single-sersic only; if multiple models are provided only one will be used.
         :return:
         """
+        position_tolerance = u.check_quantity(position_tolerance, units.arcsec)
         if output_prefix is None:
             output_prefix = self.name
         if model_guesses is None:
@@ -4379,6 +4381,7 @@ class ImagingImage(Image):
 
             gf_tbls[f"COMP_{i + 1}"] = []
             gf_dicts[f"COMP_{i + 1}"] = []
+
         gf_tbls[f"COMP_{i + 2}"] = []
         gf_dicts[f"COMP_{i + 2}"] = []
 
@@ -4432,10 +4435,11 @@ class ImagingImage(Image):
 
         self.extract_pixel_scale(ext)
 
-        for frame in range(frame_lower, frame_upper + 10, 5):
+        for frame in np.linspace(frame_lower, frame_upper + 10, 20):
+            frame = int(frame)
             margins = u.frame_from_centre(frame, x, y, data)
             print("Generating mask...")
-            data_trim = u.trim_image(data, margins=margins)
+            # data_trim = u.trim_image(data, margins=margins)
             mask_data = u.trim_image(mask.data[ext], margins=margins).value
             feedme_file = f"{output_prefix}_{frame}.feedme"
             feedme_path = os.path.join(output_dir, feedme_file)
@@ -4483,9 +4487,15 @@ class ImagingImage(Image):
 
             results_header = img_block[2].header
             components = galfit.extract_fit_params(results_header)
-            for compname in components:
+
+            component = components["COMP_2"]
+            pos = self.pixel_to_world(component["x"], component["y"])
+            pos_guess = model_guesses[0]["position"]
+            if pos.separation(pos_guess) > position_tolerance:
+                break
+
+            for i, compname in enumerate(components):
                 component = components[compname]
-                pos = self.pixel_to_world(component["x"], component["y"])
                 component["ra"] = pos.ra
                 component["dec"] = pos.dec
                 if "r_eff" in component:
@@ -4582,13 +4592,15 @@ class ImagingImage(Image):
         for component in model_tbls:
             if "r_eff_ang" in model_tbls[component].colnames:
                 print(model_tbls[component]["r_eff_ang"])
-                r_eff_proj = obj.projected_size(angle=model_tbls[component]["r_eff_ang"]).to("kpc")
-                model_tbls[component]["r_eff_proj"] = r_eff_proj
-                r_eff_proj_err = obj.projected_size(angle=model_tbls[component]["r_eff_ang_err"]).to("kpc")
-                model_tbls[component]["r_eff_proj_err"] = r_eff_proj_err
-                for d in model_dicts[component]:
-                    d["r_eff_proj"] = r_eff_proj
-                    d["r_eff_proj_err"] = r_eff_proj_err
+                r_eff_proj = obj.projected_size(angle=model_tbls[component]["r_eff_ang"])
+                if r_eff_proj is not None:
+                    r_eff_proj = r_eff_proj.to("kpc")
+                    model_tbls[component]["r_eff_proj"] = r_eff_proj
+                    r_eff_proj_err = obj.projected_size(angle=model_tbls[component]["r_eff_ang_err"]).to("kpc")
+                    model_tbls[component]["r_eff_proj_err"] = r_eff_proj_err
+                    for d in model_dicts[component]:
+                        d["r_eff_proj"] = r_eff_proj
+                        d["r_eff_proj_err"] = r_eff_proj_err
 
             for param in ("r_eff_ang", "axis_ratio", "n"):
                 if param in model_tbls[component].colnames:
@@ -4614,9 +4626,9 @@ class ImagingImage(Image):
             if "object_type" in best_params[component]:
                 best_params[component]["object_type"] = str(best_params[component]["object_type"])
 
-        print(best_params)
+        # print(best_params)
         for k, v in best_params["COMP_2"].items():
-            print(k, v, type(v))
+            print(k, "\t\t\t", v)
         best_params["image"] = self.path
         best_params["instrument"] = self.instrument_name
         best_params["band"] = self.filter_name

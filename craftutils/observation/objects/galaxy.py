@@ -291,8 +291,8 @@ class Galaxy(Extragalactic):
             "axis_ratio": photom["b"] / photom["a"],
         }
         img.extract_n_pix()
-        frame_lower = 60 #int(img.pixel(photom["a"] * photom["kron_radius"] * 2).value)
-        frame_upper = 70 #int(min(frame_lower * 4, img.n_x / 2, img.n_y / 2))
+        frame_lower = int(img.pixel(photom["a"] * photom["kron_radius"] * 2).value)
+        frame_upper = int(min(frame_lower * 3, img.n_x / 2, img.n_y / 2))
 
         kwargs = {
             "frame_lower": int(frame_lower),
@@ -300,6 +300,36 @@ class Galaxy(Extragalactic):
         }
         print("Using frames", frame_lower, kwargs["frame_upper"])
         return guesses, kwargs
+
+    def assemble_row(
+            self,
+            **kwargs
+    ):
+        row, _ = super().assemble_row(**kwargs)
+        if self.z is not None:
+            self.set_z()
+            row["z"] = self.z
+            row["d_A"] = self.D_A
+            row["d_L"] = self.D_L
+            row["mu"] = self.mu
+        if self.galfit_model is not None and "COMP_2" in self.galfit_model:
+            galfit_model = self.galfit_model["COMP_2"]
+            row["galfit_axis_ratio"] = galfit_model["axis_ratio"]
+            row["galfit_axis_ratio_err"] = galfit_model["axis_ratio_err"]
+            row["galfit_ra"] = galfit_model["ra"]
+            row["galfit_ra_err"] = galfit_model["ra_err"].to("arcsec")
+            row["galfit_dec"] = galfit_model["dec"]
+            row["galfit_dec_err"] = galfit_model["dec_err"].to("arcsec")
+            row["galfit_r_eff"] = galfit_model["r_eff"]
+            row["galfit_r_eff_err"] = galfit_model["r_eff_err"]
+            if "r_eff_proj" in galfit_model:
+                row["galfit_r_eff_proj"] = galfit_model["r_eff_proj"]
+                row["galfit_r_eff_proj_err"] = galfit_model["r_eff_proj_err"]
+            row["galfit_ra"] = galfit_model["ra"]
+            row["galfit_ra_err"] = galfit_model["ra_err"]
+            row["galfit_n"] = galfit_model["n"]
+            row["galfit_n_err"] = galfit_model["n_err"]
+        return row, "optical"
 
     @classmethod
     def default_params(cls):

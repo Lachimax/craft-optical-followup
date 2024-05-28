@@ -975,8 +975,8 @@ def imgblock_plot(img_block: Union[fits.HDUList, str], output: str = None):
                 im.data - np.median(im.data),
                 origin="lower",
                 norm=ImageNormalize(
-                    vmax=max_val + np.median(im.data),
-                    vmin=np.median(im.data) - 2 * np.std(im.data),
+                    # vmax=max_val + np.median(im.data),
+                    # vmin=np.median(im.data) - 2 * np.std(im.data),
                     stretch=SqrtStretch()
                 ),
                 cmap="cmr.bubblegum"

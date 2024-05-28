@@ -1065,133 +1065,103 @@ class Object(Generic):
         row = self.photometry_tbl_best[idx]
         return self.photometry[row["instrument"]][row["band"]][row["epoch_name"]]
 
-    def push_to_table(
+    def assemble_row(
             self,
-            select: bool = True,
-            local_output: bool = True
+            **kwargs
     ):
-        from .galaxy import Galaxy
-        from .transient import Transient
-        from .transient_host import TransientHostCandidate
+        # if not self.photometry:
+        #     return None
+        select = True
+        if "select" in kwargs:
+            select = kwargs["select"]
+        local_output = True
+        if "local_output" in kwargs:
+            select = kwargs["local_output"]
 
-        if not self.photometry:
-            return None
+        jname = self.jname(4, 3)
 
-        jname = self.jname()
+        self.retrieve_extinction_table()
 
-        self.estimate_galactic_extinction()
-        if select:
-            self.get_photometry_table(output=local_output, best=True)
-            if not isinstance(self.photometry_tbl_best, table.Table):
-                self.get_good_photometry()
-            self.photometry_to_table()
-            deepest = self.select_deepest_sep(local_output=local_output)
-        else:
-            deepest = self.select_deepest(local_output=local_output)
-
-        # best_position = self.select_best_position(local_output=local_output)
-        best_psf = self.select_psf_photometry(local_output=local_output)
+        ra_err, dec_err = self.position_err.uncertainty_quadrature()
 
         row = {
             "jname": jname,
             "field_name": self.field.name,
             "object_name": self.name,
             "position": self.position.to_string("hmsdms"),
-            "ra": deepest["ra"],
-            "ra_err": deepest["ra_err"].to("arcsec"),
-            "dec": deepest["dec"],
-            "dec_err": deepest["dec_err"].to("arcsec"),
-            "epoch_position": deepest["epoch_name"],
-            "epoch_position_date": deepest["epoch_date"],
-            "a": deepest["a"],
-            "a_err": deepest["a_err"],
-            "b": deepest["b"],
-            "b_err": deepest["b_err"],
-            "theta": deepest["theta"],
-            "theta_err": deepest["theta_err"],
-            "kron_radius": deepest["kron_radius"],
-            "epoch_ellipse": deepest["epoch_name"],
-            "epoch_ellipse_date": deepest["epoch_date"],
+            "ra": self.position.ra.to(units.degree),
+            "ra_err": ra_err.to("arcsec"),
+            "dec": self.position.dec.to(units.degree),
+            "dec_err": dec_err.to("arcsec"),
             f"e_b-v": self.ebv_sandf,
-            f"class_star": best_psf["class_star"],
-            "spread_model": best_psf["spread_model"],
-            "spread_model_err": best_psf["spread_model_err"],
-            "class_flag": best_psf["class_flag"],
         }
 
-        if isinstance(self, Galaxy) and self.z is not None:
-            row["z"] = self.z
-            row["d_A"] = self.D_A
-            row["d_L"] = self.D_L
-            row["mu"] = self.mu
-
-        if isinstance(self, TransientHostCandidate):
-            if not isinstance(self.transient, Transient):
-                self.get_transient()
-            if isinstance(self.transient.tns_name, str):
-                row["transient_tns_name"] = self.transient.tns_name
+        if self.optical:
+            self.estimate_galactic_extinction()
+            if select:
+                self.get_photometry_table(output=local_output, best=True)
+                if not isinstance(self.photometry_tbl_best, table.Table):
+                    self.get_good_photometry()
+                self.photometry_to_table()
+                deepest = self.select_deepest_sep(local_output=local_output)
             else:
-                row["transient_tns_name"] = "N/A"
+                deepest = self.select_deepest(local_output=local_output)
 
-            if self.P_Ox is not None:
-                row[f"path_pox"] = self.P_Ox
-            if self.P_U is not None:
-                row[f"path_pu"] = self.P_U
-            if self.P_Ux is not None:
-                row[f"path_pu"] = self.P_Ux
+            # best_position = self.select_best_position(local_output=local_output)
+            best_psf = self.select_psf_photometry(local_output=local_output)
 
-            if self.probabilistic_association_img:
-                row["path_img"] = self.probabilistic_association_img
-            else:
-                row["path_img"] = "N/A"
+            row.update({
+                "ra": deepest["ra"],
+                "ra_err": deepest["ra_err"].to("arcsec"),
+                "dec": deepest["dec"],
+                "dec_err": deepest["dec_err"].to("arcsec"),
+                "epoch_position": deepest["epoch_name"],
+                "epoch_position_date": deepest["epoch_date"],
+                "a": deepest["a"],
+                "a_err": deepest["a_err"],
+                "b": deepest["b"],
+                "b_err": deepest["b_err"],
+                "theta": deepest["theta"],
+                "theta_err": deepest["theta_err"],
+                "kron_radius": deepest["kron_radius"],
+                "epoch_ellipse": deepest["epoch_name"],
+                "epoch_ellipse_date": deepest["epoch_date"],
+                f"class_star": best_psf["class_star"],
+                "spread_model": best_psf["spread_model"],
+                "spread_model_err": best_psf["spread_model_err"],
+                "class_flag": best_psf["class_flag"],
+            })
 
-        if self.galfit_model is not None and "COMP_2" in self.galfit_model:
-            row["galfit_axis_ratio"] = self.galfit_model["axis_ratio"]
-            row["galfit_axis_ratio_err"] = self.galfit_model["axis_ratio_err"]
-            row["galfit_ra"] = self.galfit_model["ra"]
-            row["galfit_ra_err"] = self.galfit_model["ra_err"].to("arcsec")
-            row["galfit_dec"] = self.galfit_model["dec"]
-            row["galfit_dec_err"] = self.galfit_model["dec_err"].to("arcsec")
-            row["galfit_r_eff"] = self.galfit_model["r_eff"]
-            row["galfit_r_eff_err"] = self.galfit_model["r_eff_err"]
-            if "r_eff_proj" in self.galfit_model:
-                row["galfit_r_eff_proj"] = self.galfit_model["r_eff_proj"]
-                row["galfit_r_eff_proj_err"] = self.galfit_model["r_eff_proj_err"]
-            row["galfit_ra"] = self.galfit_model["ra"]
-            row["galfit_ra_err"] = self.galfit_model["ra_err"]
-            row["galfit_n"] = self.galfit_model["n"]
-            row["galfit_n_err"] = self.galfit_model["n_err"]
+            for instrument in self.photometry:
+                for fil in self.photometry[instrument]:
 
-        for instrument in self.photometry:
-            for fil in self.photometry[instrument]:
+                    band_str = f"{instrument}_{fil.replace('_', '-')}"
 
-                band_str = f"{instrument}_{fil.replace('_', '-')}"
+                    if select:
+                        best_photom, mean_photom = self.select_photometry_sep(fil, instrument, local_output=local_output)
+                        row[f"mag_best_{band_str}"] = best_photom["mag_sep"]
+                        row[f"mag_best_{band_str}_err"] = best_photom["mag_sep_err"]
+                        row[f"snr_best_{band_str}"] = best_photom["snr_sep"]
 
-                if select:
-                    best_photom, mean_photom = self.select_photometry_sep(fil, instrument, local_output=local_output)
-                    row[f"mag_best_{band_str}"] = best_photom["mag_sep"]
-                    row[f"mag_best_{band_str}_err"] = best_photom["mag_sep_err"]
-                    row[f"snr_best_{band_str}"] = best_photom["snr_sep"]
+                    else:
+                        best_photom, mean_photom = self.select_photometry(fil, instrument, local_output=local_output)
+                        row[f"mag_best_{band_str}"] = best_photom["mag"]
+                        row[f"mag_best_{band_str}_err"] = best_photom["mag_err"]
+                        row[f"snr_best_{band_str}"] = best_photom["snr"]
 
-                else:
-                    best_photom, mean_photom = self.select_photometry(fil, instrument, local_output=local_output)
-                    row[f"mag_best_{band_str}"] = best_photom["mag"]
-                    row[f"mag_best_{band_str}_err"] = best_photom["mag_err"]
-                    row[f"snr_best_{band_str}"] = best_photom["snr"]
-
-                row[f"mag_mean_{band_str}"] = mean_photom["mag"]
-                row[f"mag_mean_{band_str}_err"] = mean_photom["mag_err"]
-                row[f"n_mean_{band_str}"] = mean_photom["n"]
-                row[f"ext_gal_{band_str}"] = best_photom["ext_gal"]
-                # else:
-                #     row[f"ext_gal_{band_str}"] = best_photom["ext_gal_sandf"]
-                row[f"epoch_best_{band_str}"] = best_photom[f"epoch_name"]
-                row[f"epoch_best_date_{band_str}"] = str(best_photom[f"epoch_date"])
-                row[f"mag_psf_best_{band_str}"] = best_photom[f"mag_psf"]
-                row[f"mag_psf_best_{band_str}_err"] = best_photom[f"mag_psf_err"]
-                row[f"snr_psf_best_{band_str}"] = best_photom["snr_psf"]
-                row[f"mag_psf_mean_{band_str}"] = mean_photom[f"mag_psf"]
-                row[f"mag_psf_mean_{band_str}_err"] = mean_photom[f"mag_psf_err"]
+                    row[f"mag_mean_{band_str}"] = mean_photom["mag"]
+                    row[f"mag_mean_{band_str}_err"] = mean_photom["mag_err"]
+                    row[f"n_mean_{band_str}"] = mean_photom["n"]
+                    row[f"ext_gal_{band_str}"] = best_photom["ext_gal"]
+                    # else:
+                    #     row[f"ext_gal_{band_str}"] = best_photom["ext_gal_sandf"]
+                    row[f"epoch_best_{band_str}"] = best_photom[f"epoch_name"]
+                    row[f"epoch_best_date_{band_str}"] = str(best_photom[f"epoch_date"])
+                    row[f"mag_psf_best_{band_str}"] = best_photom[f"mag_psf"]
+                    row[f"mag_psf_best_{band_str}_err"] = best_photom[f"mag_psf_err"]
+                    row[f"snr_psf_best_{band_str}"] = best_photom["snr_psf"]
+                    row[f"mag_psf_mean_{band_str}"] = mean_photom[f"mag_psf"]
+                    row[f"mag_psf_mean_{band_str}_err"] = mean_photom[f"mag_psf_err"]
 
         # colnames = obs.master_objects_columns
         # for colname in colnames:
@@ -1202,10 +1172,22 @@ class Object(Generic):
         #             row[colname] = tbl[0][colname]
 
         u.debug_print(2, "Object.push_to_table(): select ==", select)
+        return row, "optical"
+
+
+    def push_to_table(
+            self,
+            **kwargs
+    ):
+
+        row, tbl_name = self.assemble_row(**kwargs)
+
+        if row is None:
+            return None
 
         import craftutils.observation.output.objects as output_objs
         # if select:
-        tbl = output_objs.load_objects_table("optical")
+        tbl = output_objs.load_objects_table(tbl_name)
         # else:
         # tbl = obs.load_master_all_objects_table()
 
