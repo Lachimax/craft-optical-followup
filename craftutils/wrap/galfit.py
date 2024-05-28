@@ -992,7 +992,7 @@ def imgblock_plot(img_block: Union[fits.HDUList, str], output: str = None):
                 xy=(x, y),
                 width=a,
                 height=b,
-                angle=-theta,
+                angle=theta + 90,
                 edgecolor="white",
                 facecolor="none",
             )

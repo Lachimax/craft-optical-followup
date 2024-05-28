@@ -3779,11 +3779,12 @@ class ImagingImage(Image):
             method="sep",
             margins: tuple = (None, None, None, None),
             min_area: int = 5,
+            output_path: str = None,
             **background_kwargs
     ):
-        """
-        Generate a segmentation map of the image in which the image is broken into segments according to detected sources.
+        """Generate a segmentation map of the image in which the image is broken into segments according to detected sources.
         Each source is assigned an integer, and the segmap has the same spatial dimensions as the input image.
+
         :param ext:
         :param threshold:
         :param method:
@@ -3826,14 +3827,20 @@ class ImagingImage(Image):
                     data_trim,
                     err=err,
                     thresh=threshold,
-                    # deblend_cont=True,
+                    # deblend_cont=0.005,
                     clean=False,
                     segmentation_map=True,
                     minarea=min_area
                 )
-
+                if output_path is not None:
+                    fig, ax = plt.subplots()
+                    ax.imshow(segmap, cmap="rainbow", origin="lower")
+                    plt.scatter(objs["x"], objs["y"], marker="x", c="black")
+                    fig.savefig(output_path, dpi=200)
+                    plt.close(fig)
         else:
             raise ValueError(f"Unrecognised method {method}.")
+
         segmap_full = np.zeros(data.shape)
         u.debug_print(2, f"{self}.generate_segmap(): segmap_full ==", segmap_full)
         u.debug_print(2, f"{self}.generate_segmap(): segmap ==", segmap)
@@ -3848,6 +3855,7 @@ class ImagingImage(Image):
             method: str = "sep",
             obj_value=1,
             back_value=0,
+            output_path: str = None,
             margins: tuple = (None, None, None, None),
     ):
         """
@@ -3864,11 +3872,16 @@ class ImagingImage(Image):
         :return:
         """
         data = self.load_data()[ext]
+        if output_path is not None:
+            output_path_segmap = output_path.replace(".fits", "_segmap.png")
+        else:
+            output_path_segmap = None
         segmap = self.generate_segmap(
             ext=ext,
             threshold=threshold,
             method=method,
-            margins=margins
+            margins=margins,
+            output_path=output_path_segmap
         )
         self.load_wcs()
 
@@ -3930,7 +3943,7 @@ class ImagingImage(Image):
 
         mask_file = self.copy(output_path)
         mask_file.load_data()
-        mask_file.data[ext] = self.generate_mask(ext=ext, **mask_kwargs) * units.dimensionless_unscaled
+        mask_file.data[ext] = self.generate_mask(ext=ext, output_path=output_path, **mask_kwargs) * units.dimensionless_unscaled
         mask_file.write_fits_file()
 
         mask_file.add_log(
@@ -4328,7 +4341,7 @@ class ImagingImage(Image):
             psf_path: str = None,
             use_frb_galfit: bool = False,
             feedme_kwargs: dict = {},
-            position_tolerance: units.Quantity = 5 * units.arcsec
+            position_tolerance: units.Quantity = 2 * units.arcsec
     ):
         """
 
@@ -4358,6 +4371,7 @@ class ImagingImage(Image):
             model_guesses = [model_guesses]
         gf_tbls = {}
         gf_dicts = {}
+        glbl = []
 
         for i, model in enumerate(model_guesses):
             if "position" in model:
@@ -4389,7 +4403,7 @@ class ImagingImage(Image):
             output_dir = self.data_path
         self.load_output_file()
         new = self.make_galfit_version(
-            output_path=os.path.join(output_dir, f"{output_prefix}_galfit.fits")
+            output_path=os.path.join(output_dir, f"{output_prefix}_{self.filter_name}_galfit.fits")
         )
         new.zeropoint_best = self.zeropoint_best
         new.open()
@@ -4422,7 +4436,7 @@ class ImagingImage(Image):
 
         mask_file = f"{output_prefix}_mask.fits"
         mask_path = os.path.join(output_dir, mask_file)
-        margins_max = u.frame_from_centre(frame_upper + 1, x, y, data)
+        margins_max = u.frame_from_centre(frame_upper, x, y, data)
         mask = new.write_mask(
             output_path=mask_path,
             do_not_mask=list(map(lambda m: m["position"], model_guesses)),
@@ -4434,8 +4448,13 @@ class ImagingImage(Image):
         )
 
         self.extract_pixel_scale(ext)
+        os.system(f"rm {output_dir}/{output_prefix}_galfit-out_*.fits")
+        os.system(f"rm {output_dir}/galfit_plot_frame*.png")
+        os.system(f"rm {output_dir}/galfit.*")
+        os.system(f"rm {output_dir}/{output_prefix}_*.feedme")
+        os.system(f"rm {output_dir}/{output_prefix}_*_fit.log")
 
-        for frame in np.linspace(frame_lower, frame_upper + 10, 20):
+        for j, frame in enumerate(np.linspace(frame_lower, frame_upper, 20)):
             frame = int(frame)
             margins = u.frame_from_centre(frame, x, y, data)
             print("Generating mask...")
@@ -4477,42 +4496,15 @@ class ImagingImage(Image):
                     skip_sky=False,
                     **model_dict
                 )
-            shutil.copy(os.path.join(output_dir, "fit.log"),
-                        os.path.join(output_dir, f"{output_prefix}_{frame}_fit.log"))
+            shutil.copy(
+                os.path.join(output_dir, "fit.log"),
+                os.path.join(output_dir, f"{output_prefix}_{frame}_fit.log")
+            )
 
             try:
                 img_block = fits.open(img_block_path)
             except FileNotFoundError:
-                return None
-
-            results_header = img_block[2].header
-            components = galfit.extract_fit_params(results_header)
-
-            component = components["COMP_2"]
-            pos = self.pixel_to_world(component["x"], component["y"])
-            pos_guess = model_guesses[0]["position"]
-            if pos.separation(pos_guess) > position_tolerance:
-                break
-
-            for i, compname in enumerate(components):
-                component = components[compname]
-                component["ra"] = pos.ra
-                component["dec"] = pos.dec
-                if "r_eff" in component:
-                    component["r_eff_ang"] = component["r_eff"].to(units.arcsec, self.pixel_scale_x)
-                    component["r_eff_ang_err"] = component["r_eff_err"].to(units.arcsec, self.pixel_scale_x)
-                # TODO: The below assumes RA and Dec are along x & y (neglecting image rotation), which isn't great
-                component["ra_err"] = component["x_err"].to(units.deg, self.pixel_scale_x)
-                component["dec_err"] = component["y_err"].to(units.deg, self.pixel_scale_y)
-                component["frame"] = frame
-                component["x_min"], component["x_max"], component["y_min"], component["y_max"] = margins
-                component_dict = component.copy()
-                if "rotation_params" in component:
-                    component.update(component.pop("rotation_params"))
-
-                results_table = table.QTable([component])
-                gf_tbls[compname].append(results_table)
-                gf_dicts[compname].append(component_dict)
+                continue
 
             mask_ones = np.invert(mask_data.astype(bool)).astype(int)
 
@@ -4534,10 +4526,52 @@ class ImagingImage(Image):
                 output=os.path.join(output_dir, f"galfit_plot_frame{frame}.png"),
                 img_block=img_block
             )
+
+            data_flatness = img_block[5].data
+            print("noise 0", np.nanstd(data_flatness))
+            margins_min = u.frame_from_centre(frame_lower, x - margins[2], y - margins[0], data_flatness)
+            print(margins_min)
+            data_flatness = u.trim_image(data_flatness, margins=margins_min)
+            noise = np.nanstd(data_flatness)
+            print("noise 1", noise)
+
             img_block.writeto(img_block_path, overwrite=True)
             img_block.close()
 
-            gf_dicts["imgblock"] = img_block_path
+            results_header = img_block[2].header
+            components = galfit.extract_fit_params(results_header)
+
+            component = components["COMP_2"]
+            pos = self.pixel_to_world(component["x"], component["y"])
+            pos_guess = model_guesses[0]["position"]
+            if pos.separation(pos_guess) > position_tolerance and j > 1:
+                continue
+
+            for i, compname in enumerate(components):
+                component = components[compname]
+                component["ra"] = pos.ra
+                component["dec"] = pos.dec
+                if "r_eff" in component:
+                    component["r_eff_ang"] = component["r_eff"].to(units.arcsec, self.pixel_scale_x)
+                    component["r_eff_ang_err"] = component["r_eff_err"].to(units.arcsec, self.pixel_scale_x)
+                # TODO: The below assumes RA and Dec are along x & y (neglecting image rotation), which isn't great
+                component["ra_err"] = component["x_err"].to(units.deg, self.pixel_scale_x)
+                component["dec_err"] = component["y_err"].to(units.deg, self.pixel_scale_y)
+                component["frame"] = frame
+                component["x_min"], component["x_max"], component["y_min"], component["y_max"] = margins
+                component_dict = component.copy()
+                if "rotation_params" in component:
+                    component.update(component.pop("rotation_params"))
+
+                results_table = table.QTable([component])
+                gf_tbls[compname].append(results_table)
+                gf_dicts[compname].append(component_dict)
+
+            glbl.append({
+                "frame": frame,
+                "imgblock": img_block_path,
+                "residual_noise": noise
+            })
 
         component_tables = {}
         for compname in gf_tbls:
@@ -4546,7 +4580,7 @@ class ImagingImage(Image):
 
         shutil.copy(p.path_to_config_galfit(), output_dir)
 
-        return component_tables, gf_dicts
+        return component_tables, gf_dicts, glbl
 
     def galfit_object(
             self,
@@ -4580,7 +4614,7 @@ class ImagingImage(Image):
         kwargs["output_dir"] = output_dir
         kwargs["output_prefix"] = output_prefix
 
-        model_tbls, model_dicts = self.galfit(
+        model_tbls, model_dicts, properties = self.galfit(
             **kwargs
         )
 
@@ -4588,7 +4622,25 @@ class ImagingImage(Image):
             return None
 
         best_params = {}
-        best_index, best_dict = galfit.sersic_best_row(model_tbls[f"COMP_{pivot_component}"])
+        noise = [m["residual_noise"] for m in properties]
+        print("noise 2", noise)
+        frame = [m["frame"] for m in properties]
+        print(frame)
+        fig, ax = plt.subplots()
+        y = noise
+        ax.scatter(
+            frame,
+            y
+        )
+        ax.set_xlabel("Frame (pix)")
+        ax.set_ylabel(f"Std dev of masked residuals")
+        fig.savefig(os.path.join(output_dir, f"{output_prefix}_frame_noise.png"))
+        plt.close(fig)
+        del fig
+
+        best_index = np.argmin(noise)
+
+        # best_index, best_dict = galfit.sersic_best_row(model_tbls[f"COMP_{pivot_component}"])
         for component in model_tbls:
             if "r_eff_ang" in model_tbls[component].colnames:
                 print(model_tbls[component]["r_eff_ang"])
@@ -4605,11 +4657,13 @@ class ImagingImage(Image):
             for param in ("r_eff_ang", "axis_ratio", "n"):
                 if param in model_tbls[component].colnames:
                     fig, ax = plt.subplots()
+                    y = model_tbls[component][param]
                     ax.errorbar(
                         model_tbls[component]["frame"],
-                        model_tbls[component][param],
+                        y,
                         yerr=model_tbls[component][f"{param}_err"]
                     )
+                    ax.set_ylim(np.min(y) - 0.2 * np.abs(np.min(y)), np.max(y) + 0.2 * np.max(y))
                     ax.set_xlabel("Frame (pix)")
                     ax.set_ylabel(f"{param} ({model_tbls[component][param].unit})")
                     fig.savefig(os.path.join(output_dir, f"{output_prefix}_frame_{param}.png"))

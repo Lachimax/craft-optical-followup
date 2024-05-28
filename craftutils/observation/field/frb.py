@@ -317,7 +317,11 @@ class FRBField(Field):
             "finalise_imaging": field_stages["finalise_imaging"],
             "probabilistic_association": {
                 "method": cls.proc_probabilistic_association,
-                "message": "Run PATH on available imaging?"
+                "message": "Run PATH on available imaging?",
+                "keywords": {
+                    "path_kwargs": {},
+                    "path_img": None
+                }
             },
             "update_photometry": field_stages["update_photometry"],
             "refine_photometry": field_stages["refine_photometry"],
@@ -330,9 +334,9 @@ class FRBField(Field):
         path_kwargs = {
             "config": {"radius": 10}
         }
-        if 'path_kwargs' in kwargs:
+        if 'path_kwargs' in kwargs and kwargs['path_kwargs'] is not None:
             path_kwargs.update(kwargs["path_kwargs"])
-        if 'path_img' in kwargs:
+        if 'path_img' in kwargs and kwargs['path_img'] is not None:
             path_img = kwargs["path_img"]
         else:
             path_img = None
@@ -528,10 +532,11 @@ class FRBField(Field):
 
     def load_output_file(self, **kwargs):
         output_dict = super().load_output_file(**kwargs)
-        if "path_runs" in output_dict and isinstance(output_dict["path_runs"], dict):
-            self.path_runs = output_dict["path_runs"]
-        if "best_path_img" in output_dict and isinstance(output_dict["best_path_img"], str):
-            self.best_path_img = output_dict["best_path_img"]
+        if output_dict is not None:
+            if "path_runs" in output_dict and isinstance(output_dict["path_runs"], dict):
+                self.path_runs = output_dict["path_runs"]
+            if "best_path_img" in output_dict and isinstance(output_dict["best_path_img"], str):
+                self.best_path_img = output_dict["best_path_img"]
         return output_dict
 
     @classmethod

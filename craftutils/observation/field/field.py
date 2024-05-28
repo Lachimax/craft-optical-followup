@@ -181,7 +181,10 @@ class Field(Pipeline):
             },
             "galfit": {
                 "method": cls.proc_galfit,
-                "message": "Perform basic GALFIT on best images?"
+                "message": "Perform basic GALFIT on best images?",
+                "keywords": {
+                    "galfit_img": None
+                }
             },
             "send_to_table": {
                 "method": cls.proc_push_to_table,
@@ -235,7 +238,10 @@ class Field(Pipeline):
         self.generate_cigale_photometry()
 
     def proc_galfit(self, output_dir: str, **kwargs):
+        if "galfit_img" in kwargs and kwargs["galfit_img"] is not None:
+            kwargs["use_img"] = kwargs["galfit_img"]
         self.galfit(**kwargs)
+
 
     def galfit(self, apply_filter=None, use_img=None, **kwargs):
         if apply_filter is None:
