@@ -4454,7 +4454,13 @@ class ImagingImage(Image):
         os.system(f"rm {output_dir}/{output_prefix}_*.feedme")
         os.system(f"rm {output_dir}/{output_prefix}_*_fit.log")
 
-        for j, frame in enumerate(np.linspace(frame_lower, frame_upper, 20)):
+        n_frames = 20
+
+        for j, frame in enumerate(np.linspace(frame_lower, frame_upper, n_frames)):
+            print()
+            print("=" * 60)
+            print(f"Using frame {frame}, {j+1} / {n_frames}")
+            print("=" * 60, "\n")
             frame = int(frame)
             margins = u.frame_from_centre(frame, x, y, data)
             print("Generating mask...")
@@ -4529,9 +4535,16 @@ class ImagingImage(Image):
 
             data_flatness = img_block[5].data
             print("noise 0", np.nanstd(data_flatness))
-            margins_min = u.frame_from_centre(frame_lower, x - margins[2], y - margins[0], data_flatness)
+            print("sum isnan", np.sum(np.isnan(data_flatness)))
+            print("sum", np.sum(data_flatness))
+            margins_min = u.frame_from_centre(frame_lower, x - margins[0], y - margins[2], data_flatness)
             print(margins_min)
             data_flatness = u.trim_image(data_flatness, margins=margins_min)
+            print("\nAfter trim")
+            print("shape", data_flatness.shape)
+            print("sum isnan", np.sum(np.isnan(data_flatness)))
+            print("sum", np.sum(data_flatness))
+            # data_flatness = data_flatness[np.isfinite(data_flatness)]
             noise = np.nanstd(data_flatness)
             print("noise 1", noise)
 
@@ -4638,7 +4651,7 @@ class ImagingImage(Image):
         plt.close(fig)
         del fig
 
-        best_index = np.argmin(noise)
+        best_index = np.nanargmin(noise)
 
         # best_index, best_dict = galfit.sersic_best_row(model_tbls[f"COMP_{pivot_component}"])
         for component in model_tbls:
@@ -4686,6 +4699,7 @@ class ImagingImage(Image):
         best_params["image"] = self.path
         best_params["instrument"] = self.instrument_name
         best_params["band"] = self.filter_name
+        best_params["initial_guess"] = model_guesses
         p.save_params(os.path.join(output_dir, "best_model.yaml"), best_params)
         obj.galfit_model = best_params
 
