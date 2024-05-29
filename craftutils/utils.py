@@ -1175,8 +1175,8 @@ def uncertainty_str_coord(
         uncertainty_ra: Union[float, units.Quantity],
         uncertainty_dec: Union[float, units.Quantity],
         n_digits_err: int = 2,
-        brackets: bool = True
-
+        brackets: bool = True,
+        ra_err_seconds: bool = False
 ):
     ra = coord.ra
     ra_s_str, ra_rounded, ra_unc_rounded = uncertainty_string(
@@ -1191,7 +1191,10 @@ def uncertainty_str_coord(
     s_2 = ra_str[s_i:]
     e_i = s_2.find("^") + s_i
     ra_replace = ra_str[s_i:e_i]
-    ra_uncertainty_str = ra_str.replace(ra_replace, ra_s_str)
+    if ra_err_seconds:
+        ra_uncertainty_str = ra_str.replace(ra_replace, ra_s_str)
+    else:
+        ra_uncertainty_str = f"{ra_str[:-1]} ({ra_unc_rounded}" + r"^{\prime\prime})$"
 
     dec = coord.dec
     dec_s_str, dec_rounded, dec_unc_rounded = uncertainty_string(
