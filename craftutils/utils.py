@@ -1102,19 +1102,18 @@ def uncertainty_string(
 
         return f"${limit_char} {value_str}$", value, uncertainty
 
-    if "e" in uncertainty_str:
-        if abs(uncertainty) < 1:
-            m = -int(np.log10(uncertainty) - 1)
+    def deal_with_e(string, val):
+        if "e" in string:
+            if abs(val) < 1:
+                m = -int(np.log10(val) - 1)
+            else:
+                m = 10
+            return f"{val:.{m}f}"
         else:
-            m = 10
-        uncertainty_str = f"{uncertainty:.{m}f}"
-    if "e" in value_str:
-        if abs(value) < 1:
-            m = -int(np.log10(value) - 1)
-        else:
-            m = 10
-        value_str = f"{value:.{m}f}"
+            return string
 
+    uncertainty_str = deal_with_e(uncertainty_str, uncertainty)
+    value_str = deal_with_e(value_str, value)
     if uncertainty == 0.:
         if isinstance(n_digits_no_err, int):
             value_str = f"${np.round(float(value_str), n_digits_err)}$"
@@ -1133,9 +1132,11 @@ def uncertainty_string(
         x = i - u_point + n_digits_err
         # Round appropriately
         uncertainty_rnd = np.round(uncertainty, x - 1)
+        uncertainty_str = deal_with_e(str(uncertainty_rnd), uncertainty_rnd)[:u_point + x]
+
         value_rnd = np.round(value, x - 1)
         value_str = str(value_rnd)[:v_point + x]
-        uncertainty_str = str(uncertainty_rnd)[:u_point + x]
+        # uncertainty_str = str(uncertainty_rnd)[:u_point + x]
 
         while len(uncertainty_str) < i + n_digits_err:
             uncertainty_str += "0"
@@ -1144,6 +1145,7 @@ def uncertainty_string(
         while v_dp < u_dp:
             value_str += "0"
             v_dp = len(value_str) - v_point
+
     else:
         # Here x is the number of digits before the decimal point to set to zero.
         if u_point < n_digits_err:
@@ -1158,7 +1160,7 @@ def uncertainty_string(
     if not include_uncertainty:
         value_str = value_str
     elif brackets:
-        if uncertainty < 1:
+        if uncertainty < 1.:
             uncertainty_str = uncertainty_str[-n_digits_err:]
         else:
             x = u_point - n_digits_err

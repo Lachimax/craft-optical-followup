@@ -1382,7 +1382,7 @@ class ImagingImage(Image):
                     del fig, ax
 
                     fig, ax = plt.subplots()
-                    ax.hist(source_cat_key[f"SNR_{snr_key}"][source_cat_key[f"SNR_{snr_key}"] < 20])
+                    ax.hist(source_cat_key[f"SNR_{snr_key}"][source_cat_key[f"SNR_{snr_key}"] < 20], bins="auto")
                     fig.savefig(os.path.join(output_dir, f"snr_{snr_key}-hist.png"), dpi=200)
                     plt.close(fig)
                     del fig, ax
@@ -1881,7 +1881,7 @@ class ImagingImage(Image):
             fig, ax = plt.subplots()
             ax.hist(
                 distance.to(units.arcsec).value,
-                bins=int(np.sqrt(len(distance))),
+                bins="auto",
                 label="Full sample"
             )
             ax.hist(
@@ -1890,7 +1890,7 @@ class ImagingImage(Image):
                 linewidth=1.2,
                 label="Sigma-clipped",
                 fc=(0, 0, 0, 0),
-                bins=int(np.sqrt(len(distance_clipped)))
+                bins="auto"
             )
             ax.set_xlabel("Offset (\")")
             ax.legend()
@@ -1901,10 +1901,10 @@ class ImagingImage(Image):
             del ax, fig
 
             fig, ax = plt.subplots()
-            ax.scatter(matches_ext_cat[ra_col], matches_ext_cat[dec_col], c=distance.to(units.arcsec), marker='x')
+            c = ax.scatter(matches_ext_cat[ra_col], matches_ext_cat[dec_col], c=distance.to(units.arcsec), marker='x')
             ax.set_xlabel("Right Ascension (Catalogue)")
             ax.set_ylabel("Declination (Catalogue)")
-            ax.colorbar(label="Offset of measured position from catalogue (\")")
+            fig.colorbar(c, label="Offset of measured position from catalogue (\")")
             if show_plots:
                 plt.show(fig)
             fig.savefig(os.path.join(output_path, f"{self.name}_astrometry_offset_sky.pdf"))
@@ -3644,8 +3644,8 @@ class ImagingImage(Image):
         y, x = np.mgrid[:data.shape[0], :data.shape[1]]
         
         fig, ax = plt.subplots()
-        ax.imshow(weights[bottom - 10:top + 10, left - 10:right + 10])
-        ax.colorbar()
+        c = ax.imshow(weights[bottom - 10:top + 10, left - 10:right + 10])
+        fig.colorbar(c)
         if isinstance(write, str):
             u.mkdir_check_nested(write)
             fig.savefig(write.replace(".fits", "_plot.png"))
