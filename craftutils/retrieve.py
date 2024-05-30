@@ -457,7 +457,8 @@ def save_eso_raw_data_and_calibs(
         program_id: str = None,
         obj: str = None,
         coord_tol: units.Quantity = 1.0 * units.arcmin,
-        data_type: str = "science"
+        data_type: str = "science",
+        keep_previous: bool = False
 ):
     u.mkdir_check(output)
     instrument = instrument.lower()
