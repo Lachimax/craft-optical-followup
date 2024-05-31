@@ -96,30 +96,23 @@ class Extragalactic(Object):
         self.update_output_file()
 
     def projected_size(self, angle: Union[units.Quantity, float]) -> Union[units.Quantity[units.kpc], None]:
-        """
-        When given an angular size, calculates the projected physical size at the redshift of the galaxy.
+        """When given an angular size, calculates the projected physical size at the redshift of the galaxy.
+
         :param angle: Angular size. If not provided as a quantity, must be in arcseconds.
         :return: Projected physical size, with units kpc
         """
         self.set_z()
-        print("\nname", self.name)
-        print("z", self.z)
-        print("DA", self.D_A)
-        print("angle 1", angle)
-        print()
 
         if self.D_A is None:
             return None
         angle = u.check_quantity(angle, unit=units.arcsec).to(units.rad).value
-        print("angle 2", angle)
         dist = angle * self.D_A
-        print("dist ", dist)
         print(dist.to(units.kpc))
         return dist.to(units.kpc)
 
     def angular_size(self, distance: Union[units.Quantity, float]):
-        """
-        Given a physical projected size at the redshift of the galaxy, calculates the angular size as seen from Earth.
+        """Given a physical projected size at the redshift of the galaxy, calculates the angular size as seen from Earth.
+
         :param distance: Physical projected size. If not provided as a quantity, must be in kiloparsecs.
         :return: Angular size, in arcseconds.
         """

@@ -277,6 +277,7 @@ class Field(Pipeline):
     def proc_push_to_table(self, output_dir: str, **kwargs):
         object_list: List[objects.Object] = list(self.objects.values())
         for obj in object_list:
+            obj.load_output_file()
             print("Tabulating", obj.name)
             obj.load_output_file()
             row = obj.push_to_table(select=True)
