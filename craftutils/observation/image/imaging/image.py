@@ -259,12 +259,8 @@ class ImagingImage(Image):
                 fwhm = 1.5 * units.arcsec
 
             new_aperture_arcsec = 8 * fwhm
-            print("New aperture", new_aperture_arcsec)
             aper_arcsec = [new_aperture_arcsec.value] * units.arcsec
-            print(aper_arcsec)
             se_kwargs["PHOT_APERTURES"] = aperture_str(aper_arcsec)
-            print("PHOT_APERTURES", se_kwargs["PHOT_APERTURES"])
-            print()
 
             catalogue = self.source_extraction(
                 configuration_file=config,
@@ -1378,20 +1374,18 @@ class ImagingImage(Image):
             source_cat_key.sort(f"FLUX_{snr_key}")
 
             if output_dir is not None:
-                plt.close()
-                plt.clf()
                 with quantity_support():
                     fig, ax = plt.subplots()
                     ax.scatter(source_cat_key[f"MAG_{snr_key}"], source_cat_key[f"SNR_{snr_key}"])
                     fig.savefig(os.path.join(output_dir, f"mag_{snr_key}-v-snr.png"), dpi=200)
                     plt.close(fig)
-                    plt.clf()
+                    del fig, ax
 
                     fig, ax = plt.subplots()
-                    ax.hist(source_cat_key[f"SNR_{snr_key}"][source_cat_key[f"SNR_{snr_key}"] < 20])
+                    ax.hist(source_cat_key[f"SNR_{snr_key}"][source_cat_key[f"SNR_{snr_key}"] < 20], bins="auto")
                     fig.savefig(os.path.join(output_dir, f"snr_{snr_key}-hist.png"), dpi=200)
                     plt.close(fig)
-                    plt.clf()
+                    del fig, ax
 
             for sigma in (5, 10, 20):
                 source_cat_sigma = source_cat_key.copy()
@@ -1402,7 +1396,7 @@ class ImagingImage(Image):
                     ax.scatter(source_cat_sigma[f"MAG_{snr_key}"], source_cat_sigma[f"SNR_{snr_key}"])
                     fig.savefig(os.path.join(output_dir, f"mag_{snr_key}-v-snr-{sigma}sig.png"), dpi=200)
                     plt.close(fig)
-                    plt.clf()
+                    del fig, ax
 
                 self.depth["max"][f"SNR_{snr_key}"][f"{sigma}-sigma"] = np.max(
                     cat_more_xsigma[f"MAG_{snr_key}_ZP_{zeropoint_name}"]
@@ -1783,52 +1777,52 @@ class ImagingImage(Image):
 
         u.debug_print(2, "ImagingImage.astrometry_diagnostics(): reference_cat ==", reference_cat)
 
-        plt.close()
-        plt.clf()
-
         with quantity_support():
-            plt.scatter(self.source_cat["RA"].value, self.source_cat["DEC"].value, marker='x')
-            plt.xlabel("Right Ascension (Catalogue)")
-            plt.ylabel("Declination (Catalogue)")
+            fig, ax = plt.subplots()
+            ax.scatter(self.source_cat["RA"].value, self.source_cat["DEC"].value, marker='x')
+            ax.set_xlabel("Right Ascension (Catalogue)")
+            ax.set_ylabel("Declination (Catalogue)")
             # plt.colorbar(label="Offset of measured position from catalogue (\")")
             if show_plots:
-                plt.show()
-            plt.savefig(os.path.join(output_path, f"{self.name}_sourcecat_sky.pdf"))
-            plt.close()
-            plt.clf()
+                plt.show(fig)
+            fig.savefig(os.path.join(output_path, f"{self.name}_sourcecat_sky.pdf"))
+            plt.close(fig)
+            del ax, fig
 
-            plt.scatter(reference_cat[ra_col].value, reference_cat[dec_col].value, marker='x')
-            plt.xlabel("Right Ascension (Catalogue)")
-            plt.ylabel("Declination (Catalogue)")
+            fig, ax = plt.subplots()
+            ax.scatter(reference_cat[ra_col].value, reference_cat[dec_col].value, marker='x')
+            ax.set_xlabel("Right Ascension (Catalogue)")
+            ax.set_ylabel("Declination (Catalogue)")
             # plt.colorbar(label="Offset of measured position from catalogue (\")")
             if show_plots:
-                plt.show()
-            plt.savefig(os.path.join(output_path, f"{self.name}_referencecat_sky.pdf"))
-            plt.close()
-            plt.clf()
+                plt.show(fig)
+            fig.savefig(os.path.join(output_path, f"{self.name}_referencecat_sky.pdf"))
+            plt.close(fig)
+            del ax, fig
 
             self.load_wcs()
             ref_cat_coords = SkyCoord(reference_cat[ra_col], reference_cat[dec_col])
             in_footprint = self.wcs[ext].footprint_contains(ref_cat_coords)
 
-            plt.scatter(
+            fig, ax = plt.subplots()
+            ax.scatter(
                 self.source_cat["RA"],
                 self.source_cat["DEC"],
                 marker='x'
             )
-            plt.scatter(
+            ax.scatter(
                 reference_cat[ra_col][in_footprint],
                 reference_cat[dec_col][in_footprint],
                 marker='x'
             )
-            plt.xlabel("Right Ascension (Catalogue)")
-            plt.ylabel("Declination (Catalogue)")
+            ax.set_xlabel("Right Ascension (Catalogue)")
+            ax.set_ylabel("Declination (Catalogue)")
             # plt.colorbar(label="Offset of measured position from catalogue (\")")
             if show_plots:
-                plt.show()
-            plt.savefig(os.path.join(output_path, f"{self.name}_bothcats_sky.pdf"))
-            plt.close()
-            plt.clf()
+                plt.show(fig)
+            fig.savefig(os.path.join(output_path, f"{self.name}_bothcats_sky.pdf"))
+            plt.close(fig)
+            del ax, fig
 
             matches_source_cat, matches_ext_cat, distance = self.match_to_cat(
                 cat=reference_cat,
@@ -1874,53 +1868,58 @@ class ImagingImage(Image):
             median_offset_local = np.median(distance_local)
             rms_offset_local = np.sqrt(np.mean(distance_local ** 2))
 
-            plt.scatter(ref_distance.to(units.arcsec), distance.to(units.arcsec))
-            plt.xlabel("Distance from reference pixel (\")")
-            plt.ylabel("Offset (\")")
+            fig, ax = plt.subplots()
+            ax.scatter(ref_distance.to(units.arcsec), distance.to(units.arcsec))
+            ax.set_xlabel("Distance from reference pixel (\")")
+            ax.set_ylabel("Offset (\")")
             if show_plots:
-                plt.show()
-            plt.savefig(os.path.join(output_path, f"{self.name}_astrometry_offset_v_ref.pdf"))
-            plt.close()
-            plt.clf()
+                plt.show(fig)
+            fig.savefig(os.path.join(output_path, f"{self.name}_astrometry_offset_v_ref.pdf"))
+            plt.close(fig)
+            del ax, fig
 
-            plt.hist(
+            fig, ax = plt.subplots()
+            ax.hist(
                 distance.to(units.arcsec).value,
-                bins=int(np.sqrt(len(distance))),
+                bins="auto",
                 label="Full sample"
             )
-            plt.hist(
+            ax.hist(
                 distance_clipped.to(units.arcsec).value,
                 edgecolor='black',
                 linewidth=1.2,
                 label="Sigma-clipped",
                 fc=(0, 0, 0, 0),
-                bins=int(np.sqrt(len(distance_clipped)))
+                bins="auto"
             )
-            plt.xlabel("Offset (\")")
-            plt.legend()
+            ax.set_xlabel("Offset (\")")
+            ax.legend()
             if show_plots:
-                plt.show()
-            plt.savefig(os.path.join(output_path, f"{self.name}_astrometry_offset_hist.pdf"))
-            plt.close()
-            plt.clf()
+                plt.show(fig)
+            fig.savefig(os.path.join(output_path, f"{self.name}_astrometry_offset_hist.pdf"))
+            plt.close(fig)
+            del ax, fig
 
-            plt.scatter(matches_ext_cat[ra_col], matches_ext_cat[dec_col], c=distance.to(units.arcsec), marker='x')
-            plt.xlabel("Right Ascension (Catalogue)")
-            plt.ylabel("Declination (Catalogue)")
-            plt.colorbar(label="Offset of measured position from catalogue (\")")
+            fig, ax = plt.subplots()
+            c = ax.scatter(matches_ext_cat[ra_col], matches_ext_cat[dec_col], c=distance.to(units.arcsec), marker='x')
+            ax.set_xlabel("Right Ascension (Catalogue)")
+            ax.set_ylabel("Declination (Catalogue)")
+            fig.colorbar(c, label="Offset of measured position from catalogue (\")")
             if show_plots:
-                plt.show()
-            plt.savefig(os.path.join(output_path, f"{self.name}_astrometry_offset_sky.pdf"))
-            plt.close()
-            plt.clf()
+                plt.show(fig)
+            fig.savefig(os.path.join(output_path, f"{self.name}_astrometry_offset_sky.pdf"))
+            plt.close(fig)
+            del ax, fig
 
             fig = plt.figure(figsize=(12, 12), dpi=1000)
-            self.plot_catalogue(
+            fig = self.plot_catalogue(
                 cat=reference_cat[in_footprint],
                 ra_col=ra_col, dec_col=dec_col,
                 fig=fig,
                 colour_column=mag_col,
                 cbar_label=mag_col)
+            plt.close(fig)
+            del fig
         # fig.savefig(os.path.join(output_path, f"{self.name}_cat_overplot.pdf"))
 
         self.astrometry_stats["mean_offset"] = mean_offset.to(units.arcsec)
@@ -2348,6 +2347,25 @@ class ImagingImage(Image):
 
         return reprojected_image
 
+    def flip_horizontal(
+            self,
+            output_path: str,
+            ext: int = 0
+    ):
+        """
+        Flips the pixels of an image horizontally, and corrects the WCS to reflect this.
+        :param output_path: Path to write flipped copy to
+        :param ext: Fits extension to flip
+        :return:
+        """
+        new = self.copy_with_outputs(output_path)
+        new.load_data()
+        new.data[ext] = np.fliplr(new.data[ext])
+        new.headers[ext]["CDELT1"] = -new.headers[ext]["CDELT1"]
+        new.headers[ext]["CRPIX1"] = new.headers[ext]["NAXIS1"] - new.headers[ext]["CRPIX1"] + 1
+        new.write_fits_file()
+        return new
+
     def trim_to_wcs(
             self,
             bottom_left: SkyCoord,
@@ -2659,15 +2677,15 @@ class ImagingImage(Image):
         cat = self.get_source_cat(dual=dual).table
 
         if cat is not None:
-            pl.plot_all_params(image=self.path, cat=cat, kron=True, show=False)
-            plt.title(self.filter_name)
+            fig, ax = pl.plot_all_params(image=self.path, cat=cat, kron=True, show=False)
+            ax.set_title(self.filter_name)
             if output is None:
                 output = os.path.join(self.data_path, f"{self.name}_source_cat_dual-{dual}.pdf")
-            plt.savefig(output)
+            fig.savefig(output)
             if show:
-                plt.show()
-            plt.close()
-            plt.clf()
+                plt.show(fig)
+            plt.close(fig)
+            del fig
 
     def plot_subimage(
             self,
@@ -2784,7 +2802,7 @@ class ImagingImage(Image):
             ax = fig.add_subplot(n_y, n_x, n, projection=projection)
 
         if not show_coords:
-            frame1 = plt.gca()
+            frame1 = fig.gca()
             frame1.axes.get_xaxis().set_visible(False)
             frame1.axes.set_yticks([])
             frame1.axes.invert_yaxis()
@@ -2985,9 +3003,6 @@ class ImagingImage(Image):
             title: str = None,
             find: SkyCoord = None
     ):
-
-        plt.close()
-        plt.clf()
         fig = plt.figure()
         ax = fig.add_subplot()
 
@@ -3014,7 +3029,8 @@ class ImagingImage(Image):
             b=[row["B_WORLD"].value],
             theta=[row["THETA_IMAGE"].value],
             world=True,
-            show_centre=True
+            show_centre=True,
+            ax=ax
         )
         pl.plot_gal_params(
             hdu=image_cut,
@@ -3024,7 +3040,8 @@ class ImagingImage(Image):
             b=[kron_b.value],
             theta=[row["THETA_IMAGE"].value],
             world=True,
-            show_centre=True
+            show_centre=True,
+            ax=ax
         )
         if title is None:
             title = self.name
@@ -3037,12 +3054,10 @@ class ImagingImage(Image):
         ax.set_title(title)
         fig.savefig(os.path.join(output))
         if show:
-            fig.show()
+            plt.show(fig)
         self.close()
         plt.close(fig)
-        fig.clear()
-        plt.clf()
-        return
+        del fig
 
     def plot(
             self,
@@ -3098,7 +3113,7 @@ class ImagingImage(Image):
 
         fig, ax = self.plot(fig=fig, ext=ext, zorder=0, **kwargs)
         x, y = self.wcs[ext].all_world2pix(cat[ra_col], cat[dec_col], 0)
-        pcm = plt.scatter(x, y, c=c, cmap="plasma", marker="x", zorder=10)
+        pcm = ax.scatter(x, y, c=c, cmap="plasma", marker="x", zorder=10)
         if colour_column is not None:
             fig.colorbar(pcm, ax=ax, label=cbar_label)
 
@@ -3415,88 +3430,101 @@ class ImagingImage(Image):
             output_dir=output_dir,
             positioning=positioning
         )
+        
+        ax, fig = plt.subplots()
+        ax.scatter(sources["mag_inserted"], sources["fraction_flux_recovered_psf"])
+        ax.set_xlabel("Inserted magnitude")
+        ax.set_ylabel("Fraction of flux recovered")
+        fig.savefig(os.path.join(output_dir, "flux_recovered_psf.png"))
+        plt.close(fig)
+        del fig, ax
 
-        plt.scatter(sources["mag_inserted"], sources["fraction_flux_recovered_psf"])
-        plt.xlabel("Inserted magnitude")
-        plt.ylabel("Fraction of flux recovered")
-        plt.savefig(os.path.join(output_dir, "flux_recovered_psf.png"))
-        plt.close()
-        plt.clf()
+        ax, fig = plt.subplots()
+        ax.scatter(sources["mag_inserted"], sources["fraction_flux_recovered_auto"])
+        ax.set_xlabel("Inserted magnitude")
+        ax.set_ylabel("Fraction of flux recovered")
+        fig.savefig(os.path.join(output_dir, "flux_recovered_auto.png"))
+        plt.close(fig)
+        del fig, ax
 
-        plt.scatter(sources["mag_inserted"], sources["fraction_flux_recovered_auto"])
-        plt.xlabel("Inserted magnitude")
-        plt.ylabel("Fraction of flux recovered")
-        plt.savefig(os.path.join(output_dir, "flux_recovered_auto.png"))
-        plt.close()
-        plt.clf()
+        ax, fig = plt.subplots()
+        ax.scatter(sources["mag_inserted"], sources["fraction_flux_recovered_sep"])
+        ax.set_xlabel("Inserted magnitude")
+        ax.set_ylabel("Fraction of flux recovered")
+        fig.savefig(os.path.join(output_dir, "flux_recovered_sep.png"))
+        plt.close(fig)
+        del fig, ax
 
-        plt.scatter(sources["mag_inserted"], sources["fraction_flux_recovered_sep"])
-        plt.xlabel("Inserted magnitude")
-        plt.ylabel("Fraction of flux recovered")
-        plt.savefig(os.path.join(output_dir, "flux_recovered_sep.png"))
-        plt.close()
-        plt.clf()
+        ax, fig = plt.subplots()
+        ax.scatter(sources["mag_inserted"], sources["delta_mag_psf"])
+        ax.set_xlabel("Inserted magnitude")
+        ax.set_ylabel("Mag psf - mag inserted")
+        fig.savefig(os.path.join(output_dir, "delta_mag_psf.png"))
+        plt.close(fig)
+        del fig, ax
 
-        plt.scatter(sources["mag_inserted"], sources["delta_mag_psf"])
-        plt.xlabel("Inserted magnitude")
-        plt.ylabel("Mag psf - mag inserted")
-        plt.savefig(os.path.join(output_dir, "delta_mag_psf.png"))
-        plt.close()
-        plt.clf()
+        ax, fig = plt.subplots()
+        ax.scatter(sources["mag_inserted"], sources["delta_mag_auto"])
+        ax.set_xlabel("Inserted magnitude")
+        ax.set_ylabel("Mag auto - mag inserted")
+        fig.savefig(os.path.join(output_dir, "delta_mag_auto.png"))
+        plt.close(fig)
+        del fig, ax
 
-        plt.scatter(sources["mag_inserted"], sources["delta_mag_auto"])
-        plt.xlabel("Inserted magnitude")
-        plt.ylabel("Mag auto - mag inserted")
-        plt.savefig(os.path.join(output_dir, "delta_mag_auto.png"))
-        plt.close()
-        plt.clf()
+        ax, fig = plt.subplots()
+        ax.scatter(sources["mag_inserted"], sources["delta_mag_sep"])
+        ax.set_xlabel("Inserted magnitude")
+        ax.set_ylabel("Mag auto - mag inserted")
+        fig.savefig(os.path.join(output_dir, "delta_mag_sep.png"))
+        plt.close(fig)
+        del fig, ax
 
-        plt.scatter(sources["mag_inserted"], sources["delta_mag_sep"])
-        plt.xlabel("Inserted magnitude")
-        plt.ylabel("Mag auto - mag inserted")
-        plt.savefig(os.path.join(output_dir, "delta_mag_sep.png"))
-        plt.close()
-        plt.clf()
+        ax, fig = plt.subplots()
+        ax.scatter(sources["mag_inserted"], sources["CLASS_STAR"])
+        ax.set_xlabel("Inserted magnitude")
+        ax.set_ylabel("Class star")
+        fig.savefig(os.path.join(output_dir, "class_star.png"))
+        plt.close(fig)
+        del fig, ax
 
-        plt.scatter(sources["mag_inserted"], sources["CLASS_STAR"])
-        plt.xlabel("Inserted magnitude")
-        plt.ylabel("Class star")
-        plt.savefig(os.path.join(output_dir, "class_star.png"))
-        plt.close()
-        plt.clf()
+        ax, fig = plt.subplots()
+        ax.scatter(sources["mag_inserted"], sources["SPREAD_MODEL"])
+        ax.set_xlabel("Inserted magnitude")
+        ax.set_ylabel("Spread Model")
+        fig.savefig(os.path.join(output_dir, "spread_model.png"))
+        plt.close(fig)
+        del fig, ax
+        
+        ax, fig = plt.subplots()
+        ax.scatter(sources["mag_inserted"], sources["matching_dist"])
+        ax.set_xlabel("Inserted magnitude")
+        ax.set_ylabel("Matching distance (arcsec)")
+        fig.savefig(os.path.join(output_dir, "matching_dist.png"))
+        plt.close(fig)
+        del fig, ax
 
-        plt.scatter(sources["mag_inserted"], sources["SPREAD_MODEL"])
-        plt.xlabel("Inserted magnitude")
-        plt.ylabel("Spread Model")
-        plt.savefig(os.path.join(output_dir, "spread_model.png"))
-        plt.close()
-        plt.clf()
+        ax, fig = plt.subplots()
+        ax.scatter(sources["mag_inserted"], sources["snr_sep"])
+        ax.set_xlabel("Inserted magnitude")
+        ax.set_ylabel("S/N, measured by SEP")
+        fig.savefig(os.path.join(output_dir, "matching_dist.png"))
+        plt.close(fig)
+        del fig, ax
 
-        plt.scatter(sources["mag_inserted"], sources["matching_dist"])
-        plt.xlabel("Inserted magnitude")
-        plt.ylabel("Matching distance (arcsec)")
-        plt.savefig(os.path.join(output_dir, "matching_dist.png"))
-        plt.close()
-        plt.clf()
-
-        plt.scatter(sources["mag_inserted"], sources["snr_sep"])
-        plt.xlabel("Inserted magnitude")
-        plt.ylabel("S/N, measured by SEP")
-        plt.savefig(os.path.join(output_dir, "matching_dist.png"))
-        plt.close()
-        plt.clf()
-
-        plt.scatter(sources["mag_inserted"], sources["SNR_PSF"])
-        plt.xlabel("Inserted magnitude")
-        plt.ylabel("S/N, measured by SEP")
-        plt.savefig(os.path.join(output_dir, "matching_dist.png"))
-        plt.close()
-        plt.clf()
+        ax, fig = plt.subplots()
+        ax.scatter(sources["mag_inserted"], sources["SNR_PSF"])
+        ax.set_xlabel("Inserted magnitude")
+        ax.set_ylabel("S/N, measured by SEP")
+        fig.savefig(os.path.join(output_dir, "matching_dist.png"))
+        plt.close(fig)
+        del fig, ax
 
         # TODO: S/N measure and plot
 
         fig, ax = self.plot_catalogue(cat=sources, ra_col="ra_inserted", dec_col="dec_inserted")
         fig.savefig(os.path.join(output_dir, "inserted_overplot.png"))
+        plt.close(fig)
+        del fig, ax
 
         sources.write(os.path.join(output_dir, "synth_cat_all.ecsv"), format="ascii.ecsv")
 
@@ -3614,16 +3642,17 @@ class ImagingImage(Image):
         model_init = model_type(**init_params)
         fitter = fitter_type(calc_uncertainties=False)
         y, x = np.mgrid[:data.shape[0], :data.shape[1]]
-
-        plt.imshow(weights[bottom - 10:top + 10, left - 10:right + 10])
-        plt.colorbar()
+        
+        fig, ax = plt.subplots()
+        c = ax.imshow(weights[bottom - 10:top + 10, left - 10:right + 10])
+        fig.colorbar(c)
         if isinstance(write, str):
             u.mkdir_check_nested(write)
-            plt.savefig(write.replace(".fits", "_plot.png"))
+            fig.savefig(write.replace(".fits", "_plot.png"))
         else:
-            plt.show()
-        plt.close()
-        plt.clf()
+            plt.show(fig)
+        plt.close(fig)
+        del fig, ax
         model = fitter(
             model_init,
             x, y,
@@ -3764,11 +3793,12 @@ class ImagingImage(Image):
             method="sep",
             margins: tuple = (None, None, None, None),
             min_area: int = 5,
+            output_path: str = None,
             **background_kwargs
     ):
-        """
-        Generate a segmentation map of the image in which the image is broken into segments according to detected sources.
+        """Generate a segmentation map of the image in which the image is broken into segments according to detected sources.
         Each source is assigned an integer, and the segmap has the same spatial dimensions as the input image.
+
         :param ext:
         :param threshold:
         :param method:
@@ -3811,14 +3841,21 @@ class ImagingImage(Image):
                     data_trim,
                     err=err,
                     thresh=threshold,
-                    # deblend_cont=True,
+                    # deblend_cont=0.005,
                     clean=False,
                     segmentation_map=True,
                     minarea=min_area
                 )
-
+                if output_path is not None:
+                    fig, ax = plt.subplots()
+                    ax.imshow(segmap, cmap="rainbow", origin="lower")
+                    ax.scatter(objs["x"], objs["y"], marker="x", c="black")
+                    fig.savefig(output_path, dpi=200)
+                    plt.close(fig)
+                    del fig, ax
         else:
             raise ValueError(f"Unrecognised method {method}.")
+
         segmap_full = np.zeros(data.shape)
         u.debug_print(2, f"{self}.generate_segmap(): segmap_full ==", segmap_full)
         u.debug_print(2, f"{self}.generate_segmap(): segmap ==", segmap)
@@ -3833,6 +3870,7 @@ class ImagingImage(Image):
             method: str = "sep",
             obj_value=1,
             back_value=0,
+            output_path: str = None,
             margins: tuple = (None, None, None, None),
     ):
         """
@@ -3849,11 +3887,16 @@ class ImagingImage(Image):
         :return:
         """
         data = self.load_data()[ext]
+        if output_path is not None:
+            output_path_segmap = output_path.replace(".fits", "_segmap.png")
+        else:
+            output_path_segmap = None
         segmap = self.generate_segmap(
             ext=ext,
             threshold=threshold,
             method=method,
-            margins=margins
+            margins=margins,
+            output_path=output_path_segmap
         )
         self.load_wcs()
 
@@ -3915,7 +3958,7 @@ class ImagingImage(Image):
 
         mask_file = self.copy(output_path)
         mask_file.load_data()
-        mask_file.data[ext] = self.generate_mask(ext=ext, **mask_kwargs) * units.dimensionless_unscaled
+        mask_file.data[ext] = self.generate_mask(ext=ext, output_path=output_path, **mask_kwargs) * units.dimensionless_unscaled
         mask_file.write_fits_file()
 
         mask_file.add_log(
@@ -4039,8 +4082,6 @@ class ImagingImage(Image):
                 'KRON_RADIUS': kron_radius
             })
 
-            plt.close()
-            plt.clf()
             with quantity_support():
 
                 theta_plot = (theta[0] * units.rad).to(units.deg).value
@@ -4093,7 +4134,7 @@ class ImagingImage(Image):
 
                 plt.close(fig)
                 fig.clear()
-                plt.clf()
+                del fig, ax
 
                 if subtract_background:
                     fig, ax, _ = self.plot_subimage(
@@ -4112,8 +4153,7 @@ class ImagingImage(Image):
                     fig.savefig(output + "_back_sub.png")
 
                     plt.close(fig)
-                    fig.clear()
-                    plt.clf()
+                    del fig, ax
 
         return flux, flux_err, flag, back
 
@@ -4199,7 +4239,8 @@ class ImagingImage(Image):
     def make_galfit_version(
             self,
             output_path: str = None,
-            ext: int = 0
+            ext: int = 0,
+            force: bool = False
     ):
         """
         Generate a version of this file for use with GALFIT.
@@ -4211,15 +4252,23 @@ class ImagingImage(Image):
         """
         if output_path is None:
             output_path = self.path.replace(".fits", "_galfit.fits")
-        new = self.copy(output_path)
-        new.load_headers()
-        new.set_header_items(
-            {
-                "GAIN": self.extract_header_item(key="OLD_EXPTIME", ext=ext) *
-                        self.extract_header_item(key="OLD_GAIN", ext=ext)
-            }
-        )
-        new.write_fits_file()
+        if force or not os.path.isfile(output_path):
+            new = self.copy(output_path)
+            new.load_headers()
+            old_exptime = self.extract_header_item(key="OLD_EXPTIME", ext=ext)
+            old_gain = self.extract_header_item(key="OLD_GAIN", ext=ext)
+            if old_exptime is not None and old_gain is not None:
+                new.set_header_items(
+                    {
+                        "GAIN": old_exptime * old_gain
+                    }
+                )
+            new.write_fits_file()
+        else:
+            new = type(self)(path=output_path)
+            new.load_output_file()
+            new.load_headers()
+            new.load_psfex_output()
         return new
 
     def make_galfit_psf(
@@ -4229,7 +4278,7 @@ class ImagingImage(Image):
             y: float
     ):
         # We obtain an oversampled PSF, because GALFIT works best with one.
-        psfex_path = os.path.join(output_dir, f"{self.name}_galfit_psfex.psf")
+        psfex_path = os.path.join(output_dir, f"{self.name}_psfex.psf")
         if not os.path.isfile(psfex_path):
             self.psfex(
                 output_dir=output_dir,
@@ -4263,7 +4312,8 @@ class ImagingImage(Image):
             mask_file: str = None,
             fitting_region_margins: tuple = None,
             convolution_size: tuple = None,
-            models: List[dict] = None
+            models: List[dict] = None,
+            **feedme_kwargs
     ):
         if fitting_region_margins is None:
             self.load_data()
@@ -4288,19 +4338,22 @@ class ImagingImage(Image):
             fitting_region_margins=fitting_region_margins,
             convolution_size=convolution_size,
             plate_scale=(dx, dy),
-            models=models
+            models=models,
+            **feedme_kwargs
         )
 
     def galfit(
             self,
             output_dir: str = None,
-            output_prefix=None,
+            output_prefix: str = None,
             frame_lower: int = 30,
             frame_upper: int = 100,
             ext: int = 0,
             model_guesses: Union[dict, List[dict]] = None,
             psf_path: str = None,
-            use_frb_galfit: bool = False
+            use_frb_galfit: bool = False,
+            feedme_kwargs: dict = {},
+            position_tolerance: units.Quantity = 2 * units.arcsec
     ):
         """
 
@@ -4316,6 +4369,7 @@ class ImagingImage(Image):
         :param use_frb_galfit: Use the FRB repo frb.galaxies.galfit module. Single-sersic only; if multiple models are provided only one will be used.
         :return:
         """
+        position_tolerance = u.check_quantity(position_tolerance, units.arcsec)
         if output_prefix is None:
             output_prefix = self.name
         if model_guesses is None:
@@ -4328,6 +4382,9 @@ class ImagingImage(Image):
         if isinstance(model_guesses, dict):
             model_guesses = [model_guesses]
         gf_tbls = {}
+        gf_dicts = {}
+        glbl = []
+
         for i, model in enumerate(model_guesses):
             if "position" in model:
                 x, y = self.world_to_pixel(
@@ -4344,14 +4401,21 @@ class ImagingImage(Image):
                 )
             else:
                 raise ValueError("All model dicts must have either 'position' or 'x' & 'y' keys.")
+
+            if "fit_position" in model:
+                model["fit_x"] = model["fit_y"] = model["fit_position"]
+
             gf_tbls[f"COMP_{i + 1}"] = []
+            gf_dicts[f"COMP_{i + 1}"] = []
+
         gf_tbls[f"COMP_{i + 2}"] = []
+        gf_dicts[f"COMP_{i + 2}"] = []
 
         if output_dir is None:
             output_dir = self.data_path
         self.load_output_file()
         new = self.make_galfit_version(
-            output_path=os.path.join(output_dir, f"{output_prefix}_galfit.fits")
+            output_path=os.path.join(output_dir, f"{output_prefix}_{self.filter_name}_galfit.fits")
         )
         new.zeropoint_best = self.zeropoint_best
         new.open()
@@ -4384,7 +4448,7 @@ class ImagingImage(Image):
 
         mask_file = f"{output_prefix}_mask.fits"
         mask_path = os.path.join(output_dir, mask_file)
-        margins_max = u.frame_from_centre(frame_upper + 1, x, y, data)
+        margins_max = u.frame_from_centre(frame_upper, x, y, data)
         mask = new.write_mask(
             output_path=mask_path,
             do_not_mask=list(map(lambda m: m["position"], model_guesses)),
@@ -4396,11 +4460,23 @@ class ImagingImage(Image):
         )
 
         self.extract_pixel_scale(ext)
+        os.system(f"rm {output_dir}/{output_prefix}_galfit-out_*.fits")
+        os.system(f"rm {output_dir}/galfit_plot_frame*.png")
+        os.system(f"rm {output_dir}/galfit.*")
+        os.system(f"rm {output_dir}/{output_prefix}_*.feedme")
+        os.system(f"rm {output_dir}/{output_prefix}_*_fit.log")
 
-        for frame in range(frame_lower, frame_upper + 1):
+        n_frames = 20
+
+        for j, frame in enumerate(np.linspace(frame_lower, frame_upper, n_frames)):
+            print()
+            print("=" * 60)
+            print(f"Using frame {frame}, {j+1} / {n_frames}")
+            print("=" * 60, "\n")
+            frame = int(frame)
             margins = u.frame_from_centre(frame, x, y, data)
             print("Generating mask...")
-            data_trim = u.trim_image(data, margins=margins)
+            # data_trim = u.trim_image(data, margins=margins)
             mask_data = u.trim_image(mask.data[ext], margins=margins).value
             feedme_file = f"{output_prefix}_{frame}.feedme"
             feedme_path = os.path.join(output_dir, feedme_file)
@@ -4415,7 +4491,8 @@ class ImagingImage(Image):
                     mask_file=mask_file,
                     fitting_region_margins=margins,
                     convolution_size=(frame * 2, frame * 2),
-                    models=model_guesses
+                    models=model_guesses,
+                    **feedme_kwargs
                 )
                 galfit.galfit(
                     config=feedme_file,
@@ -4437,30 +4514,15 @@ class ImagingImage(Image):
                     skip_sky=False,
                     **model_dict
                 )
-            shutil.copy(os.path.join(output_dir, "fit.log"),
-                        os.path.join(output_dir, f"{output_prefix}_{frame}_fit.log"))
+            shutil.copy(
+                os.path.join(output_dir, "fit.log"),
+                os.path.join(output_dir, f"{output_prefix}_{frame}_fit.log")
+            )
 
             try:
                 img_block = fits.open(img_block_path)
             except FileNotFoundError:
-                return None
-
-            results_header = img_block[2].header
-            components = galfit.extract_fit_params(results_header)
-            for compname in components:
-                component = components[compname]
-                pos = self.pixel_to_world(component["x"], component["y"])
-                component["ra"] = pos.ra
-                component["dec"] = pos.dec
-                if "r_eff" in component:
-                    component["r_eff_ang"] = component["r_eff"].to(units.arcsec, self.pixel_scale_x)
-                    component["r_eff_ang_err"] = component["r_eff_err"].to(units.arcsec, self.pixel_scale_x)
-                # TODO: The below assumes RA and Dec are along x & y (neglecting image rotation), which isn't great
-                component["ra_err"] = component["x_err"].to(units.deg, self.pixel_scale_x)
-                component["dec_err"] = component["y_err"].to(units.deg, self.pixel_scale_y)
-                component["frame"] = frame
-                results_table = table.QTable([component])
-                gf_tbls[compname].append(results_table)
+                continue
 
             mask_ones = np.invert(mask_data.astype(bool)).astype(int)
 
@@ -4478,7 +4540,63 @@ class ImagingImage(Image):
                 img_block[idx].header.insert('OBJECT', ('PCOUNT', 0))
                 img_block[idx].header.insert('OBJECT', ('GCOUNT', 1))
 
+            galfit.imgblock_plot(
+                output=os.path.join(output_dir, f"galfit_plot_frame{frame}.png"),
+                img_block=img_block
+            )
+
+            data_flatness = img_block[5].data
+            print("noise 0", np.nanstd(data_flatness))
+            print("sum isnan", np.sum(np.isnan(data_flatness)))
+            print("sum", np.sum(data_flatness))
+            margins_min = u.frame_from_centre(frame_lower, x - margins[0], y - margins[2], data_flatness)
+            print(margins_min)
+            data_flatness = u.trim_image(data_flatness, margins=margins_min)
+            print("\nAfter trim")
+            print("shape", data_flatness.shape)
+            print("sum isnan", np.sum(np.isnan(data_flatness)))
+            print("sum", np.sum(data_flatness))
+            # data_flatness = data_flatness[np.isfinite(data_flatness)]
+            noise = np.nanstd(data_flatness)
+            print("noise 1", noise)
+
             img_block.writeto(img_block_path, overwrite=True)
+            img_block.close()
+
+            results_header = img_block[2].header
+            components = galfit.extract_fit_params(results_header)
+
+            component = components["COMP_2"]
+            pos = self.pixel_to_world(component["x"], component["y"])
+            pos_guess = model_guesses[0]["position"]
+            if pos.separation(pos_guess) > position_tolerance and j > 1:
+                continue
+
+            for i, compname in enumerate(components):
+                component = components[compname]
+                component["ra"] = pos.ra
+                component["dec"] = pos.dec
+                if "r_eff" in component:
+                    component["r_eff_ang"] = component["r_eff"].to(units.arcsec, self.pixel_scale_x)
+                    component["r_eff_ang_err"] = component["r_eff_err"].to(units.arcsec, self.pixel_scale_x)
+                # TODO: The below assumes RA and Dec are along x & y (neglecting image rotation), which isn't great
+                component["ra_err"] = component["x_err"].to(units.deg, self.pixel_scale_x)
+                component["dec_err"] = component["y_err"].to(units.deg, self.pixel_scale_y)
+                component["frame"] = frame
+                component["x_min"], component["x_max"], component["y_min"], component["y_max"] = margins
+                component_dict = component.copy()
+                if "rotation_params" in component:
+                    component.update(component.pop("rotation_params"))
+
+                results_table = table.QTable([component])
+                gf_tbls[compname].append(results_table)
+                gf_dicts[compname].append(component_dict)
+
+            glbl.append({
+                "frame": frame,
+                "imgblock": img_block_path,
+                "residual_noise": noise
+            })
 
         component_tables = {}
         for compname in gf_tbls:
@@ -4487,39 +4605,115 @@ class ImagingImage(Image):
 
         shutil.copy(p.path_to_config_galfit(), output_dir)
 
-        return component_tables
+        return component_tables, gf_dicts, glbl
 
     def galfit_object(
             self,
             obj: objects.Galaxy,
             pivot_component: int = 2,
+            output_dir: str = None,
+            output_prefix: str = None,
             **kwargs
     ):
-
-        photometry, _ = obj.select_photometry(
-            fil=self.filter_name,
-            instrument=self.instrument_name,
-        )
 
         if "model_guesses" in kwargs:
             model_guesses = kwargs["model_guesses"]
         else:
-            model_guesses = [{
-                "object_type": "sersic"
-            }]
+            model_guesses, new_kwargs = obj.galfit_guess_dict(img=self)
+            kwargs.update(new_kwargs)
+        if output_dir is None:
+            output_dir = os.path.join(obj.data_path, "GALFIT")
+        os.makedirs(output_dir, exist_ok=True)
 
         for model in model_guesses:
-            model["position"] = obj.position
-            model["int_mag"] = photometry["mag"].value
+            if "position" not in model:
+                model["position"] = obj.position
+            if "int_mag" not in model:
+                photometry, _ = obj.select_photometry(
+                    fil=self.filter_name,
+                    instrument=self.instrument_name,
+                )
+                model["int_mag"] = photometry["mag"].value
 
-        model_tbls = self.galfit(
-            model_guesses=model_guesses,
+        kwargs["model_guesses"] = model_guesses
+        kwargs["output_dir"] = output_dir
+        kwargs["output_prefix"] = output_prefix
+
+        model_tbls, model_dicts, properties = self.galfit(
             **kwargs
         )
 
-        best_params = galfit.sersic_best_row(model_tbls[f"COMP_{pivot_component}"])
-        best_params["r_eff_proj"] = obj.projected_size(best_params["r_eff_ang"]).to("kpc")
-        best_params["r_eff_proj_err"] = obj.projected_size(best_params["r_eff_ang_err"]).to("kpc")
+        if model_tbls is None:
+            return None
+
+        best_params = {}
+        noise = [m["residual_noise"] for m in properties]
+        print("noise 2", noise)
+        frame = [m["frame"] for m in properties]
+        print(frame)
+        fig, ax = plt.subplots()
+        y = noise
+        ax.scatter(
+            frame,
+            y
+        )
+        ax.set_xlabel("Frame (pix)")
+        ax.set_ylabel(f"Std dev of masked residuals")
+        fig.savefig(os.path.join(output_dir, f"{output_prefix}_frame_noise.png"))
+        plt.close(fig)
+        del fig, ax
+
+        best_index = np.nanargmin(noise)
+
+        # best_index, best_dict = galfit.sersic_best_row(model_tbls[f"COMP_{pivot_component}"])
+        for component in model_tbls:
+            if "r_eff_ang" in model_tbls[component].colnames:
+                print(model_tbls[component]["r_eff_ang"])
+                r_eff_proj = obj.projected_size(angle=model_tbls[component]["r_eff_ang"])
+                if r_eff_proj is not None:
+                    r_eff_proj = r_eff_proj.to("kpc")
+                    model_tbls[component]["r_eff_proj"] = r_eff_proj
+                    r_eff_proj_err = obj.projected_size(angle=model_tbls[component]["r_eff_ang_err"]).to("kpc")
+                    model_tbls[component]["r_eff_proj_err"] = r_eff_proj_err
+                    for d in model_dicts[component]:
+                        d["r_eff_proj"] = r_eff_proj
+                        d["r_eff_proj_err"] = r_eff_proj_err
+
+            for param in ("r_eff_ang", "axis_ratio", "n"):
+                if param in model_tbls[component].colnames:
+                    fig, ax = plt.subplots()
+                    y = model_tbls[component][param]
+                    ax.errorbar(
+                        model_tbls[component]["frame"],
+                        y,
+                        yerr=model_tbls[component][f"{param}_err"]
+                    )
+                    ax.set_ylim(np.min(y) - 0.2 * np.abs(np.min(y)), np.max(y) + 0.2 * np.max(y))
+                    ax.set_xlabel("Frame (pix)")
+                    ax.set_ylabel(f"{param} ({model_tbls[component][param].unit})")
+                    fig.savefig(os.path.join(output_dir, f"{output_prefix}_frame_{param}.png"))
+                    plt.close(fig)
+                    del ax, fig
+
+            model_tbls[component].write(
+                os.path.join(output_dir, f"{output_prefix}_{component}_fits.ecsv"),
+                format="ascii.ecsv",
+                overwrite=True
+            )
+            best_params[component] = dict(model_tbls[component][best_index])
+            if "object_type" in best_params[component]:
+                best_params[component]["object_type"] = str(best_params[component]["object_type"])
+
+        # print(best_params)
+        for k, v in best_params["COMP_2"].items():
+            print(k, "\t\t\t", v)
+        best_params["image"] = self.path
+        best_params["instrument"] = self.instrument_name
+        best_params["band"] = self.filter_name
+        best_params["initial_guess"] = model_guesses
+        p.save_params(os.path.join(output_dir, "best_model.yaml"), best_params)
+        obj.galfit_model = best_params
+
         return best_params
 
     @classmethod

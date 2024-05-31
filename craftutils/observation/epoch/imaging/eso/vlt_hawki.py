@@ -161,7 +161,7 @@ class HAWKIImagingEpoch(ESOImagingEpoch):
                         if not self.quiet:
                             print(f"Copying: {file_path} \n\tto \n\t {file_destination}")
                         shutil.copy(file_path, file_destination)
-                        img = image.HAWKIImage(path=file_path, frame_type="science")
+                        img = image.HAWKIImage(path=file_destination, frame_type="science")
                         self.add_frame_reduced(img)
                         i += 1
 

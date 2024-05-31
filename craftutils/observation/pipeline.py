@@ -213,6 +213,8 @@ class Pipeline(Generic):
         else:
             raise ValueError(f"data_path has not been set for {self}")
 
+        self.load_output_file()
+
         self.do_runtime = _check_do_list(self.do_runtime, stages=list(self.stages().keys()))
         if not self.quiet and self.do_runtime:
             print(f"Doing stages {self.do_runtime}")

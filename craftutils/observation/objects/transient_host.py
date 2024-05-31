@@ -55,6 +55,31 @@ class TransientHostCandidate(Galaxy):
 
         return self.transient
 
+    def assemble_row(
+            self,
+            **kwargs
+    ):
+        row, _ = super().assemble_row(**kwargs)
+        if not self._check_transient():
+            self.get_transient()
+        if isinstance(self.transient.tns_name, str):
+            row["transient_tns_name"] = self.transient.tns_name
+        else:
+            row["transient_tns_name"] = "N/A"
+
+        if self.P_Ox is not None:
+            row[f"path_pox"] = self.P_Ox
+        if self.P_U is not None:
+            row[f"path_pu"] = self.P_U
+        if self.P_Ux is not None:
+            row[f"path_pux"] = self.P_Ux
+
+        if self.probabilistic_association_img:
+            row["path_img"] = self.probabilistic_association_img
+        else:
+            row["path_img"] = "N/A"
+        return row, "optical"
+
     @classmethod
     def default_params(cls):
         default_params = super().default_params()
@@ -67,6 +92,15 @@ class TransientHostCandidate(Galaxy):
             "probabilistic_association_img": None
         })
         return default_params
+
+    def set_z(self, z: float = None, **kwargs):
+        super().set_z(z=z, **kwargs)
+        if self._check_transient():
+            self.transient.z = z
+
+    def _check_transient(self):
+        from .transient import Transient
+        return "transient" in self.__dict__ and isinstance(self.transient, Transient)
 
     def to_param_dict(self):
         dictionary = self.default_params()

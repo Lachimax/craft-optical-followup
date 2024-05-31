@@ -121,27 +121,23 @@ class FRB(ExtragalacticTransient):
         )
         return self.x_frb
 
-    def push_to_table(
+    def assemble_row(
             self,
-            select: bool = True,
-            local_output: bool = True
+            **kwargs
     ):
-        jname = self.jname(4, 3)
-        self.retrieve_extinction_table()
-        ra_err, dec_err = self.position_err.uncertainty_quadrature()
-        row = {
-            "object_name": self.name,
-            "field_name": self.field.name,
-            "jname": jname,
-            "position": self.position.to_string("hmsdms"),
-            "ra": self.position.ra.to(units.degree),
-            "ra_err": ra_err.to("arcsec"),
-            "dec": self.position.dec.to(units.degree),
-            "dec_err": dec_err.to("arcsec"),
-            "instrument": str(self.instrument),
-            "e_b-v": self.ebv_sandf
-            # "host_galaxy": self.host_galaxy.name
-        }
+        row, _ = super().assemble_row(**kwargs)
+        if isinstance(self.host_galaxy, TransientHostCandidate):
+            row["host_galaxy"] = self.host_galaxy.name
+            hg_row = self.host_galaxy.assemble_row()
+            if f"path_pox" in hg_row:
+                row["path_pox"] = hg_row["path_pox"]
+            if f"path_pu" in hg_row:
+                row["path_pu"] = hg_row["path_pu"]
+            if f"path_pux" in hg_row:
+                row["path_pux"] = hg_row["path_pux"]
+            if "path_img" in hg_row:
+                row["path_img"] = hg_row["path_img"]
+
         if self.date is not None:
             row["date"] = str(self.date)
         if self.survey is not None:
@@ -153,14 +149,7 @@ class FRB(ExtragalacticTransient):
         if self.z is not None:
             row["z"] = self.z
 
-        import craftutils.observation.output.objects as output_objs
-        tbl = output_objs.load_objects_table("frb")
-        tbl.add_entry(
-            key=self.name,
-            entry=row
-        )
-        tbl.write_table()
-        return row
+        return row, "frb"
 
     def probabilistic_association(
             self,
@@ -319,7 +308,7 @@ class FRB(ExtragalacticTransient):
                     frame=cand_tbl["separation"].max(),
                     centre=self.position
                 )
-                c = ax.scatter(cand_tbl["x"], cand_tbl["y"], marker="x", c=np.log10(cand_tbl["P_Ox"]), cmap="bwr_r")
+                c = ax.scatter(cand_tbl["x"], cand_tbl["y"], marker="x", c=cand_tbl["P_Ox"], cmap="bwr_r")
                 cbar = fig.colorbar(c)
                 cbar.set_label("$P(O|x)_i$")
                 if show:
@@ -535,11 +524,23 @@ class FRB(ExtragalacticTransient):
     def hg_name(self):
         return self.host_name(frb_name=self.name)
 
-    def set_host(self, host_galaxy: TransientHostCandidate):
+    def set_host(self, host_galaxy: TransientHostCandidate, keep_params: list = None):
         hg_name = self.hg_name()
         old_name = host_galaxy.name
         old_host = self.host_galaxy
         print(f"Assigning {old_name} as host of {self.name} and relabelling as {hg_name}")
+        if keep_params is not None:
+            attributes = old_host.__dict__.copy()
+            print("Keeping attributes:")
+            for key in keep_params:
+                if key in attributes and attributes[key] is not None:
+                    print(f"{key}:", attributes[key])
+                    host_galaxy.__setattr__(key, attributes[key])
+                else:
+                    if key in attributes:
+                        print(f"{old_name}.{key} is None.")
+                    else:
+                        print(f"{key} not found in {old_name}.")
         host_galaxy.set_name(name=hg_name)
         self.host_galaxy = host_galaxy
         self.update_param_file("host_galaxy")
@@ -550,6 +551,7 @@ class FRB(ExtragalacticTransient):
         if self.host_galaxy.z is not None:
             self.set_z(self.host_galaxy.z)
         self.update_param_file("z")
+        self.update_param_file("other_names")
         # self.field.add_object(self.host_galaxy)
 
     @classmethod

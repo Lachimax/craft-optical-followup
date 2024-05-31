@@ -317,10 +317,15 @@ class FRBField(Field):
             "finalise_imaging": field_stages["finalise_imaging"],
             "probabilistic_association": {
                 "method": cls.proc_probabilistic_association,
-                "message": "Run PATH on available imaging?"
+                "message": "Run PATH on available imaging?",
+                "keywords": {
+                    "path_kwargs": {},
+                    "path_img": None
+                }
             },
             "update_photometry": field_stages["update_photometry"],
             "refine_photometry": field_stages["refine_photometry"],
+            "galfit": field_stages["galfit"],
             "send_to_table": field_stages["send_to_table"]
         }
         return stages
@@ -329,9 +334,9 @@ class FRBField(Field):
         path_kwargs = {
             "config": {"radius": 10}
         }
-        if 'path_kwargs' in kwargs:
+        if 'path_kwargs' in kwargs and kwargs['path_kwargs'] is not None:
             path_kwargs.update(kwargs["path_kwargs"])
-        if 'path_img' in kwargs:
+        if 'path_img' in kwargs and kwargs['path_img'] is not None:
             path_img = kwargs["path_img"]
         else:
             path_img = None
@@ -431,15 +436,23 @@ class FRBField(Field):
                 self.frb.host_candidates
             )
         )
+        if isinstance(self.frb.host_galaxy, objects.Galaxy):
+            print()
+            print(f"Initial host {self.frb.host_galaxy.name}.z:", self.frb.host_galaxy.z)
+            print()
         if len(host_candidates) > 0:
             max_pox = np.max(list(map(lambda o: o.P_Ox, host_candidates)))
             for obj in self.frb.host_candidates:
                 P_Ox = obj.P_Ox
                 if P_Ox > 0.1:
                     if P_Ox >= max_pox:
-                        self.frb.set_host(obj)
+                        self.frb.set_host(obj, keep_params=["z", "z_err", "other_names"])
                     self.add_object(obj)
                     obj.to_param_yaml(keep_old=True)
+        print()
+        print(f"New host {self.frb.host_galaxy.name}.z:", self.frb.host_galaxy.z)
+        print()
+
 
     def deepest_in_band(
             self,
@@ -500,6 +513,17 @@ class FRBField(Field):
         # print(f"The image selected for PATH is {path_img.name}, with depth {path_dict['depth']}")
         return filter_list
 
+    def galfit(self, apply_filter=None, use_img=None, **kwargs):
+
+        if apply_filter is None:
+            def hg_fil(o):
+                return o.name.startswith("HG")
+            apply_filter = hg_fil
+        if use_img is None and self.best_path_img is not None:
+            use_img = self.best_path_img
+
+        super().galfit(apply_filter=apply_filter, use_img=use_img)
+
     def _output_dict(self):
         output_dict = super()._output_dict()
         output_dict["path_runs"] = self.path_runs
@@ -508,10 +532,11 @@ class FRBField(Field):
 
     def load_output_file(self, **kwargs):
         output_dict = super().load_output_file(**kwargs)
-        if "path_runs" in output_dict and isinstance(output_dict["path_runs"], dict):
-            self.path_runs = output_dict["path_runs"]
-        if "best_path_img" in output_dict and isinstance(output_dict["best_path_img"], str):
-            self.best_path_img = output_dict["best_path_img"]
+        if output_dict is not None:
+            if "path_runs" in output_dict and isinstance(output_dict["path_runs"], dict):
+                self.path_runs = output_dict["path_runs"]
+            if "best_path_img" in output_dict and isinstance(output_dict["best_path_img"], str):
+                self.best_path_img = output_dict["best_path_img"]
         return output_dict
 
     @classmethod

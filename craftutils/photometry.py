@@ -249,7 +249,7 @@ def image_psf_diagnostics(
                 ax.hist(
                     stars[colname][np.isfinite(stars[colname])].to(units.arcsec),
                     label="Full sample",
-                    bins=int(np.sqrt(len(stars)))
+                    bins="auto"
                 )
                 ax.legend()
                 fig.savefig(os.path.join(output, f"{plot_file_prefix}_psf_histogram_{colname}_full.png"))
@@ -261,7 +261,7 @@ def image_psf_diagnostics(
                     linewidth=1.2,
                     label="Sigma-clipped",
                     fc=(0, 0, 0, 0),
-                    bins=int(np.sqrt(len(stars)))
+                    bins="auto"
                 )
                 ax.legend()
                 fig.savefig(os.path.join(output, f"{plot_file_prefix}_psf_histogram_{colname}_clipped.png"))

@@ -179,6 +179,13 @@ class Field(Pipeline):
                 "method": cls.proc_refine_photometry,
                 "message": "Do matched photometry?"
             },
+            "galfit": {
+                "method": cls.proc_galfit,
+                "message": "Perform basic GALFIT on best images?",
+                "keywords": {
+                    "galfit_img": None
+                }
+            },
             "send_to_table": {
                 "method": cls.proc_push_to_table,
                 "message": "Send photometry and other properties to data tables?"
@@ -229,6 +236,43 @@ class Field(Pipeline):
             obj.write_plot_photometry()
             obj.update_output_file()
         self.generate_cigale_photometry()
+
+    def proc_galfit(self, output_dir: str, **kwargs):
+        if "galfit_img" in kwargs and kwargs["galfit_img"] is not None:
+            kwargs["use_img"] = kwargs["galfit_img"]
+        self.galfit(**kwargs)
+
+
+    def galfit(self, apply_filter=None, use_img=None, **kwargs):
+        if apply_filter is None:
+            obj_list = list(self.objects.values())
+        else:
+            obj_list = list(filter(apply_filter, self.objects.values()))
+
+        self.load_imaging()
+
+        for obj in obj_list:
+            if isinstance(obj, objects.Galaxy):
+                obj.load_output_file()
+
+                if use_img is None:
+                    img = list(self.imaging.values())[0]["image"]
+                    print("You shouldn't be getting here right now.")
+                else:
+                    img = self.imaging[use_img]["image"]
+
+                print(f"Doing GALFIT with image {img.name}")
+
+                param_guesses, kwargs = obj.galfit_guess_dict(img=img)
+                print(param_guesses)
+
+                results = img.galfit_object(
+                    obj=obj,
+                    model_guesses=[param_guesses],
+                    output_prefix=obj.name,
+                    **kwargs
+                )
+            obj.update_output_file()
 
     def proc_push_to_table(self, output_dir: str, **kwargs):
         object_list: List[objects.Object] = list(self.objects.values())
@@ -740,10 +784,12 @@ class Field(Pipeline):
     def add_object(self, obj: Union[dict, objects.Object]):
         if isinstance(obj, dict):
             self.add_object_from_dict(obj)
-        if obj.name in self.objects:
-            warnings.warn(f"An object with name {obj.name} already exists in field {self.name}; it is being overwritten.")
+        elif obj.name in self.objects and self.objects[obj.name] is not obj:
+            warnings.warn(
+                f"An object with name {obj.name} already exists in field {self.name}; it is being overwritten.")
         self.objects[obj.name] = obj
         obj.field = self
+        return obj
 
     def remove_object(self, obj: Union[objects.Object, str]):
         if isinstance(obj, str):

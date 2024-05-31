@@ -307,7 +307,12 @@ def check_key(key: str, dictionary: dict, na_values: Union[tuple, list] = (None)
     return key in dictionary and dictionary[key] not in na_values
 
 
-def check_dict(key: str, dictionary: dict, na_values: Union[tuple, list] = (None), fail_val=None):
+def check_dict(
+        key: str,
+        dictionary: dict,
+        na_values: Union[tuple, list] = (None),
+        fail_val=None
+):
     """
 
     :param key:
@@ -325,22 +330,24 @@ def check_quantity(
         unit: Union[str, units.Unit],
         allow_mismatch: bool = True,
         enforce_equivalency: bool = True,
-        convert: bool = False
+        convert: bool = False,
+        equivalencies: Union[List[Tuple], units.Equivalency] = (),
 ):
     """
     If the passed number is not a Quantity, turns it into one with the passed unit. If it is already a Quantity,
     checks the unit; if the unit is compatible with the passed unit, the quantity is returned unchanged (unless convert
     is True).
 
-    :param number: Quantity (or not) to check.
+    :param number: value (or not) to check.
     :param unit: Unit to check for.
-    :param allow_mismatch: If `False`, even compatible units will not be allowed.
     :param enforce_equivalency: If `True`, and if `allow_mismatch` is True, a `units.UnitsError` will be raised if the
         `number` has units that are not equivalent to `unit`.
         That is, set this (and `allow_mismatch`) to `True` if you want to ensure `number` has the same
         dimensionality as `unit`, but not necessarily the same units. Savvy?
     :param convert: If `True`, convert compatible `Quantity` to units `unit`.
-    :return:
+    :param allow_mismatch: If False, even compatible but mismatched units will not be allowed; ie, the unit of the
+        quantity must match the one specified in the "unit" parameter.
+    :return: number as Quantity with specified unit.
     """
     if number is None:
         return None
@@ -350,26 +357,31 @@ def check_quantity(
         if not allow_mismatch:
             raise units.UnitsError(
                 f"This is already a Quantity, but with units {number.unit}; units {unit} were specified.")
-        elif enforce_equivalency and not (number.unit.is_equivalent(unit)):
+        elif enforce_equivalency and not (number.unit.is_equivalent(unit)) and not equivalencies:
             raise units.UnitsError(
-                f"This number is already a Quantity, but with incompatible units ({number.unit}); units {unit} were specified.")
+                f"This number is already a Quantity, but with incompatible units ({number.unit}); units {unit} were specified. equivalencies ==", equivalencies)
         elif convert:
-            number = number.to(unit)
+            number = number.to(unit, equivalencies=equivalencies)
     return number
 
 
-def dequantify(number: Union[float, int, units.Quantity], unit: units.Unit = None):
+def dequantify(
+        number: Union[float, int, units.Quantity],
+        unit: units.Unit = None,
+        equivalencies: Union[List[Tuple], units.Equivalency, Tuple] = (),
+) -> float:
     """
     Removes the unit from an astropy Quantity, or returns the number unchanged if it is not a Quantity.
     If a unit is provided, and number is a Quantity, an attempt will be made to convert the number to that unit before
     returning the value.
-    :param number:
-    :param unit:
-    :return:
+    :param number: value to strip.
+    :param unit: unit to check for.
+    :param equivalencies: List of Equivalency objects to pass to to() function for conversion.
+    :return: number that has been stripped of its units, if present.
     """
     if isinstance(number, units.Quantity):
         if unit is not None:
-            number = check_quantity(number=number, unit=unit, convert=True)
+            number = check_quantity(number=number, unit=unit, convert=True, equivalencies=equivalencies)
         return number.value
     else:
         return number
@@ -1053,6 +1065,7 @@ def uncertainty_string(
         limit_val: int = None,
         limit_type: str = "upper",
         nan_string: str = "--",
+        include_uncertainty: bool = True
 ):
 
     limit_vals = (limit_val, -99, -999, -999.)
@@ -1089,19 +1102,18 @@ def uncertainty_string(
 
         return f"${limit_char} {value_str}$", value, uncertainty
 
-    if "e" in uncertainty_str:
-        if abs(uncertainty) < 1:
-            m = -int(np.log10(uncertainty) - 1)
+    def deal_with_e(string, val):
+        if "e" in string:
+            if abs(val) < 1:
+                m = -int(np.log10(val) - 1)
+            else:
+                m = 10
+            return f"{val:.{m}f}"
         else:
-            m = 10
-        uncertainty_str = f"{uncertainty:.{m}f}"
-    if "e" in value_str:
-        if abs(value) < 1:
-            m = -int(np.log10(value) - 1)
-        else:
-            m = 10
-        value_str = f"{value:.{m}f}"
+            return string
 
+    uncertainty_str = deal_with_e(uncertainty_str, uncertainty)
+    value_str = deal_with_e(value_str, value)
     if uncertainty == 0.:
         if isinstance(n_digits_no_err, int):
             value_str = f"${np.round(float(value_str), n_digits_err)}$"
@@ -1120,9 +1132,11 @@ def uncertainty_string(
         x = i - u_point + n_digits_err
         # Round appropriately
         uncertainty_rnd = np.round(uncertainty, x - 1)
+        uncertainty_str = deal_with_e(str(uncertainty_rnd), uncertainty_rnd)[:u_point + x]
+
         value_rnd = np.round(value, x - 1)
         value_str = str(value_rnd)[:v_point + x]
-        uncertainty_str = str(uncertainty_rnd)[:u_point + x]
+        # uncertainty_str = str(uncertainty_rnd)[:u_point + x]
 
         while len(uncertainty_str) < i + n_digits_err:
             uncertainty_str += "0"
@@ -1131,6 +1145,7 @@ def uncertainty_string(
         while v_dp < u_dp:
             value_str += "0"
             v_dp = len(value_str) - v_point
+
     else:
         # Here x is the number of digits before the decimal point to set to zero.
         if u_point < n_digits_err:
@@ -1142,15 +1157,19 @@ def uncertainty_string(
         value_str = str(value_rnd)[:v_point - x] + "0" * x
         uncertainty_str = str(uncertainty_rnd)[:n_digits_err] + "0" * x
 
-    if brackets:
-        if uncertainty < 1:
+    if not include_uncertainty:
+        value_str = value_str
+    elif brackets:
+        if uncertainty < 1.:
             uncertainty_str = uncertainty_str[-n_digits_err:]
         else:
             x = u_point - n_digits_err
             uncertainty_str = uncertainty_str[:n_digits_err] + "0" * x
-        return f"${value_str}({uncertainty_str})$", value_rnd, uncertainty_rnd
+        value_str = f"${value_str}({uncertainty_str})$"
     else:
-        return f"${value_str} \pm {uncertainty_str}$", value_rnd, uncertainty_rnd
+        value_str = f"${value_str} \\pm {uncertainty_str}$"
+
+    return value_str, value_rnd, uncertainty_rnd
 
 
 def uncertainty_str_coord(
@@ -1158,8 +1177,8 @@ def uncertainty_str_coord(
         uncertainty_ra: Union[float, units.Quantity],
         uncertainty_dec: Union[float, units.Quantity],
         n_digits_err: int = 2,
-        brackets: bool = True
-
+        brackets: bool = True,
+        ra_err_seconds: bool = False
 ):
     ra = coord.ra
     ra_s_str, ra_rounded, ra_unc_rounded = uncertainty_string(
@@ -1174,7 +1193,10 @@ def uncertainty_str_coord(
     s_2 = ra_str[s_i:]
     e_i = s_2.find("^") + s_i
     ra_replace = ra_str[s_i:e_i]
-    ra_uncertainty_str = ra_str.replace(ra_replace, ra_s_str)
+    if ra_err_seconds:
+        ra_uncertainty_str = ra_str.replace(ra_replace, ra_s_str)
+    else:
+        ra_uncertainty_str = f"{ra_str[:-1]} ({ra_unc_rounded}" + r"^{\prime\prime})$"
 
     dec = coord.dec
     dec_s_str, dec_rounded, dec_unc_rounded = uncertainty_string(
@@ -1608,3 +1630,23 @@ def split_uncertainty_string(string: str, delim: str = "+/-"):
     value = float(string[:string.find(delim)])
     uncertainty = float(string[string.find(delim) + len(delim):])
     return value, uncertainty
+
+
+def polar_to_cartesian(
+        r: float,
+        theta: float,
+        centre_x: units.Quantity = 0,
+        centre_y: units.Quantity = 0
+) -> tuple:
+    """
+    Transforms polar (r, theta) coordinate to cartesian (x, y). Works with astropy Quantities, so long as r has the
+    same units as centre_x and centre_y and theta has valid angular units.
+    :param r: Radial polar coordinate
+    :param theta: Angular polar coordinate
+    :param centre_x: x coordinate of centre of polar coordinate system
+    :param centre_y: y coordinate of centre of polar coordinate system
+    :return: x, y with same units as r.
+    """
+    x = r * np.cos(theta) + centre_x
+    y = r * np.sin(theta) + centre_y
+    return x, y
