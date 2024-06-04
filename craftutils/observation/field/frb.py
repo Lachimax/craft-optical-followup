@@ -450,7 +450,8 @@ class FRBField(Field):
                     self.add_object(obj)
                     obj.to_param_yaml(keep_old=True)
         print()
-        print(f"New host {self.frb.host_galaxy.name}.z:", self.frb.host_galaxy.z)
+        if self.frb.host_galaxy is not None:
+            print(f"New host {self.frb.host_galaxy.name}.z:", self.frb.host_galaxy.z)
         print()
 
 

@@ -522,7 +522,11 @@ class FRB(ExtragalacticTransient):
         return host_name
 
     def hg_name(self):
-        return self.host_name(frb_name=self.name)
+        if self.tns_name is not None:
+            name = self.tns_name
+        else:
+            name = self.name
+        return self.host_name(frb_name=name)
 
     def set_host(self, host_galaxy: TransientHostCandidate, keep_params: list = None):
         hg_name = self.hg_name()
