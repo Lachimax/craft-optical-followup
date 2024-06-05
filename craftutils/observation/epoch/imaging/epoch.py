@@ -313,7 +313,7 @@ class ImagingEpoch(Epoch):
     def insert_synthetic_frames(self, frame_type: str, **kwargs):
         frames_original = self.validation_copy_of._get_frames(frame_type)
         for frame in frames_original:
-
+            pass
         self.generate_validation_catalogue()
 
 
