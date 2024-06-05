@@ -317,7 +317,13 @@ class Field(Pipeline):
                     obj_dict["name"] = obj_name
                 self.add_object_from_dict(obj_dict=obj_dict)
 
-    def _gather_epochs(self, mode: str = "imaging", quiet: bool = False, instrument: str = None):
+    def _gather_epochs(
+            self,
+            mode: str = "imaging",
+            quiet: bool = False,
+            instrument: str = None,
+            exclude_validation: bool = False
+    ):
         """
         Helper method for code reuse in gather_epochs_spectroscopy() and gather_epochs_imaging().
         Gathers all of the observation epochs of the given mode for this field.
@@ -359,7 +365,11 @@ class Field(Pipeline):
                     epoch = p.load_params(file=param_path)
                     epoch["format"] = "current"
                     epoch["param_path"] = param_path
-                    epochs[epoch_name] = epoch
+                    is_validation = False
+                    if "validation_copy_of" in epoch:
+                        is_validation = isinstance(epoch["validation_copy_of"], str)
+                    if not is_validation or not exclude_validation:
+                        epochs[epoch_name] = epoch
 
         ep.add_many_to_epoch_directory(epochs, field_name=self.name, mode=mode)
 
@@ -375,13 +385,23 @@ class Field(Pipeline):
         self.epochs_spectroscopy.update(epochs)
         return epochs
 
-    def gather_epochs_imaging(self, quiet: bool = False, instrument: str = None):
+    def gather_epochs_imaging(
+            self,
+            quiet: bool = False,
+            instrument: str = None,
+            exclude_validation: bool = False
+    ):
         """
         Gathers all of the imaging observation epochs of this field.
         :return: Dict, with keys being the epoch names and values being nested dictionaries containing the same
         information as the epoch .yaml files.
         """
-        epochs = self._gather_epochs(mode="imaging", quiet=quiet, instrument=instrument)
+        epochs = self._gather_epochs(
+            mode="imaging",
+            quiet=quiet,
+            instrument=instrument,
+            exclude_validation=exclude_validation
+        )
         self.epochs_imaging.update(epochs)
         return epochs
 
@@ -390,7 +410,7 @@ class Field(Pipeline):
         self.epochs_imaging[epoch_name] = epoch
         return epoch
 
-    def select_epoch(self, mode: str, instrument: str = None):
+    def select_epoch(self, mode: str, instrument: str = None, allow_new: bool = True):
         options = {}
         epoch_dict = {
             "imaging": self.epochs_imaging,
@@ -414,7 +434,8 @@ class Field(Pipeline):
                 continue
             epoch = loaded_dict[epoch]
             options[f'*{epoch.name}\t{epoch.date.isot}\t{epoch.instrument_name}'] = epoch
-        options["New epoch"] = "new"
+        if allow_new:
+            options["New epoch"] = "new"
         j, epoch = u.select_option(message="Select epoch.", options=options, sort=True)
         if epoch == "new":
             epoch = self._new_epoch(instrument=instrument, mode=mode)
@@ -464,11 +485,18 @@ class Field(Pipeline):
         current_epochs = self.gather_epochs_imaging(instrument=instrument)
         current_epochs.update(self.gather_epochs_spectroscopy(instrument=instrument))
 
+        copy_of_epoch = None
         is_combined = False
+        is_validation = False
         if mode == "imaging":
             cls = ep.ImagingEpoch.select_child_class(instrument=instrument)
             if len(self.epochs_imaging) > 1:
                 is_combined = u.select_yn("Create a pseudo-epoch combining other epochs for maximum depth?")
+            if not is_combined:
+                is_validation = u.select_yn("Make a copy of another epoch to perform validation checks?")
+                if is_validation:
+                    print("Which epoch would you like to use?")
+                    copy_of_epoch = self.select_epoch(mode=mode, instrument=instrument, allow_new=False)
         elif mode == "spectroscopy":
             cls = ep.SpectroscopyEpoch.select_child_class(instrument=instrument)
         else:
@@ -485,6 +513,8 @@ class Field(Pipeline):
             default_prefix = f"{self.name}_{instrument.upper()[instrument.find('-') + 1:]}"
             if is_combined:
                 default = default_prefix + "_combined"
+            elif is_validation:
+                default = copy_of_epoch.name + "_validation"
             else:
                 others_like = list(filter(
                     lambda string: string.startswith(default_prefix) and string[-1].isnumeric(),
@@ -509,6 +539,8 @@ class Field(Pipeline):
             #     '%Y-%m-%d')
             # new_params["program_id"] = input("Enter the programmme ID for the observation:\n")
         new_params["instrument"] = instrument
+        if isinstance(copy_of_epoch, ep.ImagingEpoch):
+            new_params["validation_copy_of"] = copy_of_epoch.name
         new_params["data_path"] = self._epoch_data_path(
             mode=mode,
             instrument=instrument,
@@ -518,10 +550,13 @@ class Field(Pipeline):
         )
         new_params["field"] = self.name
         # For a combined epoch, we want to skip the reduction stages and take frames already reduced.
-        if is_combined:
-            new_params["combined_epoch"] = True
+        new_params["combined_epoch"] = is_combined
+        if is_combined or is_validation:
             for stage_name in cls.skip_for_combined:
                 new_params["do"][stage_name] = False
+        if is_validation:
+            for stage_name in cls.validation_stages:
+                new_params["do"][stage_name] = True
         param_path = self._epoch_param_path(mode=mode, instrument=instrument, epoch_name=new_params["name"])
 
         p.save_params(file=param_path, dictionary=new_params)
@@ -533,7 +568,7 @@ class Field(Pipeline):
             frame_type = epoch.frames_for_combined
             print(f"Gathering {frame_type} frames from all {instrument} epochs")
             # Get list of other epochs
-            epochs = self.gather_epochs_imaging()
+            epochs = self.gather_epochs_imaging(exclude_validation=True)
             this_frame_dict = epoch._get_frames(frame_type=frame_type)
             for other_epoch_name in epochs:
                 if other_epoch_name == epoch.name:
@@ -566,6 +601,29 @@ class Field(Pipeline):
             print(f"With filters: {epoch.filters}")
             epoch.set_date(Time(np.mean(list(map(lambda d: d.mjd, dates))), format="mjd"))
             epoch.update_output_file()
+
+        elif is_validation:
+            dates = []
+            frame_type = epoch.frames_for_combined
+            print(f"Gathering {frame_type} frames from {copy_of_epoch.name}")
+            # Get list of other epochs
+            this_frame_dict = epoch._get_frames(frame_type=frame_type)
+            print(f"\tChecking {copy_of_epoch.name}...")
+            # If so, add to internal 'combined_from' list
+            if copy_of_epoch.date is not None:
+                dates.append(copy_of_epoch.date)
+            # Get appropriate frame dictionary from other epoch
+            frame_dict = copy_of_epoch._get_frames(frame_type)
+            # Loop through and add to this epoch's dict
+            for fil in frame_dict:
+                if len(frame_dict[fil]) > 0:
+                    epoch.check_filter(fil)
+                for frame in frame_dict[fil]:
+                    epoch._add_frame(
+                        frame,
+                        frames_dict=this_frame_dict,
+                        frame_type=frame_type
+                    )
 
         return epoch
 

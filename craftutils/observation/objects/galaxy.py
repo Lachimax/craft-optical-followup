@@ -325,8 +325,6 @@ class Galaxy(Extragalactic):
             if "r_eff_proj" in galfit_model:
                 row["galfit_r_eff_proj"] = galfit_model["r_eff_proj"]
                 row["galfit_r_eff_proj_err"] = galfit_model["r_eff_proj_err"]
-            row["galfit_ra"] = galfit_model["ra"]
-            row["galfit_ra_err"] = galfit_model["ra_err"]
             row["galfit_n"] = galfit_model["n"]
             row["galfit_n_err"] = galfit_model["n_err"]
             row["galfit_mag"] = galfit_model["mag"]
