@@ -3947,8 +3947,7 @@ class ImagingImage(Image):
             ext: int = 0,
             **mask_kwargs
     ) -> 'ImagingImage':
-        """
-        Generates and writes a source mask to a FITS file.
+        """Generates and writes a source mask to a FITS file.
         Any argument accepted by generate_mask() can be passed as a keyword.
 
         :param output_path: path to write the mask file to.
@@ -4353,7 +4352,8 @@ class ImagingImage(Image):
             psf_path: str = None,
             use_frb_galfit: bool = False,
             feedme_kwargs: dict = {},
-            position_tolerance: units.Quantity = 2 * units.arcsec
+            position_tolerance: units.Quantity = 2 * units.arcsec,
+            reject_r_eff_factor: float = None
     ):
         """
 
@@ -4566,10 +4566,18 @@ class ImagingImage(Image):
             results_header = img_block[2].header
             components = galfit.extract_fit_params(results_header)
 
+            # Reject some iterations based on deviance from guesses
             component = components["COMP_2"]
+            guess = model_guesses[0]
+
             pos = self.pixel_to_world(component["x"], component["y"])
             pos_guess = model_guesses[0]["position"]
+            # If the model has drifted too far in position from the guess, we reject
             if pos.separation(pos_guess) > position_tolerance and j > 1:
+                continue
+            # If r_eff is more than reject_r_eff_factor times the initial guess, reject
+            print(model_guesses[0].keys())
+            if reject_r_eff_factor is not None and component["r_eff"] > model_guesses[0]["r_e"] * reject_r_eff_factor:
                 continue
 
             for i, compname in enumerate(components):
@@ -4640,6 +4648,7 @@ class ImagingImage(Image):
         kwargs["output_prefix"] = output_prefix
 
         model_tbls, model_dicts, properties = self.galfit(
+            reject_r_eff_factor=2.,
             **kwargs
         )
 
@@ -4664,6 +4673,7 @@ class ImagingImage(Image):
         del fig, ax
 
         best_index = np.nanargmin(noise)
+
 
         # best_index, best_dict = galfit.sersic_best_row(model_tbls[f"COMP_{pivot_component}"])
         for component in model_tbls:

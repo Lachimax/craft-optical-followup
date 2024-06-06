@@ -320,15 +320,21 @@ class Galaxy(Extragalactic):
             row["galfit_ra_err"] = galfit_model["ra_err"].to("arcsec")
             row["galfit_dec"] = galfit_model["dec"]
             row["galfit_dec_err"] = galfit_model["dec_err"].to("arcsec")
-            row["galfit_r_eff"] = galfit_model["r_eff"]
-            row["galfit_r_eff_err"] = galfit_model["r_eff_err"]
+            row["galfit_r_eff"] = galfit_model["r_eff_ang"]
+            row["galfit_r_eff_err"] = galfit_model["r_eff_ang_err"]
             if "r_eff_proj" in galfit_model:
                 row["galfit_r_eff_proj"] = galfit_model["r_eff_proj"]
                 row["galfit_r_eff_proj_err"] = galfit_model["r_eff_proj_err"]
-            row["galfit_ra"] = galfit_model["ra"]
-            row["galfit_ra_err"] = galfit_model["ra_err"]
             row["galfit_n"] = galfit_model["n"]
             row["galfit_n_err"] = galfit_model["n_err"]
+            row["galfit_theta"] = galfit_model["n"]
+            row["galfit_theta_err"] = galfit_model["n_err"]
+            row["galfit_mag"] = galfit_model["mag"]
+            row["galfit_mag_err"] = galfit_model["mag_err"]
+            row["galfit_img"] = os.path.basename(self.galfit_model["image"]).replace(".fits", "")
+            row["galfit_band"] = self.galfit_model["band"]
+            row["galfit_instrument"] = self.galfit_model["instrument"]
+
         return row, "optical"
 
     @classmethod

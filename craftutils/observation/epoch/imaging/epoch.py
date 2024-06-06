@@ -41,6 +41,9 @@ class ImagingEpoch(Epoch):
         "convert_to_cs",
         "correct_astrometry_frames"
     ]
+    validation_stages = [
+        "insert_synthetic_frames"
+    ]
 
     def __init__(
             self,
@@ -123,6 +126,19 @@ class ImagingEpoch(Epoch):
         self.astrometry_stats = {}
         self.psf_stats = {}
 
+        self.validation_copy_of = None
+        if "validation_copy_of" in kwargs:
+            self.validation_copy_of = kwargs["validation_copy_of"]
+            if isinstance(self.validation_copy_of, str):
+                self.validation_copy_of = self.from_params(
+                    name=self.validation_copy_of,
+                    instrument=self.instrument_name,
+                    field=self.field,
+                    quiet=self.quiet
+                )
+        self.validation_catalogue_path = None
+        self.validation_catalogue = None
+
         # self.load_output_file(mode="imaging")
 
     def _pipeline_init(self, skip_cats: bool = False):
@@ -142,6 +158,12 @@ class ImagingEpoch(Epoch):
                 "keywords": {
                     "alternate_dir": None
                 }
+            },
+            "insert_synthetic_frames": {
+                "method": cls.proc_insert_synthetic_frames,
+                "message": "Insert synthetic sources in frames for validation?",
+                "default": False,
+                "keywords": {}
             },
             "defringe": {
                 "method": cls.proc_defringe,
@@ -274,6 +296,26 @@ class ImagingEpoch(Epoch):
 
     def proc_download(self, output_dir: str, **kwargs):
         pass
+
+    def proc_insert_synthetic_frames(
+            self,
+            output_dir: str,
+            **kwargs
+    ):
+        self.insert_synthetic_frames(frame_type=self.frames_for_combined, **kwargs)
+
+    def generate_validation_catalogue(self, force=True, n: int = 100):
+        if force or self.validation_catalogue_path is None:
+            pass
+        else:
+            self.validation_catalogue = table.QTable.read(self.validation_catalogue_path)
+
+    def insert_synthetic_frames(self, frame_type: str, **kwargs):
+        frames_original = self.validation_copy_of._get_frames(frame_type)
+        for frame in frames_original:
+            pass
+        self.generate_validation_catalogue()
+
 
     def proc_defringe(
             self,
@@ -1912,6 +1954,7 @@ class ImagingEpoch(Epoch):
             "frames_diagnosed": _output_img_dict_list(self.frames_diagnosed),
             "psf_stats": self.psf_stats,
             "std_pointings": self.std_pointings,
+            "validation_catalogue_path": self.validation_catalogue_path
         })
         return output_dict
 
@@ -1948,6 +1991,8 @@ class ImagingEpoch(Epoch):
                 self.astrometry_successful = outputs["astrometry_successful"]
             if "astrometry_indices" in outputs:
                 self.astrometry_indices = outputs["astrometry_indices"]
+            if "validation_catalogue_path" in outputs:
+                self.validation_catalogue_path = outputs["validation_catalogue_path"]
             if "frames_raw" in outputs:
                 for frame in set(outputs["frames_raw"]):
                     if os.path.isfile(frame):

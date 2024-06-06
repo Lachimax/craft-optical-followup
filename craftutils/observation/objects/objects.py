@@ -1182,6 +1182,11 @@ class Object(Generic):
 
         row, tbl_name = self.assemble_row(**kwargs)
 
+        print(self.name)
+        for key in sorted(row.keys()):
+            val = row[key]
+            print("\t", key, val)
+
         if row is None:
             return None
 

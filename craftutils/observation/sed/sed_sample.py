@@ -254,7 +254,7 @@ class SEDSample:
             ax.tick_params(axis="x", labelsize=tick_fontsize)
 
             # Do some plotting
-            ax.plot(
+            ax.step(
                 tbl["z"],
                 tbl["P(U|z)"],
                 label="$P(U|z) = N_\mathrm{unseen}(z)/N_\mathrm{hosts}$",

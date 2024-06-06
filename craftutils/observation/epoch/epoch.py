@@ -566,6 +566,7 @@ class Epoch(Pipeline):
             "do": {},
             "notes": [],
             "combined_epoch": False,
+            "validation_copy_of": None
         }
         # Pull the list of applicable kwargs from the stage information
         stages = cls.stages()
