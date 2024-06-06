@@ -1,6 +1,7 @@
 # Code by Lachlan Marnoch, 2021 - 2024
 import os
 import warnings
+import shutil
 from typing import Union, List
 
 import numpy as np
@@ -16,6 +17,7 @@ import craftutils.observation.image as image
 import craftutils.observation.instrument as inst
 import craftutils.observation.epoch as ep
 import craftutils.observation.survey as survey
+import craftutils.observation.filters as filters
 import craftutils.astrometry as astm
 import craftutils.params as p
 import craftutils.retrieve as retrieve
@@ -242,6 +244,52 @@ class Field(Pipeline):
             kwargs["use_img"] = kwargs["galfit_img"]
         self.galfit(**kwargs)
 
+    def get_images_band(
+            self,
+            fil: Union[str, filters.Filter],
+            instrument: Union[str, inst.Instrument] = None
+    ):
+        if isinstance(fil, str):
+            if isinstance(instrument, inst.Instrument):
+                instrument = instrument.name
+            elif not isinstance(instrument, str):
+                raise TypeError(
+                    f"If fil is provided as a string, instrument must also be provided as str or Instrument, not {type(instrument)}")
+            fil = filters.Filter.from_params(
+                instrument_name=instrument,
+                filter_name=fil
+            )
+
+        return list(
+            filter(
+                lambda d: d["filter"] == fil.name and d["instrument"] == fil.instrument.name,
+                self.imaging.values()
+            )
+        )
+
+    def get_filters(self):
+        self.load_imaging()
+        all_filters = list(map(lambda i: (i["filter"], i["instrument"]), self.imaging.values()))
+        fil_list = list(set(all_filters))
+        fil_list_2 = []
+        for fil, instr in fil_list:
+            fil = filters.Filter.from_params(filter_name=fil, instrument_name=instr)
+            fil_list_2.append(fil)
+        return fil_list_2
+
+    def deepest_in_band(
+            self,
+            fil: Union[str, filters.Filter],
+            instrument: Union[str, inst.Instrument] = None
+    ):
+        img_list = self.get_images_band(fil, instrument=instrument)
+        img_list.sort(key=lambda d: d["depth"])
+        print(len(img_list))
+        for img_dict in img_list:
+            print(img_dict["name"], img_dict["depth"])
+        img_dict = img_list[-1]
+        return img_dict
+
 
     def galfit(self, apply_filter=None, use_img=None, **kwargs):
         if apply_filter is None:
@@ -249,29 +297,40 @@ class Field(Pipeline):
         else:
             obj_list = list(filter(apply_filter, self.objects.values()))
 
-        self.load_imaging()
+        filter_list = self.load_imaging()
+
+        if use_img is None:
+            best_img = list(self.imaging.values())[0]["image"]
+            print("You shouldn't be getting here right now.")
+        else:
+            best_img = self.imaging[use_img]["image"]
 
         for obj in obj_list:
             if isinstance(obj, objects.Galaxy):
                 obj.load_output_file()
 
-                if use_img is None:
-                    img = list(self.imaging.values())[0]["image"]
-                    print("You shouldn't be getting here right now.")
-                else:
-                    img = self.imaging[use_img]["image"]
+                for fil in filter_list:
+                    img = self.deepest_in_band(fil=fil)["image"]
 
-                print(f"Doing GALFIT with image {img.name}")
+                    print(f"Doing GALFIT with image {img.name}")
 
-                param_guesses, kwargs = obj.galfit_guess_dict(img=img)
-                print(param_guesses)
+                    param_guesses, kwargs = obj.galfit_guess_dict(img=img)
+                    print(param_guesses)
 
-                results = img.galfit_object(
-                    obj=obj,
-                    model_guesses=[param_guesses],
-                    output_prefix=obj.name,
-                    **kwargs
-                )
+                    # TODO: REMOVE
+                    old_dir = os.path.join(obj.data_path, "GALFIT")
+                    n_files = sum([os.path.isfile(os.path.join(old_dir, f)) for f in os.listdir(old_dir)])
+                    if n_files > 0:
+                        shutil.rmtree(old_dir)
+
+                    results = img.galfit_object(
+                        obj=obj,
+                        model_guesses=[param_guesses],
+                        output_prefix=obj.name,
+                        **kwargs
+                    )
+                    if img.name == best_img.name:
+                        obj.galfit_models["best"] = results
             obj.update_output_file()
 
     def proc_push_to_table(self, output_dir: str, **kwargs):

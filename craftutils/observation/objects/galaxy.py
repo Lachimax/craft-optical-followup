@@ -82,7 +82,7 @@ class Galaxy(Extragalactic):
         self.cigale_results_path = None
         self.cigale_results = None
 
-        self.galfit_model = None
+        self.galfit_models = {}
 
     def sed_model_path(self):
         path = os.path.join(self.data_path, "sed_models")
@@ -132,7 +132,7 @@ class Galaxy(Extragalactic):
             "cigale_model_path": self.cigale_model_path,
             "cigale_sfh_path": self.cigale_sfh_path,
             "cigale_results": self.cigale_results,
-            "galfit_model": self.galfit_model
+            "galfit_models": self.galfit_models
         })
         return output
 
@@ -155,8 +155,8 @@ class Galaxy(Extragalactic):
                 self.cigale_sfh_path = outputs["cigale_sfh_path"]
             if "cigale_results" in outputs and outputs["cigale_results"] is not None:
                 self.cigale_results = outputs["cigale_results"]
-            if "galfit_model" in outputs and outputs["galfit_model"] is not None:
-                self.galfit_model = outputs["galfit_model"]
+            if "galfit_models" in outputs and outputs["galfit_models"] is not None:
+                self.galfit_models = outputs["galfit_models"]
         return outputs
 
     def h(self):
@@ -312,8 +312,9 @@ class Galaxy(Extragalactic):
             row["d_A"] = self.D_A
             row["d_L"] = self.D_L
             row["mu"] = self.mu
-        if self.galfit_model is not None and "COMP_2" in self.galfit_model:
-            galfit_model = self.galfit_model["COMP_2"]
+        if "best" in self.galfit_models and "COMP_2" in self.galfit_models["best"]:
+            best = self.galfit_models["best"]
+            galfit_model = best["COMP_2"]
             row["galfit_axis_ratio"] = galfit_model["axis_ratio"]
             row["galfit_axis_ratio_err"] = galfit_model["axis_ratio_err"]
             row["galfit_ra"] = galfit_model["ra"]
@@ -327,13 +328,13 @@ class Galaxy(Extragalactic):
                 row["galfit_r_eff_proj_err"] = galfit_model["r_eff_proj_err"]
             row["galfit_n"] = galfit_model["n"]
             row["galfit_n_err"] = galfit_model["n_err"]
-            row["galfit_theta"] = galfit_model["n"]
-            row["galfit_theta_err"] = galfit_model["n_err"]
+            row["galfit_theta"] = galfit_model["theta"]
+            row["galfit_theta_err"] = galfit_model["theta_err"]
             row["galfit_mag"] = galfit_model["mag"]
             row["galfit_mag_err"] = galfit_model["mag_err"]
-            row["galfit_img"] = os.path.basename(self.galfit_model["image"]).replace(".fits", "")
-            row["galfit_band"] = self.galfit_model["band"]
-            row["galfit_instrument"] = self.galfit_model["instrument"]
+            row["galfit_img"] = os.path.basename(best["image"]).replace(".fits", "")
+            row["galfit_band"] = best["band"]
+            row["galfit_instrument"] = best["instrument"]
 
         return row, "optical"
 

@@ -3430,7 +3430,7 @@ class ImagingImage(Image):
             output_dir=output_dir,
             positioning=positioning
         )
-        
+
         ax, fig = plt.subplots()
         ax.scatter(sources["mag_inserted"], sources["fraction_flux_recovered_psf"])
         ax.set_xlabel("Inserted magnitude")
@@ -3494,7 +3494,7 @@ class ImagingImage(Image):
         fig.savefig(os.path.join(output_dir, "spread_model.png"))
         plt.close(fig)
         del fig, ax
-        
+
         ax, fig = plt.subplots()
         ax.scatter(sources["mag_inserted"], sources["matching_dist"])
         ax.set_xlabel("Inserted magnitude")
@@ -3642,7 +3642,7 @@ class ImagingImage(Image):
         model_init = model_type(**init_params)
         fitter = fitter_type(calc_uncertainties=False)
         y, x = np.mgrid[:data.shape[0], :data.shape[1]]
-        
+
         fig, ax = plt.subplots()
         c = ax.imshow(weights[bottom - 10:top + 10, left - 10:right + 10])
         fig.colorbar(c)
@@ -3957,7 +3957,8 @@ class ImagingImage(Image):
 
         mask_file = self.copy(output_path)
         mask_file.load_data()
-        mask_file.data[ext] = self.generate_mask(ext=ext, output_path=output_path, **mask_kwargs) * units.dimensionless_unscaled
+        mask_file.data[ext] = self.generate_mask(ext=ext, output_path=output_path,
+                                                 **mask_kwargs) * units.dimensionless_unscaled
         mask_file.write_fits_file()
 
         mask_file.add_log(
@@ -4353,7 +4354,8 @@ class ImagingImage(Image):
             use_frb_galfit: bool = False,
             feedme_kwargs: dict = {},
             position_tolerance: units.Quantity = 2 * units.arcsec,
-            reject_r_eff_factor: float = None
+            reject_r_eff_factor: float = None,
+            pivot_component: int = 2
     ):
         """
 
@@ -4471,7 +4473,7 @@ class ImagingImage(Image):
         for j, frame in enumerate(np.linspace(frame_lower, frame_upper, n_frames)):
             print()
             print("=" * 60)
-            print(f"Using frame {frame}, {j+1} / {n_frames}")
+            print(f"Using frame {frame}, {j + 1} / {n_frames}")
             print("=" * 60, "\n")
             frame = int(frame)
             margins = u.frame_from_centre(frame, x, y, data)
@@ -4546,19 +4548,10 @@ class ImagingImage(Image):
             )
 
             data_flatness = img_block[5].data
-            print("noise 0", np.nanstd(data_flatness))
-            print("sum isnan", np.sum(np.isnan(data_flatness)))
-            print("sum", np.sum(data_flatness))
             margins_min = u.frame_from_centre(frame_lower, x - margins[0], y - margins[2], data_flatness)
-            print(margins_min)
             data_flatness = u.trim_image(data_flatness, margins=margins_min)
-            print("\nAfter trim")
-            print("shape", data_flatness.shape)
-            print("sum isnan", np.sum(np.isnan(data_flatness)))
-            print("sum", np.sum(data_flatness))
             # data_flatness = data_flatness[np.isfinite(data_flatness)]
             noise = np.nanstd(data_flatness)
-            print("noise 1", noise)
 
             img_block.writeto(img_block_path, overwrite=True)
             img_block.close()
@@ -4567,17 +4560,19 @@ class ImagingImage(Image):
             components = galfit.extract_fit_params(results_header)
 
             # Reject some iterations based on deviance from guesses
-            component = components["COMP_2"]
+            component = components[f"COMP_{pivot_component}"]
             guess = model_guesses[0]
 
             pos = self.pixel_to_world(component["x"], component["y"])
             pos_guess = model_guesses[0]["position"]
             # If the model has drifted too far in position from the guess, we reject
             if pos.separation(pos_guess) > position_tolerance and j > 1:
+                print(f"Rejecting frame {frame} due to separation > position_tolerance")
                 continue
             # If r_eff is more than reject_r_eff_factor times the initial guess, reject
             print(model_guesses[0].keys())
             if reject_r_eff_factor is not None and component["r_eff"] > model_guesses[0]["r_e"] * reject_r_eff_factor:
+                print(f"Rejecting frame {frame} due to r_eff > guess * {reject_r_eff_factor}")
                 continue
 
             for i, compname in enumerate(components):
@@ -4608,7 +4603,10 @@ class ImagingImage(Image):
 
         component_tables = {}
         for compname in gf_tbls:
-            gf_tbl = table.vstack(gf_tbls[compname])
+            if len(gf_tbls[compname]) > 0:
+                gf_tbl = table.vstack(gf_tbls[compname])
+            else:
+                return None, None, None
             component_tables[compname] = gf_tbl
 
         shutil.copy(p.path_to_config_galfit(), output_dir)
@@ -4629,8 +4627,9 @@ class ImagingImage(Image):
         else:
             model_guesses, new_kwargs = obj.galfit_guess_dict(img=self)
             kwargs.update(new_kwargs)
+
         if output_dir is None:
-            output_dir = os.path.join(obj.data_path, "GALFIT")
+            output_dir = os.path.join(obj.data_path, "GALFIT", self.name)
         os.makedirs(output_dir, exist_ok=True)
 
         for model in model_guesses:
@@ -4649,17 +4648,17 @@ class ImagingImage(Image):
 
         model_tbls, model_dicts, properties = self.galfit(
             reject_r_eff_factor=2.,
+            pivot_component=pivot_component,
             **kwargs
         )
 
         if model_tbls is None:
             return None
 
+        # Use the flatness of the residuals to assess quality of fit
         best_params = {}
         noise = [m["residual_noise"] for m in properties]
-        print("noise 2", noise)
         frame = [m["frame"] for m in properties]
-        print(frame)
         fig, ax = plt.subplots()
         y = noise
         ax.scatter(
@@ -4673,7 +4672,6 @@ class ImagingImage(Image):
         del fig, ax
 
         best_index = np.nanargmin(noise)
-
 
         # best_index, best_dict = galfit.sersic_best_row(model_tbls[f"COMP_{pivot_component}"])
         for component in model_tbls:
@@ -4715,14 +4713,14 @@ class ImagingImage(Image):
                 best_params[component]["object_type"] = str(best_params[component]["object_type"])
 
         # print(best_params)
-        for k, v in best_params["COMP_2"].items():
+        for k, v in best_params[f"COMP_{pivot_component}"].items():
             print(k, "\t\t\t", v)
         best_params["image"] = self.path
         best_params["instrument"] = self.instrument_name
         best_params["band"] = self.filter_name
         best_params["initial_guess"] = model_guesses
         p.save_params(os.path.join(output_dir, "best_model.yaml"), best_params)
-        obj.galfit_model = best_params
+        obj.galfit_models[self.filter_name] = best_params
 
         return best_params
 

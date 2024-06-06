@@ -454,53 +454,6 @@ class FRBField(Field):
             print(f"New host {self.frb.host_galaxy.name}.z:", self.frb.host_galaxy.z)
         print()
 
-
-    def deepest_in_band(
-            self,
-            fil: Union[str, filters.Filter],
-            instrument: Union[str, inst.Instrument] = None
-    ):
-        img_list = self.get_images_band(fil, instrument=instrument)
-        img_list.sort(key=lambda d: d["depth"])
-        print(len(img_list))
-        for img_dict in img_list:
-            print(img_dict["name"], img_dict["depth"])
-        img_dict = img_list[-1]
-        return img_dict
-
-    def get_filters(self):
-        self.load_imaging()
-        all_filters = list(map(lambda i: (i["filter"], i["instrument"]), self.imaging.values()))
-        fil_list = list(set(all_filters))
-        fil_list_2 = []
-        for fil, instr in fil_list:
-            fil = filters.Filter.from_params(filter_name=fil, instrument_name=instr)
-            fil_list_2.append(fil)
-        return fil_list_2
-
-    def get_images_band(
-            self,
-            fil: Union[str, filters.Filter],
-            instrument: Union[str, inst.Instrument] = None
-    ):
-        if isinstance(fil, str):
-            if isinstance(instrument, inst.Instrument):
-                instrument = instrument.name
-            elif not isinstance(instrument, str):
-                raise TypeError(
-                    f"If fil is provided as a string, instrument must also be provided as str or Instrument, not {type(instrument)}")
-            fil = filters.Filter.from_params(
-                instrument_name=instrument,
-                filter_name=fil
-            )
-
-        return list(
-            filter(
-                lambda d: d["filter"] == fil.name and d["instrument"] == fil.instrument.name,
-                self.imaging.values()
-            )
-        )
-
     def best_fil_for_path(
             self,
             exclude: list = ()
