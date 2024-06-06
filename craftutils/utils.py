@@ -1070,7 +1070,7 @@ def uncertainty_string(
 
     limit_vals = (limit_val, -99, -999, -999.)
     value = float(dequantify(value, unit))
-    if value in limit_vals or np.ma.is_masked(value):
+    if value in limit_vals or np.ma.is_masked(value) or np.isnan(value):
         return nan_string, value, uncertainty
     if np.ma.is_masked(uncertainty):
         uncertainty = 0.
