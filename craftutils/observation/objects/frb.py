@@ -214,7 +214,10 @@ class FRB(ExtragalacticTransient):
         #     img.load_output_file()
         img.extract_pixel_scale()
         if img.filter.frb_repo_name is None:
-            instname = img.instrument.name.replace("-", "_").upper()
+            if img.instrument.cigale_name is not None:
+                instname = img.instrument.cigale_name
+            else:
+                instname = img.instrument.name.replace("-", "_").upper()
             filname = f'{instname}_{img.filter.band_name}'
         else:
             filname = img.filter.frb_repo_name
@@ -260,7 +263,7 @@ class FRB(ExtragalacticTransient):
 
         p_u = prior_set["U"] = float(prior_set["U"])
 
-        print("P(U) ==", p_u)
+        # print("P(U) ==", p_u)
         print()
         print("Priors:", prior_set)
         print("Config:", config)

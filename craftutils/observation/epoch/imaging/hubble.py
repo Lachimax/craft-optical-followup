@@ -48,6 +48,7 @@ class HubbleImagingEpoch(ImagingEpoch):
             "initial_setup": super_stages["initial_setup"],
             "source_extraction": super_stages["source_extraction"],
             "photometric_calibration": super_stages["photometric_calibration"],
+            "finalise": super_stages["finalise"],
             "get_photometry": super_stages["get_photometry"]
         }
         return stages
