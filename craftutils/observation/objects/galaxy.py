@@ -275,8 +275,12 @@ class Galaxy(Extragalactic):
             instrument=instrument,
             local_output=False
         )
-
-        position = SkyCoord(photom["ra"], photom["dec"])
+        if photom["ra"] < 0 * units.deg:
+            photom = self.select_deepest()
+        if photom["ra"] < 0 * units.deg:
+            position = self.position
+        else:
+            position = SkyCoord(photom["ra"], photom["dec"])
         x, y = img.world_to_pixel(position)
         r_e = img.pixel(photom["a"])
 
