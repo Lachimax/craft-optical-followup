@@ -47,6 +47,7 @@ class SurveyImagingEpoch(ImagingEpoch):
             "source_extraction": super_stages["source_extraction"],
             "photometric_calibration": super_stages["photometric_calibration"],
             # "dual_mode_source_extraction": super_stages["dual_mode_source_extraction"],
+            "finalise": super_stages["finalise"],
             "get_photometry": super_stages["get_photometry"]
         }
         return stages
