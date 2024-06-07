@@ -292,22 +292,28 @@ class Field(Pipeline):
 
 
     def galfit(self, apply_filter=None, use_img=None, **kwargs):
+        print(apply_filter)
         if apply_filter is None:
             obj_list = list(self.objects.values())
         else:
             obj_list = list(filter(apply_filter, self.objects.values()))
 
         filter_list = self.load_imaging()
-
-        if use_img is None:
-            best_img = list(self.imaging.values())[0]["image"]
-            print("You shouldn't be getting here right now.")
-        else:
-            best_img = self.imaging[use_img]["image"]
+        print(filter_list)
+        print(obj_list)
 
         for obj in obj_list:
+
             if isinstance(obj, objects.Galaxy):
                 obj.load_output_file()
+
+                if use_img is None:
+                    phot = obj.select_deepest_sep()
+                    best_img_path = phot["good_image_path"]
+                    best_img = image.Image.from_fits(best_img_path)
+                    # print("You shouldn't be getting here right now.")
+                else:
+                    best_img = self.imaging[use_img]["image"]
 
                 for fil in filter_list:
                     img = self.deepest_in_band(fil=fil)["image"]
@@ -318,10 +324,10 @@ class Field(Pipeline):
                     print(param_guesses)
 
                     # TODO: REMOVE
-                    old_dir = os.path.join(obj.data_path, "GALFIT")
-                    n_files = sum([os.path.isfile(os.path.join(old_dir, f)) for f in os.listdir(old_dir)])
-                    if n_files > 0:
-                        shutil.rmtree(old_dir)
+                    # old_dir = os.path.join(obj.data_path, "GALFIT")
+                    # n_files = sum([os.path.isfile(os.path.join(old_dir, f)) for f in os.listdir(old_dir)])
+                    # if n_files > 0:
+                    #     shutil.rmtree(old_dir)
 
                     results = img.galfit_object(
                         obj=obj,
