@@ -4528,15 +4528,17 @@ class ImagingImage(Image):
 
             mask_ones = np.invert(mask_data.astype(bool)).astype(int)
 
+            shape = img_block[1].shape
+
             # Masked data
             img_block.insert(4, img_block[1].copy())
-            img_block[4].data *= mask_ones  # + #
-            img_block[4].data += mask_data * np.median(img_block[1].data)
+            img_block[4].data *= mask_ones[:shape[0], :shape[1]]  # + #
+            img_block[4].data += mask_data[:shape[0], :shape[1]] * np.median(img_block[1].data)
 
             # Masked, subtracted data
             img_block.insert(5, img_block[3].copy())
-            img_block[5].data *= mask_ones  # + #
-            img_block[5].data += mask_data * np.median(img_block[3].data)
+            img_block[5].data *= mask_ones[:shape[0], :shape[1]]  # + #
+            img_block[5].data += mask_data[:shape[0], :shape[1]] * np.median(img_block[3].data)
 
             for idx in [2, 3]:
                 img_block[idx].header.insert('OBJECT', ('PCOUNT', 0))
