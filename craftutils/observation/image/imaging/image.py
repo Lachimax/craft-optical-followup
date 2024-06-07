@@ -1912,7 +1912,7 @@ class ImagingImage(Image):
             del ax, fig
 
             fig = plt.figure(figsize=(12, 12), dpi=1000)
-            fig = self.plot_catalogue(
+            fig, ax = self.plot_catalogue(
                 cat=reference_cat[in_footprint],
                 ra_col=ra_col, dec_col=dec_col,
                 fig=fig,
