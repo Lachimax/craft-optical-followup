@@ -4575,6 +4575,8 @@ class ImagingImage(Image):
                 print(f"Rejecting frame {frame} due to r_eff > guess * {reject_r_eff_factor}")
                 continue
 
+            self.extract_astrometry_err()
+
             for i, compname in enumerate(components):
                 component = components[compname]
                 component["ra"] = pos.ra
@@ -4583,8 +4585,15 @@ class ImagingImage(Image):
                     component["r_eff_ang"] = component["r_eff"].to(units.arcsec, self.pixel_scale_x)
                     component["r_eff_ang_err"] = component["r_eff_err"].to(units.arcsec, self.pixel_scale_x)
                 # TODO: The below assumes RA and Dec are along x & y (neglecting image rotation), which isn't great
+
                 component["ra_err"] = component["x_err"].to(units.deg, self.pixel_scale_x)
+                if self.ra_err is not None:
+                    component["ra_err"] = u.uncertainty_sum(component["ra_err"], self.ra_err)
+
                 component["dec_err"] = component["y_err"].to(units.deg, self.pixel_scale_y)
+                if self.dec_err is not None:
+                    component["dec_err"] = u.uncertainty_sum(component["dec_err"], self.dec_err)
+
                 component["frame"] = frame
                 component["x_min"], component["x_max"], component["y_min"], component["y_max"] = margins
                 component_dict = component.copy()

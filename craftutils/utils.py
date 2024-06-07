@@ -570,8 +570,7 @@ def directory_of(path: str):
 
 
 def uncertainty_product(value, *args: tuple):
-    """
-    Each arg should be a tuple, in which the first entry is the measurement and the second entry is the uncertainty in
+    """Each arg should be a tuple, in which the first entry is the measurement and the second entry is the uncertainty in
     that measurement. These may be in the form of numpy arrays or table columns.
     """
     if None in args:
@@ -607,6 +606,7 @@ def uncertainty_sum(*args):
     return sigma
 
 
+
 def uncertainty_log10(arg: float, uncertainty_arg: float, a: float = 1.):
     """
     Calculates standard uncertainty for function of the form a * log10(arg)
@@ -615,7 +615,7 @@ def uncertainty_log10(arg: float, uncertainty_arg: float, a: float = 1.):
     return np.abs(a * uncertainty_arg / (arg * np.log(10)))
 
 
-def uncertainty_func(arg, err, func=lambda x: np.log10(x), absolute=False):
+def uncertainty_func(arg, err, func=np.log10):
     """
 
     :param arg:
@@ -629,23 +629,13 @@ def uncertainty_func(arg, err, func=lambda x: np.log10(x), absolute=False):
     error_plus = func(arg + err) - measurement
     error_minus = func(arg - err) - measurement
 
-    error_plus_actual = []
-    error_minus_actual = []
-    try:
-        for i, _ in enumerate(error_plus):
-            error_plus_actual.append(np.max([error_plus[i], error_minus[i]]))
-            error_minus_actual.append(np.min([error_plus[i], error_minus[i]]))
-    except TypeError:
-        error_plus_actual.append(np.max([error_plus, error_minus]))
-        error_minus_actual.append(np.min([error_plus, error_minus]))
+    error_plus = np.abs(error_plus)
+    error_minus = np.abs(error_minus)
 
-    if absolute:
-        return measurement + np.array([0., error_plus_actual, error_minus_actual])
-    else:
-        return np.array([measurement, error_plus_actual, error_minus_actual])
+    return measurement, error_plus, error_minus
 
 
-def uncertainty_func_percent(arg, err, func=lambda x: np.log10(x)):
+def uncertainty_func_percent(arg, err, func=np.log10):
     measurement, error_plus, error_minus = uncertainty_func(arg=arg, err=err, func=func, absolute=False)
     return np.array([error_plus / measurement, error_minus / measurement])
 

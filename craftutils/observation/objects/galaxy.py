@@ -328,8 +328,8 @@ class Galaxy(Extragalactic):
                 row["galfit_r_eff_proj_err"] = galfit_model["r_eff_proj_err"]
             row["galfit_n"] = galfit_model["n"]
             row["galfit_n_err"] = galfit_model["n_err"]
-            row["galfit_theta"] = galfit_model["theta"]
-            row["galfit_theta_err"] = galfit_model["theta_err"]
+            row["galfit_theta"] = galfit_model["position_angle"]
+            row["galfit_theta_err"] = galfit_model["position_angle_err"]
             row["galfit_mag"] = galfit_model["mag"]
             row["galfit_mag_err"] = galfit_model["mag_err"]
             row["galfit_img"] = os.path.basename(best["image"]).replace(".fits", "")
