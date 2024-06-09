@@ -359,7 +359,8 @@ def check_quantity(
                 f"This is already a Quantity, but with units {number.unit}; units {unit} were specified.")
         elif enforce_equivalency and not (number.unit.is_equivalent(unit)) and not equivalencies:
             raise units.UnitsError(
-                f"This number is already a Quantity, but with incompatible units ({number.unit}); units {unit} were specified. equivalencies ==", equivalencies)
+                f"This number is already a Quantity, but with incompatible units ({number.unit}); units {unit} were specified. equivalencies ==",
+                equivalencies)
         elif convert:
             number = number.to(unit, equivalencies=equivalencies)
     return number
@@ -606,7 +607,6 @@ def uncertainty_sum(*args):
     return sigma
 
 
-
 def uncertainty_log10(arg: float, uncertainty_arg: float, a: float = 1.):
     """
     Calculates standard uncertainty for function of the form a * log10(arg)
@@ -812,6 +812,7 @@ def _problem_row(i, row, tbl):
     for name, (val, other_val) in problem_values.items():
         print(name, val, type(val), other_val, type(other_val))
 
+
 def detect_problem_column(
         tbl: table.Table,
         fmt: str = "ascii.ecsv",
@@ -837,7 +838,6 @@ def detect_problem_column(
             print("Problem column (ValueError):")
             print(col, tbl[col])
             return col, tbl[col]
-
 
 
 def mode(lst: list):
@@ -1057,7 +1057,6 @@ def uncertainty_string(
         nan_string: str = "--",
         include_uncertainty: bool = True
 ):
-
     limit_vals = (limit_val, -99, -999, -999.)
     value = float(dequantify(value, unit))
     if value in limit_vals or np.ma.is_masked(value) or np.isnan(value):
@@ -1640,3 +1639,102 @@ def polar_to_cartesian(
     x = r * np.cos(theta) + centre_x
     y = r * np.sin(theta) + centre_y
     return x, y
+
+
+def mod_latex_table(
+        path: str,
+        caption: str = None,
+        short_caption: str = None,
+        label: str = None,
+        longtable: bool = False,
+        coltypes: str = None,
+        landscape: bool = False,
+        under_colnames: list = None,
+        second_path: str = None
+):
+    with open(path, 'r') as f:
+        file = f.readlines()
+    tab_invoc = file[1]
+    if coltypes is not None:
+        tab_invoc = r"\begin{tabular}{" + coltypes + "}\n"
+        file[1] = tab_invoc
+    if longtable:
+        file[1] = "% " + file[1]
+
+    if under_colnames is not None:
+        under_col_str = ""
+        for under_col in under_colnames:
+            under_col_str += under_col + " & "
+        under_col_str = under_col_str[:-2]
+        under_col_str += r"\\ \hline" + "\n"
+        file.insert(3, under_col_str)
+    else:
+        file[2] = file[2].replace("\n", r"\hline" + "\n")
+
+    if label is not None:
+        file.insert(
+            1,
+            r"\label{" + label + "}\n"
+        )
+        if longtable:
+            file[1] = file[1].replace("\n", r"\\" + "\n")
+
+    if caption is not None:
+        if short_caption is None:
+            cap_str = r"\caption{" + caption + "}\n"
+        else:
+            cap_str = r"\caption" + "[" + short_caption + "]{" + caption + "}\n"
+        file.insert(
+            1,
+            cap_str
+        )
+
+    if longtable:
+        tab_invoc = tab_invoc.replace("tabular", "longtable")
+        file[0] = tab_invoc
+        file.pop(-1)
+        file.pop(-1)
+        file.append(r"\end{longtable}")
+
+    if landscape:
+        file.insert(
+            0,
+            r"\begin{landscape}" + "\n"
+        )
+        file.append(
+            r"\end{landscape}" + "\n"
+        )
+
+    with open(path, 'w') as f:
+        f.writelines(file)
+    if second_path is not None:
+        with open(second_path, 'w') as f:
+            f.writelines(file)
+    return file
+
+
+def latexise_table(
+        tbl: table.Table,
+        column_dict: dict = None,
+        output_path: str = None,
+        under_colnames: dict = None,
+        **kwargs
+) -> Union[table.Table, List[str]]:
+    under_list = None
+    if under_colnames is not None:
+        under_list = []
+        for colname in tbl.colnames:
+            if colname in under_colnames:
+                under_list.append(under_colnames[colname])
+            else:
+                under_list.append("")
+    if column_dict is not None:
+        for original, new in column_dict.items():
+            if original in column_dict:
+                tbl[new] = tbl[original]
+                tbl.remove_column(original)
+    if output_path is not None:
+        tbl.write(output_path, format="ascii.latex", overwrite=True)
+        if set(kwargs.keys()).intersection({"caption", "short_caption", "label", "landscape"}):
+            tbl = mod_latex_table(path=output_path, under_colnames=under_list, **kwargs)
+    return tbl
