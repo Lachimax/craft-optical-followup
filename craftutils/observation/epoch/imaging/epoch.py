@@ -118,6 +118,7 @@ class ImagingEpoch(Epoch):
             self.coadded_subtracted_trimmed,
             self.coadded_subtracted_patch
         )
+        self.finalised = {}
 
         self.gaia_catalogue = None
         self.astrometry_indices = []
@@ -1333,10 +1334,15 @@ class ImagingEpoch(Epoch):
 
             nice_name = f"{self.field.name}_{inst_name}_{fil.replace('_', '-')}_{date}.fits"
 
+            if isinstance(self.field, fld.FRBField):
+                test_coord = self.field.frb.position
+            else:
+                test_coord = self.field.centre_coords
+
             img.estimate_depth(
                 zeropoint_name="best",
                 output_dir=output_path,
-                test_coord=self.target
+                test_coord=test_coord
             )
 
             img.select_depth()
@@ -1379,8 +1385,10 @@ class ImagingEpoch(Epoch):
             if self.did_local_background_subtraction():
                 img_subbed = self.coadded_subtracted_patch[fil]
                 self.field.add_image(img_subbed)
+                self.finalised[img_subbed.name] = img_subbed
             else:
                 self.field.add_image(img_final)
+                self.finalised[img_final.name] = img_final
 
         self.deepest_filter = deepest.filter_name
         self.deepest = deepest
@@ -1396,7 +1404,7 @@ class ImagingEpoch(Epoch):
         if "image_type" in kwargs and isinstance(kwargs["image_type"], str):
             image_type = kwargs.pop("image_type")
         else:
-            image_type = "final"
+            image_type = "finalised"
         u.debug_print(2, f"{self}.proc_get_photometry(): image_type ==:", image_type)
         # Run PATH on imaging if we're doing FRB stuff
 
@@ -1485,7 +1493,7 @@ class ImagingEpoch(Epoch):
     def get_photometry(
             self,
             path: str,
-            image_type: str = "final",
+            image_type: str = "finalised",
             dual: bool = False,
             match_tolerance: units.Quantity = 1 * units.arcsec,
             **kwargs
@@ -1519,9 +1527,11 @@ class ImagingEpoch(Epoch):
         u.mkdir_check(path)
 
         # Loop through filters
-        for fil, img in image_dict.items():
+        for key, img in image_dict.items():
 
-            fil_output_path = os.path.join(path, fil)
+            fil = img.filter_name
+
+            fil_output_path = os.path.join(path, key)
             u.mkdir_check(fil_output_path)
 
             if "secure" not in img.depth:
@@ -1756,12 +1766,12 @@ class ImagingEpoch(Epoch):
                 tbl.add_column(dec_target, name="DEC_TARGET")
 
                 tbl.write(
-                    os.path.join(fil_output_path, f"{self.field.name}_{self.name}_{fil}.ecsv"),
+                    os.path.join(fil_output_path, f"{self.field.name}_{self.name}_{key}.ecsv"),
                     format="ascii.ecsv",
                     overwrite=True
                 )
                 tbl.write(
-                    os.path.join(fil_output_path, f"{self.field.name}_{self.name}_{fil}.csv"),
+                    os.path.join(fil_output_path, f"{self.field.name}_{self.name}_{key}.csv"),
                     format="ascii.csv",
                     overwrite=True
                 )
@@ -1874,6 +1884,8 @@ class ImagingEpoch(Epoch):
             image_dict = self.coadded_subtracted_patch
         elif image_type in ["coadded_astrometry", "astrometry"]:
             image_dict = self.coadded_astrometry
+        elif image_type == "finalised":
+            image_dict = self.finalised
         else:
             raise ValueError(f"Images type '{image_type}' not recognised.")
         return image_dict
@@ -1943,6 +1955,7 @@ class ImagingEpoch(Epoch):
             "coadded_subtracted": _output_img_dict_single(self.coadded_subtracted),
             "coadded_subtracted_trimmed": _output_img_dict_single(self.coadded_subtracted_trimmed),
             "coadded_subtracted_patch": _output_img_dict_single(self.coadded_subtracted_patch),
+            "finalised": _output_img_dict_single(self.finalised),
             "deepest": deepest,
             "deepest_filter": self.deepest_filter,
             "exp_time_mean": self.exp_time_mean,
@@ -2077,6 +2090,12 @@ class ImagingEpoch(Epoch):
                     if outputs["coadded_astrometry"][fil] is not None:
                         u.debug_print(1, f"Attempting to load coadded_astrometry[{fil}]")
                         self.add_coadded_astrometry_image(img=outputs["coadded_astrometry"][fil], key=fil, **kwargs)
+            if "finalised" in outputs:
+                for name in outputs["finalised"]:
+                    if outputs["finalised"][name] is not None:
+                        u.debug_print(1, f"Attempting to load finalised[{name}]")
+                        self._add_coadded(img=outputs["finalised"][name], key=name, image_dict=self.finalised)
+
             if "std_pointings" in outputs:
                 self.std_pointings = outputs["std_pointings"]
 

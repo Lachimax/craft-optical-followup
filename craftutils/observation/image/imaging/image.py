@@ -1429,7 +1429,6 @@ class ImagingImage(Image):
             self.depth["aperture"] = self.test_limit_location(
                 sigmas=[5, 10, 20],
                 coord=test_coord,
-                output_dir=output_dir,
                 return_dict=True
             )
 

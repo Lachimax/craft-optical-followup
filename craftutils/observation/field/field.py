@@ -290,17 +290,14 @@ class Field(Pipeline):
         img_dict = img_list[-1]
         return img_dict
 
-
     def galfit(self, apply_filter=None, use_img=None, **kwargs):
-        print(apply_filter)
         if apply_filter is None:
             obj_list = list(self.objects.values())
         else:
             obj_list = list(filter(apply_filter, self.objects.values()))
 
         filter_list = self.load_imaging()
-        print(filter_list)
-        print(obj_list)
+        print("use_img", use_img)
 
         for obj in obj_list:
 
@@ -316,7 +313,9 @@ class Field(Pipeline):
                     best_img = self.imaging[use_img]["image"]
 
                 for fil in filter_list:
+                    print("best_img", best_img.name)
                     img = self.deepest_in_band(fil=fil)["image"]
+                    print("img", img.name)
 
                     print(f"Doing GALFIT with image {img.name}")
 
@@ -337,6 +336,7 @@ class Field(Pipeline):
                     )
                     if img.name == best_img.name:
                         obj.galfit_models["best"] = results
+
             obj.update_output_file()
 
     def proc_push_to_table(self, output_dir: str, **kwargs):
