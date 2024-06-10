@@ -242,9 +242,9 @@ def get_project_path():
 
 
 # Here we set up the various directories used by the pipeline.
-config = check_for_config()
 project_dir = get_project_path()
 param_dir_project = os.path.join(project_dir, "craftutils", "param")
+config = check_for_config()
 param_dir = config['param_dir']
 
 
