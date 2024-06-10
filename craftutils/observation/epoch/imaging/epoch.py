@@ -1333,7 +1333,11 @@ class ImagingEpoch(Epoch):
 
             nice_name = f"{self.field.name}_{inst_name}_{fil.replace('_', '-')}_{date}.fits"
 
-            img.estimate_depth(zeropoint_name="best", output_dir=output_path)
+            img.estimate_depth(
+                zeropoint_name="best",
+                output_dir=output_path,
+                test_coord=self.target
+            )
 
             img.select_depth()
             img.write_fits_file()
@@ -1521,7 +1525,7 @@ class ImagingEpoch(Epoch):
             u.mkdir_check(fil_output_path)
 
             if "secure" not in img.depth:
-                img.estimate_depth()
+                img.estimate_depth(test_coord=self.target)
             if not self.quiet:
                 print("Getting photometry for", img)
 

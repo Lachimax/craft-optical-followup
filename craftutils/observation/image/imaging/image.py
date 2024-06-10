@@ -1329,6 +1329,7 @@ class ImagingImage(Image):
             stars_only: bool = False,
             star_tolerance: float = 0.9,
             do_magnitude_calibration: bool = True,
+            test_coord: SkyCoord = None,
             output_dir: str = None
     ):
         """Use various measures of S/N to estimate image depth at a range of sigmas.
@@ -1423,6 +1424,14 @@ class ImagingImage(Image):
                 # ["limit test"]
 
                 self.update_output_file()
+
+        if test_coord is not None:
+            self.depth["aperture"] = self.test_limit_location(
+                sigmas=[5, 10, 20],
+                coord=test_coord,
+                output_dir=output_dir,
+                return_dict=True
+            )
 
         self.select_depth()
 
@@ -3368,10 +3377,12 @@ class ImagingImage(Image):
             coord: SkyCoord,
             ap_radius: units.Quantity = None,
             ext: int = 0,
+            sigmas: list = None,
             sigma_min: int = 1,
             sigma_max: int = 10,
+            return_dict: bool = False,
             **kwargs
-    ):
+    ) -> Union[dict, table.QTable]:
 
         if ap_radius is None:
             psf = self.extract_header_item("PSF_FWHM", ext=ext)
@@ -3392,17 +3403,31 @@ class ImagingImage(Image):
         sigma_flux = np.sqrt(flux)
 
         limits = []
-        for i in range(sigma_min, sigma_max + 1):
+
+        if sigmas is None:
+            sigmas = range(sigma_min, sigma_max + 1)
+
+        limit_dicts = {}
+
+        for i in sigmas:
             n_sigma_flux = sigma_flux * i
             limit, _, _, _ = self.magnitude(flux=n_sigma_flux)
-            limits.append({
+            limit_dict = {
                 "sigma": i,
                 "flux": n_sigma_flux[0],
                 "mag": limit[0],
                 "aperture_radius": ap_radius,
                 "aperture_radius_pix": ap_radius_pix
-            })
-        return table.QTable(limits)
+            }
+            limits.append(limit_dict)
+            limit_dicts[f"{i}-sigma"] = limit_dict
+        if return_dict:
+            limit_dicts["position"] = coord
+            limit_dicts["aperture_radius"] = ap_radius
+            limit_dicts["aperture_radius_pix"] = ap_radius_pix
+            return limit_dicts
+        else:
+            return table.QTable(limits)
 
     def test_limit_synthetic(
             self,
