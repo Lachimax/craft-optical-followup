@@ -87,7 +87,10 @@ class HubbleImagingEpoch(ImagingEpoch):
 
         for fil in image_dict:
             image_dict[fil].zeropoint()
-            image_dict[fil].estimate_depth()
+            image_dict[fil].estimate_depth(
+                test_coord=self._get_test_coord(),
+                output_dir=output_path
+            )
             self.deepest = image_dict[fil]
 
     def proc_get_photometry(self, output_dir: str, **kwargs):

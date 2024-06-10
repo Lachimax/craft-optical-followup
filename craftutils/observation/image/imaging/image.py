@@ -383,15 +383,16 @@ class ImagingImage(Image):
 
     def select_depth(self, ext: int = 0, sigma: int = 10, depth_type: str = "max"):
         if "SNR_PSF" in self.depth[depth_type] and np.isfinite(self.depth[depth_type]["SNR_PSF"][f"{sigma}-sigma"]):
-            depth = self.depth[depth_type]["SNR_PSF"][f"{sigma}-sigma"]
+            snr_type = "SNR_PSF"
         else:
-            depth = self.depth[depth_type]["SNR_AUTO"][f"{sigma}-sigma"]
+            snr_type = "SNR_AUTO"
+        depth = self.depth[depth_type][snr_type][f"{sigma}-sigma"]
         self.set_header_item(
             key="DEPTH",
             value=depth.value,
             ext=ext
         )
-        return depth
+        return depth, snr_type
 
     def clone_astrometry_info(
             self,
@@ -675,7 +676,7 @@ class ImagingImage(Image):
         for i, row in enumerate(source_cat):
             print(f"Pushing row {i} of {len(source_cat)}")
             obj = objects.Object(row=row, field=self.epoch.field)
-            depth = self.select_depth()
+            depth, _ = self.select_depth()
             obj.add_photometry(
                 instrument=self.instrument_name,
                 fil=self.filter_name,
@@ -1392,12 +1393,13 @@ class ImagingImage(Image):
                 source_cat_sigma = source_cat_key.copy()
                 # Faintest source at x-sigma:
                 cat_more_xsigma = source_cat_sigma[source_cat_sigma[f"SNR_{snr_key}"] > sigma]
-                with quantity_support():
-                    fig, ax = plt.subplots()
-                    ax.scatter(source_cat_sigma[f"MAG_{snr_key}"], source_cat_sigma[f"SNR_{snr_key}"])
-                    fig.savefig(os.path.join(output_dir, f"mag_{snr_key}-v-snr-{sigma}sig.png"), dpi=200)
-                    plt.close(fig)
-                    del fig, ax
+                if output_dir is not None:
+                    with quantity_support():
+                        fig, ax = plt.subplots()
+                        ax.scatter(source_cat_sigma[f"MAG_{snr_key}"], source_cat_sigma[f"SNR_{snr_key}"])
+                        fig.savefig(os.path.join(output_dir, f"mag_{snr_key}-v-snr-{sigma}sig.png"), dpi=200)
+                        plt.close(fig)
+                        del fig, ax
 
                 self.depth["max"][f"SNR_{snr_key}"][f"{sigma}-sigma"] = np.max(
                     cat_more_xsigma[f"MAG_{snr_key}_ZP_{zeropoint_name}"]
@@ -4600,6 +4602,13 @@ class ImagingImage(Image):
             if reject_r_eff_factor is not None and component["r_eff"] > model_guesses[0]["r_e"] * reject_r_eff_factor:
                 print(f"Rejecting frame {frame} due to r_eff > guess * {reject_r_eff_factor}")
                 continue
+            # If n is unphysically large, we reject
+            # if component["n"] < 0.5:
+            #     print(f"Rejecting frame {frame} due to n < 0.5")
+            #     continue
+            if component["n"] > 10:
+                print(f"Rejecting frame {frame} due to n > 10")
+                continue
 
             self.extract_astrometry_err()
 
@@ -4831,10 +4840,18 @@ def deepest(
         img_2: ImagingImage,
         sigma: int = 5,
         depth_type: str = "max",
-        snr_type: str = "SNR_PSF"
+        snr_type: str = None
 ):
-    print(img_1.name, img_1.depth.keys())
-    print(img_2.name, img_2.depth.keys())
+    if snr_type is None:
+        depth_1, snr_type_1 = img_1.select_depth()
+        depth_2, snr_type_2 = img_2.select_depth()
+        if snr_type_1 == snr_type_2 == "SNR_PSF":
+            snr_type = "SNR_PSF"
+        elif snr_type_1 == "SNR_AUTO" or snr_type_2 == "SNR_AUTO":
+            snr_type = "SNR_AUTO"
+
+    # print(img_1.name, img_1.depth.keys())
+    # print(img_2.name, img_2.depth.keys())
 
     if img_1.depth[depth_type][snr_type][f"{sigma}-sigma"] > \
             img_2.depth[depth_type][snr_type][f"{sigma}-sigma"]:

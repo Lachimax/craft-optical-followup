@@ -1643,14 +1643,15 @@ def polar_to_cartesian(
 
 def mod_latex_table(
         path: str,
-        caption: str = None,
         short_caption: str = None,
+        caption: str = None,
         label: str = None,
         longtable: bool = False,
         coltypes: str = None,
         landscape: bool = False,
-        under_colnames: list = None,
-        second_path: str = None
+        sub_colnames: list = None,
+        second_path: str = None,
+        multicolumn=None
 ):
     with open(path, 'r') as f:
         file = f.readlines()
@@ -1661,15 +1662,22 @@ def mod_latex_table(
     if longtable:
         file[1] = "% " + file[1]
 
-    if under_colnames is not None:
+    if sub_colnames is not None:
         under_col_str = ""
-        for under_col in under_colnames:
+        for under_col in sub_colnames:
             under_col_str += under_col + " & "
         under_col_str = under_col_str[:-2]
         under_col_str += r"\\ \hline" + "\n"
         file.insert(3, under_col_str)
     else:
         file[2] = file[2].replace("\n", r"\hline" + "\n")
+
+    if multicolumn is not None:
+        multicol_str = ""
+        for t in multicolumn:
+            multicol_str += r"\multicolumn{" + str(t[0]) + "}{" + str(t[1]) + "}{" + str(t[2]) + "} & "
+        multicol_str = multicol_str[:-2] + "\\\\ \n"
+        file.insert(2, multicol_str)
 
     if label is not None:
         file.insert(
@@ -1717,18 +1725,56 @@ def latexise_table(
         tbl: table.Table,
         column_dict: dict = None,
         output_path: str = None,
-        under_colnames: dict = None,
+        sub_colnames: dict = None,
+        n_digits_err: int = 1,
+        limit_type: str = "upper",
+        exclude_from_unc: list = (),
+        round_cols: list = (),
+        round_digits: int = 1,
         **kwargs
 ) -> Union[table.Table, List[str]]:
+
+    tbl = tbl.copy()
+
+    for col in round_cols:
+        new_col = []
+        for row in tbl:
+            val = dequantify(row[col])
+            new_col.append(str(val.round(round_digits)))
+        tbl[col] = new_col
+
+    err_colnames = list(filter(lambda c: c.endswith("_err"), tbl.colnames))
+    for err_col in err_colnames:
+        val_col = val_col = err_col[:-4]
+        if val_col in exclude_from_unc:
+            continue
+        # print(colname, do_err_str, err_col, err_col in tbl.colnames)
+        new_col = []
+        for row in tbl:
+            this_str, value, uncertainty = uncertainty_string(
+                value=row[val_col],
+                uncertainty=row[err_col],
+                n_digits_err=n_digits_err,
+                n_digits_lim=3,
+                limit_type=limit_type
+            )
+            new_col.append(this_str)
+
+        tbl[val_col] = new_col
+        tbl.remove_column(err_col)
+
     under_list = None
-    if under_colnames is not None:
+    if sub_colnames is not None:
         under_list = []
         for colname in tbl.colnames:
-            if colname in under_colnames:
-                under_list.append(under_colnames[colname])
+            if colname in sub_colnames:
+                under_list.append(sub_colnames[colname])
             else:
                 under_list.append("")
     if column_dict is not None:
+        # Sort by the provided dictionary, then the rest
+        not_in_dict = set(tbl.colnames) - set(column_dict.keys())
+        # tbl = tbl[list(column_dict.keys())]  + list(not_in_dict)]
         for original, new in column_dict.items():
             if original in column_dict:
                 tbl[new] = tbl[original]
@@ -1736,5 +1782,8 @@ def latexise_table(
     if output_path is not None:
         tbl.write(output_path, format="ascii.latex", overwrite=True)
         if set(kwargs.keys()).intersection({"caption", "short_caption", "label", "landscape"}):
-            tbl = mod_latex_table(path=output_path, under_colnames=under_list, **kwargs)
+            tbl = mod_latex_table(path=output_path, sub_colnames=under_list, **kwargs)
     return tbl
+
+
+

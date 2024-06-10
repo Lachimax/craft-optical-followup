@@ -896,7 +896,7 @@ class Field(Pipeline):
         img.filter.load_instrument()
         fil = img.filter
         fil_name = img.filter.machine_name()
-        depth = img.select_depth()
+        depth, _ = img.select_depth()
         self.imaging[img.name] = {
             "path": img.path,
             "depth": depth,

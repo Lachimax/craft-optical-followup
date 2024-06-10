@@ -1293,6 +1293,13 @@ class ImagingEpoch(Epoch):
 
         self.finalise(output_path=output_dir, **kwargs)
 
+    def _get_test_coord(self):
+        if isinstance(self.field, fld.FRBField):
+            test_coord = self.field.frb.position
+        else:
+            test_coord = self.field.centre_coords
+        return test_coord
+
     def finalise(
             self,
             image_type: str = "final",
@@ -1334,10 +1341,7 @@ class ImagingEpoch(Epoch):
 
             nice_name = f"{self.field.name}_{inst_name}_{fil.replace('_', '-')}_{date}.fits"
 
-            if isinstance(self.field, fld.FRBField):
-                test_coord = self.field.frb.position
-            else:
-                test_coord = self.field.centre_coords
+            test_coord = self._get_test_coord()
 
             img.estimate_depth(
                 zeropoint_name="best",
@@ -2391,7 +2395,7 @@ class ImagingEpoch(Epoch):
                 self.exp_time_mean[fil] = np.mean(exp_times) * units.s
             frame_exp_time = self.exp_time_mean[fil].round()
 
-            depth = img.select_depth()
+            depth, _ = img.select_depth()
 
             entry = {
                 "field_name": self.field.name,
