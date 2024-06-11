@@ -282,9 +282,13 @@ class FRB(ExtragalacticTransient):
             )
             p_ux = ass.P_Ux
             print("P(U|x) ==", p_ux)
+            cand_tbl = table.QTable.from_pandas(ass.candidates)
+            if "P_Ux" not in cand_tbl.colnames:
+                cand_tbl["P_Ux"] = [p_ux] * len(cand_tbl)
+
             if np.isnan(p_ux):
                 p_ux = None
-            cand_tbl = table.QTable.from_pandas(ass.candidates)
+
             cand_tbl["P_U"] = [p_u] * len(cand_tbl)
             max_p_ox = cand_tbl[0]["P_Ox"]
             print("Max P(O|x_i) ==", max_p_ox)

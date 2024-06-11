@@ -1680,6 +1680,8 @@ def mod_latex_table(
         file.insert(2, multicol_str)
 
     if label is not None:
+        if not label.startswith("tab:"):
+            label = "tab:" + label
         file.insert(
             1,
             r"\label{" + label + "}\n"
@@ -1733,7 +1735,6 @@ def latexise_table(
         round_digits: int = 1,
         **kwargs
 ) -> Union[table.Table, List[str]]:
-
     tbl = tbl.copy()
 
     for col in round_cols:
@@ -1784,6 +1785,3 @@ def latexise_table(
         if set(kwargs.keys()).intersection({"caption", "short_caption", "label", "landscape"}):
             tbl = mod_latex_table(path=output_path, sub_colnames=under_list, **kwargs)
     return tbl
-
-
-

@@ -1567,8 +1567,9 @@ class ImagingEpoch(Epoch):
                     centre=self.field.frb.position,
                 )
                 for obj_name, obj in self.field.objects.items():
-                    x, y = img.world_to_pixel(obj.position)
-                    plt.scatter(x, y, marker="x", label=obj_name)
+                    if obj.position is not None:
+                        x, y = img.world_to_pixel(obj.position)
+                        plt.scatter(x, y, marker="x", label=obj_name)
                 plt.legend(loc=(1.0, 0.))
                 fig.savefig(os.path.join(fil_output_path, "plot_quick.pdf"))
 
@@ -1581,7 +1582,7 @@ class ImagingEpoch(Epoch):
             if img.astrometry_err is None:
                 tolerance_eff = match_tolerance
             else:
-                tolerance_eff = np.sqrt(match_tolerance ** 2 + img.astrometry_err ** 2)
+                tolerance_eff = match_tolerance + img.astrometry_err
             print("Effective tolerance:", tolerance_eff)
             # Loop through this field's 'objects' dictionary and try to match them with the SE catalogue
             for obj_name, obj in self.field.objects.items():
@@ -1640,7 +1641,9 @@ class ImagingEpoch(Epoch):
                         do_mask=img.mask_nearby()
                     )
                     print(
-                        f"No object detected at position (nearest match at {nearest['RA']}, {nearest['DEC']}, separation {separation.to('arcsec')}).")
+                        f"No object detected at position (nearest match at {nearest['RA']}, {nearest['DEC']}, "
+                        f"separation {separation.to('arcsec').round(1)} > tolerance {tolerance_eff} = {match_tolerance} + {img.astrometry_err}, "
+                        f"with magnitude {nearest['MAG_AUTO_ZP_best']}).")
                     print()
                 # Otherwise,  send the match's information to the object's photometry table (and make plots).
                 else:
