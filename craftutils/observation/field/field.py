@@ -24,6 +24,8 @@ import craftutils.retrieve as retrieve
 import craftutils.utils as u
 from craftutils.observation.pipeline import Pipeline
 
+dm_units = units.parsec * units.cm ** -3
+
 __all__ = []
 
 # pl.latex_setup()
@@ -1013,7 +1015,7 @@ class Field(Pipeline):
         for obj in self.objects.values():
             obj.load_output_file()
 
-    def get_object(self, name: str, allow_missing: bool) -> objects.Object:
+    def get_object(self, name: str, allow_missing: bool) -> Union[objects.Object, None]:
         """
         Retrieves the named object from the field's object dictionary.
 
@@ -1030,10 +1032,11 @@ class Field(Pipeline):
 
     @classmethod
     def default_params(cls):
+        from craftutils.observation.objects.position import position_dictionary
         default_params = {
             "name": None,
             "type": "Field",
-            "centre": objects.position_dictionary.copy(),
+            "centre": position_dictionary.copy(),
             # "objects": [objects.Object.default_params()],
             "extent": 0.3 * units.deg,
             "survey": None
@@ -1188,9 +1191,9 @@ class Field(Pipeline):
                 input_type=float
             )
             if dm in ["", " ", 'None']:
-                dm = 0 * objects.dm_units
+                dm = 0 * dm_units
             else:
-                dm *= objects.dm_units
+                dm *= dm_units
 
             date = u.user_input(
                 "If you have a precise FRB arrival time, please enter that now; otherwise, leave blank."
