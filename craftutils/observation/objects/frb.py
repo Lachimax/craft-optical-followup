@@ -214,7 +214,10 @@ class FRB(ExtragalacticTransient):
         #     img.load_output_file()
         img.extract_pixel_scale()
         if img.filter.frb_repo_name is None:
-            instname = img.instrument.name.replace("-", "_").upper()
+            if img.instrument.cigale_name is not None:
+                instname = img.instrument.cigale_name
+            else:
+                instname = img.instrument.name.replace("-", "_").upper()
             filname = f'{instname}_{img.filter.band_name}'
         else:
             filname = img.filter.frb_repo_name
@@ -260,7 +263,7 @@ class FRB(ExtragalacticTransient):
 
         p_u = prior_set["U"] = float(prior_set["U"])
 
-        print("P(U) ==", p_u)
+        # print("P(U) ==", p_u)
         print()
         print("Priors:", prior_set)
         print("Config:", config)
@@ -279,9 +282,13 @@ class FRB(ExtragalacticTransient):
             )
             p_ux = ass.P_Ux
             print("P(U|x) ==", p_ux)
+            cand_tbl = table.QTable.from_pandas(ass.candidates)
+            if "P_Ux" not in cand_tbl.colnames:
+                cand_tbl["P_Ux"] = [p_ux] * len(cand_tbl)
+
             if np.isnan(p_ux):
                 p_ux = None
-            cand_tbl = table.QTable.from_pandas(ass.candidates)
+
             cand_tbl["P_U"] = [p_u] * len(cand_tbl)
             max_p_ox = cand_tbl[0]["P_Ox"]
             print("Max P(O|x_i) ==", max_p_ox)

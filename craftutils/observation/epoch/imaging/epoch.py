@@ -118,6 +118,7 @@ class ImagingEpoch(Epoch):
             self.coadded_subtracted_trimmed,
             self.coadded_subtracted_patch
         )
+        self.finalised = {}
 
         self.gaia_catalogue = None
         self.astrometry_indices = []
@@ -1292,6 +1293,13 @@ class ImagingEpoch(Epoch):
 
         self.finalise(output_path=output_dir, **kwargs)
 
+    def _get_test_coord(self):
+        if isinstance(self.field, fld.FRBField):
+            test_coord = self.field.frb.position
+        else:
+            test_coord = self.field.centre_coords
+        return test_coord
+
     def finalise(
             self,
             image_type: str = "final",
@@ -1333,7 +1341,13 @@ class ImagingEpoch(Epoch):
 
             nice_name = f"{self.field.name}_{inst_name}_{fil.replace('_', '-')}_{date}.fits"
 
-            img.estimate_depth(zeropoint_name="best", output_dir=output_path)
+            test_coord = self._get_test_coord()
+
+            img.estimate_depth(
+                zeropoint_name="best",
+                output_dir=output_path,
+                test_coord=test_coord
+            )
 
             img.select_depth()
             img.write_fits_file()
@@ -1375,8 +1389,10 @@ class ImagingEpoch(Epoch):
             if self.did_local_background_subtraction():
                 img_subbed = self.coadded_subtracted_patch[fil]
                 self.field.add_image(img_subbed)
+                self.finalised[img_subbed.name] = img_subbed
             else:
                 self.field.add_image(img_final)
+                self.finalised[img_final.name] = img_final
 
         self.deepest_filter = deepest.filter_name
         self.deepest = deepest
@@ -1392,7 +1408,7 @@ class ImagingEpoch(Epoch):
         if "image_type" in kwargs and isinstance(kwargs["image_type"], str):
             image_type = kwargs.pop("image_type")
         else:
-            image_type = "final"
+            image_type = "finalised"
         u.debug_print(2, f"{self}.proc_get_photometry(): image_type ==:", image_type)
         # Run PATH on imaging if we're doing FRB stuff
 
@@ -1481,7 +1497,7 @@ class ImagingEpoch(Epoch):
     def get_photometry(
             self,
             path: str,
-            image_type: str = "final",
+            image_type: str = "finalised",
             dual: bool = False,
             match_tolerance: units.Quantity = 1 * units.arcsec,
             **kwargs
@@ -1515,13 +1531,15 @@ class ImagingEpoch(Epoch):
         u.mkdir_check(path)
 
         # Loop through filters
-        for fil, img in image_dict.items():
+        for key, img in image_dict.items():
 
-            fil_output_path = os.path.join(path, fil)
+            fil = img.filter_name
+
+            fil_output_path = os.path.join(path, key)
             u.mkdir_check(fil_output_path)
 
             if "secure" not in img.depth:
-                img.estimate_depth()
+                img.estimate_depth(test_coord=self.target)
             if not self.quiet:
                 print("Getting photometry for", img)
 
@@ -1549,8 +1567,9 @@ class ImagingEpoch(Epoch):
                     centre=self.field.frb.position,
                 )
                 for obj_name, obj in self.field.objects.items():
-                    x, y = img.world_to_pixel(obj.position)
-                    plt.scatter(x, y, marker="x", label=obj_name)
+                    if obj.position is not None:
+                        x, y = img.world_to_pixel(obj.position)
+                        plt.scatter(x, y, marker="x", label=obj_name)
                 plt.legend(loc=(1.0, 0.))
                 fig.savefig(os.path.join(fil_output_path, "plot_quick.pdf"))
 
@@ -1563,7 +1582,7 @@ class ImagingEpoch(Epoch):
             if img.astrometry_err is None:
                 tolerance_eff = match_tolerance
             else:
-                tolerance_eff = np.sqrt(match_tolerance ** 2 + img.astrometry_err ** 2)
+                tolerance_eff = match_tolerance + img.astrometry_err
             print("Effective tolerance:", tolerance_eff)
             # Loop through this field's 'objects' dictionary and try to match them with the SE catalogue
             for obj_name, obj in self.field.objects.items():
@@ -1622,7 +1641,9 @@ class ImagingEpoch(Epoch):
                         do_mask=img.mask_nearby()
                     )
                     print(
-                        f"No object detected at position (nearest match at {nearest['RA']}, {nearest['DEC']}, separation {separation.to('arcsec')}).")
+                        f"No object detected at position (nearest match at {nearest['RA']}, {nearest['DEC']}, "
+                        f"separation {separation.to('arcsec').round(1)} > tolerance {tolerance_eff} = {match_tolerance} + {img.astrometry_err}, "
+                        f"with magnitude {nearest['MAG_AUTO_ZP_best']}).")
                     print()
                 # Otherwise,  send the match's information to the object's photometry table (and make plots).
                 else:
@@ -1752,12 +1773,12 @@ class ImagingEpoch(Epoch):
                 tbl.add_column(dec_target, name="DEC_TARGET")
 
                 tbl.write(
-                    os.path.join(fil_output_path, f"{self.field.name}_{self.name}_{fil}.ecsv"),
+                    os.path.join(fil_output_path, f"{self.field.name}_{self.name}_{key}.ecsv"),
                     format="ascii.ecsv",
                     overwrite=True
                 )
                 tbl.write(
-                    os.path.join(fil_output_path, f"{self.field.name}_{self.name}_{fil}.csv"),
+                    os.path.join(fil_output_path, f"{self.field.name}_{self.name}_{key}.csv"),
                     format="ascii.csv",
                     overwrite=True
                 )
@@ -1870,6 +1891,8 @@ class ImagingEpoch(Epoch):
             image_dict = self.coadded_subtracted_patch
         elif image_type in ["coadded_astrometry", "astrometry"]:
             image_dict = self.coadded_astrometry
+        elif image_type == "finalised":
+            image_dict = self.finalised
         else:
             raise ValueError(f"Images type '{image_type}' not recognised.")
         return image_dict
@@ -1939,6 +1962,7 @@ class ImagingEpoch(Epoch):
             "coadded_subtracted": _output_img_dict_single(self.coadded_subtracted),
             "coadded_subtracted_trimmed": _output_img_dict_single(self.coadded_subtracted_trimmed),
             "coadded_subtracted_patch": _output_img_dict_single(self.coadded_subtracted_patch),
+            "finalised": _output_img_dict_single(self.finalised),
             "deepest": deepest,
             "deepest_filter": self.deepest_filter,
             "exp_time_mean": self.exp_time_mean,
@@ -2073,6 +2097,12 @@ class ImagingEpoch(Epoch):
                     if outputs["coadded_astrometry"][fil] is not None:
                         u.debug_print(1, f"Attempting to load coadded_astrometry[{fil}]")
                         self.add_coadded_astrometry_image(img=outputs["coadded_astrometry"][fil], key=fil, **kwargs)
+            if "finalised" in outputs:
+                for name in outputs["finalised"]:
+                    if outputs["finalised"][name] is not None:
+                        u.debug_print(1, f"Attempting to load finalised[{name}]")
+                        self._add_coadded(img=outputs["finalised"][name], key=name, image_dict=self.finalised)
+
             if "std_pointings" in outputs:
                 self.std_pointings = outputs["std_pointings"]
 
@@ -2368,7 +2398,7 @@ class ImagingEpoch(Epoch):
                 self.exp_time_mean[fil] = np.mean(exp_times) * units.s
             frame_exp_time = self.exp_time_mean[fil].round()
 
-            depth = img.select_depth()
+            depth, _ = img.select_depth()
 
             entry = {
                 "field_name": self.field.name,
