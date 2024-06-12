@@ -640,6 +640,41 @@ def uncertainty_func_percent(arg, err, func=np.log10):
     return np.array([error_plus / measurement, error_minus / measurement])
 
 
+def uncertainty_sin(theta, sigma_theta, a=1., b=1.):
+    return np.abs(a * b * np.cos(theta) * sigma_theta)
+
+
+def uncertainty_cos(theta, sigma_theta, a=1., b=1.):
+    return np.abs(a * b * np.sin(theta) * sigma_theta)
+
+
+def uncertainty_power(x, power, sigma_x, a=1.):
+    f = a * x ** power
+    return np.abs(f * power * sigma_x / x)
+
+
+def great_circle_dist(ra_1, dec_1, ra_2, dec_2):
+    delta_ra = ra_2 - ra_1
+    term_1 = np.sin(dec_1) * np.sin(dec_2)
+    term_2 = np.cos(dec_1) * np.cos(dec_2) * np.cos(delta_ra)
+    x = term_1 + term_2
+    s = np.arccos(x).to("arcsec")
+    return s
+
+
+def inclination(
+        axis_ratio: float,
+        q_0: float = 0.2
+) -> units.Quantity:
+    """Using the power of geometry, loosely estimates the inclination angle of a disk galaxy.
+
+    :param axis_ratio: Axis ratio b/a of the galaxy.
+    :param q_0: Axis ratio if viewed fully edge-on.
+    :return: Inclination angle in degrees.
+    """
+    return (np.arccos(np.sqrt((axis_ratio ** 2 - q_0 ** 2) / (1 - q_0 ** 2))) * units.rad).to(units.deg)
+
+
 def get_column_names(path, delimiter=','):
     with open(path) as f:
         names = f.readline().split(delimiter)
@@ -1627,9 +1662,9 @@ def polar_to_cartesian(
         centre_x: units.Quantity = 0,
         centre_y: units.Quantity = 0
 ) -> tuple:
-    """
-    Transforms polar (r, theta) coordinate to cartesian (x, y). Works with astropy Quantities, so long as r has the
+    """Transforms polar (r, theta) coordinate to cartesian (x, y). Works with astropy Quantities, so long as r has the
     same units as centre_x and centre_y and theta has valid angular units.
+
     :param r: Radial polar coordinate
     :param theta: Angular polar coordinate
     :param centre_x: x coordinate of centre of polar coordinate system
