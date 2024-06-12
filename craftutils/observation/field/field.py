@@ -560,7 +560,7 @@ class Field(Pipeline):
             if len(self.epochs_imaging) > 1:
                 is_combined = u.select_yn("Create a pseudo-epoch combining other epochs for maximum depth?")
             if not is_combined:
-                is_validation = u.select_yn("Make a copy of another epoch to perform validation checks?")
+                is_validation = u.select_yn("Make a copy of another epoch to perform validation_checks checks?")
                 if is_validation:
                     print("Which epoch would you like to use?")
                     copy_of_epoch = self.select_epoch(mode=mode, instrument=instrument, allow_new=False)
@@ -568,7 +568,13 @@ class Field(Pipeline):
             cls = ep.SpectroscopyEpoch.select_child_class(instrument=instrument)
         else:
             raise ValueError("mode must be 'imaging' or 'spectroscopy'.")
-        new_params = cls.default_params()
+
+
+
+        if is_validation:
+            new_params = p.load_params(os.path.join(self.param_dir, mode, instrument, copy_of_epoch.name + ".yaml"))
+        else:
+            new_params = cls.default_params()
 
         if instrument in surveys:
             new_params["name"] = instrument.upper()
@@ -624,6 +630,8 @@ class Field(Pipeline):
         if is_validation:
             for stage_name in cls.validation_stages:
                 new_params["do"][stage_name] = True
+                new_params["source_extraction"]["do_astrometry_diagnostics"] = False
+                new_params["source_extraction"]["do_psf_diagnostics"] = False
         param_path = self._epoch_param_path(mode=mode, instrument=instrument, epoch_name=new_params["name"])
 
         p.save_params(file=param_path, dictionary=new_params)

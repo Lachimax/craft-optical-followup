@@ -4,6 +4,7 @@ import numpy as np
 
 import astropy.table as table
 import astropy.units as units
+from astropy.coordinates import SkyCoord
 
 from craftutils.observation.catalogue import Catalogue
 import craftutils.observation.image as image
@@ -73,6 +74,8 @@ class SECatalogue(Catalogue):
         else:
             source_cat["DEC_ERR"] = np.sqrt(
                 source_cat["ERRY2_WORLD"].to(units.arcsec ** 2))
+
+        source_cat["COORD"] = SkyCoord(source_cat["RA"],  source_cat["DEC"])
 
         return source_cat
 
@@ -183,3 +186,5 @@ class SECatalogue(Catalogue):
         else:
             outputs["image_path"] = None
         return outputs
+
+

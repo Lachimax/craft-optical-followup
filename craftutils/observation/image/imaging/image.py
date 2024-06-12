@@ -3191,19 +3191,38 @@ class ImagingImage(Image):
 
     def insert_synthetic_sources(
             self,
-            x: np.float64, y: np.float64,
-            mag: np.float64,
+            catalogue: table.QTable,
             output: str,
             overwrite: bool = True,
-            world_coordinates: bool = False,
-            extra_values: table.Table = None,
             model: str = "psfex"
     ):
+        """Catalogue must have column 'mag', and either 'coord' or 'x' AND 'y'.
+
+        :param catalogue:
+        :param output:
+        :param overwrite:
+        :param model:
+        :return:
+        """
         if self.psfex_path is None:
             raise ValueError(f"{self.name}.psfex_path has not been set.")
         if self.zeropoint_best is None:
             raise ValueError(f"{self.name}.zeropoint_best has not been set.")
         output_cat = output.replace('.fits', '_synth_cat.ecsv')
+
+        if "x" in catalogue.colnames and "y" in catalogue.colnames:
+            x = catalogue["x"]
+            y = catalogue["y"]
+        elif "coord" in catalogue.colnames:
+            x, y = self.world_to_pixel(coord=catalogue["coord"])
+            catalogue["x"] = x
+            catalogue["y"] = y
+        else:
+            raise ValueError("Either 'x' and 'y' or 'coord' must be provided.")
+        if "mag" not in catalogue.colnames:
+            raise ValueError("'mag' column missing from provided catalogue.")
+        else:
+            mag = catalogue["mag"]
 
         self.extract_pixel_scale()
 
@@ -3216,8 +3235,7 @@ class ImagingImage(Image):
                 airmass=self.extract_airmass(),
                 extinction=self.zeropoint_best["extinction"],
                 exp_time=self.extract_exposure_time(),
-                world_coordinates=world_coordinates,
-                extra_values=extra_values,
+                world_coordinates=False,
                 output=output,
                 output_cat=output_cat,
                 overwrite=overwrite,
@@ -3232,8 +3250,7 @@ class ImagingImage(Image):
                 airmass=self.extract_airmass(),
                 extinction=self.zeropoint_best["extinction"],
                 exp_time=self.extract_exposure_time(),
-                world_coordinates=world_coordinates,
-                extra_values=extra_values,
+                world_coordinates=False,
                 output=output,
                 output_cat=output_cat,
                 overwrite=overwrite

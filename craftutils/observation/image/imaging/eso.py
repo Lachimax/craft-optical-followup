@@ -205,7 +205,7 @@ class FORS2CoaddedImage(CoaddedImage):
                 skip_retrievable = kwargs.pop("skip_retrievable")
             if skip_retrievable:
                 skip_zp = True
-        else:
+        elif "instrument_archive" in self.zeropoints:
             zp = self.zeropoints["instrument_archive"]
         if not skip_zp:
             zp = super().zeropoint(

@@ -135,8 +135,9 @@ class ImagingEpoch(Epoch):
                     name=self.validation_copy_of,
                     instrument=self.instrument_name,
                     field=self.field,
-                    quiet=self.quiet
+                    # quiet=self.quiet
                 )
+                self.date = self.validation_copy_of.date
         self.validation_catalogue_path = None
         self.validation_catalogue = None
 
@@ -159,12 +160,6 @@ class ImagingEpoch(Epoch):
                 "keywords": {
                     "alternate_dir": None
                 }
-            },
-            "insert_synthetic_frames": {
-                "method": cls.proc_insert_synthetic_frames,
-                "message": "Insert synthetic sources in frames for validation?",
-                "default": False,
-                "keywords": {}
             },
             "defringe": {
                 "method": cls.proc_defringe,
@@ -215,6 +210,12 @@ class ImagingEpoch(Epoch):
                     # "polynomial_degree": 3
                 }
             },
+            "insert_synthetic_frames": {
+                "method": cls.proc_insert_synthetic_frames,
+                "message": "Insert synthetic sources in frames for validation_checks?",
+                "default": False,
+                "keywords": {}
+            },
             "coadd": {
                 "method": cls.proc_coadd,
                 "message": "Coadd frames with Montage?",
@@ -246,7 +247,8 @@ class ImagingEpoch(Epoch):
                 "message": "Do source extraction and diagnostics?",
                 "default": True,
                 "keywords": {
-                    "do_astrometry_diagnostics": True
+                    "do_astrometry_diagnostics": True,
+                    "do_psf_diagnostics": True
                 }
             },
             "photometric_calibration": {
@@ -303,20 +305,72 @@ class ImagingEpoch(Epoch):
             output_dir: str,
             **kwargs
     ):
-        self.insert_synthetic_frames(frame_type=self.frames_for_combined, **kwargs)
+        self.insert_synthetic_frames(
+            frame_type=self.frames_for_combined,
+            output_dir=output_dir,
+            **kwargs
+        )
+        print(self.validation_copy_of.frames_final)
+        self.frames_final = self.validation_copy_of.frames_final
 
-    def generate_validation_catalogue(self, force=True, n: int = 100):
-        if force or self.validation_catalogue_path is None:
-            pass
+    def generate_validation_catalogue(
+            self,
+            force=False,
+            centre: SkyCoord = None,
+            box: units.Quantity = 3 * units.arcmin,
+            min_mag: float = 19.5,
+            max_mag: float = 23.5,
+            n: int = 100
+    ):
+        if force or self.validation_catalogue_path is None or not os.path.isfile(self.validation_catalogue_path):
+            if centre is None:
+                centre = self.field.centre_coords
+            d_x = (np.random.rand(n) - 0.5) * box
+            d_y = (np.random.rand(n) - 0.5) * box
+            ra = centre.ra + d_x / np.cos(centre.dec)
+            dec = centre.dec + d_y
+            new_coords = SkyCoord(ra, dec)
+            tab_dict = {
+                "coord": new_coords,
+                "mag": np.random.rand(n) * (max_mag - min_mag) + min_mag,
+            }
+            self.validation_catalogue = table.QTable(tab_dict)
+            self.validation_catalogue_path = os.path.join(self.data_path, "validation_catalogue_generated.ecsv")
+            self.validation_catalogue.write(self.validation_catalogue_path, overwrite=True)
+            fig, ax = plt.subplots()
+            c = ax.scatter(new_coords.ra, new_coords.dec, c=self.validation_catalogue["mag"])
+            fig.colorbar(c)
+            figpath = self.validation_catalogue_path.replace(".ecsv", ".pdf")
+            print("Saving:", figpath)
+            fig.savefig(figpath)
         else:
             self.validation_catalogue = table.QTable.read(self.validation_catalogue_path)
 
-    def insert_synthetic_frames(self, frame_type: str, **kwargs):
+    def insert_synthetic_frames(self, frame_type: str, output_dir: str, **kwargs):
+        # else:
+        #     cat_name = "instrument_archive"
+        print(self.validation_copy_of.output_file)
+        print(self.validation_copy_of.coadded_final)
+        final_images = self.validation_copy_of._get_images(image_type="final")
         frames_original = self.validation_copy_of._get_frames(frame_type)
-        for frame in frames_original:
-            pass
+        frames_dict = self._get_frames(frame_type=frame_type)
         self.generate_validation_catalogue()
-
+        self._get_frames(frame_type=frame_type).clear()
+        for fil, frames in frames_original.items():
+            final_img = final_images[fil]
+            zp_dict = final_img.zeropoint_best
+            output_fil = os.path.join(output_dir, fil)
+            os.makedirs(output_fil, exist_ok=True)
+            se_dir = os.path.join(output_fil, "source_extraction")
+            os.makedirs(se_dir, exist_ok=True)
+            for frame in frames:
+                frame.psfex(output_dir=se_dir)
+                frame.zeropoint_best = zp_dict.copy()
+                inserted, _ = frame.insert_synthetic_sources(
+                    catalogue=self.validation_catalogue,
+                    output=os.path.join(output_fil, frame.filename.replace(".fits", "_synth.fits")),
+                )
+                self._add_frame(inserted, frames_dict=frames_dict, frame_type=frame_type)
 
     def proc_defringe(
             self,
@@ -1397,7 +1451,8 @@ class ImagingEpoch(Epoch):
         self.deepest_filter = deepest.filter_name
         self.deepest = deepest
 
-        self.push_to_table()
+        if self.validation_copy_of is None:
+            self.push_to_table()
         return deepest
 
     def proc_get_photometry(
@@ -1546,6 +1601,10 @@ class ImagingEpoch(Epoch):
             # Transform source extractor magnitudes using zeropoint.
             img.calibrate_magnitudes(zeropoint_name="best", dual=dual, force=True)
 
+            if self.validation_catalogue_path is not None:
+                self.validation_checks(img=img, output_dir=fil_output_path)
+                continue
+
             # Set up lists for matches to turn into a subset of the SE catalogue
             rows = []
             names = []
@@ -1553,10 +1612,7 @@ class ImagingEpoch(Epoch):
             ra_target = []
             dec_target = []
 
-            if "SNR_PSF" in img.depth["secure"]:
-                depth = img.depth["secure"]["SNR_PSF"][f"5-sigma"]
-            else:
-                depth = img.depth["secure"]["SNR_AUTO"][f"5-sigma"]
+            depth = img.select_depth(sigma=5, depth_type="secure")
 
             img.load_data()
 
@@ -1809,6 +1865,27 @@ class ImagingEpoch(Epoch):
     #         u.mkdir_check(fil_output_path)
     #         img = image_dict[fil]
     #         img.push_source_cat(dual=dual)
+
+    def validation_checks(
+            self,
+            img: image.ImagingImage,
+            output_dir: str,
+            tolerance=0.5 * units.arcsec
+    ):
+        self.validation_catalogue = table.QTable.read(self.validation_catalogue_path)
+        idx, sep, _ = self.validation_catalogue["coord"].match_to_catalog_sky(img.source_cat["COORD"])
+        matches_se = img.source_cat[idx]
+        sep = sep.to("arcsec")
+        self.validation_catalogue["separation_fil"] = sep
+        for mag_type in ("PSF", "AUTO"):
+            y = self.validation_catalogue[f"{img.filter_name}_mag_{mag_type}"] = matches_se[f"MAG_{mag_type}_ZP_best"]
+            self.validation_catalogue[f"{img.filter_name}_mag_{mag_type}_err"] = matches_se[f"MAGERR_{mag_type}_ZP_best"]
+            x = self.validation_catalogue["mag"]
+            fig, ax = plt.subplots()
+            c = ax.scatter(x, y, marker="x", c=sep)
+            fig.colorbar(c)
+            fig.savefig(os.path.join(output_dir, "validation_comparison.pdf"))
+        self.validation_catalogue.write(self.validation_catalogue_path, overwrite=True)
 
     def astrometry_diagnostics(
             self,
@@ -2102,7 +2179,10 @@ class ImagingEpoch(Epoch):
                     if outputs["finalised"][name] is not None:
                         u.debug_print(1, f"Attempting to load finalised[{name}]")
                         self._add_coadded(img=outputs["finalised"][name], key=name, image_dict=self.finalised)
-
+            if "frames_final" in outputs:
+                self.frames_final = outputs["frames_final"]
+            if "coadded_final" in outputs:
+                self.coadded_final = outputs["coadded_final"]
             if "std_pointings" in outputs:
                 self.std_pointings = outputs["std_pointings"]
 
@@ -2439,7 +2519,6 @@ class ImagingEpoch(Epoch):
             name: str,
             instrument: str,
             field: Union['fld.Field', str] = None,
-            quiet: bool = False
     ):
         if name in active_epochs:
             return active_epochs[name]
@@ -2449,7 +2528,8 @@ class ImagingEpoch(Epoch):
             instrument_name=instrument,
             field_name=field_name,
             epoch_name=name)
-        return cls.from_file(param_file=path, field=field, quiet=quiet)
+        print(cls)
+        return cls.from_file(param_file=path, field=field)
 
     @classmethod
     def build_param_path(cls, instrument_name: str, field_name: str, epoch_name: str):
