@@ -13,7 +13,7 @@ import numpy as np
 import astropy.table as table
 import astropy.io.fits as fits
 import astropy.units as units
-from astropy.coordinates import SkyCoord
+from astropy.coordinates import SkyCoord, Longitude
 from astropy.time import Time
 
 # TODO: Arrange these into some kind of logical order.
@@ -1204,15 +1204,25 @@ def uncertainty_str_coord(
         brackets: bool = True,
         ra_err_seconds: bool = False
 ):
-    ra = coord.ra
-    ra_s_str, ra_rounded, ra_unc_rounded = uncertainty_string(
+    print("=" * 100)
+    print(coord)
+    print(coord.to_string("hmsdms"))
+    print(uncertainty_ra)
+    uncertainty_ra_s = Longitude(uncertainty_ra).hms.s
+    ra_s_str, ra_s_rounded, ra_s_unc_rounded = uncertainty_string(
         value=coord.ra.hms.s,
-        uncertainty=uncertainty_ra,
+        uncertainty=uncertainty_ra_s,
+        n_digits_err=n_digits_err,
+        brackets=brackets
+    )
+    ra_arcsec_str, ra_arcsec_rounded, ra_arcsec_unc_rounded = uncertainty_string(
+        value=coord.ra.to("arcsec"),
+        uncertainty=uncertainty_ra.to("arcsec"),
         n_digits_err=n_digits_err,
         brackets=brackets
     )
     ra_s_str = ra_s_str.replace("$", "")
-    ra_str = ra.to_string("h", format="latex")
+    ra_str = coord.ra.to_string("h", format="latex")
     s_i = ra_str.find(r"{m}}") + 4
     s_2 = ra_str[s_i:]
     e_i = s_2.find("^") + s_i
@@ -1220,8 +1230,8 @@ def uncertainty_str_coord(
     if ra_err_seconds:
         ra_uncertainty_str = ra_str.replace(ra_replace, ra_s_str)
     else:
-        ra_uncertainty_str = f"{ra_str[:-1]} ({ra_unc_rounded}" + r"^{\prime\prime})$"
 
+        ra_uncertainty_str = f"{ra_str.replace(ra_replace, str(ra_s_rounded))[:-1]} \pm ({ra_arcsec_unc_rounded}" + r"^{\prime\prime})$"
     dec = coord.dec
     dec_s_str, dec_rounded, dec_unc_rounded = uncertainty_string(
         value=abs(coord.dec.dms.s),
@@ -1763,15 +1773,52 @@ def latexise_table(
         column_dict: dict = None,
         output_path: str = None,
         sub_colnames: dict = None,
-        n_digits_err: int = 1,
-        limit_type: str = "upper",
         exclude_from_unc: list = (),
         round_cols: list = (),
         round_digits: int = 1,
+        ra_col: str = None,
+        dec_col: str = None,
+        ra_err_col: str = None,
+        dec_err_col: str = None,
+        err_suffix: str = "_err",
+        coord_kwargs: dict = None,
+        uncertainty_kwargs: dict = None,
         **kwargs
 ) -> Union[table.Table, List[str]]:
     tbl = tbl.copy()
 
+    # Make appropriate RA and Dec columns
+    if ra_col is not None and dec_col is not None:
+        if ra_err_col is None:
+            ra_err_col = ra_col + err_suffix
+        if dec_err_col is None:
+            dec_err_col = dec_col + err_suffix
+        default_coord_kwargs = dict(
+            n_digits_err=1,
+            brackets=True,
+            ra_err_seconds=False,
+        )
+        if coord_kwargs is not None:
+            default_coord_kwargs.update(coord_kwargs)
+        coord_kwargs = default_coord_kwargs
+
+        ra_strs = []
+        dec_strs = []
+        for row in tbl:
+            ra_str, dec_str = uncertainty_str_coord(
+                coord=SkyCoord(ra=row[ra_col], dec=row[dec_col], unit="deg"),
+                uncertainty_ra=row[ra_err_col].to("arcsec"),
+                uncertainty_dec=row[dec_err_col].to("arcsec"),
+                **coord_kwargs
+            )
+            ra_strs.append(ra_str)
+            dec_strs.append(dec_str)
+        tbl[ra_col] = ra_strs
+        tbl[dec_col] = dec_strs
+        tbl.remove_column(ra_err_col)
+        tbl.remove_column(dec_err_col)
+
+    # Get rid of units
     for col in round_cols:
         new_col = []
         for row in tbl:
@@ -1779,26 +1826,34 @@ def latexise_table(
             new_col.append(str(val.round(round_digits)))
         tbl[col] = new_col
 
-    err_colnames = list(filter(lambda c: c.endswith("_err"), tbl.colnames))
+    # Produce combined value(error) strings
+    err_colnames = list(filter(lambda c: c.endswith(err_suffix), tbl.colnames))
     for err_col in err_colnames:
-        val_col = val_col = err_col[:-4]
+        val_col = err_col[:-len(err_suffix)]
         if val_col in exclude_from_unc:
             continue
         # print(colname, do_err_str, err_col, err_col in tbl.colnames)
         new_col = []
+        default_unc_kwargs = dict(
+            n_digits_lim=3,
+            n_digits_err=1,
+            limit_type="upper",
+        )
+        if uncertainty_kwargs is not None:
+            default_unc_kwargs.update(uncertainty_kwargs)
+        uncertainty_kwargs = default_unc_kwargs
         for row in tbl:
             this_str, value, uncertainty = uncertainty_string(
                 value=row[val_col],
                 uncertainty=row[err_col],
-                n_digits_err=n_digits_err,
-                n_digits_lim=3,
-                limit_type=limit_type
+                **uncertainty_kwargs
             )
             new_col.append(this_str)
 
         tbl[val_col] = new_col
         tbl.remove_column(err_col)
 
+    # Stick some extra text under column names, e.g. units
     under_list = None
     if sub_colnames is not None:
         under_list = []
@@ -1807,6 +1862,8 @@ def latexise_table(
                 under_list.append(sub_colnames[colname])
             else:
                 under_list.append("")
+
+    # Rename columns
     if column_dict is not None:
         # Sort by the provided dictionary, then the rest
         not_in_dict = set(tbl.colnames) - set(column_dict.keys())
@@ -1815,6 +1872,8 @@ def latexise_table(
             if original in column_dict:
                 tbl[new] = tbl[original]
                 tbl.remove_column(original)
+
+    # Add various other components to the .tex output
     if output_path is not None:
         tbl.write(output_path, format="ascii.latex", overwrite=True)
         if set(kwargs.keys()).intersection({"caption", "short_caption", "label", "landscape"}):

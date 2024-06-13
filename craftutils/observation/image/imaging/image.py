@@ -179,7 +179,7 @@ class ImagingImage(Image):
 
     def psfex(
             self,
-            output_dir: str,
+            output_dir: str = None,
             force: bool = False,
             set_attributes: bool = True,
             se_kwargs: dict = {},
@@ -196,6 +196,9 @@ class ImagingImage(Image):
         :return: HDUList representing the PSF model FITS file.
         """
         psfex_output = None
+        if output_dir is None:
+            output_dir = os.path.join(os.path.dirname(self.path), "psfex")
+        os.makedirs(output_dir, exist_ok=True)
 
         if force or self.psfex_path is None or not os.path.isfile(self.psfex_path):
 
@@ -3204,19 +3207,20 @@ class ImagingImage(Image):
         :param model:
         :return:
         """
+        print("catalogue[0]:", catalogue[0])
         if self.psfex_path is None:
             raise ValueError(f"{self.name}.psfex_path has not been set.")
         if self.zeropoint_best is None:
             raise ValueError(f"{self.name}.zeropoint_best has not been set.")
         output_cat = output.replace('.fits', '_synth_cat.ecsv')
 
-        if "x" in catalogue.colnames and "y" in catalogue.colnames:
-            x = catalogue["x"]
-            y = catalogue["y"]
-        elif "coord" in catalogue.colnames:
+        if "coord" in catalogue.colnames:
             x, y = self.world_to_pixel(coord=catalogue["coord"])
             catalogue["x"] = x
             catalogue["y"] = y
+        elif "x" in catalogue.colnames and "y" in catalogue.colnames:
+            x = catalogue["x"]
+            y = catalogue["y"]
         else:
             raise ValueError("Either 'x' and 'y' or 'coord' must be provided.")
         if "mag" not in catalogue.colnames:

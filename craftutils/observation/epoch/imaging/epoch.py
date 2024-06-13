@@ -318,11 +318,12 @@ class ImagingEpoch(Epoch):
             force=False,
             centre: SkyCoord = None,
             box: units.Quantity = 3 * units.arcmin,
-            min_mag: float = 19.5,
-            max_mag: float = 23.5,
+            min_mag: float = 18., #19.5
+            max_mag: float = 25., #23.5
             n: int = 100
     ):
         if force or self.validation_catalogue_path is None or not os.path.isfile(self.validation_catalogue_path):
+            print("Generating synthetic catalogue...")
             if centre is None:
                 centre = self.field.centre_coords
             d_x = (np.random.rand(n) - 0.5) * box
@@ -364,10 +365,10 @@ class ImagingEpoch(Epoch):
             se_dir = os.path.join(output_fil, "source_extraction")
             os.makedirs(se_dir, exist_ok=True)
             for frame in frames:
-                frame.psfex(output_dir=se_dir)
+                frame.psfex()
                 frame.zeropoint_best = zp_dict.copy()
                 inserted, _ = frame.insert_synthetic_sources(
-                    catalogue=self.validation_catalogue,
+                    catalogue=self.validation_catalogue.copy(),
                     output=os.path.join(output_fil, frame.filename.replace(".fits", "_synth.fits")),
                 )
                 self._add_frame(inserted, frames_dict=frames_dict, frame_type=frame_type)
@@ -1876,15 +1877,24 @@ class ImagingEpoch(Epoch):
         idx, sep, _ = self.validation_catalogue["coord"].match_to_catalog_sky(img.source_cat["COORD"])
         matches_se = img.source_cat[idx]
         sep = sep.to("arcsec")
-        self.validation_catalogue["separation_fil"] = sep
+        self.validation_catalogue[f"separation_{img.filter_name}"] = sep
         for mag_type in ("PSF", "AUTO"):
-            y = self.validation_catalogue[f"{img.filter_name}_mag_{mag_type}"] = matches_se[f"MAG_{mag_type}_ZP_best"]
+            self.validation_catalogue[f"{img.filter_name}_mag_{mag_type}"] = matches_se[f"MAG_{mag_type}_ZP_best"]
             self.validation_catalogue[f"{img.filter_name}_mag_{mag_type}_err"] = matches_se[f"MAGERR_{mag_type}_ZP_best"]
-            x = self.validation_catalogue["mag"]
+            cat = self.validation_catalogue[self.validation_catalogue[f"{img.filter_name}_mag_{mag_type}"] < 100 * units.mag]
+            x = cat[f"mag"]
+            y = cat[f"{img.filter_name}_mag_{mag_type}"].value
+            y_err = cat[f"{img.filter_name}_mag_{mag_type}_err"].value
             fig, ax = plt.subplots()
-            c = ax.scatter(x, y, marker="x", c=sep)
-            fig.colorbar(c)
-            fig.savefig(os.path.join(output_dir, "validation_comparison.pdf"))
+            ax.errorbar(x, y, yerr=y_err, c="black", ls="none")
+            c = ax.scatter(x, y, marker="x", c=cat[f"separation_{img.filter_name}"].value)
+            print(np.min(x), np.max(x))
+            ax.plot([np.min(x), np.max(x)], [np.min(x), np.max(x)], c="red")
+            ax.set_ylabel("Extracted object (mag)")
+            ax.set_xlabel("Inserted object (mag)")
+            cbar = fig.colorbar(c)
+            cbar.set_label(r"Separation ($\prime\prime$)")
+            fig.savefig(os.path.join(output_dir, f"validation_comparison_{mag_type}.pdf"))
         self.validation_catalogue.write(self.validation_catalogue_path, overwrite=True)
 
     def astrometry_diagnostics(
