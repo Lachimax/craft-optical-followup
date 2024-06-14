@@ -1873,21 +1873,22 @@ class ImagingEpoch(Epoch):
             output_dir: str,
             tolerance=0.5 * units.arcsec
     ):
+        fil = img.filter_name
         self.validation_catalogue = table.QTable.read(self.validation_catalogue_path)
         idx, sep, _ = self.validation_catalogue["coord"].match_to_catalog_sky(img.source_cat["COORD"])
         matches_se = img.source_cat[idx]
         sep = sep.to("arcsec")
-        self.validation_catalogue[f"separation_{img.filter_name}"] = sep
+        self.validation_catalogue[f"separation_{fil}"] = sep
         for mag_type in ("PSF", "AUTO"):
-            self.validation_catalogue[f"{img.filter_name}_mag_{mag_type}"] = matches_se[f"MAG_{mag_type}_ZP_best"]
-            self.validation_catalogue[f"{img.filter_name}_mag_{mag_type}_err"] = matches_se[f"MAGERR_{mag_type}_ZP_best"]
-            cat = self.validation_catalogue[self.validation_catalogue[f"{img.filter_name}_mag_{mag_type}"] < 100 * units.mag]
+            self.validation_catalogue[f"{fil}_mag_{mag_type}"] = matches_se[f"MAG_{mag_type}_ZP_best"]
+            self.validation_catalogue[f"{fil}_mag_{mag_type}_err"] = matches_se[f"MAGERR_{mag_type}_ZP_best"]
+            cat = self.validation_catalogue[self.validation_catalogue[f"{fil}_mag_{mag_type}"] < 100 * units.mag]
             x = cat[f"mag"]
-            y = cat[f"{img.filter_name}_mag_{mag_type}"].value
-            y_err = cat[f"{img.filter_name}_mag_{mag_type}_err"].value
+            y = cat[f"{fil}_mag_{mag_type}"].value
+            y_err = cat[f"{fil}_mag_{mag_type}_err"].value
             fig, ax = plt.subplots()
             ax.errorbar(x, y, yerr=y_err, c="black", ls="none")
-            c = ax.scatter(x, y, marker="x", c=cat[f"separation_{img.filter_name}"].value)
+            c = ax.scatter(x, y, marker="x", c=cat[f"separation_{fil}"].value)
             print(np.min(x), np.max(x))
             ax.plot([np.min(x), np.max(x)], [np.min(x), np.max(x)], c="red")
             ax.set_ylabel("Extracted object (mag)")
@@ -1895,6 +1896,28 @@ class ImagingEpoch(Epoch):
             cbar = fig.colorbar(c)
             cbar.set_label(r"Separation ($\prime\prime$)")
             fig.savefig(os.path.join(output_dir, f"validation_comparison_{mag_type}.pdf"))
+            fig.clear()
+            plt.close(fig)
+
+        # Class Star
+        self.validation_catalogue[f"{img.filter_name}_class_star"] = matches_se[f"CLASS_STAR"]
+        fig, ax = plt.subplots()
+        x = self.validation_catalogue[f"{img.filter_name}_class_star"]
+        ax.hist(x, bins="auto")
+        fig.savefig(os.path.join(output_dir, f"validation_class_star.pdf"))
+        fig.clear()
+        plt.close(fig)
+
+        self.validation_catalogue[f"fwhm_{fil}"] = matches_se["FWHM_WORLD"].to("arcsec")
+        cat = self.validation_catalogue.copy()
+        cat_se = img.source_cat.table
+        fig, ax = plt.subplots()
+        ax.hist(cat[f"fwhm_{fil}"].value, density=True, bins="auto")
+        ax.hist(cat_se[f"FWHM_WORLD"].to("arcsec").value, density=True, bins="auto", alpha=0.5)
+        fig.savefig(os.path.join(output_dir, f"validation_fwhm_{mag_type}.pdf"))
+        fig.clear()
+        plt.close(fig)
+
         self.validation_catalogue.write(self.validation_catalogue_path, overwrite=True)
 
     def astrometry_diagnostics(
