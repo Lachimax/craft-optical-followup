@@ -13,7 +13,7 @@ import numpy as np
 import astropy.table as table
 import astropy.io.fits as fits
 import astropy.units as units
-from astropy.coordinates import SkyCoord, Longitude
+from astropy.coordinates import SkyCoord, Longitude, Latitude
 from astropy.time import Time
 
 # TODO: Arrange these into some kind of logical order.
@@ -1749,7 +1749,9 @@ def mod_latex_table(
         file[0] = tab_invoc
         file.pop(-1)
         file.pop(-1)
-        file.append(r"\end{longtable}")
+        file.append(r"\end{longtable}" + "\n")
+        file.insert(0, r"\begin{singlespace}")
+        file.append(r"\end{singlespace}" + "\n")
 
     if landscape:
         file.insert(
@@ -1805,12 +1807,16 @@ def latexise_table(
         ra_strs = []
         dec_strs = []
         for row in tbl:
-            ra_str, dec_str = uncertainty_str_coord(
-                coord=SkyCoord(ra=row[ra_col], dec=row[dec_col], unit="deg"),
-                uncertainty_ra=row[ra_err_col].to("arcsec"),
-                uncertainty_dec=row[dec_err_col].to("arcsec"),
-                **coord_kwargs
-            )
+            if row[ra_err_col] > 0:
+                ra_str, dec_str = uncertainty_str_coord(
+                    coord=SkyCoord(ra=row[ra_col], dec=row[dec_col], unit="deg"),
+                    uncertainty_ra=row[ra_err_col].to("arcsec"),
+                    uncertainty_dec=row[dec_err_col].to("arcsec"),
+                    **coord_kwargs
+                )
+            else:
+                ra_str = Longitude(row[ra_col]).to_string("h", format="latex")
+                dec_str = Latitude(row[dec_col]).to_string(format="latex")
             ra_strs.append(ra_str)
             dec_strs.append(dec_str)
         tbl[ra_col] = ra_strs
@@ -1826,6 +1832,12 @@ def latexise_table(
             new_col.append(str(val.round(round_digits)))
         tbl[col] = new_col
 
+    # Replace booleans with Y/N
+    for col in tbl.colnames:
+        if isinstance(tbl[col][0], np.bool_):
+            yn = {True: "Y", False: "N"}
+            tbl[col] = [yn[b] for b in tbl[col]]
+
     # Produce combined value(error) strings
     err_colnames = list(filter(lambda c: c.endswith(err_suffix), tbl.colnames))
     for err_col in err_colnames:
@@ -1837,6 +1849,7 @@ def latexise_table(
         default_unc_kwargs = dict(
             n_digits_lim=3,
             n_digits_err=1,
+            n_digits_no_err=None,
             limit_type="upper",
         )
         if uncertainty_kwargs is not None:
@@ -1853,6 +1866,12 @@ def latexise_table(
         tbl[val_col] = new_col
         tbl.remove_column(err_col)
 
+    # # Add columns for reference
+    # if ref_prefix is not None:
+    #     ref_colnames = list(filter(lambda c: c.startswith(ref_prefix), tbl.colnames))
+    #     for row in tbl:
+    #         ref_key =
+
     # Stick some extra text under column names, e.g. units
     under_list = None
     if sub_colnames is not None:
@@ -1861,17 +1880,23 @@ def latexise_table(
             if colname in sub_colnames:
                 under_list.append(sub_colnames[colname])
             else:
-                under_list.append("")
+                under_list.append(" ")
 
     # Rename columns
     if column_dict is not None:
         # Sort by the provided dictionary, then the rest
-        not_in_dict = set(tbl.colnames) - set(column_dict.keys())
+        # not_in_dict = set(tbl.colnames) - set(column_dict.keys())
         # tbl = tbl[list(column_dict.keys())]  + list(not_in_dict)]
-        for original, new in column_dict.items():
+        nems = []
+        for original in tbl.colnames:
             if original in column_dict:
+                new = column_dict[original]
                 tbl[new] = tbl[original]
                 tbl.remove_column(original)
+                nems.append(new)
+            else:
+                nems.append(original)
+        tbl = tbl[nems]
 
     # Add various other components to the .tex output
     if output_path is not None:
