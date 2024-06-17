@@ -2106,8 +2106,13 @@ def insert_synthetic_point_sources_psfex(
     combine = np.zeros(image.shape)
     print('Generating additive image...')
     for i in range(len(x)):
-        flux = mag_to_instrumental_flux(mag=mag[i], exp_time=exp_time, zeropoint=zeropoint, extinction=extinction,
-                                        airmass=airmass)
+        flux = mag_to_instrumental_flux(
+            mag=mag[i],
+            exp_time=exp_time,
+            zeropoint=zeropoint,
+            extinction=extinction,
+            airmass=airmass
+        )
 
         row = (x[i], y[i], flux)
         source = table.QTable(rows=[row], names=('x_inserted', 'y_inserted', 'flux_inserted'))
@@ -2239,11 +2244,20 @@ def insert_point_sources_to_file(
     return file, sources
 
 
-def insert_random_point_sources_to_file(file: Union[fits.hdu.HDUList, str], fwhm: float, output: str, n: int = 1000,
-                                        exp_time: float = 1.,
-                                        zeropoint: float = 0., max_mag: float = 30, min_mag: float = 20.,
-                                        extinction: float = 0., airmass: float = None, overwrite: bool = True,
-                                        saturate: float = None):
+def insert_random_point_sources_to_file(
+        file: Union[fits.hdu.HDUList, str],
+        fwhm: float,
+        output: str,
+        n: int = 1000,
+        exp_time: float = 1.,
+        zeropoint: float = 0.,
+        max_mag: float = 30,
+        min_mag: float = 20.,
+        extinction: float = 0.,
+        airmass: float = None,
+        overwrite: bool = True,
+        saturate: float = None
+):
     # TODO: For these methods, make it read from file header if None for some of the arguments.
 
     file, path = ff.path_or_hdu(file)
@@ -2254,9 +2268,20 @@ def insert_random_point_sources_to_file(file: Union[fits.hdu.HDUList, str], fwhm
     y = np.random.uniform(0, n_y, size=n)
     mag = np.random.uniform(min_mag, max_mag, size=n)
 
-    return insert_point_sources_to_file(file=file, x=x, y=y, fwhm=fwhm, mag=mag, exp_time=exp_time, zeropoint=zeropoint,
-                                        extinction=extinction, airmass=airmass, output=output, overwrite=overwrite,
-                                        saturate=saturate)
+    return insert_point_sources_to_file(
+        file=file,
+        x=x,
+        y=y,
+        fwhm=fwhm,
+        mag=mag,
+        exp_time=exp_time,
+        zeropoint=zeropoint,
+        extinction=extinction,
+        airmass=airmass,
+        output=output,
+        overwrite=overwrite,
+        saturate=saturate
+    )
 
 
 def insert_synthetic_at_frb(obj: Union[str, dict], test_path, filters: list, magnitudes: list, add_path=False,

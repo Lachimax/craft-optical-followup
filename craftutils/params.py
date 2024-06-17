@@ -67,6 +67,16 @@ config_file = os.path.join(config_dir, "config.yaml")
 @u.export
 def check_for_config():
     u.mkdir_check(config_dir)
+    config_template = {
+        'eso_install_dir': None,
+        'esoreflex_input_dir': None,
+        'esoreflex_output_dir': None,
+        'furby_dir': None,
+        'param_dir': param_dir_project,
+        'top_data_dir': os.path.join(os.path.expanduser("~"), "Data"),
+        'table_dir': None,
+        'publications_output_dir': os.path.join(os.path.expanduser("~"), "Data", "publications")
+    }
     config_dict = load_params(config_file)
     if config_dict is None:
         # Copy template config file from project directory.
@@ -79,14 +89,37 @@ def check_for_config():
             config_file
         )
         print(f"No config file was detected at {config_file}.")
-        print(f"A fresh config file has been created at '{config_file}'")
-        print(
-            "In this file, please set 'top_data_dir' to a valid path in which to store all "
-            "data products of this package (This may require a large amount of space.).")
-        print("You may also like to specify an alternate param_dir")
+        print(f"A fresh config file will been created at '{config_file}'.")
+        # print("I will now ask you for some directories that will go into this file, but it may be edited at any time.")
+        # top_data_dir = u.user_input(
+        #     "\nPlease enter a directory in which to store all data products of this package "
+        #     "(This may require a large amount of space.). If the directory does not exist, "
+        #     "I will attempt to create it.",
+        #     default=config_template["top_data_dir"]
+        # )
+        # os.makedirs(top_data_dir, exist_ok=True)
+        # config_dict["top_data_dir"] = top_data_dir
+        #
+        # param_dir_n = u.user_input(
+        #     "\nEnter a directory in which parameter files will be written and loaded from; leave as default to use this"
+        #     "repository's param directory.",
+        #     default=config_template["param_dir"]
+        # )
+        # os.makedirs(param_dir_n, exist_ok=True)
+        # config_dict["param_dir"] = param_dir_n
+        # if param_dir_n != config_template["param_dir"]:
+        #     print("Copying included param files to param directory.")
+        #     shutil.copytree(config_template["param_dir"], param_dir_n)
+
+        # if u.select_yn(message="Do you have ESO Reflex installed?"):
+        #     if os.path.isdir()
+
         config_dict = load_params(config_file)
-        # except FileNotFoundError:
-        #     warnings.warn("config file was not created properly; most likely you are running something other than Linux.")
+
+    for param in config_template:
+        if param not in config_dict:
+            config_dict[param] = config_template[param]
+
     for path_name in config_dict:
         path = config_dict[path_name]
         if path is not None:
@@ -209,9 +242,9 @@ def get_project_path():
 
 
 # Here we set up the various directories used by the pipeline.
-config = check_for_config()
 project_dir = get_project_path()
 param_dir_project = os.path.join(project_dir, "craftutils", "param")
+config = check_for_config()
 param_dir = config['param_dir']
 
 

@@ -173,6 +173,17 @@ class OutputCatalogue(Generic):
                     self.template[colname] = "N/A"
                 else:
                     self.template[colname] = type(entry[colname])(-999)
+            elif isinstance(entry[colname], units.Quantity):
+                try:
+                    u.check_quantity(
+                        number=entry[colname],
+                        unit=self.template[colname].unit,
+                        allow_mismatch=True,
+                        enforce_equivalency=True
+                    )
+                except units.UnitsError:
+                    raise units.UnitsError(
+                        f"For {key}, units for {colname} ({entry[colname].unit}) do not match template (and could not be converted): {self.template[colname].unit}")
 
         self.table[key] = entry
 

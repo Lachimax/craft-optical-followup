@@ -131,8 +131,6 @@ class Pipeline(Generic):
         self._pipeline_init(skip_cats=skip_cats)
         # u.debug_print(2, "Epoch.pipeline(): kwargs ==", kwargs)
 
-        print("do_runtime", self.do_runtime)
-
         # Loop through stages list specified in self.stages()
         stages = self.stages()
         u.debug_print(1, f"Epoch.pipeline(): type(self) ==", type(self))

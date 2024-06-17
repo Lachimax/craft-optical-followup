@@ -1,6 +1,7 @@
 # Code by Lachlan Marnoch, 2021 - 2024
 import os
 import warnings
+import shutil
 from typing import Union, List
 
 import numpy as np
@@ -16,11 +17,14 @@ import craftutils.observation.image as image
 import craftutils.observation.instrument as inst
 import craftutils.observation.epoch as ep
 import craftutils.observation.survey as survey
+import craftutils.observation.filters as filters
 import craftutils.astrometry as astm
 import craftutils.params as p
 import craftutils.retrieve as retrieve
 import craftutils.utils as u
 from craftutils.observation.pipeline import Pipeline
+
+dm_units = units.parsec * units.cm ** -3
 
 __all__ = []
 
@@ -242,6 +246,51 @@ class Field(Pipeline):
             kwargs["use_img"] = kwargs["galfit_img"]
         self.galfit(**kwargs)
 
+    def get_images_band(
+            self,
+            fil: Union[str, filters.Filter],
+            instrument: Union[str, inst.Instrument] = None
+    ):
+        if isinstance(fil, str):
+            if isinstance(instrument, inst.Instrument):
+                instrument = instrument.name
+            elif not isinstance(instrument, str):
+                raise TypeError(
+                    f"If fil is provided as a string, instrument must also be provided as str or Instrument, not {type(instrument)}")
+            fil = filters.Filter.from_params(
+                instrument_name=instrument,
+                filter_name=fil
+            )
+
+        return list(
+            filter(
+                lambda d: d["filter"] == fil.name and d["instrument"] == fil.instrument.name,
+                self.imaging.values()
+            )
+        )
+
+    def get_filters(self):
+        self.load_imaging()
+        all_filters = list(map(lambda i: (i["filter"], i["instrument"]), self.imaging.values()))
+        fil_list = list(set(all_filters))
+        fil_list_2 = []
+        for fil, instr in fil_list:
+            fil = filters.Filter.from_params(filter_name=fil, instrument_name=instr)
+            fil_list_2.append(fil)
+        return fil_list_2
+
+    def deepest_in_band(
+            self,
+            fil: Union[str, filters.Filter],
+            instrument: Union[str, inst.Instrument] = None
+    ):
+        img_list = self.get_images_band(fil, instrument=instrument)
+        img_list.sort(key=lambda d: d["depth"])
+        print(len(img_list))
+        for img_dict in img_list:
+            print(img_dict["name"], img_dict["depth"])
+        img_dict = img_list[-1]
+        return img_dict
 
     def galfit(self, apply_filter=None, use_img=None, **kwargs):
         if apply_filter is None:
@@ -249,29 +298,47 @@ class Field(Pipeline):
         else:
             obj_list = list(filter(apply_filter, self.objects.values()))
 
-        self.load_imaging()
+        filter_list = self.load_imaging()
+        print("use_img", use_img)
 
         for obj in obj_list:
+
             if isinstance(obj, objects.Galaxy):
                 obj.load_output_file()
 
                 if use_img is None:
-                    img = list(self.imaging.values())[0]["image"]
-                    print("You shouldn't be getting here right now.")
+                    phot = obj.select_deepest_sep()
+                    best_img_path = phot["good_image_path"]
+                    best_img = image.Image.from_fits(best_img_path)
+                    # print("You shouldn't be getting here right now.")
                 else:
-                    img = self.imaging[use_img]["image"]
+                    best_img = self.imaging[use_img]["image"]
 
-                print(f"Doing GALFIT with image {img.name}")
+                for fil in filter_list:
+                    print("best_img", best_img.name)
+                    img = self.deepest_in_band(fil=fil)["image"]
+                    print("img", img.name)
 
-                param_guesses, kwargs = obj.galfit_guess_dict(img=img)
-                print(param_guesses)
+                    print(f"Doing GALFIT with image {img.name}")
 
-                results = img.galfit_object(
-                    obj=obj,
-                    model_guesses=[param_guesses],
-                    output_prefix=obj.name,
-                    **kwargs
-                )
+                    param_guesses, kwargs = obj.galfit_guess_dict(img=img)
+                    print(param_guesses)
+
+                    # TODO: REMOVE
+                    # old_dir = os.path.join(obj.data_path, "GALFIT")
+                    # n_files = sum([os.path.isfile(os.path.join(old_dir, f)) for f in os.listdir(old_dir)])
+                    # if n_files > 0:
+                    #     shutil.rmtree(old_dir)
+
+                    results = img.galfit_object(
+                        obj=obj,
+                        model_guesses=[param_guesses],
+                        output_prefix=obj.name,
+                        **kwargs
+                    )
+                    if img.name == best_img.name:
+                        obj.galfit_models["best"] = results
+
             obj.update_output_file()
 
     def proc_push_to_table(self, output_dir: str, **kwargs):
@@ -317,7 +384,13 @@ class Field(Pipeline):
                     obj_dict["name"] = obj_name
                 self.add_object_from_dict(obj_dict=obj_dict)
 
-    def _gather_epochs(self, mode: str = "imaging", quiet: bool = False, instrument: str = None):
+    def _gather_epochs(
+            self,
+            mode: str = "imaging",
+            quiet: bool = False,
+            instrument: str = None,
+            exclude_validation: bool = False
+    ):
         """
         Helper method for code reuse in gather_epochs_spectroscopy() and gather_epochs_imaging().
         Gathers all of the observation epochs of the given mode for this field.
@@ -359,7 +432,11 @@ class Field(Pipeline):
                     epoch = p.load_params(file=param_path)
                     epoch["format"] = "current"
                     epoch["param_path"] = param_path
-                    epochs[epoch_name] = epoch
+                    is_validation = False
+                    if "validation_copy_of" in epoch:
+                        is_validation = isinstance(epoch["validation_copy_of"], str)
+                    if not is_validation or not exclude_validation:
+                        epochs[epoch_name] = epoch
 
         ep.add_many_to_epoch_directory(epochs, field_name=self.name, mode=mode)
 
@@ -375,13 +452,23 @@ class Field(Pipeline):
         self.epochs_spectroscopy.update(epochs)
         return epochs
 
-    def gather_epochs_imaging(self, quiet: bool = False, instrument: str = None):
+    def gather_epochs_imaging(
+            self,
+            quiet: bool = False,
+            instrument: str = None,
+            exclude_validation: bool = False
+    ):
         """
         Gathers all of the imaging observation epochs of this field.
         :return: Dict, with keys being the epoch names and values being nested dictionaries containing the same
         information as the epoch .yaml files.
         """
-        epochs = self._gather_epochs(mode="imaging", quiet=quiet, instrument=instrument)
+        epochs = self._gather_epochs(
+            mode="imaging",
+            quiet=quiet,
+            instrument=instrument,
+            exclude_validation=exclude_validation
+        )
         self.epochs_imaging.update(epochs)
         return epochs
 
@@ -390,7 +477,7 @@ class Field(Pipeline):
         self.epochs_imaging[epoch_name] = epoch
         return epoch
 
-    def select_epoch(self, mode: str, instrument: str = None):
+    def select_epoch(self, mode: str, instrument: str = None, allow_new: bool = True):
         options = {}
         epoch_dict = {
             "imaging": self.epochs_imaging,
@@ -414,7 +501,8 @@ class Field(Pipeline):
                 continue
             epoch = loaded_dict[epoch]
             options[f'*{epoch.name}\t{epoch.date.isot}\t{epoch.instrument_name}'] = epoch
-        options["New epoch"] = "new"
+        if allow_new:
+            options["New epoch"] = "new"
         j, epoch = u.select_option(message="Select epoch.", options=options, sort=True)
         if epoch == "new":
             epoch = self._new_epoch(instrument=instrument, mode=mode)
@@ -464,16 +552,29 @@ class Field(Pipeline):
         current_epochs = self.gather_epochs_imaging(instrument=instrument)
         current_epochs.update(self.gather_epochs_spectroscopy(instrument=instrument))
 
+        copy_of_epoch = None
         is_combined = False
+        is_validation = False
         if mode == "imaging":
             cls = ep.ImagingEpoch.select_child_class(instrument=instrument)
             if len(self.epochs_imaging) > 1:
                 is_combined = u.select_yn("Create a pseudo-epoch combining other epochs for maximum depth?")
+            if not is_combined:
+                is_validation = u.select_yn("Make a copy of another epoch to perform validation_checks checks?")
+                if is_validation:
+                    print("Which epoch would you like to use?")
+                    copy_of_epoch = self.select_epoch(mode=mode, instrument=instrument, allow_new=False)
         elif mode == "spectroscopy":
             cls = ep.SpectroscopyEpoch.select_child_class(instrument=instrument)
         else:
             raise ValueError("mode must be 'imaging' or 'spectroscopy'.")
-        new_params = cls.default_params()
+
+
+
+        if is_validation:
+            new_params = p.load_params(os.path.join(self.param_dir, mode, instrument, copy_of_epoch.name + ".yaml"))
+        else:
+            new_params = cls.default_params()
 
         if instrument in surveys:
             new_params["name"] = instrument.upper()
@@ -485,6 +586,8 @@ class Field(Pipeline):
             default_prefix = f"{self.name}_{instrument.upper()[instrument.find('-') + 1:]}"
             if is_combined:
                 default = default_prefix + "_combined"
+            elif is_validation:
+                default = copy_of_epoch.name + "_validation"
             else:
                 others_like = list(filter(
                     lambda string: string.startswith(default_prefix) and string[-1].isnumeric(),
@@ -509,6 +612,8 @@ class Field(Pipeline):
             #     '%Y-%m-%d')
             # new_params["program_id"] = input("Enter the programmme ID for the observation:\n")
         new_params["instrument"] = instrument
+        if isinstance(copy_of_epoch, ep.ImagingEpoch):
+            new_params["validation_copy_of"] = copy_of_epoch.name
         new_params["data_path"] = self._epoch_data_path(
             mode=mode,
             instrument=instrument,
@@ -518,10 +623,15 @@ class Field(Pipeline):
         )
         new_params["field"] = self.name
         # For a combined epoch, we want to skip the reduction stages and take frames already reduced.
-        if is_combined:
-            new_params["combined_epoch"] = True
+        new_params["combined_epoch"] = is_combined
+        if is_combined or is_validation:
             for stage_name in cls.skip_for_combined:
                 new_params["do"][stage_name] = False
+        if is_validation:
+            for stage_name in cls.validation_stages:
+                new_params["do"][stage_name] = True
+                new_params["source_extraction"]["do_astrometry_diagnostics"] = False
+                new_params["source_extraction"]["do_psf_diagnostics"] = False
         param_path = self._epoch_param_path(mode=mode, instrument=instrument, epoch_name=new_params["name"])
 
         p.save_params(file=param_path, dictionary=new_params)
@@ -533,7 +643,7 @@ class Field(Pipeline):
             frame_type = epoch.frames_for_combined
             print(f"Gathering {frame_type} frames from all {instrument} epochs")
             # Get list of other epochs
-            epochs = self.gather_epochs_imaging()
+            epochs = self.gather_epochs_imaging(exclude_validation=True)
             this_frame_dict = epoch._get_frames(frame_type=frame_type)
             for other_epoch_name in epochs:
                 if other_epoch_name == epoch.name:
@@ -566,6 +676,29 @@ class Field(Pipeline):
             print(f"With filters: {epoch.filters}")
             epoch.set_date(Time(np.mean(list(map(lambda d: d.mjd, dates))), format="mjd"))
             epoch.update_output_file()
+
+        elif is_validation:
+            dates = []
+            frame_type = epoch.frames_for_combined
+            print(f"Gathering {frame_type} frames from {copy_of_epoch.name}")
+            # Get list of other epochs
+            this_frame_dict = epoch._get_frames(frame_type=frame_type)
+            print(f"\tChecking {copy_of_epoch.name}...")
+            # If so, add to internal 'combined_from' list
+            if copy_of_epoch.date is not None:
+                dates.append(copy_of_epoch.date)
+            # Get appropriate frame dictionary from other epoch
+            frame_dict = copy_of_epoch._get_frames(frame_type)
+            # Loop through and add to this epoch's dict
+            for fil in frame_dict:
+                if len(frame_dict[fil]) > 0:
+                    epoch.check_filter(fil)
+                for frame in frame_dict[fil]:
+                    epoch._add_frame(
+                        frame,
+                        frames_dict=this_frame_dict,
+                        frame_type=frame_type
+                    )
 
         return epoch
 
@@ -773,7 +906,7 @@ class Field(Pipeline):
         img.filter.load_instrument()
         fil = img.filter
         fil_name = img.filter.machine_name()
-        depth = img.select_depth()
+        depth, _ = img.select_depth()
         self.imaging[img.name] = {
             "path": img.path,
             "depth": depth,
@@ -890,7 +1023,7 @@ class Field(Pipeline):
         for obj in self.objects.values():
             obj.load_output_file()
 
-    def get_object(self, name: str, allow_missing: bool) -> objects.Object:
+    def get_object(self, name: str, allow_missing: bool) -> Union[objects.Object, None]:
         """
         Retrieves the named object from the field's object dictionary.
 
@@ -907,10 +1040,11 @@ class Field(Pipeline):
 
     @classmethod
     def default_params(cls):
+        from craftutils.observation.objects.position import position_dictionary
         default_params = {
             "name": None,
             "type": "Field",
-            "centre": objects.position_dictionary.copy(),
+            "centre": position_dictionary.copy(),
             # "objects": [objects.Object.default_params()],
             "extent": 0.3 * units.deg,
             "survey": None
@@ -1065,9 +1199,9 @@ class Field(Pipeline):
                 input_type=float
             )
             if dm in ["", " ", 'None']:
-                dm = 0 * objects.dm_units
+                dm = 0 * dm_units
             else:
-                dm *= objects.dm_units
+                dm *= dm_units
 
             date = u.user_input(
                 "If you have a precise FRB arrival time, please enter that now; otherwise, leave blank."

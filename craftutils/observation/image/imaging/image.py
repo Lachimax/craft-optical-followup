@@ -179,7 +179,7 @@ class ImagingImage(Image):
 
     def psfex(
             self,
-            output_dir: str,
+            output_dir: str = None,
             force: bool = False,
             set_attributes: bool = True,
             se_kwargs: dict = {},
@@ -196,6 +196,9 @@ class ImagingImage(Image):
         :return: HDUList representing the PSF model FITS file.
         """
         psfex_output = None
+        if output_dir is None:
+            output_dir = os.path.join(os.path.dirname(self.path), "psfex")
+        os.makedirs(output_dir, exist_ok=True)
 
         if force or self.psfex_path is None or not os.path.isfile(self.psfex_path):
 
@@ -383,15 +386,16 @@ class ImagingImage(Image):
 
     def select_depth(self, ext: int = 0, sigma: int = 10, depth_type: str = "max"):
         if "SNR_PSF" in self.depth[depth_type] and np.isfinite(self.depth[depth_type]["SNR_PSF"][f"{sigma}-sigma"]):
-            depth = self.depth[depth_type]["SNR_PSF"][f"{sigma}-sigma"]
+            snr_type = "SNR_PSF"
         else:
-            depth = self.depth[depth_type]["SNR_AUTO"][f"{sigma}-sigma"]
+            snr_type = "SNR_AUTO"
+        depth = self.depth[depth_type][snr_type][f"{sigma}-sigma"]
         self.set_header_item(
             key="DEPTH",
             value=depth.value,
             ext=ext
         )
-        return depth
+        return depth, snr_type
 
     def clone_astrometry_info(
             self,
@@ -675,7 +679,7 @@ class ImagingImage(Image):
         for i, row in enumerate(source_cat):
             print(f"Pushing row {i} of {len(source_cat)}")
             obj = objects.Object(row=row, field=self.epoch.field)
-            depth = self.select_depth()
+            depth, _ = self.select_depth()
             obj.add_photometry(
                 instrument=self.instrument_name,
                 fil=self.filter_name,
@@ -1329,6 +1333,7 @@ class ImagingImage(Image):
             stars_only: bool = False,
             star_tolerance: float = 0.9,
             do_magnitude_calibration: bool = True,
+            test_coord: SkyCoord = None,
             output_dir: str = None
     ):
         """Use various measures of S/N to estimate image depth at a range of sigmas.
@@ -1391,12 +1396,13 @@ class ImagingImage(Image):
                 source_cat_sigma = source_cat_key.copy()
                 # Faintest source at x-sigma:
                 cat_more_xsigma = source_cat_sigma[source_cat_sigma[f"SNR_{snr_key}"] > sigma]
-                with quantity_support():
-                    fig, ax = plt.subplots()
-                    ax.scatter(source_cat_sigma[f"MAG_{snr_key}"], source_cat_sigma[f"SNR_{snr_key}"])
-                    fig.savefig(os.path.join(output_dir, f"mag_{snr_key}-v-snr-{sigma}sig.png"), dpi=200)
-                    plt.close(fig)
-                    del fig, ax
+                if output_dir is not None:
+                    with quantity_support():
+                        fig, ax = plt.subplots()
+                        ax.scatter(source_cat_sigma[f"MAG_{snr_key}"], source_cat_sigma[f"SNR_{snr_key}"])
+                        fig.savefig(os.path.join(output_dir, f"mag_{snr_key}-v-snr-{sigma}sig.png"), dpi=200)
+                        plt.close(fig)
+                        del fig, ax
 
                 self.depth["max"][f"SNR_{snr_key}"][f"{sigma}-sigma"] = np.max(
                     cat_more_xsigma[f"MAG_{snr_key}_ZP_{zeropoint_name}"]
@@ -1423,6 +1429,13 @@ class ImagingImage(Image):
                 # ["limit test"]
 
                 self.update_output_file()
+
+        if test_coord is not None:
+            self.depth["aperture"] = self.test_limit_location(
+                sigmas=[5, 10, 20],
+                coord=test_coord,
+                return_dict=True
+            )
 
         self.select_depth()
 
@@ -1912,7 +1925,7 @@ class ImagingImage(Image):
             del ax, fig
 
             fig = plt.figure(figsize=(12, 12), dpi=1000)
-            fig = self.plot_catalogue(
+            fig, ax = self.plot_catalogue(
                 cat=reference_cat[in_footprint],
                 ra_col=ra_col, dec_col=dec_col,
                 fig=fig,
@@ -3181,19 +3194,39 @@ class ImagingImage(Image):
 
     def insert_synthetic_sources(
             self,
-            x: np.float64, y: np.float64,
-            mag: np.float64,
+            catalogue: table.QTable,
             output: str,
             overwrite: bool = True,
-            world_coordinates: bool = False,
-            extra_values: table.Table = None,
             model: str = "psfex"
     ):
+        """Catalogue must have column 'mag', and either 'coord' or 'x' AND 'y'.
+
+        :param catalogue:
+        :param output:
+        :param overwrite:
+        :param model:
+        :return:
+        """
+        print("catalogue[0]:", catalogue[0])
         if self.psfex_path is None:
             raise ValueError(f"{self.name}.psfex_path has not been set.")
         if self.zeropoint_best is None:
             raise ValueError(f"{self.name}.zeropoint_best has not been set.")
         output_cat = output.replace('.fits', '_synth_cat.ecsv')
+
+        if "coord" in catalogue.colnames:
+            x, y = self.world_to_pixel(coord=catalogue["coord"])
+            catalogue["x"] = x
+            catalogue["y"] = y
+        elif "x" in catalogue.colnames and "y" in catalogue.colnames:
+            x = catalogue["x"]
+            y = catalogue["y"]
+        else:
+            raise ValueError("Either 'x' and 'y' or 'coord' must be provided.")
+        if "mag" not in catalogue.colnames:
+            raise ValueError("'mag' column missing from provided catalogue.")
+        else:
+            mag = catalogue["mag"]
 
         self.extract_pixel_scale()
 
@@ -3206,8 +3239,7 @@ class ImagingImage(Image):
                 airmass=self.extract_airmass(),
                 extinction=self.zeropoint_best["extinction"],
                 exp_time=self.extract_exposure_time(),
-                world_coordinates=world_coordinates,
-                extra_values=extra_values,
+                world_coordinates=False,
                 output=output,
                 output_cat=output_cat,
                 overwrite=overwrite,
@@ -3222,8 +3254,7 @@ class ImagingImage(Image):
                 airmass=self.extract_airmass(),
                 extinction=self.zeropoint_best["extinction"],
                 exp_time=self.extract_exposure_time(),
-                world_coordinates=world_coordinates,
-                extra_values=extra_values,
+                world_coordinates=False,
                 output=output,
                 output_cat=output_cat,
                 overwrite=overwrite
@@ -3368,10 +3399,12 @@ class ImagingImage(Image):
             coord: SkyCoord,
             ap_radius: units.Quantity = None,
             ext: int = 0,
+            sigmas: list = None,
             sigma_min: int = 1,
             sigma_max: int = 10,
+            return_dict: bool = False,
             **kwargs
-    ):
+    ) -> Union[dict, table.QTable]:
 
         if ap_radius is None:
             psf = self.extract_header_item("PSF_FWHM", ext=ext)
@@ -3392,17 +3425,31 @@ class ImagingImage(Image):
         sigma_flux = np.sqrt(flux)
 
         limits = []
-        for i in range(sigma_min, sigma_max + 1):
+
+        if sigmas is None:
+            sigmas = range(sigma_min, sigma_max + 1)
+
+        limit_dicts = {}
+
+        for i in sigmas:
             n_sigma_flux = sigma_flux * i
             limit, _, _, _ = self.magnitude(flux=n_sigma_flux)
-            limits.append({
+            limit_dict = {
                 "sigma": i,
                 "flux": n_sigma_flux[0],
                 "mag": limit[0],
                 "aperture_radius": ap_radius,
                 "aperture_radius_pix": ap_radius_pix
-            })
-        return table.QTable(limits)
+            }
+            limits.append(limit_dict)
+            limit_dicts[f"{i}-sigma"] = limit_dict
+        if return_dict:
+            limit_dicts["position"] = coord
+            limit_dicts["aperture_radius"] = ap_radius
+            limit_dicts["aperture_radius_pix"] = ap_radius_pix
+            return limit_dicts
+        else:
+            return table.QTable(limits)
 
     def test_limit_synthetic(
             self,
@@ -3430,7 +3477,7 @@ class ImagingImage(Image):
             output_dir=output_dir,
             positioning=positioning
         )
-        
+
         ax, fig = plt.subplots()
         ax.scatter(sources["mag_inserted"], sources["fraction_flux_recovered_psf"])
         ax.set_xlabel("Inserted magnitude")
@@ -3494,7 +3541,7 @@ class ImagingImage(Image):
         fig.savefig(os.path.join(output_dir, "spread_model.png"))
         plt.close(fig)
         del fig, ax
-        
+
         ax, fig = plt.subplots()
         ax.scatter(sources["mag_inserted"], sources["matching_dist"])
         ax.set_xlabel("Inserted magnitude")
@@ -3642,7 +3689,7 @@ class ImagingImage(Image):
         model_init = model_type(**init_params)
         fitter = fitter_type(calc_uncertainties=False)
         y, x = np.mgrid[:data.shape[0], :data.shape[1]]
-        
+
         fig, ax = plt.subplots()
         c = ax.imshow(weights[bottom - 10:top + 10, left - 10:right + 10])
         fig.colorbar(c)
@@ -3947,8 +3994,7 @@ class ImagingImage(Image):
             ext: int = 0,
             **mask_kwargs
     ) -> 'ImagingImage':
-        """
-        Generates and writes a source mask to a FITS file.
+        """Generates and writes a source mask to a FITS file.
         Any argument accepted by generate_mask() can be passed as a keyword.
 
         :param output_path: path to write the mask file to.
@@ -3958,7 +4004,8 @@ class ImagingImage(Image):
 
         mask_file = self.copy(output_path)
         mask_file.load_data()
-        mask_file.data[ext] = self.generate_mask(ext=ext, output_path=output_path, **mask_kwargs) * units.dimensionless_unscaled
+        mask_file.data[ext] = self.generate_mask(ext=ext, output_path=output_path,
+                                                 **mask_kwargs) * units.dimensionless_unscaled
         mask_file.write_fits_file()
 
         mask_file.add_log(
@@ -4353,7 +4400,9 @@ class ImagingImage(Image):
             psf_path: str = None,
             use_frb_galfit: bool = False,
             feedme_kwargs: dict = {},
-            position_tolerance: units.Quantity = 2 * units.arcsec
+            position_tolerance: units.Quantity = 2 * units.arcsec,
+            reject_r_eff_factor: float = None,
+            pivot_component: int = 2
     ):
         """
 
@@ -4471,7 +4520,7 @@ class ImagingImage(Image):
         for j, frame in enumerate(np.linspace(frame_lower, frame_upper, n_frames)):
             print()
             print("=" * 60)
-            print(f"Using frame {frame}, {j+1} / {n_frames}")
+            print(f"Using frame {frame}, {j + 1} / {n_frames}")
             print("=" * 60, "\n")
             frame = int(frame)
             margins = u.frame_from_centre(frame, x, y, data)
@@ -4526,15 +4575,17 @@ class ImagingImage(Image):
 
             mask_ones = np.invert(mask_data.astype(bool)).astype(int)
 
+            shape = img_block[1].shape
+
             # Masked data
             img_block.insert(4, img_block[1].copy())
-            img_block[4].data *= mask_ones  # + #
-            img_block[4].data += mask_data * np.median(img_block[1].data)
+            img_block[4].data *= mask_ones[:shape[0], :shape[1]]  # + #
+            img_block[4].data += mask_data[:shape[0], :shape[1]] * np.median(img_block[1].data)
 
             # Masked, subtracted data
             img_block.insert(5, img_block[3].copy())
-            img_block[5].data *= mask_ones  # + #
-            img_block[5].data += mask_data * np.median(img_block[3].data)
+            img_block[5].data *= mask_ones[:shape[0], :shape[1]]  # + #
+            img_block[5].data += mask_data[:shape[0], :shape[1]] * np.median(img_block[3].data)
 
             for idx in [2, 3]:
                 img_block[idx].header.insert('OBJECT', ('PCOUNT', 0))
@@ -4546,19 +4597,10 @@ class ImagingImage(Image):
             )
 
             data_flatness = img_block[5].data
-            print("noise 0", np.nanstd(data_flatness))
-            print("sum isnan", np.sum(np.isnan(data_flatness)))
-            print("sum", np.sum(data_flatness))
             margins_min = u.frame_from_centre(frame_lower, x - margins[0], y - margins[2], data_flatness)
-            print(margins_min)
             data_flatness = u.trim_image(data_flatness, margins=margins_min)
-            print("\nAfter trim")
-            print("shape", data_flatness.shape)
-            print("sum isnan", np.sum(np.isnan(data_flatness)))
-            print("sum", np.sum(data_flatness))
             # data_flatness = data_flatness[np.isfinite(data_flatness)]
             noise = np.nanstd(data_flatness)
-            print("noise 1", noise)
 
             img_block.writeto(img_block_path, overwrite=True)
             img_block.close()
@@ -4566,11 +4608,30 @@ class ImagingImage(Image):
             results_header = img_block[2].header
             components = galfit.extract_fit_params(results_header)
 
-            component = components["COMP_2"]
+            # Reject some iterations based on deviance from guesses
+            component = components[f"COMP_{pivot_component}"]
+            guess = model_guesses[0]
+
             pos = self.pixel_to_world(component["x"], component["y"])
             pos_guess = model_guesses[0]["position"]
+            # If the model has drifted too far in position from the guess, we reject
             if pos.separation(pos_guess) > position_tolerance and j > 1:
+                print(f"Rejecting frame {frame} due to separation > position_tolerance")
                 continue
+            # If r_eff is more than reject_r_eff_factor times the initial guess, reject
+            print(model_guesses[0].keys())
+            if reject_r_eff_factor is not None and component["r_eff"] > model_guesses[0]["r_e"] * reject_r_eff_factor:
+                print(f"Rejecting frame {frame} due to r_eff > guess * {reject_r_eff_factor}")
+                continue
+            # If n is unphysically large, we reject
+            # if component["n"] < 0.5:
+            #     print(f"Rejecting frame {frame} due to n < 0.5")
+            #     continue
+            if component["n"] > 10:
+                print(f"Rejecting frame {frame} due to n > 10")
+                continue
+
+            self.extract_astrometry_err()
 
             for i, compname in enumerate(components):
                 component = components[compname]
@@ -4580,8 +4641,15 @@ class ImagingImage(Image):
                     component["r_eff_ang"] = component["r_eff"].to(units.arcsec, self.pixel_scale_x)
                     component["r_eff_ang_err"] = component["r_eff_err"].to(units.arcsec, self.pixel_scale_x)
                 # TODO: The below assumes RA and Dec are along x & y (neglecting image rotation), which isn't great
+
                 component["ra_err"] = component["x_err"].to(units.deg, self.pixel_scale_x)
+                if self.ra_err is not None:
+                    component["ra_err"] = u.uncertainty_sum(component["ra_err"], self.ra_err)
+
                 component["dec_err"] = component["y_err"].to(units.deg, self.pixel_scale_y)
+                if self.dec_err is not None:
+                    component["dec_err"] = u.uncertainty_sum(component["dec_err"], self.dec_err)
+
                 component["frame"] = frame
                 component["x_min"], component["x_max"], component["y_min"], component["y_max"] = margins
                 component_dict = component.copy()
@@ -4600,7 +4668,10 @@ class ImagingImage(Image):
 
         component_tables = {}
         for compname in gf_tbls:
-            gf_tbl = table.vstack(gf_tbls[compname])
+            if len(gf_tbls[compname]) > 0:
+                gf_tbl = table.vstack(gf_tbls[compname])
+            else:
+                return None, None, None
             component_tables[compname] = gf_tbl
 
         shutil.copy(p.path_to_config_galfit(), output_dir)
@@ -4621,8 +4692,9 @@ class ImagingImage(Image):
         else:
             model_guesses, new_kwargs = obj.galfit_guess_dict(img=self)
             kwargs.update(new_kwargs)
+
         if output_dir is None:
-            output_dir = os.path.join(obj.data_path, "GALFIT")
+            output_dir = os.path.join(obj.data_path, "GALFIT", self.name)
         os.makedirs(output_dir, exist_ok=True)
 
         for model in model_guesses:
@@ -4640,17 +4712,18 @@ class ImagingImage(Image):
         kwargs["output_prefix"] = output_prefix
 
         model_tbls, model_dicts, properties = self.galfit(
+            reject_r_eff_factor=2.,
+            pivot_component=pivot_component,
             **kwargs
         )
 
         if model_tbls is None:
             return None
 
+        # Use the flatness of the residuals to assess quality of fit
         best_params = {}
         noise = [m["residual_noise"] for m in properties]
-        print("noise 2", noise)
         frame = [m["frame"] for m in properties]
-        print(frame)
         fig, ax = plt.subplots()
         y = noise
         ax.scatter(
@@ -4705,14 +4778,14 @@ class ImagingImage(Image):
                 best_params[component]["object_type"] = str(best_params[component]["object_type"])
 
         # print(best_params)
-        for k, v in best_params["COMP_2"].items():
+        for k, v in best_params[f"COMP_{pivot_component}"].items():
             print(k, "\t\t\t", v)
         best_params["image"] = self.path
         best_params["instrument"] = self.instrument_name
         best_params["band"] = self.filter_name
         best_params["initial_guess"] = model_guesses
         p.save_params(os.path.join(output_dir, "best_model.yaml"), best_params)
-        obj.galfit_model = best_params
+        obj.galfit_models[self.filter_name] = best_params
 
         return best_params
 
@@ -4788,10 +4861,18 @@ def deepest(
         img_2: ImagingImage,
         sigma: int = 5,
         depth_type: str = "max",
-        snr_type: str = "SNR_PSF"
+        snr_type: str = None
 ):
-    print(img_1.name, img_1.depth.keys())
-    print(img_2.name, img_2.depth.keys())
+    if snr_type is None:
+        depth_1, snr_type_1 = img_1.select_depth()
+        depth_2, snr_type_2 = img_2.select_depth()
+        if snr_type_1 == snr_type_2 == "SNR_PSF":
+            snr_type = "SNR_PSF"
+        elif snr_type_1 == "SNR_AUTO" or snr_type_2 == "SNR_AUTO":
+            snr_type = "SNR_AUTO"
+
+    # print(img_1.name, img_1.depth.keys())
+    # print(img_2.name, img_2.depth.keys())
 
     if img_1.depth[depth_type][snr_type][f"{sigma}-sigma"] > \
             img_2.depth[depth_type][snr_type][f"{sigma}-sigma"]:
