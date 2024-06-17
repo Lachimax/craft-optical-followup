@@ -59,7 +59,6 @@ def epoch_from_directory(epoch_name: str, quiet: bool = False):
                 epoch_name,
                 instrument=instrument,
                 field=field,
-                quiet=quiet
             )
         elif mode == "spectroscopy":
             epoch = SpectroscopyEpoch.from_params(

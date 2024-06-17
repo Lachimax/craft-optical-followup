@@ -197,7 +197,7 @@ class Object(Generic):
 
         cls = image.CoaddedImage.select_child_class(instrument_name=deepest_dict["instrument"])
         deepest_img = cls(path=deepest_path)
-        deep_mask = deepest_img.write_mask(
+        deep_mask, objs = deepest_img.write_mask(
             output_path=os.path.join(
                 self.data_path,
                 f"{self.name_filesys}_master-mask_{deepest_dict['instrument']}_{deepest_dict['filter']}_{deepest_dict['epoch_name']}.fits",
@@ -227,6 +227,7 @@ class Object(Generic):
             deepest_dict["flux_sep"] = mag_results["flux"][0]
             deepest_dict["flux_sep_err"] = mag_results["flux_err"][0]
             deepest_dict["limit_threshold"] = mag_results["threshold"]
+            deepest_dict["peak"] = mag_results["peak"]
         else:
             deepest_dict["mag_sep"] = -999. * units.mag
             deepest_dict["mag_sep_err"] = -999. * units.mag
@@ -236,6 +237,7 @@ class Object(Generic):
             deepest_dict["flux_sep_err"] = -999.
             deepest_dict["threshold_sep"] = -999.
             deepest_dict["limit_threshold"] = -999.
+            deepest_dict["peak"] = - 999.
         deepest_dict["zeropoint_sep"] = deepest_img.zeropoint_best["zeropoint_img"]
 
         for instrument in self.photometry:
@@ -275,6 +277,7 @@ class Object(Generic):
                         phot_dict["flux_sep"] = mag_results["flux"][0]
                         phot_dict["flux_sep_err"] = mag_results["flux_err"][0]
                         phot_dict["limit_threshold"] = mag_results["threshold"]
+                        phot_dict["peak"] = mag_results["peak"]
                     else:
                         phot_dict["mag_sep"] = -999. * units.mag
                         phot_dict["mag_sep_err"] = -999. * units.mag
@@ -284,6 +287,7 @@ class Object(Generic):
                         phot_dict["flux_sep_err"] = -999.
                         phot_dict["threshold_sep"] = -999.
                         phot_dict["limit_threshold"] = -999.
+                        phot_dict["peak"] = -999.
                     phot_dict["zeropoint_sep"] = img.zeropoint_best["zeropoint_img"]
                     mag_results = img.sep_elliptical_magnitude(
                         centre=self.position_photometry,
@@ -300,15 +304,14 @@ class Object(Generic):
                         phot_dict["snr_sep_unmasked"] = mag_results["snr"][0]
                         phot_dict["flux_sep_unmasked"] = mag_results["flux"][0]
                         phot_dict["flux_sep_unmasked_err"] = mag_results["flux_err"][0]
-                        phot_dict["limit_threshold"] = mag_results["threshold"]
+                        phot_dict["peak_unmasked"] = mag_results["peak"]
                     else:
                         phot_dict["mag_sep_unmasked"] = -999. * units.mag
                         phot_dict["mag_sep_unmasked_err"] = -999. * units.mag
                         phot_dict["snr_sep"] = -999.
                         phot_dict["flux_sep_unmasked"] = -999.
                         phot_dict["flux_sep_unmasked_err"] = -999.
-                        phot_dict["limit_threshold"] = -999.
-
+                        phot_dict["peak_unmasked"] = -999.
                     img.close()
                     del img
                     mask_rp.close()
@@ -351,6 +354,7 @@ class Object(Generic):
             good_image_path = image_path
         if isinstance(epoch_date, time.Time):
             epoch_date = epoch_date.strftime('%Y-%m-%d')
+        print(image_depth)
         photometry = {
             "instrument": str(instrument),
             "filter": str(fil),
@@ -1056,7 +1060,7 @@ class Object(Generic):
 
         return deepest
 
-    def select_deepest_sep(self, local_output: bool = True):
+    def select_deepest_sep(self, local_output: bool = True) -> Union[dict, None]:
         self.get_photometry_table(output=local_output, best=True)
         if not isinstance(self.photometry_tbl_best, table.Table) or "snr_sep" not in self.photometry_tbl_best.colnames:
             print(f"No photometry found for {self.name}")

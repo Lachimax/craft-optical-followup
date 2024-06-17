@@ -269,10 +269,16 @@ class Field(Pipeline):
             )
         )
 
-    def get_filters(self):
+    def get_filters(self, instrument: str = None):
         self.load_imaging()
+        # Build a list of (filters, instruments) using all available epochs
         all_filters = list(map(lambda i: (i["filter"], i["instrument"]), self.imaging.values()))
+        # Use a set to cull it to unique values
         fil_list = list(set(all_filters))
+        # Filter (no pun intended) out unwanted instruments
+        if instrument is not None:
+            fil_list = list(filter(lambda f, i: i["instrument"] == instrument, fil_list))
+        # Build a list of Filter objects from the strings
         fil_list_2 = []
         for fil, instr in fil_list:
             fil = filters.Filter.from_params(filter_name=fil, instrument_name=instr)
@@ -283,12 +289,9 @@ class Field(Pipeline):
             self,
             fil: Union[str, filters.Filter],
             instrument: Union[str, inst.Instrument] = None
-    ):
+    ) -> dict:
         img_list = self.get_images_band(fil, instrument=instrument)
         img_list.sort(key=lambda d: d["depth"])
-        print(len(img_list))
-        for img_dict in img_list:
-            print(img_dict["name"], img_dict["depth"])
         img_dict = img_list[-1]
         return img_dict
 
@@ -568,8 +571,6 @@ class Field(Pipeline):
             cls = ep.SpectroscopyEpoch.select_child_class(instrument=instrument)
         else:
             raise ValueError("mode must be 'imaging' or 'spectroscopy'.")
-
-
 
         if is_validation:
             new_params = p.load_params(os.path.join(self.param_dir, mode, instrument, copy_of_epoch.name + ".yaml"))
@@ -901,6 +902,7 @@ class Field(Pipeline):
     def add_image(
             self,
             img: image.ImagingImage,
+            epoch_name: str = None
     ):
         img.extract_filter()
         img.filter.load_instrument()
@@ -912,7 +914,8 @@ class Field(Pipeline):
             "depth": depth,
             "instrument": fil.instrument.name,
             "filter": fil.name,
-            "name": img.name
+            "name": img.name,
+            "epoch": epoch_name
         }
 
     def add_object(self, obj: Union[dict, objects.Object]):

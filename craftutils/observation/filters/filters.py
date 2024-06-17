@@ -16,8 +16,21 @@ import craftutils.photometry as ph
 
 active_filters = {}
 
-
 # __all__ = []
+
+cmaps = {
+    "u": "cmr.bubblegum",
+    "g": "viridis",
+    "v": "cmr.flamingo",
+    "r": "plasma",
+    "i": "cividis",
+    "z": "cmr.ghostlight",
+    "j": "cmr.fall",
+    "h": "cmr.sunburst",
+    "k": "cmr.ember",
+    "ks": "cmr.ember"
+}
+
 
 def best_for_path(
         filter_list: List['Filter'],
@@ -42,8 +55,10 @@ class Filter:
         if "name" in kwargs:
             self.name = kwargs["name"]
         self.formatted_name = None
-        if "formatted_name" in kwargs:
+        if "formatted_name" in kwargs and isinstance(kwargs["formatted_name"], str):
             self.formatted_name = kwargs["formatted_name"]
+        else:
+            self.formatted_name = f"${self.name}$"
         self.band_name = None
         if "band_name" in kwargs and kwargs["band_name"] is not None:
             self.band_name = kwargs["band_name"]
@@ -89,6 +104,8 @@ class Filter:
         self.cmap = None
         if "cmap" in kwargs:
             self.cmap = kwargs["cmap"]
+        elif isinstance(self.band_name, str) and self.band_name in cmaps:
+            self.cmap = cmaps[self.band_name]
 
         self.lambda_eff = None
         self.lambda_fwhm = None

@@ -1443,10 +1443,10 @@ class ImagingEpoch(Epoch):
             deepest = image.deepest(deepest, img)
             if self.did_local_background_subtraction():
                 img_subbed = self.coadded_subtracted_patch[fil]
-                self.field.add_image(img_subbed)
+                self.field.add_image(img_subbed, epoch_name=self.name)
                 self.finalised[img_subbed.name] = img_subbed
             else:
-                self.field.add_image(img_final)
+                self.field.add_image(img_final, epoch_name=self.name)
                 self.finalised[img_final.name] = img_final
 
         self.deepest_filter = deepest.filter_name
@@ -1613,7 +1613,7 @@ class ImagingEpoch(Epoch):
             ra_target = []
             dec_target = []
 
-            depth = img.select_depth(sigma=5, depth_type="secure")
+            depth, _ = img.select_depth(sigma=5, depth_type="secure")
 
             img.load_data()
 
@@ -1763,7 +1763,9 @@ class ImagingEpoch(Epoch):
                         image_depth=depth,
                         image_path=img.path,
                         good_image_path=good_image_path,
-                        do_mask=img.mask_nearby()
+                        do_mask=img.mask_nearby(),
+                        flux_max=nearest["FLUX_MAX"],
+                        background_se=nearest["BACKGROUND"],
                     )
 
                     # Do more plots with FRB ellipses if this is an FRBField

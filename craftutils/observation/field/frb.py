@@ -206,7 +206,6 @@ class FRBField(Field):
             include_img_err: bool = True,
             **kwargs
     ) -> Tuple[plt.Figure, plt.Axes, dict]:
-
         if imshow_kwargs is None:
             imshow_kwargs = {}
         if frb_kwargs is None:

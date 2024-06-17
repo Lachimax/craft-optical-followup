@@ -1750,7 +1750,7 @@ def mod_latex_table(
         file.pop(-1)
         file.pop(-1)
         file.append(r"\end{longtable}" + "\n")
-        file.insert(0, r"\begin{singlespace}")
+        file.insert(0, r"\begin{singlespace}" + "\n")
         file.append(r"\end{singlespace}" + "\n")
 
     if landscape:

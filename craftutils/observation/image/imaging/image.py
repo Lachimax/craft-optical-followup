@@ -2682,7 +2682,9 @@ class ImagingImage(Image):
         pix_scale = self.pixel_scale_y
         u.debug_print(1, "ImagingImage.nice_frame(): self.pixel_scale_dec ==", self.pixel_scale_y)
         this_frame = max(
-            kron_a.to(units.pixel, pix_scale), frame)  # + 5 * units.pix,
+            kron_a.to(units.pixel, pix_scale),
+            frame.to(units.pixel, pix_scale)
+        )  # + 5 * units.pix,
         u.debug_print(1, "ImagingImage.nice_frame(): this_frame ==", this_frame)
         return this_frame
 
@@ -2721,7 +2723,6 @@ class ImagingImage(Image):
             clip_data: bool = False,
             **kwargs,
     ) -> Tuple[plt.Figure, plt.Axes, dict]:
-
         if data == "image":
             self.load_data()
             data = self.data[ext].value
@@ -2860,7 +2861,6 @@ class ImagingImage(Image):
         if scale_bar_object is not None:
             if scale_bar_kwargs is None:
                 scale_bar_kwargs = {}
-            print(scale_bar_kwargs)
             self.scale_bar(
                 obj=scale_bar_object,
                 ax=ax,
@@ -2901,7 +2901,6 @@ class ImagingImage(Image):
             text_kwargs["fontsize"] = 12
         if "color" not in text_kwargs:
             text_kwargs["color"] = "white"
-
         if "color" not in line_kwargs:
             line_kwargs["color"] = "white"
         if "lw" not in line_kwargs:
@@ -3639,7 +3638,7 @@ class ImagingImage(Image):
         data = self.data[ext] * 1  # [bottom:top, left:right] * 1
 
         if generate_mask:
-            mask = self.generate_mask(
+            mask, objs = self.generate_mask(
                 margins=margins,
                 method="sep",
                 **mask_kwargs,
@@ -3781,7 +3780,7 @@ class ImagingImage(Image):
 
         mask = None
         if do_mask:
-            mask = self.generate_mask(method=method)
+            mask, objs = self.generate_mask(method=method)
             mask = mask.astype(bool)
 
         if method == "sep":
@@ -3872,6 +3871,7 @@ class ImagingImage(Image):
             )
             u.debug_print(2, f"{self}.generate_segmap(): threshold ==", threshold)
             segmap = photutils.detect_sources(data_trim, threshold, npixels=min_area)
+            objs = None
 
         elif method == "sep":
             # The copying is done here to avoid 'C-contiguous' errors in SEP.
@@ -3907,7 +3907,7 @@ class ImagingImage(Image):
         u.debug_print(2, f"{self}.generate_segmap(): segmap_full ==", segmap_full)
         u.debug_print(2, f"{self}.generate_segmap(): segmap ==", segmap)
         segmap_full[bottom:top + 1, left:right + 1] = segmap.data
-        return segmap_full
+        return segmap_full, objs
 
     def generate_mask(
             self,
@@ -3938,7 +3938,7 @@ class ImagingImage(Image):
             output_path_segmap = output_path.replace(".fits", "_segmap.png")
         else:
             output_path_segmap = None
-        segmap = self.generate_segmap(
+        segmap, objs = self.generate_segmap(
             ext=ext,
             threshold=threshold,
             method=method,
@@ -3972,7 +3972,7 @@ class ImagingImage(Image):
         mask[mask > 0] = obj_value
         mask[mask == 0] = back_value
 
-        return mask
+        return mask, objs
 
     def masked_data(
             self,
@@ -3982,7 +3982,7 @@ class ImagingImage(Image):
     ):
         self.load_data()
         if mask is None:
-            mask = self.generate_mask(**generate_mask_kwargs)
+            mask, objs = self.generate_mask(**generate_mask_kwargs)
 
         # if mask_type == 'zeroed-out'
 
@@ -4004,8 +4004,12 @@ class ImagingImage(Image):
 
         mask_file = self.copy(output_path)
         mask_file.load_data()
-        mask_file.data[ext] = self.generate_mask(ext=ext, output_path=output_path,
-                                                 **mask_kwargs) * units.dimensionless_unscaled
+        mask_data, objs = self.generate_mask(
+            ext=ext,
+            output_path=output_path,
+            **mask_kwargs
+        )
+        mask_file.data[ext] = mask_data * units.dimensionless_unscaled
         mask_file.write_fits_file()
 
         mask_file.add_log(
@@ -4014,7 +4018,7 @@ class ImagingImage(Image):
             output_path=output_path,
         )
         mask_file.update_output_file()
-        return mask_file
+        return mask_file, objs
 
     def mask_nearby(self):
         return True
@@ -4061,6 +4065,8 @@ class ImagingImage(Image):
             subtract_background: bool = True,
     ):
 
+        if output is None:
+            output = self.path.replace(".fits", "_sep")
         if isinstance(output, str):
             back_output = output + "_back.fits"
             segmap_output = output + "_segmap.fits"
@@ -4085,15 +4091,17 @@ class ImagingImage(Image):
 
         u.debug_print(2, f"sep_elliptical_photometry: mask_nearby == {mask_nearby}")
 
+        objs = None
         if isinstance(mask_nearby, ImagingImage):
             mask = mask_nearby.data[0].value
         elif mask_nearby:
-            mask = self.write_mask(
+            mask, objs = self.write_mask(
                 do_not_mask=centre,
                 ext=ext,
                 method="sep",
                 output_path=segmap_output
-            ).data[0].value
+            )
+            mask = mask.data[0].value
         else:
             mask = np.zeros_like(self.data[ext].data)
 
@@ -4120,6 +4128,14 @@ class ImagingImage(Image):
             gain=self.extract_gain().value,
             mask=mask.astype(bool),
         )
+        properties = {}
+        if objs is not None:
+            objs_coord = self.pixel_to_world(x=objs["x"], y=objs["y"])
+            s = objs_coord.separation(centre)
+            s_min = s[s.argmin()]
+            if s_min < b_world:
+                obj_match = objs[s.argmin()]
+                properties = {"peak": obj_match["peak"]}
 
         if isinstance(output, str):
             # objects = sep.extract(self.data_sub_bkg[ext], 1.5, err=self.sep_background[ext].rms())
@@ -4202,7 +4218,7 @@ class ImagingImage(Image):
                     plt.close(fig)
                     del fig, ax
 
-        return flux, flux_err, flag, back
+        return flux, flux_err, flag, back, properties
 
     def sep_elliptical_magnitude(
             self,
@@ -4240,7 +4256,7 @@ class ImagingImage(Image):
 
         u.debug_print(2, f"sep_elliptical_magnitude(): mask_nearby == {mask_nearby}")
 
-        flux, flux_err, flags, back = self.sep_elliptical_photometry(
+        flux, flux_err, flags, back, properties = self.sep_elliptical_photometry(
             centre=centre,
             a_world=a_world,
             b_world=b_world,
@@ -4273,6 +4289,10 @@ class ImagingImage(Image):
                 mag_err[i] = -999. * units.mag
                 mag[i] = m
 
+        peak = -999.
+        if "peak" in properties:
+            peak = properties["peak"]
+
         return {
             "mag": mag,
             "mag_err": mag_err,
@@ -4280,7 +4300,8 @@ class ImagingImage(Image):
             "back": back,
             "flux": flux,
             "flux_err": flux_err,
-            "threshold": detection_threshold
+            "threshold": detection_threshold,
+            "peak": peak
         }
 
     def make_galfit_version(
@@ -4498,7 +4519,7 @@ class ImagingImage(Image):
         mask_file = f"{output_prefix}_mask.fits"
         mask_path = os.path.join(output_dir, mask_file)
         margins_max = u.frame_from_centre(frame_upper, x, y, data)
-        mask = new.write_mask(
+        mask, objs = new.write_mask(
             output_path=mask_path,
             do_not_mask=list(map(lambda m: m["position"], model_guesses)),
             ext=ext,
@@ -4612,7 +4633,7 @@ class ImagingImage(Image):
             component = components[f"COMP_{pivot_component}"]
             guess = model_guesses[0]
 
-            pos = self.pixel_to_world(component["x"], component["y"])
+            pos = self.pixel_to_world(component["x"], component["y"], origin=1)
             pos_guess = model_guesses[0]["position"]
             # If the model has drifted too far in position from the guess, we reject
             if pos.separation(pos_guess) > position_tolerance and j > 1:
