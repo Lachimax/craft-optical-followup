@@ -1445,9 +1445,8 @@ class ImagingEpoch(Epoch):
                 img_subbed = self.coadded_subtracted_patch[fil]
                 self.field.add_image(img_subbed, epoch_name=self.name)
                 self.finalised[img_subbed.name] = img_subbed
-            else:
-                self.field.add_image(img_final, epoch_name=self.name)
-                self.finalised[img_final.name] = img_final
+            self.field.add_image(img_final, epoch_name=self.name)
+            self.finalised[img_final.name] = img_final
 
         self.deepest_filter = deepest.filter_name
         self.deepest = deepest

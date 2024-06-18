@@ -218,6 +218,7 @@ class ImagingImage(Image):
                     phot_apers_str += f"{a},"
                 phot_apers_str = phot_apers_str[:-1]
                 print()
+                print("apertures_arcsec", apertures_arcsec)
                 print("PHOT_APERTURES", phot_apers_str)
                 se_kwargs["PHOT_APERTURES"] = phot_apers_str
                 print("PHOT_APERTURES", se_kwargs["PHOT_APERTURES"])
@@ -251,7 +252,7 @@ class ImagingImage(Image):
             clipped = sigma_clip(stars[col], masked=True, sigma=2)
             stars_clip = stars[~clipped.mask]
             stars_clip = stars_clip[np.isfinite(stars_clip[col])]
-            stars_clip = stars_clip[stars_clip[col] > 0.1 * units.arcsec]
+            # stars_clip = stars_clip[stars_clip[col] > 0.1 * units.arcsec]
 
             print(f"Num stars after sigma clipping {col}:", len(stars_clip))
             fwhm_gauss = stars_clip[col]
@@ -263,6 +264,8 @@ class ImagingImage(Image):
 
             new_aperture_arcsec = 8 * fwhm
             aper_arcsec = [new_aperture_arcsec.value] * units.arcsec
+            # if np.sum(np.isnan(aper_arcsec)) > 0):
+
             se_kwargs["PHOT_APERTURES"] = aperture_str(aper_arcsec)
 
             catalogue = self.source_extraction(
@@ -2721,6 +2724,8 @@ class ImagingImage(Image):
             scale_bar_kwargs: dict = None,
             data: str = "image",
             clip_data: bool = False,
+            astm_crosshairs: bool = False,
+            astm_kwargs = {},
             **kwargs,
     ) -> Tuple[plt.Figure, plt.Axes, dict]:
         if data == "image":
@@ -2856,8 +2861,6 @@ class ImagingImage(Image):
         # ax.tick_params(labelsize=14)
         # ax.yaxis.set_label_position("right")
 
-        # plt.tight_layout()
-
         if scale_bar_object is not None:
             if scale_bar_kwargs is None:
                 scale_bar_kwargs = {}
@@ -2867,6 +2870,36 @@ class ImagingImage(Image):
                 fig=fig,
                 **scale_bar_kwargs
             )
+        if astm_crosshairs:
+            default_astm = {
+                "x": 0.9,
+                "y": 0.1,
+                "color": "white"
+            }
+            default_astm.update(astm_kwargs)
+
+            self.extract_astrometry_err()
+            ra_err = self.ra_err
+            dec_err = self.dec_err
+            if ra_err is not None and self.dec_err is not None:
+                self.extract_pointing()
+                x_err = self.pixel(ra_err).value * np.cos(self.pointing.dec)
+                y_err = self.pixel(dec_err).value
+                x = default_astm.pop("x")
+                y = default_astm.pop("y")
+                x_disp, y_disp = ax.transAxes.transform((x, y))
+                x_data, y_data = ax.transData.inverted().transform((x_disp, y_disp))
+                print(f"{x=}, {y=}, {x_data=}, {y_data=}")
+                # ax.scatter(x_data, y_data, marker="x")
+                ax.errorbar(
+                    x_data,
+                    y_data,
+                    xerr=x_err,
+                    yerr=y_err,
+                    ls="none",
+                    # marker="x",
+                    **default_astm
+                )
         if output_path is not None:
             fig.savefig(output_path)
 
@@ -3407,7 +3440,9 @@ class ImagingImage(Image):
 
         if ap_radius is None:
             psf = self.extract_header_item("PSF_FWHM", ext=ext)
-            if not psf:
+            if psf < 0:
+                psf = None
+            if psf is None:
                 ap_radius = 2 * units.arcsec
             else:
                 ap_radius = 2 * psf * units.arcsec
@@ -3420,6 +3455,7 @@ class ImagingImage(Image):
         self.model_background_photometry(method="sep", do_mask=True, ext=ext, **kwargs)
         rms = self.sep_background[ext].rms()
 
+        print([x], [y], ap_radius_pix, ap_radius, pix_scale)
         flux, _, _ = sep.sum_circle(rms ** 2, [x], [y], ap_radius_pix)
         sigma_flux = np.sqrt(flux)
 
@@ -4564,10 +4600,13 @@ class ImagingImage(Image):
                     models=model_guesses,
                     **feedme_kwargs
                 )
-                galfit.galfit(
-                    config=feedme_file,
-                    output_dir=output_dir
-                )
+                try:
+                    galfit.galfit(
+                        config=feedme_file,
+                        output_dir=output_dir
+                    )
+                except SystemError:
+                    continue
             else:
                 import frb.galaxies.galfit as galfit_frb
                 galfit_frb.run(
@@ -4584,10 +4623,14 @@ class ImagingImage(Image):
                     skip_sky=False,
                     **model_dict
                 )
-            shutil.copy(
-                os.path.join(output_dir, "fit.log"),
-                os.path.join(output_dir, f"{output_prefix}_{frame}_fit.log")
-            )
+            fit_log = os.path.join(output_dir, "fit.log")
+            if os.path.isfile(fit_log):
+                shutil.copy(
+                    fit_log,
+                    os.path.join(output_dir, f"{output_prefix}_{frame}_fit.log")
+                )
+            else:
+                continue
 
             try:
                 img_block = fits.open(img_block_path)

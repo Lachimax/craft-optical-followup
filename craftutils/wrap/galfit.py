@@ -19,7 +19,6 @@ def galfit(config: str, output_dir: str):
     u.system_command_verbose(f"galfit {config}")
     os.chdir(cwd)
 
-
 def feedme_sky_model(
         background_center: float = 1.3920 * units.adu,
         fit_background_center: bool = True,
