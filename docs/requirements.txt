@@ -50,6 +50,7 @@ sphinxcontrib-qthelp==1.0.3
     # via sphinx
 sphinxcontrib-serializinghtml==1.1.5
     # via sphinx
+sphinx-immaterial==0.11.2
 urllib3==1.26.18
     # via requests
 zipp==3.17.0
