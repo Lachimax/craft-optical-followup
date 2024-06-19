@@ -188,7 +188,8 @@ class ImagingEpoch(Epoch):
                     "correct_to_epoch": True,
                     "registration_template": None,
                     "odds_to_tune_up": None,
-                    "odds-to-solve": None
+                    "odds-to-solve": None,
+                    "solve_one": False
                 }
             },
             "frame_diagnostics": {
@@ -668,6 +669,7 @@ class ImagingEpoch(Epoch):
             frames: dict = None,
             am_params: dict = {},
             background_kwargs: dict = {},
+            solve_one: bool = False,
             **kwargs
     ):
         self.frames_astrometry = {}
@@ -693,6 +695,11 @@ class ImagingEpoch(Epoch):
                 astrometry_fil_path = os.path.join(output_dir, fil)
                 for frame in frames_by_chip[chip]:
                     frame_alt = None
+                    if solve_one and first_success is not None:
+                        if not self.quiet:
+                            print(f"{frame} added to astroalign queue (solve_one is True).")
+                        self.astrometry_successful[fil][frame.name] = False
+                        continue
                     if back_subbed:
                         # For some fields, we want to subtract the background before attempting to solve, because of
                         # bright stars or the like.
@@ -730,6 +737,7 @@ class ImagingEpoch(Epoch):
                         self.astrometry_successful[fil][frame.name] = "astrometry.net"
                         if first_success is None:
                             first_success = new_frame
+
                     else:
                         if not self.quiet:
                             print(f"{frame} Astrometry.net unsuccessful; adding frame to astroalign queue.")

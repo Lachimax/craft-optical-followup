@@ -6,12 +6,12 @@ for example, the astrometry-related stages.
 
 
 When the ``craft-optical-followup`` package has been properly installed (see :doc:`installation`), the script
-``craft_optical_pipeline`` will be placed in the ``bin`` directory for the current environment, and thus should be
+``craft_optical_followup`` will be placed in the ``bin`` directory for the current environment, and thus should be
 callable from anywhere.
 
 .. code-block:: bash
 
-        $ craft_optical_pipeline
+        $ craft_optical_followup
 
 Simply invoking this from your terminal will conjure an interactive programme via which any of the supported pipelines
 can be launched, and guiding you through the main options, such as which Field and Epoch you want to work on. However,
@@ -19,7 +19,7 @@ some of these can be skipped by including parameter flags:
 
 .. code-block:: bash
 
-        $ craft_optical_pipeline --epoch FRB20180924_FORS2_1 --field FRB20180924
+        $ craft_optical_followup --epoch FRB20180924_FORS2_1 --field FRB20180924
 
 A full listing of valid flags is given `below <Script parameters>`_.
 
