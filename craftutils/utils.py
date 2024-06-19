@@ -1825,11 +1825,16 @@ def latexise_table(
         tbl.remove_column(dec_err_col)
 
     # Get rid of units
+    def to_str(v):
+        if v in (None, -999., -99.) or not np.isfinite(v):
+            return "--"
+        else:
+            return str(v)
     for col in round_cols:
         new_col = []
         for row in tbl:
             val = dequantify(row[col])
-            new_col.append(str(val.round(round_digits)))
+            new_col.append(to_str(val.round(round_digits)))
         tbl[col] = new_col
 
     # Replace booleans with Y/N
@@ -1865,6 +1870,11 @@ def latexise_table(
 
         tbl[val_col] = new_col
         tbl.remove_column(err_col)
+
+    val_cols = list(filter(lambda c: type(tbl[c][0]) in (int, float, np.float_), tbl.colnames))
+
+    for col in val_cols:
+        tbl[col] = [to_str(v) for v in tbl[col]]
 
     # # Add columns for reference
     # if ref_prefix is not None:

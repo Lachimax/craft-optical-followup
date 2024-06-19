@@ -2725,7 +2725,7 @@ class ImagingImage(Image):
             data: str = "image",
             clip_data: bool = False,
             astm_crosshairs: bool = False,
-            astm_kwargs = {},
+            astm_kwargs={},
             **kwargs,
     ) -> Tuple[plt.Figure, plt.Axes, dict]:
         if data == "image":
@@ -2909,9 +2909,9 @@ class ImagingImage(Image):
 
     def scale_bar(
             self,
-            obj: objects.Extragalactic,
             ax: plt.Axes,
             fig: plt.Figure,
+            obj: objects.Extragalactic = None,
             size: units.Quantity = 1 * units.arcsec,
             spread_factor: float = 0.5,
             x_ax: float = 0.1,
@@ -2945,25 +2945,35 @@ class ImagingImage(Image):
         # if isinstance(x, units.Quantity):
         #     if x.decompose().unit == units.rad:
         #         x = x.to(units.pix, self.pixel_scale_x)
-        if obj.z is None:
-            return None
+        print("scale_bar:", obj, obj.z)
+        physical_scale = True
+        if obj is None or obj.z is None or obj.z < 0.:
+            physical_scale = False
+        size_proj = None
         if not isinstance(size, units.Quantity):
             size = size * units.pix
         if size.decompose().unit == units.pix:
             size_pix = size
             size_ang = size_pix.to(units.arcsec, self.pixel_scale_x)
-            size_proj = obj.projected_size(size_ang)
+            if physical_scale:
+                size_proj = obj.projected_size(size_ang)
         elif size.decompose().unit == units.meter:
+            if not physical_scale:
+                raise ValueError(
+                    f"A physical size ({size}) has been passed as the scale bar size, but the object has no or negative redshift.")
             size_proj = size
             size_ang = obj.angular_size(distance=size)
             size_pix = size_ang.to(units.pix, self.pixel_scale_x)
         elif size.decompose().unit == units.rad:
             size_ang = size
             size_pix = size_ang.to(units.pix, self.pixel_scale_x)
-            size_proj = obj.projected_size(size_ang)
+            if physical_scale:
+                size_proj = obj.projected_size(size_ang)
         else:
-            raise ValueError(f"The units of provided size, {size.unit}, cannot be parsed as a pixel, angular or "
-                             f"physical distance.")
+            raise ValueError(
+                f"The units of provided size, {size.unit}, cannot be parsed as a pixel, angular or "
+                f"physical distance."
+            )
 
         if "solid_capstyle" not in line_kwargs:
             line_kwargs["solid_capstyle"] = "butt"
@@ -3022,17 +3032,18 @@ class ImagingImage(Image):
         # Except for this one, where we transform the final text coordinates back to Axes coordinates
         x_ax, y_proj_ax = ax.transAxes.inverted().transform((x_disp, y_proj_disp))
         # Draw the projected size text.
-        if bold:
-            str_spc = f"\\textbf{{{size_proj.round(precision_spc)}}}"
-        else:
-            str_spc = size_proj.round(precision_spc)
-        ax.text(
-            x_ax,
-            y_proj_ax,
-            str_spc,
-            transform=ax.transAxes,
-            **text_kwargs
-        )
+        if physical_scale:
+            if bold:
+                str_spc = f"\\textbf{{{size_proj.round(precision_spc)}}}"
+            else:
+                str_spc = size_proj.round(precision_spc)
+            ax.text(
+                x_ax,
+                y_proj_ax,
+                str_spc,
+                transform=ax.transAxes,
+                **text_kwargs
+            )
 
         # I am a matplotlib god.
 
