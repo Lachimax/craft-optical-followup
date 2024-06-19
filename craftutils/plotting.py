@@ -43,9 +43,28 @@ textheights = {
     "PASA": 9.45
 }
 
+colours = [
+    "magenta",
+    "green",
+    "red",
+    "blue",
+    "cyan",
+    "purple",
+    "violet",
+    "darkorange",
+    "gray",
+    "lightblue",
+    "lime",
+    "gold",
+    "brown",
+    "maroon",
+    "pink",
+]
+
 tick_fontsize = 12
 axis_fontsize = 14
 lineweight = 1.5
+
 
 @u.export
 def plot_kron(fig: plt.Figure, data_title: str, instrument: str, f: str, index: Union[int, list], catalogue: str,
@@ -667,6 +686,7 @@ def plot_gal_params(
         a: Union[list, np.ndarray, float],
         b: Union[list, np.ndarray, float],
         theta: Union[list, np.ndarray, float],
+        ax: plt.Axes,
         colour: str = 'white',
         show_centre: bool = False,
         label: str = None,
@@ -718,8 +738,10 @@ def plot_gal_params(
         else:
             line_label = label
         if show_centre:
-            plt.plot((0.0, n_x), (ys[i], ys[i]), c=colour, label=line_label)
-            plt.plot((x, x), (0.0, n_y), c=colour)
+            ax.plot((0.0, n_x), (ys[i], ys[i]), c=colour, label=line_label)
+            ax.plot((x, x), (0.0, n_y), c=colour)
+
+    return ax
 
 
 def plot_all_params(
@@ -733,7 +755,9 @@ def plot_all_params(
         b_key: str = "B_WORLD",
         theta_key: str = "THETA_WORLD",
         kron: bool = False,
-        kron_key: str = "KRON_RADIUS"
+        kron_key: str = "KRON_RADIUS",
+        fig: plt.Figure = None,
+        ax: plt.Axes = None
 ):
     """
     Plots
@@ -755,9 +779,11 @@ def plot_all_params(
 
     wcs_image = wcs.WCS(header=image[0].header)
 
-    plt.subplot(projection=wcs_image)
+    if fig is None:
+        fig = plt.Figure()
+        ax = fig.add_subplot(projection=wcs_image)
     norm = ImageNormalize(data, interval=ZScaleInterval(), stretch=SqrtStretch())
-    plt.imshow(data, origin='lower', norm=norm, )
+    ax.imshow(data, origin='lower', norm=norm, )
     plot_gal_params(
         hdu=image,
         ras=cat[ra_key],
@@ -765,15 +791,23 @@ def plot_all_params(
         a=cat[a_key],
         b=cat[b_key],
         theta=cat[theta_key],
-        colour='red'
+        colour='red',
+        ax=ax
     )
     if kron:
-        plot_gal_params(hdu=image, ras=cat[ra_key], decs=cat[dec_key], a=cat[kron_key] * cat[a_key],
-                        b=cat[kron_key] * cat[b_key],
-                        theta=cat[theta_key], colour='violet')
+        plot_gal_params(
+            hdu=image,
+            ras=cat[ra_key],
+            decs=cat[dec_key],
+            a=cat[kron_key] * cat[a_key],
+            b=cat[kron_key] * cat[b_key],
+            theta=cat[theta_key],
+            colour='violet',
+            ax=ax
+        )
 
     if show:
-        plt.show()
+        plt.show(fig)
 
     if cutout:
         n_x = data.shape[1]
@@ -788,22 +822,36 @@ def plot_all_params(
         top = mid_y + 45
 
         gal = ff.trim(hdu=image, left=left, right=right, bottom=bottom, top=top)
-        plt.imshow(gal[0].data)
-        plot_gal_params(hdu=gal, ras=cat[ra_key], decs=cat[dec_key], a=cat[a_key],
-                        b=cat[b_key],
-                        theta=cat[theta_key], colour='red')
+        ax.imshow(gal[0].data)
+        plot_gal_params(
+            hdu=gal,
+            ras=cat[ra_key],
+            decs=cat[dec_key],
+            a=cat[a_key],
+            b=cat[b_key],
+            theta=cat[theta_key],
+            colour='red',
+            ax=ax
+        )
         if kron:
-            plot_gal_params(hdu=image, ras=cat[ra_key], decs=cat[dec_key], a=cat[kron_key] * cat[a_key],
-                            b=cat[kron_key] * cat[b_key],
-                            theta=cat[theta_key], colour='violet')
+            plot_gal_params(
+                hdu=image,
+                ras=cat[ra_key],
+                decs=cat[dec_key],
+                a=cat[kron_key] * cat[a_key],
+                b=cat[kron_key] * cat[b_key],
+                theta=cat[theta_key],
+                colour='violet',
+                ax=ax
+            )
 
         if show:
-            plt.show()
+            plt.show(fig)
 
     if path:
         image.close()
 
-
+    return fig, ax
 
 
 def plot_lines(ax, z_shift, space: str = "wavelength", **kwargs):

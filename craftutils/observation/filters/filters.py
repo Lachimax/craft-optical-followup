@@ -1,7 +1,7 @@
 import os
 
 import numpy as np
-from typing import Union
+from typing import Union, Dict, List
 
 import astropy.table as table
 import astropy.io.votable as votable
@@ -18,18 +18,47 @@ active_filters = {}
 
 # __all__ = []
 
+cmaps = {
+    "u": "cmr.bubblegum",
+    "g": "viridis",
+    "v": "cmr.flamingo",
+    "r": "plasma",
+    "i": "cividis",
+    "z": "cmr.ghostlight",
+    "j": "cmr.fall",
+    "h": "cmr.sunburst",
+    "k": "cmr.ember",
+    "ks": "cmr.ember"
+}
+
+
+def best_for_path(
+        filter_list: List['Filter'],
+        exclude: list = (),
+):
+    r_sloan = Filter.from_params("r", "sdss")
+    best_score = np.inf * units.angstrom
+
+    filter_list.sort(key=lambda f: r_sloan.compare_wavelength_range(f))
+    best_fil = filter_list[0]
+
+    print(f"Best filter for PATH is {best_fil.instrument.name}/{best_fil.name}")
+    return best_fil
+
 
 # @u.export
 class Filter:
-
+    # TODO: Consider refactoring to Band instead of Filter?
     def __init__(self, **kwargs):
 
         self.name = None
         if "name" in kwargs:
             self.name = kwargs["name"]
         self.formatted_name = None
-        if "formatted_name" in kwargs:
+        if "formatted_name" in kwargs and isinstance(kwargs["formatted_name"], str):
             self.formatted_name = kwargs["formatted_name"]
+        else:
+            self.formatted_name = f"${self.name}$"
         self.band_name = None
         if "band_name" in kwargs and kwargs["band_name"] is not None:
             self.band_name = kwargs["band_name"]
@@ -75,6 +104,8 @@ class Filter:
         self.cmap = None
         if "cmap" in kwargs:
             self.cmap = kwargs["cmap"]
+        elif isinstance(self.band_name, str) and self.band_name in cmaps:
+            self.cmap = cmaps[self.band_name]
 
         self.lambda_eff = None
         self.lambda_fwhm = None
@@ -243,6 +274,7 @@ class Filter:
         return name
 
     def machine_name(self):
+        self.load_instrument()
         return f"{self.instrument.name}_{self.name.replace('_', '-')}"
 
     def load_instrument(self):
@@ -458,4 +490,3 @@ class Filter:
             ),
             f"{filter_name}_photometry.ecsv"
         )
-

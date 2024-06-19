@@ -198,16 +198,15 @@ class FORS2CoaddedImage(CoaddedImage):
 
         skip_zp = False
         zp = {}
-        if self.filter.calib_retrievable():
+        if self.filter.calib_retrievable() and "instrument_archive" not in self.zeropoints:
             zp = self.calibration_from_qc1()
             skip_retrievable = True
             if "skip_retrievable" in kwargs:
                 skip_retrievable = kwargs.pop("skip_retrievable")
-            u.debug_print(1, "skip_retrievable:", skip_retrievable)
             if skip_retrievable:
                 skip_zp = True
-            u.debug_print(2, "skip_zp:", skip_zp)
-        u.debug_print(2, "skip_zp:", skip_zp)
+        elif "instrument_archive" in self.zeropoints:
+            zp = self.zeropoints["instrument_archive"]
         if not skip_zp:
             zp = super().zeropoint(
                 **kwargs

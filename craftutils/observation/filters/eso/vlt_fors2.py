@@ -61,6 +61,7 @@ class FORS2Filter(filters.Filter):
                 self.calibration_table["extinction_err"] *= units.mag
                 self.write_calibration_table()
                 self.calibration_table_last_updated = date.today()
+
             else:
                 u.debug_print(1, "Filter calibrations already updated today; skipping.")
 

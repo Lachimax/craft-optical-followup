@@ -13,7 +13,7 @@ import numpy as np
 import astropy.table as table
 import astropy.io.fits as fits
 import astropy.units as units
-from astropy.coordinates import SkyCoord
+from astropy.coordinates import SkyCoord, Longitude, Latitude
 from astropy.time import Time
 
 # TODO: Arrange these into some kind of logical order.
@@ -307,7 +307,12 @@ def check_key(key: str, dictionary: dict, na_values: Union[tuple, list] = (None)
     return key in dictionary and dictionary[key] not in na_values
 
 
-def check_dict(key: str, dictionary: dict, na_values: Union[tuple, list] = (None), fail_val=None):
+def check_dict(
+        key: str,
+        dictionary: dict,
+        na_values: Union[tuple, list] = (None),
+        fail_val=None
+):
     """
 
     :param key:
@@ -325,22 +330,24 @@ def check_quantity(
         unit: Union[str, units.Unit],
         allow_mismatch: bool = True,
         enforce_equivalency: bool = True,
-        convert: bool = False
+        convert: bool = False,
+        equivalencies: Union[List[Tuple], units.Equivalency] = (),
 ):
     """
     If the passed number is not a Quantity, turns it into one with the passed unit. If it is already a Quantity,
     checks the unit; if the unit is compatible with the passed unit, the quantity is returned unchanged (unless convert
     is True).
 
-    :param number: Quantity (or not) to check.
+    :param number: value (or not) to check.
     :param unit: Unit to check for.
-    :param allow_mismatch: If `False`, even compatible units will not be allowed.
     :param enforce_equivalency: If `True`, and if `allow_mismatch` is True, a `units.UnitsError` will be raised if the
         `number` has units that are not equivalent to `unit`.
         That is, set this (and `allow_mismatch`) to `True` if you want to ensure `number` has the same
         dimensionality as `unit`, but not necessarily the same units. Savvy?
     :param convert: If `True`, convert compatible `Quantity` to units `unit`.
-    :return:
+    :param allow_mismatch: If False, even compatible but mismatched units will not be allowed; ie, the unit of the
+        quantity must match the one specified in the "unit" parameter.
+    :return: number as Quantity with specified unit.
     """
     if number is None:
         return None
@@ -350,26 +357,32 @@ def check_quantity(
         if not allow_mismatch:
             raise units.UnitsError(
                 f"This is already a Quantity, but with units {number.unit}; units {unit} were specified.")
-        elif enforce_equivalency and not (number.unit.is_equivalent(unit)):
+        elif enforce_equivalency and not (number.unit.is_equivalent(unit)) and not equivalencies:
             raise units.UnitsError(
-                f"This number is already a Quantity, but with incompatible units ({number.unit}); units {unit} were specified.")
+                f"This number is already a Quantity, but with incompatible units ({number.unit}); units {unit} were specified. equivalencies ==",
+                equivalencies)
         elif convert:
-            number = number.to(unit)
+            number = number.to(unit, equivalencies=equivalencies)
     return number
 
 
-def dequantify(number: Union[float, int, units.Quantity], unit: units.Unit = None):
+def dequantify(
+        number: Union[float, int, units.Quantity],
+        unit: units.Unit = None,
+        equivalencies: Union[List[Tuple], units.Equivalency, Tuple] = (),
+) -> float:
     """
     Removes the unit from an astropy Quantity, or returns the number unchanged if it is not a Quantity.
     If a unit is provided, and number is a Quantity, an attempt will be made to convert the number to that unit before
     returning the value.
-    :param number:
-    :param unit:
-    :return:
+    :param number: value to strip.
+    :param unit: unit to check for.
+    :param equivalencies: List of Equivalency objects to pass to to() function for conversion.
+    :return: number that has been stripped of its units, if present.
     """
     if isinstance(number, units.Quantity):
         if unit is not None:
-            number = check_quantity(number=number, unit=unit, convert=True)
+            number = check_quantity(number=number, unit=unit, convert=True, equivalencies=equivalencies)
         return number.value
     else:
         return number
@@ -499,17 +512,13 @@ def mkdir_check(*paths: str):
     :param paths: each argument is a path to check and create.
     """
     for path in paths:
-        if not os.path.isdir(path):
-            debug_print(2, f"Making directory {path}")
-            os.mkdir(path)
-        else:
-            debug_print(2, f"Directory {path} already exists, doing nothing.")
+        os.makedirs(path, exist_ok=True)
 
 
 def mkdir_check_nested(
         path: str,
         remove_last: bool = True
-):
+) -> str:
     """
     Does mkdir_check, but for all parent directories of the given path.
     That is, for all of the levels of the given path, a directory will be created if it doesn't exist.
@@ -518,16 +527,11 @@ def mkdir_check_nested(
         Useful if the path will in fact be that of a file that you just want to create a directory for.
     :return:
     """
-    levels = []
-    while len(path) > 1:
-        path, end = os.path.split(path)
-        levels.append(end)
-    levels.append(path)
-    levels.reverse()
+
     if remove_last:
-        levels.pop()
-    debug_print(2, "utils.mkdir_check_nested(): levels ==", levels)
-    mkdir_check_args(*levels)
+        path, end = os.path.split(path)
+    os.makedirs(path, exist_ok=True)
+    return path
 
 
 def move_check(origin: str, destination: str):
@@ -567,8 +571,7 @@ def directory_of(path: str):
 
 
 def uncertainty_product(value, *args: tuple):
-    """
-    Each arg should be a tuple, in which the first entry is the measurement and the second entry is the uncertainty in
+    """Each arg should be a tuple, in which the first entry is the measurement and the second entry is the uncertainty in
     that measurement. These may be in the form of numpy arrays or table columns.
     """
     if None in args:
@@ -612,7 +615,7 @@ def uncertainty_log10(arg: float, uncertainty_arg: float, a: float = 1.):
     return np.abs(a * uncertainty_arg / (arg * np.log(10)))
 
 
-def uncertainty_func(arg, err, func=lambda x: np.log10(x), absolute=False):
+def uncertainty_func(arg, err, func=np.log10):
     """
 
     :param arg:
@@ -626,25 +629,50 @@ def uncertainty_func(arg, err, func=lambda x: np.log10(x), absolute=False):
     error_plus = func(arg + err) - measurement
     error_minus = func(arg - err) - measurement
 
-    error_plus_actual = []
-    error_minus_actual = []
-    try:
-        for i, _ in enumerate(error_plus):
-            error_plus_actual.append(np.max([error_plus[i], error_minus[i]]))
-            error_minus_actual.append(np.min([error_plus[i], error_minus[i]]))
-    except TypeError:
-        error_plus_actual.append(np.max([error_plus, error_minus]))
-        error_minus_actual.append(np.min([error_plus, error_minus]))
+    error_plus = np.abs(error_plus)
+    error_minus = np.abs(error_minus)
 
-    if absolute:
-        return measurement + np.array([0., error_plus_actual, error_minus_actual])
-    else:
-        return np.array([measurement, error_plus_actual, error_minus_actual])
+    return measurement, error_plus, error_minus
 
 
-def uncertainty_func_percent(arg, err, func=lambda x: np.log10(x)):
+def uncertainty_func_percent(arg, err, func=np.log10):
     measurement, error_plus, error_minus = uncertainty_func(arg=arg, err=err, func=func, absolute=False)
     return np.array([error_plus / measurement, error_minus / measurement])
+
+
+def uncertainty_sin(theta, sigma_theta, a=1., b=1.):
+    return np.abs(a * b * np.cos(theta) * sigma_theta)
+
+
+def uncertainty_cos(theta, sigma_theta, a=1., b=1.):
+    return np.abs(a * b * np.sin(theta) * sigma_theta)
+
+
+def uncertainty_power(x, power, sigma_x, a=1.):
+    f = a * x ** power
+    return np.abs(f * power * sigma_x / x)
+
+
+def great_circle_dist(ra_1, dec_1, ra_2, dec_2):
+    delta_ra = ra_2 - ra_1
+    term_1 = np.sin(dec_1) * np.sin(dec_2)
+    term_2 = np.cos(dec_1) * np.cos(dec_2) * np.cos(delta_ra)
+    x = term_1 + term_2
+    s = np.arccos(x).to("arcsec")
+    return s
+
+
+def inclination(
+        axis_ratio: float,
+        q_0: float = 0.2
+) -> units.Quantity:
+    """Using the power of geometry, loosely estimates the inclination angle of a disk galaxy.
+
+    :param axis_ratio: Axis ratio b/a of the galaxy.
+    :param q_0: Axis ratio if viewed fully edge-on.
+    :return: Inclination angle in degrees.
+    """
+    return (np.arccos(np.sqrt((axis_ratio ** 2 - q_0 ** 2) / (1 - q_0 ** 2))) * units.rad).to(units.deg)
 
 
 def get_column_names(path, delimiter=','):
@@ -771,32 +799,80 @@ def root_mean_squared_error(
     return np.sqrt(mse)
 
 
-def detect_problem_table(
+def detect_problem_row(
         tbl: table.Table,
-        fmt: str = "ascii.ecsv"
-) -> table.Row:
+        fmt: str = "ascii.ecsv",
+        remove_output: bool = True
+) -> Tuple[int, table.Row]:
     """
     This function iterates through the rows of an astropy Table and attempts to write each one to disk;
     if it fails on one, the row's index and the row itself are returned.
 
     :param tbl: The Table (or subclass) to check.
     :param fmt: The format to attempt to write; different formats may have trouble with different data types.
+    :param remove_output: auto-delete output tables.
     :return: index, row
     """
+    i = None
+    row = None
     for i, row in enumerate(tbl):
+        print(f"Writing up to row {i}")
         tbl_this = tbl[:i + 1]
         try:
             writepath = os.path.join(os.path.expanduser("~"), f"test.{fmt}")
             tbl_this.write(writepath, overwrite=True, format=fmt)
-            os.remove(writepath)
+            if remove_output:
+                os.remove(writepath)
         except NotImplementedError:
-            print("Problem row:")
+            print("Problem column (NotImplementedError):")
             print(i, row)
+            _problem_row(i, row, tbl)
             return i, row
         except ValueError:
-            print("Problem row:")
+            print("Problem column (ValueError):")
             print(i, row)
+            _problem_row(i, row, tbl)
             return i, row
+
+
+def _problem_row(i, row, tbl):
+    problem_values = {}
+    j = i - 1
+    other_row = tbl[j]
+    print(tbl[[i, j]])
+    for col in tbl.colnames:
+        if type(other_row[col]) is not type(row[col]):
+            problem_values[col] = (row[col], other_row[col])
+    print(len(problem_values))
+    for name, (val, other_val) in problem_values.items():
+        print(name, val, type(val), other_val, type(other_val))
+
+
+def detect_problem_column(
+        tbl: table.Table,
+        fmt: str = "ascii.ecsv",
+        remove_output: bool = True
+):
+    print(type(tbl))
+    colnames = tbl.colnames
+    for i, col in enumerate(colnames):
+        colnames_trunc = colnames[:i]
+        tbl_this = tbl[colnames_trunc]
+        try:
+            writepath = os.path.join(os.path.expanduser("~"), f"test.{fmt}")
+            tbl_this.write(writepath, overwrite=True, format=fmt)
+            if remove_output:
+                os.remove(writepath)
+        except NotImplementedError:
+            print(tbl_this)
+            print("Problem column (NotImplementedError):")
+            print(col, tbl[col])
+            return col, tbl[col]
+        except ValueError:
+            print(tbl_this)
+            print("Problem column (ValueError):")
+            print(col, tbl[col])
+            return col, tbl[col]
 
 
 def mode(lst: list):
@@ -1007,16 +1083,18 @@ def uncertainty_string(
         value: Union[float, units.Quantity],
         uncertainty: Union[float, units.Quantity],
         n_digits_err: int = 1,
+        n_digits_no_err: int = 1,
         n_digits_lim: int = None,
         unit: units.Unit = None,
         brackets: bool = True,
         limit_val: int = None,
         limit_type: str = "upper",
         nan_string: str = "--",
+        include_uncertainty: bool = True
 ):
     limit_vals = (limit_val, -99, -999, -999.)
     value = float(dequantify(value, unit))
-    if value in limit_vals or np.ma.is_masked(value):
+    if value in limit_vals or np.ma.is_masked(value) or np.isnan(value):
         return nan_string, value, uncertainty
     if np.ma.is_masked(uncertainty):
         uncertainty = 0.
@@ -1039,7 +1117,6 @@ def uncertainty_string(
     if uncertainty in limit_vals:
         if n_digits_lim:
             # Account for the decimal point
-            print(v_point, n_digits_lim)
             if v_point < n_digits_lim:
                 n_digits_lim += 1
                 x = 0
@@ -1049,21 +1126,22 @@ def uncertainty_string(
 
         return f"${limit_char} {value_str}$", value, uncertainty
 
-    if "e" in uncertainty_str:
-        if abs(uncertainty) < 1:
-            m = -int(np.log10(uncertainty) - 1)
+    def deal_with_e(string, val):
+        if "e" in string:
+            if abs(val) < 1:
+                m = -int(np.log10(val) - 1)
+            else:
+                m = 10
+            return f"{val:.{m}f}"
         else:
-            m = 10
-        uncertainty_str = f"{uncertainty:.{m}f}"
-    if "e" in value_str:
-        if abs(value) < 1:
-            m = -int(np.log10(value) - 1)
-        else:
-            m = 10
-        value_str = f"{value:.{m}f}"
+            return string
 
+    uncertainty_str = deal_with_e(uncertainty_str, uncertainty)
+    value_str = deal_with_e(value_str, value)
     if uncertainty == 0.:
-        return f"${np.round(float(value_str), n_digits_err)}$", value, uncertainty
+        if isinstance(n_digits_no_err, int):
+            value_str = f"${np.round(float(value_str), n_digits_err)}$"
+        return value_str, value, uncertainty
 
     # Find the decimal point in the uncertainty.
     u_point = uncertainty_str.find(".")
@@ -1078,9 +1156,11 @@ def uncertainty_string(
         x = i - u_point + n_digits_err
         # Round appropriately
         uncertainty_rnd = np.round(uncertainty, x - 1)
+        uncertainty_str = deal_with_e(str(uncertainty_rnd), uncertainty_rnd)[:u_point + x]
+
         value_rnd = np.round(value, x - 1)
         value_str = str(value_rnd)[:v_point + x]
-        uncertainty_str = str(uncertainty_rnd)[:u_point + x]
+        # uncertainty_str = str(uncertainty_rnd)[:u_point + x]
 
         while len(uncertainty_str) < i + n_digits_err:
             uncertainty_str += "0"
@@ -1089,6 +1169,7 @@ def uncertainty_string(
         while v_dp < u_dp:
             value_str += "0"
             v_dp = len(value_str) - v_point
+
     else:
         # Here x is the number of digits before the decimal point to set to zero.
         if u_point < n_digits_err:
@@ -1100,15 +1181,19 @@ def uncertainty_string(
         value_str = str(value_rnd)[:v_point - x] + "0" * x
         uncertainty_str = str(uncertainty_rnd)[:n_digits_err] + "0" * x
 
-    if brackets:
-        if uncertainty < 1:
+    if not include_uncertainty:
+        value_str = value_str
+    elif brackets:
+        if uncertainty < 1.:
             uncertainty_str = uncertainty_str[-n_digits_err:]
         else:
             x = u_point - n_digits_err
             uncertainty_str = uncertainty_str[:n_digits_err] + "0" * x
-        return f"${value_str}({uncertainty_str})$", value_rnd, uncertainty_rnd
+        value_str = f"${value_str}({uncertainty_str})$"
     else:
-        return f"${value_str} \pm {uncertainty_str}$", value_rnd, uncertainty_rnd
+        value_str = f"${value_str} \\pm {uncertainty_str}$"
+
+    return value_str, value_rnd, uncertainty_rnd
 
 
 def uncertainty_str_coord(
@@ -1116,24 +1201,37 @@ def uncertainty_str_coord(
         uncertainty_ra: Union[float, units.Quantity],
         uncertainty_dec: Union[float, units.Quantity],
         n_digits_err: int = 2,
-        brackets: bool = True
-
+        brackets: bool = True,
+        ra_err_seconds: bool = False
 ):
-    ra = coord.ra
-    ra_s_str, ra_rounded, ra_unc_rounded = uncertainty_string(
+    print("=" * 100)
+    print(coord)
+    print(coord.to_string("hmsdms"))
+    print(uncertainty_ra)
+    uncertainty_ra_s = Longitude(uncertainty_ra).hms.s
+    ra_s_str, ra_s_rounded, ra_s_unc_rounded = uncertainty_string(
         value=coord.ra.hms.s,
-        uncertainty=uncertainty_ra,
+        uncertainty=uncertainty_ra_s,
+        n_digits_err=n_digits_err,
+        brackets=brackets
+    )
+    ra_arcsec_str, ra_arcsec_rounded, ra_arcsec_unc_rounded = uncertainty_string(
+        value=coord.ra.to("arcsec"),
+        uncertainty=uncertainty_ra.to("arcsec"),
         n_digits_err=n_digits_err,
         brackets=brackets
     )
     ra_s_str = ra_s_str.replace("$", "")
-    ra_str = ra.to_string("h", format="latex")
+    ra_str = coord.ra.to_string("h", format="latex")
     s_i = ra_str.find(r"{m}}") + 4
     s_2 = ra_str[s_i:]
     e_i = s_2.find("^") + s_i
     ra_replace = ra_str[s_i:e_i]
-    ra_uncertainty_str = ra_str.replace(ra_replace, ra_s_str)
+    if ra_err_seconds:
+        ra_uncertainty_str = ra_str.replace(ra_replace, ra_s_str)
+    else:
 
+        ra_uncertainty_str = f"{ra_str.replace(ra_replace, str(ra_s_rounded))[:-1]} \pm ({ra_arcsec_unc_rounded}" + r"^{\prime\prime})$"
     dec = coord.dec
     dec_s_str, dec_rounded, dec_unc_rounded = uncertainty_string(
         value=abs(coord.dec.dms.s),
@@ -1566,3 +1664,253 @@ def split_uncertainty_string(string: str, delim: str = "+/-"):
     value = float(string[:string.find(delim)])
     uncertainty = float(string[string.find(delim) + len(delim):])
     return value, uncertainty
+
+
+def polar_to_cartesian(
+        r: float,
+        theta: float,
+        centre_x: units.Quantity = 0,
+        centre_y: units.Quantity = 0
+) -> tuple:
+    """Transforms polar (r, theta) coordinate to cartesian (x, y). Works with astropy Quantities, so long as r has the
+    same units as centre_x and centre_y and theta has valid angular units.
+
+    :param r: Radial polar coordinate
+    :param theta: Angular polar coordinate
+    :param centre_x: x coordinate of centre of polar coordinate system
+    :param centre_y: y coordinate of centre of polar coordinate system
+    :return: x, y with same units as r.
+    """
+    x = r * np.cos(theta) + centre_x
+    y = r * np.sin(theta) + centre_y
+    return x, y
+
+
+def mod_latex_table(
+        path: str,
+        short_caption: str = None,
+        caption: str = None,
+        label: str = None,
+        longtable: bool = False,
+        coltypes: str = None,
+        landscape: bool = False,
+        sub_colnames: list = None,
+        second_path: str = None,
+        multicolumn=None
+):
+    with open(path, 'r') as f:
+        file = f.readlines()
+    tab_invoc = file[1]
+    if coltypes is not None:
+        tab_invoc = r"\begin{tabular}{" + coltypes + "}\n"
+        file[1] = tab_invoc
+    if longtable:
+        file[1] = "% " + file[1]
+
+    if sub_colnames is not None:
+        under_col_str = ""
+        for under_col in sub_colnames:
+            under_col_str += under_col + " & "
+        under_col_str = under_col_str[:-2]
+        under_col_str += r"\\ \hline" + "\n"
+        file.insert(3, under_col_str)
+    else:
+        file[2] = file[2].replace("\n", r"\hline" + "\n")
+
+    if multicolumn is not None:
+        multicol_str = ""
+        for t in multicolumn:
+            multicol_str += r"\multicolumn{" + str(t[0]) + "}{" + str(t[1]) + "}{" + str(t[2]) + "} & "
+        multicol_str = multicol_str[:-2] + "\\\\ \n"
+        file.insert(2, multicol_str)
+
+    if label is not None:
+        if not label.startswith("tab:"):
+            label = "tab:" + label
+        file.insert(
+            1,
+            r"\label{" + label + "}\n"
+        )
+        if longtable:
+            file[1] = file[1].replace("\n", r"\\" + "\n")
+
+    if caption is not None:
+        if short_caption is None:
+            cap_str = r"\caption{" + caption + "}\n"
+        else:
+            cap_str = r"\caption" + "[" + short_caption + "]{" + caption + "}\n"
+        file.insert(
+            1,
+            cap_str
+        )
+
+    if longtable:
+        tab_invoc = tab_invoc.replace("tabular", "longtable")
+        file[0] = tab_invoc
+        file.pop(-1)
+        file.pop(-1)
+        file.append(r"\end{longtable}" + "\n")
+        file.insert(0, r"\begin{singlespace}" + "\n")
+        file.append(r"\end{singlespace}" + "\n")
+
+    if landscape:
+        file.insert(
+            0,
+            r"\begin{landscape}" + "\n"
+        )
+        file.append(
+            r"\end{landscape}" + "\n"
+        )
+
+    with open(path, 'w') as f:
+        f.writelines(file)
+    if second_path is not None:
+        with open(second_path, 'w') as f:
+            f.writelines(file)
+    return file
+
+
+def latexise_table(
+        tbl: table.Table,
+        column_dict: dict = None,
+        output_path: str = None,
+        sub_colnames: dict = None,
+        exclude_from_unc: list = (),
+        round_cols: list = (),
+        round_digits: int = 1,
+        ra_col: str = None,
+        dec_col: str = None,
+        ra_err_col: str = None,
+        dec_err_col: str = None,
+        err_suffix: str = "_err",
+        coord_kwargs: dict = None,
+        uncertainty_kwargs: dict = None,
+        **kwargs
+) -> Union[table.Table, List[str]]:
+    tbl = tbl.copy()
+
+    # Make appropriate RA and Dec columns
+    if ra_col is not None and dec_col is not None:
+        if ra_err_col is None:
+            ra_err_col = ra_col + err_suffix
+        if dec_err_col is None:
+            dec_err_col = dec_col + err_suffix
+        default_coord_kwargs = dict(
+            n_digits_err=1,
+            brackets=True,
+            ra_err_seconds=False,
+        )
+        if coord_kwargs is not None:
+            default_coord_kwargs.update(coord_kwargs)
+        coord_kwargs = default_coord_kwargs
+
+        ra_strs = []
+        dec_strs = []
+        for row in tbl:
+            if row[ra_err_col] > 0:
+                ra_str, dec_str = uncertainty_str_coord(
+                    coord=SkyCoord(ra=row[ra_col], dec=row[dec_col], unit="deg"),
+                    uncertainty_ra=row[ra_err_col].to("arcsec"),
+                    uncertainty_dec=row[dec_err_col].to("arcsec"),
+                    **coord_kwargs
+                )
+            else:
+                ra_str = Longitude(row[ra_col]).to_string("h", format="latex")
+                dec_str = Latitude(row[dec_col]).to_string(format="latex")
+            ra_strs.append(ra_str)
+            dec_strs.append(dec_str)
+        tbl[ra_col] = ra_strs
+        tbl[dec_col] = dec_strs
+        tbl.remove_column(ra_err_col)
+        tbl.remove_column(dec_err_col)
+
+    # Get rid of units
+    def to_str(v):
+        if v in (None, -999., -99.) or not np.isfinite(v):
+            return "--"
+        else:
+            return str(v)
+    for col in round_cols:
+        new_col = []
+        for row in tbl:
+            val = dequantify(row[col])
+            new_col.append(to_str(val.round(round_digits)))
+        tbl[col] = new_col
+
+    # Replace booleans with Y/N
+    for col in tbl.colnames:
+        if isinstance(tbl[col][0], np.bool_):
+            yn = {True: "Y", False: "N"}
+            tbl[col] = [yn[b] for b in tbl[col]]
+
+    # Produce combined value(error) strings
+    err_colnames = list(filter(lambda c: c.endswith(err_suffix), tbl.colnames))
+    for err_col in err_colnames:
+        val_col = err_col[:-len(err_suffix)]
+        if val_col in exclude_from_unc:
+            continue
+        # print(colname, do_err_str, err_col, err_col in tbl.colnames)
+        new_col = []
+        default_unc_kwargs = dict(
+            n_digits_lim=3,
+            n_digits_err=1,
+            n_digits_no_err=None,
+            limit_type="upper",
+        )
+        if uncertainty_kwargs is not None:
+            default_unc_kwargs.update(uncertainty_kwargs)
+        uncertainty_kwargs = default_unc_kwargs
+        for row in tbl:
+            this_str, value, uncertainty = uncertainty_string(
+                value=row[val_col],
+                uncertainty=row[err_col],
+                **uncertainty_kwargs
+            )
+            new_col.append(this_str)
+
+        tbl[val_col] = new_col
+        tbl.remove_column(err_col)
+
+    val_cols = list(filter(lambda c: type(tbl[c][0]) in (int, float, np.float_), tbl.colnames))
+
+    for col in val_cols:
+        tbl[col] = [to_str(v) for v in tbl[col]]
+
+    # # Add columns for reference
+    # if ref_prefix is not None:
+    #     ref_colnames = list(filter(lambda c: c.startswith(ref_prefix), tbl.colnames))
+    #     for row in tbl:
+    #         ref_key =
+
+    # Stick some extra text under column names, e.g. units
+    under_list = None
+    if sub_colnames is not None:
+        under_list = []
+        for colname in tbl.colnames:
+            if colname in sub_colnames:
+                under_list.append(sub_colnames[colname])
+            else:
+                under_list.append(" ")
+
+    # Rename columns
+    if column_dict is not None:
+        # Sort by the provided dictionary, then the rest
+        # not_in_dict = set(tbl.colnames) - set(column_dict.keys())
+        # tbl = tbl[list(column_dict.keys())]  + list(not_in_dict)]
+        nems = []
+        for original in tbl.colnames:
+            if original in column_dict:
+                new = column_dict[original]
+                tbl[new] = tbl[original]
+                tbl.remove_column(original)
+                nems.append(new)
+            else:
+                nems.append(original)
+        tbl = tbl[nems]
+
+    # Add various other components to the .tex output
+    if output_path is not None:
+        tbl.write(output_path, format="ascii.latex", overwrite=True)
+        if set(kwargs.keys()).intersection({"caption", "short_caption", "label", "landscape"}):
+            tbl = mod_latex_table(path=output_path, sub_colnames=under_list, **kwargs)
+    return tbl

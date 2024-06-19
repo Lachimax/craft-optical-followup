@@ -1,1 +1,1 @@
-from .spectroscopy import *
+from .spectrum import *

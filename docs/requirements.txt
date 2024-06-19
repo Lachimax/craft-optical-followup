@@ -8,29 +8,31 @@ alabaster==0.7.12
     # via sphinx
 babel==2.10.3
     # via sphinx
-certifi==2022.12.7
+certifi==2023.7.22
     # via requests
 charset-normalizer==2.1.0
     # via requests
 docutils==0.17.1
     # via sphinx
-idna==3.3
+idna==3.7
     # via requests
 imagesize==1.4.1
     # via sphinx
-jinja2==3.1.2
+importlib-metadata==7.0.1
+    # via sphinx
+jinja2==3.1.4
     # via sphinx
 markupsafe==2.1.1
     # via jinja2
 packaging==21.3
     # via sphinx
-pygments==2.12.0
+pygments==2.15.0
     # via sphinx
 pyparsing==3.0.9
     # via packaging
 pytz==2022.1
     # via babel
-requests==2.31.0
+requests==2.32.0
     # via sphinx
 snowballstemmer==2.2.0
     # via sphinx
@@ -48,5 +50,7 @@ sphinxcontrib-qthelp==1.0.3
     # via sphinx
 sphinxcontrib-serializinghtml==1.1.5
     # via sphinx
-urllib3==1.26.9
+urllib3==1.26.18
     # via requests
+zipp==3.17.0
+    # via importlib-metadata

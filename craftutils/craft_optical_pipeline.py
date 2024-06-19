@@ -137,7 +137,8 @@ def main(
     mode = mode.lower()
 
     if mode == "objects":
-        field.objects_pipeline()
+        field.do_runtime = do
+        field.pipeline()
         exit()
     else:
         if epoch_name is None:
@@ -157,7 +158,7 @@ def main(
             epoch.field = field
 
     u.debug_print(2, "pipeline.py: type(epoch) ==", type(epoch))
-    epoch.do = do
+    epoch.do_runtime = do
     epoch.pipeline(skip_cats=skip_cats)
 
 
@@ -237,3 +238,7 @@ def parse_args():
         furby_path=fp,
         skip_cats=args.skip_cats
     )
+
+
+if __name__ == "__main__":
+    parse_args()

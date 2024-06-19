@@ -1,18 +1,13 @@
 # Code by Lachlan Marnoch, 2021
-import copy
-import math
+
 import os
 import shutil
 import string
-from typing import Union, Tuple, List
-
-import numpy as np
-import matplotlib.pyplot as plt
+from typing import Union, List
 
 import astropy.io.fits as fits
 import astropy.table as table
 import astropy.units as units
-from astropy.coordinates import SkyCoord
 from astropy.time import Time
 
 from astropy.visualization import quantity_support
@@ -243,6 +238,8 @@ def fits_table_all(
 def detect_instrument(path: str, ext: int = 0, fail_quietly: bool = False):
     if not os.path.exists(path) or not os.path.isfile(path):
         raise FileNotFoundError(f"No image found at {path}")
+    elif path.endswith("_outputs.yaml"):
+        path = path.replace("_outputs.yaml", ".fits")
 
     try:
         with fits.open(path) as file:
@@ -277,10 +274,10 @@ def detect_instrument(path: str, ext: int = 0, fail_quietly: bool = False):
 
 # @u.export
 def from_path(path: str, cls: type = None, **kwargs):
-    """
-    To be used when there may already be an image instance for this path floating around in memory, and it's okay
+    """To be used when there may already be an image instance for this path floating around in memory, and it's okay
     (or better) to access this one instead of creating a new instance.
     When the image may have overwritten a previous file, instantiating the image directly is better.
+
     :param path:
     :param cls:
     :param kwargs:
@@ -354,13 +351,14 @@ class Image:
         try:
             u.debug_print(1, f"Image.__init__(): {self}.instrument_name ==", self.instrument_name)
             self.instrument = inst.Instrument.from_params(instrument_name=self.instrument_name)
-
         except FileNotFoundError:
             u.debug_print(1, f"Image.__init__(): FileNotFoundError")
             self.instrument = None
+
         u.debug_print(
             1, f"Image.__init__(): {self}.instrument ==", self.instrument,
-            self.instrument_name)
+            self.instrument_name
+        )
         self.epoch = None
 
         # Header attributes
@@ -607,12 +605,6 @@ class Image:
     def extract_header_item(self, key: str, ext: int = 0, accept_absent: bool = False):
         # Check in the given HDU, then check all headers.
         value = self._extract_header_item(key=key, ext=ext)
-        u.debug_print(2, "")
-        u.debug_print(2, "Image.extract_header_item():")
-        u.debug_print(2, f"\t{self}.path ==", self.path)
-        u.debug_print(2, f"\t key ==", key)
-        u.debug_print(2, f"\t value ==", value)
-        u.debug_print(2, "")
         if value is None and not accept_absent:
             for ext in range(len(self.headers)):
                 value = self._extract_header_item(key=key, ext=ext)
@@ -659,7 +651,7 @@ class Image:
             self.gain = u.check_quantity(self.gain, gain_unit)
         return self.gain
 
-    def extract_date_obs(self):
+    def extract_date_obs(self) -> str:
         key = self.header_keys()["date-obs"]
         self.date_obs = self.extract_header_item(key)
         key = self.header_keys()["mjd-obs"]
@@ -752,7 +744,7 @@ class Image:
         header_keys = {
             "integration_time": "INTTIME",
             "exposure_time": "EXPTIME",
-            "exposure_time_old": "OLD_EXPTIME",
+            "exposure_time_old": "HIERARCH OLD_EXPTIME",
             "noise_read": "RON",
             "noise_read_old": "OLD_RON",
             "gain": "GAIN",
@@ -763,7 +755,7 @@ class Image:
             "instrument": "INSTRUME",
             "unit": "BUNIT",
             "saturate": "SATURATE",
-            "saturate_old": "OLD_SATURATE",
+            "saturate_old": "HIERARCH OLD_SATURATE",
             "program_id": "PROG_ID"
         }
         return header_keys
@@ -841,3 +833,5 @@ class Image:
             new_files[hdu.name] = new_img
         self.close()
         return new_files
+
+

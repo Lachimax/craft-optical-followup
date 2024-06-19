@@ -8,7 +8,7 @@ from astropy.time import Time
 import craftutils.utils as u
 import craftutils.observation.image as image
 
-from ..spectroscopy_epoch import SpectroscopyEpoch
+from ..epoch import SpectroscopyEpoch
 from ...epoch import _retrieve_eso_epoch
 
 
