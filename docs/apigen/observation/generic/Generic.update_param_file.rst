@@ -6,5 +6,5 @@
 
 
 
-.. python-apigen-entity-page::  craftutils.observation.objects.Extragalactic.load_output_file
+.. python-apigen-entity-page::  craftutils.observation.generic.Generic.update_param_file
 

@@ -6,5 +6,5 @@
 
 
 
-.. python-apigen-entity-page::  craftutils.observation.objects.Star.__init__
+.. python-apigen-entity-page::  craftutils.observation.generic.Generic
 
