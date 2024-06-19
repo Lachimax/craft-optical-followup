@@ -720,9 +720,11 @@ class Field(Pipeline):
         else:
             raise ValueError(f"data_path is not set for {self}.")
 
-    def _cat_data_path(self, cat: str):
+    def _cat_data_path(self, cat: str, data_release: int = None):
         if self.data_path is not None:
             filename = f"{cat}_{self.name}.csv"
+            if data_release is not None:
+                filename.replace(".csv", f"_dr{data_release}.csv")
             path = os.path.join(self.data_path, filename)
             return path
         else:
@@ -780,7 +782,7 @@ class Field(Pipeline):
             radius = self.extent
         else:
             radius = 0.5 * units.deg
-        output = self._cat_data_path(cat=cat_name)
+        output = self._cat_data_path(cat=cat_name, data_release=data_release)
         ra = self.centre_coords.ra.value
         dec = self.centre_coords.dec.value
 
