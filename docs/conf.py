@@ -36,6 +36,7 @@ python_apigen_modules = {
     "craftutils.stats": "apigen/stats/",
     "craftutils.utils": "apigen/utils/",
     "craftutils.observation": "apigen/observation/",
+    "craftutils.observation.epoch": "apigen/observation/epoch/",
     "craftutils.observation.field": "apigen/observation/field/",
     "craftutils.observation.filters": "apigen/observation/filter/",
     "craftutils.observation.image": "apigen/observation/image/",
