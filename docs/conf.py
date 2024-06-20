@@ -106,4 +106,7 @@ exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store']
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#options-for-html-output
 
 html_theme = 'sphinx_immaterial'
+html_theme_options = {
+    "toc_title_is_page_title": True
+}
 html_static_path = ['_static']

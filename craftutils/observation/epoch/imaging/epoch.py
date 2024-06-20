@@ -920,8 +920,8 @@ class ImagingEpoch(Epoch):
             out_dict: Union[dict, str] = "coadded",
             sigma_clip: float = 1.5
     ):
-        """
-        Use Montage and ccdproc to coadd individual frames.
+        """Use Montage and ccdproc to coadd individual frames.
+
         :param output_dir: Directory in which to write data products.
         :param frames: Name of frames list to coadd.
         :param sigma_clip: Multiple of pixel stack standard deviation to clip when doing sigma-clipped stack.
@@ -955,8 +955,8 @@ class ImagingEpoch(Epoch):
                 output_directory=output_directory_fil,
                 output_file_name=f"{self.name}_{self.date_str()}_{fil}_coadded.fits",
                 coadd_types=["median", "mean"],
-                add_with_ccdproc=False,
-                sigma_clip=True,
+                # add_with_ccdproc=False,
+                # sigma_clip=True,
                 # unit="electron / second"
                 # sigma_clip_low_threshold=5,
             )[0]
