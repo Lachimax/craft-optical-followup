@@ -346,13 +346,22 @@ eso_tap_url = "http://archive.eso.org/tap_obs"
 
 
 def login_eso():
+    """Attempts to log in to the ESO archive using the username and password stored in ``keys.yaml``.
+
+    :return:
+    """
     if "eso_auth_token" not in keys:
         print("Attempting login to ESO archive.")
         token_url = "https://www.eso.org/sso/oidc/token"
-        r = requests.get(token_url,
-                         params={"response_type": "id_token token", "grant_type": "password",
-                                 "client_id": "clientid",
-                                 "username": keys["eso_user"], "password": keys["eso_pwd"]})
+        r = requests.get(
+            token_url,
+            params={
+                "response_type": "id_token token",
+                "grant_type": "password",
+                "client_id": "clientid",
+                "username": keys["eso_user"],
+                "password": keys["eso_pwd"]
+            })
         try:
             token_response = r.json()
             token = token_response['id_token'] + '=='
@@ -695,7 +704,6 @@ def retrieve_fors2_calib(fil: str = 'I_BESS', date_from: str = '2017-01-01', dat
     except urllib.error.URLError:
         print("Calibration table could not be retrieved, likely due to website issues.")
         return None
-
 
 
 @u.export
