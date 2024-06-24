@@ -316,7 +316,7 @@ class Galaxy(Extragalactic):
             row["d_A"] = self.D_A
             row["d_L"] = self.D_L
             row["mu"] = self.mu
-        if "best" in self.galfit_models and "COMP_2" in self.galfit_models["best"]:
+        if "best" in self.galfit_models and self.galfit_models["best"] is not None and "COMP_2" in self.galfit_models["best"]:
             best = self.galfit_models["best"]
             galfit_model = best["COMP_2"]
             row["galfit_axis_ratio"] = galfit_model["axis_ratio"]
@@ -327,6 +327,9 @@ class Galaxy(Extragalactic):
             row["galfit_dec_err"] = galfit_model["dec_err"].to("arcsec")
             row["galfit_r_eff"] = galfit_model["r_eff_ang"]
             row["galfit_r_eff_err"] = galfit_model["r_eff_ang_err"]
+            if self.z is not None and self.z > 0:
+                galfit_model["r_eff_proj"] = self.projected_size(galfit_model["r_eff_ang"])
+                galfit_model["r_eff_proj_err"] = self.projected_size(galfit_model["r_eff_ang_err"])
             if "r_eff_proj" in galfit_model:
                 row["galfit_r_eff_proj"] = galfit_model["r_eff_proj"]
                 row["galfit_r_eff_proj_err"] = galfit_model["r_eff_proj_err"]

@@ -1437,8 +1437,11 @@ class ImagingEpoch(Epoch):
                 )
             )
 
+            refined_path = None
             if isinstance(self.field.survey, Survey):
                 refined_path = self.field.survey.refined_stage_path
+
+                nice_name = f"{self.field.name}_{inst_name}_{fil.replace('_', '-')}_{date}.fits"
 
                 if refined_path is not None:
                     img.copy_with_outputs(
@@ -1448,13 +1451,34 @@ class ImagingEpoch(Epoch):
                         )
                     )
 
+            self.field.add_image(img_final, epoch_name=self.name)
+            self.finalised[fil] = img_final
+
             deepest = image.deepest(deepest, img)
             if self.did_local_background_subtraction():
                 img_subbed = self.coadded_subtracted_patch[fil]
-                self.field.add_image(img_subbed, epoch_name=self.name)
-                self.finalised[img_subbed.name] = img_subbed
-            self.field.add_image(img_final, epoch_name=self.name)
-            self.finalised[img_final.name] = img_final
+                nice_name = f"{self.field.name}_{inst_name}_{fil.replace('_', '-')}_back-subtracted-patch.fits"
+                img_final = img_subbed.copy_with_outputs(os.path.join(
+                    self.data_path,
+                    nice_name)
+                )
+                img.copy_with_outputs(
+                    os.path.join(
+                        staging_dir,
+                        nice_name
+                    )
+                )
+
+                if refined_path is not None:
+                    img.copy_with_outputs(
+                        os.path.join(
+                            refined_path,
+                            nice_name
+                        )
+                    )
+
+                self.field.add_image(img_final, epoch_name=self.name)
+                self.finalised[fil] = img_final
 
         self.deepest_filter = deepest.filter_name
         self.deepest = deepest
@@ -1665,10 +1689,11 @@ class ImagingEpoch(Epoch):
                 ra_target.append(obj.position.ra)
                 dec_target.append(obj.position.dec)
 
-                if self.did_local_background_subtraction():
-                    good_image_path = self.coadded_subtracted[fil].path
-                else:
-                    good_image_path = self.coadded_unprojected[fil].path
+                # if self.did_local_background_subtraction():
+                #     good_image_path = self.coadded_subtracted[fil].path
+                # else:
+                #     good_image_path = self.coadded_unprojected[fil].path
+                good_image_path = self.finalised[fil].path
                 # If the nearest object is outside tolerance, declare that no match was found and send a dummy entry to
                 # the object's photometry table.
                 if separation > tolerance_eff:

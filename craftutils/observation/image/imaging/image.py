@@ -1434,11 +1434,16 @@ class ImagingImage(Image):
                 self.update_output_file()
 
         if test_coord is not None:
-            self.depth["aperture"] = self.test_limit_location(
+            aperture_test = self.test_limit_location(
                 sigmas=[5, 10, 20],
                 coord=test_coord,
                 return_dict=True
             )
+            aperture_dict = {}
+            for key, value in aperture_test.items():
+                if "-sigma" in key:
+                    aperture_dict[key] = aperture_test[key]["mag"]
+            self.depth["aperture"] = aperture_dict
 
         self.select_depth()
 
@@ -3451,6 +3456,7 @@ class ImagingImage(Image):
 
         if ap_radius is None:
             psf = self.extract_header_item("PSF_FWHM", ext=ext)
+            print(psf)
             if psf < 0:
                 psf = None
             if psf is None:
@@ -3930,6 +3936,7 @@ class ImagingImage(Image):
             if 0 in data_trim.shape:
                 # If we've trimmed the array down to nothing, we should just return something empty and avoid sep errors
                 segmap = np.zeros(data_trim.shape, dtype=int)
+                objs = None
             else:
                 objs, segmap = sep.extract(
                     data_trim,

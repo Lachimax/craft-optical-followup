@@ -198,8 +198,11 @@ class Field(Pipeline):
         }
 
     def proc_finalise_imaging(self, output_dir: str, **kwargs):
+        # def fin_fil(name: str):
+        #     return "validation" not in name
         self.force_stage_all_epochs(
             stage="finalise",
+            exclude_validation=True,
             **kwargs
         )
 
@@ -211,8 +214,8 @@ class Field(Pipeline):
             **kwargs
         )
 
-    def force_stage_all_epochs(self, stage: str, **kwargs):
-        epochs = self.gather_epochs_imaging()
+    def force_stage_all_epochs(self, stage: str, exclude_validation: bool = True, **kwargs):
+        epochs = self.gather_epochs_imaging(exclude_validation=exclude_validation)
         for epoch_name in epochs:
             epoch = ep.epoch_from_directory(epoch_name)
             epoch.do_runtime = [stage]
@@ -295,13 +298,19 @@ class Field(Pipeline):
         img_dict = img_list[-1]
         return img_dict
 
-    def galfit(self, apply_filter=None, use_img=None, **kwargs):
+    def galfit(
+            self,
+            apply_filter=None,
+            use_img: str = None,
+            use_subbed: bool = False,
+            **kwargs
+    ):
         if apply_filter is None:
             obj_list = list(self.objects.values())
         else:
             obj_list = list(filter(apply_filter, self.objects.values()))
 
-        filter_list = self.load_imaging()
+        filter_list = self.load_imaging(instrument="vlt-fors2")
         print("use_img", use_img)
 
         for obj in obj_list:
@@ -317,10 +326,20 @@ class Field(Pipeline):
                 else:
                     best_img = self.imaging[use_img]["image"]
 
+                img_dict = {}
+
                 for fil in filter_list:
+                    print()
+                    print("=" * 100)
                     print("best_img", best_img.name)
                     img = self.deepest_in_band(fil=fil)["image"]
                     print("img", img.name)
+                    img_dict[fil.name] = img
+
+                best_fil = best_img.filter
+                img_dict[best_fil.name] = best_img
+
+                for fil, img in img_dict.items():
 
                     print(f"Doing GALFIT with image {img.name}")
 
@@ -339,8 +358,12 @@ class Field(Pipeline):
                         output_prefix=obj.name,
                         **kwargs
                     )
-                    if img.name == best_img.name:
+                    print(img.name, best_img.name)
+                    print(img.path, "\n", best_img.path)
+                    if img.name == best_img.name and results is not None:
                         obj.galfit_models["best"] = results
+                    print("=" * 100)
+                    print()
 
             obj.update_output_file()
 
@@ -875,9 +898,11 @@ class Field(Pipeline):
                 self.imaging.update(outputs["imaging"])
         return outputs
 
-    def load_imaging(self):
+    def load_imaging(self, instrument: str = None):
         filter_list = []
         for img_name, img_dict in self.imaging.items():
+            if instrument is not None and instrument != img_dict["instrument"]:
+                continue
             cls = image.CoaddedImage.select_child_class(
                 instrument_name=img_dict["instrument"]
             )
