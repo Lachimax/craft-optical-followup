@@ -18,6 +18,7 @@ from astropy.modeling import models, fitting
 from astropy.visualization import (
     ImageNormalize,
     LogStretch,
+    LinearStretch,
     SqrtStretch,
     MinMaxInterval,
     ZScaleInterval
@@ -2731,6 +2732,7 @@ class ImagingImage(Image):
             clip_data: bool = False,
             astm_crosshairs: bool = False,
             astm_kwargs={},
+            save_kwargs={},
             **kwargs,
     ) -> Tuple[plt.Figure, plt.Axes, dict]:
         if data == "image":
@@ -2806,6 +2808,8 @@ class ImagingImage(Image):
             normalize_kwargs["stretch"] = SqrtStretch()
         elif normalize_kwargs["stretch"] == "log":
             normalize_kwargs["stretch"] = LogStretch()
+        elif normalize_kwargs["stretch"] == "linear":
+            normalize_kwargs["stretch"] = LinearStretch()
 
         if "interval" not in normalize_kwargs:
             normalize_kwargs["interval"] = MinMaxInterval()
@@ -2906,7 +2910,7 @@ class ImagingImage(Image):
                     **default_astm
                 )
         if output_path is not None:
-            fig.savefig(output_path)
+            fig.savefig(output_path, **save_kwargs)
 
         del data
 
