@@ -775,7 +775,7 @@ class Field(Pipeline):
             if date is None:
                 name_str = epoch_name
             else:
-                name_str = f"{date}-{epoch_name}"
+                name_str = f"{date.strftime('%Y-%m-%d')}-{epoch_name}"
             path, path_abs = self._instrument_data_path(mode=mode, instrument=instrument)
             path = os.path.join(path, name_str)
             path_abs = os.path.join(path_abs, name_str)

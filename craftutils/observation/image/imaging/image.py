@@ -3278,7 +3278,7 @@ class ImagingImage(Image):
         if "mag" not in catalogue.colnames:
             raise ValueError("'mag' column missing from provided catalogue.")
         else:
-            mag = catalogue["mag"]
+            mag = u.dequantify(catalogue["mag"])
 
         self.extract_pixel_scale()
 
@@ -3368,8 +3368,11 @@ class ImagingImage(Image):
             else:
                 raise ValueError(f"positioning {positioning} not recognised.")
 
+            cat = table.QTable({
+                "x": x_synth, "y": y_synth, "mag": mag
+            })
             file, sources = self.insert_synthetic_sources(
-                x=x_synth, y=y_synth, mag=mag.value,
+                cat,
                 output=os.path.join(output_dir, filename + f"_mag_{np.round(mag.value, 1)}.fits"),
                 model=model
             )

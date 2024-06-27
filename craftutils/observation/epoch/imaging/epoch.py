@@ -327,14 +327,14 @@ class ImagingEpoch(Epoch):
             print("Generating synthetic catalogue...")
             if centre is None:
                 centre = self.field.centre_coords
-            d_x = (np.random.rand(n) - 0.5) * box
-            d_y = (np.random.rand(n) - 0.5) * box
+            d_x = (2 * np.random.rand(n) - 1) * box
+            d_y = (2 * np.random.rand(n) - 1) * box
             ra = centre.ra + d_x / np.cos(centre.dec)
             dec = centre.dec + d_y
             new_coords = SkyCoord(ra, dec)
             tab_dict = {
                 "coord": new_coords,
-                "mag": np.random.rand(n) * (max_mag - min_mag) + min_mag,
+                "mag": (np.random.rand(n) * (max_mag - min_mag) + min_mag) * units.mag,
             }
             self.validation_catalogue = table.QTable(tab_dict)
             self.validation_catalogue_path = os.path.join(self.data_path, "validation_catalogue_generated.ecsv")
@@ -1907,17 +1907,21 @@ class ImagingEpoch(Epoch):
             output_dir: str,
             tolerance=0.5 * units.arcsec
     ):
+        pl.latex_setup()
         fil = img.filter_name
         self.validation_catalogue = table.QTable.read(self.validation_catalogue_path)
         idx, sep, _ = self.validation_catalogue["coord"].match_to_catalog_sky(img.source_cat["COORD"])
         matches_se = img.source_cat[idx]
         sep = sep.to("arcsec")
         self.validation_catalogue[f"separation_{fil}"] = sep
+        values = {}
         for mag_type in ("PSF", "AUTO"):
             self.validation_catalogue[f"{fil}_mag_{mag_type}"] = matches_se[f"MAG_{mag_type}_ZP_best"]
             self.validation_catalogue[f"{fil}_mag_{mag_type}_err"] = matches_se[f"MAGERR_{mag_type}_ZP_best"]
+            self.validation_catalogue[f"{fil}_mag_{mag_type}_delta"] = u.check_quantity(self.validation_catalogue["mag"], units.mag) - self.validation_catalogue[f"{fil}_mag_{mag_type}"]
             cat = self.validation_catalogue[self.validation_catalogue[f"{fil}_mag_{mag_type}"] < 100 * units.mag]
-            x = cat[f"mag"]
+            cat = cat[cat[f"{fil}_mag_{mag_type}"] > -100 * units.mag]
+            x = cat[f"mag"].value
             y = cat[f"{fil}_mag_{mag_type}"].value
             y_err = cat[f"{fil}_mag_{mag_type}_err"].value
             fig, ax = plt.subplots()
@@ -1933,11 +1937,34 @@ class ImagingEpoch(Epoch):
             fig.clear()
             plt.close(fig)
 
+            fig, ax = plt.subplots()
+            ax.hist(cat[f"{fil}_mag_{mag_type}_delta"], bins="auto")
+            ax.set_xlabel(r"$m_\mathrm{inserted} - m_\mathrm{extracted}$")
+            fig.savefig(os.path.join(output_dir, f"delta-m_{mag_type}.pdf"))
+            fig.clear()
+            plt.close(fig)
+
+            values[mag_type] = {
+                "matches": len(cat)
+            }
+            cat = cat[cat[f"separation_{fil}"] <= 1 * units.arcsec]
+            values[mag_type]["matches_separation"] = len(cat)
+            cat = cat[cat[f"{fil}_mag_{mag_type}_delta"] < 1 * np.std(cat[f"{fil}_mag_{mag_type}_delta"])]
+            values[mag_type].update({
+                "scatter": np.sqrt(np.nanmean(cat[f"{fil}_mag_{mag_type}_delta"]**2)),
+                "median_delta": np.nanmedian(np.abs(cat[f"{fil}_mag_{mag_type}_delta"])),
+                "mean_delta": np.nanmean(np.abs(cat[f"{fil}_mag_{mag_type}_delta"])),
+                "min_delta": np.nanmin(np.abs(cat[f"{fil}_mag_{mag_type}_delta"])),
+                "max_delta": np.nanmax(np.abs(cat[f"{fil}_mag_{mag_type}_delta"])),
+                "matches_mag_clipped": len(cat)
+            })
+
         # Class Star
         self.validation_catalogue[f"{img.filter_name}_class_star"] = matches_se[f"CLASS_STAR"]
         fig, ax = plt.subplots()
         x = self.validation_catalogue[f"{img.filter_name}_class_star"]
         ax.hist(x, bins="auto")
+        ax.set_xlabel("CLASS\_STAR")
         fig.savefig(os.path.join(output_dir, f"validation_class_star.pdf"))
         fig.clear()
         plt.close(fig)
@@ -1947,12 +1974,14 @@ class ImagingEpoch(Epoch):
         cat_se = img.source_cat.table
         fig, ax = plt.subplots()
         ax.hist(cat[f"fwhm_{fil}"].value, density=True, bins="auto")
-        ax.hist(cat_se[f"FWHM_WORLD"].to("arcsec").value, density=True, bins="auto", alpha=0.5)
-        fig.savefig(os.path.join(output_dir, f"validation_fwhm_{mag_type}.pdf"))
+        # ax.hist(cat_se[f"FWHM_WORLD"].to("arcsec").value, density=True, bins="auto", alpha=0.5)
+        ax.set_xlabel("FWHM (arcsec)")
+        fig.savefig(os.path.join(output_dir, f"validation_fwhm.pdf"))
         fig.clear()
         plt.close(fig)
 
         self.validation_catalogue.write(self.validation_catalogue_path, overwrite=True)
+        p.save_params(os.path.join(output_dir, "values.yaml"), values)
 
     def astrometry_diagnostics(
             self,
