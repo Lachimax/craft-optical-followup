@@ -1,4 +1,4 @@
-from typing import Union, List
+from typing import Union, List, Callable
 import os
 import copy
 
@@ -189,7 +189,7 @@ class Object(Generic):
     def get_good_photometry(self):
 
         import craftutils.observation.image as image
-        self.estimate_galactic_extinction()
+        self.apply_galactic_extinction()
         deepest_dict = self.select_deepest()
         deepest_path = deepest_dict["good_image_path"]
 
@@ -562,7 +562,7 @@ class Object(Generic):
             kwargs["ecolor"] = "black"
 
         if extinction_corrected:
-            self.estimate_galactic_extinction()
+            self.apply_galactic_extinction()
             key = f"mag_{mag_type}_ext_corrected"
         else:
             key = f"mag_{mag_type}"
@@ -643,7 +643,7 @@ class Object(Generic):
         if "ecolor" not in kwargs:
             kwargs["ecolor"] = "black"
 
-        self.estimate_galactic_extinction()
+        self.apply_galactic_extinction()
         photometry_tbl = self.photometry_to_table(
             output=self.build_photometry_table_path(best=best),
             fmts=["ascii.ecsv", "ascii.csv"],
@@ -776,19 +776,21 @@ class Object(Generic):
     #     extinction.fitzpatrick99(tbl["lambda_eff"], a_v, r_v) * units.mag
     #     pass
 
-    def galactic_extinction_fm07(
+    def galactic_extinction(
             self,
-            lambda_eff: units.Quantity,
-            r_v: float = 3.1
+            fil: filters.Filter,
+            r_v: float = 3.1,
+            spectrum: table.QTable = None,
+            extinction_law: Callable = None,
     ):
-        import extinction
-        lambda_eff = u.dequantify(lambda_eff, unit=units.Angstrom)
-        lambda_eff = np.array(u.check_iterable(lambda_eff))
-        self.retrieve_extinction_table()
-        a_v = (r_v * self.ebv_sandf).value
-        return extinction.fm07(lambda_eff, a_v, unit="aa") * units.mag
+        return fil.galactic_extinction(
+            e_bv=self.ebv_sandf,
+            r_v=r_v,
+            spectrum=spectrum,
+            extinction_law=extinction_law
+        )
 
-    def estimate_galactic_extinction(
+    def apply_galactic_extinction(
             self,
             ax=None,
             r_v: float = 3.1,
@@ -834,46 +836,54 @@ class Object(Generic):
                 print(f"No photometry found for {self.name}")
                 return
 
-        tbl["ext_gal_sandf"] = self.galactic_extinction_fm07(lambda_eff=tbl["lambda_eff"], r_v=r_v)
+        exts = []
+        fils = []
+        for row in tbl:
+            fil = filters.Filter.from_params(row["filter"], row["instrument"])
+            fils.append(fil)
+            exts.append(self.galactic_extinction(fil=fil, r_v=r_v))
 
-        tbl["ext_gal_interp"] = np.interp(
-            tbl["lambda_eff"],
-            lambda_eff_tbl,
-            self.irsa_extinction["A_SandF"].value
-        ) * units.mag
+        print(exts)
+        tbl["ext_gal_sandf"] = exts
 
-        ax.plot(
-            x, self.galactic_extinction_fm07(x, r_v=r_v).value,
-            label="S\&F + F99 extinction law",
-            c="red"
-        )
-        ax.scatter(
-            lambda_eff_tbl, self.irsa_extinction["A_SandF"].value,
-            label="from IRSA",
-            c="green",
-            **kwargs)
-        ax.scatter(
-            tbl["lambda_eff"], tbl["ext_gal_pl"].value,
-            label="power law interpolation of IRSA",
-            c="blue",
-            **kwargs
-        )
-        ax.scatter(
-            tbl["lambda_eff"], tbl["ext_gal_interp"].value,
-            label="numpy interpolation from IRSA",
-            c="violet",
-            **kwargs
-        )
-        ax.scatter(
-            tbl["lambda_eff"], tbl["ext_gal_sandf"].value,
-            label="S\&F + F99 extinction law",
-            c="red",
-            **kwargs
-        )
-        ax.set_ylim(0, 0.6)
-        ax.legend()
-        plt.savefig(os.path.join(self.data_path, f"{self.name_filesys}_irsa_extinction.pdf"))
-        plt.close()
+        # tbl["ext_gal_interp"] = np.interp(
+        #     tbl["lambda_eff"],
+        #     lambda_eff_tbl,
+        #     self.irsa_extinction["A_SandF"].value
+        # ) * units.mag
+        #
+        # ax.plot(
+        #     x, self.galactic_extinction(x, r_v=r_v).value,
+        #     label="S\&F + F99 extinction law",
+        #     c="red"
+        # )
+        # ax.scatter(
+        #     lambda_eff_tbl, self.irsa_extinction["A_SandF"].value,
+        #     label="from IRSA",
+        #     c="green",
+        #     **kwargs)
+        # ax.scatter(
+        #     tbl["lambda_eff"], tbl["ext_gal_pl"].value,
+        #     label="power law interpolation of IRSA",
+        #     c="blue",
+        #     **kwargs
+        # )
+        # ax.scatter(
+        #     tbl["lambda_eff"], tbl["ext_gal_interp"].value,
+        #     label="numpy interpolation from IRSA",
+        #     c="violet",
+        #     **kwargs
+        # )
+        # ax.scatter(
+        #     tbl["lambda_eff"], tbl["ext_gal_sandf"].value,
+        #     label="S\&F + F99 extinction law",
+        #     c="red",
+        #     **kwargs
+        # )
+        # ax.set_ylim(0, 0.6)
+        # ax.legend()
+        # plt.savefig(os.path.join(self.data_path, f"{self.name_filesys}_irsa_extinction.pdf"))
+        # plt.close()
 
         for row in tbl:
             instrument = row["instrument"]
@@ -1101,7 +1111,7 @@ class Object(Generic):
         }
 
         if self.optical:
-            self.estimate_galactic_extinction()
+            self.apply_galactic_extinction()
             if select:
                 self.get_photometry_table(output=local_output, best=True)
                 if not isinstance(self.photometry_tbl_best, table.Table):
@@ -1142,7 +1152,8 @@ class Object(Generic):
                     band_str = f"{instrument}_{fil.replace('_', '-')}"
 
                     if select:
-                        best_photom, mean_photom = self.select_photometry_sep(fil, instrument, local_output=local_output)
+                        best_photom, mean_photom = self.select_photometry_sep(fil, instrument,
+                                                                              local_output=local_output)
                         row[f"mag_best_{band_str}"] = best_photom["mag_sep"]
                         row[f"mag_best_{band_str}_err"] = best_photom["mag_sep_err"]
                         row[f"snr_best_{band_str}"] = best_photom["snr_sep"]
@@ -1177,7 +1188,6 @@ class Object(Generic):
 
         u.debug_print(2, "Object.push_to_table(): select ==", select)
         return row, "optical"
-
 
     def push_to_table(
             self,

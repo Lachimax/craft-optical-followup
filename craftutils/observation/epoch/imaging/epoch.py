@@ -1201,6 +1201,8 @@ class ImagingEpoch(Epoch):
                 output_dir=output_dir,
                 phot_autoparams=f"{configs['kron_factor']},{configs['kron_radius_min']}"
             )
+            x, y = img.world_to_pixel(self.field.centre_coords)
+            img.psf_to_hdu(x=x, y=y, output_dir=output_dir)
 
         if do_astrometry_diagnostics:
             if "offset_tolerance" in kwargs:

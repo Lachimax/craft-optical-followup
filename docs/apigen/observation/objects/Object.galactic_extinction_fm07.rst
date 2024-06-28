@@ -6,5 +6,5 @@
 
 
 
-.. python-apigen-entity-page::  craftutils.observation.objects.Object.galactic_extinction_fm07
+.. python-apigen-entity-page::  craftutils.observation.objects.Object.galactic_extinction
 

@@ -212,20 +212,17 @@ class ImagingImage(Image):
                               2.92
                           ] * units.arcsec
 
-            def aperture_str(apertures_arcsec):
-                phot_aper = apertures_arcsec.to(units.pix, scale).value
+            def aperture_str(phot_aper):
                 phot_apers_str = ""
                 for a in phot_aper:
-                    phot_apers_str += f"{a},"
+                    phot_apers_str += f"{int(a)},"
                 phot_apers_str = phot_apers_str[:-1]
-                print()
-                print("apertures_arcsec", apertures_arcsec)
-                print("PHOT_APERTURES", phot_apers_str)
+                # print("PHOT_APERTURES", phot_apers_str)
                 se_kwargs["PHOT_APERTURES"] = phot_apers_str
-                print("PHOT_APERTURES", se_kwargs["PHOT_APERTURES"])
+                # print("PHOT_APERTURES", se_kwargs["PHOT_APERTURES"])
                 return phot_apers_str
 
-            aperture_str(aper_arcsec)
+            aperture_str(aper_arcsec.value)
 
             config = p.path_to_config_sextractor_config_pre_psfex()
             output_params = p.path_to_config_sextractor_param_pre_psfex()
@@ -267,8 +264,11 @@ class ImagingImage(Image):
             aper_arcsec = [new_aperture_arcsec.value] * units.arcsec
             # if np.sum(np.isnan(aper_arcsec)) > 0):
 
-            se_kwargs["PHOT_APERTURES"] = aperture_str(aper_arcsec)
+            aperture_pix = aper_arcsec.to(units.pix, scale).round().value
+            se_kwargs["PHOT_APERTURES"] = aperture_str(aperture_pix)
+            vig_size = int(aperture_pix[0] * 2)
 
+            # se_kwargs["VIGNET()"]
             catalogue = self.source_extraction(
                 configuration_file=config,
                 output_dir=output_dir,
@@ -3464,7 +3464,7 @@ class ImagingImage(Image):
         if ap_radius is None:
             psf = self.extract_header_item("PSF_FWHM", ext=ext)
             print(psf)
-            if psf < 0:
+            if psf is not None and psf < 0:
                 psf = None
             if psf is None:
                 ap_radius = 2 * units.arcsec
@@ -4419,7 +4419,15 @@ class ImagingImage(Image):
         else:
             self.psfex_path = psfex_path
             self.load_psfex_output()
-        # Load oversampled PSF image
+        return self.psf_to_hdu(x=x, y=y, output_dir=output_dir)
+
+    def psf_to_hdu(
+            self,
+            x: float, y: float,
+            output_dir: str = None
+    ):
+        if output_dir is None:
+            output_dir = self.data_path
         psf_img = self.psf_image(x=x, y=y, match_pixel_scale=False)[0]
         psf_img /= np.max(psf_img)
         # Write our PSF image to disk for GALFIT to find

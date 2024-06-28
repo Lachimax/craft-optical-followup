@@ -6,5 +6,5 @@
 
 
 
-.. python-apigen-entity-page::  craftutils.observation.objects.Object.estimate_galactic_extinction
+.. python-apigen-entity-page::  craftutils.observation.objects.Object.apply_galactic_extinction
 

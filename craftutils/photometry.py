@@ -434,8 +434,7 @@ def flux_ab(
         transmission: Union[np.ndarray, units.Quantity] = None,
         frequency: units.Quantity = None,
 ):
-    """
-    Calculates the total integrated flux of the flat AB source (3631 Jy) as seen through a given filter;
+    """Calculates the total integrated flux of the flat AB source (3631 Jy) as seen through a given filter;
     that is, the denominator of the AB Magnitude formula.
     `transmission` and `frequency`, whether provided in `tbl` or as separate arguments, must be the same length and
     correspond 1-to-1.
