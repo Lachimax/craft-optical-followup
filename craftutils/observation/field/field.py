@@ -584,9 +584,11 @@ class Field(Pipeline):
         if mode == "imaging":
             cls = ep.ImagingEpoch.select_child_class(instrument=instrument)
             if len(self.epochs_imaging) > 1:
-                is_combined = u.select_yn("Create a pseudo-epoch combining other epochs for maximum depth?")
+                is_combined = u.select_yn("Create a pseudo-epoch combining other epochs for maximum depth?",
+                                          default=False)
             if not is_combined:
-                is_validation = u.select_yn("Make a copy of another epoch to perform validation_checks checks?")
+                is_validation = u.select_yn("Make a copy of another epoch to perform validation_checks checks?",
+                                            default=False)
                 if is_validation:
                     print("Which epoch would you like to use?")
                     copy_of_epoch = self.select_epoch(mode=mode, instrument=instrument, allow_new=False)
