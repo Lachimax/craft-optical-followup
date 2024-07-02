@@ -1252,8 +1252,8 @@ class Field(Pipeline):
             frb_dict["date"] = date
             frb_dict["dm"] = dm
             frb_dict["position"] = position
-            frb_dict["position_err"]["a"]["stat"] = float(ra_err)
-            frb_dict["position_err"]["b"]["stat"] = float(dec_err)
+            frb_dict["position_err"]["a"]["total"] = float(ra_err)
+            frb_dict["position_err"]["b"]["total"] = float(dec_err)
             frb_dict["tns_name"] = tns_name
             frb_dict["field"] = field_name
 
