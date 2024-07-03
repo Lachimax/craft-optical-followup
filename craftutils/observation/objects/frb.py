@@ -1303,7 +1303,7 @@ class FRB(ExtragalacticTransient):
         limits = img.test_limit_location(self.position, ap_radius=2 * psf)
         lim_5sigma = limits["mag"][4]
         a_z = self.galactic_extinction(img.filter)
-        lim_w_ext = lim_5sigma - a_z[0]
+        lim_w_ext = lim_5sigma - a_z
         print("Using limit", lim_w_ext)
         vals, tbl, z_lost = sample.probability_unseen(
             band=img.filter,

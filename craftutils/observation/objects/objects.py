@@ -783,6 +783,7 @@ class Object(Generic):
             spectrum: table.QTable = None,
             extinction_law: Callable = None,
     ):
+        self.retrieve_extinction_table()
         return fil.galactic_extinction(
             e_bv=self.ebv_sandf,
             r_v=r_v,

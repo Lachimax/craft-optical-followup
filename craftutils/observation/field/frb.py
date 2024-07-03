@@ -276,8 +276,6 @@ class FRBField(Field):
         if a == 0 * units.arcsec or b == 0 * units.arcsec:
             a, b = uncertainty.uncertainty_quadrature_equ()
         theta = uncertainty.theta.to(units.deg)
-        print("FRB error ellipse:")
-        print(a, b, theta)
         rotation_angle = img.extract_rotation_angle(ext=ext)
         theta = theta - rotation_angle
         img.extract_pixel_scale()
@@ -296,8 +294,6 @@ class FRBField(Field):
         if img_err is not None:
             a = np.sqrt(a ** 2 + img_err ** 2)
             b = np.sqrt(b ** 2 + img_err ** 2)
-        print("Final error ellipse:")
-        print(a, b, theta)
         ax = img.plot_ellipse(
             ax=ax,
             coord=frb,
@@ -382,13 +378,13 @@ class FRBField(Field):
                 max_p_ox = write_dict["max_P(O|x_i)"]
                 if max_p_ox is None:
                     img_fixed = False
-                if cand_tbl is not None:
-                    path_cat = self.frb.consolidate_candidate_tables(
-                        sort_by="P_Ox",
-                        reverse_sort=True,
-                        p_ox_assign=path_img.name,
-                        p_u=p_u
-                    )
+                # if cand_tbl is not None:
+                #     path_cat = self.frb.consolidate_candidate_tables(
+                #         sort_by="P_Ox",
+                #         reverse_sort=True,
+                #         p_ox_assign=path_img.name,
+                #         p_u=p_u
+                #     )
                 if path_img.name not in self.path_runs:
                     self.path_runs[path_img.name] = {}
                 self.path_runs[path_img.name]["calculated"] = write_dict
@@ -396,7 +392,7 @@ class FRBField(Field):
         #     self.add_path_candidates()
 
         # Do 0.1 first so that we get it as the default set of host candidates in case the above failed
-        p_us = [0.1, 0., 0.2]
+        p_us = [0., 0.1, 0.2]
 
         if max_p_ox is None:
             if images:
@@ -420,15 +416,16 @@ class FRBField(Field):
                 self.path_runs[img.name][p_u] = write_dict
             if path_img is None:
                 path_img = images[0]
-            path_cat = self.frb.consolidate_candidate_tables(
-                sort_by="P_Ox",
-                reverse_sort=True,
-                p_ox_assign=path_img.name,
-                p_u=p_u
-            )
-            # If the custom P(U) run was unsuccessful, use the results for P(U) = 0.1
-            if p_u == 0.1: # and max_p_ox is None:
-                self.add_path_candidates()
+
+        path_cat = self.frb.consolidate_candidate_tables(
+            sort_by="P_Ox",
+            reverse_sort=True,
+            p_ox_assign=path_img.name,
+            p_u=0.1
+        )
+        # If the custom P(U) run was unsuccessful, use the results for P(U) = 0.1
+        # if p_u == 0.1:  # and max_p_ox is None:
+        self.add_path_candidates()
 
         self.best_path_img = path_img.name
 
@@ -439,6 +436,7 @@ class FRBField(Field):
                 self.frb.host_candidates
             )
         )
+        print(host_candidates)
         if isinstance(self.frb.host_galaxy, objects.Galaxy):
             print()
             print(f"Initial host {self.frb.host_galaxy.name}.z:", self.frb.host_galaxy.z)
@@ -446,8 +444,10 @@ class FRBField(Field):
         if len(host_candidates) > 0:
             max_pox = np.max(list(map(lambda o: o.P_Ox, host_candidates)))
             for obj in self.frb.host_candidates:
+                print("Checking", obj.name)
                 P_Ox = obj.P_Ox
                 if P_Ox > 0.1:
+                    print(f"\tAdding {obj.name}: P(O|x) = {P_Ox} > 0.1.")
                     if P_Ox >= max_pox:
                         self.frb.set_host(obj, keep_params=["z", "z_err", "other_names"])
                     self.add_object(obj)
