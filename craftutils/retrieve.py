@@ -1122,14 +1122,18 @@ def login_des():
     Obtains an auth token using the username and password credentials for a given database.
     """
     # Login to obtain an auth token
-    r = requests.post(
-        f'{des_api_url}/login',
-        data={
-            'username': keys['des_user'],
-            'password': keys['des_pwd'],
-            'database': 'desdr'
-        }
-    )
+    try:
+        r = requests.post(
+            f'{des_api_url}/login',
+            data={
+                'username': keys['des_user'],
+                'password': keys['des_pwd'],
+                'database': 'desdr'
+            }
+        )
+    except requests.exceptions.SSLError:
+        print("DES login failed; server-side SSL error.")
+        return 'ERROR'
     # Store the JWT auth token
     try:
         js = r.json()
@@ -1137,7 +1141,7 @@ def login_des():
             raise PermissionError(js['message'])
         keys['des_auth_token'] = js['token']
     except JSONDecodeError:
-        print("Login failed; either credentials are invalid, or there was a server-side error; skipping DES tasks.")
+        print("DES login failed; either credentials are invalid, or there was a server-side error; skipping DES tasks.")
         return 'ERROR'
     return keys['des_auth_token']
 
