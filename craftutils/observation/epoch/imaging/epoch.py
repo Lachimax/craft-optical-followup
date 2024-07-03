@@ -188,7 +188,7 @@ class ImagingEpoch(Epoch):
                     "correct_to_epoch": True,
                     "registration_template": None,
                     "odds_to_tune_up": None,
-                    "odds-to-solve": None,
+                    "odds_to_solve": None,
                     "solve_one": False
                 }
             },
@@ -1655,6 +1655,7 @@ class ImagingEpoch(Epoch):
                     img=img,
                     frame=10 * units.arcsec,
                     centre=self.field.frb.position,
+                    astm_crosshairs=True,
                 )
                 for obj_name, obj in self.field.objects.items():
                     if obj.position is not None:
@@ -1837,7 +1838,8 @@ class ImagingEpoch(Epoch):
                                     frb_kwargs={
                                         "edgecolor": "black"
                                     },
-                                    normalize_kwargs=normalize_kwargs
+                                    normalize_kwargs=normalize_kwargs,
+                                    astm_crosshairs=True,
                                 )
                                 output_path = os.path.join(
                                     fil_output_path,

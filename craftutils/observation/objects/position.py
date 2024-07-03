@@ -179,13 +179,14 @@ class PositionUncertainty:
             a_stat = u.check_quantity(number=a_stat, unit=units.arcsec)
             b_sys = u.check_quantity(number=b_sys, unit=units.arcsec)
             b_stat = u.check_quantity(number=b_stat, unit=units.arcsec)
-            theta = u.check_quantity(number=theta, unit=units.arcsec)
+            theta = u.check_quantity(number=theta, unit=units.deg)
 
         self.a_sys = a_sys
         self.a_stat = a_stat
         self.b_sys = b_sys
         self.b_stat = b_stat
         self.theta = theta
+        print(f"Position: {theta=}")
 
         self.ra_sys = ra_err_sys
         self.dec_sys = dec_err_sys

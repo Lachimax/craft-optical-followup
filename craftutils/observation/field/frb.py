@@ -276,6 +276,8 @@ class FRBField(Field):
         if a == 0 * units.arcsec or b == 0 * units.arcsec:
             a, b = uncertainty.uncertainty_quadrature_equ()
         theta = uncertainty.theta.to(units.deg)
+        print("FRB error ellipse:")
+        print(a, b, theta)
         rotation_angle = img.extract_rotation_angle(ext=ext)
         theta = theta - rotation_angle
         img.extract_pixel_scale()
@@ -294,6 +296,8 @@ class FRBField(Field):
         if img_err is not None:
             a = np.sqrt(a ** 2 + img_err ** 2)
             b = np.sqrt(b ** 2 + img_err ** 2)
+        print("Final error ellipse:")
+        print(a, b, theta)
         ax = img.plot_ellipse(
             ax=ax,
             coord=frb,

@@ -204,11 +204,12 @@ class FRB(ExtragalacticTransient):
         a, b = self.position_err.uncertainty_quadrature()
         a = np.sqrt(a ** 2 + astm_rms ** 2)
         b = np.sqrt(b ** 2 + astm_rms ** 2)
+        theta = self.theta
         x_frb = self.generate_x_frb()
         x_frb.set_ee(
             a=a.value,
             b=b.value,
-            theta=0.,
+            theta=theta.value,
             cl=0.68,
         )
         #     img.load_output_file()
