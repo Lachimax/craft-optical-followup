@@ -204,7 +204,7 @@ class FRB(ExtragalacticTransient):
         a, b = self.position_err.uncertainty_quadrature()
         a = np.sqrt(a ** 2 + astm_rms ** 2)
         b = np.sqrt(b ** 2 + astm_rms ** 2)
-        theta = self.theta
+        theta = self.position_err.theta
         x_frb = self.generate_x_frb()
         x_frb.set_ee(
             a=a.value,
@@ -1302,7 +1302,7 @@ class FRB(ExtragalacticTransient):
         psf = img.extract_psf_fwhm()
         limits = img.test_limit_location(self.position, ap_radius=2 * psf)
         lim_5sigma = limits["mag"][4]
-        a_z = self.galactic_extinction(img.filter.lambda_eff)
+        a_z = self.galactic_extinction(img.filter)
         lim_w_ext = lim_5sigma - a_z[0]
         print("Using limit", lim_w_ext)
         vals, tbl, z_lost = sample.probability_unseen(

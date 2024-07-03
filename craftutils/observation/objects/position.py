@@ -252,8 +252,9 @@ class PositionUncertainty:
         self.a = a_total
         self.b = b_total
 
+        if theta is None:
+            theta = 0.0 * units.deg
         self.theta = theta
-        print(f"Position: {theta=}")
 
         self.ra_sys = ra_err_sys
         self.dec_sys = dec_err_sys

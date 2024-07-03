@@ -2843,11 +2843,14 @@ class ImagingImage(Image):
         else:
             scaling_data = normalize_kwargs.pop("data")
 
+        if "vmin" in normalize_kwargs:
+            if normalize_kwargs["vmin"] == "median":
+                normalize_kwargs["vmin"] = np.median(scaling_data)
+            elif normalize_kwargs["vmin"] == "min":
+                normalize_kwargs["vmin"] = np.min(scaling_data)
+
         if "cmap" not in imshow_kwargs and self.filter and self.filter.cmap:
             imshow_kwargs["cmap"] = self.filter.cmap
-
-        # if "vmin" not in normalize_kwargs:
-        #     normalize_kwargs["vmin"] = np.min(data_clipped)
 
         mapping = ax.imshow(
             data,

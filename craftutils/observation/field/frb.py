@@ -392,8 +392,8 @@ class FRBField(Field):
                 if path_img.name not in self.path_runs:
                     self.path_runs[path_img.name] = {}
                 self.path_runs[path_img.name]["calculated"] = write_dict
-        if max_p_ox is not None:
-            self.add_path_candidates()
+        # if max_p_ox is not None:
+        #     self.add_path_candidates()
 
         # Do 0.1 first so that we get it as the default set of host candidates in case the above failed
         p_us = [0.1, 0., 0.2]
@@ -427,7 +427,7 @@ class FRBField(Field):
                 p_u=p_u
             )
             # If the custom P(U) run was unsuccessful, use the results for P(U) = 0.1
-            if p_u == 0.1 and max_p_ox is None:
+            if p_u == 0.1: # and max_p_ox is None:
                 self.add_path_candidates()
 
         self.best_path_img = path_img.name
