@@ -261,7 +261,7 @@ class ImagingImage(Image):
                 fwhm = 1.5 * units.arcsec
 
             new_aperture_arcsec = 8 * fwhm
-            aper_arcsec = [new_aperture_arcsec.value] * units.arcsec
+            aper_arcsec = list(np.linspace(1, new_aperture_arcsec.value, 3)) * units.arcsec
             # if np.sum(np.isnan(aper_arcsec)) > 0):
 
             aperture_pix = aper_arcsec.to(units.pix, scale).round().value
