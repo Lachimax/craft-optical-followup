@@ -203,7 +203,6 @@ class Filter:
         w_ext = np.array(w.value.astype('double'))
 
         def av(rv, ebv):
-            print(rv, ebv)
             aav = (rv * u.dequantify(ebv))
             return aav
 

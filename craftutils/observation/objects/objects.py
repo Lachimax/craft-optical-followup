@@ -524,6 +524,7 @@ class Object(Generic):
                 output = output.replace(".pdf", "_best.pdf")
             plt.savefig(output, bbox_inches="tight")
             plt.close(fig)
+            del fig, ax
 
         output_n = output.replace("_photometry_best.pdf", "_photometry_time.pdf")
 
@@ -537,6 +538,7 @@ class Object(Generic):
                 output_n = output_n.replace(".pdf", "_gal_ext.pdf")
             plt.savefig(output_n, bbox_inches="tight")
             plt.close(fig)
+            del fig, ax
 
     def plot_photometry_time(
             self,
@@ -793,43 +795,42 @@ class Object(Generic):
 
     def apply_galactic_extinction(
             self,
-            ax=None,
+            # ax=None,
             r_v: float = 3.1,
             **kwargs
     ):
 
-        if ax is None:
-            fig, ax = plt.subplots()
-        if "marker" not in kwargs:
-            kwargs["marker"] = "x"
+        # if ax is None:
+        #     fig, ax = plt.subplots()
+        # if "marker" not in kwargs:
+        #     kwargs["marker"] = "x"
 
         self.retrieve_extinction_table()
 
         tbl = self.photometry_to_table(fmts=["ascii.ecsv", "ascii.csv"])
 
-        x = np.linspace(0, 80000, 1000) * units.Angstrom
+        # x = np.linspace(0, 80000, 1000) * units.Angstrom
 
-        lambda_eff_tbl = self.irsa_extinction["LamEff"].to(
-            units.Angstrom)
-        power_law = models.PowerLaw1D()
-        fitter = fitting.LevMarLSQFitter()
-        try:
-            fitted = fitter(power_law, lambda_eff_tbl, self.irsa_extinction["A_SandF"].value)
-            tbl["ext_gal_pl"] = fitted(tbl["lambda_eff"]) * units.mag
-            ax.plot(
-                x, fitted(x),
-                label=f"power law fit to IRSA",
-                # , \\alpha={fitted.alpha.value}; $x_0$={fitted.x_0.value}; A={fitted.amplitude.value}",
-                c="blue"
-            )
-            self.extinction_power_law = {
-                "amplitude": fitted.amplitude.value * fitted.amplitude.unit,
-                "x_0": fitted.x_0.value,
-                "alpha": fitted.alpha.value
-            }
-        except fitting.NonFiniteValueError:
-            fitted = None
-            tbl["ext_gal_pl"] = -999. * units.mag
+        # lambda_eff_tbl = self.irsa_extinction["LamEff"].to(units.Angstrom)
+        # power_law = models.PowerLaw1D()
+        # fitter = fitting.LevMarLSQFitter()
+        # try:
+        #     fitted = fitter(power_law, lambda_eff_tbl, self.irsa_extinction["A_SandF"].value)
+        #     tbl["ext_gal_pl"] = fitted(tbl["lambda_eff"]) * units.mag
+        #     ax.plot(
+        #         x, fitted(x),
+        #         label=f"power law fit to IRSA",
+        #         # , \\alpha={fitted.alpha.value}; $x_0$={fitted.x_0.value}; A={fitted.amplitude.value}",
+        #         c="blue"
+        #     )
+        #     self.extinction_power_law = {
+        #         "amplitude": fitted.amplitude.value * fitted.amplitude.unit,
+        #         "x_0": fitted.x_0.value,
+        #         "alpha": fitted.alpha.value
+        #     }
+        # except fitting.NonFiniteValueError:
+        #     fitted = None
+        #     tbl["ext_gal_pl"] = -999. * units.mag
 
         if not self.photometry:
             self.load_output_file()
@@ -844,7 +845,6 @@ class Object(Generic):
             fils.append(fil)
             exts.append(self.galactic_extinction(fil=fil, r_v=r_v))
 
-        print(exts)
         tbl["ext_gal_sandf"] = exts
 
         # tbl["ext_gal_interp"] = np.interp(
@@ -910,7 +910,7 @@ class Object(Generic):
         # tbl_2.update(tbl)
         # tbl_2.write(self.build_photometry_table_path().replace("photometry", "photemetry_extended"))
         self.update_output_file()
-        return ax
+        return exts
 
     def retrieve_extinction_table(self, force: bool = False):
         self.load_extinction_table()
