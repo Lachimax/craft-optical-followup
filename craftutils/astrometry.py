@@ -58,7 +58,21 @@ def generate_astrometry_indices(
         index_output_dir: str,
         fits_cat_output: str = None,
         add_path: bool = True,
-        p_lower: int = -2, p_upper: int = 2):
+        p_lower: int = -2, p_upper: int = 2
+):
+    """
+
+    :param cat_name:
+    :param cat:
+    :param output_file_prefix:
+    :param unique_id_prefix:
+    :param index_output_dir:
+    :param fits_cat_output:
+    :param add_path:
+    :param p_lower:
+    :param p_upper:
+    :return:
+    """
     u.mkdir_check(index_output_dir)
     if add_path:
         astrometry_net.add_index_directory(index_output_dir)
@@ -236,7 +250,6 @@ def offset_astrometry(hdu: fits.hdu, offset_ra: float, offset_dec: float, output
     :return:
     """
     hdu, path = ff.path_or_hdu(hdu)
-    print(offset_ra, offset_dec)
     print('Writing tweaked file to:')
     print('\t', output)
     print(hdu[0].header['CRVAL1'], hdu[0].header['CRVAL2'])
