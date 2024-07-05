@@ -646,6 +646,8 @@ class ImagingEpoch(Epoch):
 
         u.debug_print(2, kwargs)
 
+        self.field.retrieve_catalogue(cat_name="gaia")
+
         self.generate_astrometry_indices(correct_to_epoch=correct_to_epoch)
 
         self.frames_astrometry = {}
@@ -1243,6 +1245,8 @@ class ImagingEpoch(Epoch):
             kwargs["snr_min"] = 3.
         if "suppress_select" not in kwargs:
             kwargs["suppress_select"] = True
+
+        self.field.retrieve_catalogues()
 
         image_dict = self._get_images(image_type=image_type)
         for fil in image_dict:

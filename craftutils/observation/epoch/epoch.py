@@ -401,8 +401,6 @@ class Epoch(Pipeline):
     # def set_survey(self):
 
     def _pipeline_init(self, skip_cats: bool = False):
-        if not skip_cats:
-            self.field.retrieve_catalogues()
         super()._pipeline_init()
         self.set_path(
             key="download",
