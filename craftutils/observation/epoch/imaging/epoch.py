@@ -197,6 +197,12 @@ class ImagingEpoch(Epoch):
                 "message": "Run diagnostics on individual frames?",
                 "default": False,
             },
+            "insert_synthetic_frames": {
+                "method": cls.proc_insert_synthetic_frames,
+                "message": "Insert synthetic sources in frames for validation_checks?",
+                "default": False,
+                "keywords": {}
+            },
             "subtract_background_frames": {
                 "method": cls.proc_subtract_background_frames,
                 "message": "Subtract local background from frames?",
@@ -210,12 +216,6 @@ class ImagingEpoch(Epoch):
                     "method": "local",
                     # "polynomial_degree": 3
                 }
-            },
-            "insert_synthetic_frames": {
-                "method": cls.proc_insert_synthetic_frames,
-                "message": "Insert synthetic sources in frames for validation_checks?",
-                "default": False,
-                "keywords": {}
             },
             "coadd": {
                 "method": cls.proc_coadd,
@@ -1650,7 +1650,7 @@ class ImagingEpoch(Epoch):
             ra_target = []
             dec_target = []
 
-            depth, _ = img.select_depth(sigma=5, depth_type="secure")
+            depth, _ = img.select_depth()
 
             img.load_data()
 

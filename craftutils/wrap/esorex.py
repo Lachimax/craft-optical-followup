@@ -21,7 +21,7 @@ if p.config["eso_install_dir"]:
             os.listdir(eso_calib_path)
         ).__next__())
 
-
+@u.export
 def write_sof(
         table_path: str,
         output_path: str = 'bias.sof',
@@ -110,7 +110,7 @@ def sof(frames: Dict[str, list], output_path: str):
 
     return output_lines
 
-
+@u.export
 def fors_bias(
         bias_frames: List[str], output_dir: str, output_filename: str = None,
         sof_name: str = "bias.sof"):
