@@ -46,6 +46,12 @@ python_apigen_modules = {
     "craftutils.observation.objects": "apigen/observation/objects/",
     "craftutils.observation.survey": "apigen/observation/survey/",
     "craftutils.wrap.astrometry_net": "apigen/wrap/astrometry_net/",
+    "craftutils.wrap.esorex": "apigen/wrap/esorex/",
+    "craftutils.wrap.dragons": "apigen/wrap/dragons/",
+    "craftutils.wrap.galfit": "apigen/wrap/galfit/",
+    "craftutils.wrap.montage": "apigen/wrap/montage/",
+    "craftutils.wrap.psfex": "apigen/wrap/psfex/",
+    "craftutils.wrap.source_extractor": "apigen/wrap/source_extractor/",
 }
 
 python_apigen_default_groups = [
