@@ -89,6 +89,7 @@ python_apigen_default_groups = [
     ("class:craftutils.observation.survey.*", "Survey classes"),
     ("function:craftutils.observation.survey.*", "Survey functions"),
     ("function:craftutils.wrap.astrometry_net.*", "Astrometry.net functions"),
+    ("function:craftutils.wrap.esorex.*", "Esorex functions"),
 ]
 
 # Create hyperlinks to other documentation
