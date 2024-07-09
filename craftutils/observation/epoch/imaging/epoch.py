@@ -321,12 +321,18 @@ class ImagingEpoch(Epoch):
             box: units.Quantity = 3 * units.arcmin,
             min_mag: float = 18., #19.5
             max_mag: float = 25., #23.5
-            n: int = 100
+            n: int = None
     ):
         if force or self.validation_catalogue_path is None or not os.path.isfile(self.validation_catalogue_path):
             print("Generating synthetic catalogue...")
             if centre is None:
                 centre = self.field.centre_coords
+            if n is None:
+                area = (2 * box) ** 2
+                area_default = (3 * units.arcmin) ** 2
+                n = int(300 * area / area_default)
+            print("Number of stars to generate:", n)
+            print("Inside box:", box)
             d_x = (2 * np.random.rand(n) - 1) * box
             d_y = (2 * np.random.rand(n) - 1) * box
             ra = centre.ra + d_x / np.cos(centre.dec)
@@ -356,7 +362,23 @@ class ImagingEpoch(Epoch):
         final_images = self.validation_copy_of._get_images(image_type="final")
         frames_original = self.validation_copy_of._get_frames(frame_type)
         frames_dict = self._get_frames(frame_type=frame_type)
-        self.generate_validation_catalogue()
+        box = None
+        centre = None
+        if self.did_local_background_subtraction():
+            img = frames_original[list(frames_original.keys())[0]][0]
+            img.extract_pixel_scale()
+            if "subtract_background_frames" in self.param_file:
+                par_dict = self.param_file["subtract_background_frames"]
+                print(par_dict)
+                if "frame" in par_dict:
+                    box = par_dict["frame"]
+                else:
+                    box = 15 * units.arcsec
+                if "centre" in par_dict:
+                    centre = par_dict["centre"]
+                box = box.to(units.arcsec, img.pixel_scale_y)
+
+        self.generate_validation_catalogue(box=box, centre=centre, force=True)
         self._get_frames(frame_type=frame_type).clear()
         for fil, frames in frames_original.items():
             final_img = final_images[fil]
@@ -454,6 +476,8 @@ class ImagingEpoch(Epoch):
     def proc_subtract_background_frames(self, output_dir: str, **kwargs):
         self.frames_subtracted = {}
         if "frames" not in kwargs:
+            # if self.validation_catalogue is not None:
+            #     kwargs["frames"] = ""
             if "correct_astrometry_frames" in self.do_param and self.do_param["correct_astrometry_frames"]:
                 kwargs["frames"] = "astrometry"
             else:
@@ -1918,10 +1942,21 @@ class ImagingEpoch(Epoch):
         pl.latex_setup()
         fil = img.filter_name
         self.validation_catalogue = table.QTable.read(self.validation_catalogue_path)
+
         idx, sep, _ = self.validation_catalogue["coord"].match_to_catalog_sky(img.source_cat["COORD"])
         matches_se = img.source_cat[idx]
         sep = sep.to("arcsec")
         self.validation_catalogue[f"separation_{fil}"] = sep
+
+        fig, ax = plt.subplots()
+        x_synth, y_synth = img.world_to_pixel(self.validation_catalogue["coord"])
+        c = ax.scatter(x=x_synth, y=y_synth, marker="x", c=sep)
+        cbar = fig.colorbar(c)
+        ax.set_ylabel("x (inserted)")
+        ax.set_xlabel("y (inserted)")
+        cbar.set_label(r"Separation ($\prime\prime$)")
+        fig.savefig(os.path.join(output_dir, f"position_{fil}.pdf"))
+
         values = {}
         for mag_type in ("PSF", "AUTO"):
             self.validation_catalogue[f"{fil}_mag_{mag_type}"] = matches_se[f"MAG_{mag_type}_ZP_best"]
@@ -1929,6 +1964,7 @@ class ImagingEpoch(Epoch):
             self.validation_catalogue[f"{fil}_mag_{mag_type}_delta"] = u.check_quantity(self.validation_catalogue["mag"], units.mag) - self.validation_catalogue[f"{fil}_mag_{mag_type}"]
             cat = self.validation_catalogue[self.validation_catalogue[f"{fil}_mag_{mag_type}"] < 100 * units.mag]
             cat = cat[cat[f"{fil}_mag_{mag_type}"] > -100 * units.mag]
+            cat = cat[cat[f"separation_{fil}"] < tolerance]
             x = cat[f"mag"].value
             y = cat[f"{fil}_mag_{mag_type}"].value
             y_err = cat[f"{fil}_mag_{mag_type}_err"].value

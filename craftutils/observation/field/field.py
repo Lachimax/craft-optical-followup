@@ -840,7 +840,7 @@ class Field(Pipeline):
             u.debug_print(1, f"This field is not present in {cat_name}.")
 
     def load_catalogue(self, cat_name: str, **kwargs):
-        if self.retrieve_catalogue(cat_name):
+        if self.retrieve_catalogue(cat_name, **kwargs):
             if cat_name == "gaia":
                 if "data_release" in kwargs:
                     data_release = kwargs["data_release"]

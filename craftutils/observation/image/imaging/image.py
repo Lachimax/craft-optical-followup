@@ -3262,7 +3262,6 @@ class ImagingImage(Image):
         :param model:
         :return:
         """
-        print("catalogue[0]:", catalogue[0])
         if self.psfex_path is None:
             raise ValueError(f"{self.name}.psfex_path has not been set.")
         if self.zeropoint_best is None:
