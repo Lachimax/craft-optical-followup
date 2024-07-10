@@ -53,5 +53,5 @@ sphinxcontrib-serializinghtml==1.1.5
 sphinx-immaterial==0.11.2
 urllib3==1.26.18
     # via requests
-zipp==3.17.0
+zipp==3.19.1
     # via importlib-metadata
