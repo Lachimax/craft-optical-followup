@@ -1,4 +1,6 @@
 # Code by Lachlan Marnoch, 2019-2022
+import numbers
+
 import datetime
 import math
 import os
@@ -1914,3 +1916,53 @@ def latexise_table(
         if set(kwargs.keys()).intersection({"caption", "short_caption", "label", "landscape"}):
             tbl = mod_latex_table(path=output_path, sub_colnames=under_list, **kwargs)
     return tbl
+
+def add_stats(
+        tbl,
+        name_col: str,
+        cols_exclude: list,
+        exclude_err: Union[bool, str] = True,
+        round_n: int = 2
+):
+    if exclude_err:
+        if not isinstance(exclude_err, str):
+            exclude_err = "_err"
+        cols_exclude += list(filter(lambda c: c.endswith(exclude_err), tbl.colnames))
+    tbl_ = tbl.copy()
+    median_dict = {}
+    mean_dict = {}
+    min_dict = {}
+    max_dict = {}
+    sigma_dict = {name_col: r"Std. Deviation"}
+    median_dict[name_col] = "Median"
+    mean_dict[name_col] = "Mean"
+    max_dict[name_col] = "Maximum"
+    min_dict[name_col] = "\hline Minimum"
+    for col in tbl_.colnames:
+        if col not in cols_exclude:
+            if isinstance(tbl_[col], units.Quantity):
+                un = tbl_[col].unit
+            else:
+                un = 1.
+            samp = tbl_[col][tbl_[col] != -999 * un]
+            median_dict[col] = np.round(np.nanmedian(samp), round_n)
+            mean_dict[col] = np.round(np.nanmean(samp), round_n)
+            max_dict[col] = np.round(np.nanmax(samp), round_n)
+            min_dict[col] = np.round(np.nanmin(samp), round_n)
+            sigma_dict[col] = np.round(np.nanstd(samp), round_n)
+            # col_dict[col] =cxZ
+            # print(col, ":\t\t", np.median(tbl[col]))
+        # elif col in cols_exclude and isinstance(tbl_[col][0], numbers.Number) or isinstance(tbl_[col][0], units.Quantity):
+        #     median_dict[col] = np.NaN
+        #     mean_dict[col] = np.NaN
+        #     max_dict[col] = np.NaN
+        #     min_dict[col] = np.NaN
+        #     sigma_dict[col] = np.NaN
+
+    tbl_.add_row(min_dict)
+    tbl_.add_row(max_dict)
+    tbl_.add_row(sigma_dict)
+    tbl_.add_row(mean_dict)
+    tbl_.add_row(median_dict)
+
+    return tbl_
