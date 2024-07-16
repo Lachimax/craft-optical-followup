@@ -677,6 +677,23 @@ def inclination(
     return (np.arccos(np.sqrt((axis_ratio ** 2 - q_0 ** 2) / (1 - q_0 ** 2))) * units.rad).to(units.deg)
 
 
+def deprojected_offset(
+        coord_obj,
+        coord_galaxy,
+        position_angle_galaxy,
+        i
+):
+    r = coord_galaxy.separation(coord_obj)
+    theta_frb = coord_galaxy.position_angle(coord_obj).to("deg")
+
+    x_frb = r * np.sin(theta_frb)
+    y_frb = r * np.cos(theta_frb)
+
+    u = x_frb * np.sin(position_angle_galaxy) + y_frb * np.cos(position_angle_galaxy)
+    v = x_frb * np.cos(position_angle_galaxy) - y_frb * np.sin(position_angle_galaxy)
+    return np.sqrt(u ** 2 + (v / np.cos(i)) ** 2).to("arcsec")
+
+
 def get_column_names(path, delimiter=','):
     with open(path) as f:
         names = f.readline().split(delimiter)
@@ -1817,6 +1834,8 @@ def latexise_table(
                     **coord_kwargs
                 )
             else:
+                print(row)
+                print(row[ra_col])
                 ra_str = Longitude(row[ra_col]).to_string("h", format="latex")
                 dec_str = Latitude(row[dec_col]).to_string(format="latex")
             ra_strs.append(ra_str)

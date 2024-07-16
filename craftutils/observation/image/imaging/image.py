@@ -4839,6 +4839,14 @@ class ImagingImage(Image):
 
         # best_index, best_dict = galfit.sersic_best_row(model_tbls[f"COMP_{pivot_component}"])
         for component in model_tbls:
+            if "position_angle" in model_tbls[component].colnames:
+                print(model_tbls[component]["position_angle"])
+                theta = model_tbls[component]["position_angle"]
+                rotation_angle = self.extract_rotation_angle()
+                theta = (theta - rotation_angle).to("deg")
+                model_tbls[component]["position_angle"] = theta
+                for d in model_dicts[component]:
+                    d["position_angle"] = theta
             if "r_eff_ang" in model_tbls[component].colnames:
                 print(model_tbls[component]["r_eff_ang"])
                 r_eff_proj = obj.projected_size(angle=model_tbls[component]["r_eff_ang"])
