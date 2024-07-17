@@ -84,6 +84,9 @@ class Galaxy(Extragalactic):
 
         self.galfit_models = {}
 
+        self.inclination = None
+        self.position_angle = None
+
     def sed_model_path(self):
         path = os.path.join(self.data_path, "sed_models")
         u.mkdir_check(path)

@@ -269,13 +269,17 @@ class FRBField(Field):
         img.load_headers()
         frb = self.frb.position
         uncertainty = self.frb.position_err
-        a, b = uncertainty.uncertainty_quadrature()
-        if a == 0 * units.arcsec or b == 0 * units.arcsec:
-            a, b = uncertainty.uncertainty_quadrature_equ()
-        theta = uncertainty.theta.to(units.deg)
+        a, b, theta = uncertainty.uncertainty_quadrature()
+        # if a == 0 * units.arcsec or b == 0 * units.arcsec:
+        #     a, b, theta = uncertainty.uncertainty_quadrature_equ()
         rotation_angle = img.extract_rotation_angle(ext=ext)
         theta = theta - rotation_angle
         img.extract_pixel_scale()
+        print()
+        print(a, b, theta)
+        print(uncertainty.a, uncertainty.b, uncertainty.theta)
+        print(uncertainty.ra_total, uncertainty.dec_total)
+        print()
 
         if "include_img_err" in frb_kwargs:
             include_img_err = frb_kwargs.pop("include_img_err")

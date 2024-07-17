@@ -261,13 +261,16 @@ class PositionUncertainty:
         self.ra_stat = ra_err_stat
         self.dec_stat = dec_err_stat
         self.ra_total = ra_err_total
-        self.dec_err = dec_err_total
+        self.dec_total = dec_err_total
 
     def __str__(self):
         return f"PositionUncertainty: a_stat={self.a_stat}, b_stat={self.b_stat}; a_sys={self.a_sys}, b_sys={self.b_sys}"
 
     def uncertainty_quadrature(self):
         do_equ = False
+        a_quad = 0
+        b_quad = 0
+        theta = self.theta
         if self.a is not None:
             a_quad = self.a
         elif self.a_sys is not None and self.a_stat is not None:
@@ -275,6 +278,9 @@ class PositionUncertainty:
         else:
             do_equ = True
             # raise ValueError(f"{self.a=}, {self.a_sys=}, {self.a_stat=}")
+
+        # print()
+        # print("1:", a_quad, b_quad, theta)
 
         if not do_equ and self.b is not None:
             b_quad = self.b
@@ -284,12 +290,20 @@ class PositionUncertainty:
             do_equ = True
             # raise ValueError(f"{self.b=}, {self.b_sys=}, {self.b_stat=}")
 
+        if a_quad == 0 or b_quad == 0:
+            do_equ = True
+
+
         if do_equ:
             a_quad, b_quad = self.uncertainty_quadrature_equ()
-        return max(a_quad, b_quad), min(a_quad, b_quad)
+            if b_quad > a_quad:
+                theta = 0 * units.deg
+            else:
+                theta = 90 * units.deg
+        return max(a_quad, b_quad), min(a_quad, b_quad), theta
 
     def uncertainty_quadrature_equ(self):
-        return np.sqrt(self.ra_sys ** 2 + self.ra_stat ** 2), np.sqrt(self.dec_sys ** 2 + self.dec_stat ** 2)
+        return np.sqrt(self.ra_total ** 2), np.sqrt(self.dec_total ** 2)
 
     # TODO: Finish this
 
@@ -297,13 +311,17 @@ class PositionUncertainty:
         return {
             "a_sys": self.a_sys,
             "a_stat": self.a_stat,
+            "a": self.a,
             "b_sys": self.b_sys,
             "b_stat": self.b_stat,
+            "b": self.b,
             "theta": self.theta,
             "alpha_err_sys": self.ra_sys,
             "delta_err_sys": self.dec_sys,
             "alpha_err_stat": self.ra_stat,
-            "delta_err_stat": self.dec_stat
+            "delta_err_stat": self.dec_stat,
+            "alpha_total": self.ra_total,
+            "delta_total": self.dec_total
         }
 
     @classmethod

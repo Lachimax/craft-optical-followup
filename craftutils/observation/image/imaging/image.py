@@ -633,6 +633,19 @@ class ImagingImage(Image):
             centre_kwargs: dict = {},
             **kwargs
     ):
+        """
+
+
+        :param ax:
+        :param coord:
+        :param a:
+        :param b:
+        :param theta: East from North.
+        :param plot_centre:
+        :param centre_kwargs:
+        :param kwargs:
+        :return:
+        """
         if b is None:
             b = a
         if theta is None:
@@ -642,11 +655,12 @@ class ImagingImage(Image):
         if "facecolor" not in kwargs:
             kwargs["facecolor"] = "none"
         x, y = self.world_to_pixel(coord, 0)
+        theta = u.check_quantity(theta, units.deg, convert=True).value
         e = Ellipse(
             xy=(x, y),
             width=2 * a.to(units.pix, self.pixel_scale_y).value,
             height=2 * b.to(units.pix, self.pixel_scale_y).value,
-            angle=theta.value,
+            angle=theta + 90,
             **kwargs
         )
         # e.set_edgecolor(color)
@@ -4843,7 +4857,7 @@ class ImagingImage(Image):
                 print(model_tbls[component]["position_angle"])
                 theta = model_tbls[component]["position_angle"]
                 rotation_angle = self.extract_rotation_angle()
-                theta = (theta - rotation_angle).to("deg")
+                theta = (theta + rotation_angle).to("deg")
                 model_tbls[component]["position_angle"] = theta
                 for d in model_dicts[component]:
                     d["position_angle"] = theta

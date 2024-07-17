@@ -107,7 +107,7 @@ class Extragalactic(Object):
             return None
         angle = u.check_quantity(angle, unit=units.arcsec).to(units.rad).value
         dist = angle * self.D_A
-        print(dist.to(units.kpc))
+        # print(dist.to(units.kpc))
         return dist.to(units.kpc)
 
     def angular_size(self, distance: Union[units.Quantity, float]):

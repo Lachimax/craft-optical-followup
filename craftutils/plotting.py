@@ -28,6 +28,10 @@ import craftutils.params as p
 import craftutils.astrometry as am
 import craftutils.utils as u
 
+matplotlib.use('Agg')
+# This is to prevent insane memory useage; see top (but not approved) answer here:
+# https://stackoverflow.com/questions/31156578/matplotlib-doesnt-release-memory-after-savefig-and-close
+
 __all__ = []
 
 quantity_support()

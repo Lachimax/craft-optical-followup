@@ -678,21 +678,29 @@ def inclination(
 
 
 def deprojected_offset(
-        coord_obj,
-        coord_galaxy,
-        position_angle_galaxy,
-        i
+        object_coord: SkyCoord,
+        galaxy_coord: SkyCoord,
+        position_angle: Union[units.Quantity, float],
+        inc: Union[units.Quantity, float]
 ):
-    r = coord_galaxy.separation(coord_obj)
-    theta_frb = coord_galaxy.position_angle(coord_obj).to("deg")
+    """
 
-    x_frb = r * np.sin(theta_frb)
-    y_frb = r * np.cos(theta_frb)
+    :param object_coord:
+    :param galaxy_coord:
+    :param position_angle:
+    :param inc:
+    :return:
+    """
 
-    u = x_frb * np.sin(position_angle_galaxy) + y_frb * np.cos(position_angle_galaxy)
-    v = x_frb * np.cos(position_angle_galaxy) - y_frb * np.sin(position_angle_galaxy)
-    return np.sqrt(u ** 2 + (v / np.cos(i)) ** 2).to("arcsec")
+    position_angle = check_quantity(position_angle, units.deg)
+    inc = check_quantity(inc, units.deg)
 
+    x_frb = (object_coord.ra - galaxy_coord.ra) * np.cos(galaxy_coord.dec)
+    y_frb = object_coord.dec - galaxy_coord.dec
+
+    u = x_frb * np.sin(position_angle) + y_frb * np.cos(position_angle)
+    v = x_frb * np.cos(position_angle) - y_frb * np.sin(position_angle)
+    return np.sqrt(u ** 2 + (v / np.cos(inc)) ** 2).to("arcsec")
 
 def get_column_names(path, delimiter=','):
     with open(path) as f:

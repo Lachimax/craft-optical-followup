@@ -960,8 +960,8 @@ def imgblock_plot(img_block: Union[fits.HDUList, str], output: str = None):
     x = params["x"].value - x_left
     y = params["y"].value - y_bottom
     r_eff = params["r_eff"].value
-    a = r_eff
-    b = r_eff * params["axis_ratio"]
+    a = r_eff * 2
+    b = r_eff * params["axis_ratio"] * 2
     theta = params["position_angle"].value
 
     for i, im in enumerate(img_block):
