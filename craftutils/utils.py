@@ -851,13 +851,13 @@ def detect_problem_row(
             if remove_output:
                 os.remove(writepath)
         except NotImplementedError:
-            print("Problem column (NotImplementedError):")
+            print("Problem row (NotImplementedError):")
             print(i, row)
             _problem_row(i, row, tbl)
             return i, row
         except ValueError:
-            print("Problem column (ValueError):")
-            print(i, row)
+            print("Problem row (ValueError): row", i)
+            print(row)
             _problem_row(i, row, tbl)
             return i, row
 
@@ -893,13 +893,14 @@ def detect_problem_column(
         except NotImplementedError:
             print(tbl_this)
             print("Problem column (NotImplementedError):")
-            print(col, tbl[col])
+            print(tbl[col])
             return col, tbl[col]
         except ValueError:
             print(tbl_this)
             print("Problem column (ValueError):")
-            print(col, tbl[col])
+            print(tbl[col])
             return col, tbl[col]
+    return None, None
 
 
 def mode(lst: list):

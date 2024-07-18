@@ -25,9 +25,12 @@ class ExtragalacticTransient(Transient, Extragalactic):
         self.z = None
         self.z_err = None
         if "z" in kwargs:
-            self.z = kwargs["z"]
-        if "z_err" in kwargs:
-            self.z_err = kwargs["z"]
+            z = kwargs["z"]
+            z_err = None
+            if "z_err" in kwargs:
+                z_err = kwargs["z_err"]
+            self.set_z(z=z, z_err=z_err)
+
         self.host_galaxy = host_galaxy
         self.host_candidate_tables = {}
         self.host_candidates = []

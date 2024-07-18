@@ -845,7 +845,10 @@ class FRB(ExtragalacticTransient):
         from frb.dm.igm import average_DMhalos
         hmf.init_hmf()
         if z_max is None:
-            z_max = self.host_galaxy.z
+            if self.host_galaxy.z is not None:
+                z_max = self.host_galaxy.z
+            else:
+                return -999 * dm_units
         if z_max <= 0:
             return 0 * dm_units
         else:
