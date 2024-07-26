@@ -664,9 +664,11 @@ def great_circle_dist(ra_1, dec_1, ra_2, dec_2):
     return s
 
 
+
 def inclination(
         axis_ratio: float,
-        q_0: float = 0.2
+        q_0: float = 0.2,
+        uncos: bool = True
 ) -> units.Quantity:
     """Using the power of geometry, loosely estimates the inclination angle of a disk galaxy.
 
@@ -674,8 +676,10 @@ def inclination(
     :param q_0: Axis ratio if viewed fully edge-on.
     :return: Inclination angle in degrees.
     """
-    return (np.arccos(np.sqrt((axis_ratio ** 2 - q_0 ** 2) / (1 - q_0 ** 2))) * units.rad).to(units.deg)
-
+    if uncos:
+        return (np.arccos(np.sqrt((axis_ratio ** 2 - q_0 ** 2) / (1 - q_0 ** 2))) * units.rad).to(units.deg)
+    else:
+        return np.sqrt((axis_ratio ** 2 - q_0 ** 2) / (1 - q_0 ** 2))
 
 def deprojected_offset(
         object_coord: SkyCoord,
