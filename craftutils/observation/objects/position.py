@@ -279,8 +279,8 @@ class PositionUncertainty:
             do_equ = True
             # raise ValueError(f"{self.a=}, {self.a_sys=}, {self.a_stat=}")
 
-        # print()
-        # print("1:", a_quad, b_quad, theta)
+        print()
+        print("1:", do_equ, a_quad, b_quad, theta)
 
         if not do_equ and self.b is not None:
             b_quad = self.b
@@ -290,19 +290,25 @@ class PositionUncertainty:
             do_equ = True
             # raise ValueError(f"{self.b=}, {self.b_sys=}, {self.b_stat=}")
 
+        print("2:", do_equ, a_quad, b_quad, theta)
+
         if a_quad == 0 or b_quad == 0:
             do_equ = True
 
+        print("3:", do_equ, a_quad, b_quad, theta)
 
         if do_equ:
-            a_quad, b_quad = self.uncertainty_quadrature_equ()
-            if b_quad > a_quad:
-                theta = 0 * units.deg
-            else:
-                theta = 90 * units.deg
+            a_eq, b_eq = self.uncertainty_quadrature_equ()
+            if a_eq is not None and b_eq is not None:
+                if b_quad > a_quad:
+                    theta = 0 * units.deg
+                else:
+                    theta = 90 * units.deg
         return max(a_quad, b_quad), min(a_quad, b_quad), theta
 
     def uncertainty_quadrature_equ(self):
+        if self.ra_total is None or self.dec_total is None:
+            return None, None
         return np.sqrt(self.ra_total ** 2), np.sqrt(self.dec_total ** 2)
 
     # TODO: Finish this

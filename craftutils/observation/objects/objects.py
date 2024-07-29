@@ -1097,7 +1097,7 @@ class Object(Generic):
 
         self.retrieve_extinction_table()
 
-        ra_err, dec_err = self.position_err.uncertainty_quadrature()
+        ra_err, dec_err, theta = self.position_err.uncertainty_quadrature()
 
         row = {
             "jname": jname,

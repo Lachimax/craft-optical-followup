@@ -201,10 +201,10 @@ class FRB(ExtragalacticTransient):
             self.check_data_path()
             output_dir = str(os.path.join(self.data_path, "PATH", img.name))
             u.mkdir_check(output_dir)
-        a, b = self.position_err.uncertainty_quadrature()
+        a, b, theta = self.position_err.uncertainty_quadrature()
         a = np.sqrt(a ** 2 + astm_rms ** 2)
         b = np.sqrt(b ** 2 + astm_rms ** 2)
-        theta = self.position_err.theta
+        # theta = self.position_err.theta
         x_frb = self.generate_x_frb()
         x_frb.set_ee(
             a=a.value,
