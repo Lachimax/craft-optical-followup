@@ -1956,6 +1956,8 @@ def add_stats(
         exclude_err: Union[bool, str] = True,
         round_n: int = 2
 ):
+    if name_col not in tbl.colnames:
+        raise ValueError(f"No column '{name_col}' in table.")
     if exclude_err:
         if not isinstance(exclude_err, str):
             exclude_err = "_err"
