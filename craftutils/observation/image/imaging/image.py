@@ -1954,6 +1954,7 @@ class ImagingImage(Image):
                 fig=fig,
                 colour_column=mag_col,
                 cbar_label=mag_col)
+            fig.savefig(os.path.join(output_path, f"{self.name}_astrometry_overplot.pdf"))
             plt.close(fig)
             del fig
         # fig.savefig(os.path.join(output_path, f"{self.name}_cat_overplot.pdf"))
