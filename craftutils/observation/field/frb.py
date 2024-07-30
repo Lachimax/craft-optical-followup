@@ -337,7 +337,7 @@ class FRBField(Field):
         if 'path_kwargs' in kwargs and kwargs['path_kwargs'] is not None:
             path_kwargs.update(kwargs["path_kwargs"])
         if 'path_img' in kwargs and kwargs['path_img'] is not None:
-            path_img = kwargs["path_img"]
+            path_img = kwargs.pop("path_img")
         else:
             path_img = None
         self.probabilistic_association(path_img=path_img, **path_kwargs)
@@ -355,45 +355,46 @@ class FRBField(Field):
         if path_img is not None:
             img_fixed = True
             path_img = self.imaging[path_img]["image"]
+            images = [path_img]
+        else:
+            print("fil_list", len(fil_list))
+            images = list(map(lambda f: self.deepest_in_band(fil=f)["image"], fil_list))
 
-        print("fil_list", len(fil_list))
-        images = list(map(lambda f: self.deepest_in_band(fil=f)["image"], fil_list))
+        p_us = [0., 0.1, 0.2]
 
         max_p_ox = None
         while max_p_ox in (None, 0.) and images:
-            if not img_fixed:
-                path_img = images.pop(0)
+            path_img_this = images.pop(0)
             vals, tbl, z_lost = self.frb.host_probability_unseen(
-                img=path_img,
+                img=path_img_this,
                 sample="Gordon+2023",
                 n_z=500
             )
             if vals is not None:
                 p_u = float(vals["P(U)"]["step"])
-                path_kwargs["priors"]["U"] = p_u
-                cand_tbl, write_dict = self.frb.probabilistic_association(
-                    img=path_img,
-                    do_plot=True,
-                    **path_kwargs
-                )
-                max_p_ox = write_dict["max_P(O|x_i)"]
-                if max_p_ox is None:
-                    img_fixed = False
-                # if cand_tbl is not None:
-                #     path_cat = self.frb.consolidate_candidate_tables(
-                #         sort_by="P_Ox",
-                #         reverse_sort=True,
-                #         p_ox_assign=path_img.name,
-                #         p_u=p_u
-                #     )
-                if path_img.name not in self.path_runs:
-                    self.path_runs[path_img.name] = {}
-                self.path_runs[path_img.name]["calculated"] = write_dict
+            else:
+                p_u = 0.1
+            path_kwargs["priors"]["U"] = p_u
+            cand_tbl, write_dict = self.frb.probabilistic_association(
+                img=path_img_this,
+                do_plot=True,
+                **path_kwargs
+            )
+            max_p_ox = write_dict["max_P(O|x_i)"]
+            if max_p_ox is None:
+                img_fixed = False
+            # if cand_tbl is not None:
+            #     path_cat = self.frb.consolidate_candidate_tables(
+            #         sort_by="P_Ox",
+            #         reverse_sort=True,
+            #         p_ox_assign=path_img.name,
+            #         p_u=p_u
+            #     )
+            if path_img_this.name not in self.path_runs:
+                self.path_runs[path_img_this.name] = {}
+            self.path_runs[path_img_this.name]["calculated"] = write_dict
         # if max_p_ox is not None:
         #     self.add_path_candidates()
-
-        # Do 0.1 first so that we get it as the default set of host candidates in case the above failed
-        p_us = [0., 0.1, 0.2]
 
         if max_p_ox is None:
             if images:

@@ -209,7 +209,7 @@ class Field(Pipeline):
     def proc_update_photometry(self, output_dir: str, **kwargs):
         self.force_stage_all_epochs(
             stage="get_photometry",
-            skip_plots=True,
+            # skip_plots=True,
             skip_path=True,
             **kwargs
         )
@@ -324,6 +324,7 @@ class Field(Pipeline):
                     best_img = image.Image.from_fits(best_img_path)
                     # print("You shouldn't be getting here right now.")
                 else:
+                    print(self.imaging[use_img])
                     best_img = self.imaging[use_img]["image"]
 
                 img_dict = {}

@@ -541,7 +541,7 @@ class FRB(ExtragalacticTransient):
         old_name = host_galaxy.name
         old_host = self.host_galaxy
         print(f"Assigning {old_name} as host of {self.name} and relabelling as {hg_name}")
-        if keep_params is not None:
+        if keep_params is not None and old_host is not None:
             attributes = old_host.__dict__.copy()
             print("Keeping attributes:")
             for key in keep_params:
