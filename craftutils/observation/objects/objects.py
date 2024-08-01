@@ -1039,12 +1039,26 @@ class Object(Generic):
         return self.photometry[row["instrument"]][row["band"]][row["epoch_name"]]
 
     def select_deepest(self, local_output: bool = True):
+        force_dict = None
+        if "force_template_image" in self.param_file:
+            force_dict = self.param_file["force_template_image"]
         self.get_photometry_table(output=local_output, best=False)
-        if self.photometry_tbl is None or "snr" not in self.photometry_tbl.colnames:
+        if self.photometry_tbl is None:
             return None
-        idx = np.argmax(self.photometry_tbl["snr"])
-        row = self.photometry_tbl[idx]
-        deepest = self.photometry[row["instrument"]][row["band"]][row["epoch_name"]]
+        if force_dict is None:
+            if "snr" not in self.photometry_tbl.colnames:
+                return None
+            idx = np.argmax(self.photometry_tbl["snr"])
+            row = self.photometry_tbl[idx]
+            instrument = row["instrument"]
+            band = row["band"]
+            epoch = row["epoch_name"]
+        else:
+            instrument = force_dict["instrument"]
+            band = force_dict["band"]
+            epoch = force_dict["epoch_name"]
+
+        deepest = self.photometry[instrument][band][epoch]
         # if self.photometry_args is None:
         self.a = deepest["a"]
         self.b = deepest["b"]
@@ -1072,13 +1086,28 @@ class Object(Generic):
         return deepest
 
     def select_deepest_sep(self, local_output: bool = True) -> Union[dict, None]:
+        force_dict = None
+        if "force_template_image" in self.param_file:
+            force_dict = self.param_file["force_template_image"]
         self.get_photometry_table(output=local_output, best=True)
-        if not isinstance(self.photometry_tbl_best, table.Table) or "snr_sep" not in self.photometry_tbl_best.colnames:
+        if not isinstance(self.photometry_tbl_best, table.Table):
             print(f"No photometry found for {self.name}")
             return None
-        idx = np.argmax(self.photometry_tbl_best["snr_sep"])
-        row = self.photometry_tbl_best[idx]
-        return self.photometry[row["instrument"]][row["band"]][row["epoch_name"]]
+        if force_dict is None:
+            if "snr_sep" not in self.photometry_tbl_best.colnames:
+                print(f"No photometry found for {self.name}")
+                return None
+            idx = np.argmax(self.photometry_tbl_best["snr_sep"])
+            row = self.photometry_tbl_best[idx]
+            instrument = row["instrument"]
+            band = row["band"]
+            epoch = row["epoch_name"]
+        else:
+            instrument = force_dict["instrument"]
+            band = force_dict["band"]
+            epoch = force_dict["epoch_name"]
+
+        return self.photometry[instrument][band][epoch]
 
     def assemble_row(
             self,

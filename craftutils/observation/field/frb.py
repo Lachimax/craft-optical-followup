@@ -451,7 +451,7 @@ class FRBField(Field):
                 if P_Ox > 0.1:
                     print(f"\tAdding {obj.name}: P(O|x) = {P_Ox} > 0.1.")
                     if P_Ox >= max_pox:
-                        self.frb.set_host(obj, keep_params=["z", "z_err", "other_names"])
+                        self.frb.set_host(obj, keep_params=["z", "z_err", "other_names", "force_template_img"])
                     self.add_object(obj)
                     obj.to_param_yaml(keep_old=True)
         print()
