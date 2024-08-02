@@ -667,7 +667,7 @@ def great_circle_dist(ra_1, dec_1, ra_2, dec_2):
 
 def inclination(
         axis_ratio: float,
-        q_0: float = 0.2,
+        q_0: Union[float, str] = 0.2,
         uncos: bool = True
 ) -> units.Quantity:
     """Using the power of geometry, loosely estimates the inclination angle of a disk galaxy.
