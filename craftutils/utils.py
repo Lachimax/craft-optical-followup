@@ -6,7 +6,7 @@ import math
 import os
 import shutil
 import sys
-from typing import List, Union, Tuple, Iterable
+from typing import List, Union, Tuple, Iterable, Any
 from datetime import datetime as dt
 import subprocess
 
@@ -664,7 +664,6 @@ def great_circle_dist(ra_1, dec_1, ra_2, dec_2):
     return s
 
 
-
 def inclination(
         axis_ratio: float,
         q_0: Union[float, str] = 0.2,
@@ -680,6 +679,7 @@ def inclination(
         return (np.arccos(np.sqrt((axis_ratio ** 2 - q_0 ** 2) / (1 - q_0 ** 2))) * units.rad).to(units.deg)
     else:
         return np.sqrt((axis_ratio ** 2 - q_0 ** 2) / (1 - q_0 ** 2))
+
 
 def deprojected_offset(
         object_coord: SkyCoord,
@@ -705,6 +705,7 @@ def deprojected_offset(
     u = x_frb * np.sin(position_angle) + y_frb * np.cos(position_angle)
     v = x_frb * np.cos(position_angle) - y_frb * np.sin(position_angle)
     return np.sqrt(u ** 2 + (v / np.cos(inc)) ** 2).to("arcsec")
+
 
 def get_column_names(path, delimiter=','):
     with open(path) as f:
@@ -1132,6 +1133,7 @@ def uncertainty_string(
         uncertainty = 0.
 
     uncertainty = float(dequantify(uncertainty, unit))
+
     if limit_type == "upper":
         limit_char = "<"
     else:
@@ -1169,6 +1171,7 @@ def uncertainty_string(
             return string
 
     uncertainty_str = deal_with_e(uncertainty_str, uncertainty)
+
     value_str = deal_with_e(value_str, value)
     if uncertainty == 0.:
         if isinstance(n_digits_no_err, int):
@@ -1179,19 +1182,26 @@ def uncertainty_string(
     u_point = uncertainty_str.find(".")
     if u_point == -1:
         u_point = len(uncertainty_str)
-    # If the uncertainty is less than 1, we iterate along the string starting at the decimal place until we find a non-zero character.
+
+    # Do this part assuming that uncertainty is less than 1;
+    # If this turns out to be false, the variables will get overwritten anyway
+    uncertainty_rnd = None
     if uncertainty < 1.:
         i = u_point + 1
+        # If the uncertainty is less than 1, we iterate along the string starting at the decimal place until we find a non-zero character.
         while uncertainty_str[i] == "0":
             i += 1
         # x is the number of digits after the decimal point to show.
         x = i - u_point + n_digits_err
-        # Round appropriately
         uncertainty_rnd = np.round(uncertainty, x - 1)
         uncertainty_str = deal_with_e(str(uncertainty_rnd), uncertainty_rnd)[:u_point + x]
 
+    if uncertainty_rnd is not None and uncertainty_rnd < 1.:
+        # Round appropriately
+
         value_rnd = np.round(value, x - 1)
         value_str = str(value_rnd)[:v_point + x]
+
         # uncertainty_str = str(uncertainty_rnd)[:u_point + x]
 
         while len(uncertainty_str) < i + n_digits_err:
@@ -1212,19 +1222,27 @@ def uncertainty_string(
         value_rnd = np.round(value, -x)
         value_str = str(value_rnd)[:v_point - x] + "0" * x
         uncertainty_str = str(uncertainty_rnd)[:n_digits_err] + "0" * x
+        # print(uncertainty_str, oom + 1)
+
+    oom = np.floor(np.log10(uncertainty_rnd))
 
     if not include_uncertainty:
         value_str = value_str
     elif brackets:
-        if uncertainty < 1.:
+        if uncertainty_rnd < 1.:
+            # print(uncertainty_str)
             uncertainty_str = uncertainty_str[-n_digits_err:]
         else:
             x = u_point - n_digits_err
             uncertainty_str = uncertainty_str[:n_digits_err] + "0" * x
+            while len(uncertainty_str) < int(oom + 1):
+                uncertainty_str += "0"
         value_str = f"${value_str}({uncertainty_str})$"
     else:
         value_str = f"${value_str} \\pm {uncertainty_str}$"
 
+    # print(value_str)
+    # print("\t", uncertainty, uncertainty_str, oom + 1)
     return value_str, value_rnd, uncertainty_rnd
 
 
@@ -1864,6 +1882,7 @@ def latexise_table(
             return "--"
         else:
             return str(v)
+
     for col in round_cols:
         new_col = []
         for row in tbl:
@@ -1949,6 +1968,7 @@ def latexise_table(
             tbl = mod_latex_table(path=output_path, sub_colnames=under_list, **kwargs)
     return tbl
 
+
 def add_stats(
         tbl,
         name_col: str,
@@ -2000,3 +2020,40 @@ def add_stats(
     tbl_.add_row(median_dict)
 
     return tbl_
+
+
+def lacom(value: str):
+    return str(value).replace(
+        "-", ""
+    ).replace(
+        " ", ""
+    ).replace(
+        "_", ""
+    ).replace(
+        " ", ""
+    ).replace(
+        "$", ""
+    ).replace(
+        ",", ""
+    ).replace(
+        "<", ""
+    ).replace(
+        ">", ""
+    )
+    for i in range(10):
+        value = value.replace(str(i), "")
+
+def latex_command(command: str, value: Any) -> str:
+    value = str(value)
+    command = lacom(command)
+    return "\\newcommand{\\" + command + "}{" + value + "}\n"
+
+
+def latex_command_file(command_dict: dict, output_path: str = None) -> list:
+    lines = []
+    for key, value in command_dict.items():
+        lines.append(latex_command(key, value))
+    if output_path is not None:
+        with open(output_path, "w") as f:
+            f.writelines(lines)
+    return lines
