@@ -2023,7 +2023,7 @@ def add_stats(
 
 
 def lacom(value: str):
-    return str(value).replace(
+    value = str(value).replace(
         "-", ""
     ).replace(
         " ", ""
@@ -2039,9 +2039,20 @@ def lacom(value: str):
         "<", ""
     ).replace(
         ">", ""
+    ).replace(
+        "&", ""
+    ).replace(
+        "\\", ""
+    ).replace(
+        "(", ""
+    ).replace(
+        ")", ""
+    ).replace(
+        "+", ""
     )
     for i in range(10):
         value = value.replace(str(i), "")
+    return value
 
 def latex_command(command: str, value: Any) -> str:
     value = str(value)
