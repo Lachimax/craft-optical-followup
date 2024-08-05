@@ -370,6 +370,7 @@ class FRB(ExtragalacticTransient):
         path_cat = None
         p_u = float(np.round(p_u, 4))
         for tbl_name in self.host_candidate_tables[p_u]:
+            print(tbl_name)
             if tbl_name == "consolidated":
                 continue
             if p_ox_assign is None:
@@ -399,12 +400,13 @@ class FRB(ExtragalacticTransient):
 
             for row in matched[np.invert(matched["matched"])]:
                 print(
-                    f'Adding label {row["label"]} from {tbl_name} table. ra={row["ra"]}, dec={row["dec"]}, {sort_by}_{p_ox_assign}')
+                    f'Adding label {row["label"]} from {tbl_name} table. ra={row["ra"]}, dec={row["dec"]}, P_Ox_{p_ox_assign}')
                 path_cat.add_row(row[path_cat.colnames])
 
         # path_cat["coord"] = SkyCoord(path_cat["ra"], path_cat["dec"])
         if sort_by == "P_Ox":
             sort_by = f"P_Ox_{p_ox_assign}"
+        print("HERE", path_cat.colnames)
         path_cat.sort(sort_by, reverse=reverse_sort)
         ids = []
         id_strs = []

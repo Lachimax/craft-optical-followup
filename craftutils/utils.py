@@ -675,10 +675,40 @@ def inclination(
     :param q_0: Axis ratio if viewed fully edge-on.
     :return: Inclination angle in degrees.
     """
+    if axis_ratio < q_0:
+        if uncos:
+            return 90 * units.deg
+        else:
+            return units.Quantity(0.)
     if uncos:
         return (np.arccos(np.sqrt((axis_ratio ** 2 - q_0 ** 2) / (1 - q_0 ** 2))) * units.rad).to(units.deg)
     else:
         return np.sqrt((axis_ratio ** 2 - q_0 ** 2) / (1 - q_0 ** 2))
+
+
+def inclination_array(
+        axis_ratio,
+        q_0,
+        uncos: bool = True
+):
+    return units.Quantity([inclination(ab, q_0, uncos=uncos) for ab in axis_ratio])
+
+
+def inclination_table(
+        tbl: table.QTable,
+        axis_ratio_column: str,
+        inclination_column: str,
+        cos_column: str = None,
+        q_0: float = 0.2
+):
+    tbl[inclination_column] = [-999 * units.deg] * len(tbl)
+    if cos_column is not None:
+        tbl[cos_column] = [units.Quantity(-999.)] * len(tbl)
+    for row in tbl:
+        row[inclination_column] = inclination(axis_ratio=row[axis_ratio_column], q_0=q_0)
+        if cos_column is not None:
+            row[cos_column] = inclination(axis_ratio=row[axis_ratio_column], q_0=q_0, uncos=False)
+    return tbl
 
 
 def deprojected_offset(
@@ -1222,6 +1252,8 @@ def uncertainty_string(
         value_rnd = np.round(value, -x)
         value_str = str(value_rnd)[:v_point - x] + "0" * x
         uncertainty_str = str(uncertainty_rnd)[:n_digits_err] + "0" * x
+        if float(value_str) == 0:
+            value_str = "0"
         # print(uncertainty_str, oom + 1)
 
     oom = np.floor(np.log10(uncertainty_rnd))
@@ -2053,6 +2085,7 @@ def lacom(value: str):
     for i in range(10):
         value = value.replace(str(i), "")
     return value
+
 
 def latex_command(command: str, value: Any) -> str:
     value = str(value)

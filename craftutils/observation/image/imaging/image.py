@@ -661,6 +661,7 @@ class ImagingImage(Image):
             width=2 * a.to(units.pix, self.pixel_scale_y).value,
             height=2 * b.to(units.pix, self.pixel_scale_y).value,
             angle=theta + 90,
+            zorder=1,
             **kwargs
         )
         # e.set_edgecolor(color)

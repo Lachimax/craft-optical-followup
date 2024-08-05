@@ -291,13 +291,15 @@ class PositionUncertainty:
             do_equ = True
 
         if do_equ:
-            a_eq, b_eq = self.uncertainty_quadrature_equ()
-            if a_eq is not None and b_eq is not None:
-                if b_quad > a_quad:
-                    theta = 0 * units.deg
-                else:
+            ra_err, dec_err = self.uncertainty_quadrature_equ()
+            if ra_err is not None and dec_err is not None:
+                a_quad = max(ra_err, dec_err)
+                b_quad = min(ra_err, dec_err)
+                if ra_err > dec_err:
                     theta = 90 * units.deg
-        return max(a_quad, b_quad), min(a_quad, b_quad), theta
+                else:
+                    theta = 0 * units.deg
+        return a_quad, b_quad, theta
 
     def uncertainty_quadrature_equ(self):
         if self.ra_total is None or self.dec_total is None:

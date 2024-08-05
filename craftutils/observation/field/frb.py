@@ -275,11 +275,6 @@ class FRBField(Field):
         rotation_angle = img.extract_rotation_angle(ext=ext)
         theta = theta - rotation_angle
         img.extract_pixel_scale()
-        print()
-        print(a, b, theta)
-        print(uncertainty.a, uncertainty.b, uncertainty.theta)
-        print(uncertainty.ra_total, uncertainty.dec_total)
-        print()
 
         if "include_img_err" in frb_kwargs:
             include_img_err = frb_kwargs.pop("include_img_err")
@@ -365,6 +360,7 @@ class FRBField(Field):
         max_p_ox = None
         while max_p_ox in (None, 0.) and images:
             path_img_this = images.pop(0)
+            print(f"{path_img_this.name=}")
             vals, tbl, z_lost = self.frb.host_probability_unseen(
                 img=path_img_this,
                 sample="Gordon+2023",
@@ -404,6 +400,8 @@ class FRBField(Field):
 
         print("fil_list", len(fil_list))
         images = list(map(lambda f: self.deepest_in_band(fil=f)["image"], fil_list))
+        if path_img not in images:
+            images.append(path_img)
 
         for p_u in p_us:
             for img in images:
