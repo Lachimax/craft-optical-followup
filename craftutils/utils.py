@@ -1897,8 +1897,6 @@ def latexise_table(
                     **coord_kwargs
                 )
             else:
-                print(row)
-                print(row[ra_col])
                 ra_str = Longitude(row[ra_col]).to_string("h", format="latex")
                 dec_str = Latitude(row[dec_col]).to_string(format="latex")
             ra_strs.append(ra_str)
@@ -1932,7 +1930,7 @@ def latexise_table(
     err_colnames = list(filter(lambda c: c.endswith(err_suffix), tbl.colnames))
     for err_col in err_colnames:
         val_col = err_col[:-len(err_suffix)]
-        if val_col in exclude_from_unc:
+        if val_col in round_cols or val_col in exclude_from_unc:
             continue
         # print(colname, do_err_str, err_col, err_col in tbl.colnames)
         new_col = []
@@ -1946,6 +1944,7 @@ def latexise_table(
             default_unc_kwargs.update(uncertainty_kwargs)
         uncertainty_kwargs = default_unc_kwargs
         for row in tbl:
+            # print(val_col, row[val_col])
             this_str, value, uncertainty = uncertainty_string(
                 value=row[val_col],
                 uncertainty=row[err_col],

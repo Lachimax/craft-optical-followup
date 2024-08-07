@@ -400,7 +400,8 @@ class FRBField(Field):
 
         print("fil_list", len(fil_list))
         images = list(map(lambda f: self.deepest_in_band(fil=f)["image"], fil_list))
-        if path_img not in images:
+        print(path_img)
+        if path_img is not None and path_img not in images:
             images.append(path_img)
 
         for p_u in p_us:
