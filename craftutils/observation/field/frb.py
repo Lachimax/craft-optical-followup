@@ -346,77 +346,49 @@ class FRBField(Field):
         fil_list = self.best_fil_for_path()
         pl.latex_setup()
 
-        img_fixed = False
+        images = list(map(lambda f: self.deepest_in_band(fil=f)["image"], fil_list))
+
         if path_img is not None:
-            img_fixed = True
             path_img = self.imaging[path_img]["image"]
-            images = [path_img]
+            if path_img not in images:
+                images.insert(0, path_img)
         else:
-            print("fil_list", len(fil_list))
-            images = list(map(lambda f: self.deepest_in_band(fil=f)["image"], fil_list))
+            path_img = images[0]
 
-        p_us = [0., 0.1, 0.2]
-
-        max_p_ox = None
-        while max_p_ox in (None, 0.) and images:
-            path_img_this = images.pop(0)
-            print(f"{path_img_this.name=}")
-            vals, tbl, z_lost = self.frb.host_probability_unseen(
-                img=path_img_this,
-                sample="Gordon+2023",
-                n_z=500
-            )
-            if vals is not None:
-                p_u = float(vals["P(U)"]["step"])
-            else:
-                p_u = 0.1
-            path_kwargs["priors"]["U"] = p_u
-            cand_tbl, write_dict = self.frb.probabilistic_association(
-                img=path_img_this,
-                do_plot=True,
-                **path_kwargs
-            )
-            max_p_ox = write_dict["max_P(O|x_i)"]
-            if max_p_ox is None:
-                img_fixed = False
-            # if cand_tbl is not None:
-            #     path_cat = self.frb.consolidate_candidate_tables(
-            #         sort_by="P_Ox",
-            #         reverse_sort=True,
-            #         p_ox_assign=path_img.name,
-            #         p_u=p_u
-            #     )
-            if path_img_this.name not in self.path_runs:
-                self.path_runs[path_img_this.name] = {}
-            self.path_runs[path_img_this.name]["calculated"] = write_dict
         # if max_p_ox is not None:
         #     self.add_path_candidates()
 
-        if max_p_ox is None:
-            if images:
-                path_img = images[0]
-            else:
-                path_img = None
-
         print("fil_list", len(fil_list))
-        images = list(map(lambda f: self.deepest_in_band(fil=f)["image"], fil_list))
-        print(path_img)
-        if path_img is not None and path_img not in images:
-            images.append(path_img)
 
-        for p_u in p_us:
-            for img in images:
+        max_p_ox = None
+        while max_p_ox in (None, 0.) and images:
+            img = images.pop()
+            p_us = [0., 0.1, 0.2]
+            p_u_calculated = -999.
+            if self.survey == "CRAFT_ICS":
+                vals, tbl, z_lost = self.frb.host_probability_unseen(
+                    img=img,
+                    sample="Gordon+2023",
+                    n_z=500
+                )
+                if vals is not None:
+                    p_u_calculated = float(vals["P(U)"]["step"])
+                    p_us.append(p_u_calculated)
+            for p_u in p_us:
                 path_kwargs["priors"]["U"] = p_u
                 cand_tbl, write_dict = self.frb.probabilistic_association(
                     img=img,
                     do_plot=True,
                     **path_kwargs
                 )
-                if img.name not in self.path_runs:
-                    self.path_runs[img.name] = {}
-                self.path_runs[img.name][p_u] = write_dict
-            if path_img is None:
-                path_img = images[0]
+                max_p_ox = write_dict["max_P(O|x_i)"]
+                if max_p_ox is not None:
+                    path_img = img
+                    if img.name not in self.path_runs:
+                        self.path_runs[img.name] = {}
+                    self.path_runs[img.name][p_u] = write_dict
+                    if p_u == p_u_calculated:
+                        self.path_runs[img.name]["calculated"] = write_dict
 
         path_cat = self.frb.consolidate_candidate_tables(
             sort_by="P_Ox",

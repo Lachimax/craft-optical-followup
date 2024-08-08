@@ -206,6 +206,7 @@ class FRB(ExtragalacticTransient):
         b = np.sqrt(b ** 2 + astm_rms ** 2)
         # theta = self.position_err.theta
         x_frb = self.generate_x_frb()
+        print(f"Passing {self.name}, with {a=}, {b=}, {theta=}")
         x_frb.set_ee(
             a=a.value,
             b=b.value,
@@ -229,8 +230,9 @@ class FRB(ExtragalacticTransient):
         elif "max_radius" in config:
             max_radius = config["max_radius"]
         else:
-            max_radius = 20.
-
+            max_radius = 40.
+        import matplotlib
+        # matplotlib.use("Qt5Agg")
         config_n = dict(
             max_radius=int(max_radius),
             skip_bayesian=False,
@@ -270,91 +272,94 @@ class FRB(ExtragalacticTransient):
         print("Config:", config)
         print()
 
-        if "show" not in associate_kwargs:
-            associate_kwargs["show"] = show
+        # if "show" not in associate_kwargs:
+        #     associate_kwargs["show"] = show
 
-        try:
-            ass = associate.run_individual(
-                config=config,
-                FRB=x_frb,
-                prior=prior_set,
-                **associate_kwargs,
-                # extinction_correct=True
+        # try:
+        print("Trying...")
+        ass = associate.run_individual(
+            config=config,
+            FRB=x_frb,
+            prior=prior_set,
+            show=True,
+            **associate_kwargs,
+            # extinction_correct=True
+        )
+        p_ux = ass.P_Ux
+        print("P(U|x) ==", p_ux)
+        cand_tbl = table.QTable.from_pandas(ass.candidates)
+        if "P_Ux" not in cand_tbl.colnames:
+            cand_tbl["P_Ux"] = [p_ux] * len(cand_tbl)
+
+        if np.isnan(p_ux):
+            p_ux = None
+
+        cand_tbl["P_U"] = [p_u] * len(cand_tbl)
+        max_p_ox = cand_tbl[0]["P_Ox"]
+        print("Max P(O|x_i) ==", max_p_ox)
+        if np.ma.is_masked(max_p_ox):
+            max_p_ox = None
+        print("\n\n")
+        cand_tbl["ra"] *= units.deg
+        cand_tbl["dec"] *= units.deg
+        coord = SkyCoord(cand_tbl["ra"], cand_tbl["dec"])
+        cand_tbl["x"], cand_tbl["y"] = img.world_to_pixel(coord=coord)
+        cand_tbl["separation"] *= units.arcsec
+        cand_tbl[filname] *= units.mag
+        p_u_rnd = np.round(p_u, 4)
+        if p_u_rnd not in self.host_candidate_tables:
+            self.host_candidate_tables[p_u_rnd] = {}
+        self.host_candidate_tables[p_u_rnd][img.name] = cand_tbl
+        self.update_output_file()
+
+        if do_plot and isinstance(self.field, FRBField) and (show or output_dir):
+            fig = plt.figure(figsize=(12, 12))
+            fig, ax, _ = self.field.plot_host(
+                img=img,
+                fig=fig,
+                frame=cand_tbl["separation"].max(),
+                centre=self.position
             )
-            p_ux = ass.P_Ux
-            print("P(U|x) ==", p_ux)
-            cand_tbl = table.QTable.from_pandas(ass.candidates)
-            if "P_Ux" not in cand_tbl.colnames:
-                cand_tbl["P_Ux"] = [p_ux] * len(cand_tbl)
-
-            if np.isnan(p_ux):
-                p_ux = None
-
-            cand_tbl["P_U"] = [p_u] * len(cand_tbl)
-            max_p_ox = cand_tbl[0]["P_Ox"]
-            print("Max P(O|x_i) ==", max_p_ox)
-            if np.ma.is_masked(max_p_ox):
-                max_p_ox = None
-            print("\n\n")
-            cand_tbl["ra"] *= units.deg
-            cand_tbl["dec"] *= units.deg
-            coord = SkyCoord(cand_tbl["ra"], cand_tbl["dec"])
-            cand_tbl["x"], cand_tbl["y"] = img.world_to_pixel(coord=coord)
-            cand_tbl["separation"] *= units.arcsec
-            cand_tbl[filname] *= units.mag
-            p_u_rnd = np.round(p_u, 4)
-            if p_u_rnd not in self.host_candidate_tables:
-                self.host_candidate_tables[p_u_rnd] = {}
-            self.host_candidate_tables[p_u_rnd][img.name] = cand_tbl
-            self.update_output_file()
-
-            if do_plot and isinstance(self.field, FRBField) and (show or output_dir):
-                fig = plt.figure(figsize=(12, 12))
-                fig, ax, _ = self.field.plot_host(
-                    img=img,
-                    fig=fig,
-                    frame=cand_tbl["separation"].max(),
-                    centre=self.position
-                )
-                c = ax.scatter(cand_tbl["x"], cand_tbl["y"], marker="x", c=cand_tbl["P_Ox"], cmap="bwr_r")
-                cbar = fig.colorbar(c)
-                cbar.set_label("$P(O|x)_i$")
-                if show:
-                    plt.show(fig)
-                if output_dir:
-                    fig.savefig(os.path.join(output_dir, f"{self.name}_PATH_{img.name}_PU_{p_u}.pdf"))
-                plt.close(fig)
-
-            write_dict = {
-                "priors": prior_set,
-                "config": config_n,
-                "max_P(O|x_i)": max_p_ox,
-                "P(U|x)": p_ux,
-                "output_dir": output_dir,
-            }
-
+            c = ax.scatter(cand_tbl["x"], cand_tbl["y"], marker="x", c=cand_tbl["P_Ox"], cmap="bwr_r")
+            cbar = fig.colorbar(c)
+            cbar.set_label("$P(O|x)_i$")
+            if show:
+                plt.show(fig)
             if output_dir:
-                for fmt in ("csv", "ecsv"):
-                    cand_tbl.write(
-                        os.path.join(output_dir, f"{self.name}_PATH_{img.name}_PU_{p_u}.{fmt}"),
-                        format=f"ascii.{fmt}",
-                        overwrite=True
-                    )
+                fig.savefig(os.path.join(output_dir, f"{self.name}_PATH_{img.name}_PU_{p_u}.pdf"))
+            plt.close(fig)
 
-                p.save_params(
-                    os.path.join(output_dir, f"{self.name}_PATH_{img.name}_PU_{p_u}.yaml"),
-                    write_dict
+        write_dict = {
+            "priors": prior_set,
+            "config": config_n,
+            "max_P(O|x_i)": max_p_ox,
+            "P(U|x)": p_ux,
+            "output_dir": output_dir,
+        }
+
+        if output_dir:
+            for fmt in ("csv", "ecsv"):
+                cand_tbl.write(
+                    os.path.join(output_dir, f"{self.name}_PATH_{img.name}_PU_{p_u}.{fmt}"),
+                    format=f"ascii.{fmt}",
+                    overwrite=True
                 )
 
-        except IndexError:
-            write_dict = {
-                "priors": prior_set,
-                "config": config_n,
-                "max_P(O|x_i)": None,
-                "P(U|x)": None,
-                "output_dir": output_dir,
-            }
-            cand_tbl = None
+            p.save_params(
+                os.path.join(output_dir, f"{self.name}_PATH_{img.name}_PU_{p_u}.yaml"),
+                write_dict
+            )
+
+        # except IndexError:
+        #     print("Failed.")
+        #     write_dict = {
+        #         "priors": prior_set,
+        #         "config": config_n,
+        #         "max_P(O|x_i)": None,
+        #         "P(U|x)": None,
+        #         "output_dir": output_dir,
+        #     }
+        #     cand_tbl = None
 
         return cand_tbl, write_dict
 
