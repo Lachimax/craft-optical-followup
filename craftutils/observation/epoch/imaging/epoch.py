@@ -1547,7 +1547,10 @@ class ImagingEpoch(Epoch):
         #         image_type=image_type_path,
         #         **path_kwargs
         #     )
-        self.get_photometry(output_dir, image_type=image_type, **kwargs)
+        if not self.data_bad:
+            self.get_photometry(output_dir, image_type=image_type, **kwargs)
+        else:
+            print(f"Skipping 'get_photometry' due to data quality (data_bad==True in param file.)")
 
     def did_local_background_subtraction(self):
         if "subtract_background_frames" in self.do_param:

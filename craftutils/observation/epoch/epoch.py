@@ -304,6 +304,10 @@ class Epoch(Pipeline):
 
         active_epochs[self.name] = self
 
+        self.data_bad = False
+        if "data_bad" in kwargs:
+            self.data_bad = kwargs["data_bad"]
+
     def is_excluded(self, frame: Union[image.Image, str]):
         if isinstance(frame, image.Image):
             ident = frame.name

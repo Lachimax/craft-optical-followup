@@ -522,10 +522,6 @@ class FRB(ExtragalacticTransient):
         dictionary.update({
             "host_galaxy": self.host_galaxy.name,
         })
-        if isinstance(self.transient, str):
-            dictionary["transient"] = self.transient
-        else:
-            dictionary["transient"] = self.transient.name
         return dictionary
 
     @classmethod
@@ -562,6 +558,7 @@ class FRB(ExtragalacticTransient):
                         print(f"{key} not found in {old_name}.")
         host_galaxy.set_name(name=hg_name)
         self.host_galaxy = host_galaxy
+        self.host_galaxy.transient = self
         self.update_param_file("host_galaxy")
         from craftutils.observation.field import Field
         if isinstance(self.field, Field):

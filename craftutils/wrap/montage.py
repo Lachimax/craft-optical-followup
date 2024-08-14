@@ -108,7 +108,7 @@ def inject_header(
         f"EXPTIME": np.nanmean(table[important_keys["exposure_time"]]),
         f"FILTER": template.extract_filter(),
         f"INSTRUME": template.instrument_name,
-        f"RON": template.extract_noise_read().value,
+        f"RON": template.extract_noise_read().value * np.sqrt(len(table)),
         f"BUNIT": template.extract_unit(),
         f"GAIA": template.extract_header_item("GAIA")
     }

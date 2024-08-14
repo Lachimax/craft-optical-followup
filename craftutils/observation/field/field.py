@@ -209,7 +209,7 @@ class Field(Pipeline):
     def proc_update_photometry(self, output_dir: str, **kwargs):
         self.force_stage_all_epochs(
             stage="get_photometry",
-            # skip_plots=True,
+            skip_plots=True,
             skip_path=True,
             **kwargs
         )

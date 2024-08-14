@@ -59,6 +59,13 @@ class TransientHostCandidate(Galaxy):
             self,
             **kwargs
     ):
+        select = True
+        if "select" in kwargs:
+            select = kwargs["select"]
+        local_output = True
+        if "local_output" in kwargs:
+            select = kwargs["local_output"]
+
         row, _ = super().assemble_row(**kwargs)
         if not self._check_transient():
             self.get_transient()
@@ -78,6 +85,24 @@ class TransientHostCandidate(Galaxy):
             row["path_img"] = self.probabilistic_association_img
         else:
             row["path_img"] = "N/A"
+
+        for instrument in self.photometry:
+            for fil in self.photometry[instrument]:
+                band_str = f"{instrument}_{fil.replace('_', '-')}"
+                if select:
+                    best_photom, mean_photom = self.select_photometry_sep(
+                        fil, instrument,
+                        local_output=local_output
+                    )
+                else:
+                    best_photom, mean_photom = self.select_photometry(
+                        fil,
+                        instrument,
+                        local_output=local_output
+                    )
+                row[f"transient_position_surface_brightness_{band_str}"] = best_photom["transient_position_surface_brightness"]
+                row[f"transient_position_surface_brightness_{band_str}_err"] = best_photom["transient_position_surface_brightness_err"]
+
         return row, "optical"
 
     @classmethod

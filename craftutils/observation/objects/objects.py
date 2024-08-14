@@ -186,6 +186,16 @@ class Object(Generic):
         for cat in self.field.cats:
             pass
 
+    def surface_brightness_at_position(self, img):
+        x, y = img.world_to_pixel(coord=self.position)
+        x = int(x)
+        y = int(y)
+        pixels, err = img.surface_brightness()
+        p_xy = pixels[y, x]
+        err_xy = err[y, x]
+        ext = self.galactic_extinction(fil=img.filter) / units.arcsec ** 2
+        return p_xy - ext, err_xy
+
     def get_good_photometry(self):
 
         import craftutils.observation.image as image
@@ -218,6 +228,12 @@ class Object(Generic):
             ),
             mask_nearby=deep_mask
         )
+
+        from .transient_host import TransientHostCandidate
+        if isinstance(self, TransientHostCandidate):
+            sb, sb_err = self.transient.surface_brightness_at_position(img=deepest_img)
+            deepest_dict["transient_position_surface_brightness"] = sb
+            deepest_dict["transient_position_surface_brightness_err"] = sb_err
 
         if mag_results is not None:
             deepest_dict["mag_sep"] = mag_results["mag"][0]
@@ -268,6 +284,11 @@ class Object(Generic):
                         output=os.path.join(self.data_path, f"{self.name_filesys}_{instrument}_{band}_{epoch}"),
                         mask_nearby=mask_rp
                     )
+
+                    if isinstance(self, TransientHostCandidate):
+                        sb, sb_err = self.transient.surface_brightness_at_position(img=img)
+                        phot_dict["transient_position_surface_brightness"] = sb
+                        phot_dict["transient_position_surface_brightness_err"] = sb_err
 
                     if mag_results is not None:
                         phot_dict["mag_sep"] = mag_results["mag"][0]
@@ -1182,14 +1203,20 @@ class Object(Generic):
                     band_str = f"{instrument}_{fil.replace('_', '-')}"
 
                     if select:
-                        best_photom, mean_photom = self.select_photometry_sep(fil, instrument,
-                                                                              local_output=local_output)
+                        best_photom, mean_photom = self.select_photometry_sep(
+                            fil, instrument,
+                            local_output=local_output
+                        )
                         row[f"mag_best_{band_str}"] = best_photom["mag_sep"]
                         row[f"mag_best_{band_str}_err"] = best_photom["mag_sep_err"]
                         row[f"snr_best_{band_str}"] = best_photom["snr_sep"]
 
                     else:
-                        best_photom, mean_photom = self.select_photometry(fil, instrument, local_output=local_output)
+                        best_photom, mean_photom = self.select_photometry(
+                            fil,
+                            instrument,
+                            local_output=local_output
+                        )
                         row[f"mag_best_{band_str}"] = best_photom["mag"]
                         row[f"mag_best_{band_str}_err"] = best_photom["mag_err"]
                         row[f"snr_best_{band_str}"] = best_photom["snr"]

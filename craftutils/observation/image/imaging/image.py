@@ -237,7 +237,6 @@ class ImagingImage(Image):
                 catalog_type="ASCII_HEAD",
                 **se_kwargs
             )
-            print(cat_prelim_path)
             cat_prelim = catalog.SECatalogue(se_path=cat_prelim_path, image=self)
             cat = cat_prelim.table
 
@@ -256,7 +255,6 @@ class ImagingImage(Image):
             fwhm_gauss = stars_clip[col]
             print()
             fwhm = np.nanmedian(fwhm_gauss).to(units.arcsec)
-            print(fwhm)
             if fwhm > 5 * units.arcsec:
                 fwhm = 1.5 * units.arcsec
 
@@ -817,6 +815,10 @@ class ImagingImage(Image):
             u.debug_print(2, "Pixel scale already set.")
 
         return self.pixel_scale_x, self.pixel_scale_y
+
+    def pixel_area(self, ext: int = 0):
+        x_scale, y_scale = self._pixel_scale(ext=ext)
+        return x_scale.to("arcsec") * y_scale.to("arcsec")
 
     def extract_world_scale(self, ext: int = 0, force: bool = False):
         x, y = self._pixel_scale(ext=ext)
@@ -2296,9 +2298,9 @@ class ImagingImage(Image):
     ):
         self.load_data()
         self.load_output_file()
-        data = self.data[ext]
+        data = self.data[ext] * 1.
         if sub_back:
-            _, bkg = self.model_background_photometry(**back_kwargs)
+            _, bkg = self.model_background_photometry(force=True, **back_kwargs)
             data -= bkg
         data[data <= 0] = 0.
         return self.magnitude(
@@ -2311,8 +2313,9 @@ class ImagingImage(Image):
     ):
         self.load_data()
         self.load_output_file()
-        data = self.data[ext].value
-        pix_mags = self.pixel_magnitudes()
+        pix_mags, pix_mags_err, _, _ = self.pixel_magnitudes(sub_back=True, ext=ext)
+        surf_brightness = pix_mags.value + 2.5 * np.log10(self.pixel_area() / units.arcsec ** 2)
+        return surf_brightness * units.mag / units.arcsec ** 2, pix_mags_err / units.arcsec ** 2
 
     def reproject(
             self,
@@ -2917,7 +2920,6 @@ class ImagingImage(Image):
                 y = default_astm.pop("y")
                 x_disp, y_disp = ax.transAxes.transform((x, y))
                 x_data, y_data = ax.transData.inverted().transform((x_disp, y_disp))
-                print(f"{x=}, {y=}, {x_data=}, {y_data=}")
                 # ax.scatter(x_data, y_data, marker="x")
                 ax.errorbar(
                     x_data,
@@ -2973,7 +2975,6 @@ class ImagingImage(Image):
         # if isinstance(x, units.Quantity):
         #     if x.decompose().unit == units.rad:
         #         x = x.to(units.pix, self.pixel_scale_x)
-        print("scale_bar:", obj, obj.z)
         physical_scale = True
         if obj is None or obj.z is None or obj.z < 0.:
             physical_scale = False
@@ -3481,7 +3482,6 @@ class ImagingImage(Image):
 
         if ap_radius is None:
             psf = self.extract_header_item("PSF_FWHM", ext=ext)
-            print(psf)
             if psf is not None and psf < 0:
                 psf = None
             if psf is None:
@@ -3497,7 +3497,6 @@ class ImagingImage(Image):
         self.model_background_photometry(method="sep", do_mask=True, ext=ext, **kwargs)
         rms = self.sep_background[ext].rms()
 
-        print([x], [y], ap_radius_pix, ap_radius, pix_scale)
         flux, _, _ = sep.sum_circle(rms ** 2, [x], [y], ap_radius_pix)
         sigma_flux = np.sqrt(flux)
 
@@ -3710,9 +3709,6 @@ class ImagingImage(Image):
             ext=ext
         )
 
-        print("")
-        print(self.filename)
-
         data = self.data[ext] * 1  # [bottom:top, left:right] * 1
 
         if generate_mask:
@@ -3850,11 +3846,19 @@ class ImagingImage(Image):
             filter_size: int = 3,
             method: str = "sep",
             write: str = None,
+            write_err: str = None,
             write_subbed: str = None,
             do_mask: bool = False,
+            force: bool = True,
             **back_kwargs
     ):
         self.load_data()
+
+        if not force and self.data_sub_bkg[ext] is not None:
+            if method == "sep":
+                return self.sep_background[ext], self.sep_background[ext].back()
+            else:
+                return self.pu_background[ext], self.pu_background[ext].background
 
         mask = None
         if do_mask:
@@ -3862,7 +3866,7 @@ class ImagingImage(Image):
             mask = mask.astype(bool)
 
         if method == "sep":
-            data = u.sanitise_endianness(self.data[ext])
+            data = u.sanitise_endianness(self.data[ext] * 1)
             bkg = self.sep_background[ext] = sep.Background(
                 data,
                 bw=box_size, bh=box_size,
@@ -3874,10 +3878,10 @@ class ImagingImage(Image):
                 bkg_data = bkg.back() * data.unit
             else:
                 bkg_data = bkg.back()
-            self.data_sub_bkg[ext] = (data - bkg_data)
+            self.data_sub_bkg[ext] = (data * 1 - bkg_data)
 
         elif method == "photutils":
-            data = self.data[ext]
+            data = self.data[ext] * 1.
             sigma_clip = SigmaClip(sigma=3.)
             bkg_estimator = photutils.MedianBackground()
             bkg = self.pu_background[ext] = photutils.Background2D(
@@ -3901,11 +3905,18 @@ class ImagingImage(Image):
             back_file.data[ext] = bkg_data
             back_file.write_fits_file()
 
+        if isinstance(write_err, str):
+            err_file = self.copy(write_err, suffix=f"err_{method}")
+            err_file.load_data()
+            err_file.load_headers()
+            err_file.data[ext] = bkg.rms() * bkg_data.unit
+            err_file.write_fits_file()
+
         if isinstance(write_subbed, str):
             subbed_file = self.copy(write_subbed, suffix=f"background-subtracted_{method}")
             subbed_file.load_data()
             subbed_file.load_headers()
-            subbed_file.data[ext] = self.data[ext] - bkg_data
+            subbed_file.data[ext] = self.data[ext] * 1. - bkg_data
             subbed_file.write_fits_file()
 
         return bkg, bkg_data
@@ -3913,7 +3924,7 @@ class ImagingImage(Image):
     def generate_segmap(
             self,
             ext: int = 0,
-            threshold: float = 4,
+            threshold: float = 4.,
             method="sep",
             margins: tuple = (None, None, None, None),
             min_area: int = 5,
@@ -3933,7 +3944,7 @@ class ImagingImage(Image):
         data = self.data[ext]
         left, right, bottom, top = u.check_margins(data=data, margins=margins)
 
-        bkg, bkg_data = self.model_background_photometry(method=method, ext=ext, **background_kwargs)
+        bkg, bkg_data = self.model_background_photometry(method=method, ext=ext, force=False, **background_kwargs)
 
         if method == "photutils":
             data_trim = u.trim_image(
@@ -3954,7 +3965,7 @@ class ImagingImage(Image):
         elif method == "sep":
             # The copying is done here to avoid 'C-contiguous' errors in SEP.
             data_trim = u.sanitise_endianness(
-                u.trim_image(self.data_sub_bkg[ext], margins=margins)
+                u.trim_image(self.data_sub_bkg[ext] * 1., margins=margins)
             ).copy()
             err = u.trim_image(bkg.rms(), margins=margins).copy()
             u.debug_print(2, f"{self}.generate_segmap(): type(err) ==", type(err), "err.shape ==", err.shape)
@@ -4148,12 +4159,22 @@ class ImagingImage(Image):
             output = self.path.replace(".fits", "_sep")
         if isinstance(output, str):
             back_output = output + "_back.fits"
+            subbed_output = output + "_back-subbed.fits"
+            err_output = output + "_err.fits"
             segmap_output = output + "_segmap.fits"
         else:
             back_output = None
+            subbed_output = None
             segmap_output = None
+            err_output = None
 
-        self.model_background_photometry(ext=ext, write=back_output, do_mask=True)
+        self.model_background_photometry(
+            ext=ext,
+            write=back_output,
+            write_err=err_output,
+            write_subbed=subbed_output,
+            do_mask=True
+        )
         self.load_wcs()
         self.extract_pixel_scale()
         if not self.wcs[ext].footprint_contains(centre):
@@ -4404,10 +4425,12 @@ class ImagingImage(Image):
             new.load_headers()
             old_exptime = self.extract_header_item(key="OLD_EXPTIME", ext=ext)
             old_gain = self.extract_header_item(key="OLD_GAIN", ext=ext)
+            old_rdnoise = self.extract_header_item(key="OLD_RDNOISE")
             if old_exptime is not None and old_gain is not None:
                 new.set_header_items(
                     {
-                        "GAIN": old_exptime * old_gain
+                        "GAIN": old_exptime * old_gain,
+                        "RDNOISE": old_rdnoise
                     }
                 )
             new.write_fits_file()
@@ -4856,7 +4879,6 @@ class ImagingImage(Image):
         # best_index, best_dict = galfit.sersic_best_row(model_tbls[f"COMP_{pivot_component}"])
         for component in model_tbls:
             if "position_angle" in model_tbls[component].colnames:
-                print(model_tbls[component]["position_angle"])
                 theta = model_tbls[component]["position_angle"]
                 rotation_angle = self.extract_rotation_angle()
                 theta = (theta + rotation_angle).to("deg")
@@ -4864,7 +4886,6 @@ class ImagingImage(Image):
                 for d in model_dicts[component]:
                     d["position_angle"] = theta
             if "r_eff_ang" in model_tbls[component].colnames:
-                print(model_tbls[component]["r_eff_ang"])
                 r_eff_proj = obj.projected_size(angle=model_tbls[component]["r_eff_ang"])
                 if r_eff_proj is not None:
                     r_eff_proj = r_eff_proj.to("kpc")
@@ -4900,7 +4921,6 @@ class ImagingImage(Image):
             if "object_type" in best_params[component]:
                 best_params[component]["object_type"] = str(best_params[component]["object_type"])
 
-        # print(best_params)
         for k, v in best_params[f"COMP_{pivot_component}"].items():
             print(k, "\t\t\t", v)
         best_params["image"] = self.path
@@ -4974,7 +4994,6 @@ class ImagingImage(Image):
             elif cat == "calib_pipeline":
                 differences[cat] = 0.1 * units.angstrom
 
-        print(differences)
         differences = dict(sorted(differences.items(), key=lambda x: x[1]))
         return list(differences.keys()), list(differences.values())
 
