@@ -719,7 +719,7 @@ class ImagingImage(Image):
                 epoch_date=str(self.epoch.date.isot),
                 class_star=row["CLASS_STAR"],
                 spread_model=row["SPREAD_MODEL"],
-                spread_model_err=row["SPREADERR_MODEL"],
+                spread_model_err=row["SPREAD imERR_MODEL"],
                 class_flag=row["CLASS_FLAG"],
                 mag_psf=row["MAG_PSF_ZP_best"],
                 mag_psf_err=row["MAGERR_PSF_ZP_best"],

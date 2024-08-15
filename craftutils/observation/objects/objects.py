@@ -232,18 +232,18 @@ class Object(Generic):
         from .transient_host import TransientHostCandidate
         if isinstance(self, TransientHostCandidate):
             sb, sb_err = self.transient.surface_brightness_at_position(img=deepest_img)
-            deepest_dict["transient_position_surface_brightness"] = sb
-            deepest_dict["transient_position_surface_brightness_err"] = sb_err
+            deepest_dict["transient_position_surface_brightness"] = float(sb.value) * units.mag / units.arcsec ** 2
+            deepest_dict["transient_position_surface_brightness_err"] = float(sb_err.value) * units.mag / units.arcsec ** 2
 
         if mag_results is not None:
             deepest_dict["mag_sep"] = mag_results["mag"][0]
             deepest_dict["mag_sep_err"] = mag_results["mag_err"][0]
             deepest_dict["snr_sep"] = mag_results["snr"][0]
-            deepest_dict["back_sep"] = mag_results["back"][0]
-            deepest_dict["flux_sep"] = mag_results["flux"][0]
-            deepest_dict["flux_sep_err"] = mag_results["flux_err"][0]
-            deepest_dict["limit_threshold"] = mag_results["threshold"]
-            deepest_dict["peak"] = mag_results["peak"]
+            deepest_dict["back_sep"] = float(mag_results["back"][0])
+            deepest_dict["flux_sep"] = float(mag_results["flux"][0])
+            deepest_dict["flux_sep_err"] = float(mag_results["flux_err"][0])
+            deepest_dict["limit_threshold"] = float(mag_results["threshold"])
+            deepest_dict["peak"] = float(mag_results["peak"])
         else:
             deepest_dict["mag_sep"] = -999. * units.mag
             deepest_dict["mag_sep_err"] = -999. * units.mag
@@ -287,18 +287,18 @@ class Object(Generic):
 
                     if isinstance(self, TransientHostCandidate):
                         sb, sb_err = self.transient.surface_brightness_at_position(img=img)
-                        phot_dict["transient_position_surface_brightness"] = sb
-                        phot_dict["transient_position_surface_brightness_err"] = sb_err
+                        phot_dict["transient_position_surface_brightness"] = float(sb.value) * units.mag / units.arcsec ** 2
+                        phot_dict["transient_position_surface_brightness_err"] = float(sb_err.value) * units.mag / units.arcsec ** 2
 
                     if mag_results is not None:
                         phot_dict["mag_sep"] = mag_results["mag"][0]
                         phot_dict["mag_sep_err"] = mag_results["mag_err"][0]
-                        phot_dict["snr_sep"] = mag_results["snr"][0]
-                        phot_dict["back_sep"] = mag_results["back"][0]
-                        phot_dict["flux_sep"] = mag_results["flux"][0]
-                        phot_dict["flux_sep_err"] = mag_results["flux_err"][0]
-                        phot_dict["limit_threshold"] = mag_results["threshold"]
-                        phot_dict["peak"] = mag_results["peak"]
+                        phot_dict["snr_sep"] = float(mag_results["snr"][0])
+                        phot_dict["back_sep"] = float(mag_results["back"][0])
+                        phot_dict["flux_sep"] = float(mag_results["flux"][0])
+                        phot_dict["flux_sep_err"] = float(mag_results["flux_err"][0])
+                        phot_dict["limit_threshold"] = float(mag_results["threshold"])
+                        phot_dict["peak"] = float(mag_results["peak"])
                     else:
                         phot_dict["mag_sep"] = -999. * units.mag
                         phot_dict["mag_sep_err"] = -999. * units.mag
@@ -322,10 +322,10 @@ class Object(Generic):
                     if mag_results is not None:
                         phot_dict["mag_sep_unmasked"] = mag_results["mag"][0]
                         phot_dict["mag_sep_unmasked_err"] = mag_results["mag_err"][0]
-                        phot_dict["snr_sep_unmasked"] = mag_results["snr"][0]
-                        phot_dict["flux_sep_unmasked"] = mag_results["flux"][0]
-                        phot_dict["flux_sep_unmasked_err"] = mag_results["flux_err"][0]
-                        phot_dict["peak_unmasked"] = mag_results["peak"]
+                        phot_dict["snr_sep_unmasked"] = float(mag_results["snr"][0])
+                        phot_dict["flux_sep_unmasked"] = float(mag_results["flux"][0])
+                        phot_dict["flux_sep_unmasked_err"] = float(mag_results["flux_err"][0])
+                        phot_dict["peak_unmasked"] = float(mag_results["peak"])
                     else:
                         phot_dict["mag_sep_unmasked"] = -999. * units.mag
                         phot_dict["mag_sep_unmasked_err"] = -999. * units.mag

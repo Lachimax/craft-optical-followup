@@ -160,7 +160,34 @@ def sanitise_yaml_dict(dictionary: dict):
     return dictionary
 
 
-def save_params(file: str, dictionary: dict):
+def save_params(file: str, dictionary: dict, print_all: bool=False):
+    if print_all:
+        print("\nSAVING PARAMS TO FILE", file)
+        for k, v in dictionary.items():
+            if k not in ["log"]:
+                if not isinstance(v, dict):
+                    print(k, ":", v, f"({type(v)})")
+                else:
+                    print(k, "(dict) :")
+                    for kk, vv in v.items():
+                        if not isinstance(vv, dict):
+                            print("\t", kk, ":", vv, f"({type(vv)})")
+                        else:
+                            print("\t", kk, "(dict):")
+                            for kkk, vvv in vv.items():
+                                if not isinstance(vvv, dict):
+                                    print("\t\t", kkk, ":", vvv, f"({type(vvv)})")
+                                else:
+                                    print("\t\t", kkk, "(dict):")
+                                    for kkkk, vvvv in vvv.items():
+                                        if not isinstance(vvvv, dict):
+                                            print("\t\t", kkkk, ":", vvvv, f"({type(vvvv)})")
+                                        else:
+                                            print("\t\t", kkkk, "(dict):")
+                                            for kkkkk, vvvvv in vvvv.items():
+                                                print("\t\t\t", kkkkk, ":", vvvvv, f"({type(vvvvv)})")
+
+
     file = u.sanitise_file_ext(filename=file, ext=".yaml")
 
     u.debug_print(1, 'Saving parameter file to ' + str(file))

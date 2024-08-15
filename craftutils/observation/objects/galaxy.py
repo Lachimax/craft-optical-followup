@@ -158,7 +158,7 @@ class Galaxy(Extragalactic):
                 self.cigale_sfh_path = outputs["cigale_sfh_path"]
             if "cigale_results" in outputs and outputs["cigale_results"] is not None:
                 self.cigale_results = outputs["cigale_results"]
-            if "galfit_models" in outputs and outputs["galfit_models"] is not None:
+            if "galfit_models" in outputs and outputs["galfit_models"] is not None and outputs["galfit_models"]:
                 self.galfit_models = outputs["galfit_models"]
         return outputs
 
