@@ -127,7 +127,6 @@ class Field(Pipeline):
 
         self.cats = {}
         self.cat_gaia = None
-        self.irsa_extinction = None
 
         if objs is not None:
             for obj in objs:
@@ -400,7 +399,7 @@ class Field(Pipeline):
                 print(f"Looking in {obj_path}")
 
             obj_params = list(
-                filter(lambda f: f.endswith(".yaml") and not f.endswith("backup.yaml"), os.listdir(obj_path)))
+                filter(lambda f: f.endswith(".yaml") and not f.endswith("backup.yaml") and not f == "None.yaml", os.listdir(obj_path)))
             obj_params.sort()
             for obj_param in obj_params:
                 obj_name = obj_param[:obj_param.find(".yaml")]
@@ -953,7 +952,7 @@ class Field(Pipeline):
             self.add_object_from_dict(obj)
         elif obj.name in self.objects and self.objects[obj.name] is not obj:
             warnings.warn(
-                f"An object with name {obj.name} already exists in field {self.name}; it is being overwritten.")
+                f"An object with name {obj.name}, z={self.objects[obj.name].z} already exists in field {self.name}; it is being overwritten (z={obj.z}).")
         self.objects[obj.name] = obj
         obj.field = self
         return obj

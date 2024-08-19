@@ -42,7 +42,9 @@ class ExtragalacticTransient(Transient, Extragalactic):
 
         :return: The Galaxy or TransientHostCandidate object.
         """
-
+        from craftutils.observation.field import Field
+        print(f"{self.host_galaxy=}")
+        print(f"{self.field=}")
         if self.host_galaxy is None:
             self.host_galaxy = TransientHostCandidate(
                 transient=self,
@@ -50,7 +52,7 @@ class ExtragalacticTransient(Transient, Extragalactic):
                 z_err=self.z_err,
                 name=name
             )
-        elif isinstance(self.host_galaxy, str) and self.field:
+        elif isinstance(self.host_galaxy, str) and isinstance(self.field, Field):
             self.host_galaxy = self._get_object(self.host_galaxy)
 
         return self.host_galaxy

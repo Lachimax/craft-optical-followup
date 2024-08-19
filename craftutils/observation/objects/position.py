@@ -306,7 +306,8 @@ class PositionUncertainty:
             return None, None
         return np.sqrt(self.ra_total ** 2), np.sqrt(self.dec_total ** 2)
 
-    # TODO: Finish this
+    # def mc_ellipse(self):
+
 
     def to_dict(self):
         return {
