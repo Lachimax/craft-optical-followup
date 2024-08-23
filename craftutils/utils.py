@@ -917,7 +917,8 @@ def detect_problem_column(
 ):
     print(type(tbl))
     colnames = tbl.colnames
-    for i, col in enumerate(colnames):
+    for i in range(len(colnames)):
+        col = colnames[i-1]
         colnames_trunc = colnames[:i]
         tbl_this = tbl[colnames_trunc]
         try:
@@ -928,6 +929,7 @@ def detect_problem_column(
         except NotImplementedError:
             print(tbl_this)
             print("Problem column (NotImplementedError):")
+            print(col)
             print(tbl[col])
             return col, tbl[col]
         except ValueError:
