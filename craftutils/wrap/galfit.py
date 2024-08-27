@@ -925,7 +925,11 @@ def spiral_from_model_dict(
         raise ValueError(f"Coordinate rotation type {rot_type} not recognised.")
 
 
-def imgblock_plot(img_block: Union[fits.HDUList, str], output: str = None):
+def imgblock_plot(
+        img_block: Union[fits.HDUList, str],
+        output: str = None,
+        # frame:
+):
     if isinstance(img_block, str):
         img_block = fits.open(img_block)
 

@@ -1303,7 +1303,7 @@ def uncertainty_str_coord(
         value=coord.ra.to("arcsec"),
         uncertainty=uncertainty_ra.to("arcsec"),
         n_digits_err=n_digits_err,
-        brackets=brackets
+        brackets=False
     )
     ra_s_str = ra_s_str.replace("$", "")
     ra_str = coord.ra.to_string("h", format="latex")
@@ -1315,7 +1315,7 @@ def uncertainty_str_coord(
         ra_uncertainty_str = ra_str.replace(ra_replace, ra_s_str)
     else:
 
-        ra_uncertainty_str = f"{ra_str.replace(ra_replace, str(ra_s_rounded))[:-1]} \pm ({ra_arcsec_unc_rounded}" + r"^{\prime\prime})$"
+        ra_uncertainty_str = f"{ra_str.replace(ra_replace, str(ra_s_rounded))[:-1]} \pm {ra_arcsec_unc_rounded}" + r"^{\prime\prime}$"
     dec = coord.dec
     dec_s_str, dec_rounded, dec_unc_rounded = uncertainty_string(
         value=abs(coord.dec.dms.s),

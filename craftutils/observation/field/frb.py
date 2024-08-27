@@ -358,14 +358,13 @@ class FRBField(Field):
         # if max_p_ox is not None:
         #     self.add_path_candidates()
 
-        print("fil_list", len(fil_list))
-
         max_p_ox = None
         while max_p_ox in (None, 0.) and images:
-            img = images.pop()
+            img = images.pop(0)
             p_us = [0., 0.1, 0.2]
             p_u_calculated = -999.
-            if self.survey == "CRAFT_ICS":
+            print("SURVEY", self.survey, self.survey == "CRAFT_ICS")
+            if self.survey.name == "CRAFT_ICS":
                 vals, tbl, z_lost = self.frb.host_probability_unseen(
                     img=img,
                     sample="Gordon+2023",
@@ -409,7 +408,6 @@ class FRBField(Field):
                 self.frb.host_candidates
             )
         )
-        print(host_candidates)
         if isinstance(self.frb.host_galaxy, objects.Galaxy):
             print()
             print(f"Initial host {self.frb.host_galaxy.name}.z:", self.frb.host_galaxy.z)
@@ -437,7 +435,6 @@ class FRBField(Field):
         # TODO: Allow for other instruments; there needs to be a depth check here so that VLT imaging gets selected over
         # survey imaging
         filter_list = self.load_imaging(instrument="vlt-fors2")
-        print("filter_list", len(filter_list))
         best_fil = filters.best_for_path(filter_list, exclude=exclude)
         # path_dict = self.deepest_in_band(fil=best_fil)
         # path_img = path_dict["image"]

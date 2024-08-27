@@ -43,8 +43,6 @@ class ExtragalacticTransient(Transient, Extragalactic):
         :return: The Galaxy or TransientHostCandidate object.
         """
         from craftutils.observation.field import Field
-        print(f"{self.host_galaxy=}")
-        print(f"{self.field=}")
         if self.host_galaxy is None:
             self.host_galaxy = TransientHostCandidate(
                 transient=self,

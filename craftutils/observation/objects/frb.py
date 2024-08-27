@@ -411,7 +411,6 @@ class FRB(ExtragalacticTransient):
         # path_cat["coord"] = SkyCoord(path_cat["ra"], path_cat["dec"])
         if sort_by == "P_Ox":
             sort_by = f"P_Ox_{p_ox_assign}"
-        print("HERE", path_cat.colnames)
         path_cat.sort(sort_by, reverse=reverse_sort)
         ids = []
         id_strs = []
