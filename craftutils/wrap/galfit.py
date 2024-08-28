@@ -9,6 +9,7 @@ import astropy.io.fits as fits
 import astropy.units as units
 import astropy.table as table
 from astropy.visualization import LogStretch, ImageNormalize, SqrtStretch
+from lalinference.tiger.postproc import fontsize
 
 import craftutils.utils as u
 
@@ -928,19 +929,23 @@ def spiral_from_model_dict(
 def imgblock_plot(
         img_block: Union[fits.HDUList, str],
         output: str = None,
-        # frame:
+        fig: plt.Figure = None,
+        frame: float = None
 ):
     if isinstance(img_block, str):
         img_block = fits.open(img_block)
 
     fitsect = img_block[2].header["FITSECT"][1:-1]
     x_sect, y_sect = fitsect.split(",")
-    x_left, _ = x_sect.split(":")
+    x_left, x_right = x_sect.split(":")
     x_left = int(x_left)
-    y_bottom, _ = y_sect.split(":")
+    x_right = int(x_right)
+    y_bottom, y_top = y_sect.split(":")
     y_bottom = int(y_bottom)
+    y_top = int(y_top)
 
-    fig = plt.figure(figsize=(24, 12))
+    if fig is None:
+        fig = plt.figure(figsize=(24, 12))
 
     if len(img_block) > 4:
         vimg = img_block[4].data
@@ -968,21 +973,46 @@ def imgblock_plot(
     b = r_eff * params["axis_ratio"] * 2
     theta = params["position_angle"].value
 
+    if frame is not None:
+        f_left = int(np.round(x - frame))
+        f_right = int(np.round(x + frame))
+        f_bottom = int(np.round(y - frame))
+        f_top = int(np.round(y + frame))
+    else:
+        f_left = f_bottom = 0
+        f_top, f_right = img_block[1].data.shape
+        f_top -= 1
+        f_bottom -= 1
+
+    model_img = img_block[2].data
+    residuals_img = img_block[5].data
+
+    print("\tFRAME", frame)
+
     for i, im in enumerate(img_block):
         if i == 0:
             continue
+        elif i in (1, 2, 4):
+            norm_data = model_img
+            vmin = None
+        else:
+            norm_data = residuals_img
+            vmin = np.median(norm_data) - 1 * np.std(norm_data)
         if im.is_image:
             ax = fig.add_subplot(1, len(img_block), i + 1)
-            ax.set_title(names[i])
+            ax.set_title(names[i], fontsize=7.5)
+            # print("\t\t", i, names[i], "VMAX:", vmax)
             ax.imshow(
-                im.data - np.median(im.data),
+                im.data,
+                # (im.data - np.median(im.data))[f_bottom:f_top, f_left:f_right],
                 origin="lower",
                 norm=ImageNormalize(
-                    # vmax=max_val + np.median(im.data),
-                    # vmin=np.median(im.data) - 2 * np.std(im.data),
+                    data=norm_data,
+                    vmin=vmin,
                     stretch=SqrtStretch()
                 ),
-                cmap="cmr.bubblegum"
+                cmap="cmr.bubblegum",
+                interpolation="none",
             )
             ax.errorbar(
                 x, y,
@@ -1000,8 +1030,15 @@ def imgblock_plot(
                 facecolor="none",
             )
             ax.add_artist(e)
+            ax.set_xlim(f_left, f_right)
+            ax.set_ylim(f_bottom, f_top)
+            ax.set_xticks([])
+            ax.set_yticks([])
+
+            # ax.grid(False)
+
 
     if isinstance(output, str):
         fig.savefig(output, dpi=100, bbox_inches="tight")
 
-    return fig
+    return fig, (x_left, x_right, y_bottom, y_top)
