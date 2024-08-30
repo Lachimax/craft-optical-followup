@@ -918,7 +918,7 @@ def detect_problem_column(
     print(type(tbl))
     colnames = tbl.colnames
     for i in range(len(colnames)):
-        col = colnames[i-1]
+        col = colnames[i - 1]
         colnames_trunc = colnames[:i]
         tbl_this = tbl[colnames_trunc]
         try:
@@ -2082,6 +2082,8 @@ def lacom(value: str):
         ")", ""
     ).replace(
         "+", ""
+    ).replace(
+        ".", ""
     )
     for i in range(10):
         value = value.replace(str(i), "")

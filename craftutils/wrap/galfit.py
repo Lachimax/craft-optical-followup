@@ -9,7 +9,6 @@ import astropy.io.fits as fits
 import astropy.units as units
 import astropy.table as table
 from astropy.visualization import LogStretch, ImageNormalize, SqrtStretch
-from lalinference.tiger.postproc import fontsize
 
 import craftutils.utils as u
 
