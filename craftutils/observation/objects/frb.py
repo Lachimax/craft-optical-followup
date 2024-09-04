@@ -320,6 +320,11 @@ class FRB(ExtragalacticTransient):
                 frame=cand_tbl["separation"].max(),
                 centre=self.position
             )
+
+            for n, obj in self.field.objects.items():
+                x, y = img.world_to_pixel(obj.position)
+                ax.text(x=x, y=y, s=n, color="white")
+
             c = ax.scatter(cand_tbl["x"], cand_tbl["y"], marker="x", c=cand_tbl["P_Ox"], cmap="bwr_r")
             cbar = fig.colorbar(c)
             cbar.set_label("$P(O|x)_i$")
@@ -1278,7 +1283,7 @@ class FRB(ExtragalacticTransient):
     def host_probability_unseen(
             self,
             img: 'image.ImagingImage',
-            sample: Union[str, sed.SEDSample] = "Gordon+2023",
+            sample: Union[str, 'sed.SEDSample'] = "Gordon+2023",
             **kwargs
     ):
         """Uses the Marnoch+2023 method to estimate the probability that this FRB's host galaxy is unseen in the given
@@ -1318,6 +1323,9 @@ class FRB(ExtragalacticTransient):
             plot=True,
             output=os.path.join(self.data_path, "PATH", "p_u")
         )
+        vals["limit_ext_correct"] = lim_w_ext
+        vals["limit_measured"] = lim_5sigma
+        vals["extinction"] = a_z
         return vals, tbl, z_lost
 
     def read_p_z_dm(self, path: str = None):

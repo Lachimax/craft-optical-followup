@@ -137,6 +137,8 @@ class Object(Generic):
             self.kron = self.photometry_args["kron_radius"]
 
         self.other_names: List[str] = []
+        if "other_names" in kwargs:
+            self.other_names = kwargs["other_names"]
 
     def __str__(self):
         return self.name

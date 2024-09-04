@@ -363,6 +363,7 @@ class FRBField(Field):
             img = images.pop(0)
             p_us = [0., 0.1, 0.2]
             p_u_calculated = -999.
+            vals = None
             print("SURVEY", self.survey, self.survey == "CRAFT_ICS")
             if self.survey.name == "CRAFT_ICS":
                 vals, tbl, z_lost = self.frb.host_probability_unseen(
@@ -386,7 +387,8 @@ class FRBField(Field):
                     if img.name not in self.path_runs:
                         self.path_runs[img.name] = {}
                     self.path_runs[img.name][p_u] = write_dict
-                    if p_u == p_u_calculated:
+                    if p_u == p_u_calculated and p_u > 0.:
+                        write_dict["p_u_calculation"] = vals
                         self.path_runs[img.name]["calculated"] = write_dict
 
         path_cat = self.frb.consolidate_candidate_tables(
@@ -417,8 +419,8 @@ class FRBField(Field):
             for obj in self.frb.host_candidates:
                 print("Checking", obj.name)
                 P_Ox = obj.P_Ox
-                if P_Ox > 0.1:
-                    print(f"\tAdding {obj.name}: P(O|x) = {P_Ox} > 0.1.")
+                if P_Ox > 0.05:
+                    print(f"\tAdding {obj.name}: P(O|x) = {P_Ox} > 0.05.")
                     if P_Ox >= max_pox:
                         self.frb.set_host(obj, keep_params=["z", "z_err", "other_names", "force_template_img"])
                     self.add_object(obj)
