@@ -497,9 +497,25 @@ class SEDSample:
         return values, tbl, z_lost
 
     def average_template(self, norm_band: fil.Filter):
-        luminosities = []
-        for model_name, model in self.model_dict.items():
+        # luminosities = []
+        lum_temp_interp = None
+        lum_sum = None
+        for i, (model_name, model) in enumerate(self.model_dict.items()):
             luminosity = model.calculate_rest_luminosity()
+            lum_total = model.luminosity_bolometric()
+            luminosity["luminosity_nu_norm"] = luminosity["luminosity_nu"] / lum_total
+            if i == 0:
+                lum_temp_interp = luminosity
+                lum_sum = luminosity["luminosity_nu_norm"]
+            else:
+                lum_norm = np.interp(
+                    x=lum_temp_interp["frequency"],
+                    xp=luminosity["frequency"],
+                    fp=luminosity["frequency"]
+                )
+                lum_sum += lum_norm
+        avg_lum = lum_sum / len(self.model_dict)
+        return avg_lum
 
 
     def _output_dict(self):
