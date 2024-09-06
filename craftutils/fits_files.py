@@ -45,13 +45,15 @@ def get_rotation_angle(header: fits.header, astropy_units=False):
 
 def path_or_hdu(hdu: Union[fits.HDUList, str], update=False):
     path = None
-    if type(hdu) is str:
+    if isinstance(hdu, str):
         path = u.sanitise_file_ext(filename=hdu, ext=".fits")
         u.debug_print(1, f"Loading HDU at {path}")
         if update:
             hdu = fits.open(hdu, mode='update')
         else:
             hdu = fits.open(hdu)
+    elif hdu is None:
+        raise ValueError("hdu is None; must be a path or a HDUList")
 
     return hdu, path
 

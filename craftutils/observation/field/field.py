@@ -304,17 +304,20 @@ class Field(Pipeline):
             use_subbed: bool = False,
             **kwargs
     ):
+        from craftutils.observation.objects import Galaxy
         if apply_filter is None:
             obj_list = list(self.objects.values())
         else:
             obj_list = list(filter(apply_filter, self.objects.values()))
+
+        obj_list += list(filter(lambda o: isinstance(o, Galaxy) and o.do_galfit, self.objects.values()))
 
         filter_list = self.load_imaging(instrument="vlt-fors2")
         print("use_img", use_img)
 
         for obj in obj_list:
 
-            if isinstance(obj, objects.Galaxy):
+            if isinstance(obj, objects.Galaxy) and obj.do_galfit:
                 obj.load_output_file()
 
                 if use_img is None:

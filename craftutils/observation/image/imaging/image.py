@@ -91,6 +91,9 @@ class ImagingImage(Image):
         self.source_cat_dual = None
         self.dual_mode_template = None
 
+        self.galfit_psfex_path = None
+        self.galfit_psfex_output = None
+
         self.sep_background = None
         self.pu_background = None
         self.data_sub_bkg = None
@@ -184,6 +187,7 @@ class ImagingImage(Image):
             force: bool = False,
             set_attributes: bool = True,
             se_kwargs: dict = {},
+            galfit: bool = False,
             **kwargs
     ):
         """Run PSFEx on this image to obtain a PSF model. Also performs the prerequisite Source Extractor runs.
@@ -201,7 +205,14 @@ class ImagingImage(Image):
             output_dir = os.path.join(os.path.dirname(self.path), "psfex")
         os.makedirs(output_dir, exist_ok=True)
 
-        if force or self.psfex_path is None or not os.path.isfile(self.psfex_path):
+        if galfit:
+            if "PSF_SAMPLING" not in kwargs:
+                kwargs["PSF_SAMPLING"] = 0.5
+            path = self.galfit_psfex_path
+        else:
+            path = self.psfex_path
+
+        if force or path is None or not os.path.isfile(path):
 
             # Set up a list of photometric apertures to pass to SE as a string.
             _, scale = self.extract_pixel_scale()
@@ -283,7 +294,7 @@ class ImagingImage(Image):
                 output_dir=output_dir,
                 **kwargs
             )
-            psfex_output = fits.open(psfex_path)
+            psfex_output = fits.open(psfex_path, galfit=galfit)
 
             if not psfex.check_successful(psfex_output):
                 print(f"PSFEx did not converge. Retrying with PHOTFLUX_KEY==FLUX_AUTO")
@@ -321,11 +332,14 @@ class ImagingImage(Image):
                 i += 1
 
             if set_attributes:
-                self.psfex_path = psfex_path
-                self.extract_pixel_scale()
-                pix_scale = self.pixel_scale_y
-                self.fwhm_pix_psfex = psfex_output[1].header['PSF_FWHM'] * units.pixel
-                self.fwhm_psfex = self.fwhm_pix_psfex.to(units.arcsec, pix_scale)
+                if galfit:
+                    self.galfit_psfex_path = psfex_path
+                else:
+                    self.psfex_path = psfex_path
+                    self.extract_pixel_scale()
+                    pix_scale = self.pixel_scale_y
+                    self.fwhm_pix_psfex = psfex_output[1].header['PSF_FWHM'] * units.pixel
+                    self.fwhm_psfex = self.fwhm_pix_psfex.to(units.arcsec, pix_scale)
 
             self.add_log(
                 action="PSF modelled using psfex.",
@@ -336,22 +350,49 @@ class ImagingImage(Image):
             self.update_output_file()
 
         if set_attributes:
-            return self.load_psfex_output()
+            return self.load_psfex_output(galfit=galfit)
         else:
             return psfex_output
 
     # def _psfex(self):
 
-    def load_psfex_output(self, force: bool = False):
-        if force or self.psfex_output is None:
-            self.psfex_output = fits.open(self.psfex_path)
-        return self.psfex_output
-
-    def psf_image(self, x: float, y: float, match_pixel_scale: bool = True):
-        if match_pixel_scale:
-            return psfex.load_psfex(model_path=self.psfex_path, x=x, y=y)
+    def load_psfex_output(
+            self,
+            force: bool = False,
+            galfit: bool = False
+    ):
+        if galfit:
+            path = self.galfit_psfex_path
+            output = self.galfit_psfex_output
         else:
-            return psfex.load_psfex_oversampled(model=self.psfex_path, x=x, y=y)
+            path = self.psfex_path
+            output = self.psfex_output
+
+        if force or output is None:
+            output = fits.open(path)
+
+        if galfit:
+            self.galfit_psfex_output = output
+        else:
+            self.psfex_output = output
+
+        return output
+
+    def psf_image(
+            self, x: float, y: float,
+            match_pixel_scale: bool = True,
+            galfit: bool = False
+    ):
+        if galfit:
+            path = self.galfit_psfex_path
+        else:
+            path = self.psfex_path
+            match_pixel_scale = False
+
+        if match_pixel_scale:
+            return psfex.load_psfex(model_path=path, x=x, y=y)
+        else:
+            return psfex.load_psfex_oversampled(model=path, x=x, y=y)
 
     def clone_diagnostics(
             self,
@@ -884,6 +925,7 @@ class ImagingImage(Image):
                 "extinction_atmospheric_err": self.extinction_atmospheric_err,
                 "filter": self.filter_name,
                 "psfex_path": self.psfex_path,
+                "galfit_psfex_path": self.galfit_psfex_path,
                 "synth_cat_path": self.synth_cat_path,
                 "psf_stats": self.psf_stats,
                 "fwhm_pix_psfex": self.fwhm_pix_psfex,
@@ -923,6 +965,8 @@ class ImagingImage(Image):
                 self.filter_name = outputs["filter"]
             if "psfex_path" in outputs:
                 self.psfex_path = outputs["psfex_path"]
+            if "galfit_psfex_path" in outputs:
+                self.galfit_psfex_path = outputs["galfit_psfex_path"]
             if "source_cat_path" in outputs and outputs["source_cat_path"] is not None and os.path.exists(
                     outputs["source_cat_path"]):
                 self.source_cat = catalog.SECatalogue(path=outputs["source_cat_path"], image=self)
@@ -4414,6 +4458,7 @@ class ImagingImage(Image):
         Generate a version of this file for use with GALFIT.
         Modifies header item GAIN to conform to GALFIT's expectations (outlined in the GALFIT User Manual,
         http://users.obs.carnegiescience.edu/peng/work/galfit/galfit.html)
+
         :param output_path: path to write modified file to.
         :param ext: FITS extension to modify header of.
         :return:
@@ -4438,7 +4483,7 @@ class ImagingImage(Image):
             new = type(self)(path=output_path)
             new.load_output_file()
             new.load_headers()
-            new.load_psfex_output()
+            new.load_psfex_output(galfit=True)
         return new
 
     def make_galfit_psf(
@@ -4448,28 +4493,33 @@ class ImagingImage(Image):
             y: float
     ):
         # We obtain an oversampled PSF, because GALFIT works best with one.
-        psfex_path = os.path.join(output_dir, f"{self.name}_psfex.psf")
-        if not os.path.isfile(psfex_path):
+        # psfex_path = os.path.join(output_dir, f"{self.name}_psfex.psf")
+        if self.galfit_psfex_path is None or not os.path.isfile(self.galfit_psfex_path):
             self.psfex(
                 output_dir=output_dir,
                 PSF_SAMPLING=0.5,  # Equivalent to GALFIT fine-sampling factor = 2
                 # PSF_SIZE=50,
                 force=True,
-                set_attributes=True
+                set_attributes=True,
+                galfit=True
             )
         else:
-            self.psfex_path = psfex_path
-            self.load_psfex_output()
-        return self.psf_to_hdu(x=x, y=y, output_dir=output_dir)
+            self.load_psfex_output(galfit=True)
+        return self.psf_to_hdu(x=x, y=y, output_dir=output_dir, galfit=True)
 
     def psf_to_hdu(
             self,
             x: float, y: float,
-            output_dir: str = None
+            output_dir: str = None,
+            galfit: bool = False
     ):
         if output_dir is None:
             output_dir = self.data_path
-        psf_img = self.psf_image(x=x, y=y, match_pixel_scale=False)[0]
+        psf_img = self.psf_image(
+            x=x, y=y,
+            match_pixel_scale=False,
+            galfit=galfit
+        )[0]
         psf_img /= np.max(psf_img)
         # Write our PSF image to disk for GALFIT to find
         psf_hdu = fits.hdu.PrimaryHDU(psf_img)
@@ -4595,7 +4645,10 @@ class ImagingImage(Image):
             output_dir = self.data_path
         self.load_output_file()
         new = self.make_galfit_version(
-            output_path=os.path.join(output_dir, f"{output_prefix}_{self.filter_name}_galfit.fits")
+            output_path=os.path.join(
+                output_dir,
+                f"{output_prefix}_{self.filter_name}_galfit.fits"
+            )
         )
         new.zeropoint_best = self.zeropoint_best
         new.open()

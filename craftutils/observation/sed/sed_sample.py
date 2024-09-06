@@ -17,7 +17,7 @@ import craftutils.observation.objects as objects
 from craftutils.observation.objects.extragalactic import cosmology
 from craftutils.plotting import tick_fontsize, axis_fontsize, lineweight
 from craftutils.photometry import distance_modulus
-from craftutils.observation.sed import SEDModel
+from craftutils.observation.sed import SEDModel, NormalisedTemplate
 
 
 class SEDSample:
@@ -34,6 +34,7 @@ class SEDSample:
         self.output_file: str = None
         self.z_mag_tbls: Dict[str, table.QTable] = {}
         self.z_mag_tbl_paths: Dict[str, str] = {}
+        self.template: 'NormalisedTemplate' = None
         for key, item in kwargs.items():
             setattr(self, key, item)
 
@@ -243,7 +244,7 @@ class SEDSample:
             fig = plt.figure(figsize=(pl.textwidths["mqthesis"], 0.5 * pl.textwidths["mqthesis"]))
             ax = fig.add_subplot()
 
-            leg_x = 0 #1.13
+            leg_x = 0  # 1.13
             leg_y = 1.1
 
             ax_pdf = ax.twinx()
@@ -462,7 +463,7 @@ class SEDSample:
             ax_m_z.set_xlim(min_z, max_z)
             ax_m_z.invert_yaxis()
             ax_m_z.set_xlabel("$z$", fontsize=axis_fontsize)
-            #\mathrm{{{band.nice_name()}}}
+            # \mathrm{{{band.nice_name()}}}
             ax_m_z.set_ylabel(f"$m$", fontsize=axis_fontsize)
 
             ax_pdf.tick_params(bottom=False, labelsize=tick_fontsize)
@@ -496,27 +497,104 @@ class SEDSample:
         }
         return values, tbl, z_lost
 
-    def average_template(self, norm_band: fil.Filter):
+    def average_template(
+            self,
+            norm_band: fil.Filter = None,
+            output: str = None,
+            **plotting_kwargs
+    ):
         # luminosities = []
-        lum_temp_interp = None
-        lum_sum = None
+        lum_sum_nu = None
+        fig = None
+        ax_lum_nu = None
+        ax_norm_nu = None
+        ax_lum_lambda = None
+        ax_norm_lambda = None
+        if output is not None:
+            fig = plt.figure()
+            ax_lum_nu = fig.add_subplot(2, 2, 1)
+            ax_norm_nu = fig.add_subplot(2, 2, 2)
+            ax_lum_lambda = fig.add_subplot(2, 2, 3)
+            ax_norm_lambda = fig.add_subplot(2, 2, 4)
+
+        models = [t for t in self.model_dict.values()]
+        lum_temp_interp = models[np.argmax([len(m.model_table) for m in models])].calculate_rest_luminosity()
+
         for i, (model_name, model) in enumerate(self.model_dict.items()):
             luminosity = model.calculate_rest_luminosity()
             lum_total = model.luminosity_bolometric()
-            luminosity["luminosity_nu_norm"] = luminosity["luminosity_nu"] / lum_total
+            luminosity["luminosity_nu_norm"] = (luminosity["luminosity_nu"] / lum_total)  # .decompose()
+            luminosity["luminosity_lambda_norm"] = (luminosity["luminosity_nu"] / lum_total)
+            if fig is not None:
+                ax_lum_nu.plot(
+                    luminosity["frequency"],
+                    luminosity["luminosity_nu"],
+                )
+                ax_norm_nu.plot(
+                    luminosity["frequency"],
+                    luminosity["luminosity_nu_norm"],
+                )
+                ax_lum_lambda.plot(
+                    luminosity["wavelength"],
+                    luminosity["luminosity_lambda"],
+                )
+                ax_norm_lambda.plot(
+                    luminosity["wavelength"],
+                    luminosity["luminosity_lambda_norm"],
+                )
             if i == 0:
                 lum_temp_interp = luminosity
-                lum_sum = luminosity["luminosity_nu_norm"]
+                lum_sum_nu = luminosity["luminosity_nu_norm"]
+                lum_sum_lambda = luminosity["luminosity_lambda_norm"]
             else:
-                lum_norm = np.interp(
+                lum_norm_nu = np.interp(
                     x=lum_temp_interp["frequency"],
                     xp=luminosity["frequency"],
-                    fp=luminosity["frequency"]
+                    fp=luminosity["luminosity_nu_norm"]
                 )
-                lum_sum += lum_norm
-        avg_lum = lum_sum / len(self.model_dict)
-        return avg_lum
+                lum_sum_nu += lum_norm_nu
+                lum_norm_lambda = np.interp(
+                    x=lum_temp_interp["wavelength"],
+                    xp=luminosity["wavelength"],
+                    fp=luminosity["luminosity_lambda_norm"]
+                )
+                lum_sum_lambda += lum_norm_lambda
 
+        avg_lum = lum_temp_interp.copy()
+        avg_lum["luminosity_nu_norm"] = lum_sum_nu / len(self.model_dict)
+        avg_lum["luminosity_lambda_norm"] = lum_sum_lambda / len(self.model_dict)
+
+        if fig is not None:
+            ax_norm_nu.plot(
+                avg_lum["frequency"],
+                avg_lum["luminosity_nu_norm"],
+                # lw=3,
+                ls=":",
+                zorder=2,
+                c="black"
+            )
+            ax_lum_nu.set_yscale("log")
+            ax_lum_nu.set_xscale("log")
+            ax_norm_nu.set_xscale("log")
+            ax_norm_nu.set_yscale("log")
+            ax_norm_lambda.plot(
+                avg_lum["wavelength"],
+                avg_lum["luminosity_lambda_norm"],
+                # lw=3,
+                ls=":",
+                zorder=2,
+                c="black"
+            )
+            ax_lum_lambda.set_yscale("log")
+            ax_lum_lambda.set_xscale("log")
+            ax_norm_lambda.set_xscale("log")
+            ax_norm_lambda.set_yscale("log")
+
+        fig.savefig(output)
+
+        self.template = NormalisedTemplate(model_table=avg_lum)
+
+        return avg_lum
 
     def _output_dict(self):
         obj_dict = self.__dict__.copy()
@@ -549,7 +627,8 @@ class SEDSample:
                 _, name = os.path.split(path)
                 name, _ = os.path.splitext(name)
             else:
-                raise ValueError("A valid name could not be determined for the SED Sample. Try pointing directly to the .yaml file.")
+                raise ValueError(
+                    "A valid name could not be determined for the SED Sample. Try pointing directly to the .yaml file.")
 
         sample = cls(name=name)
 

@@ -82,6 +82,7 @@ def load_psfex_oversampled(model: Union[str, 'astropy.io.fits.HDUList'], x: floa
     See https://psfex.readthedocs.io/en/latest/Appendices.html
     This function will return the PSFEx output with the pixel scale of the PSFEx output. To retrieve an image with
     the same pixel scale as the original science image, use load_psfex()
+
     :param model: Path to PSFEx-generated model, as a FITS file (usually ends in .psf); OR HDUList representing the
         file.
     :param x: pixel x-coordinate to use for model input
