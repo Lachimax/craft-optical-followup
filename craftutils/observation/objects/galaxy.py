@@ -36,6 +36,8 @@ class Galaxy(Extragalactic):
         self.mass_stellar = None
         if "mass_stellar" in kwargs:
             self.mass_stellar = u.check_quantity(kwargs["mass_stellar"], units.solMass)
+        elif "log_mass_stellar" in kwargs:
+            self.mass_stellar = units.solMass * 10 ** (float(kwargs["log_mass_stellar"]))
 
         self.mass_stellar_err_plus = None
         self.mass_stellar_err_minus = None
@@ -323,7 +325,8 @@ class Galaxy(Extragalactic):
             row["d_A"] = self.D_A
             row["d_L"] = self.D_L
             row["mu"] = self.mu
-        if "best" in self.galfit_models and self.galfit_models["best"] is not None and "COMP_2" in self.galfit_models["best"]:
+        if "best" in self.galfit_models and self.galfit_models["best"] is not None and "COMP_2" in self.galfit_models[
+            "best"]:
             best = self.galfit_models["best"]
             galfit_model = best["COMP_2"]
             row["galfit_axis_ratio"] = galfit_model["axis_ratio"]

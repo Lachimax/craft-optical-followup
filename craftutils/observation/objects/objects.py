@@ -1162,8 +1162,12 @@ class Object(Generic):
             "dec_err": dec_err.to("arcsec"),
             f"e_b-v": self.ebv_sandf,
         }
+        if "include_photometry" in kwargs:
+            include_photometry = kwargs["include_photometry"]
+        else:
+            include_photometry = True
 
-        if self.optical:
+        if self.optical and include_photometry:
             self.apply_galactic_extinction()
             if select:
                 self.get_photometry_table(output=local_output, best=True)

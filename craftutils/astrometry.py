@@ -325,3 +325,30 @@ def match_catalogs(
         matches_1["matched"][:n_matches] = True
 
     return matches_1, matches_2, distance
+
+def construct_corners_table(
+    tbl: table.QTable,
+    padding=10 * units.arcsec,
+    ra_col: str = "ra",
+    dec_col: str = "dec"
+):
+    ra_max = tbl[ra_col].max() + padding
+    ra_min = tbl[ra_col].min() - padding
+    dec_max = tbl[dec_col].max() + padding
+    dec_min = tbl[dec_col].min() - padding
+
+    return construct_corners(
+        ra_min, ra_max, dec_min, dec_max
+    )
+
+def construct_corners(
+        ra_min: units.Quantity,
+        ra_max: units.Quantity,
+        dec_min: units.Quantity,
+        dec_max: units.Quantity,
+):
+
+    corner_1 = coordinates.SkyCoord(ra_max, dec_max)
+    corner_2 = coordinates.SkyCoord(ra_min, dec_min)
+
+    return corner_1, corner_2

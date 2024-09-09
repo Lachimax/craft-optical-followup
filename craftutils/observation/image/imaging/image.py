@@ -2779,6 +2779,12 @@ class ImagingImage(Image):
             centre: SkyCoord = None,
             frame: units.Quantity = None,
             corners: Tuple[SkyCoord] = None,
+            edges: Tuple[
+                units.Quantity[units.deg],
+                units.Quantity[units.deg],
+                units.Quantity[units.deg],
+                units.Quantity[units.deg]
+            ] = None,
             ext: int = 0,
             fig: plt.Figure = None,
             ax: plt.Axes = None,
@@ -2815,6 +2821,13 @@ class ImagingImage(Image):
                 f"data_type {data} not recognised; this can be 'image', 'background', or 'background_subtracted_image'")
 
         _, scale = self.extract_pixel_scale()
+        if edges is not None and corners is None:
+            corners = astm.construct_corners(
+                ra_min=edges[0],
+                ra_max=edges[1],
+                dec_min=edges[2],
+                dec_max=edges[3],
+            )
 
         other_args = {}
         if centre is not None and frame is not None:
@@ -2844,12 +2857,13 @@ class ImagingImage(Image):
             ys = y_1, y_0
             bottom = int(min(ys))
             top = int(max(ys))
-
         else:
             left = 0
             right = data.shape[1]
             bottom = 0
             top = data.shape[0]
+
+        print(left, right, top, bottom)
 
         # print(type(data), data[bottom:top, left:right])
         if mask is not None:

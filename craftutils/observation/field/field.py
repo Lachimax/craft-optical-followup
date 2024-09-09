@@ -1073,6 +1073,15 @@ class Field(Pipeline):
         else:
             return None
 
+    def object_table(self, tbl_type: str = None, **kwargs):
+        self.load_all_objects()
+        rows = []
+        for name, obj in self.objects.items():
+            row_dict, type_ = obj.assemble_row(**kwargs)
+            if tbl_type is None or tbl_type == type_:
+                rows.append(row_dict)
+        return table.QTable(rows)
+
     @classmethod
     def default_params(cls):
         from craftutils.observation.objects.position import position_dictionary

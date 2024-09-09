@@ -128,7 +128,7 @@ class FRB(ExtragalacticTransient):
         row, _ = super().assemble_row(**kwargs)
         if isinstance(self.host_galaxy, TransientHostCandidate):
             row["host_galaxy"] = self.host_galaxy.name
-            hg_row = self.host_galaxy.assemble_row()
+            hg_row = self.host_galaxy.assemble_row(**kwargs)
             if f"path_pox" in hg_row:
                 row["path_pox"] = hg_row["path_pox"]
             if f"path_pu" in hg_row:
