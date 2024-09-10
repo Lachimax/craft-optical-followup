@@ -231,7 +231,7 @@ class Field(Pipeline):
 
     def proc_refine_photometry(self, output_dir: str, **kwargs):
         object_list: List[objects.Object] = list(self.objects.values())
-        object_list.sort(key=lambda o: o.name, reverse=True)
+        object_list.sort(key=lambda o: o.name, reverse=False)
         for obj in object_list:
             if not obj.optical:
                 continue

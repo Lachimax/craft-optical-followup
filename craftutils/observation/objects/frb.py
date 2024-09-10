@@ -743,6 +743,7 @@ class FRB(ExtragalacticTransient):
             halo_models = {
                 "yf17": halos.YF17,
                 "pz19": halos.MilkyWay,
+                "mb04": halos.MB04,
                 "mb15": halos.MB15
             }
             if model == "all":

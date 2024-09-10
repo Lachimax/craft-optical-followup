@@ -4236,7 +4236,7 @@ class ImagingImage(Image):
         self.load_wcs()
         self.extract_pixel_scale()
         if not self.wcs[ext].footprint_contains(centre):
-            return None, None, None, None
+            return None, None, None, None, None
         x, y = self.wcs[ext].all_world2pix(centre.ra.value, centre.dec.value, 0)
         x = u.check_iterable(x)
         y = u.check_iterable(y)
