@@ -655,6 +655,14 @@ def uncertainty_power(x, power, sigma_x, a=1.):
     return np.abs(f * power * sigma_x / x)
 
 
+def uncertainty_power_2(x, base, sigma_x, a=1.):
+    f = base ** (a * x)
+    print(f"{x=}, {base=}, {sigma_x=}")
+    print(f"result", np.abs(f) * np.abs(a * np.log(base) * sigma_x))
+    print()
+    return np.abs(f) * np.abs(a * np.log(base) * sigma_x)
+
+
 def great_circle_dist(ra_1, dec_1, ra_2, dec_2):
     delta_ra = ra_2 - ra_1
     term_1 = np.sin(dec_1) * np.sin(dec_2)

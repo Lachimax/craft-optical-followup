@@ -1044,8 +1044,11 @@ class Field(Pipeline):
                 obj = self.objects[obj_name]
                 obj.load_output_file()
                 obj.cigale_results = p.sanitise_yaml_dict(dict(results_tbl[i]))
-                obj.mass_stellar = obj.cigale_results["bayes.stellar.m_star"] * units.solMass
-                obj.mass_stellar_err = obj.cigale_results["bayes.stellar.m_star_err"] * units.solMass
+                obj.log_mass_stellar = np.log10(obj.cigale_results["bayes.stellar.m_star"])
+                obj.log_mass_stellar_err_plus = obj.log_mass_stellar_err_minus = u.uncertainty_log10(
+                    arg=obj.cigale_results["bayes.stellar.m_star"],
+                    uncertainty_arg=obj.cigale_results["bayes.stellar.m_star_err"]
+                )
                 obj.sfr = obj.cigale_results["bayes.sfh.sfr"] * units.solMass / units.year
                 obj.sfr_err = obj.cigale_results["bayes.sfh.sfr_err"] * units.solMass / units.year
                 if os.path.isfile(model_path):

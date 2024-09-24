@@ -86,22 +86,28 @@ class TransientHostCandidate(Galaxy):
         else:
             row["path_img"] = "N/A"
 
-        for instrument in self.photometry:
-            for fil in self.photometry[instrument]:
-                band_str = f"{instrument}_{fil.replace('_', '-')}"
-                if select:
-                    best_photom, mean_photom = self.select_photometry_sep(
-                        fil, instrument,
-                        local_output=local_output
-                    )
-                else:
-                    best_photom, mean_photom = self.select_photometry(
-                        fil,
-                        instrument,
-                        local_output=local_output
-                    )
-                row[f"transient_position_surface_brightness_{band_str}"] = best_photom["transient_position_surface_brightness"]
-                row[f"transient_position_surface_brightness_{band_str}_err"] = best_photom["transient_position_surface_brightness_err"]
+        if "include_photometry" in kwargs:
+            include_photometry = kwargs["include_photometry"]
+        else:
+            include_photometry = True
+
+        if include_photometry:
+            for instrument in self.photometry:
+                for fil in self.photometry[instrument]:
+                    band_str = f"{instrument}_{fil.replace('_', '-')}"
+                    if select:
+                        best_photom, mean_photom = self.select_photometry_sep(
+                            fil, instrument,
+                            local_output=local_output
+                        )
+                    else:
+                        best_photom, mean_photom = self.select_photometry(
+                            fil,
+                            instrument,
+                            local_output=local_output
+                        )
+                    row[f"transient_position_surface_brightness_{band_str}"] = best_photom["transient_position_surface_brightness"]
+                    row[f"transient_position_surface_brightness_{band_str}_err"] = best_photom["transient_position_surface_brightness_err"]
 
         return row, "optical"
 
