@@ -37,7 +37,7 @@ class Galaxy(Extragalactic):
         if "mass_stellar" in kwargs:
             self.log_mass_stellar = np.log10(u.check_quantity(kwargs["mass_stellar"], units.solMass).value)
         elif "log_mass_stellar" in kwargs:
-            self.log_mass_stellar = units.solMass * 10 ** (float(kwargs["log_mass_stellar"]))
+            self.log_mass_stellar = float(kwargs["log_mass_stellar"])
 
         self.log_mass_stellar_err_plus = None
         self.log_mass_stellar_err_minus = None
@@ -74,7 +74,6 @@ class Galaxy(Extragalactic):
             self.log_mass_stellar_err_minus = float(kwargs["log_mass_stellar_err_minus"])
         elif "log_mass_stellar_err" in kwargs:
             self.log_mass_stellar_err_minus = float(kwargs["log_mass_stellar_err"])
-
 
         self.sfr = None
         if "sfr" in kwargs:
@@ -172,12 +171,12 @@ class Galaxy(Extragalactic):
     def load_output_file(self):
         outputs = super().load_output_file()
         if outputs is not None:
-            if "log_mass_stellar" in outputs and outputs["log_mass_stellar"] is not None:
-                self.log_mass_stellar = outputs["log_mass_stellar"]
-            if "log_mass_stellar_err_plus" in outputs and outputs["log_mass_stellar_err_plus"] is not None:
-                self.log_mass_stellar_err_plus = outputs["log_mass_stellar_err_plus"]
-            if "log_mass_stellar_err_minus" in outputs and outputs["log_mass_stellar_err_minus"] is not None:
-                self.log_mass_stellar_err_minus = outputs["log_mass_stellar_err_minus"]
+            # if "log_mass_stellar" in outputs and outputs["log_mass_stellar"] is not None:
+            #     self.log_mass_stellar = outputs["log_mass_stellar"]
+            # if "log_mass_stellar_err_plus" in outputs and outputs["log_mass_stellar_err_plus"] is not None:
+            #     self.log_mass_stellar_err_plus = outputs["log_mass_stellar_err_plus"]
+            # if "log_mass_stellar_err_minus" in outputs and outputs["log_mass_stellar_err_minus"] is not None:
+            #     self.log_mass_stellar_err_minus = outputs["log_mass_stellar_err_minus"]
             if "sfr" in outputs and outputs["sfr"] is not None:
                 self.sfr = outputs["sfr"]
             if "sfr_err" in outputs and outputs["sfr_err"] is not None:
@@ -200,7 +199,7 @@ class Galaxy(Extragalactic):
         if self.log_mass_stellar is None:
             raise ValueError(f"{self}.log_mass_stellar has not been defined.")
         self.log_mass_halo = halomass_from_stellarmass(
-            log_mstar=np.log10(self.log_mass_stellar / units.solMass),
+            log_mstar=self.log_mass_stellar,
             z=self.z
         )
         self.mass_halo = (10 ** self.log_mass_halo) * units.solMass

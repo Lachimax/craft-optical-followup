@@ -313,10 +313,13 @@ class Field(Pipeline):
         obj_list += list(filter(lambda o: isinstance(o, Galaxy) and o.do_galfit, self.objects.values()))
 
         filter_list = self.load_imaging(instrument="vlt-fors2")
+        if not filter_list:
+            filter_list = self.load_imaging()
+        print(filter_list)
         print("use_img", use_img)
 
         for obj in obj_list:
-
+            print(obj.name, type(obj), obj.do_galfit)
             if isinstance(obj, objects.Galaxy) and obj.do_galfit:
                 obj.load_output_file()
 

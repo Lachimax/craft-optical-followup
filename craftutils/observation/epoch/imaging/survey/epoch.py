@@ -68,15 +68,19 @@ class SurveyImagingEpoch(ImagingEpoch):
         pass
 
     def proc_source_extraction(self, output_dir: str, **kwargs):
+        if "do_astrometry_diagnostics" in kwargs:
+            kwargs.pop("do_astrometry_diagnostics")
         self.source_extraction(
             output_dir=output_dir,
             do_astrometry_diagnostics=False,
-            do_psf_diagnostics=True,
+            # do_psf_diagnostics=True,
             **kwargs
         )
 
     def proc_get_photometry(self, output_dir: str, **kwargs):
         self.load_output_file()
+        if "image_type" in kwargs:
+            kwargs.pop("image_type")
         self.get_photometry(path=output_dir, image_type="coadded", **kwargs)
 
     def _initial_setup(self, output_dir: str, **kwargs):
@@ -117,18 +121,18 @@ class SurveyImagingEpoch(ImagingEpoch):
         for fil in self.coadded:
             img = self.coadded[fil]
             zp = img.zeropoint(
-                cat=self.field.get_path(f"cat_csv_{self.catalogue}"),
-                output_path=os.path.join(output_path, img.name),
-                cat_name=self.catalogue,
-                dist_tol=distance_tolerance,
-                show=False,
-                snr_cut=snr_min,
-                star_class_tol=star_class_tolerance,
-                image_name=f"{self.catalogue}",
+                # cat=self.field.get_path(f"cat_csv_{self.catalogue}"),
+                # output_path=os.path.join(output_path, img.name),
+                # cat_name=self.catalogue,
+                # dist_tol=distance_tolerance,
+                # show=False,
+                # snr_cut=snr_min,
+                # star_class_tol=star_class_tolerance,
+                # image_name=f"{self.catalogue}",
             )
             img.select_zeropoint(True, preferred=self.preferred_zeropoint)
             img.estimate_depth(
-                zeropoint_name=self.catalogue,
+                zeropoint_name=self.preferred_zeropoint,
                 output_dir=output_path
             )  # , do_magnitude_calibration=False)
             if deepest is not None:

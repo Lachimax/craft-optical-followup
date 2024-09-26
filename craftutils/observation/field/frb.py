@@ -437,6 +437,8 @@ class FRBField(Field):
         # TODO: Allow for other instruments; there needs to be a depth check here so that VLT imaging gets selected over
         # survey imaging
         filter_list = self.load_imaging(instrument="vlt-fors2")
+        if not filter_list:
+            filter_list = self.load_imaging()
         best_fil = filters.best_for_path(filter_list, exclude=exclude)
         # path_dict = self.deepest_in_band(fil=best_fil)
         # path_img = path_dict["image"]

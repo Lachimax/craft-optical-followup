@@ -657,9 +657,6 @@ def uncertainty_power(x, power, sigma_x, a=1.):
 
 def uncertainty_power_2(x, base, sigma_x, a=1.):
     f = base ** (a * x)
-    print(f"{x=}, {base=}, {sigma_x=}")
-    print(f"result", np.abs(f) * np.abs(a * np.log(base) * sigma_x))
-    print()
     return np.abs(f) * np.abs(a * np.log(base) * sigma_x)
 
 

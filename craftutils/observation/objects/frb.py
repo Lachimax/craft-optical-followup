@@ -322,8 +322,9 @@ class FRB(ExtragalacticTransient):
             )
 
             for n, obj in self.field.objects.items():
-                x, y = img.world_to_pixel(obj.position)
-                ax.text(x=x, y=y, s=n, color="white")
+                if obj.position is not None:
+                    x, y = img.world_to_pixel(obj.position)
+                    ax.text(x=x, y=y, s=n, color="white")
 
             c = ax.scatter(cand_tbl["x"], cand_tbl["y"], marker="x", c=cand_tbl["P_Ox"], cmap="bwr_r")
             cbar = fig.colorbar(c)
@@ -953,7 +954,11 @@ class FRB(ExtragalacticTransient):
         from .galaxy import Galaxy
         from frb.halos.hmf import halo_incidence
 
-        outputs = self.dm_mw_halo(distance=rmax)
+        if skip_other_models:
+            model = "all"
+        else:
+            model = "pz19"
+        outputs = self.dm_mw_halo(distance=rmax, model=model)
 
         if load_objects:
             self.field.load_all_objects()
@@ -962,7 +967,7 @@ class FRB(ExtragalacticTransient):
         if foreground_objects is None:
             foreground_objects = list(
                 filter(
-                    lambda o: isinstance(o, Galaxy) and o.z <= self.host_galaxy.z and o.mass_stellar is not None,
+                    lambda o: isinstance(o, Galaxy) and o.z <= self.host_galaxy.z and o.log_mass_stellar is not None,
                     self.field.objects.values()
                 )
             )
@@ -1079,22 +1084,26 @@ class FRB(ExtragalacticTransient):
             halo_info["offset_angle_err"] = offset_angle_err = np.sqrt(fg_pos_err ** 2 + frb_err_dec ** 2)
             halo_info["r_perp"] = offset = obj.projected_size(offset_angle).to(units.kpc)
             halo_info["r_perp_err"] = obj.projected_size(offset_angle_err).to(units.kpc)
-            halo_info["mass_stellar"] = fg_m_star = obj.mass_stellar
-            halo_info["mass_stellar_err_plus"] = fg_m_star_err_plus = obj.mass_stellar_err_plus
-            halo_info["mass_stellar_err_minus"] = fg_m_star_err_minus = obj.mass_stellar_err_minus
-            try:
-                halo_info["log_mass_stellar"] = np.log10(fg_m_star / units.solMass)
-            except units.UnitTypeError:
-                continue
-            print(fg_m_star, fg_m_star_err_plus)
-            halo_info["log_mass_stellar_err_plus"] = u.uncertainty_log10(
-                arg=fg_m_star,
-                uncertainty_arg=fg_m_star_err_plus
+            halo_info["log_mass_stellar"] = fg_logm_star = obj.log_mass_stellar
+            halo_info["log_mass_stellar_err_plus"] = fg_logm_star_err_plus = obj.log_mass_stellar_err_plus
+            halo_info["log_mass_stellar_err_minus"] = fg_logm_star_err_minus = obj.log_mass_stellar_err_minus
+            # try:
+            #     halo_info["log_mass_stellar"] = np.log10(fg_logm_star / units.solMass)
+            # except units.UnitTypeError:
+            #     continue
+            # print(fg_logm_star, "+", fg_logm_star_err_plus, "-", fg_logm_star_err_minus)
+            halo_info["mass_stellar"] = units.solMass * 10 ** (fg_logm_star)
+            halo_info["mass_stellar_err_plus"] = u.uncertainty_power_2(
+                x=fg_logm_star,
+                sigma_x=fg_logm_star_err_plus,
+                base=10
             )
-            halo_info["log_mass_stellar_err_minus"] = u.uncertainty_log10(
-                arg=fg_m_star,
-                uncertainty_arg=fg_m_star_err_minus
+            halo_info["mass_stellar_err_minus"] = u.uncertainty_power_2(
+                x=fg_logm_star,
+                sigma_x=fg_logm_star_err_minus,
+                base=10
             )
+
             obj.halo_mass()
             halo_info["mass_halo"] = obj.mass_halo
             halo_info["log_mass_halo"] = obj.log_mass_halo
@@ -1131,21 +1140,23 @@ class FRB(ExtragalacticTransient):
                 rmax=rmax,
                 step_size=step_size_halo
             ) / (1 + obj.z)
-            halo_info["dm_halo_yf17"] = yf17.Ne_Rperp(
-                Rperp=offset,
-                rmax=rmax,
-                step_size=step_size_halo
-            ) / (1 + obj.z)
-            halo_info["dm_halo_mb04"] = mb04.Ne_Rperp(
-                Rperp=offset,
-                rmax=rmax,
-                step_size=step_size_halo
-            ) / (1 + obj.z)
-            halo_info["dm_halo_mb15"] = mb15.Ne_Rperp(
-                Rperp=offset,
-                rmax=rmax,
-                step_size=step_size_halo
-            ) / (1 + obj.z)
+
+            if not skip_other_models:
+                halo_info["dm_halo_yf17"] = yf17.Ne_Rperp(
+                    Rperp=offset,
+                    rmax=rmax,
+                    step_size=step_size_halo
+                ) / (1 + obj.z)
+                halo_info["dm_halo_mb04"] = mb04.Ne_Rperp(
+                    Rperp=offset,
+                    rmax=rmax,
+                    step_size=step_size_halo
+                ) / (1 + obj.z)
+                halo_info["dm_halo_mb15"] = mb15.Ne_Rperp(
+                    Rperp=offset,
+                    rmax=rmax,
+                    step_size=step_size_halo
+                ) / (1 + obj.z)
 
             halo_info["r_200"] = mnfw.r200
             if obj.name.startswith("HG"):
@@ -1228,9 +1239,9 @@ class FRB(ExtragalacticTransient):
 
         print("\tEmpirical DM_halos:")
         outputs["dm_halos_emp"] = halo_tbl["dm_halo"].nansum() - dm_halo_host
-        outputs["dm_halos_yf17"] = halo_tbl["dm_halo_yf17"].nansum() - dm_halo_host
-        outputs["dm_halos_mb04"] = halo_tbl["dm_halo_mb04"].nansum() - dm_halo_host
-        outputs["dm_halos_mb15"] = halo_tbl["dm_halo_mb15"].nansum() - dm_halo_host
+        # outputs["dm_halos_yf17"] = halo_tbl["dm_halo_yf17"].nansum() - dm_halo_host
+        # outputs["dm_halos_mb04"] = halo_tbl["dm_halo_mb04"].nansum() - dm_halo_host
+        # outputs["dm_halos_mb15"] = halo_tbl["dm_halo_mb15"].nansum() - dm_halo_host
 
         print("\t", outputs["dm_halos_emp"])
 

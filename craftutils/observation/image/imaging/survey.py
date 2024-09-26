@@ -70,7 +70,7 @@ class DESCutout(SurveyCutout):
             self,
             **kwargs
     ):
-        self.add_zeropoint(
+        return self.add_zeropoint(
             catalogue="calib_pipeline",
             zeropoint=self.extract_header_item("MAGZERO"),  # - 2.5 * np.log10(exptime)) * units.mag,
             zeropoint_err=0.0 * units.mag,
@@ -79,11 +79,10 @@ class DESCutout(SurveyCutout):
             airmass=0.0,
             airmass_err=0.0
         )
-        zp = super().zeropoint(
-            **kwargs
-        )
+        # zp = super().zeropoint(
+        #     **kwargs
+        # )
 
-        return zp
 
     def extract_unit(self, astropy: bool = False):
         unit = "ct / s"

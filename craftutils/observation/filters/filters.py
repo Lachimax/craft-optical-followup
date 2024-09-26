@@ -218,7 +218,7 @@ class Filter:
 
         numerator = np.trapz(t * s * 10 ** (-a_w / 2.5), w)
         denominator = np.trapz(t * s, w)
-        delta_m = -2.5 * np.log10(numerator / denominator) * units.mag
+        delta_m = float(-2.5 * np.log10(numerator / denominator)) * units.mag
         return delta_m
 
     def compare_transmissions(self, other: 'Filter'):
