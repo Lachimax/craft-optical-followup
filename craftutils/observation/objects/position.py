@@ -4,6 +4,7 @@ import copy
 import numpy as np
 
 from astropy.coordinates import SkyCoord, Longitude
+import astropy.uncertainty as unc
 import astropy.units as units
 
 import craftutils.utils as u
@@ -84,6 +85,8 @@ class PositionUncertainty:
         """
 
         self.sigma = sigma
+        self.position = position
+        self.cos_dec = np.cos(position.dec)
         # Assign values from dictionary, if provided.
         if type(uncertainty) is dict:
             ra_key = None
@@ -195,9 +198,9 @@ class PositionUncertainty:
             theta = 0.0 * units.deg
 
         if ra_err_stat is None and "alpha_err_stat" in kwargs and kwargs["alpha_err_stat"] is not None:
-            ra_err_stat = (kwargs["alpha_err_stat"] / np.cos(position.dec)).to("arcsec")
+            ra_err_stat = (kwargs["alpha_err_stat"] / self.cos_dec).to("arcsec")
         if ra_err_sys is None and "alpha_err_sys" in kwargs and kwargs["alpha_err_sys"] is not None:
-            ra_err_sys = (kwargs["alpha_err_sys"] / np.cos(position.dec)).to("arcsec")
+            ra_err_sys = (kwargs["alpha_err_sys"] / self.cos_dec).to("arcsec")
         if dec_err_stat is None and "delta_err_stat" in kwargs and kwargs["delta_err_stat"] is not None:
             dec_err_stat = kwargs["delta_err_stat"]
         if dec_err_sys is None and "delta_err_sys" in kwargs and kwargs["delta_err_sys"] is not None:
@@ -225,8 +228,8 @@ class PositionUncertainty:
         # Convert equatorial uncertainty to ellipse with theta=0
         # if not ellipse:
         #     dec = position.dec
-        #     a_sys = ra_err_sys * np.cos(dec)
-        #     a_stat = ra_err_stat * np.cos(dec)
+        #     a_sys = ra_err_sys * self.cos_dec
+        #     a_stat = ra_err_stat * self.cos_dec
         #     b_sys = dec_err_sys
         #     b_stat = dec_err_stat
         #     if b_sys > a_sys:
@@ -306,7 +309,38 @@ class PositionUncertainty:
             return None, None
         return np.sqrt(self.ra_total ** 2), np.sqrt(self.dec_total ** 2)
 
-    # def mc_ellipse(self):
+    def mc_ellipse(self, n_samples=1):
+        """
+        Uses the uncertainty ellipse as a distribution from which to generate a sample of positions, for use in Monte
+        Carlo methods.
+
+        :param n_samples: number of positions to generate.
+        :return:
+        """
+        a_quad, b_quad, theta = self.uncertainty_quadrature()
+        delta_a_d = unc.normal(
+            center=0,
+            std=a_quad,
+            n_samples=n_samples
+        )
+
+        delta_b_d = unc.normal(
+            center=0,
+            std=b_quad,
+            n_samples=n_samples
+        )
+
+        sint = np.cos(theta)
+        cost = np.sin(theta)
+
+        delta_x_d = delta_a_d * cost - delta_b_d * sint
+        delta_alpha_d = delta_x_d / self.cos_dec
+        delta_delta_d = delta_b_d * cost + delta_a_d * sint
+
+        ra_d = (delta_alpha_d + self.position.ra).to(units.deg)
+        dec_d = (delta_delta_d + self.position.dec).to(units.deg)
+        frb_c = SkyCoord(ra_d.distribution, dec_d.distribution)
+        return frb_c
 
 
     def to_dict(self):

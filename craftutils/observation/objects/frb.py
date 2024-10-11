@@ -946,19 +946,26 @@ class FRB(ExtragalacticTransient):
             rmax=1.,
             cat_search: str = None,
             step_size_halo: units.Quantity = 0.1 * units.kpc,
-            neval_cosmic: int = 10000,
+            neval_cosmic: int = 1000,
             foreground_objects: list = None,
             load_objects: bool = True,
-            skip_other_models: bool = False
+            skip_other_models: bool = False,
+            do_mc: bool = False,
+            dm_host_ism: units.Quantity = 0,
+            dm_host_ism_err: units.Quantity = 0,
     ):
         from .galaxy import Galaxy
         from frb.halos.hmf import halo_incidence
 
+        dm_host_ism = u.check_quantity(dm_host_ism, dm_units)
+
         if skip_other_models:
-            model = "all"
+            outputs = {
+                "dm_halo_mw_pz19": self.dm_mw_halo(distance=rmax, model="pz19")
+            }
         else:
-            model = "pz19"
-        outputs = self.dm_mw_halo(distance=rmax, model=model)
+            outputs = self.dm_mw_halo(distance=rmax, model="all")
+        outputs["do_mc"] = do_mc
 
         if load_objects:
             self.field.load_all_objects()
@@ -979,6 +986,14 @@ class FRB(ExtragalacticTransient):
         frb_err_ra, frb_err_dec = self.position_err.uncertainty_quadrature_equ()
         frb_err_dec = frb_err_dec.to(units.arcsec)
         cosmic_tbl = table.QTable()
+
+        if do_mc:
+            position_frb = self.position_err.mc_ellipse(n_samples=1)[0]
+            if dm_host_ism > 0:
+                dm_host_ism = np.random.normal(loc=dm_host_ism.value, scale=dm_host_ism_err.value) * dm_units
+                dm_host_ism_err = 0 * dm_units
+        else:
+            position_frb = self.position
 
         print("DM_FRB:")
         print(self.dm)
@@ -1049,9 +1064,15 @@ class FRB(ExtragalacticTransient):
             obj.select_deepest()
 
             if obj.position_photometry is not None:
-                pos = obj.position_photometry
+                if do_mc:
+                    pos = obj.position_photometry_err.mc_ellipse(n_samples=1)[0]
+                else:
+                    pos = obj.position_photometry
             else:
-                pos = obj.position
+                if do_mc:
+                    pos = obj.position_err.mc_ellipse(n_samples=1)[0]
+                else:
+                    pos = obj.position
 
             halo_info = {
                 "id": obj.name,
@@ -1070,7 +1091,7 @@ class FRB(ExtragalacticTransient):
                     halo_info["id_cat"] = "--"
                 halo_info["offset_cat"] = sep.to(units.arcsec)
 
-            halo_info["offset_angle"] = offset_angle = self.position.separation(obj.position_photometry).to(
+            halo_info["offset_angle"] = offset_angle = position_frb.separation(obj.position_photometry).to(
                 units.arcsec)
             if obj.position_photometry_err.dec_stat is not None:
                 fg_pos_err = max(
@@ -1081,41 +1102,65 @@ class FRB(ExtragalacticTransient):
             halo_info["distance_angular_size"] = obj.angular_size_distance()
             halo_info["distance_luminosity"] = obj.luminosity_distance()
             halo_info["distance_comoving"] = obj.comoving_distance()
-            halo_info["offset_angle_err"] = offset_angle_err = np.sqrt(fg_pos_err ** 2 + frb_err_dec ** 2)
+            if not do_mc:
+                halo_info["offset_angle_err"] = offset_angle_err = np.sqrt(fg_pos_err ** 2 + frb_err_dec ** 2)
             halo_info["r_perp"] = offset = obj.projected_size(offset_angle).to(units.kpc)
-            halo_info["r_perp_err"] = obj.projected_size(offset_angle_err).to(units.kpc)
-            halo_info["log_mass_stellar"] = fg_logm_star = obj.log_mass_stellar
-            halo_info["log_mass_stellar_err_plus"] = fg_logm_star_err_plus = obj.log_mass_stellar_err_plus
-            halo_info["log_mass_stellar_err_minus"] = fg_logm_star_err_minus = obj.log_mass_stellar_err_minus
-            # try:
+            if not do_mc:
+                halo_info["r_perp_err"] = obj.projected_size(offset_angle_err).to(units.kpc)
+
+            if do_mc:
+                fg_logm_star = np.random.normal(
+                    loc=obj.log_mass_stellar,
+                    scale=max(obj.log_mass_stellar_err_plus, obj.log_mass_stellar_err_minus),
+                )
+                obj.log_mass_stellar = fg_logm_star
+
+            else:
+                fg_logm_star = obj.log_mass_stellar
+                halo_info["log_mass_stellar_err_plus"] = fg_logm_star_err_plus = obj.log_mass_stellar_err_plus
+                halo_info["log_mass_stellar_err_minus"] = fg_logm_star_err_minus = obj.log_mass_stellar_err_minus
+                halo_info["mass_stellar_err_plus"] = u.uncertainty_power_2(
+                    x=fg_logm_star,
+                    sigma_x=fg_logm_star_err_plus,
+                    base=10
+                )
+                halo_info["mass_stellar_err_minus"] = u.uncertainty_power_2(
+                    x=fg_logm_star,
+                    sigma_x=fg_logm_star_err_minus,
+                    base=10
+                )
+            halo_info["log_mass_stellar"] = fg_logm_star
+            halo_info["mass_stellar"] = units.solMass * 10 ** fg_logm_star
+                        # try:
             #     halo_info["log_mass_stellar"] = np.log10(fg_logm_star / units.solMass)
             # except units.UnitTypeError:
             #     continue
             # print(fg_logm_star, "+", fg_logm_star_err_plus, "-", fg_logm_star_err_minus)
-            halo_info["mass_stellar"] = units.solMass * 10 ** (fg_logm_star)
-            halo_info["mass_stellar_err_plus"] = u.uncertainty_power_2(
-                x=fg_logm_star,
-                sigma_x=fg_logm_star_err_plus,
-                base=10
-            )
-            halo_info["mass_stellar_err_minus"] = u.uncertainty_power_2(
-                x=fg_logm_star,
-                sigma_x=fg_logm_star_err_minus,
-                base=10
-            )
 
             obj.halo_mass()
+
+            if do_mc:
+                fg_logm_halo = np.random.normal(
+                    loc=obj.log_mass_halo,
+                    scale=0.3
+                )
+                obj.log_mass_halo = fg_logm_halo
+                obj.mass_halo = units.solMass * 10 ** fg_logm_halo
+            else:
+                halo_info["log_mass_halo_upper"] = obj.log_mass_halo_upper
+                halo_info["log_mass_halo_lower"] = obj.log_mass_halo_lower
+
             halo_info["mass_halo"] = obj.mass_halo
             halo_info["log_mass_halo"] = obj.log_mass_halo
-            halo_info["log_mass_halo_upper"] = obj.log_mass_halo_upper
-            halo_info["log_mass_halo_lower"] = obj.log_mass_halo_lower
+
             halo_info["h"] = obj.h()
-            halo_info["c"] = obj.halo_concentration_parameter()
+            halo_info["c200"] = obj.halo_concentration_parameter()
 
             mnfw = obj.halo_model_mnfw()
-            yf17 = obj.halo_model_yf17()
-            mb04 = obj.halo_model_mb04()
-            mb15 = obj.halo_model_mb15()
+            if not skip_other_models and not do_mc:
+                yf17 = obj.halo_model_yf17()
+                mb04 = obj.halo_model_mb04()
+                mb15 = obj.halo_model_mb15()
 
             halo_nes = []
             rs = []
@@ -1173,7 +1218,7 @@ class FRB(ExtragalacticTransient):
 
             halo_profiles[obj.name] = halo_nes
 
-            if host.z is not None:
+            if host.z is not None and not do_mc:
                 halo_info["n_intersect_greater"] = halo_incidence(
                     Mlow=obj.mass_halo.value,
                     zFRB=host.z,
@@ -1192,7 +1237,7 @@ class FRB(ExtragalacticTransient):
             halo_info["log_mass_halo_partition_high"] = np.log10(m_high)
             halo_info["log_mass_halo_partition_low"] = np.log10(m_low)
 
-            if host.z is not None:
+            if host.z is not None and not do_mc:
                 halo_info["n_intersect_partition"] = halo_incidence(
                     Mlow=m_low,
                     Mhigh=m_high,
@@ -1200,14 +1245,14 @@ class FRB(ExtragalacticTransient):
                     radius=halo_info["r_perp"]
                 )
 
-            if obj.cigale_results is not None:
-                halo_info["u-r"] = obj.cigale_results["bayes.param.restframe_u_prime-r_prime"] * units.mag
-            if obj.sfr is not None:
-                halo_info["sfr"] = obj.sfr
-            if obj.sfr_err is not None:
-                halo_info["sfr_err"] = obj.sfr_err
+            # if obj.cigale_results is not None:
+            #     halo_info["u-r"] = obj.cigale_results["bayes.param.restframe_u_prime-r_prime"] * units.mag
+            # if obj.sfr is not None:
+            #     halo_info["sfr"] = obj.sfr
+            # if obj.sfr_err is not None:
+            #     halo_info["sfr_err"] = obj.sfr_err
 
-            if halo_info["dm_halo"] > 0. * dm_units:
+            if halo_info["dm_halo"] > 0. * dm_units and not do_mc:
                 dm_halo_cum_this = obj.halo_dm_cum(
                     rmax=rmax,
                     rperp=offset,
@@ -1253,7 +1298,7 @@ class FRB(ExtragalacticTransient):
         if host.z is not None:
             print("DM_host:")
             # Obtained using James 2021
-            print("\tMedian DM_host:")
+            print("\tMedian DM_host (James+2022B) at z:")
             outputs["dm_host_median_james22A"] = dm_host_median["james_22A"] / (1 + host.z)
             outputs["dm_host_median"] = dm_host_median["james_22B"] / (1 + host.z)
             print("\t", outputs["dm_host_median"])
@@ -1265,16 +1310,25 @@ class FRB(ExtragalacticTransient):
             outputs["dm_halo_host"] = dm_halo_host
             print("\t", outputs["dm_halo_host"])
 
-            print("\tDM_host,ism:")
-            outputs["dm_host_ism"] = outputs["dm_host_median"] - outputs["dm_halo_host"]
-            print("\t", outputs["dm_host_ism"])
+            if dm_host_ism > 0:
+                print("\tDM_host,ism (given):")
+                outputs["dm_host_ism"] = dm_host_ism
+            else:
+                print("\tDM_host,ism (estimated from median):")
+                outputs["dm_host_ism"] = outputs["dm_host_median"] - outputs["dm_halo_host"]
+            outputs["dm_host_ism_err"] = dm_host_ism_err
+            print("\t", outputs["dm_host_ism"], "+/-", outputs["dm_host_ism_err"])
+
+            outputs["dm_host"] = outputs["dm_host_ism"] + outputs["dm_halo_host"]
+            print("\tDM_host")
+            print("\t", outputs["dm_host"])
 
         print("Excess DM estimate:")
-        outputs["dm_excess_avg"] = self.dm - outputs["dm_cosmic_avg"] - outputs["dm_mw"] - outputs["dm_host_median"]
+        outputs["dm_excess_avg"] = self.dm - outputs["dm_cosmic_avg"] - outputs["dm_mw"] - outputs["dm_host"]
         print("\t", outputs["dm_excess_avg"])
 
         print("Empirical Excess DM:")
-        outputs["dm_excess_emp"] = self.dm - outputs["dm_cosmic_emp"] - outputs["dm_mw"] - outputs["dm_host_median"]
+        outputs["dm_excess_emp"] = self.dm - outputs["dm_cosmic_emp"] - outputs["dm_mw"] - outputs["dm_host"]
         print("\t", outputs["dm_excess_emp"])
 
         #     r_eff_proj = foreground.projected_distance(r_eff).to(units.kpc)
