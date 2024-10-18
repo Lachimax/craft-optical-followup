@@ -1108,7 +1108,8 @@ class FRB(ExtragalacticTransient):
             skip_other_models: bool = False,
             do_mc: bool = False,
             cat_search: str = None,
-            cosmic_tbl: table.QTable = None
+            cosmic_tbl: table.QTable = None,
+            smhm_relationship: str = "K18"
     ):
 
         from .galaxy import Galaxy
@@ -1185,7 +1186,7 @@ class FRB(ExtragalacticTransient):
                     fg_pos_err = max(gal_ra_err, gal_dec_err)
 
             else:
-                print(f"Using YAML position: {obj.position}, {obj.position_err}")
+                print(f"\t\tUsing YAML position: {obj.position}, {obj.position_err}")
                 if do_mc:
                     pos = obj.position_err.mc_ellipse(n_samples=1)[0]
                     fg_pos_err = 0 * units.arcsec
@@ -1257,20 +1258,8 @@ class FRB(ExtragalacticTransient):
             #     continue
             # print(fg_logm_star, "+", fg_logm_star_err_plus, "-", fg_logm_star_err_minus)
 
-            obj.halo_mass()
-
-            if do_mc:
-                # print("\t\t Drawing halo mass.")
-                fg_logm_halo = np.random.normal(
-                    loc=obj.log_mass_halo,
-                    scale=0.3
-                )
-                print(f"\t\t Drew log(M_halo) = {fg_logm_halo} (calculated {obj.log_mass_halo} +/- 0.3)")
-                obj.log_mass_halo = fg_logm_halo
-                obj.mass_halo = units.solMass * 10 ** fg_logm_halo
-            else:
-                halo_info["log_mass_halo_upper"] = obj.log_mass_halo_upper
-                halo_info["log_mass_halo_lower"] = obj.log_mass_halo_lower
+            print("\t\tDrawing log(M_halo)")
+            obj.halo_mass(relationship=smhm_relationship, do_mc=do_mc)
 
             halo_info["mass_halo"] = obj.mass_halo
             halo_info["log_mass_halo"] = obj.log_mass_halo

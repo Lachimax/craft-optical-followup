@@ -1,6 +1,7 @@
 import os
 
 import numpy as np
+from scipy.optimize import fsolve
 
 import astropy.units as units
 import astropy.table as table
@@ -10,8 +11,10 @@ from astropy.coordinates import SkyCoord
 import craftutils
 import craftutils.utils as u
 import craftutils.observation.sed as sed
+from build.lib.frb.halos.utils import stellarmass_from_halomass
 
 from .extragalactic import Extragalactic, cosmology
+
 
 
 @u.export
@@ -85,8 +88,7 @@ class Galaxy(Extragalactic):
 
         self.mass_halo = None
         self.log_mass_halo = None
-        self.log_mass_halo_upper = None
-        self.log_mass_halo_lower = None
+        self.log_mass_halo_err = None
         if "mass_halo" in kwargs:
             self.mass_halo = u.check_quantity(kwargs["mass_halo"], units.solMass)
             self.log_mass_halo = np.log10(self.mass_halo / units.solMass)
@@ -194,29 +196,46 @@ class Galaxy(Extragalactic):
     def h(self):
         return cosmology.H(z=self.z) / (100 * units.km * units.second ** -1 * units.Mpc ** -1)
 
-    def halo_mass(self):
-        from frb.halos.utils import halomass_from_stellarmass
+    def halo_mass(self, relationship: str = "K18", do_mc: bool = False, **kwargs):
         if self.log_mass_stellar is None:
             raise ValueError(f"{self}.log_mass_stellar has not been defined.")
-        self.log_mass_halo = halomass_from_stellarmass(
-            log_mstar=self.log_mass_stellar,
-            z=self.z
-        )
+        if relationship == "M13":
+            from frb.halos.utils import halomass_from_stellarmass
+
+            if "scatter" in kwargs:
+                scatter = kwargs["scatter"]
+            else:
+                scatter = 0.3
+            self.log_mass_halo = halomass_from_stellarmass(
+                log_mstar=self.log_mass_stellar,
+                z=self.z
+            )
+            if do_mc:
+                log_mass_halo = np.random.normal(self.log_mass_halo, scatter)
+                print(f"\t\t Drew log(M_halo) = {log_mass_halo} (fiducial {self.log_mass_halo} +/- {scatter})")
+                self.log_mass_halo = log_mass_halo
+            else:
+                self.log_mass_halo_err = scatter
+
+        elif relationship == "K18":
+            params = params_k18.copy()
+            params.update(kwargs)
+            self.log_mass_halo = halomass_from_stellarmass_b13(self.log_mass_stellar, randomize=do_mc, **params)
+
+        elif relationship == "B13":
+            params = params_b13.copy()
+            params.update(kwargs)
+            self.log_mass_halo = halomass_from_stellarmass_b13(self.log_mass_stellar, randomize=do_mc, **params)
+
+        else:
+            raise ValueError(f"Relationship {relationship} not recognised.")
+
         self.mass_halo = (10 ** self.log_mass_halo) * units.solMass
-        if self.log_mass_stellar_err_plus is None:
-            self.log_mass_stellar_err_plus = 0. * units.solMass
-        self.log_mass_halo_upper = halomass_from_stellarmass(
-            log_mstar=self.log_mass_stellar + self.log_mass_stellar_err_plus,
-            z=self.z
-        )
-        if self.log_mass_stellar_err_minus is None:
-            self.log_mass_stellar_err_minus = 0. * units.solMass
-        self.log_mass_halo_lower = halomass_from_stellarmass(
-            log_mstar=self.log_mass_stellar - self.log_mass_stellar_err_minus,
-            z=self.z
-        )
 
         return self.mass_halo, self.log_mass_halo
+
+    def stellar_mass_from_halo_mass(self, method: str = "Behroozi2013", **kwargs):
+        pass
 
     def halo_concentration_parameter(self):
         if self.log_mass_halo is None:
@@ -385,3 +404,141 @@ class Galaxy(Extragalactic):
             "type": "Galaxy"
         })
         return default_params
+
+
+params_b13 = {
+    "M10": 11.514,
+    "M10_err": 0.053,
+    "M1a": -1.793,
+    "M1a_err": 0.330,
+    "M1z": 11.514,
+    "M1z_err": 0.125,
+    "epsilon_0": -1.777,
+    "epsilon_0_err": 0.146,
+    "epsilon_a": -0.006,
+    "epsilon_a_err": 0.361,
+    "epsilon_z": 0.,
+    "epsilon_z_err": 0.104,
+    "epsilon_a2": -0.119,
+    "epsilon_a2_err": 0.061,
+    "alpha_0": -1.412,
+    "alpha_0_err": 0.105,
+    "alpha_a": 0.731,
+    "alpha_a_err": 0.344,
+    "delta_0": 3.508,
+    "delta_0_err": 0.369,
+    "delta_a": 2.608,
+    "delta_a_err": 2.446,
+    "delta_z": -0.043,
+    "delta_z_err": 0.958,
+    "gamma_0": 0.316,
+    "gamma_0_err": 0.076,
+    "gamma_a": 1.319,
+    "gamma_a_err": 0.584,
+    "gamma_z": 0.279,
+    "gamma_z_err": 0.256,
+    "xi_0": 0.218,
+    "xi_0_err": 0.033,
+    "xi_a": -0.023,
+    "xi_a_err": 0.068,
+}
+
+# Parameters from Kravtsov 2018
+params_k18 = {
+    "alpha_0": -1.779,
+    "delta_0": 4.394,
+    "gamma_0": 0.547
+}
+
+
+def stellarmass_from_halomass_b13(
+        log_mhalo: float,
+        z: float = 0.,
+        randomize: bool = False,
+        **kwargs
+):
+    """
+    The stellar-mass-to-halo-mass parameterisation of Behroozi et al 2013 (https://doi.org/10.1088/0004-637X/770/1/57);
+    default values are the best fits from that paper, with uncertainties in each value taken as the maximum uncertainty
+    from that paper.
+
+    :param z:
+    :param log_mstar:
+    :param randomize:
+    :param kwargs:
+    :return:
+    """
+
+    from argparse import Namespace
+
+    default_kwargs = params_b13.copy()
+    default_kwargs.update(kwargs)
+    if randomize:
+        for k, v in default_kwargs.items():
+            if k.endswith("_err"):
+                k_measured = k.replace("_err", "")
+                v_measured = default_kwargs[k_measured]
+                default_kwargs[k_measured] = np.random.normal(v_measured, v)
+
+    v = Namespace(**default_kwargs)
+
+    # First, redshift evolution
+    a = 1 / (1 + z)
+    nu = np.exp(-4 * a ** 2)
+    log_M1 = v.M10 + (v.M1a * (a - 1) + v.M1z * z) * nu
+    log_epsilon = v.epsilon_0 + (v.epsilon_a * (a - 1) + v.epsilon_z * z) * nu + v.epsilon_a2 * (a - 1)
+    alpha = v.alpha_0 + (v.alpha_a * (a - 1)) * nu
+    delta = v.delta_0 + (v.delta_a * (a - 1) + v.delta_z * z) * nu
+    gamma = v.gamma_0 + (v.gamma_a * (a - 1) + v.gamma_z * z) * nu
+
+    def f(x):
+        return - np.log10(10 ** (alpha * x) + 1) + delta * (np.log10(1 + np.exp(x)) ** gamma) / (1 + np.exp(10 ** -x))
+
+    log_Mstar = log_M1 + log_epsilon + f(log_mhalo - log_M1) - f(0)
+
+    if randomize:
+        xi = v.xi_0 + v.xi_a * (a - 1)
+        log_Mstar = np.random.normal(log_Mstar, xi)
+
+    return log_Mstar
+
+def halomass_from_stellarmass_b13(
+        log_mstar: float,
+        z: float = 0,
+        randomize: bool = False,
+        **kwargs
+):
+    """
+    Adapted from the frb repo.
+
+    :param z:
+    :param log_mstar:
+    :param randomize:
+    :param kwargs:
+    :return:
+    """
+
+    default_kwargs = params_b13.copy()
+    default_kwargs.update(kwargs)
+
+    try:
+        log_mstar * z
+    except ValueError:
+        raise TypeError(
+            "log_mstar and z can't be broadcast together for root finding. Use numpy arrays of same length or scalar values.")
+    if not randomize:
+        f = lambda x: stellarmass_from_halomass_b13(x, z=z, randomize=False, **default_kwargs) - log_mstar
+    else:
+        for k, v in default_kwargs.items():
+            if k.endswith("_err"):
+                k_measured = k.replace("_err", "")
+                v_measured = default_kwargs[k_measured]
+                default_kwargs[k_measured] = np.random.normal(v_measured, v)
+                # print("\t\t\tDrew ")
+        f = lambda x: stellarmass_from_halomass_b13(x, z=z, randomize=False, **default_kwargs) - log_mstar
+
+    guess = 2+log_mstar
+    if hasattr(log_mstar, "__iter__"):
+        return fsolve(f, guess)
+    else:
+        return fsolve(f, guess)[0]
