@@ -1104,6 +1104,7 @@ class FRB(ExtragalacticTransient):
             foreground_objects: list = None,
             step_size_halo: units.Quantity = 0.1 * units.kpc,
             rmax=1.,
+            fhot=0.75,
             load_objects: bool = True,
             skip_other_models: bool = False,
             do_mc: bool = False,
@@ -1267,7 +1268,7 @@ class FRB(ExtragalacticTransient):
             halo_info["h"] = obj.h()
             halo_info["c200"] = obj.halo_concentration_parameter()
 
-            mnfw = obj.halo_model_mnfw()
+            mnfw = obj.halo_model_mnfw(f_hot=fhot)
             if not skip_other_models and not do_mc:
                 yf17 = obj.halo_model_yf17()
                 mb04 = obj.halo_model_mb04()
