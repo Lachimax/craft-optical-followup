@@ -1146,8 +1146,8 @@ class FRB(ExtragalacticTransient):
                     self.field.objects.values()
                 )
             )
-        if host not in foreground_objects and host.z is not None:
-            foreground_objects.append(host)
+        # if host not in foreground_objects and host.z is not None:
+        #     foreground_objects.append(host)
 
         for obj in foreground_objects:
             print(f"\tDM_halo_{obj.name}: ({obj.z=})")
