@@ -11,7 +11,6 @@ from astropy.coordinates import SkyCoord
 import craftutils
 import craftutils.utils as u
 import craftutils.observation.sed as sed
-from build.lib.frb.halos.utils import stellarmass_from_halomass
 
 from .extragalactic import Extragalactic, cosmology
 

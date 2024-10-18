@@ -1110,7 +1110,9 @@ class FRB(ExtragalacticTransient):
             do_mc: bool = False,
             cat_search: str = None,
             cosmic_tbl: table.QTable = None,
-            smhm_relationship: str = "K18"
+            smhm_relationship: str = "K18",
+            do_profiles: bool = True,
+            do_incidence: bool = False,
     ):
 
         from .galaxy import Galaxy
@@ -1146,8 +1148,6 @@ class FRB(ExtragalacticTransient):
             )
         if host not in foreground_objects and host.z is not None:
             foreground_objects.append(host)
-
-        foreground_zs = list(map(lambda o: o.z, foreground_objects))
 
         for obj in foreground_objects:
             print(f"\tDM_halo_{obj.name}: ({obj.z=})")
@@ -1274,7 +1274,7 @@ class FRB(ExtragalacticTransient):
                 mb04 = obj.halo_model_mb04()
                 mb15 = obj.halo_model_mb15()
 
-            if not do_mc:
+            if not do_mc and do_profiles:
                 # This is for building a profile of DM with R_perp
                 halo_nes = []
                 rs = []
@@ -1335,7 +1335,7 @@ class FRB(ExtragalacticTransient):
 
             halo_inform.append(halo_info)
 
-            if host.z is not None and not do_mc:
+            if host.z is not None and do_incidence and not do_mc:
                 halo_info["n_intersect_greater"] = halo_incidence(
                     Mlow=obj.mass_halo.value,
                     zFRB=host.z,
@@ -1354,7 +1354,7 @@ class FRB(ExtragalacticTransient):
             halo_info["log_mass_halo_partition_high"] = np.log10(m_high)
             halo_info["log_mass_halo_partition_low"] = np.log10(m_low)
 
-            if host.z is not None and not do_mc:
+            if host.z is not None and do_incidence and not do_mc:
                 halo_info["n_intersect_partition"] = halo_incidence(
                     Mlow=m_low,
                     Mhigh=m_high,
@@ -1403,7 +1403,8 @@ class FRB(ExtragalacticTransient):
             cosmic_tbl["dm_cosmic_emp"] = cosmic_tbl["dm_halos_emp"] + cosmic_tbl["dm_igm"]
 
         print("\tEmpirical DM_halos:")
-        outputs["dm_halos_emp"] = halo_tbl["dm_halo"].nansum() - dm_halo_host
+        outputs["dm_halos_inclusive"] = halo_tbl["dm_halo"].nansum()
+        outputs["dm_halos_emp"] = outputs["dm_halos_inclusive"] - dm_halo_host
 
         outputs["dm_halo_host"] = dm_halo_host
         outputs["halo_models"] = halo_models
