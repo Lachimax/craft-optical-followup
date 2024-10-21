@@ -1159,42 +1159,13 @@ class FRB(ExtragalacticTransient):
 
             # print("\t\t Drawing position.")
 
-            if "best" in obj.galfit_models:
-                pos = SkyCoord(
-                    obj.galgalfit_models["best"]["ra"],
-                    obj.galgalfit_models["best"]["dec"]
-                )
-                pos_err_ = PositionUncertainty(
-                    ra_err_total=obj.galgalfit_models["best"]["ra_err"],
-                    dec_err_total=obj.galgalfit_models["best"]["dec_err"],
-                )
-                print(f"Using GALFIT position: {pos}, {pos_err_}")
-                if do_mc:
-                    pos = obj.pos_err_.mc_ellipse(n_samples=1)[0]
-                    fg_pos_err = 0 * units.arcsec
-                else:
-                    gal_ra_err, gal_dec_err, _ = obj.pos_err_.uncertainty_quadrature()
-                    fg_pos_err = max(gal_ra_err, gal_dec_err)
-
-            elif obj.position_photometry is not None:
-                print(f"Using photometry position: {obj.position_photometry}, {obj.position_photometry_err}")
-                if do_mc:
-                    pos = obj.position_photometry_err.mc_ellipse(n_samples=1)[0]
-                    fg_pos_err = 0 * units.arcsec
-                else:
-                    pos = obj.position_photometry
-                    gal_ra_err, gal_dec_err, _ = obj.position_photometry_err.uncertainty_quadrature()
-                    fg_pos_err = max(gal_ra_err, gal_dec_err)
-
-            else:
-                print(f"\t\tUsing YAML position: {obj.position}, {obj.position_err}")
-                if do_mc:
-                    pos = obj.position_err.mc_ellipse(n_samples=1)[0]
-                    fg_pos_err = 0 * units.arcsec
-                else:
-                    pos = obj.position
-                    gal_ra_err, gal_dec_err, _ = obj.position_err.uncertainty_quadrature()
-                    fg_pos_err = max(gal_ra_err, gal_dec_err)
+            pos, fg_pos_err = obj.get_position()
+            if do_mc:
+                pos = fg_pos_err.mc_ellipse(n_samples=1)[0]
+                # fg_pos_err = 0 * units.arcsec
+            # else:
+            #     gal_ra_err, gal_dec_err, _ = fg_pos_err.uncertainty_quadrature()
+            #     # fg_pos_err = max(gal_ra_err, gal_dec_err)
 
             halo_info = {
                 "id": obj.name,

@@ -316,6 +316,33 @@ class Galaxy(Extragalactic):
         })
         return tbl
 
+    def get_position(self):
+        from craftutils.observation.objects import PositionUncertainty
+        if "best" in self.galfit_models:
+            gf_model = self.galfit_models["best"]["COMP_2"]
+            pos = SkyCoord(
+                gf_model["ra"],
+                gf_model["dec"]
+            )
+            pos_err = PositionUncertainty(
+                position=pos,
+                ra_err_total=gf_model["ra_err"],
+                dec_err_total=gf_model["dec_err"],
+            )
+            print(f"Using GALFIT position: {pos}, {pos_err}")
+
+        elif self.position_photometry is not None:
+            print(f"Using photometry position: {self.position_photometry}, {self.position_photometry_err}")
+            pos = self.position_photometry
+            pos_err = self.position_photometry_err
+
+        else:
+            print(f"\t\tUsing YAML position: {self.position}, {self.position_err}")
+            pos = self.position_err
+            pos_err = self.position
+
+        return pos, pos_err
+
     def galfit_guess_dict(self, img: 'craftutils.observation.image.ImagingImage'):
         img.load_output_file()
         fil = img.filter.name

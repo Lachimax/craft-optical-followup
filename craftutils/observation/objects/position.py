@@ -46,8 +46,8 @@ def skycoord_to_position_dict(skycoord: SkyCoord):
 class PositionUncertainty:
     def __init__(
             self,
+            position: SkyCoord,
             uncertainty: Union[float, units.Quantity, dict, tuple] = None,
-            position: SkyCoord = None,
             ra_err_total: Union[float, units.Quantity] = None,
             ra_err_sys: Union[float, units.Quantity] = None,
             ra_err_stat: Union[float, units.Quantity] = None,
