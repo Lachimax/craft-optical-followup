@@ -561,6 +561,9 @@ def halomass_from_stellarmass_b13(
                 v_measured = default_kwargs[k_measured]
                 default_kwargs[k_measured] = np.random.normal(v_measured, v)
                 # print("\t\t\tDrew ")
+        a = 1 / (1 + z)
+        xi = default_kwargs["xi_0"] + default_kwargs["xi_a"] * (a - 1)
+        log_mstar = np.random.normal(log_mstar, xi)
         f = lambda x: stellarmass_from_halomass_b13(x, z=z, randomize=False, **default_kwargs) - log_mstar
 
     guess = 2+log_mstar
