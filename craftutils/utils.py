@@ -715,6 +715,41 @@ def inclination_table(
             row[cos_column] = inclination(axis_ratio=row[axis_ratio_column], q_0=q_0, uncos=False)
     return tbl
 
+dm_units = units.pc / (units.cm ** 3)
+
+def tau(
+        a_t,
+        f,
+        dm,
+        nu,
+        g_scatt,
+):
+    """
+    Encodes equation 1 of Ocker+2021 (https://doi.org/10.3847/1538-4357/abeb6e)
+    """
+    f = check_quantity(f, units.pc ** -(2/3) * units.km ** (-1/3)).value
+
+    return (48.03 * units.ns * a_t * f * g_scatt * (dm / dm_units) ** 2 / (nu / units.GHz) ** 4).to("ms")
+
+
+def tau_cosmological(
+        a_t,
+        f,
+        dm,
+        z_l,
+        nu,
+        d_sl,
+        d_lo,
+        d_so,
+        l
+):
+    """
+    Encodes equation 2 of Ocker+2021 (https://doi.org/10.3847/1538-4357/abeb6e)
+    """
+
+    g_scatt = d_sl * d_lo / (l * d_so)
+    return tau(a_t=a_t,f=f,dm=dm, g_scatt=g_scatt, nu=nu) / ((1 + z_l) ** 3)
+
 
 def deprojected_offset(
         object_coord: SkyCoord,

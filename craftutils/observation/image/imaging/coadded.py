@@ -185,32 +185,7 @@ class GSAOIImage(CoaddedImage):
         self.pointing = SkyCoord(ra, dec, unit=units.deg)
         return self.pointing
 
-
-class HubbleImage(CoaddedImage):
-    instrument_name = "hst-dummy"
-
-    def __init__(
-            self,
-            path: str,
-            frame_type: str = None,
-            instrument_name: str = None
-    ):
-        if instrument_name is None:
-            instrument_name = detect_instrument(path)
-        super().__init__(
-            path=path,
-            frame_type=frame_type,
-            instrument_name=instrument_name,
-        )
-
-    def extract_exposure_time(self):
-        self.exposure_time = 1.0 * units.second
-        return self.exposure_time
-
-    def extract_noise_read(self):
-        self.noise_read = 0.0 * noise_read_unit
-        return self.noise_read
-
+class STScIImage(CoaddedImage):
     def zeropoint(self, **kwargs):
         """
         Returns the AB magnitude zeropoint of the image, according to
@@ -240,6 +215,32 @@ class HubbleImage(CoaddedImage):
         )
         self.update_output_file()
         return self.zeropoint_best
+
+
+class HubbleImage(STScIImage):
+    instrument_name = "hst-dummy"
+
+    def __init__(
+            self,
+            path: str,
+            frame_type: str = None,
+            instrument_name: str = None
+    ):
+        if instrument_name is None:
+            instrument_name = detect_instrument(path)
+        super().__init__(
+            path=path,
+            frame_type=frame_type,
+            instrument_name=instrument_name,
+        )
+
+    def extract_exposure_time(self):
+        self.exposure_time = 1.0 * units.second
+        return self.exposure_time
+
+    def extract_noise_read(self):
+        self.noise_read = 0.0 * noise_read_unit
+        return self.noise_read
 
     def mask_nearby(self):
         if self.instrument_name == "hst-wfc3_uvis2":

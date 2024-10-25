@@ -217,9 +217,10 @@ class FRBField(Field):
         if not isinstance(self.frb, objects.FRB):
             raise TypeError("self.frb has not been set properly for this FRBField.")
         if centre is None:
-            centre = self.frb.host_galaxy.position
-        if centre is None:
-            centre = self.frb.position
+            if self.frb.host_galaxy is not None:
+                centre = self.frb.host_galaxy.position
+            else:
+                centre = self.frb.position
 
         if draw_scale_bar:
             kwargs["scale_bar_object"] = self.frb.host_galaxy

@@ -10,6 +10,7 @@ from astropy.coordinates import SkyCoord
 
 import craftutils
 import craftutils.utils as u
+import craftutils.params as p
 import craftutils.observation.sed as sed
 
 from .extragalactic import Extragalactic, cosmology
@@ -190,6 +191,18 @@ class Galaxy(Extragalactic):
                 self.cigale_results = outputs["cigale_results"]
             if "galfit_models" in outputs and outputs["galfit_models"] is not None and outputs["galfit_models"]:
                 self.galfit_models = outputs["galfit_models"]
+            else:
+                galfit_dir = os.path.join(self.data_path, "GALFIT")
+                if os.path.isdir(galfit_dir):
+                    for img in os.listdir(os.path.join(self.data_path, "GALFIT")):
+                        img_dir = os.path.join(galfit_dir, img)
+                        gf_param_path = os.path.join(img_dir, "best_model.yaml")
+                        if os.path.isfile(gf_param_path):
+                            gf_params = p.load_params(gf_param_path)
+                            # if gf_params is not None:
+                            band = gf_params["band"]
+                            self.galfit_models[band] = gf_params
+
         return outputs
 
     def h(self):
@@ -318,6 +331,7 @@ class Galaxy(Extragalactic):
 
     def get_position(self):
         from craftutils.observation.objects import PositionUncertainty
+        self.load_output_file()
         if "best" in self.galfit_models:
             gf_model = self.galfit_models["best"]["COMP_2"]
             pos = SkyCoord(
@@ -338,8 +352,8 @@ class Galaxy(Extragalactic):
 
         else:
             print(f"\t\tUsing YAML position: {self.position}, {self.position_err}")
-            pos = self.position_err
-            pos_err = self.position
+            pos = self.position
+            pos_err = self.position_err
 
         return pos, pos_err
 
@@ -520,13 +534,13 @@ def stellarmass_from_halomass_b13(
     def f(x):
         return - np.log10(10 ** (alpha * x) + 1) + delta * (np.log10(1 + np.exp(x)) ** gamma) / (1 + np.exp(10 ** -x))
 
-    log_Mstar = log_M1 + log_epsilon + f(log_mhalo - log_M1) - f(0)
+    log_mstar = log_M1 + log_epsilon + f(log_mhalo - log_M1) - f(0)
 
     if randomize:
         xi = v.xi_0 + v.xi_a * (a - 1)
-        log_Mstar = np.random.normal(log_Mstar, xi)
+        log_mstar = np.random.normal(log_mstar, xi)
 
-    return log_Mstar
+    return log_mstar
 
 def halomass_from_stellarmass_b13(
         log_mstar: float,

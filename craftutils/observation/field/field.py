@@ -186,7 +186,8 @@ class Field(Pipeline):
                 "method": cls.proc_galfit,
                 "message": "Perform basic GALFIT on best images?",
                 "keywords": {
-                    "galfit_img": None
+                    "galfit_img": None,
+                    "force": False
                 }
             },
             "send_to_table": {
@@ -305,6 +306,10 @@ class Field(Pipeline):
             **kwargs
     ):
         from craftutils.observation.objects import Galaxy
+        if "force" in kwargs:
+            force = kwargs["force"]
+        else:
+            force = False
         if apply_filter is None:
             obj_list = list(self.objects.values())
         else:
@@ -358,12 +363,19 @@ class Field(Pipeline):
                     # if n_files > 0:
                     #     shutil.rmtree(old_dir)
 
-                    results = img.galfit_object(
-                        obj=obj,
-                        model_guesses=[param_guesses],
-                        output_prefix=obj.name,
-                        **kwargs
-                    )
+                    if obj.galfit_models and not force:
+                        print("Found existing models; skipping actual GALFIT run.")
+                        if fil in obj.galfit_models:
+                            results = obj.galfit_models[fil]
+                        else:
+                            results = None
+                    else:
+                        results = img.galfit_object(
+                            obj=obj,
+                            model_guesses=[param_guesses],
+                            output_prefix=obj.name,
+                            **kwargs
+                        )
                     print(img.name, best_img.name)
                     print(img.path, "\n", best_img.path)
                     if img.name == best_img.name and results is not None:

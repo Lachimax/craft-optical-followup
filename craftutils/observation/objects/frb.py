@@ -654,8 +654,9 @@ class FRB(ExtragalacticTransient):
         if self._dm_mw_ism_ne2001 is None or force:
             self._dm_mw_ism_ne2001, self._tau_mw_ism_ne2001 = self._dm_mw_ism_pygedm(
                 method="ne2001",
-                distance=distance
+                distance=min(distance, 50 * units.kpc)
             )
+        self._tau_mw_ism_ne2001 = self._tau_mw_ism_ne2001.to("ms")
         return self._dm_mw_ism_ne2001
 
     def dm_mw_ism_ymw16(
@@ -668,6 +669,7 @@ class FRB(ExtragalacticTransient):
                 method="ymw16",
                 distance=distance
             )
+        self._tau_mw_ism_ymw16 = self._tau_mw_ism_ymw16.to("ms")
         return self._dm_mw_ism_ymw16
 
     def _dm_mw_ism_pygedm(
@@ -900,7 +902,7 @@ class FRB(ExtragalacticTransient):
         else:
             return 0 * dm_units
         if subtract_mw:
-            tau_mw = self.tau_mw()
+            tau_mw, _ = self.tau_mw()
             tau -= tau_mw
         afg_unit = units.pc ** (-2 / 3) * units.km ** (-1 / 3)
         afg = u.check_quantity(afg, afg_unit)
@@ -926,7 +928,84 @@ class FRB(ExtragalacticTransient):
 
         tau_dm_mw = 1.9 * 10e-7 * units.ms * (nu / units.GHz) ** x_tau * (dm / dm_units) ** 1.5 * (
                 1 + 3.55e-5 * (dm / dm_units) ** 3)
-        return tau_dm_mw.to(units.ms)
+        tau_dm_mw = tau_dm_mw.to(units.ms)
+
+        log_tau = np.log10(tau_dm_mw.value)
+        log_tau_err = 0.76
+        tau_dm_mw_err = u.uncertainty_power_2(x=log_tau, base=10., sigma_x=log_tau_err)
+
+        return tau_dm_mw, tau_dm_mw_err * units.ms
+
+    def tau_mw_halo(
+            self,
+            f=0.03 * units.pc ** -(2/3) * units.km ** (-1/3),
+            a_t=1.,
+            nu: units.Quantity[units.MHz] = None,
+            dm_mw_halo=40 * dm_units
+    ):
+        """
+        Uses equation 1 of Ocker+2021 (https://doi.org/10.3847/1538-4357/abeb6e) and their limit of F for the MW halo
+        (0.03). It should be noted that this represents an upper limit on scattering.
+
+        :param f:
+        :param a_t:
+        :param nu:
+        :param dm_mw_halo:
+        :return:
+        """
+        if nu is None:
+            nu = self.nu_scattering
+        return u.tau(
+            a_t=a_t,
+            f=f,
+            nu=nu,
+            g_scatt=1, # For observer embedded in the medium and source distance >> l,
+            dm=dm_mw_halo
+        )
+
+    def tau_from_halo(
+            self,
+            halo: 'frb.halos.models.ModifiedNFW',
+            f,
+            r_perp,
+            nu: units.Quantity[units.MHz] = None,
+            dm_kwargs: dict = {},
+            a_t=1.,
+    ):
+        """
+        Encodes equation 2 of Ocker+2021 (https://doi.org/10.3847/1538-4357/abeb6e)
+
+        :param halo:
+        :param f:
+        :param r_perp:
+        :param nu:
+        :param dm_kwargs:
+        :param kwargs:
+        :return:
+        """
+
+        if nu is None:
+            nu = self.nu_scattering
+
+        d_sl = cosmology.angular_diameter_distance_z1z2(halo.z, self.z)
+        d_lo = cosmology.angular_diameter_distance(halo.z)
+        d_so = cosmology.angular_diameter_distance(self.z)
+        dm_halo = halo.Ne_Rperp(
+            r_perp,
+            **dm_kwargs
+        ).value / (1 + halo.z)
+
+        return u.tau_cosmological(
+            a_t=a_t,
+            f=f,
+            dm=dm_halo,
+            z_l=halo.z,
+            nu=nu,
+            d_sl=d_sl,
+            d_lo=d_lo,
+            d_so=d_so,
+            l=2 * np.sqrt(halo.r200**2 - r_perp**2)
+        )
 
     def z_from_dm(
             self,
@@ -953,7 +1032,6 @@ class FRB(ExtragalacticTransient):
             **halo_kwargs
     ):
 
-
         dm_host_ism = u.check_quantity(dm_host_ism, dm_units)
 
         if skip_other_models:
@@ -968,30 +1046,34 @@ class FRB(ExtragalacticTransient):
         # frb_err_ra, frb_err_dec = self.position_err.uncertainty_quadrature_equ()
         # frb_err_dec = frb_err_dec.to(units.arcsec)
 
-        print("DM_FRB:")
-        print(self.dm)
+        print("DM_FRB:", self.dm, "+/-", self.dm_err)
+        print("tau_FRB:", self.tau, "+/-", self.tau_err, "at", self.nu_scattering)
 
-        print("DM_MW:")
+        print("Milky Way:")
 
-        print("\tDM_MWISM:")
+        print("\tISM:")
         # outputs["dm_ism_mw_cum"] = self.estimate_dm_mw_ism_cum(max_dm=outputs["dm_ism_mw_ne2001"] - 0.5 * dm_units)
-        print("\t\tDM_MWISM_NE2001")
         outputs["dm_ism_mw_ne2001"] = self.dm_mw_ism_ne2001()
-        print("\t\t", outputs["dm_ism_mw_ne2001"])
+        outputs["tau_ism_mw_ne2001"] = self._tau_mw_ism_ne2001
+        print("\t\tDM_MWISM_NE2001:", outputs["dm_ism_mw_ne2001"])
+        print("\t\ttau_MWISM_NE2001:", outputs["tau_ism_mw_ne2001"])
 
-        print("\t\tDM_MWISM_YMW16")
         outputs["dm_ism_mw_ymw16"] = self.dm_mw_ism_ymw16()
-        print("\t\t", outputs["dm_ism_mw_ymw16"])
+        outputs["tau_ism_mw_ymw16"] = self._tau_mw_ism_ymw16
+        print("\t\tDM_MWISM_YMW16:", outputs["dm_ism_mw_ymw16"])
+        print("\t\ttau_MWISM_YMW16:", outputs["tau_ism_mw_ymw16"])
 
-        print("\tDM_MWHalo_PZ19:")
-        print("\t", outputs["dm_halo_mw_pz19"])
+        outputs["tau_ism_mw_c22"], outputs["tau_ism_mw_c22_err"] = self.tau_mw()
+        print("\t\ttau_MWISM_C22:", outputs["tau_ism_mw_c22"], "+/-", outputs["tau_ism_mw_c22_err"])
+
+        print("\tDM_MWHalo_PZ19:", outputs["dm_halo_mw_pz19"])
 
         if not skip_other_models:
-            print("\tDM_MWHalo_YF17:")
-            print("\t", outputs["dm_halo_mw_yf17"])
+            print("\tDM_MWHalo_YF17:", outputs["dm_halo_mw_yf17"])
+            print("\tDM_MWHalo_MB15:", outputs["dm_halo_mw_mb15"])
 
-            print("\tDM_MWHalo_MB15:")
-            print("\t", outputs["dm_halo_mw_mb15"])
+        outputs["tau_halo_mw"] = self.tau_mw_halo()
+        print("\ttau_MWHalo: <", outputs["tau_halo_mw"])
 
         print("\tDM_MW:")
         outputs["dm_mw"] = outputs["dm_halo_mw_pz19"] + outputs["dm_ism_mw_ne2001"]
@@ -1073,8 +1155,10 @@ class FRB(ExtragalacticTransient):
             print("\t", outputs["dm_host_ism"], "+/-", outputs["dm_host_ism_err"])
 
             outputs["dm_host"] = outputs["dm_host_ism"] + outputs["dm_halo_host"]
-            print("\tDM_host")
-            print("\t", outputs["dm_host"])
+            print("\tDM_host:", outputs["dm_host"])
+
+            outputs["dm_host_tau"] = self.dm_host_from_tau(1)
+            print("\tDM_host_tau:", outputs["dm_host_tau"])
 
         # if not do_mc:
         print("Excess DM estimate:")
