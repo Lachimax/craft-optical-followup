@@ -212,7 +212,7 @@ class Galaxy(Extragalactic):
         if self.log_mass_stellar is None:
             raise ValueError(f"{self}.log_mass_stellar has not been defined.")
         if relationship == "M13":
-            from frb.halos.utils import halomass_from_stellarmass
+            from frb.halos.models import halomass_from_stellarmass
 
             if "scatter" in kwargs:
                 scatter = kwargs["scatter"]
@@ -220,7 +220,8 @@ class Galaxy(Extragalactic):
                 scatter = 0.3
             self.log_mass_halo = halomass_from_stellarmass(
                 log_mstar=self.log_mass_stellar,
-                z=self.z
+                z=self.z,
+                randomize=do_mc
             )
             if do_mc:
                 log_mass_halo = np.random.normal(self.log_mass_halo, scatter)
@@ -451,7 +452,7 @@ params_b13 = {
     "M10_err": 0.053,
     "M1a": -1.793,
     "M1a_err": 0.330,
-    "M1z": 11.514,
+    "M1z": -0.251,
     "M1z_err": 0.125,
     "epsilon_0": -1.777,
     "epsilon_0_err": 0.146,
@@ -582,6 +583,11 @@ def halomass_from_stellarmass_b13(
 
     guess = 2+log_mstar
     if hasattr(log_mstar, "__iter__"):
-        return fsolve(f, guess)
+        log_mhalo = fsolve(f, guess)
     else:
-        return fsolve(f, guess)[0]
+        log_mhalo = fsolve(f, guess)[0]
+
+    if randomize:
+        print("\t\t\tDrew log(Mhalo) = ", log_mhalo)
+
+    return log_mhalo

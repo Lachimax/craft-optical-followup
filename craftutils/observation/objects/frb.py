@@ -1314,7 +1314,6 @@ class FRB(ExtragalacticTransient):
             #     continue
             # print(fg_logm_star, "+", fg_logm_star_err_plus, "-", fg_logm_star_err_minus)
 
-            print("\t\tDrawing log(M_halo)")
             obj.halo_mass(relationship=smhm_relationship, do_mc=do_mc)
 
             halo_info["mass_halo"] = obj.mass_halo
