@@ -24,6 +24,8 @@ If you make use of this code, as-is or in a derived form, please cite [Marnoch20
    software
    references
    api
+   docs
+   TODO
 
 .. autosummary::
    :toctree: stubs

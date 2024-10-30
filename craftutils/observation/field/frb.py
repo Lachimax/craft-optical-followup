@@ -508,10 +508,11 @@ class FRBField(Field):
 
     def load_output_file(self, **kwargs):
         output_dict = super().load_output_file(**kwargs)
-        if "path_runs" in output_dict and isinstance(output_dict["path_runs"], dict):
-            self.path_runs = output_dict["path_runs"]
-        if "best_path_img" in output_dict and isinstance(output_dict["best_path_img"], str):
-            self.best_path_img = output_dict["best_path_img"]
+        if output_dict is not None:
+            if "path_runs" in output_dict and isinstance(output_dict["path_runs"], dict):
+                self.path_runs = output_dict["path_runs"]
+            if "best_path_img" in output_dict and isinstance(output_dict["best_path_img"], str):
+                self.best_path_img = output_dict["best_path_img"]
         return output_dict
 
     @classmethod

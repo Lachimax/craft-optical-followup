@@ -10,4 +10,4 @@ The filenames generally match the pattern ``<name>_outputs.yaml``.
 Each key found in one of these files will correspond to the name of a property of that object as initialised in its
 ``__init__()`` method.
 
-Image objects are represented as path strings that point to their image file.
+Image (FITS) objects are represented as path strings that point to the FITS file.
