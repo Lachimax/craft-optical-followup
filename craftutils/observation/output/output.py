@@ -66,11 +66,16 @@ class OutputCatalogue(Generic):
             self,
             force: bool = False,
     ):
+        self.load_output_file()
         if self.template is None:
             self.template = self.build_default()
+
         if force or self.table is None:
+            self.table = {}
             if os.path.isfile(self.table_path):
-                self.table = p.load_params(self.table_path)
+                tbl_dict = p.load_params(self.table_path)
+                for name, entry in tbl_dict.items():
+                    self.add_entry(key=name, entry=entry)
         if self.table is None:
             self.table = {}
         return self.table
@@ -122,6 +127,8 @@ class OutputCatalogue(Generic):
             self,
             sort_by: Union[str, list] = None,
     ):
+        self.load_output_file()
+        self.update_entries()
         tbl = self.table
         tbl_path = self.table_path
         if sort_by is None:
@@ -141,6 +148,13 @@ class OutputCatalogue(Generic):
             format="ascii.csv",
             overwrite=True
         )
+        self.update_output_file()
+
+    def update_entries(self):
+        for name, row in self.table.items():
+            for colname in self.template:
+                if colname not in row or row[colname] == 0.0:
+                    row[colname] = self.template[colname]
 
     def add_entry(
             self,
@@ -159,6 +173,17 @@ class OutputCatalogue(Generic):
                     self.template[colname] = "N/A"
                 else:
                     self.template[colname] = type(entry[colname])(-999)
+            elif isinstance(entry[colname], units.Quantity):
+                try:
+                    u.check_quantity(
+                        number=entry[colname],
+                        unit=self.template[colname].unit,
+                        allow_mismatch=True,
+                        enforce_equivalency=True
+                    )
+                except units.UnitsError:
+                    raise units.UnitsError(
+                        f"For {key}, units for {colname} ({entry[colname].unit}) do not match template (and could not be converted): {self.template[colname].unit}")
 
         self.table[key] = entry
 
@@ -241,6 +266,14 @@ class OutputCatalogue(Generic):
             "template": self.template,
         })
         return output_dict
+
+    def load_output_file(self, **kwargs):
+        output = super().load_output_file(**kwargs)
+        if output is None:
+            return None
+        if "template" in output and output["template"] is not None:
+            self.template = output["template"]
+        return output
 
     @classmethod
     def column_names(cls):

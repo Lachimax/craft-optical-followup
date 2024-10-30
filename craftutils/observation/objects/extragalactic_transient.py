@@ -1,3 +1,7 @@
+import astropy.units as units
+
+import craftutils.utils as u
+
 from .transient import Transient
 from .extragalactic import Extragalactic, cosmology
 from .transient_host import TransientHostCandidate
@@ -21,9 +25,12 @@ class ExtragalacticTransient(Transient, Extragalactic):
         self.z = None
         self.z_err = None
         if "z" in kwargs:
-            self.z = kwargs["z"]
-        if "z_err" in kwargs:
-            self.z_err = kwargs["z"]
+            z = kwargs["z"]
+            z_err = None
+            if "z_err" in kwargs:
+                z_err = kwargs["z_err"]
+            self.set_z(z=z, z_err=z_err)
+
         self.host_galaxy = host_galaxy
         self.host_candidate_tables = {}
         self.host_candidates = []
@@ -35,7 +42,7 @@ class ExtragalacticTransient(Transient, Extragalactic):
 
         :return: The Galaxy or TransientHostCandidate object.
         """
-
+        from craftutils.observation.field import Field
         if self.host_galaxy is None:
             self.host_galaxy = TransientHostCandidate(
                 transient=self,
@@ -43,10 +50,26 @@ class ExtragalacticTransient(Transient, Extragalactic):
                 z_err=self.z_err,
                 name=name
             )
-        elif isinstance(self.host_galaxy, str) and self.field:
+        elif isinstance(self.host_galaxy, str) and isinstance(self.field, Field):
             self.host_galaxy = self._get_object(self.host_galaxy)
 
         return self.host_galaxy
+
+    def deprojected_host_offset(
+            self
+    ):
+        from .galaxy import Galaxy
+        if (not isinstance(self.host_galaxy, Galaxy)
+                or not isinstance(self.host_galaxy.inclination, units.Quantity)
+                or not isinstance(self.host_galaxy.position_angle, units.Quantity)
+        ):
+            return None
+        return u.deprojected_offset(
+            object_coord=self.position,
+            galaxy_coord=self.host_galaxy.position,
+            position_angle=self.host_galaxy.position_angle,
+            inc=self.host_galaxy.inclination
+        )
 
     def _updateable(self):
         p_dict = super()._updateable()

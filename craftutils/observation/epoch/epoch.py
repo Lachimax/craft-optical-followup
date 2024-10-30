@@ -3,19 +3,16 @@
 import os
 import shutil
 import datetime
-from typing import Union, List, Dict
+from typing import Union
 
 from astropy.time import Time
-from astropy.coordinates import SkyCoord
 import astropy.units as units
 
 import craftutils.params as p
 import craftutils.retrieve as retrieve
 import craftutils.utils as u
 import craftutils.observation.field as fld
-import craftutils.observation.objects as objects
 import craftutils.observation.image as image
-import craftutils.observation.log as log
 from craftutils.observation.pipeline import Pipeline
 from craftutils.observation.instrument import Instrument
 
@@ -62,7 +59,6 @@ def epoch_from_directory(epoch_name: str, quiet: bool = False):
                 epoch_name,
                 instrument=instrument,
                 field=field,
-                quiet=quiet
             )
         elif mode == "spectroscopy":
             epoch = SpectroscopyEpoch.from_params(
@@ -308,6 +304,10 @@ class Epoch(Pipeline):
 
         active_epochs[self.name] = self
 
+        self.data_bad = False
+        if "data_bad" in kwargs:
+            self.data_bad = kwargs["data_bad"]
+
     def is_excluded(self, frame: Union[image.Image, str]):
         if isinstance(frame, image.Image):
             ident = frame.name
@@ -405,8 +405,6 @@ class Epoch(Pipeline):
     # def set_survey(self):
 
     def _pipeline_init(self, skip_cats: bool = False):
-        if not skip_cats:
-            self.field.retrieve_catalogues()
         super()._pipeline_init()
         self.set_path(
             key="download",
@@ -569,6 +567,7 @@ class Epoch(Pipeline):
             "do": {},
             "notes": [],
             "combined_epoch": False,
+            "validation_copy_of": None
         }
         # Pull the list of applicable kwargs from the stage information
         stages = cls.stages()
@@ -606,56 +605,6 @@ class Epoch(Pipeline):
             field_name = name.split("_")[0]
         return field_name, field
 
-
-class StandardEpoch(Epoch):
-    instrument_name = "dummy-instrument"
-
-    def __init__(
-            self,
-            centre_coords: SkyCoord,
-            instrument: str,
-            frames_standard: Dict[str, List[image.ImagingImage]] = {},
-            frames_flat: Dict[str, List[image.ImagingImage]] = {},
-            frames_bias: List[image.ImagingImage] = [],
-            date: Union[str, Time] = None,
-            **kwargs
-    ):
-        field = fld.StandardField(centre_coords=centre_coords)
-        name = f"{field.name}_{date.strftime('%Y-%m-%d')}"
-        param_path = os.path.join(p.param_dir, "fields", field.name, "imaging", f"{name}.yaml")
-
-        if not os.path.isfile(param_path):
-            self.new_yaml(
-                name=name,
-                path=param_path,
-                centre=objects.skycoord_to_position_dict(centre_coords)
-            )
-
-        super().__init__(
-            param_path=param_path,
-            name=name,
-            field=field,
-            data_path=os.path.join(field.data_path, "imaging", str(instrument), name),
-            instrument=str(instrument),
-            date=date,
-            **kwargs
-        )
-
-        self.frames_standard = frames_standard
-        self.frames_bias = frames_bias
-        self.frames_flat = frames_flat
-
-        self.load_output_file()
-
-    @classmethod
-    def select_child_class(cls, instrument: Union[str, Instrument]):
-        if isinstance(instrument, Instrument):
-            instrument = instrument.name
-        if instrument == "vlt-fors2":
-            from craftutils.observation.epoch.imaging.eso.vlt_fors2.std import FORS2StandardEpoch
-            return FORS2StandardEpoch
-        else:
-            return StandardEpoch
 
 
 def _retrieve_eso_epoch(

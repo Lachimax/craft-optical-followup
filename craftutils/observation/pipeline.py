@@ -131,8 +131,6 @@ class Pipeline(Generic):
         self._pipeline_init(skip_cats=skip_cats)
         # u.debug_print(2, "Epoch.pipeline(): kwargs ==", kwargs)
 
-        print("do_runtime", self.do_runtime)
-
         # Loop through stages list specified in self.stages()
         stages = self.stages()
         u.debug_print(1, f"Epoch.pipeline(): type(self) ==", type(self))
@@ -171,7 +169,9 @@ class Pipeline(Generic):
             )):
                 self.stage_params[name] = stage_kwargs.copy()
                 if not self.quiet:
+                    print()
                     print(f"Performing processing step {n}: {name} with keywords:\n", stage_kwargs)
+                    print("=" * 100)
                 # Construct path; if dir_name is None then the step is pathless.
                 dir_name = f"{n}-{name}"
 
@@ -211,6 +211,8 @@ class Pipeline(Generic):
         else:
             raise ValueError(f"data_path has not been set for {self}")
 
+        self.load_output_file()
+
         self.do_runtime = _check_do_list(self.do_runtime, stages=list(self.stages().keys()))
         if not self.quiet and self.do_runtime:
             print(f"Doing stages {self.do_runtime}")
@@ -234,6 +236,7 @@ class Pipeline(Generic):
             if "stages" in outputs:
                 self.stages_complete.update(outputs["stages"])
         return outputs
+
 
 def _check_do_list(
         do: Union[list, str],

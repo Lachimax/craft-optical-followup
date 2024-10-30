@@ -1,7 +1,9 @@
+import warnings
+
 import os
 
 import numpy as np
-from typing import Union, Dict, List
+from typing import Union, Dict, List, Callable
 
 import astropy.table as table
 import astropy.io.votable as votable
@@ -16,8 +18,21 @@ import craftutils.photometry as ph
 
 active_filters = {}
 
-
 # __all__ = []
+
+cmaps = {
+    "u": "cmr.bubblegum",
+    "g": "viridis",
+    "v": "cmr.flamingo",
+    "r": "plasma",
+    "i": "cividis",
+    "z": "cmr.ghostlight",
+    "j": "cmr.fall",
+    "h": "cmr.sunburst",
+    "k": "cmr.ember",
+    "ks": "cmr.ember"
+}
+
 
 def best_for_path(
         filter_list: List['Filter'],
@@ -42,8 +57,10 @@ class Filter:
         if "name" in kwargs:
             self.name = kwargs["name"]
         self.formatted_name = None
-        if "formatted_name" in kwargs:
+        if "formatted_name" in kwargs and isinstance(kwargs["formatted_name"], str):
             self.formatted_name = kwargs["formatted_name"]
+        else:
+            self.formatted_name = f"${self.name}$"
         self.band_name = None
         if "band_name" in kwargs and kwargs["band_name"] is not None:
             self.band_name = kwargs["band_name"]
@@ -89,6 +106,8 @@ class Filter:
         self.cmap = None
         if "cmap" in kwargs:
             self.cmap = kwargs["cmap"]
+        elif isinstance(self.band_name, str) and self.band_name in cmaps:
+            self.cmap = cmaps[self.band_name]
 
         self.lambda_eff = None
         self.lambda_fwhm = None
@@ -150,6 +169,57 @@ class Filter:
             transmission=transmission["Transmission"],
             frequency=transmission["Frequency"],
         )
+
+    def galactic_extinction(
+            self,
+            e_bv: units.Quantity[units.mag],
+            spectrum: table.QTable = None,
+            r_v: float = 3.1,
+            extinction_law: Callable = None,
+            table_name: str = None,
+    ):
+        import extinction
+        if extinction_law is None:
+            extinction_law = extinction.fm07
+
+        if table_name is None:
+            _, table_name = self.select_transmission_table()
+        transmission = self.transmission_tables[table_name]
+        spec_un = units.ph / (units.angstrom * units.s)
+        if spectrum is None:
+            # If no spectrum is provided, assume flat
+            spectrum = table.QTable(
+                {
+                    "wavelength": transmission["Wavelength"],
+                    "flux": np.ones(transmission["Wavelength"].shape) * spec_un,
+                }
+            )
+        else:
+            transmission = self.interp_to_wavelength(wavelengths=spectrum["wavelength"], table_name=table_name)
+
+        t = transmission["Transmission"]
+        s = u.check_quantity(spectrum["flux"], spec_un)
+        w = spectrum["wavelength"]
+        w_ext = np.array(w.value.astype('double'))
+
+        def av(rv, ebv):
+            aav = (rv * u.dequantify(ebv))
+            return aav
+
+        if extinction_law is extinction.fm07:
+            if r_v != 3.1:
+                warnings.warn(f"FM07 is compatible only with r_v == 3.1; changing to 3.1 from {r_v}.")
+                r_v = 3.1
+            a_v = av(r_v, e_bv)
+            a_w = extinction.fm07(w_ext, a_v=a_v, unit="aa")
+        else:
+            a_v = av(r_v, e_bv)
+            a_w = extinction_law(w_ext, a_v=a_v, unit="aa", r_v=r_v)
+
+        numerator = np.trapz(t * s * 10 ** (-a_w / 2.5), w)
+        denominator = np.trapz(t * s, w)
+        delta_m = float(-2.5 * np.log10(numerator / denominator)) * units.mag
+        return delta_m
 
     def compare_transmissions(self, other: 'Filter'):
         tbl_self, tbl_other = self.find_comparable_table(other)

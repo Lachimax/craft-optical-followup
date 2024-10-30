@@ -18,6 +18,7 @@ from astropy.modeling import models, fitting
 from astropy.visualization import (
     ImageNormalize,
     LogStretch,
+    LinearStretch,
     SqrtStretch,
     MinMaxInterval,
     ZScaleInterval
@@ -89,6 +90,9 @@ class ImagingImage(Image):
         self.source_cat = None
         self.source_cat_dual = None
         self.dual_mode_template = None
+
+        self.galfit_psfex_path = None
+        self.galfit_psfex_output = None
 
         self.sep_background = None
         self.pu_background = None
@@ -179,14 +183,15 @@ class ImagingImage(Image):
 
     def psfex(
             self,
-            output_dir: str,
+            output_dir: str = None,
             force: bool = False,
             set_attributes: bool = True,
             se_kwargs: dict = {},
+            galfit: bool = False,
             **kwargs
     ):
-        """
-        Run PSFEx on this image to obtain a PSF model.
+        """Run PSFEx on this image to obtain a PSF model. Also performs the prerequisite Source Extractor runs.
+
         :param output_dir: path to directory to write PSFEx outputs to.
         :param force: If False, and this object already has a PSF model, we just return the one that already exists.
         :param se_kwargs: arguments to pass to Source Extractor.
@@ -196,27 +201,83 @@ class ImagingImage(Image):
         :return: HDUList representing the PSF model FITS file.
         """
         psfex_output = None
+        if output_dir is None:
+            output_dir = os.path.join(os.path.dirname(self.path), "psfex")
+        os.makedirs(output_dir, exist_ok=True)
 
-        if force or self.psfex_path is None or not os.path.isfile(self.psfex_path):
+        if galfit:
+            if "PSF_SAMPLING" not in kwargs:
+                kwargs["PSF_SAMPLING"] = 0.5
+            path = self.galfit_psfex_path
+        else:
+            path = self.psfex_path
+
+        if force or path is None or not os.path.isfile(path):
+
             # Set up a list of photometric apertures to pass to SE as a string.
             _, scale = self.extract_pixel_scale()
             aper_arcsec = [
-                              # 50,
+                              10,
                               4.87,
                               3.9,
                               2.92
                           ] * units.arcsec
-            phot_aper = aper_arcsec.to(units.pix, scale).value
-            phot_aper_str = ""
-            for a in phot_aper:
-                phot_aper_str += f"{a},"
-            phot_aper_str = phot_aper_str[:-1]
-            se_kwargs["PHOT_APERTURES"] = phot_aper_str
-            kwargs["PHOTFLUX_KEY"] = '"FLUX_APER(1)"'
-            kwargs["PHOTFLUXERR_KEY"] = '"FLUXERR_APER(1)"'
+
+            def aperture_str(phot_aper):
+                phot_apers_str = ""
+                for a in phot_aper:
+                    phot_apers_str += f"{int(a)},"
+                phot_apers_str = phot_apers_str[:-1]
+                # print("PHOT_APERTURES", phot_apers_str)
+                se_kwargs["PHOT_APERTURES"] = phot_apers_str
+                # print("PHOT_APERTURES", se_kwargs["PHOT_APERTURES"])
+                return phot_apers_str
+
+            aperture_str(aper_arcsec.value)
 
             config = p.path_to_config_sextractor_config_pre_psfex()
             output_params = p.path_to_config_sextractor_param_pre_psfex()
+            out_tmp = os.path.join(output_dir, "preliminary")
+            os.makedirs(out_tmp, exist_ok=True)
+
+            cat_prelim_path = self.source_extraction(
+                configuration_file=config,
+                output_dir=out_tmp,
+                parameters_file=output_params,
+                catalog_name=f"{self.name}_pre-psfex.cat",
+                catalog_type="ASCII_HEAD",
+                **se_kwargs
+            )
+            cat_prelim = catalog.SECatalogue(se_path=cat_prelim_path, image=self)
+            cat = cat_prelim.table
+
+            self.open()
+
+            from astropy.stats import sigma_clip
+
+            col = "FWHM_WORLD"
+            stars = cat[cat["CLASS_STAR"] >= 0.95]
+            clipped = sigma_clip(stars[col], masked=True, sigma=2)
+            stars_clip = stars[~clipped.mask]
+            stars_clip = stars_clip[np.isfinite(stars_clip[col])]
+            # stars_clip = stars_clip[stars_clip[col] > 0.1 * units.arcsec]
+
+            print(f"Num stars after sigma clipping {col}:", len(stars_clip))
+            fwhm_gauss = stars_clip[col]
+            print()
+            fwhm = np.nanmedian(fwhm_gauss).to(units.arcsec)
+            if fwhm > 5 * units.arcsec:
+                fwhm = 1.5 * units.arcsec
+
+            new_aperture_arcsec = 8 * fwhm
+            aper_arcsec = list(np.linspace(1, new_aperture_arcsec.value, 3)) * units.arcsec
+            # if np.sum(np.isnan(aper_arcsec)) > 0):
+
+            aperture_pix = aper_arcsec.to(units.pix, scale).round().value
+            se_kwargs["PHOT_APERTURES"] = aperture_str(aperture_pix)
+            vig_size = int(aperture_pix[0] * 2)
+
+            # se_kwargs["VIGNET()"]
             catalogue = self.source_extraction(
                 configuration_file=config,
                 output_dir=output_dir,
@@ -225,12 +286,15 @@ class ImagingImage(Image):
                 **se_kwargs
             )
 
+            kwargs["PHOTFLUX_KEY"] = '"FLUX_APER(1)"'
+            kwargs["PHOTFLUXERR_KEY"] = '"FLUXERR_APER(1)"'
+
             psfex_path = psfex.psfex(
                 catalog=catalogue,
                 output_dir=output_dir,
                 **kwargs
             )
-            psfex_output = fits.open(psfex_path)
+            psfex_output = fits.open(psfex_path, galfit=galfit)
 
             if not psfex.check_successful(psfex_output):
                 print(f"PSFEx did not converge. Retrying with PHOTFLUX_KEY==FLUX_AUTO")
@@ -268,11 +332,14 @@ class ImagingImage(Image):
                 i += 1
 
             if set_attributes:
-                self.psfex_path = psfex_path
-                self.extract_pixel_scale()
-                pix_scale = self.pixel_scale_y
-                self.fwhm_pix_psfex = psfex_output[1].header['PSF_FWHM'] * units.pixel
-                self.fwhm_psfex = self.fwhm_pix_psfex.to(units.arcsec, pix_scale)
+                if galfit:
+                    self.galfit_psfex_path = psfex_path
+                else:
+                    self.psfex_path = psfex_path
+                    self.extract_pixel_scale()
+                    pix_scale = self.pixel_scale_y
+                    self.fwhm_pix_psfex = psfex_output[1].header['PSF_FWHM'] * units.pixel
+                    self.fwhm_psfex = self.fwhm_pix_psfex.to(units.arcsec, pix_scale)
 
             self.add_log(
                 action="PSF modelled using psfex.",
@@ -283,22 +350,49 @@ class ImagingImage(Image):
             self.update_output_file()
 
         if set_attributes:
-            return self.load_psfex_output()
+            return self.load_psfex_output(galfit=galfit)
         else:
             return psfex_output
 
     # def _psfex(self):
 
-    def load_psfex_output(self, force: bool = False):
-        if force or self.psfex_output is None:
-            self.psfex_output = fits.open(self.psfex_path)
-        return self.psfex_output
-
-    def psf_image(self, x: float, y: float, match_pixel_scale: bool = True):
-        if match_pixel_scale:
-            return psfex.load_psfex(model_path=self.psfex_path, x=x, y=y)
+    def load_psfex_output(
+            self,
+            force: bool = False,
+            galfit: bool = False
+    ):
+        if galfit:
+            path = self.galfit_psfex_path
+            output = self.galfit_psfex_output
         else:
-            return psfex.load_psfex_oversampled(model=self.psfex_path, x=x, y=y)
+            path = self.psfex_path
+            output = self.psfex_output
+
+        if force or output is None:
+            output = fits.open(path)
+
+        if galfit:
+            self.galfit_psfex_output = output
+        else:
+            self.psfex_output = output
+
+        return output
+
+    def psf_image(
+            self, x: float, y: float,
+            match_pixel_scale: bool = True,
+            galfit: bool = False
+    ):
+        if galfit:
+            path = self.galfit_psfex_path
+        else:
+            path = self.psfex_path
+            match_pixel_scale = False
+
+        if match_pixel_scale:
+            return psfex.load_psfex(model_path=path, x=x, y=y)
+        else:
+            return psfex.load_psfex_oversampled(model=path, x=x, y=y)
 
     def clone_diagnostics(
             self,
@@ -335,15 +429,16 @@ class ImagingImage(Image):
 
     def select_depth(self, ext: int = 0, sigma: int = 10, depth_type: str = "max"):
         if "SNR_PSF" in self.depth[depth_type] and np.isfinite(self.depth[depth_type]["SNR_PSF"][f"{sigma}-sigma"]):
-            depth = self.depth[depth_type]["SNR_PSF"][f"{sigma}-sigma"]
+            snr_type = "SNR_PSF"
         else:
-            depth = self.depth[depth_type]["SNR_AUTO"][f"{sigma}-sigma"]
+            snr_type = "SNR_AUTO"
+        depth = self.depth[depth_type][snr_type][f"{sigma}-sigma"]
         self.set_header_item(
             key="DEPTH",
             value=depth.value,
             ext=ext
         )
-        return depth
+        return depth, snr_type
 
     def clone_astrometry_info(
             self,
@@ -537,7 +632,7 @@ class ImagingImage(Image):
             coord: SkyCoord,
             origin: int = 0,
             ext: int = 0
-    ) -> Tuple[np.ndarray]:
+    ) -> Tuple[np.ndarray, np.ndarray]:
         """
         Turns a sky coordinate into image pixel coordinates;
         :param coord: SkyCoord object to convert to pixel coordinates; essentially a wrapper for SkyCoord.to_pixel()
@@ -577,6 +672,19 @@ class ImagingImage(Image):
             centre_kwargs: dict = {},
             **kwargs
     ):
+        """
+
+
+        :param ax:
+        :param coord:
+        :param a:
+        :param b:
+        :param theta: East from North.
+        :param plot_centre:
+        :param centre_kwargs:
+        :param kwargs:
+        :return:
+        """
         if b is None:
             b = a
         if theta is None:
@@ -586,11 +694,13 @@ class ImagingImage(Image):
         if "facecolor" not in kwargs:
             kwargs["facecolor"] = "none"
         x, y = self.world_to_pixel(coord, 0)
+        theta = u.check_quantity(theta, units.deg, convert=True).value
         e = Ellipse(
             xy=(x, y),
             width=2 * a.to(units.pix, self.pixel_scale_y).value,
             height=2 * b.to(units.pix, self.pixel_scale_y).value,
-            angle=theta.value,
+            angle=theta + 90,
+            zorder=1,
             **kwargs
         )
         # e.set_edgecolor(color)
@@ -627,7 +737,7 @@ class ImagingImage(Image):
         for i, row in enumerate(source_cat):
             print(f"Pushing row {i} of {len(source_cat)}")
             obj = objects.Object(row=row, field=self.epoch.field)
-            depth = self.select_depth()
+            depth, _ = self.select_depth()
             obj.add_photometry(
                 instrument=self.instrument_name,
                 fil=self.filter_name,
@@ -650,7 +760,7 @@ class ImagingImage(Image):
                 epoch_date=str(self.epoch.date.isot),
                 class_star=row["CLASS_STAR"],
                 spread_model=row["SPREAD_MODEL"],
-                spread_model_err=row["SPREADERR_MODEL"],
+                spread_model_err=row["SPREAD imERR_MODEL"],
                 class_flag=row["CLASS_FLAG"],
                 mag_psf=row["MAG_PSF_ZP_best"],
                 mag_psf_err=row["MAGERR_PSF_ZP_best"],
@@ -747,6 +857,10 @@ class ImagingImage(Image):
 
         return self.pixel_scale_x, self.pixel_scale_y
 
+    def pixel_area(self, ext: int = 0):
+        x_scale, y_scale = self._pixel_scale(ext=ext)
+        return x_scale.to("arcsec") * y_scale.to("arcsec")
+
     def extract_world_scale(self, ext: int = 0, force: bool = False):
         x, y = self._pixel_scale(ext=ext)
         dec = self.extract_pointing().dec.to(units.rad)
@@ -811,6 +925,7 @@ class ImagingImage(Image):
                 "extinction_atmospheric_err": self.extinction_atmospheric_err,
                 "filter": self.filter_name,
                 "psfex_path": self.psfex_path,
+                "galfit_psfex_path": self.galfit_psfex_path,
                 "synth_cat_path": self.synth_cat_path,
                 "psf_stats": self.psf_stats,
                 "fwhm_pix_psfex": self.fwhm_pix_psfex,
@@ -850,6 +965,8 @@ class ImagingImage(Image):
                 self.filter_name = outputs["filter"]
             if "psfex_path" in outputs:
                 self.psfex_path = outputs["psfex_path"]
+            if "galfit_psfex_path" in outputs:
+                self.galfit_psfex_path = outputs["galfit_psfex_path"]
             if "source_cat_path" in outputs and outputs["source_cat_path"] is not None and os.path.exists(
                     outputs["source_cat_path"]):
                 self.source_cat = catalog.SECatalogue(path=outputs["source_cat_path"], image=self)
@@ -887,7 +1004,7 @@ class ImagingImage(Image):
             return None, None
 
         ranking, diff = self.rank_photometric_cat(cats=self.zeropoints)
-        if preferred is not None:
+        if preferred is not None and preferred in self.zeropoints:
             ranking.insert(0, preferred)
 
         zps = []
@@ -1281,6 +1398,7 @@ class ImagingImage(Image):
             stars_only: bool = False,
             star_tolerance: float = 0.9,
             do_magnitude_calibration: bool = True,
+            test_coord: SkyCoord = None,
             output_dir: str = None
     ):
         """Use various measures of S/N to estimate image depth at a range of sigmas.
@@ -1325,22 +1443,31 @@ class ImagingImage(Image):
             source_cat_key = source_cat_key[source_cat_key[f"SNR_{snr_key}"] > 0]
             source_cat_key.sort(f"FLUX_{snr_key}")
 
-            plt.scatter(source_cat_key[f"MAG_{snr_key}"], source_cat_key[f"SNR_{snr_key}"])
-            plt.savefig(os.path.join(output_dir, f"mag_{snr_key}-v-snr.png"), dpi=200)
-            plt.close()
+            if output_dir is not None:
+                with quantity_support():
+                    fig, ax = plt.subplots()
+                    ax.scatter(source_cat_key[f"MAG_{snr_key}"], source_cat_key[f"SNR_{snr_key}"])
+                    fig.savefig(os.path.join(output_dir, f"mag_{snr_key}-v-snr.png"), dpi=200)
+                    plt.close(fig)
+                    del fig, ax
 
-            plt.hist(source_cat_key[f"SNR_{snr_key}"][source_cat_key[f"SNR_{snr_key}"] < 20])
-            plt.savefig(os.path.join(output_dir, f"snr_{snr_key}-hist.png"), dpi=200)
-            plt.close()
+                    fig, ax = plt.subplots()
+                    ax.hist(source_cat_key[f"SNR_{snr_key}"][source_cat_key[f"SNR_{snr_key}"] < 20], bins="auto")
+                    fig.savefig(os.path.join(output_dir, f"snr_{snr_key}-hist.png"), dpi=200)
+                    plt.close(fig)
+                    del fig, ax
 
             for sigma in (5, 10, 20):
                 source_cat_sigma = source_cat_key.copy()
                 # Faintest source at x-sigma:
                 cat_more_xsigma = source_cat_sigma[source_cat_sigma[f"SNR_{snr_key}"] > sigma]
-
-                plt.scatter(source_cat_sigma[f"MAG_{snr_key}"], source_cat_sigma[f"SNR_{snr_key}"])
-                plt.savefig(os.path.join(output_dir, f"mag_{snr_key}-v-snr-{sigma}sig.png"), dpi=200)
-                plt.close()
+                if output_dir is not None:
+                    with quantity_support():
+                        fig, ax = plt.subplots()
+                        ax.scatter(source_cat_sigma[f"MAG_{snr_key}"], source_cat_sigma[f"SNR_{snr_key}"])
+                        fig.savefig(os.path.join(output_dir, f"mag_{snr_key}-v-snr-{sigma}sig.png"), dpi=200)
+                        plt.close(fig)
+                        del fig, ax
 
                 self.depth["max"][f"SNR_{snr_key}"][f"{sigma}-sigma"] = np.max(
                     cat_more_xsigma[f"MAG_{snr_key}_ZP_{zeropoint_name}"]
@@ -1355,7 +1482,8 @@ class ImagingImage(Image):
                     # Find its counterpart in the full catalogue
                     i, _ = u.find_nearest(source_cat["NUMBER"], source_less_sigma[i]["NUMBER"])
                     # Get the source that is next up in brightness (being brighter)
-                    i += 1
+                    if i < len(source_cat) - 1:
+                        i += 1
                     src_lim = source_cat[i]
 
                 else:
@@ -1366,6 +1494,18 @@ class ImagingImage(Image):
                 # ["limit test"]
 
                 self.update_output_file()
+
+        if test_coord is not None:
+            aperture_test = self.test_limit_location(
+                sigmas=[5, 10, 20],
+                coord=test_coord,
+                return_dict=True
+            )
+            aperture_dict = {}
+            for key, value in aperture_test.items():
+                if "-sigma" in key:
+                    aperture_dict[key] = aperture_test[key]["mag"]
+            self.depth["aperture"] = aperture_dict
 
         self.select_depth()
 
@@ -1720,48 +1860,52 @@ class ImagingImage(Image):
 
         u.debug_print(2, "ImagingImage.astrometry_diagnostics(): reference_cat ==", reference_cat)
 
-        plt.close()
-
         with quantity_support():
-            plt.scatter(self.source_cat["RA"].value, self.source_cat["DEC"].value, marker='x')
-            plt.xlabel("Right Ascension (Catalogue)")
-            plt.ylabel("Declination (Catalogue)")
+            fig, ax = plt.subplots()
+            ax.scatter(self.source_cat["RA"].value, self.source_cat["DEC"].value, marker='x')
+            ax.set_xlabel("Right Ascension (Catalogue)")
+            ax.set_ylabel("Declination (Catalogue)")
             # plt.colorbar(label="Offset of measured position from catalogue (\")")
             if show_plots:
-                plt.show()
-            plt.savefig(os.path.join(output_path, f"{self.name}_sourcecat_sky.pdf"))
-            plt.close()
+                plt.show(fig)
+            fig.savefig(os.path.join(output_path, f"{self.name}_sourcecat_sky.pdf"))
+            plt.close(fig)
+            del ax, fig
 
-            plt.scatter(reference_cat[ra_col].value, reference_cat[dec_col].value, marker='x')
-            plt.xlabel("Right Ascension (Catalogue)")
-            plt.ylabel("Declination (Catalogue)")
+            fig, ax = plt.subplots()
+            ax.scatter(reference_cat[ra_col].value, reference_cat[dec_col].value, marker='x')
+            ax.set_xlabel("Right Ascension (Catalogue)")
+            ax.set_ylabel("Declination (Catalogue)")
             # plt.colorbar(label="Offset of measured position from catalogue (\")")
             if show_plots:
-                plt.show()
-            plt.savefig(os.path.join(output_path, f"{self.name}_referencecat_sky.pdf"))
-            plt.close()
+                plt.show(fig)
+            fig.savefig(os.path.join(output_path, f"{self.name}_referencecat_sky.pdf"))
+            plt.close(fig)
+            del ax, fig
 
             self.load_wcs()
             ref_cat_coords = SkyCoord(reference_cat[ra_col], reference_cat[dec_col])
             in_footprint = self.wcs[ext].footprint_contains(ref_cat_coords)
 
-            plt.scatter(
+            fig, ax = plt.subplots()
+            ax.scatter(
                 self.source_cat["RA"],
                 self.source_cat["DEC"],
                 marker='x'
             )
-            plt.scatter(
+            ax.scatter(
                 reference_cat[ra_col][in_footprint],
                 reference_cat[dec_col][in_footprint],
                 marker='x'
             )
-            plt.xlabel("Right Ascension (Catalogue)")
-            plt.ylabel("Declination (Catalogue)")
+            ax.set_xlabel("Right Ascension (Catalogue)")
+            ax.set_ylabel("Declination (Catalogue)")
             # plt.colorbar(label="Offset of measured position from catalogue (\")")
             if show_plots:
-                plt.show()
-            plt.savefig(os.path.join(output_path, f"{self.name}_bothcats_sky.pdf"))
-            plt.close()
+                plt.show(fig)
+            fig.savefig(os.path.join(output_path, f"{self.name}_bothcats_sky.pdf"))
+            plt.close(fig)
+            del ax, fig
 
             matches_source_cat, matches_ext_cat, distance = self.match_to_cat(
                 cat=reference_cat,
@@ -1807,50 +1951,59 @@ class ImagingImage(Image):
             median_offset_local = np.median(distance_local)
             rms_offset_local = np.sqrt(np.mean(distance_local ** 2))
 
-            plt.scatter(ref_distance.to(units.arcsec), distance.to(units.arcsec))
-            plt.xlabel("Distance from reference pixel (\")")
-            plt.ylabel("Offset (\")")
+            fig, ax = plt.subplots()
+            ax.scatter(ref_distance.to(units.arcsec), distance.to(units.arcsec))
+            ax.set_xlabel("Distance from reference pixel (\")")
+            ax.set_ylabel("Offset (\")")
             if show_plots:
-                plt.show()
-            plt.savefig(os.path.join(output_path, f"{self.name}_astrometry_offset_v_ref.pdf"))
-            plt.close()
+                plt.show(fig)
+            fig.savefig(os.path.join(output_path, f"{self.name}_astrometry_offset_v_ref.pdf"))
+            plt.close(fig)
+            del ax, fig
 
-            plt.hist(
+            fig, ax = plt.subplots()
+            ax.hist(
                 distance.to(units.arcsec).value,
-                bins=int(np.sqrt(len(distance))),
+                bins="auto",
                 label="Full sample"
             )
-            plt.hist(
+            ax.hist(
                 distance_clipped.to(units.arcsec).value,
                 edgecolor='black',
                 linewidth=1.2,
                 label="Sigma-clipped",
                 fc=(0, 0, 0, 0),
-                bins=int(np.sqrt(len(distance_clipped)))
+                bins="auto"
             )
-            plt.xlabel("Offset (\")")
-            plt.legend()
+            ax.set_xlabel("Offset (\")")
+            ax.legend()
             if show_plots:
-                plt.show()
-            plt.savefig(os.path.join(output_path, f"{self.name}_astrometry_offset_hist.pdf"))
-            plt.close()
+                plt.show(fig)
+            fig.savefig(os.path.join(output_path, f"{self.name}_astrometry_offset_hist.pdf"))
+            plt.close(fig)
+            del ax, fig
 
-            plt.scatter(matches_ext_cat[ra_col], matches_ext_cat[dec_col], c=distance.to(units.arcsec), marker='x')
-            plt.xlabel("Right Ascension (Catalogue)")
-            plt.ylabel("Declination (Catalogue)")
-            plt.colorbar(label="Offset of measured position from catalogue (\")")
+            fig, ax = plt.subplots()
+            c = ax.scatter(matches_ext_cat[ra_col], matches_ext_cat[dec_col], c=distance.to(units.arcsec), marker='x')
+            ax.set_xlabel("Right Ascension (Catalogue)")
+            ax.set_ylabel("Declination (Catalogue)")
+            fig.colorbar(c, label="Offset of measured position from catalogue (\")")
             if show_plots:
-                plt.show()
-            plt.savefig(os.path.join(output_path, f"{self.name}_astrometry_offset_sky.pdf"))
-            plt.close()
+                plt.show(fig)
+            fig.savefig(os.path.join(output_path, f"{self.name}_astrometry_offset_sky.pdf"))
+            plt.close(fig)
+            del ax, fig
 
             fig = plt.figure(figsize=(12, 12), dpi=1000)
-            self.plot_catalogue(
+            fig, ax = self.plot_catalogue(
                 cat=reference_cat[in_footprint],
                 ra_col=ra_col, dec_col=dec_col,
                 fig=fig,
                 colour_column=mag_col,
                 cbar_label=mag_col)
+            fig.savefig(os.path.join(output_path, f"{self.name}_astrometry_overplot.pdf"))
+            plt.close(fig)
+            del fig
         # fig.savefig(os.path.join(output_path, f"{self.name}_cat_overplot.pdf"))
 
         self.astrometry_stats["mean_offset"] = mean_offset.to(units.arcsec)
@@ -1911,7 +2064,7 @@ class ImagingImage(Image):
             mag_max: float = 0.0 * units.mag,
             mag_min: float = -50. * units.mag,
             match_to: table.Table = None,
-            star_class_tol: int = 0,
+            star_class_tol: float = 0.95,
             frame: float = None,
             ext: int = 0,
             target: SkyCoord = None,
@@ -2189,9 +2342,9 @@ class ImagingImage(Image):
     ):
         self.load_data()
         self.load_output_file()
-        data = self.data[ext]
+        data = self.data[ext] * 1.
         if sub_back:
-            _, bkg = self.model_background_photometry(**back_kwargs)
+            _, bkg = self.model_background_photometry(force=True, **back_kwargs)
             data -= bkg
         data[data <= 0] = 0.
         return self.magnitude(
@@ -2204,8 +2357,9 @@ class ImagingImage(Image):
     ):
         self.load_data()
         self.load_output_file()
-        data = self.data[ext].value
-        pix_mags = self.pixel_magnitudes()
+        pix_mags, pix_mags_err, _, _ = self.pixel_magnitudes(sub_back=True, ext=ext)
+        surf_brightness = pix_mags.value + 2.5 * np.log10(self.pixel_area() / units.arcsec ** 2)
+        return surf_brightness * units.mag / units.arcsec ** 2, pix_mags_err / units.arcsec ** 2
 
     def reproject(
             self,
@@ -2277,6 +2431,25 @@ class ImagingImage(Image):
         # reprojected_image.write_fits_file()
 
         return reprojected_image
+
+    def flip_horizontal(
+            self,
+            output_path: str,
+            ext: int = 0
+    ):
+        """
+        Flips the pixels of an image horizontally, and corrects the WCS to reflect this.
+        :param output_path: Path to write flipped copy to
+        :param ext: Fits extension to flip
+        :return:
+        """
+        new = self.copy_with_outputs(output_path)
+        new.load_data()
+        new.data[ext] = np.fliplr(new.data[ext])
+        new.headers[ext]["CDELT1"] = -new.headers[ext]["CDELT1"]
+        new.headers[ext]["CRPIX1"] = new.headers[ext]["NAXIS1"] - new.headers[ext]["CRPIX1"] + 1
+        new.write_fits_file()
+        return new
 
     def trim_to_wcs(
             self,
@@ -2581,7 +2754,9 @@ class ImagingImage(Image):
         pix_scale = self.pixel_scale_y
         u.debug_print(1, "ImagingImage.nice_frame(): self.pixel_scale_dec ==", self.pixel_scale_y)
         this_frame = max(
-            kron_a.to(units.pixel, pix_scale), frame)  # + 5 * units.pix,
+            kron_a.to(units.pixel, pix_scale),
+            frame.to(units.pixel, pix_scale)
+        )  # + 5 * units.pix,
         u.debug_print(1, "ImagingImage.nice_frame(): this_frame ==", this_frame)
         return this_frame
 
@@ -2589,20 +2764,27 @@ class ImagingImage(Image):
         cat = self.get_source_cat(dual=dual).table
 
         if cat is not None:
-            pl.plot_all_params(image=self.path, cat=cat, kron=True, show=False)
-            plt.title(self.filter_name)
+            fig, ax = pl.plot_all_params(image=self.path, cat=cat, kron=True, show=False)
+            ax.set_title(self.filter_name)
             if output is None:
                 output = os.path.join(self.data_path, f"{self.name}_source_cat_dual-{dual}.pdf")
-            plt.savefig(output)
+            fig.savefig(output)
             if show:
-                plt.show()
-            plt.close()
+                plt.show(fig)
+            plt.close(fig)
+            del fig
 
     def plot_subimage(
             self,
             centre: SkyCoord = None,
             frame: units.Quantity = None,
             corners: Tuple[SkyCoord] = None,
+            edges: Tuple[
+                units.Quantity[units.deg],
+                units.Quantity[units.deg],
+                units.Quantity[units.deg],
+                units.Quantity[units.deg]
+            ] = None,
             ext: int = 0,
             fig: plt.Figure = None,
             ax: plt.Axes = None,
@@ -2617,9 +2799,11 @@ class ImagingImage(Image):
             scale_bar_kwargs: dict = None,
             data: str = "image",
             clip_data: bool = False,
+            astm_crosshairs: bool = False,
+            astm_kwargs={},
+            save_kwargs={},
             **kwargs,
-    ) -> Tuple[plt.Axes, plt.Figure, dict]:
-
+    ) -> Tuple[plt.Figure, plt.Axes, dict]:
         if data == "image":
             self.load_data()
             data = self.data[ext].value
@@ -2637,6 +2821,13 @@ class ImagingImage(Image):
                 f"data_type {data} not recognised; this can be 'image', 'background', or 'background_subtracted_image'")
 
         _, scale = self.extract_pixel_scale()
+        if edges is not None and corners is None:
+            corners = astm.construct_corners(
+                ra_min=edges[0],
+                ra_max=edges[1],
+                dec_min=edges[2],
+                dec_max=edges[3],
+            )
 
         other_args = {}
         if centre is not None and frame is not None:
@@ -2666,12 +2857,13 @@ class ImagingImage(Image):
             ys = y_1, y_0
             bottom = int(min(ys))
             top = int(max(ys))
-
         else:
             left = 0
             right = data.shape[1]
             bottom = 0
             top = data.shape[0]
+
+        print(left, right, top, bottom)
 
         # print(type(data), data[bottom:top, left:right])
         if mask is not None:
@@ -2693,6 +2885,8 @@ class ImagingImage(Image):
             normalize_kwargs["stretch"] = SqrtStretch()
         elif normalize_kwargs["stretch"] == "log":
             normalize_kwargs["stretch"] = LogStretch()
+        elif normalize_kwargs["stretch"] == "linear":
+            normalize_kwargs["stretch"] = LinearStretch()
 
         if "interval" not in normalize_kwargs:
             normalize_kwargs["interval"] = MinMaxInterval()
@@ -2713,7 +2907,7 @@ class ImagingImage(Image):
             ax = fig.add_subplot(n_y, n_x, n, projection=projection)
 
         if not show_coords:
-            frame1 = plt.gca()
+            frame1 = fig.gca()
             frame1.axes.get_xaxis().set_visible(False)
             frame1.axes.set_yticks([])
             frame1.axes.invert_yaxis()
@@ -2726,11 +2920,14 @@ class ImagingImage(Image):
         else:
             scaling_data = normalize_kwargs.pop("data")
 
+        if "vmin" in normalize_kwargs:
+            if normalize_kwargs["vmin"] == "median":
+                normalize_kwargs["vmin"] = np.median(scaling_data)
+            elif normalize_kwargs["vmin"] == "min":
+                normalize_kwargs["vmin"] = np.min(scaling_data)
+
         if "cmap" not in imshow_kwargs and self.filter and self.filter.cmap:
             imshow_kwargs["cmap"] = self.filter.cmap
-
-        # if "vmin" not in normalize_kwargs:
-        #     normalize_kwargs["vmin"] = np.min(data_clipped)
 
         mapping = ax.imshow(
             data,
@@ -2753,30 +2950,56 @@ class ImagingImage(Image):
         # ax.tick_params(labelsize=14)
         # ax.yaxis.set_label_position("right")
 
-        # plt.tight_layout()
-
         if scale_bar_object is not None:
             if scale_bar_kwargs is None:
                 scale_bar_kwargs = {}
-            print(scale_bar_kwargs)
             self.scale_bar(
                 obj=scale_bar_object,
                 ax=ax,
                 fig=fig,
                 **scale_bar_kwargs
             )
+        if astm_crosshairs:
+            default_astm = {
+                "x": 0.9,
+                "y": 0.1,
+                "color": "white"
+            }
+            default_astm.update(astm_kwargs)
+
+            self.extract_astrometry_err()
+            ra_err = self.ra_err
+            dec_err = self.dec_err
+            if ra_err is not None and self.dec_err is not None:
+                self.extract_pointing()
+                x_err = self.pixel(ra_err).value * np.cos(self.pointing.dec)
+                y_err = self.pixel(dec_err).value
+                x = default_astm.pop("x")
+                y = default_astm.pop("y")
+                x_disp, y_disp = ax.transAxes.transform((x, y))
+                x_data, y_data = ax.transData.inverted().transform((x_disp, y_disp))
+                # ax.scatter(x_data, y_data, marker="x")
+                ax.errorbar(
+                    x_data,
+                    y_data,
+                    xerr=x_err,
+                    yerr=y_err,
+                    ls="none",
+                    # marker="x",
+                    **default_astm
+                )
         if output_path is not None:
-            fig.savefig(output_path)
+            fig.savefig(output_path, **save_kwargs)
 
         del data
 
-        return ax, fig, other_args
+        return fig, ax, other_args
 
     def scale_bar(
             self,
-            obj: objects.Extragalactic,
             ax: plt.Axes,
             fig: plt.Figure,
+            obj: objects.Extragalactic = None,
             size: units.Quantity = 1 * units.arcsec,
             spread_factor: float = 0.5,
             x_ax: float = 0.1,
@@ -2799,7 +3022,6 @@ class ImagingImage(Image):
             text_kwargs["fontsize"] = 12
         if "color" not in text_kwargs:
             text_kwargs["color"] = "white"
-
         if "color" not in line_kwargs:
             line_kwargs["color"] = "white"
         if "lw" not in line_kwargs:
@@ -2811,25 +3033,34 @@ class ImagingImage(Image):
         # if isinstance(x, units.Quantity):
         #     if x.decompose().unit == units.rad:
         #         x = x.to(units.pix, self.pixel_scale_x)
-        if obj.z is None:
-            return None
+        physical_scale = True
+        if obj is None or obj.z is None or obj.z < 0.:
+            physical_scale = False
+        size_proj = None
         if not isinstance(size, units.Quantity):
             size = size * units.pix
         if size.decompose().unit == units.pix:
             size_pix = size
             size_ang = size_pix.to(units.arcsec, self.pixel_scale_x)
-            size_proj = obj.projected_size(size_ang)
+            if physical_scale:
+                size_proj = obj.projected_size(size_ang)
         elif size.decompose().unit == units.meter:
+            if not physical_scale:
+                raise ValueError(
+                    f"A physical size ({size}) has been passed as the scale bar size, but the object has no or negative redshift.")
             size_proj = size
             size_ang = obj.angular_size(distance=size)
             size_pix = size_ang.to(units.pix, self.pixel_scale_x)
         elif size.decompose().unit == units.rad:
             size_ang = size
             size_pix = size_ang.to(units.pix, self.pixel_scale_x)
-            size_proj = obj.projected_size(size_ang)
+            if physical_scale:
+                size_proj = obj.projected_size(size_ang)
         else:
-            raise ValueError(f"The units of provided size, {size.unit}, cannot be parsed as a pixel, angular or "
-                             f"physical distance.")
+            raise ValueError(
+                f"The units of provided size, {size.unit}, cannot be parsed as a pixel, angular or "
+                f"physical distance."
+            )
 
         if "solid_capstyle" not in line_kwargs:
             line_kwargs["solid_capstyle"] = "butt"
@@ -2888,17 +3119,18 @@ class ImagingImage(Image):
         # Except for this one, where we transform the final text coordinates back to Axes coordinates
         x_ax, y_proj_ax = ax.transAxes.inverted().transform((x_disp, y_proj_disp))
         # Draw the projected size text.
-        if bold:
-            str_spc = f"\\textbf{{{size_proj.round(precision_spc)}}}"
-        else:
-            str_spc = size_proj.round(precision_spc)
-        ax.text(
-            x_ax,
-            y_proj_ax,
-            str_spc,
-            transform=ax.transAxes,
-            **text_kwargs
-        )
+        if physical_scale:
+            if bold:
+                str_spc = f"\\textbf{{{size_proj.round(precision_spc)}}}"
+            else:
+                str_spc = size_proj.round(precision_spc)
+            ax.text(
+                x_ax,
+                y_proj_ax,
+                str_spc,
+                transform=ax.transAxes,
+                **text_kwargs
+            )
 
         # I am a matplotlib god.
 
@@ -2914,8 +3146,6 @@ class ImagingImage(Image):
             title: str = None,
             find: SkyCoord = None
     ):
-
-        plt.close()
         fig = plt.figure()
         ax = fig.add_subplot()
 
@@ -2942,7 +3172,8 @@ class ImagingImage(Image):
             b=[row["B_WORLD"].value],
             theta=[row["THETA_IMAGE"].value],
             world=True,
-            show_centre=True
+            show_centre=True,
+            ax=ax
         )
         pl.plot_gal_params(
             hdu=image_cut,
@@ -2952,7 +3183,8 @@ class ImagingImage(Image):
             b=[kron_b.value],
             theta=[row["THETA_IMAGE"].value],
             world=True,
-            show_centre=True
+            show_centre=True,
+            ax=ax
         )
         if title is None:
             title = self.name
@@ -2965,10 +3197,10 @@ class ImagingImage(Image):
         ax.set_title(title)
         fig.savefig(os.path.join(output))
         if show:
-            fig.show()
+            plt.show(fig)
         self.close()
         plt.close(fig)
-        return
+        del fig
 
     def plot(
             self,
@@ -2981,7 +3213,7 @@ class ImagingImage(Image):
         if fig is None:
             fig = plt.figure(figsize=(12, 12), dpi=1000)
         if ax is None:
-            ax, fig = self.wcs_axes(fig=fig, ext=ext)
+            fig, ax = self.wcs_axes(fig=fig, ext=ext)
         self.load_data()
         data = u.dequantify(self.data[ext])
         ax.imshow(
@@ -2994,7 +3226,7 @@ class ImagingImage(Image):
             ),
             origin='lower',
         )
-        return ax, fig
+        return fig, ax
 
     def wcs_axes(self, fig: plt.Figure = None, ext: int = 0):
         if fig is None:
@@ -3002,7 +3234,7 @@ class ImagingImage(Image):
         ax = fig.add_subplot(
             projection=self.load_wcs()[ext]
         )
-        return ax, fig
+        return fig, ax
 
     def plot_catalogue(
             self,
@@ -3022,15 +3254,15 @@ class ImagingImage(Image):
         else:
             c = "red"
 
-        ax, fig = self.plot(fig=fig, ext=ext, zorder=0, **kwargs)
+        fig, ax = self.plot(fig=fig, ext=ext, zorder=0, **kwargs)
         x, y = self.wcs[ext].all_world2pix(cat[ra_col], cat[dec_col], 0)
-        pcm = plt.scatter(x, y, c=c, cmap="plasma", marker="x", zorder=10)
+        pcm = ax.scatter(x, y, c=c, cmap="plasma", marker="x", zorder=10)
         if colour_column is not None:
             fig.colorbar(pcm, ax=ax, label=cbar_label)
 
         u.debug_print(2, f"{self}.plot_catalogue(): len(cat):", len(cat))
 
-        return ax, fig
+        return fig, ax
 
     def plot_coords(
             self,
@@ -3092,19 +3324,38 @@ class ImagingImage(Image):
 
     def insert_synthetic_sources(
             self,
-            x: np.float64, y: np.float64,
-            mag: np.float64,
+            catalogue: table.QTable,
             output: str,
             overwrite: bool = True,
-            world_coordinates: bool = False,
-            extra_values: table.Table = None,
             model: str = "psfex"
     ):
+        """Catalogue must have column 'mag', and either 'coord' or 'x' AND 'y'.
+
+        :param catalogue:
+        :param output:
+        :param overwrite:
+        :param model:
+        :return:
+        """
         if self.psfex_path is None:
             raise ValueError(f"{self.name}.psfex_path has not been set.")
         if self.zeropoint_best is None:
             raise ValueError(f"{self.name}.zeropoint_best has not been set.")
         output_cat = output.replace('.fits', '_synth_cat.ecsv')
+
+        if "coord" in catalogue.colnames:
+            x, y = self.world_to_pixel(coord=catalogue["coord"])
+            catalogue["x"] = x
+            catalogue["y"] = y
+        elif "x" in catalogue.colnames and "y" in catalogue.colnames:
+            x = catalogue["x"]
+            y = catalogue["y"]
+        else:
+            raise ValueError("Either 'x' and 'y' or 'coord' must be provided.")
+        if "mag" not in catalogue.colnames:
+            raise ValueError("'mag' column missing from provided catalogue.")
+        else:
+            mag = u.dequantify(catalogue["mag"])
 
         self.extract_pixel_scale()
 
@@ -3117,8 +3368,7 @@ class ImagingImage(Image):
                 airmass=self.extract_airmass(),
                 extinction=self.zeropoint_best["extinction"],
                 exp_time=self.extract_exposure_time(),
-                world_coordinates=world_coordinates,
-                extra_values=extra_values,
+                world_coordinates=False,
                 output=output,
                 output_cat=output_cat,
                 overwrite=overwrite,
@@ -3133,8 +3383,7 @@ class ImagingImage(Image):
                 airmass=self.extract_airmass(),
                 extinction=self.zeropoint_best["extinction"],
                 exp_time=self.extract_exposure_time(),
-                world_coordinates=world_coordinates,
-                extra_values=extra_values,
+                world_coordinates=False,
                 output=output,
                 output_cat=output_cat,
                 overwrite=overwrite
@@ -3196,8 +3445,11 @@ class ImagingImage(Image):
             else:
                 raise ValueError(f"positioning {positioning} not recognised.")
 
+            cat = table.QTable({
+                "x": x_synth, "y": y_synth, "mag": mag
+            })
             file, sources = self.insert_synthetic_sources(
-                x=x_synth, y=y_synth, mag=mag.value,
+                cat,
                 output=os.path.join(output_dir, filename + f"_mag_{np.round(mag.value, 1)}.fits"),
                 model=model
             )
@@ -3279,14 +3531,18 @@ class ImagingImage(Image):
             coord: SkyCoord,
             ap_radius: units.Quantity = None,
             ext: int = 0,
+            sigmas: list = None,
             sigma_min: int = 1,
             sigma_max: int = 10,
+            return_dict: bool = False,
             **kwargs
-    ):
+    ) -> Union[dict, table.QTable]:
 
         if ap_radius is None:
             psf = self.extract_header_item("PSF_FWHM", ext=ext)
-            if not psf:
+            if psf is not None and psf < 0:
+                psf = None
+            if psf is None:
                 ap_radius = 2 * units.arcsec
             else:
                 ap_radius = 2 * psf * units.arcsec
@@ -3303,17 +3559,31 @@ class ImagingImage(Image):
         sigma_flux = np.sqrt(flux)
 
         limits = []
-        for i in range(sigma_min, sigma_max + 1):
+
+        if sigmas is None:
+            sigmas = range(sigma_min, sigma_max + 1)
+
+        limit_dicts = {}
+
+        for i in sigmas:
             n_sigma_flux = sigma_flux * i
             limit, _, _, _ = self.magnitude(flux=n_sigma_flux)
-            limits.append({
+            limit_dict = {
                 "sigma": i,
                 "flux": n_sigma_flux[0],
                 "mag": limit[0],
                 "aperture_radius": ap_radius,
                 "aperture_radius_pix": ap_radius_pix
-            })
-        return table.QTable(limits)
+            }
+            limits.append(limit_dict)
+            limit_dicts[f"{i}-sigma"] = limit_dict
+        if return_dict:
+            limit_dicts["position"] = coord
+            limit_dicts["aperture_radius"] = ap_radius
+            limit_dicts["aperture_radius_pix"] = ap_radius_pix
+            return limit_dicts
+        else:
+            return table.QTable(limits)
 
     def test_limit_synthetic(
             self,
@@ -3342,76 +3612,100 @@ class ImagingImage(Image):
             positioning=positioning
         )
 
-        plt.scatter(sources["mag_inserted"], sources["fraction_flux_recovered_psf"])
-        plt.xlabel("Inserted magnitude")
-        plt.ylabel("Fraction of flux recovered")
-        plt.savefig(os.path.join(output_dir, "flux_recovered_psf.png"))
-        plt.close()
+        ax, fig = plt.subplots()
+        ax.scatter(sources["mag_inserted"], sources["fraction_flux_recovered_psf"])
+        ax.set_xlabel("Inserted magnitude")
+        ax.set_ylabel("Fraction of flux recovered")
+        fig.savefig(os.path.join(output_dir, "flux_recovered_psf.png"))
+        plt.close(fig)
+        del fig, ax
 
-        plt.scatter(sources["mag_inserted"], sources["fraction_flux_recovered_auto"])
-        plt.xlabel("Inserted magnitude")
-        plt.ylabel("Fraction of flux recovered")
-        plt.savefig(os.path.join(output_dir, "flux_recovered_auto.png"))
-        plt.close()
+        ax, fig = plt.subplots()
+        ax.scatter(sources["mag_inserted"], sources["fraction_flux_recovered_auto"])
+        ax.set_xlabel("Inserted magnitude")
+        ax.set_ylabel("Fraction of flux recovered")
+        fig.savefig(os.path.join(output_dir, "flux_recovered_auto.png"))
+        plt.close(fig)
+        del fig, ax
 
-        plt.scatter(sources["mag_inserted"], sources["fraction_flux_recovered_sep"])
-        plt.xlabel("Inserted magnitude")
-        plt.ylabel("Fraction of flux recovered")
-        plt.savefig(os.path.join(output_dir, "flux_recovered_sep.png"))
-        plt.close()
+        ax, fig = plt.subplots()
+        ax.scatter(sources["mag_inserted"], sources["fraction_flux_recovered_sep"])
+        ax.set_xlabel("Inserted magnitude")
+        ax.set_ylabel("Fraction of flux recovered")
+        fig.savefig(os.path.join(output_dir, "flux_recovered_sep.png"))
+        plt.close(fig)
+        del fig, ax
 
-        plt.scatter(sources["mag_inserted"], sources["delta_mag_psf"])
-        plt.xlabel("Inserted magnitude")
-        plt.ylabel("Mag psf - mag inserted")
-        plt.savefig(os.path.join(output_dir, "delta_mag_psf.png"))
-        plt.close()
+        ax, fig = plt.subplots()
+        ax.scatter(sources["mag_inserted"], sources["delta_mag_psf"])
+        ax.set_xlabel("Inserted magnitude")
+        ax.set_ylabel("Mag psf - mag inserted")
+        fig.savefig(os.path.join(output_dir, "delta_mag_psf.png"))
+        plt.close(fig)
+        del fig, ax
 
-        plt.scatter(sources["mag_inserted"], sources["delta_mag_auto"])
-        plt.xlabel("Inserted magnitude")
-        plt.ylabel("Mag auto - mag inserted")
-        plt.savefig(os.path.join(output_dir, "delta_mag_auto.png"))
-        plt.close()
+        ax, fig = plt.subplots()
+        ax.scatter(sources["mag_inserted"], sources["delta_mag_auto"])
+        ax.set_xlabel("Inserted magnitude")
+        ax.set_ylabel("Mag auto - mag inserted")
+        fig.savefig(os.path.join(output_dir, "delta_mag_auto.png"))
+        plt.close(fig)
+        del fig, ax
 
-        plt.scatter(sources["mag_inserted"], sources["delta_mag_sep"])
-        plt.xlabel("Inserted magnitude")
-        plt.ylabel("Mag auto - mag inserted")
-        plt.savefig(os.path.join(output_dir, "delta_mag_sep.png"))
-        plt.close()
+        ax, fig = plt.subplots()
+        ax.scatter(sources["mag_inserted"], sources["delta_mag_sep"])
+        ax.set_xlabel("Inserted magnitude")
+        ax.set_ylabel("Mag auto - mag inserted")
+        fig.savefig(os.path.join(output_dir, "delta_mag_sep.png"))
+        plt.close(fig)
+        del fig, ax
 
-        plt.scatter(sources["mag_inserted"], sources["CLASS_STAR"])
-        plt.xlabel("Inserted magnitude")
-        plt.ylabel("Class star")
-        plt.savefig(os.path.join(output_dir, "class_star.png"))
-        plt.close()
+        ax, fig = plt.subplots()
+        ax.scatter(sources["mag_inserted"], sources["CLASS_STAR"])
+        ax.set_xlabel("Inserted magnitude")
+        ax.set_ylabel("Class star")
+        fig.savefig(os.path.join(output_dir, "class_star.png"))
+        plt.close(fig)
+        del fig, ax
 
-        plt.scatter(sources["mag_inserted"], sources["SPREAD_MODEL"])
-        plt.xlabel("Inserted magnitude")
-        plt.ylabel("Spread Model")
-        plt.savefig(os.path.join(output_dir, "spread_model.png"))
-        plt.close()
+        ax, fig = plt.subplots()
+        ax.scatter(sources["mag_inserted"], sources["SPREAD_MODEL"])
+        ax.set_xlabel("Inserted magnitude")
+        ax.set_ylabel("Spread Model")
+        fig.savefig(os.path.join(output_dir, "spread_model.png"))
+        plt.close(fig)
+        del fig, ax
 
-        plt.scatter(sources["mag_inserted"], sources["matching_dist"])
-        plt.xlabel("Inserted magnitude")
-        plt.ylabel("Matching distance (arcsec)")
-        plt.savefig(os.path.join(output_dir, "matching_dist.png"))
-        plt.close()
+        ax, fig = plt.subplots()
+        ax.scatter(sources["mag_inserted"], sources["matching_dist"])
+        ax.set_xlabel("Inserted magnitude")
+        ax.set_ylabel("Matching distance (arcsec)")
+        fig.savefig(os.path.join(output_dir, "matching_dist.png"))
+        plt.close(fig)
+        del fig, ax
 
-        plt.scatter(sources["mag_inserted"], sources["snr_sep"])
-        plt.xlabel("Inserted magnitude")
-        plt.ylabel("S/N, measured by SEP")
-        plt.savefig(os.path.join(output_dir, "matching_dist.png"))
-        plt.close()
+        ax, fig = plt.subplots()
+        ax.scatter(sources["mag_inserted"], sources["snr_sep"])
+        ax.set_xlabel("Inserted magnitude")
+        ax.set_ylabel("S/N, measured by SEP")
+        fig.savefig(os.path.join(output_dir, "matching_dist.png"))
+        plt.close(fig)
+        del fig, ax
 
-        plt.scatter(sources["mag_inserted"], sources["SNR_PSF"])
-        plt.xlabel("Inserted magnitude")
-        plt.ylabel("S/N, measured by SEP")
-        plt.savefig(os.path.join(output_dir, "matching_dist.png"))
-        plt.close()
+        ax, fig = plt.subplots()
+        ax.scatter(sources["mag_inserted"], sources["SNR_PSF"])
+        ax.set_xlabel("Inserted magnitude")
+        ax.set_ylabel("S/N, measured by SEP")
+        fig.savefig(os.path.join(output_dir, "matching_dist.png"))
+        plt.close(fig)
+        del fig, ax
 
         # TODO: S/N measure and plot
 
-        ax, fig = self.plot_catalogue(cat=sources, ra_col="ra_inserted", dec_col="dec_inserted")
+        fig, ax = self.plot_catalogue(cat=sources, ra_col="ra_inserted", dec_col="dec_inserted")
         fig.savefig(os.path.join(output_dir, "inserted_overplot.png"))
+        plt.close(fig)
+        del fig, ax
 
         sources.write(os.path.join(output_dir, "synth_cat_all.ecsv"), format="ascii.ecsv")
 
@@ -3473,13 +3767,10 @@ class ImagingImage(Image):
             ext=ext
         )
 
-        print("")
-        print(self.filename)
-
         data = self.data[ext] * 1  # [bottom:top, left:right] * 1
 
         if generate_mask:
-            mask = self.generate_mask(
+            mask, objs = self.generate_mask(
                 margins=margins,
                 method="sep",
                 **mask_kwargs,
@@ -3530,14 +3821,16 @@ class ImagingImage(Image):
         fitter = fitter_type(calc_uncertainties=False)
         y, x = np.mgrid[:data.shape[0], :data.shape[1]]
 
-        plt.imshow(weights[bottom - 10:top + 10, left - 10:right + 10])
-        plt.colorbar()
+        fig, ax = plt.subplots()
+        c = ax.imshow(weights[bottom - 10:top + 10, left - 10:right + 10])
+        fig.colorbar(c)
         if isinstance(write, str):
             u.mkdir_check_nested(write)
-            plt.savefig(write.replace(".fits", "_plot.png"))
+            fig.savefig(write.replace(".fits", "_plot.png"))
         else:
-            plt.show()
-        plt.close()
+            plt.show(fig)
+        plt.close(fig)
+        del fig, ax
         model = fitter(
             model_init,
             x, y,
@@ -3611,19 +3904,27 @@ class ImagingImage(Image):
             filter_size: int = 3,
             method: str = "sep",
             write: str = None,
+            write_err: str = None,
             write_subbed: str = None,
             do_mask: bool = False,
+            force: bool = True,
             **back_kwargs
     ):
         self.load_data()
 
+        if not force and self.data_sub_bkg[ext] is not None:
+            if method == "sep":
+                return self.sep_background[ext], self.sep_background[ext].back()
+            else:
+                return self.pu_background[ext], self.pu_background[ext].background
+
         mask = None
         if do_mask:
-            mask = self.generate_mask(method=method)
+            mask, objs = self.generate_mask(method=method)
             mask = mask.astype(bool)
 
         if method == "sep":
-            data = u.sanitise_endianness(self.data[ext])
+            data = u.sanitise_endianness(self.data[ext] * 1)
             bkg = self.sep_background[ext] = sep.Background(
                 data,
                 bw=box_size, bh=box_size,
@@ -3635,10 +3936,10 @@ class ImagingImage(Image):
                 bkg_data = bkg.back() * data.unit
             else:
                 bkg_data = bkg.back()
-            self.data_sub_bkg[ext] = (data - bkg_data)
+            self.data_sub_bkg[ext] = (data * 1 - bkg_data)
 
         elif method == "photutils":
-            data = self.data[ext]
+            data = self.data[ext] * 1.
             sigma_clip = SigmaClip(sigma=3.)
             bkg_estimator = photutils.MedianBackground()
             bkg = self.pu_background[ext] = photutils.Background2D(
@@ -3662,11 +3963,18 @@ class ImagingImage(Image):
             back_file.data[ext] = bkg_data
             back_file.write_fits_file()
 
+        if isinstance(write_err, str):
+            err_file = self.copy(write_err, suffix=f"err_{method}")
+            err_file.load_data()
+            err_file.load_headers()
+            err_file.data[ext] = bkg.rms() * bkg_data.unit
+            err_file.write_fits_file()
+
         if isinstance(write_subbed, str):
             subbed_file = self.copy(write_subbed, suffix=f"background-subtracted_{method}")
             subbed_file.load_data()
             subbed_file.load_headers()
-            subbed_file.data[ext] = self.data[ext] - bkg_data
+            subbed_file.data[ext] = self.data[ext] * 1. - bkg_data
             subbed_file.write_fits_file()
 
         return bkg, bkg_data
@@ -3674,15 +3982,16 @@ class ImagingImage(Image):
     def generate_segmap(
             self,
             ext: int = 0,
-            threshold: float = 4,
+            threshold: float = 4.,
             method="sep",
             margins: tuple = (None, None, None, None),
             min_area: int = 5,
+            output_path: str = None,
             **background_kwargs
     ):
-        """
-        Generate a segmentation map of the image in which the image is broken into segments according to detected sources.
+        """Generate a segmentation map of the image in which the image is broken into segments according to detected sources.
         Each source is assigned an integer, and the segmap has the same spatial dimensions as the input image.
+
         :param ext:
         :param threshold:
         :param method:
@@ -3693,7 +4002,7 @@ class ImagingImage(Image):
         data = self.data[ext]
         left, right, bottom, top = u.check_margins(data=data, margins=margins)
 
-        bkg, bkg_data = self.model_background_photometry(method=method, ext=ext, **background_kwargs)
+        bkg, bkg_data = self.model_background_photometry(method=method, ext=ext, force=False, **background_kwargs)
 
         if method == "photutils":
             data_trim = u.trim_image(
@@ -3709,35 +4018,44 @@ class ImagingImage(Image):
             )
             u.debug_print(2, f"{self}.generate_segmap(): threshold ==", threshold)
             segmap = photutils.detect_sources(data_trim, threshold, npixels=min_area)
+            objs = None
 
         elif method == "sep":
             # The copying is done here to avoid 'C-contiguous' errors in SEP.
             data_trim = u.sanitise_endianness(
-                u.trim_image(self.data_sub_bkg[ext], margins=margins)
+                u.trim_image(self.data_sub_bkg[ext] * 1., margins=margins)
             ).copy()
             err = u.trim_image(bkg.rms(), margins=margins).copy()
             u.debug_print(2, f"{self}.generate_segmap(): type(err) ==", type(err), "err.shape ==", err.shape)
             if 0 in data_trim.shape:
                 # If we've trimmed the array down to nothing, we should just return something empty and avoid sep errors
                 segmap = np.zeros(data_trim.shape, dtype=int)
+                objs = None
             else:
                 objs, segmap = sep.extract(
                     data_trim,
                     err=err,
                     thresh=threshold,
-                    # deblend_cont=True,
+                    # deblend_cont=0.005,
                     clean=False,
                     segmentation_map=True,
                     minarea=min_area
                 )
-
+                if output_path is not None:
+                    fig, ax = plt.subplots()
+                    ax.imshow(segmap, cmap="rainbow", origin="lower")
+                    ax.scatter(objs["x"], objs["y"], marker="x", c="black")
+                    fig.savefig(output_path, dpi=200)
+                    plt.close(fig)
+                    del fig, ax
         else:
             raise ValueError(f"Unrecognised method {method}.")
+
         segmap_full = np.zeros(data.shape)
         u.debug_print(2, f"{self}.generate_segmap(): segmap_full ==", segmap_full)
         u.debug_print(2, f"{self}.generate_segmap(): segmap ==", segmap)
         segmap_full[bottom:top + 1, left:right + 1] = segmap.data
-        return segmap_full
+        return segmap_full, objs
 
     def generate_mask(
             self,
@@ -3747,6 +4065,7 @@ class ImagingImage(Image):
             method: str = "sep",
             obj_value=1,
             back_value=0,
+            output_path: str = None,
             margins: tuple = (None, None, None, None),
     ):
         """
@@ -3763,11 +4082,16 @@ class ImagingImage(Image):
         :return:
         """
         data = self.load_data()[ext]
-        segmap = self.generate_segmap(
+        if output_path is not None:
+            output_path_segmap = output_path.replace(".fits", "_segmap.png")
+        else:
+            output_path_segmap = None
+        segmap, objs = self.generate_segmap(
             ext=ext,
             threshold=threshold,
             method=method,
-            margins=margins
+            margins=margins,
+            output_path=output_path_segmap
         )
         self.load_wcs()
 
@@ -3796,7 +4120,7 @@ class ImagingImage(Image):
         mask[mask > 0] = obj_value
         mask[mask == 0] = back_value
 
-        return mask
+        return mask, objs
 
     def masked_data(
             self,
@@ -3806,7 +4130,7 @@ class ImagingImage(Image):
     ):
         self.load_data()
         if mask is None:
-            mask = self.generate_mask(**generate_mask_kwargs)
+            mask, objs = self.generate_mask(**generate_mask_kwargs)
 
         # if mask_type == 'zeroed-out'
 
@@ -3818,8 +4142,7 @@ class ImagingImage(Image):
             ext: int = 0,
             **mask_kwargs
     ) -> 'ImagingImage':
-        """
-        Generates and writes a source mask to a FITS file.
+        """Generates and writes a source mask to a FITS file.
         Any argument accepted by generate_mask() can be passed as a keyword.
 
         :param output_path: path to write the mask file to.
@@ -3829,7 +4152,12 @@ class ImagingImage(Image):
 
         mask_file = self.copy(output_path)
         mask_file.load_data()
-        mask_file.data[ext] = self.generate_mask(ext=ext, **mask_kwargs) * units.dimensionless_unscaled
+        mask_data, objs = self.generate_mask(
+            ext=ext,
+            output_path=output_path,
+            **mask_kwargs
+        )
+        mask_file.data[ext] = mask_data * units.dimensionless_unscaled
         mask_file.write_fits_file()
 
         mask_file.add_log(
@@ -3838,7 +4166,7 @@ class ImagingImage(Image):
             output_path=output_path,
         )
         mask_file.update_output_file()
-        return mask_file
+        return mask_file, objs
 
     def mask_nearby(self):
         return True
@@ -3885,18 +4213,30 @@ class ImagingImage(Image):
             subtract_background: bool = True,
     ):
 
+        if output is None:
+            output = self.path.replace(".fits", "_sep")
         if isinstance(output, str):
             back_output = output + "_back.fits"
+            subbed_output = output + "_back-subbed.fits"
+            err_output = output + "_err.fits"
             segmap_output = output + "_segmap.fits"
         else:
             back_output = None
+            subbed_output = None
             segmap_output = None
+            err_output = None
 
-        self.model_background_photometry(ext=ext, write=back_output, do_mask=True)
+        self.model_background_photometry(
+            ext=ext,
+            write=back_output,
+            write_err=err_output,
+            write_subbed=subbed_output,
+            do_mask=True
+        )
         self.load_wcs()
         self.extract_pixel_scale()
         if not self.wcs[ext].footprint_contains(centre):
-            return None, None, None, None
+            return None, None, None, None, None
         x, y = self.wcs[ext].all_world2pix(centre.ra.value, centre.dec.value, 0)
         x = u.check_iterable(x)
         y = u.check_iterable(y)
@@ -3909,15 +4249,17 @@ class ImagingImage(Image):
 
         u.debug_print(2, f"sep_elliptical_photometry: mask_nearby == {mask_nearby}")
 
+        objs = None
         if isinstance(mask_nearby, ImagingImage):
             mask = mask_nearby.data[0].value
         elif mask_nearby:
-            mask = self.write_mask(
+            mask, objs = self.write_mask(
                 do_not_mask=centre,
                 ext=ext,
                 method="sep",
                 output_path=segmap_output
-            ).data[0].value
+            )
+            mask = mask.data[0].value
         else:
             mask = np.zeros_like(self.data[ext].data)
 
@@ -3944,6 +4286,14 @@ class ImagingImage(Image):
             gain=self.extract_gain().value,
             mask=mask.astype(bool),
         )
+        properties = {}
+        if objs is not None:
+            objs_coord = self.pixel_to_world(x=objs["x"], y=objs["y"])
+            s = objs_coord.separation(centre)
+            s_min = s[s.argmin()]
+            if s_min < b_world:
+                obj_match = objs[s.argmin()]
+                properties = {"peak": obj_match["peak"]}
 
         if isinstance(output, str):
             # objects = sep.extract(self.data_sub_bkg[ext], 1.5, err=self.sep_background[ext].rms())
@@ -3953,7 +4303,6 @@ class ImagingImage(Image):
                 'KRON_RADIUS': kron_radius
             })
 
-            plt.close()
             with quantity_support():
 
                 theta_plot = (theta[0] * units.rad).to(units.deg).value
@@ -3987,7 +4336,7 @@ class ImagingImage(Image):
                 #     ax.add_artist(e)
                 #     ax.text(objects["x"][i], objects["y"][i], objects["theta"][i] * 180. / np.pi)
 
-                ax, fig, _ = self.plot_subimage(
+                fig, ax, _ = self.plot_subimage(
                     centre=centre,
                     frame=this_frame,
                     ext=ext,
@@ -4005,9 +4354,11 @@ class ImagingImage(Image):
                 fig.savefig(output + ".png")
 
                 plt.close(fig)
+                fig.clear()
+                del fig, ax
 
                 if subtract_background:
-                    ax, fig, _ = self.plot_subimage(
+                    fig, ax, _ = self.plot_subimage(
                         centre=centre,
                         frame=this_frame,
                         ext=ext,
@@ -4023,8 +4374,9 @@ class ImagingImage(Image):
                     fig.savefig(output + "_back_sub.png")
 
                     plt.close(fig)
+                    del fig, ax
 
-        return flux, flux_err, flag, back
+        return flux, flux_err, flag, back, properties
 
     def sep_elliptical_magnitude(
             self,
@@ -4062,7 +4414,7 @@ class ImagingImage(Image):
 
         u.debug_print(2, f"sep_elliptical_magnitude(): mask_nearby == {mask_nearby}")
 
-        flux, flux_err, flags, back = self.sep_elliptical_photometry(
+        flux, flux_err, flags, back, properties = self.sep_elliptical_photometry(
             centre=centre,
             a_world=a_world,
             b_world=b_world,
@@ -4095,6 +4447,10 @@ class ImagingImage(Image):
                 mag_err[i] = -999. * units.mag
                 mag[i] = m
 
+        peak = -999.
+        if "peak" in properties:
+            peak = properties["peak"]
+
         return {
             "mag": mag,
             "mag_err": mag_err,
@@ -4102,33 +4458,46 @@ class ImagingImage(Image):
             "back": back,
             "flux": flux,
             "flux_err": flux_err,
-            "threshold": detection_threshold
+            "threshold": detection_threshold,
+            "peak": peak
         }
 
     def make_galfit_version(
             self,
             output_path: str = None,
-            ext: int = 0
+            ext: int = 0,
+            force: bool = False
     ):
         """
         Generate a version of this file for use with GALFIT.
         Modifies header item GAIN to conform to GALFIT's expectations (outlined in the GALFIT User Manual,
         http://users.obs.carnegiescience.edu/peng/work/galfit/galfit.html)
+
         :param output_path: path to write modified file to.
         :param ext: FITS extension to modify header of.
         :return:
         """
         if output_path is None:
             output_path = self.path.replace(".fits", "_galfit.fits")
-        new = self.copy(output_path)
-        new.load_headers()
-        new.set_header_items(
-            {
-                "GAIN": self.extract_header_item(key="OLD_EXPTIME", ext=ext) *
-                        self.extract_header_item(key="OLD_GAIN", ext=ext)
-            }
-        )
-        new.write_fits_file()
+        if force or not os.path.isfile(output_path):
+            new = self.copy(output_path)
+            new.load_headers()
+            old_exptime = self.extract_header_item(key="OLD_EXPTIME", ext=ext)
+            old_gain = self.extract_header_item(key="OLD_GAIN", ext=ext)
+            old_rdnoise = self.extract_header_item(key="OLD_RDNOISE")
+            if old_exptime is not None and old_gain is not None:
+                new.set_header_items(
+                    {
+                        "GAIN": old_exptime * old_gain,
+                        "RDNOISE": old_rdnoise
+                    }
+                )
+            new.write_fits_file()
+        else:
+            new = type(self)(path=output_path)
+            new.load_output_file()
+            new.load_headers()
+            new.load_psfex_output(galfit=True)
         return new
 
     def make_galfit_psf(
@@ -4138,20 +4507,33 @@ class ImagingImage(Image):
             y: float
     ):
         # We obtain an oversampled PSF, because GALFIT works best with one.
-        psfex_path = os.path.join(output_dir, f"{self.name}_galfit_psfex.psf")
-        if not os.path.isfile(psfex_path):
+        # psfex_path = os.path.join(output_dir, f"{self.name}_psfex.psf")
+        if self.galfit_psfex_path is None or not os.path.isfile(self.galfit_psfex_path):
             self.psfex(
                 output_dir=output_dir,
                 PSF_SAMPLING=0.5,  # Equivalent to GALFIT fine-sampling factor = 2
                 # PSF_SIZE=50,
                 force=True,
-                set_attributes=True
+                set_attributes=True,
+                galfit=True
             )
         else:
-            self.psfex_path = psfex_path
-            self.load_psfex_output()
-        # Load oversampled PSF image
-        psf_img = self.psf_image(x=x, y=y, match_pixel_scale=False)[0]
+            self.load_psfex_output(galfit=True)
+        return self.psf_to_hdu(x=x, y=y, output_dir=output_dir, galfit=True)
+
+    def psf_to_hdu(
+            self,
+            x: float, y: float,
+            output_dir: str = None,
+            galfit: bool = False
+    ):
+        if output_dir is None:
+            output_dir = self.data_path
+        psf_img = self.psf_image(
+            x=x, y=y,
+            match_pixel_scale=False,
+            galfit=galfit
+        )[0]
         psf_img /= np.max(psf_img)
         # Write our PSF image to disk for GALFIT to find
         psf_hdu = fits.hdu.PrimaryHDU(psf_img)
@@ -4172,7 +4554,8 @@ class ImagingImage(Image):
             mask_file: str = None,
             fitting_region_margins: tuple = None,
             convolution_size: tuple = None,
-            models: List[dict] = None
+            models: List[dict] = None,
+            **feedme_kwargs
     ):
         if fitting_region_margins is None:
             self.load_data()
@@ -4197,19 +4580,24 @@ class ImagingImage(Image):
             fitting_region_margins=fitting_region_margins,
             convolution_size=convolution_size,
             plate_scale=(dx, dy),
-            models=models
+            models=models,
+            **feedme_kwargs
         )
 
     def galfit(
             self,
             output_dir: str = None,
-            output_prefix=None,
+            output_prefix: str = None,
             frame_lower: int = 30,
             frame_upper: int = 100,
             ext: int = 0,
             model_guesses: Union[dict, List[dict]] = None,
             psf_path: str = None,
-            use_frb_galfit: bool = False
+            use_frb_galfit: bool = False,
+            feedme_kwargs: dict = {},
+            position_tolerance: units.Quantity = 2 * units.arcsec,
+            reject_r_eff_factor: float = None,
+            pivot_component: int = 2
     ):
         """
 
@@ -4225,6 +4613,7 @@ class ImagingImage(Image):
         :param use_frb_galfit: Use the FRB repo frb.galaxies.galfit module. Single-sersic only; if multiple models are provided only one will be used.
         :return:
         """
+        position_tolerance = u.check_quantity(position_tolerance, units.arcsec)
         if output_prefix is None:
             output_prefix = self.name
         if model_guesses is None:
@@ -4237,6 +4626,9 @@ class ImagingImage(Image):
         if isinstance(model_guesses, dict):
             model_guesses = [model_guesses]
         gf_tbls = {}
+        gf_dicts = {}
+        glbl = []
+
         for i, model in enumerate(model_guesses):
             if "position" in model:
                 x, y = self.world_to_pixel(
@@ -4253,14 +4645,24 @@ class ImagingImage(Image):
                 )
             else:
                 raise ValueError("All model dicts must have either 'position' or 'x' & 'y' keys.")
+
+            if "fit_position" in model:
+                model["fit_x"] = model["fit_y"] = model["fit_position"]
+
             gf_tbls[f"COMP_{i + 1}"] = []
+            gf_dicts[f"COMP_{i + 1}"] = []
+
         gf_tbls[f"COMP_{i + 2}"] = []
+        gf_dicts[f"COMP_{i + 2}"] = []
 
         if output_dir is None:
             output_dir = self.data_path
         self.load_output_file()
         new = self.make_galfit_version(
-            output_path=os.path.join(output_dir, f"{output_prefix}_galfit.fits")
+            output_path=os.path.join(
+                output_dir,
+                f"{output_prefix}_{self.filter_name}_galfit.fits"
+            )
         )
         new.zeropoint_best = self.zeropoint_best
         new.open()
@@ -4293,8 +4695,8 @@ class ImagingImage(Image):
 
         mask_file = f"{output_prefix}_mask.fits"
         mask_path = os.path.join(output_dir, mask_file)
-        margins_max = u.frame_from_centre(frame_upper + 1, x, y, data)
-        mask = new.write_mask(
+        margins_max = u.frame_from_centre(frame_upper, x, y, data)
+        mask, objs = new.write_mask(
             output_path=mask_path,
             do_not_mask=list(map(lambda m: m["position"], model_guesses)),
             ext=ext,
@@ -4305,11 +4707,23 @@ class ImagingImage(Image):
         )
 
         self.extract_pixel_scale(ext)
+        os.system(f"rm {output_dir}/{output_prefix}_galfit-out_*.fits")
+        os.system(f"rm {output_dir}/galfit_plot_frame*.png")
+        os.system(f"rm {output_dir}/galfit.*")
+        os.system(f"rm {output_dir}/{output_prefix}_*.feedme")
+        os.system(f"rm {output_dir}/{output_prefix}_*_fit.log")
 
-        for frame in range(frame_lower, frame_upper + 1):
+        n_frames = 20
+
+        for j, frame in enumerate(np.linspace(frame_lower, frame_upper, n_frames)):
+            print()
+            print("=" * 60)
+            print(f"Using frame {frame}, {j + 1} / {n_frames}")
+            print("=" * 60, "\n")
+            frame = int(frame)
             margins = u.frame_from_centre(frame, x, y, data)
             print("Generating mask...")
-            data_trim = u.trim_image(data, margins=margins)
+            # data_trim = u.trim_image(data, margins=margins)
             mask_data = u.trim_image(mask.data[ext], margins=margins).value
             feedme_file = f"{output_prefix}_{frame}.feedme"
             feedme_path = os.path.join(output_dir, feedme_file)
@@ -4324,12 +4738,16 @@ class ImagingImage(Image):
                     mask_file=mask_file,
                     fitting_region_margins=margins,
                     convolution_size=(frame * 2, frame * 2),
-                    models=model_guesses
+                    models=model_guesses,
+                    **feedme_kwargs
                 )
-                galfit.galfit(
-                    config=feedme_file,
-                    output_dir=output_dir
-                )
+                try:
+                    galfit.galfit(
+                        config=feedme_file,
+                        output_dir=output_dir
+                    )
+                except SystemError:
+                    continue
             else:
                 import frb.galaxies.galfit as galfit_frb
                 galfit_frb.run(
@@ -4346,89 +4764,243 @@ class ImagingImage(Image):
                     skip_sky=False,
                     **model_dict
                 )
-            shutil.copy(os.path.join(output_dir, "fit.log"),
-                        os.path.join(output_dir, f"{output_prefix}_{frame}_fit.log"))
+            fit_log = os.path.join(output_dir, "fit.log")
+            if os.path.isfile(fit_log):
+                shutil.copy(
+                    fit_log,
+                    os.path.join(output_dir, f"{output_prefix}_{frame}_fit.log")
+                )
+            else:
+                continue
 
             try:
                 img_block = fits.open(img_block_path)
             except FileNotFoundError:
-                return None
+                continue
+
+            mask_ones = np.invert(mask_data.astype(bool)).astype(int)
+
+            shape = img_block[1].shape
+
+            try:
+                # Masked data
+                img_block.insert(4, img_block[1].copy())
+                img_block[4].data *= mask_ones[:shape[0], :shape[1]]  # + #
+                img_block[4].data += mask_data[:shape[0], :shape[1]] * np.median(img_block[1].data)
+
+                # Masked, subtracted data
+                img_block.insert(5, img_block[3].copy())
+                img_block[5].data *= mask_ones[:shape[0], :shape[1]]  # + #
+                img_block[5].data += mask_data[:shape[0], :shape[1]] * np.median(img_block[3].data)
+
+            except ValueError:
+                break
+
+            for idx in [2, 3]:
+                img_block[idx].header.insert('OBJECT', ('PCOUNT', 0))
+                img_block[idx].header.insert('OBJECT', ('GCOUNT', 1))
+
+            galfit.imgblock_plot(
+                output=os.path.join(output_dir, f"galfit_plot_frame{frame}.png"),
+                img_block=img_block
+            )
+
+            data_flatness = img_block[5].data
+            margins_min = u.frame_from_centre(frame_lower, x - margins[0], y - margins[2], data_flatness)
+            data_flatness = u.trim_image(data_flatness, margins=margins_min)
+            # data_flatness = data_flatness[np.isfinite(data_flatness)]
+            noise = np.nanstd(data_flatness)
+
+            img_block.writeto(img_block_path, overwrite=True)
+            img_block.close()
 
             results_header = img_block[2].header
             components = galfit.extract_fit_params(results_header)
-            for compname in components:
+
+            # Reject some iterations based on deviance from guesses
+            component = components[f"COMP_{pivot_component}"]
+            guess = model_guesses[0]
+
+            pos = self.pixel_to_world(component["x"], component["y"], origin=1)
+            pos_guess = model_guesses[0]["position"]
+            # If the model has drifted too far in position from the guess, we reject
+            if pos.separation(pos_guess) > position_tolerance and j > 1:
+                print(f"Rejecting frame {frame} due to separation > position_tolerance")
+                continue
+            # If r_eff is more than reject_r_eff_factor times the initial guess, reject
+            print(model_guesses[0].keys())
+            if reject_r_eff_factor is not None and component["r_eff"] > model_guesses[0]["r_e"] * reject_r_eff_factor:
+                print(f"Rejecting frame {frame} due to r_eff > guess * {reject_r_eff_factor}")
+                continue
+            # If n is unphysically large, we reject
+            # if component["n"] < 0.5:
+            #     print(f"Rejecting frame {frame} due to n < 0.5")
+            #     continue
+            if component["n"] > 10:
+                print(f"Rejecting frame {frame} due to n > 10")
+                continue
+
+            self.extract_astrometry_err()
+
+            for i, compname in enumerate(components):
                 component = components[compname]
-                pos = self.pixel_to_world(component["x"], component["y"])
                 component["ra"] = pos.ra
                 component["dec"] = pos.dec
                 if "r_eff" in component:
                     component["r_eff_ang"] = component["r_eff"].to(units.arcsec, self.pixel_scale_x)
                     component["r_eff_ang_err"] = component["r_eff_err"].to(units.arcsec, self.pixel_scale_x)
                 # TODO: The below assumes RA and Dec are along x & y (neglecting image rotation), which isn't great
+
                 component["ra_err"] = component["x_err"].to(units.deg, self.pixel_scale_x)
+                if self.ra_err is not None:
+                    component["ra_err"] = u.uncertainty_sum(component["ra_err"], self.ra_err)
+
                 component["dec_err"] = component["y_err"].to(units.deg, self.pixel_scale_y)
+                if self.dec_err is not None:
+                    component["dec_err"] = u.uncertainty_sum(component["dec_err"], self.dec_err)
+
                 component["frame"] = frame
+                component["x_min"], component["x_max"], component["y_min"], component["y_max"] = margins
+                component_dict = component.copy()
+                if "rotation_params" in component:
+                    component.update(component.pop("rotation_params"))
+
                 results_table = table.QTable([component])
                 gf_tbls[compname].append(results_table)
+                gf_dicts[compname].append(component_dict)
 
-            mask_ones = np.invert(mask_data.astype(bool)).astype(int)
-
-            # Masked data
-            img_block.insert(4, img_block[1].copy())
-            img_block[4].data *= mask_ones  # + #
-            img_block[4].data += mask_data * np.median(img_block[1].data)
-
-            # Masked, subtracted data
-            img_block.insert(5, img_block[3].copy())
-            img_block[5].data *= mask_ones  # + #
-            img_block[5].data += mask_data * np.median(img_block[3].data)
-
-            for idx in [2, 3]:
-                img_block[idx].header.insert('OBJECT', ('PCOUNT', 0))
-                img_block[idx].header.insert('OBJECT', ('GCOUNT', 1))
-
-            img_block.writeto(img_block_path, overwrite=True)
+            glbl.append({
+                "frame": frame,
+                "imgblock": img_block_path,
+                "residual_noise": noise
+            })
 
         component_tables = {}
         for compname in gf_tbls:
-            gf_tbl = table.vstack(gf_tbls[compname])
+            if len(gf_tbls[compname]) > 0:
+                gf_tbl = table.vstack(gf_tbls[compname])
+            else:
+                return None, None, None
             component_tables[compname] = gf_tbl
 
         shutil.copy(p.path_to_config_galfit(), output_dir)
 
-        return component_tables
+        return component_tables, gf_dicts, glbl
 
     def galfit_object(
             self,
             obj: objects.Galaxy,
             pivot_component: int = 2,
+            output_dir: str = None,
+            output_prefix: str = None,
             **kwargs
     ):
-
-        photometry, _ = obj.select_photometry(
-            fil=self.filter_name,
-            instrument=self.instrument_name,
-        )
 
         if "model_guesses" in kwargs:
             model_guesses = kwargs["model_guesses"]
         else:
-            model_guesses = [{
-                "object_type": "sersic"
-            }]
+            model_guesses, new_kwargs = obj.galfit_guess_dict(img=self)
+            kwargs.update(new_kwargs)
+
+        if output_dir is None:
+            output_dir = os.path.join(obj.data_path, "GALFIT", self.name)
+        os.makedirs(output_dir, exist_ok=True)
 
         for model in model_guesses:
-            model["position"] = obj.position
-            model["int_mag"] = photometry["mag"].value
+            if "position" not in model:
+                model["position"] = obj.position
+            if "int_mag" not in model:
+                photometry, _ = obj.select_photometry(
+                    fil=self.filter_name,
+                    instrument=self.instrument_name,
+                )
+                model["int_mag"] = photometry["mag"].value
 
-        model_tbls = self.galfit(
-            model_guesses=model_guesses,
+        kwargs["model_guesses"] = model_guesses
+        kwargs["output_dir"] = output_dir
+        kwargs["output_prefix"] = output_prefix
+
+        model_tbls, model_dicts, properties = self.galfit(
+            reject_r_eff_factor=2.,
+            pivot_component=pivot_component,
             **kwargs
         )
 
-        best_params = galfit.sersic_best_row(model_tbls[f"COMP_{pivot_component}"])
-        best_params["r_eff_proj"] = obj.projected_size(best_params["r_eff_ang"]).to("kpc")
-        best_params["r_eff_proj_err"] = obj.projected_size(best_params["r_eff_ang_err"]).to("kpc")
+        if model_tbls is None:
+            return None
+
+        # Use the flatness of the residuals to assess quality of fit
+        best_params = {}
+        noise = [m["residual_noise"] for m in properties]
+        frame = [m["frame"] for m in properties]
+        fig, ax = plt.subplots()
+        y = noise
+        ax.scatter(
+            frame,
+            y
+        )
+        ax.set_xlabel("Frame (pix)")
+        ax.set_ylabel(f"Std dev of masked residuals")
+        fig.savefig(os.path.join(output_dir, f"{output_prefix}_frame_noise.png"))
+        plt.close(fig)
+        del fig, ax
+
+        best_index = np.nanargmin(noise)
+
+        # best_index, best_dict = galfit.sersic_best_row(model_tbls[f"COMP_{pivot_component}"])
+        for component in model_tbls:
+            if "position_angle" in model_tbls[component].colnames:
+                theta = model_tbls[component]["position_angle"]
+                rotation_angle = self.extract_rotation_angle()
+                theta = (theta + rotation_angle).to("deg")
+                model_tbls[component]["position_angle"] = theta
+                for d in model_dicts[component]:
+                    d["position_angle"] = theta
+            if "r_eff_ang" in model_tbls[component].colnames:
+                r_eff_proj = obj.projected_size(angle=model_tbls[component]["r_eff_ang"])
+                if r_eff_proj is not None:
+                    r_eff_proj = r_eff_proj.to("kpc")
+                    model_tbls[component]["r_eff_proj"] = r_eff_proj
+                    r_eff_proj_err = obj.projected_size(angle=model_tbls[component]["r_eff_ang_err"]).to("kpc")
+                    model_tbls[component]["r_eff_proj_err"] = r_eff_proj_err
+                    for d in model_dicts[component]:
+                        d["r_eff_proj"] = r_eff_proj
+                        d["r_eff_proj_err"] = r_eff_proj_err
+
+            for param in ("r_eff_ang", "axis_ratio", "n"):
+                if param in model_tbls[component].colnames:
+                    fig, ax = plt.subplots()
+                    y = model_tbls[component][param]
+                    ax.errorbar(
+                        model_tbls[component]["frame"],
+                        y,
+                        yerr=model_tbls[component][f"{param}_err"]
+                    )
+                    ax.set_ylim(np.min(y) - 0.2 * np.abs(np.min(y)), np.max(y) + 0.2 * np.max(y))
+                    ax.set_xlabel("Frame (pix)")
+                    ax.set_ylabel(f"{param} ({model_tbls[component][param].unit})")
+                    fig.savefig(os.path.join(output_dir, f"{output_prefix}_frame_{param}.png"))
+                    plt.close(fig)
+                    del ax, fig
+
+            model_tbls[component].write(
+                os.path.join(output_dir, f"{output_prefix}_{component}_fits.ecsv"),
+                format="ascii.ecsv",
+                overwrite=True
+            )
+            best_params[component] = dict(model_tbls[component][best_index])
+            if "object_type" in best_params[component]:
+                best_params[component]["object_type"] = str(best_params[component]["object_type"])
+
+        for k, v in best_params[f"COMP_{pivot_component}"].items():
+            print(k, "\t\t\t", v)
+        best_params["image"] = self.path
+        best_params["instrument"] = self.instrument_name
+        best_params["band"] = self.filter_name
+        best_params["initial_guess"] = model_guesses
+        p.save_params(os.path.join(output_dir, "best_model.yaml"), best_params)
+        obj.galfit_models[self.filter_name] = best_params
+
         return best_params
 
     @classmethod
@@ -4493,7 +5065,6 @@ class ImagingImage(Image):
             elif cat == "calib_pipeline":
                 differences[cat] = 0.1 * units.angstrom
 
-        print(differences)
         differences = dict(sorted(differences.items(), key=lambda x: x[1]))
         return list(differences.keys()), list(differences.values())
 
@@ -4503,10 +5074,18 @@ def deepest(
         img_2: ImagingImage,
         sigma: int = 5,
         depth_type: str = "max",
-        snr_type: str = "SNR_PSF"
+        snr_type: str = None
 ):
-    print(img_1.name, img_1.depth.keys())
-    print(img_2.name, img_2.depth.keys())
+    if snr_type is None:
+        depth_1, snr_type_1 = img_1.select_depth()
+        depth_2, snr_type_2 = img_2.select_depth()
+        if snr_type_1 == snr_type_2 == "SNR_PSF":
+            snr_type = "SNR_PSF"
+        elif snr_type_1 == "SNR_AUTO" or snr_type_2 == "SNR_AUTO":
+            snr_type = "SNR_AUTO"
+
+    # print(img_1.name, img_1.depth.keys())
+    # print(img_2.name, img_2.depth.keys())
 
     if img_1.depth[depth_type][snr_type][f"{sigma}-sigma"] > \
             img_2.depth[depth_type][snr_type][f"{sigma}-sigma"]:

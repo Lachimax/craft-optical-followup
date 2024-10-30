@@ -4,10 +4,10 @@ import copy
 import numpy as np
 
 from astropy.coordinates import SkyCoord, Longitude
+import astropy.uncertainty as unc
 import astropy.units as units
 
 import craftutils.utils as u
-
 
 position_dictionary = {
     "alpha": {
@@ -23,6 +23,7 @@ uncertainty_dict = {
     "sys": 0.0,
     "stat": 0.0
 }
+
 
 @u.export
 def skycoord_to_position_dict(skycoord: SkyCoord):
@@ -45,8 +46,8 @@ def skycoord_to_position_dict(skycoord: SkyCoord):
 class PositionUncertainty:
     def __init__(
             self,
+            position: SkyCoord,
             uncertainty: Union[float, units.Quantity, dict, tuple] = None,
-            position: SkyCoord = None,
             ra_err_total: Union[float, units.Quantity] = None,
             ra_err_sys: Union[float, units.Quantity] = None,
             ra_err_stat: Union[float, units.Quantity] = None,
@@ -55,8 +56,10 @@ class PositionUncertainty:
             dec_err_stat: Union[float, units.Quantity] = None,
             a_stat: Union[float, units.Quantity] = None,
             a_sys: Union[float, units.Quantity] = None,
+            a_total: Union[float, units.Quantity] = None,
             b_stat: Union[float, units.Quantity] = None,
             b_sys: Union[float, units.Quantity] = None,
+            b_total: Union[float, units.Quantity] = None,
             theta: Union[float, units.Quantity] = None,
             sigma: float = None,
             **kwargs
@@ -82,6 +85,8 @@ class PositionUncertainty:
         """
 
         self.sigma = sigma
+        self.position = position
+        self.cos_dec = np.cos(position.dec)
         # Assign values from dictionary, if provided.
         if type(uncertainty) is dict:
             ra_key = None
@@ -91,14 +96,29 @@ class PositionUncertainty:
                 ra_key = "alpha"
 
             if ra_key is not None:
-                if "sys" in uncertainty[ra_key] and uncertainty[ra_key]["sys"] is not None:
-                    ra_err_sys = uncertainty[ra_key]["sys"]
-                    if isinstance(ra_err_sys, str):
-                        ra_err_sys = Longitude(ra_err_sys).to("arcsec")
-                if "stat" in uncertainty[ra_key] and uncertainty[ra_key]["stat"] is not None:
-                    ra_err_stat = uncertainty[ra_key]["stat"]
-                    if isinstance(ra_err_stat, str):
-                        ra_err_stat = Longitude(ra_err_stat).to("arcsec")
+                ra_unc = uncertainty[ra_key]
+                if isinstance(ra_unc, dict):
+                    if "sys" in ra_unc and ra_unc["sys"] is not None:
+                        ra_err_sys = ra_unc["sys"]
+                        if isinstance(ra_err_sys, str):
+                            ra_err_sys = Longitude(ra_err_sys).to("arcsec")
+                    else:
+                        ra_err_sys = None
+
+                    if "stat" in ra_unc and ra_unc["stat"] is not None:
+                        ra_err_stat = ra_unc["stat"]
+                        if isinstance(ra_err_stat, str):
+                            ra_err_stat = Longitude(ra_err_stat).to("arcsec")
+                    else:
+                        ra_err_stat = None
+                    if "total" in ra_unc and ra_unc["total"] is not None:
+                        ra_err_total = ra_unc["total"]
+                    else:
+                        ra_err_total = None
+                else:
+                    ra_err_sys = None
+                    ra_err_stat = None
+                    ra_err_total = ra_unc
 
             dec_key = None
             if "dec" in uncertainty and uncertainty["dec"] is not None:
@@ -107,36 +127,80 @@ class PositionUncertainty:
                 dec_key = "delta"
 
             if dec_key is not None:
-                if "sys" in uncertainty[dec_key] and uncertainty[dec_key]["sys"] is not None:
-                    dec_err_sys = uncertainty[dec_key]["sys"]
-                if "stat" in uncertainty[dec_key] and uncertainty[dec_key]["stat"] is not None:
-                    dec_err_stat = uncertainty[dec_key]["stat"]
+
+                dec_unc = uncertainty[dec_key]
+                if isinstance(dec_unc, dict):
+                    if "sys" in dec_unc and dec_unc["sys"] is not None:
+                        dec_err_sys = uncertainty[dec_key]["sys"]
+                    else:
+                        dec_err_sys = None
+                    if "stat" in dec_unc and dec_unc["stat"] is not None:
+                        dec_err_stat = dec_unc["stat"]
+                    else:
+                        dec_err_stat = None
+                    if "total" in dec_unc and dec_unc["total"] is not None:
+                        dec_err_total = dec_unc["total"]
+                else:
+                    dec_err_sys = None
+                    dec_err_stat = None
+                    dec_err_total = dec_unc
 
             if "a" in uncertainty and uncertainty["a"] is not None:
-                if "sys" in uncertainty["a"] and uncertainty["a"]["sys"] is not None:
-                    a_sys = uncertainty["a"]["sys"]
-                if "stat" in uncertainty["a"] and uncertainty["a"]["stat"] is not None:
-                    a_stat = uncertainty["a"]["stat"]
+                a_ = uncertainty["a"]
+                if isinstance(a_, dict):
+                    if "sys" in a_ and a_["sys"] is not None:
+                        a_sys = a_["sys"]
+                    else:
+                        a_sys = None
+                    if "stat" in a_ and a_["stat"] is not None:
+                        a_stat = a_["stat"]
+                    else:
+                        a_stat = None
+                    if "total" in a_ and a_["total"] is not None:
+                        a_total = a_["total"]
+                    else:
+                        a_total = None
+                else:
+                    a_stat = None
+                    a_sys = None
+                    a_total = a_
             if "b" in uncertainty and uncertainty["b"] is not None:
-                if "sys" in uncertainty["b"] and uncertainty["b"]["sys"] is not None:
-                    b_sys = uncertainty["b"]["sys"]
-                if "stat" in uncertainty["b"] and uncertainty["a"]["stat"] is not None:
-                    b_stat = uncertainty["b"]["stat"]
+                b_ = uncertainty["b"]
+                if isinstance(b_, dict):
+                    if "sys" in b_ and b_["sys"] is not None:
+                        b_sys = b_["sys"]
+                    else:
+                        b_sys = None
+                    if "stat" in b_ and b_["stat"] is not None:
+                        b_stat = b_["stat"]
+                    else:
+                        b_stat = None
+                    if "total" in b_ and b_["total"] is not None:
+                        b_total = b_["total"]
+                    else:
+                        b_total = None
+                else:
+                    b_stat = None
+                    b_sys = None
+                    b_total = b_
+
             if "theta" in uncertainty and uncertainty["theta"] is not None:
                 theta = uncertainty["theta"]
         # If uncertainty is a single value, assume a circular uncertainty region without distinction between systematic
         # and statistical.
         elif uncertainty is not None:
-            a_stat = uncertainty
-            a_sys = 0.0 * units.arcsec
-            b_stat = uncertainty
-            b_sys = 0.0 * units.arcsec
+            a_total = uncertainty
+            a_sys = None
+            a_stat = None
+            b_total = uncertainty
+            b_sys = None
+            b_stat = None
             theta = 0.0 * units.deg
 
         if ra_err_stat is None and "alpha_err_stat" in kwargs and kwargs["alpha_err_stat"] is not None:
-            ra_err_stat = (kwargs["alpha_err_stat"] / np.cos(position.dec)).to("arcsec")
+            ra_err_stat = (kwargs["alpha_err_stat"] / self.cos_dec).to("arcsec")
         if ra_err_sys is None and "alpha_err_sys" in kwargs and kwargs["alpha_err_sys"] is not None:
-            ra_err_sys = (kwargs["alpha_err_sys"] / np.cos(position.dec)).to("arcsec")
+            ra_err_sys = (kwargs["alpha_err_sys"] / self.cos_dec).to("arcsec")
         if dec_err_stat is None and "delta_err_stat" in kwargs and kwargs["delta_err_stat"] is not None:
             dec_err_stat = kwargs["delta_err_stat"]
         if dec_err_sys is None and "delta_err_sys" in kwargs and kwargs["delta_err_sys"] is not None:
@@ -147,75 +211,153 @@ class PositionUncertainty:
                       a_sys, b_stat, b_sys, theta, position)
         u.debug_print(2, "PositionUncertainty.__init__(): ra_err_sys, ra_err_stat, dec_err_sys, dec_err_stat ==",
                       ra_err_sys, ra_err_stat, dec_err_sys, dec_err_stat)
-        if a_stat is not None and a_sys is not None and b_stat is not None and b_sys is not None and theta is not None:
-            ellipse = True
-        elif ra_err_sys is not None and ra_err_stat is not None and dec_err_sys is not None and dec_err_stat is not None and position is not None:
-            ellipse = False
-        else:
-            raise ValueError(
-                "Either all ellipse values (a, b, theta) or all equatorial values (ra, dec, position) must be provided.")
+        # if a_stat is not None and a_sys is not None and b_stat is not None and b_sys is not None and theta is not None:
+        #     ellipse = True
+        # elif ra_err_sys is not None and ra_err_stat is not None and dec_err_sys is not None and dec_err_stat is not None and position is not None:
+        #     ellipse = False
+        # else:
+        #     raise ValueError(
+        #         "Either all ellipse values (a, b, theta) or all equatorial values (ra, dec, position) must be provided.")
 
         ra_err_sys = u.check_quantity(number=ra_err_sys, unit=units.arcsec)
         ra_err_stat = u.check_quantity(number=ra_err_stat, unit=units.arcsec)
+        ra_err_total = u.check_quantity(number=ra_err_total, unit=units.arcsec)
         dec_err_sys = u.check_quantity(number=dec_err_sys, unit=units.arcsec)
         dec_err_stat = u.check_quantity(number=dec_err_stat, unit=units.arcsec)
+        dec_err_total = u.check_quantity(number=dec_err_total, unit=units.arcsec)
         # Convert equatorial uncertainty to ellipse with theta=0
-        if not ellipse:
-            ra = position.ra
-            dec = position.dec
-            a_sys = ra_err_sys * np.cos(dec)
-            a_stat = ra_err_stat * np.cos(dec)
-            b_sys = dec_err_sys
-            b_stat = dec_err_stat
-            if b_sys > a_sys:
-                theta = 90. * units.deg
-            else:
-                theta = 0. * units.degree
-            a_sys, b_sys = max(a_sys, b_sys), min(a_sys, b_sys)
-            a_stat, b_stat = max(a_stat, b_stat), min(a_stat, b_stat)
+        # if not ellipse:
+        #     dec = position.dec
+        #     a_sys = ra_err_sys * self.cos_dec
+        #     a_stat = ra_err_stat * self.cos_dec
+        #     b_sys = dec_err_sys
+        #     b_stat = dec_err_stat
+        #     if b_sys > a_sys:
+        #         theta = 90. * units.deg
+        #     else:
+        #         theta = 0. * units.degree
+        #     a_sys, b_sys = max(a_sys, b_sys), min(a_sys, b_sys)
+        #     a_stat, b_stat = max(a_stat, b_stat), min(a_stat, b_stat)
         # Or use ellipse parameters as given.
-        else:
-            a_sys = u.check_quantity(number=a_sys, unit=units.arcsec)
-            a_stat = u.check_quantity(number=a_stat, unit=units.arcsec)
-            b_sys = u.check_quantity(number=b_sys, unit=units.arcsec)
-            b_stat = u.check_quantity(number=b_stat, unit=units.arcsec)
-            theta = u.check_quantity(number=theta, unit=units.arcsec)
+        a_sys = u.check_quantity(number=a_sys, unit=units.arcsec)
+        a_stat = u.check_quantity(number=a_stat, unit=units.arcsec)
+        a_total = u.check_quantity(number=a_total, unit=units.arcsec)
+        b_sys = u.check_quantity(number=b_sys, unit=units.arcsec)
+        b_stat = u.check_quantity(number=b_stat, unit=units.arcsec)
+        b_total = u.check_quantity(number=b_total, unit=units.arcsec)
+        theta = u.check_quantity(number=theta, unit=units.deg)
 
         self.a_sys = a_sys
         self.a_stat = a_stat
         self.b_sys = b_sys
         self.b_stat = b_stat
+
+        self.a = a_total
+        self.b = b_total
+
+        if theta is None:
+            theta = 0.0 * units.deg
         self.theta = theta
 
         self.ra_sys = ra_err_sys
         self.dec_sys = dec_err_sys
         self.ra_stat = ra_err_stat
         self.dec_stat = dec_err_stat
+        self.ra_total = ra_err_total
+        self.dec_total = dec_err_total
 
     def __str__(self):
         return f"PositionUncertainty: a_stat={self.a_stat}, b_stat={self.b_stat}; a_sys={self.a_sys}, b_sys={self.b_sys}"
 
     def uncertainty_quadrature(self):
-        a_quad = np.sqrt(self.a_sys ** 2 + self.a_stat ** 2)
-        b_quad = np.sqrt(self.b_sys ** 2 + self.b_stat ** 2)
-        return max(a_quad, b_quad), min(a_quad, b_quad)
+        do_equ = False
+        a_quad = 0
+        b_quad = 0
+        theta = self.theta
+        if self.a is not None:
+            a_quad = self.a
+        elif self.a_sys is not None and self.a_stat is not None:
+            a_quad = np.sqrt(self.a_sys ** 2 + self.a_stat ** 2)
+        else:
+            do_equ = True
+            # raise ValueError(f"{self.a=}, {self.a_sys=}, {self.a_stat=}")
+
+        if not do_equ and self.b is not None:
+            b_quad = self.b
+        elif self.b_sys is not None and self.b_stat is not None:
+            b_quad = np.sqrt(self.b_sys ** 2 + self.b_stat ** 2)
+        else:
+            do_equ = True
+            # raise ValueError(f"{self.b=}, {self.b_sys=}, {self.b_stat=}")
+
+        if a_quad == 0 or b_quad == 0:
+            do_equ = True
+
+        if do_equ:
+            ra_err, dec_err = self.uncertainty_quadrature_equ()
+            if ra_err is not None and dec_err is not None:
+                a_quad = max(ra_err, dec_err)
+                b_quad = min(ra_err, dec_err)
+                if ra_err > dec_err:
+                    theta = 90 * units.deg
+                else:
+                    theta = 0 * units.deg
+        return a_quad, b_quad, theta
 
     def uncertainty_quadrature_equ(self):
-        return np.sqrt(self.ra_sys ** 2 + self.ra_stat ** 2), np.sqrt(self.dec_sys ** 2 + self.dec_stat ** 2)
+        if self.ra_total is None or self.dec_total is None:
+            return None, None
+        return np.sqrt(self.ra_total ** 2), np.sqrt(self.dec_total ** 2)
 
-    # TODO: Finish this
+    def mc_ellipse(self, n_samples=1):
+        """
+        Uses the uncertainty ellipse as a distribution from which to generate a sample of positions, for use in Monte
+        Carlo methods.
+
+        :param n_samples: number of positions to generate.
+        :return:
+        """
+        a_quad, b_quad, theta = self.uncertainty_quadrature()
+        delta_a_d = unc.normal(
+            center=0,
+            std=a_quad,
+            n_samples=n_samples
+        )
+
+        delta_b_d = unc.normal(
+            center=0,
+            std=b_quad,
+            n_samples=n_samples
+        )
+
+        sint = np.cos(theta)
+        cost = np.sin(theta)
+
+        delta_x_d = delta_a_d * cost - delta_b_d * sint
+        delta_alpha_d = delta_x_d / self.cos_dec
+        delta_delta_d = delta_b_d * cost + delta_a_d * sint
+
+        ra_d = (delta_alpha_d + self.position.ra).to(units.deg)
+        dec_d = (delta_delta_d + self.position.dec).to(units.deg)
+        frb_c = SkyCoord(ra_d.distribution, dec_d.distribution)
+        return frb_c
+
 
     def to_dict(self):
         return {
             "a_sys": self.a_sys,
             "a_stat": self.a_stat,
+            "a": self.a,
             "b_sys": self.b_sys,
             "b_stat": self.b_stat,
+            "b": self.b,
             "theta": self.theta,
             "alpha_err_sys": self.ra_sys,
             "delta_err_sys": self.dec_sys,
             "alpha_err_stat": self.ra_stat,
-            "delta_err_stat": self.dec_stat
+            "delta_err_stat": self.dec_stat,
+            "alpha_total": self.ra_total,
+            "delta_total": self.dec_total
         }
 
     @classmethod

@@ -49,6 +49,7 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
             "register_frames": ie_stages["register_frames"],
             "correct_astrometry_frames": ie_stages["correct_astrometry_frames"],
             "frame_diagnostics": ie_stages["frame_diagnostics"],
+            "insert_synthetic_frames": ie_stages["insert_synthetic_frames"],
             "subtract_background_frames": ie_stages["subtract_background_frames"],
             "coadd": ie_stages["coadd"],
             "correct_astrometry_coadded": ie_stages["correct_astrometry_coadded"],
@@ -56,6 +57,7 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
             "source_extraction": ie_stages["source_extraction"],
             "photometric_calibration": ie_stages["photometric_calibration"],
             "dual_mode_source_extraction": ie_stages["dual_mode_source_extraction"],
+            # "validate_photometry": ie_stages["check_validation"],
             "finalise": ie_stages["finalise"],
             "get_photometry": ie_stages["get_photometry"],
             # "get_photometry_all": ie_stages["get_photometry_all"]

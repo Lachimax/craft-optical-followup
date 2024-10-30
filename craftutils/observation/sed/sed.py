@@ -598,6 +598,9 @@ class SEDModel:
     def columns(cls):
         return {}
 
+@u.export
+class NormalisedTemplate(SEDModel):
+    pass
 
 def _d_nu_d_lambda(tbl):
     d_lambda = np.diff(tbl["wavelength"])

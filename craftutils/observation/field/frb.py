@@ -179,7 +179,7 @@ class FRBField(Field):
             self.frb_ellipse_to_plot(ext=ext[0], frb_kwargs=frb_kwargs, img=red_trimmed, ax=ax)
 
         fig.savefig(output_path)
-        return ax, fig, colour
+        return fig, ax, colour
 
     def plot_host(
             self,
@@ -191,9 +191,6 @@ class FRBField(Field):
             show_frb: bool = True,
             frame: units.Quantity = 30 * units.pix,
             n: int = 1, n_x: int = 1, n_y: int = 1,
-            # ticks: int = None, interval: str = 'minmax',
-            # font_size: int = 12,
-            # reverse_y=False,
             frb_kwargs: dict = None,
             imshow_kwargs: dict = None,
             normalize_kwargs: dict = None,
@@ -205,8 +202,7 @@ class FRBField(Field):
             scale_bar_kwargs: dict = None,
             include_img_err: bool = True,
             **kwargs
-    ) -> Tuple[plt.Axes, plt.Figure, dict]:
-
+    ) -> Tuple[plt.Figure, plt.Axes, dict]:
         if imshow_kwargs is None:
             imshow_kwargs = {}
         if frb_kwargs is None:
@@ -221,14 +217,15 @@ class FRBField(Field):
         if not isinstance(self.frb, objects.FRB):
             raise TypeError("self.frb has not been set properly for this FRBField.")
         if centre is None:
-            centre = self.frb.host_galaxy.position
-        if centre is None:
-            centre = self.frb.position
+            if self.frb.host_galaxy is not None:
+                centre = self.frb.host_galaxy.position
+            else:
+                centre = self.frb.position
 
         if draw_scale_bar:
             kwargs["scale_bar_object"] = self.frb.host_galaxy
 
-        ax, fig, other_args = img.plot_subimage(
+        fig, ax, other_args = img.plot_subimage(
             centre=centre,
             frame=frame,
             ext=ext,
@@ -256,7 +253,7 @@ class FRBField(Field):
         if output_path is not None:
             fig.savefig(output_path)
 
-        return ax, fig, other_args
+        return fig, ax, other_args
 
     def frb_ellipse_to_plot(
             self,
@@ -273,10 +270,9 @@ class FRBField(Field):
         img.load_headers()
         frb = self.frb.position
         uncertainty = self.frb.position_err
-        a, b = uncertainty.uncertainty_quadrature()
-        if a == 0 * units.arcsec or b == 0 * units.arcsec:
-            a, b = uncertainty.uncertainty_quadrature_equ()
-        theta = uncertainty.theta.to(units.deg)
+        a, b, theta = uncertainty.uncertainty_quadrature()
+        # if a == 0 * units.arcsec or b == 0 * units.arcsec:
+        #     a, b, theta = uncertainty.uncertainty_quadrature_equ()
         rotation_angle = img.extract_rotation_angle(ext=ext)
         theta = theta - rotation_angle
         img.extract_pixel_scale()
@@ -317,10 +313,15 @@ class FRBField(Field):
             "finalise_imaging": field_stages["finalise_imaging"],
             "probabilistic_association": {
                 "method": cls.proc_probabilistic_association,
-                "message": "Run PATH on available imaging?"
+                "message": "Run PATH on available imaging?",
+                "keywords": {
+                    "path_kwargs": {},
+                    "path_img": None
+                }
             },
             "update_photometry": field_stages["update_photometry"],
             "refine_photometry": field_stages["refine_photometry"],
+            "galfit": field_stages["galfit"],
             "send_to_table": field_stages["send_to_table"]
         }
         return stages
@@ -329,10 +330,10 @@ class FRBField(Field):
         path_kwargs = {
             "config": {"radius": 10}
         }
-        if 'path_kwargs' in kwargs:
+        if 'path_kwargs' in kwargs and kwargs['path_kwargs'] is not None:
             path_kwargs.update(kwargs["path_kwargs"])
-        if 'path_img' in kwargs:
-            path_img = kwargs["path_img"]
+        if 'path_img' in kwargs and kwargs['path_img'] is not None:
+            path_img = kwargs.pop("path_img")
         else:
             path_img = None
         self.probabilistic_association(path_img=path_img, **path_kwargs)
@@ -346,81 +347,60 @@ class FRBField(Field):
         fil_list = self.best_fil_for_path()
         pl.latex_setup()
 
-        img_fixed = False
-        if path_img is not None:
-            img_fixed = True
-            path_img = self.imaging[path_img]["image"]
-
-        print("fil_list", len(fil_list))
         images = list(map(lambda f: self.deepest_in_band(fil=f)["image"], fil_list))
+
+        if path_img is not None:
+            path_img = self.imaging[path_img]["image"]
+            if path_img not in images:
+                images.insert(0, path_img)
+        else:
+            path_img = images[0]
+
+        # if max_p_ox is not None:
+        #     self.add_path_candidates()
 
         max_p_ox = None
         while max_p_ox in (None, 0.) and images:
-            if not img_fixed:
-                path_img = images.pop(0)
-            vals, tbl, z_lost = self.frb.host_probability_unseen(
-                img=path_img,
-                sample="Gordon+2023",
-                n_z=500
-            )
-            if vals is not None:
-                p_u = float(vals["P(U)"]["step"])
-                path_kwargs["priors"]["U"] = p_u
-                cand_tbl, write_dict = self.frb.probabilistic_association(
-                    img=path_img,
-                    do_plot=True,
-                    **path_kwargs
+            img = images.pop(0)
+            p_us = [0., 0.1, 0.2]
+            p_u_calculated = -999.
+            vals = None
+            print("SURVEY", self.survey, self.survey == "CRAFT_ICS")
+            if self.survey.name == "CRAFT_ICS":
+                vals, tbl, z_lost = self.frb.host_probability_unseen(
+                    img=img,
+                    sample="Gordon+2023",
+                    n_z=500
                 )
-                max_p_ox = write_dict["max_P(O|x_i)"]
-                if max_p_ox is None:
-                    img_fixed = False
-                if cand_tbl is not None:
-                    path_cat = self.frb.consolidate_candidate_tables(
-                        sort_by="P_Ox",
-                        reverse_sort=True,
-                        p_ox_assign=path_img.name,
-                        p_u=p_u
-                    )
-                if path_img.name not in self.path_runs:
-                    self.path_runs[path_img.name] = {}
-                self.path_runs[path_img.name]["calculated"] = write_dict
-        if max_p_ox is not None:
-            self.add_path_candidates()
-
-        # Do 0.1 first so that we get it as the default set of host candidates in case the above failed
-        p_us = [0.1, 0., 0.2]
-
-        if max_p_ox is None:
-            if images:
-                path_img = images[0]
-            else:
-                path_img = None
-
-        print("fil_list", len(fil_list))
-        images = list(map(lambda f: self.deepest_in_band(fil=f)["image"], fil_list))
-
-        for p_u in p_us:
-            for img in images:
+                if vals is not None:
+                    p_u_calculated = float(vals["P(U)"]["step"])
+                    p_us.append(p_u_calculated)
+            for p_u in p_us:
                 path_kwargs["priors"]["U"] = p_u
                 cand_tbl, write_dict = self.frb.probabilistic_association(
                     img=img,
                     do_plot=True,
                     **path_kwargs
                 )
-                if img.name not in self.path_runs:
-                    self.path_runs[img.name] = {}
-                self.path_runs[img.name][p_u] = write_dict
-            if path_img is None:
-                path_img = images[0]
-            path_cat = self.frb.consolidate_candidate_tables(
-                sort_by="P_Ox",
-                reverse_sort=True,
-                p_ox_assign=path_img.name,
-                p_u=p_u
-            )
-            # If the custom P(U) run was unsuccessful, use the results for P(U) = 0.1
-            if p_u == 0.1 and max_p_ox is None:
-                self.add_path_candidates()
+                max_p_ox = write_dict["max_P(O|x_i)"]
+                if max_p_ox is not None:
+                    path_img = img
+                    if img.name not in self.path_runs:
+                        self.path_runs[img.name] = {}
+                    self.path_runs[img.name][p_u] = write_dict
+                    if p_u == p_u_calculated and p_u > 0.:
+                        write_dict["p_u_calculation"] = vals
+                        self.path_runs[img.name]["calculated"] = write_dict
+
+        path_cat = self.frb.consolidate_candidate_tables(
+            sort_by="P_Ox",
+            reverse_sort=True,
+            p_ox_assign=path_img.name,
+            p_u=0.1
+        )
+        # If the custom P(U) run was unsuccessful, use the results for P(U) = 0.1
+        # if p_u == 0.1:  # and max_p_ox is None:
+        self.add_path_candidates()
 
         self.best_path_img = path_img.name
 
@@ -431,74 +411,52 @@ class FRBField(Field):
                 self.frb.host_candidates
             )
         )
+        if isinstance(self.frb.host_galaxy, objects.Galaxy):
+            print()
+            print(f"Initial host {self.frb.host_galaxy.name}.z:", self.frb.host_galaxy.z)
+            print()
         if len(host_candidates) > 0:
             max_pox = np.max(list(map(lambda o: o.P_Ox, host_candidates)))
             for obj in self.frb.host_candidates:
+                print("Checking", obj.name)
                 P_Ox = obj.P_Ox
-                if P_Ox > 0.1:
+                if P_Ox > 0.05:
+                    print(f"\tAdding {obj.name}: P(O|x) = {P_Ox} > 0.05.")
                     if P_Ox >= max_pox:
-                        self.frb.set_host(obj)
+                        self.frb.set_host(obj, keep_params=["z", "z_err", "other_names", "force_template_img"])
                     self.add_object(obj)
                     obj.to_param_yaml(keep_old=True)
-
-    def deepest_in_band(
-            self,
-            fil: Union[str, filters.Filter],
-            instrument: Union[str, inst.Instrument] = None
-    ):
-        img_list = self.get_images_band(fil, instrument=instrument)
-        img_list.sort(key=lambda d: d["depth"])
-        print(len(img_list))
-        for img_dict in img_list:
-            print(img_dict["name"], img_dict["depth"])
-        img_dict = img_list[-1]
-        return img_dict
-
-    def get_filters(self):
-        self.load_imaging()
-        all_filters = list(map(lambda i: (i["filter"], i["instrument"]), self.imaging.values()))
-        fil_list = list(set(all_filters))
-        fil_list_2 = []
-        for fil, instr in fil_list:
-            fil = filters.Filter.from_params(filter_name=fil, instrument_name=instr)
-            fil_list_2.append(fil)
-        return fil_list_2
-
-    def get_images_band(
-            self,
-            fil: Union[str, filters.Filter],
-            instrument: Union[str, inst.Instrument] = None
-    ):
-        if isinstance(fil, str):
-            if isinstance(instrument, inst.Instrument):
-                instrument = instrument.name
-            elif not isinstance(instrument, str):
-                raise TypeError(
-                    f"If fil is provided as a string, instrument must also be provided as str or Instrument, not {type(instrument)}")
-            fil = filters.Filter.from_params(
-                instrument_name=instrument,
-                filter_name=fil
-            )
-
-        return list(
-            filter(
-                lambda d: d["filter"] == fil.name and d["instrument"] == fil.instrument.name,
-                self.imaging.values()
-            )
-        )
+        print()
+        if self.frb.host_galaxy is not None:
+            print(f"New host {self.frb.host_galaxy.name}.z:", self.frb.host_galaxy.z)
+        print()
 
     def best_fil_for_path(
             self,
             exclude: list = ()
     ):
-        filter_list = self.load_imaging()
-        print("filter_list", len(filter_list))
+        # TODO: Allow for other instruments; there needs to be a depth check here so that VLT imaging gets selected over
+        # survey imaging
+        filter_list = self.load_imaging(instrument="vlt-fors2")
+        if not filter_list:
+            filter_list = self.load_imaging()
         best_fil = filters.best_for_path(filter_list, exclude=exclude)
         # path_dict = self.deepest_in_band(fil=best_fil)
         # path_img = path_dict["image"]
         # print()
         # print(f"The image selected for PATH is {path_img.name}, with depth {path_dict['depth']}")
         return filter_list
+
+    def galfit(self, apply_filter=None, use_img=None, **kwargs):
+
+        if apply_filter is None:
+            def hg_fil(o):
+                return o.name.startswith("HG")
+            apply_filter = hg_fil
+        if use_img is None and self.best_path_img is not None:
+            use_img = self.best_path_img
+
+        super().galfit(apply_filter=apply_filter, use_img=use_img)
 
     def _output_dict(self):
         output_dict = super()._output_dict()

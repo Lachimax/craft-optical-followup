@@ -1,6 +1,7 @@
 import astropy.units as units
 
 from .objects import ObjectCatalogue
+from ..instrument import Instrument
 
 
 class OpticalCatalogue(ObjectCatalogue):
@@ -25,3 +26,10 @@ class OpticalCatalogue(ObjectCatalogue):
             "class_flag": int,
         })
         return columns
+
+    def limit_to_band(self, instrument_name: str, band_name: str):
+        tbl = self.to_astropy().copy()
+        band_str = f"{instrument_name.replace('_', '-')}_{band_name.replace('_', '-')}"
+        mag_str = "mag_best_" + band_str
+        tbl = tbl[tbl[mag_str].value > -999]
+        return tbl

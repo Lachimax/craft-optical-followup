@@ -1,4 +1,4 @@
-from typing import Union, List
+from typing import Union, List, Callable
 import os
 import copy
 
@@ -136,6 +136,10 @@ class Object(Generic):
             self.theta = self.photometry_args["theta"]
             self.kron = self.photometry_args["kron_radius"]
 
+        self.other_names: List[str] = []
+        if "other_names" in kwargs:
+            self.other_names = kwargs["other_names"]
+
     def __str__(self):
         return self.name
 
@@ -184,10 +188,20 @@ class Object(Generic):
         for cat in self.field.cats:
             pass
 
+    def surface_brightness_at_position(self, img):
+        x, y = img.world_to_pixel(coord=self.position)
+        x = int(x)
+        y = int(y)
+        pixels, err = img.surface_brightness()
+        p_xy = pixels[y, x]
+        err_xy = err[y, x]
+        ext = self.galactic_extinction(fil=img.filter) / units.arcsec ** 2
+        return p_xy - ext, err_xy
+
     def get_good_photometry(self):
 
         import craftutils.observation.image as image
-        self.estimate_galactic_extinction()
+        self.apply_galactic_extinction()
         deepest_dict = self.select_deepest()
         deepest_path = deepest_dict["good_image_path"]
 
@@ -195,7 +209,7 @@ class Object(Generic):
 
         cls = image.CoaddedImage.select_child_class(instrument_name=deepest_dict["instrument"])
         deepest_img = cls(path=deepest_path)
-        deep_mask = deepest_img.write_mask(
+        deep_mask, objs = deepest_img.write_mask(
             output_path=os.path.join(
                 self.data_path,
                 f"{self.name_filesys}_master-mask_{deepest_dict['instrument']}_{deepest_dict['filter']}_{deepest_dict['epoch_name']}.fits",
@@ -216,14 +230,22 @@ class Object(Generic):
             ),
             mask_nearby=deep_mask
         )
+
+        from .transient_host import TransientHostCandidate
+        if isinstance(self, TransientHostCandidate):
+            sb, sb_err = self.transient.surface_brightness_at_position(img=deepest_img)
+            deepest_dict["transient_position_surface_brightness"] = float(sb.value) * units.mag / units.arcsec ** 2
+            deepest_dict["transient_position_surface_brightness_err"] = float(sb_err.value) * units.mag / units.arcsec ** 2
+
         if mag_results is not None:
             deepest_dict["mag_sep"] = mag_results["mag"][0]
             deepest_dict["mag_sep_err"] = mag_results["mag_err"][0]
             deepest_dict["snr_sep"] = mag_results["snr"][0]
-            deepest_dict["back_sep"] = mag_results["back"][0]
-            deepest_dict["flux_sep"] = mag_results["flux"][0]
-            deepest_dict["flux_sep_err"] = mag_results["flux_err"][0]
-            deepest_dict["limit_threshold"] = mag_results["threshold"]
+            deepest_dict["back_sep"] = float(mag_results["back"][0])
+            deepest_dict["flux_sep"] = float(mag_results["flux"][0])
+            deepest_dict["flux_sep_err"] = float(mag_results["flux_err"][0])
+            deepest_dict["limit_threshold"] = float(mag_results["threshold"])
+            deepest_dict["peak"] = float(mag_results["peak"])
         else:
             deepest_dict["mag_sep"] = -999. * units.mag
             deepest_dict["mag_sep_err"] = -999. * units.mag
@@ -233,6 +255,7 @@ class Object(Generic):
             deepest_dict["flux_sep_err"] = -999.
             deepest_dict["threshold_sep"] = -999.
             deepest_dict["limit_threshold"] = -999.
+            deepest_dict["peak"] = - 999.
         deepest_dict["zeropoint_sep"] = deepest_img.zeropoint_best["zeropoint_img"]
 
         for instrument in self.photometry:
@@ -264,14 +287,20 @@ class Object(Generic):
                         mask_nearby=mask_rp
                     )
 
+                    if isinstance(self, TransientHostCandidate):
+                        sb, sb_err = self.transient.surface_brightness_at_position(img=img)
+                        phot_dict["transient_position_surface_brightness"] = float(sb.value) * units.mag / units.arcsec ** 2
+                        phot_dict["transient_position_surface_brightness_err"] = float(sb_err.value) * units.mag / units.arcsec ** 2
+
                     if mag_results is not None:
                         phot_dict["mag_sep"] = mag_results["mag"][0]
                         phot_dict["mag_sep_err"] = mag_results["mag_err"][0]
-                        phot_dict["snr_sep"] = mag_results["snr"][0]
-                        phot_dict["back_sep"] = mag_results["back"][0]
-                        phot_dict["flux_sep"] = mag_results["flux"][0]
-                        phot_dict["flux_sep_err"] = mag_results["flux_err"][0]
-                        phot_dict["limit_threshold"] = mag_results["threshold"]
+                        phot_dict["snr_sep"] = float(mag_results["snr"][0])
+                        phot_dict["back_sep"] = float(mag_results["back"][0])
+                        phot_dict["flux_sep"] = float(mag_results["flux"][0])
+                        phot_dict["flux_sep_err"] = float(mag_results["flux_err"][0])
+                        phot_dict["limit_threshold"] = float(mag_results["threshold"])
+                        phot_dict["peak"] = float(mag_results["peak"])
                     else:
                         phot_dict["mag_sep"] = -999. * units.mag
                         phot_dict["mag_sep_err"] = -999. * units.mag
@@ -281,6 +310,7 @@ class Object(Generic):
                         phot_dict["flux_sep_err"] = -999.
                         phot_dict["threshold_sep"] = -999.
                         phot_dict["limit_threshold"] = -999.
+                        phot_dict["peak"] = -999.
                     phot_dict["zeropoint_sep"] = img.zeropoint_best["zeropoint_img"]
                     mag_results = img.sep_elliptical_magnitude(
                         centre=self.position_photometry,
@@ -294,17 +324,26 @@ class Object(Generic):
                     if mag_results is not None:
                         phot_dict["mag_sep_unmasked"] = mag_results["mag"][0]
                         phot_dict["mag_sep_unmasked_err"] = mag_results["mag_err"][0]
-                        phot_dict["snr_sep_unmasked"] = mag_results["snr"][0]
-                        phot_dict["flux_sep_unmasked"] = mag_results["flux"][0]
-                        phot_dict["flux_sep_unmasked_err"] = mag_results["flux_err"][0]
-                        phot_dict["limit_threshold"] = mag_results["threshold"]
+                        phot_dict["snr_sep_unmasked"] = float(mag_results["snr"][0])
+                        phot_dict["flux_sep_unmasked"] = float(mag_results["flux"][0])
+                        phot_dict["flux_sep_unmasked_err"] = float(mag_results["flux_err"][0])
+                        phot_dict["peak_unmasked"] = float(mag_results["peak"])
                     else:
                         phot_dict["mag_sep_unmasked"] = -999. * units.mag
                         phot_dict["mag_sep_unmasked_err"] = -999. * units.mag
                         phot_dict["snr_sep"] = -999.
                         phot_dict["flux_sep_unmasked"] = -999.
                         phot_dict["flux_sep_unmasked_err"] = -999.
-                        phot_dict["limit_threshold"] = -999.
+                        phot_dict["peak_unmasked"] = -999.
+                    img.close()
+                    del img
+                    mask_rp.close()
+                    del mask_rp
+
+        deepest_img.close()
+        del deepest_img
+        deep_mask.close()
+        del deep_mask
 
         self.update_output_file()
 
@@ -338,6 +377,7 @@ class Object(Generic):
             good_image_path = image_path
         if isinstance(epoch_date, time.Time):
             epoch_date = epoch_date.strftime('%Y-%m-%d')
+        print(image_depth)
         photometry = {
             "instrument": str(instrument),
             "filter": str(fil),
@@ -472,6 +512,13 @@ class Object(Generic):
         else:
             return False
 
+    def _updateable(self):
+        p_dict = super()._updateable()
+        p_dict.update({
+            "other_names": self.other_names,
+        })
+        return p_dict
+
     def update_output_file(self):
         if self.check_data_path():
             super().update_output_file()
@@ -494,17 +541,18 @@ class Object(Generic):
 
         plt.close()
         for best in (False, True):
-            ax, fig = self.plot_photometry(**kwargs, best=best)
+            fig, ax = self.plot_photometry(**kwargs, best=best)
             ax.legend(loc=(1.1, 0.))
             if best:
                 output = output.replace(".pdf", "_best.pdf")
             plt.savefig(output, bbox_inches="tight")
             plt.close(fig)
+            del fig, ax
 
         output_n = output.replace("_photometry_best.pdf", "_photometry_time.pdf")
 
         for ext_corr in (False, True):
-            ax, fig = self.plot_photometry_time(
+            fig, ax = self.plot_photometry_time(
                 extinction_corrected=ext_corr,
                 **kwargs
             )
@@ -513,6 +561,7 @@ class Object(Generic):
                 output_n = output_n.replace(".pdf", "_gal_ext.pdf")
             plt.savefig(output_n, bbox_inches="tight")
             plt.close(fig)
+            del fig, ax
 
     def plot_photometry_time(
             self,
@@ -538,7 +587,7 @@ class Object(Generic):
             kwargs["ecolor"] = "black"
 
         if extinction_corrected:
-            self.estimate_galactic_extinction()
+            self.apply_galactic_extinction()
             key = f"mag_{mag_type}_ext_corrected"
         else:
             key = f"mag_{mag_type}"
@@ -589,7 +638,7 @@ class Object(Generic):
                 ax.set_ylabel("Apparent magnitude")
                 ax.set_xlabel("MJD")
                 ax.invert_yaxis()
-        return ax, fig
+        return fig, ax
 
     def plot_photometry(
             self,
@@ -619,7 +668,7 @@ class Object(Generic):
         if "ecolor" not in kwargs:
             kwargs["ecolor"] = "black"
 
-        self.estimate_galactic_extinction()
+        self.apply_galactic_extinction()
         photometry_tbl = self.photometry_to_table(
             output=self.build_photometry_table_path(best=best),
             fmts=["ascii.ecsv", "ascii.csv"],
@@ -637,30 +686,31 @@ class Object(Generic):
                 mags["lambda_eff"],
                 mags["mag_sep"],
                 yerr=mags["mag_sep_err"],
+                label="Measurement",
                 **kwargs,
             )
             ax.scatter(
                 limits["lambda_eff"],
                 limits["mag_sep"],
-                label="Magnitude upper limit",
+                label="Upper limit",
                 marker="v",
             )
             ax.scatter(
                 mags["lambda_eff"],
                 mags["mag_sep_ext_corrected"],
                 color="orange",
-                label="Magnitude (extinction-corrected)"
+                label="Extinction-corrected measurement"
             )
             ax.scatter(
                 limits["lambda_eff"],
                 limits["mag_sep_ext_corrected"],
-                label="Magnitude upper limit (extinction-corrected)",
+                label="Extinction-corrected upper limit",
                 marker="v",
             )
             ax.set_ylabel("Apparent magnitude")
             ax.set_xlabel("$\lambda_\mathrm{eff}$ (\AA)")
             ax.invert_yaxis()
-        return ax, fig
+        return fig, ax
 
     def build_photometry_table_path(self, best: bool = False):
         self.check_data_path()
@@ -751,57 +801,59 @@ class Object(Generic):
     #     extinction.fitzpatrick99(tbl["lambda_eff"], a_v, r_v) * units.mag
     #     pass
 
-    def galactic_extinction_fm07(
+    def galactic_extinction(
             self,
-            lambda_eff: units.Quantity,
-            r_v: float = 3.1
+            fil: filters.Filter,
+            r_v: float = 3.1,
+            spectrum: table.QTable = None,
+            extinction_law: Callable = None,
     ):
-        import extinction
-        lambda_eff = u.dequantify(lambda_eff, unit=units.Angstrom)
-        lambda_eff = np.array(u.check_iterable(lambda_eff))
         self.retrieve_extinction_table()
-        a_v = (r_v * self.ebv_sandf).value
-        return extinction.fm07(lambda_eff, a_v, unit="aa") * units.mag
+        return fil.galactic_extinction(
+            e_bv=self.ebv_sandf,
+            r_v=r_v,
+            spectrum=spectrum,
+            extinction_law=extinction_law
+        )
 
-    def estimate_galactic_extinction(
+    def apply_galactic_extinction(
             self,
-            ax=None,
+            # ax=None,
             r_v: float = 3.1,
             **kwargs
     ):
 
-        if ax is None:
-            fig, ax = plt.subplots()
-        if "marker" not in kwargs:
-            kwargs["marker"] = "x"
+        # if ax is None:
+        #     fig, ax = plt.subplots()
+        # if "marker" not in kwargs:
+        #     kwargs["marker"] = "x"
 
         self.retrieve_extinction_table()
 
         tbl = self.photometry_to_table(fmts=["ascii.ecsv", "ascii.csv"])
 
-        x = np.linspace(0, 80000, 1000) * units.Angstrom
+        # x = np.linspace(0, 80000, 1000) * units.Angstrom
 
-        lambda_eff_tbl = self.irsa_extinction["LamEff"].to(
-            units.Angstrom)
-        power_law = models.PowerLaw1D()
-        fitter = fitting.LevMarLSQFitter()
-        try:
-            fitted = fitter(power_law, lambda_eff_tbl, self.irsa_extinction["A_SandF"].value)
-            tbl["ext_gal_pl"] = fitted(tbl["lambda_eff"]) * units.mag
-            ax.plot(
-                x, fitted(x),
-                label=f"power law fit to IRSA",
-                # , \\alpha={fitted.alpha.value}; $x_0$={fitted.x_0.value}; A={fitted.amplitude.value}",
-                c="blue"
-            )
-            self.extinction_power_law = {
-                "amplitude": fitted.amplitude.value * fitted.amplitude.unit,
-                "x_0": fitted.x_0.value,
-                "alpha": fitted.alpha.value
-            }
-        except fitting.NonFiniteValueError:
-            fitted = None
-            tbl["ext_gal_pl"] = -999. * units.mag
+        # lambda_eff_tbl = self.irsa_extinction["LamEff"].to(units.Angstrom)
+        # power_law = models.PowerLaw1D()
+        # fitter = fitting.LevMarLSQFitter()
+        # try:
+        #     fitted = fitter(power_law, lambda_eff_tbl, self.irsa_extinction["A_SandF"].value)
+        #     tbl["ext_gal_pl"] = fitted(tbl["lambda_eff"]) * units.mag
+        #     ax.plot(
+        #         x, fitted(x),
+        #         label=f"power law fit to IRSA",
+        #         # , \\alpha={fitted.alpha.value}; $x_0$={fitted.x_0.value}; A={fitted.amplitude.value}",
+        #         c="blue"
+        #     )
+        #     self.extinction_power_law = {
+        #         "amplitude": fitted.amplitude.value * fitted.amplitude.unit,
+        #         "x_0": fitted.x_0.value,
+        #         "alpha": fitted.alpha.value
+        #     }
+        # except fitting.NonFiniteValueError:
+        #     fitted = None
+        #     tbl["ext_gal_pl"] = -999. * units.mag
 
         if not self.photometry:
             self.load_output_file()
@@ -809,46 +861,53 @@ class Object(Generic):
                 print(f"No photometry found for {self.name}")
                 return
 
-        tbl["ext_gal_sandf"] = self.galactic_extinction_fm07(lambda_eff=tbl["lambda_eff"], r_v=r_v)
+        exts = []
+        fils = []
+        for row in tbl:
+            fil = filters.Filter.from_params(row["filter"], row["instrument"])
+            fils.append(fil)
+            exts.append(self.galactic_extinction(fil=fil, r_v=r_v))
 
-        tbl["ext_gal_interp"] = np.interp(
-            tbl["lambda_eff"],
-            lambda_eff_tbl,
-            self.irsa_extinction["A_SandF"].value
-        ) * units.mag
+        tbl["ext_gal_sandf"] = exts
 
-        ax.plot(
-            x, self.galactic_extinction_fm07(x, r_v=r_v).value,
-            label="S\&F + F99 extinction law",
-            c="red"
-        )
-        ax.scatter(
-            lambda_eff_tbl, self.irsa_extinction["A_SandF"].value,
-            label="from IRSA",
-            c="green",
-            **kwargs)
-        ax.scatter(
-            tbl["lambda_eff"], tbl["ext_gal_pl"].value,
-            label="power law interpolation of IRSA",
-            c="blue",
-            **kwargs
-        )
-        ax.scatter(
-            tbl["lambda_eff"], tbl["ext_gal_interp"].value,
-            label="numpy interpolation from IRSA",
-            c="violet",
-            **kwargs
-        )
-        ax.scatter(
-            tbl["lambda_eff"], tbl["ext_gal_sandf"].value,
-            label="S\&F + F99 extinction law",
-            c="red",
-            **kwargs
-        )
-        ax.set_ylim(0, 0.6)
-        ax.legend()
-        plt.savefig(os.path.join(self.data_path, f"{self.name_filesys}_irsa_extinction.pdf"))
-        plt.close()
+        # tbl["ext_gal_interp"] = np.interp(
+        #     tbl["lambda_eff"],
+        #     lambda_eff_tbl,
+        #     self.irsa_extinction["A_SandF"].value
+        # ) * units.mag
+        #
+        # ax.plot(
+        #     x, self.galactic_extinction(x, r_v=r_v).value,
+        #     label="S\&F + F99 extinction law",
+        #     c="red"
+        # )
+        # ax.scatter(
+        #     lambda_eff_tbl, self.irsa_extinction["A_SandF"].value,
+        #     label="from IRSA",
+        #     c="green",
+        #     **kwargs)
+        # ax.scatter(
+        #     tbl["lambda_eff"], tbl["ext_gal_pl"].value,
+        #     label="power law interpolation of IRSA",
+        #     c="blue",
+        #     **kwargs
+        # )
+        # ax.scatter(
+        #     tbl["lambda_eff"], tbl["ext_gal_interp"].value,
+        #     label="numpy interpolation from IRSA",
+        #     c="violet",
+        #     **kwargs
+        # )
+        # ax.scatter(
+        #     tbl["lambda_eff"], tbl["ext_gal_sandf"].value,
+        #     label="S\&F + F99 extinction law",
+        #     c="red",
+        #     **kwargs
+        # )
+        # ax.set_ylim(0, 0.6)
+        # ax.legend()
+        # plt.savefig(os.path.join(self.data_path, f"{self.name_filesys}_irsa_extinction.pdf"))
+        # plt.close()
 
         for row in tbl:
             instrument = row["instrument"]
@@ -874,7 +933,7 @@ class Object(Generic):
         # tbl_2.update(tbl)
         # tbl_2.write(self.build_photometry_table_path().replace("photometry", "photemetry_extended"))
         self.update_output_file()
-        return ax
+        return exts
 
     def retrieve_extinction_table(self, force: bool = False):
         self.load_extinction_table()
@@ -935,6 +994,9 @@ class Object(Generic):
         self.get_photometry_table(output=local_output, best=True)
         fil_photom = self.photometry_tbl_best[self.photometry_tbl_best["band"] == fil]
         fil_photom = fil_photom[fil_photom["instrument"] == instrument]
+        if len(fil_photom) == 0:
+            print(f"No photometry found for band {fil} in instrument {instrument}.")
+            return None, None
         row = fil_photom[np.argmax(fil_photom["snr"])]
         photom_dict = self.photometry[instrument][fil][row["epoch_name"]]
 
@@ -1000,12 +1062,26 @@ class Object(Generic):
         return self.photometry[row["instrument"]][row["band"]][row["epoch_name"]]
 
     def select_deepest(self, local_output: bool = True):
+        force_dict = None
+        if "force_template_image" in self.param_file:
+            force_dict = self.param_file["force_template_image"]
         self.get_photometry_table(output=local_output, best=False)
-        if self.photometry_tbl is None or "snr" not in self.photometry_tbl.colnames:
+        if self.photometry_tbl is None:
             return None
-        idx = np.argmax(self.photometry_tbl["snr"])
-        row = self.photometry_tbl[idx]
-        deepest = self.photometry[row["instrument"]][row["band"]][row["epoch_name"]]
+        if force_dict is None:
+            if "snr" not in self.photometry_tbl.colnames:
+                return None
+            idx = np.argmax(self.photometry_tbl["snr"])
+            row = self.photometry_tbl[idx]
+            instrument = row["instrument"]
+            band = row["band"]
+            epoch = row["epoch_name"]
+        else:
+            instrument = force_dict["instrument"]
+            band = force_dict["band"]
+            epoch = force_dict["epoch_name"]
+
+        deepest = self.photometry[instrument][band][epoch]
         # if self.photometry_args is None:
         self.a = deepest["a"]
         self.b = deepest["b"]
@@ -1032,125 +1108,138 @@ class Object(Generic):
 
         return deepest
 
-    def select_deepest_sep(self, local_output: bool = True):
+    def select_deepest_sep(self, local_output: bool = True) -> Union[dict, None]:
+        force_dict = None
+        if "force_template_image" in self.param_file:
+            force_dict = self.param_file["force_template_image"]
         self.get_photometry_table(output=local_output, best=True)
-        if not isinstance(self.photometry_tbl_best, table.Table) or "snr_sep" not in self.photometry_tbl_best.colnames:
+        if not isinstance(self.photometry_tbl_best, table.Table):
             print(f"No photometry found for {self.name}")
             return None
-        idx = np.argmax(self.photometry_tbl_best["snr_sep"])
-        row = self.photometry_tbl_best[idx]
-        return self.photometry[row["instrument"]][row["band"]][row["epoch_name"]]
-
-    def push_to_table(
-            self,
-            select: bool = True,
-            local_output: bool = True
-    ):
-        from .galaxy import Galaxy
-        from .transient import Transient
-        from .transient_host import TransientHostCandidate
-
-        if not self.photometry:
-            return None
-
-        jname = self.jname()
-
-        self.estimate_galactic_extinction()
-        if select:
-            self.get_photometry_table(output=local_output, best=True)
-            if not isinstance(self.photometry_tbl_best, table.Table):
-                self.get_good_photometry()
-            self.photometry_to_table()
-            deepest = self.select_deepest_sep(local_output=local_output)
+        if force_dict is None:
+            if "snr_sep" not in self.photometry_tbl_best.colnames:
+                print(f"No photometry found for {self.name}")
+                return None
+            idx = np.argmax(self.photometry_tbl_best["snr_sep"])
+            row = self.photometry_tbl_best[idx]
+            instrument = row["instrument"]
+            band = row["band"]
+            epoch = row["epoch_name"]
         else:
-            deepest = self.select_deepest(local_output=local_output)
+            instrument = force_dict["instrument"]
+            band = force_dict["band"]
+            epoch = force_dict["epoch_name"]
 
-        # best_position = self.select_best_position(local_output=local_output)
-        best_psf = self.select_psf_photometry(local_output=local_output)
+        return self.photometry[instrument][band][epoch]
+
+    def assemble_row(
+            self,
+            **kwargs
+    ):
+        # if not self.photometry:
+        #     return None
+        select = True
+        if "select" in kwargs:
+            select = kwargs["select"]
+        local_output = True
+        if "local_output" in kwargs:
+            select = kwargs["local_output"]
+
+        jname = self.jname(4, 3)
+
+        self.retrieve_extinction_table()
+
+        ra_err, dec_err, theta = self.position_err.uncertainty_quadrature()
 
         row = {
             "jname": jname,
             "field_name": self.field.name,
             "object_name": self.name,
             "position": self.position.to_string("hmsdms"),
-            "ra": deepest["ra"],
-            "ra_err": deepest["ra_err"].to("arcsec"),
-            "dec": deepest["dec"],
-            "dec_err": deepest["dec_err"].to("arcsec"),
-            "epoch_position": deepest["epoch_name"],
-            "epoch_position_date": deepest["epoch_date"],
-            "a": deepest["a"],
-            "a_err": deepest["a_err"],
-            "b": deepest["b"],
-            "b_err": deepest["b_err"],
-            "theta": deepest["theta"],
-            "theta_err": deepest["theta_err"],
-            "kron_radius": deepest["kron_radius"],
-            "epoch_ellipse": deepest["epoch_name"],
-            "epoch_ellipse_date": deepest["epoch_date"],
+            "ra": self.position.ra.to(units.degree),
+            "ra_err": ra_err.to("arcsec"),
+            "dec": self.position.dec.to(units.degree),
+            "dec_err": dec_err.to("arcsec"),
             f"e_b-v": self.ebv_sandf,
-            f"class_star": best_psf["class_star"],
-            "spread_model": best_psf["spread_model"],
-            "spread_model_err": best_psf["spread_model_err"],
-            "class_flag": best_psf["class_flag"],
         }
+        if "include_photometry" in kwargs:
+            include_photometry = kwargs["include_photometry"]
+        else:
+            include_photometry = True
 
-        if isinstance(self, Galaxy) and self.z is not None:
-            row["z"] = self.z
-            row["d_A"] = self.D_A
-            row["d_L"] = self.D_L
-            row["mu"] = self.mu
-
-        if isinstance(self, TransientHostCandidate):
-            if not isinstance(self.transient, Transient):
-                self.get_transient()
-            if isinstance(self.transient.tns_name, str):
-                row["transient_tns_name"] = self.transient.tns_name
+        if self.optical and include_photometry:
+            self.apply_galactic_extinction()
+            if select:
+                self.get_photometry_table(output=local_output, best=True)
+                if not isinstance(self.photometry_tbl_best, table.Table):
+                    self.get_good_photometry()
+                self.photometry_to_table()
+                deepest = self.select_deepest_sep(local_output=local_output)
             else:
-                row["transient_tns_name"] = "N/A"
+                deepest = self.select_deepest(local_output=local_output)
 
-            if self.P_Ox is not None:
-                row[f"path_pox"] = self.P_Ox
-            if self.P_U is not None:
-                row[f"path_pu"] = self.P_U
-            if self.P_Ux is not None:
-                row[f"path_pu"] = self.P_Ux
+            # best_position = self.select_best_position(local_output=local_output)
+            best_psf = self.select_psf_photometry(local_output=local_output)
 
-            if self.probabilistic_association_img:
-                row["path_img"] = self.probabilistic_association_img
-            else:
-                row["path_img"] = "N/A"
+            row.update({
+                "ra": deepest["ra"],
+                "ra_err": deepest["ra_err"].to("arcsec"),
+                "dec": deepest["dec"],
+                "dec_err": deepest["dec_err"].to("arcsec"),
+                "epoch_position": deepest["epoch_name"],
+                "epoch_position_date": deepest["epoch_date"],
+                "a": deepest["a"],
+                "a_err": deepest["a_err"],
+                "b": deepest["b"],
+                "b_err": deepest["b_err"],
+                "theta": deepest["theta"],
+                "theta_err": deepest["theta_err"],
+                "kron_radius": deepest["kron_radius"],
+                "epoch_ellipse": deepest["epoch_name"],
+                "epoch_ellipse_date": deepest["epoch_date"],
+                f"class_star": best_psf["class_star"],
+                "spread_model": best_psf["spread_model"],
+                "spread_model_err": best_psf["spread_model_err"],
+                "class_flag": best_psf["class_flag"],
+            })
 
-        for instrument in self.photometry:
-            for fil in self.photometry[instrument]:
+            for instrument in self.photometry:
+                for fil in self.photometry[instrument]:
 
-                band_str = f"{instrument}_{fil.replace('_', '-')}"
+                    band_str = f"{instrument}_{fil.replace('_', '-')}"
 
-                if select:
-                    best_photom, mean_photom = self.select_photometry_sep(fil, instrument, local_output=local_output)
-                    row[f"mag_best_{band_str}"] = best_photom["mag_sep"]
-                    row[f"mag_best_{band_str}_err"] = best_photom["mag_sep_err"]
-                    row[f"snr_best_{band_str}"] = best_photom["snr_sep"]
+                    if select:
+                        best_photom, mean_photom = self.select_photometry_sep(
+                            fil, instrument,
+                            local_output=local_output
+                        )
+                        row[f"mag_best_{band_str}"] = best_photom["mag_sep"]
+                        row[f"mag_best_{band_str}_err"] = best_photom["mag_sep_err"]
+                        row[f"snr_best_{band_str}"] = best_photom["snr_sep"]
 
-                else:
-                    best_photom, mean_photom = self.select_photometry(fil, instrument, local_output=local_output)
-                    row[f"mag_best_{band_str}"] = best_photom["mag"]
-                    row[f"mag_best_{band_str}_err"] = best_photom["mag_err"]
-                    row[f"snr_best_{band_str}"] = best_photom["snr"]
+                    else:
+                        best_photom, mean_photom = self.select_photometry(
+                            fil,
+                            instrument,
+                            local_output=local_output
+                        )
+                        row[f"mag_best_{band_str}"] = best_photom["mag"]
+                        row[f"mag_best_{band_str}_err"] = best_photom["mag_err"]
+                        row[f"snr_best_{band_str}"] = best_photom["snr"]
 
-                row[f"mag_mean_{band_str}"] = mean_photom["mag"]
-                row[f"mag_mean_{band_str}_err"] = mean_photom["mag_err"]
-                row[f"n_mean_{band_str}"] = mean_photom["n"]
-                row[f"ext_gal_{band_str}"] = best_photom["ext_gal"]
-                # else:
-                #     row[f"ext_gal_{band_str}"] = best_photom["ext_gal_sandf"]
-                row[f"epoch_best_{band_str}"] = best_photom[f"epoch_name"]
-                row[f"epoch_best_date_{band_str}"] = str(best_photom[f"epoch_date"])
-                row[f"mag_psf_best_{band_str}"] = best_photom[f"mag_psf"]
-                row[f"mag_psf_best_{band_str}_err"] = best_photom[f"mag_psf_err"]
-                row[f"snr_psf_best_{band_str}"] = best_photom["snr_psf"]
-                row[f"mag_psf_mean_{band_str}"] = mean_photom[f"mag_psf"]
-                row[f"mag_psf_mean_{band_str}_err"] = mean_photom[f"mag_psf_err"]
+                    row[f"mag_mean_{band_str}"] = mean_photom["mag"]
+                    row[f"mag_mean_{band_str}_err"] = mean_photom["mag_err"]
+                    row[f"n_mean_{band_str}"] = mean_photom["n"]
+                    row[f"ext_gal_{band_str}"] = best_photom["ext_gal"]
+                    # else:
+                    #     row[f"ext_gal_{band_str}"] = best_photom["ext_gal_sandf"]
+                    row[f"epoch_best_{band_str}"] = best_photom[f"epoch_name"]
+                    row[f"epoch_best_date_{band_str}"] = str(best_photom[f"epoch_date"])
+                    row[f"mag_psf_best_{band_str}"] = best_photom[f"mag_psf"]
+                    row[f"mag_psf_best_{band_str}_err"] = best_photom[f"mag_psf_err"]
+                    row[f"snr_psf_best_{band_str}"] = best_photom["snr_psf"]
+                    row[f"mag_psf_mean_{band_str}"] = mean_photom[f"mag_psf"]
+                    row[f"mag_psf_mean_{band_str}_err"] = mean_photom[f"mag_psf_err"]
 
         # colnames = obs.master_objects_columns
         # for colname in colnames:
@@ -1161,10 +1250,26 @@ class Object(Generic):
         #             row[colname] = tbl[0][colname]
 
         u.debug_print(2, "Object.push_to_table(): select ==", select)
+        return row, "optical"
+
+    def push_to_table(
+            self,
+            **kwargs
+    ):
+
+        row, tbl_name = self.assemble_row(**kwargs)
+
+        print(self.name)
+        for key in sorted(row.keys()):
+            val = row[key]
+            print("\t", key, val)
+
+        if row is None:
+            return None
 
         import craftutils.observation.output.objects as output_objs
         # if select:
-        tbl = output_objs.load_objects_table("optical")
+        tbl = output_objs.load_objects_table(tbl_name)
         # else:
         # tbl = obs.load_master_all_objects_table()
 

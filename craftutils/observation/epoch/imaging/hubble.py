@@ -48,6 +48,7 @@ class HubbleImagingEpoch(ImagingEpoch):
             "initial_setup": super_stages["initial_setup"],
             "source_extraction": super_stages["source_extraction"],
             "photometric_calibration": super_stages["photometric_calibration"],
+            "finalise": super_stages["finalise"],
             "get_photometry": super_stages["get_photometry"]
         }
         return stages
@@ -86,7 +87,10 @@ class HubbleImagingEpoch(ImagingEpoch):
 
         for fil in image_dict:
             image_dict[fil].zeropoint()
-            image_dict[fil].estimate_depth()
+            image_dict[fil].estimate_depth(
+                test_coord=self._get_test_coord(),
+                output_dir=output_path
+            )
             self.deepest = image_dict[fil]
 
     def proc_get_photometry(self, output_dir: str, **kwargs):

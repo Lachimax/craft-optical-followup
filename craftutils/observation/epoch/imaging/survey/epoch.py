@@ -29,7 +29,7 @@ class SurveyImagingEpoch(ImagingEpoch):
             param_path=param_path,
             data_path=data_path,
             source_extractor_config=source_extractor_config,
-            instrument=self.instrument_name
+            **kwargs
         )
         self.load_output_file(mode="imaging")
         # if isinstance(field, Field):
@@ -47,6 +47,7 @@ class SurveyImagingEpoch(ImagingEpoch):
             "source_extraction": super_stages["source_extraction"],
             "photometric_calibration": super_stages["photometric_calibration"],
             # "dual_mode_source_extraction": super_stages["dual_mode_source_extraction"],
+            "finalise": super_stages["finalise"],
             "get_photometry": super_stages["get_photometry"]
         }
         return stages
@@ -67,16 +68,20 @@ class SurveyImagingEpoch(ImagingEpoch):
         pass
 
     def proc_source_extraction(self, output_dir: str, **kwargs):
+        if "do_astrometry_diagnostics" in kwargs:
+            kwargs.pop("do_astrometry_diagnostics")
         self.source_extraction(
             output_dir=output_dir,
             do_astrometry_diagnostics=False,
-            do_psf_diagnostics=True,
+            # do_psf_diagnostics=True,
             **kwargs
         )
 
     def proc_get_photometry(self, output_dir: str, **kwargs):
         self.load_output_file()
-        self.get_photometry(output_dir, image_type="coadded", **kwargs)
+        if "image_type" in kwargs:
+            kwargs.pop("image_type")
+        self.get_photometry(path=output_dir, image_type="coadded", **kwargs)
 
     def _initial_setup(self, output_dir: str, **kwargs):
         download_dir = self.paths["download"]
@@ -116,17 +121,20 @@ class SurveyImagingEpoch(ImagingEpoch):
         for fil in self.coadded:
             img = self.coadded[fil]
             zp = img.zeropoint(
-                cat=self.field.get_path(f"cat_csv_{self.catalogue}"),
-                output_path=os.path.join(output_path, img.name),
-                cat_name=self.catalogue,
-                dist_tol=distance_tolerance,
-                show=False,
-                snr_cut=snr_min,
-                star_class_tol=star_class_tolerance,
-                image_name=f"{self.catalogue}",
+                # cat=self.field.get_path(f"cat_csv_{self.catalogue}"),
+                # output_path=os.path.join(output_path, img.name),
+                # cat_name=self.catalogue,
+                # dist_tol=distance_tolerance,
+                # show=False,
+                # snr_cut=snr_min,
+                # star_class_tol=star_class_tolerance,
+                # image_name=f"{self.catalogue}",
             )
             img.select_zeropoint(True, preferred=self.preferred_zeropoint)
-            img.estimate_depth(zeropoint_name=self.catalogue)  # , do_magnitude_calibration=False)
+            img.estimate_depth(
+                zeropoint_name=self.preferred_zeropoint,
+                output_dir=output_path
+            )  # , do_magnitude_calibration=False)
             if deepest is not None:
                 deepest = image.deepest(deepest, img)
             else:

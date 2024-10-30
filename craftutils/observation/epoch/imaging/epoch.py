@@ -41,6 +41,9 @@ class ImagingEpoch(Epoch):
         "convert_to_cs",
         "correct_astrometry_frames"
     ]
+    validation_stages = [
+        "insert_synthetic_frames"
+    ]
 
     def __init__(
             self,
@@ -115,6 +118,7 @@ class ImagingEpoch(Epoch):
             self.coadded_subtracted_trimmed,
             self.coadded_subtracted_patch
         )
+        self.finalised = {}
 
         self.gaia_catalogue = None
         self.astrometry_indices = []
@@ -122,6 +126,20 @@ class ImagingEpoch(Epoch):
         self.frame_stats = {}
         self.astrometry_stats = {}
         self.psf_stats = {}
+
+        self.validation_copy_of = None
+        if "validation_copy_of" in kwargs:
+            self.validation_copy_of = kwargs["validation_copy_of"]
+            if isinstance(self.validation_copy_of, str):
+                self.validation_copy_of = self.from_params(
+                    name=self.validation_copy_of,
+                    instrument=self.instrument_name,
+                    field=self.field,
+                    # quiet=self.quiet
+                )
+                self.date = self.validation_copy_of.date
+        self.validation_catalogue_path = None
+        self.validation_catalogue = None
 
         # self.load_output_file(mode="imaging")
 
@@ -170,13 +188,20 @@ class ImagingEpoch(Epoch):
                     "correct_to_epoch": True,
                     "registration_template": None,
                     "odds_to_tune_up": None,
-                    "odds-to-solve": None
+                    "odds_to_solve": None,
+                    "solve_one": False
                 }
             },
             "frame_diagnostics": {
                 "method": cls.proc_frame_diagnostics,
                 "message": "Run diagnostics on individual frames?",
                 "default": False,
+            },
+            "insert_synthetic_frames": {
+                "method": cls.proc_insert_synthetic_frames,
+                "message": "Insert synthetic sources in frames for validation_checks?",
+                "default": False,
+                "keywords": {}
             },
             "subtract_background_frames": {
                 "method": cls.proc_subtract_background_frames,
@@ -223,7 +248,8 @@ class ImagingEpoch(Epoch):
                 "message": "Do source extraction and diagnostics?",
                 "default": True,
                 "keywords": {
-                    "do_astrometry_diagnostics": True
+                    "do_astrometry_diagnostics": True,
+                    "do_psf_diagnostics": True
                 }
             },
             "photometric_calibration": {
@@ -274,6 +300,101 @@ class ImagingEpoch(Epoch):
 
     def proc_download(self, output_dir: str, **kwargs):
         pass
+
+    def proc_insert_synthetic_frames(
+            self,
+            output_dir: str,
+            **kwargs
+    ):
+        self.insert_synthetic_frames(
+            frame_type=self.frames_for_combined,
+            output_dir=output_dir,
+            **kwargs
+        )
+        print(self.validation_copy_of.frames_final)
+        self.frames_final = self.validation_copy_of.frames_final
+
+    def generate_validation_catalogue(
+            self,
+            force=False,
+            centre: SkyCoord = None,
+            box: units.Quantity = 3 * units.arcmin,
+            min_mag: float = 18., #19.5
+            max_mag: float = 25., #23.5
+            n: int = None
+    ):
+        if force or self.validation_catalogue_path is None or not os.path.isfile(self.validation_catalogue_path):
+            print("Generating synthetic catalogue...")
+            if centre is None:
+                centre = self.field.centre_coords
+            if n is None:
+                area = (2 * box) ** 2
+                area_default = (3 * units.arcmin) ** 2
+                n = int(300 * area / area_default)
+            print("Number of stars to generate:", n)
+            print("Inside box:", box)
+            d_x = (2 * np.random.rand(n) - 1) * box
+            d_y = (2 * np.random.rand(n) - 1) * box
+            ra = centre.ra + d_x / np.cos(centre.dec)
+            dec = centre.dec + d_y
+            new_coords = SkyCoord(ra, dec)
+            tab_dict = {
+                "coord": new_coords,
+                "mag": (np.random.rand(n) * (max_mag - min_mag) + min_mag) * units.mag,
+            }
+            self.validation_catalogue = table.QTable(tab_dict)
+            self.validation_catalogue_path = os.path.join(self.data_path, "validation_catalogue_generated.ecsv")
+            self.validation_catalogue.write(self.validation_catalogue_path, overwrite=True)
+            fig, ax = plt.subplots()
+            c = ax.scatter(new_coords.ra, new_coords.dec, c=self.validation_catalogue["mag"])
+            fig.colorbar(c)
+            figpath = self.validation_catalogue_path.replace(".ecsv", ".pdf")
+            print("Saving:", figpath)
+            fig.savefig(figpath)
+        else:
+            self.validation_catalogue = table.QTable.read(self.validation_catalogue_path)
+
+    def insert_synthetic_frames(self, frame_type: str, output_dir: str, **kwargs):
+        # else:
+        #     cat_name = "instrument_archive"
+        print(self.validation_copy_of.output_file)
+        print(self.validation_copy_of.coadded_final)
+        final_images = self.validation_copy_of._get_images(image_type="final")
+        frames_original = self.validation_copy_of._get_frames(frame_type)
+        frames_dict = self._get_frames(frame_type=frame_type)
+        box = None
+        centre = None
+        if self.did_local_background_subtraction():
+            img = frames_original[list(frames_original.keys())[0]][0]
+            img.extract_pixel_scale()
+            if "subtract_background_frames" in self.param_file:
+                par_dict = self.param_file["subtract_background_frames"]
+                print(par_dict)
+                if "frame" in par_dict:
+                    box = par_dict["frame"]
+                else:
+                    box = 15 * units.arcsec
+                if "centre" in par_dict:
+                    centre = par_dict["centre"]
+                box = box.to(units.arcsec, img.pixel_scale_y)
+
+        self.generate_validation_catalogue(box=box, centre=centre, force=True)
+        self._get_frames(frame_type=frame_type).clear()
+        for fil, frames in frames_original.items():
+            final_img = final_images[fil]
+            zp_dict = final_img.zeropoint_best
+            output_fil = os.path.join(output_dir, fil)
+            os.makedirs(output_fil, exist_ok=True)
+            se_dir = os.path.join(output_fil, "source_extraction")
+            os.makedirs(se_dir, exist_ok=True)
+            for frame in frames:
+                frame.psfex()
+                frame.zeropoint_best = zp_dict.copy()
+                inserted, _ = frame.insert_synthetic_sources(
+                    catalogue=self.validation_catalogue.copy(),
+                    output=os.path.join(output_fil, frame.filename.replace(".fits", "_synth.fits")),
+                )
+                self._add_frame(inserted, frames_dict=frames_dict, frame_type=frame_type)
 
     def proc_defringe(
             self,
@@ -355,6 +476,8 @@ class ImagingEpoch(Epoch):
     def proc_subtract_background_frames(self, output_dir: str, **kwargs):
         self.frames_subtracted = {}
         if "frames" not in kwargs:
+            # if self.validation_catalogue is not None:
+            #     kwargs["frames"] = ""
             if "correct_astrometry_frames" in self.do_param and self.do_param["correct_astrometry_frames"]:
                 kwargs["frames"] = "astrometry"
             else:
@@ -547,6 +670,8 @@ class ImagingEpoch(Epoch):
 
         u.debug_print(2, kwargs)
 
+        self.field.retrieve_catalogue(cat_name="gaia")
+
         self.generate_astrometry_indices(correct_to_epoch=correct_to_epoch)
 
         self.frames_astrometry = {}
@@ -570,6 +695,7 @@ class ImagingEpoch(Epoch):
             frames: dict = None,
             am_params: dict = {},
             background_kwargs: dict = {},
+            solve_one: bool = False,
             **kwargs
     ):
         self.frames_astrometry = {}
@@ -595,6 +721,11 @@ class ImagingEpoch(Epoch):
                 astrometry_fil_path = os.path.join(output_dir, fil)
                 for frame in frames_by_chip[chip]:
                     frame_alt = None
+                    if solve_one and first_success is not None:
+                        if not self.quiet:
+                            print(f"{frame} added to astroalign queue (solve_one is True).")
+                        self.astrometry_successful[fil][frame.name] = False
+                        continue
                     if back_subbed:
                         # For some fields, we want to subtract the background before attempting to solve, because of
                         # bright stars or the like.
@@ -632,6 +763,7 @@ class ImagingEpoch(Epoch):
                         self.astrometry_successful[fil][frame.name] = "astrometry.net"
                         if first_success is None:
                             first_success = new_frame
+
                     else:
                         if not self.quiet:
                             print(f"{frame} Astrometry.net unsuccessful; adding frame to astroalign queue.")
@@ -814,8 +946,8 @@ class ImagingEpoch(Epoch):
             out_dict: Union[dict, str] = "coadded",
             sigma_clip: float = 1.5
     ):
-        """
-        Use Montage and ccdproc to coadd individual frames.
+        """Use Montage and ccdproc to coadd individual frames.
+
         :param output_dir: Directory in which to write data products.
         :param frames: Name of frames list to coadd.
         :param sigma_clip: Multiple of pixel stack standard deviation to clip when doing sigma-clipped stack.
@@ -849,8 +981,8 @@ class ImagingEpoch(Epoch):
                 output_directory=output_directory_fil,
                 output_file_name=f"{self.name}_{self.date_str()}_{fil}_coadded.fits",
                 coadd_types=["median", "mean"],
-                add_with_ccdproc=False,
-                sigma_clip=True,
+                # add_with_ccdproc=False,
+                # sigma_clip=True,
                 # unit="electron / second"
                 # sigma_clip_low_threshold=5,
             )[0]
@@ -1095,6 +1227,8 @@ class ImagingEpoch(Epoch):
                 output_dir=output_dir,
                 phot_autoparams=f"{configs['kron_factor']},{configs['kron_radius_min']}"
             )
+            x, y = img.world_to_pixel(self.field.centre_coords)
+            img.psf_to_hdu(x=x, y=y, output_dir=output_dir)
 
         if do_astrometry_diagnostics:
             if "offset_tolerance" in kwargs:
@@ -1135,6 +1269,8 @@ class ImagingEpoch(Epoch):
             kwargs["snr_min"] = 3.
         if "suppress_select" not in kwargs:
             kwargs["suppress_select"] = True
+
+        self.field.retrieve_catalogues()
 
         image_dict = self._get_images(image_type=image_type)
         for fil in image_dict:
@@ -1250,6 +1386,13 @@ class ImagingEpoch(Epoch):
 
         self.finalise(output_path=output_dir, **kwargs)
 
+    def _get_test_coord(self):
+        if isinstance(self.field, fld.FRBField):
+            test_coord = self.field.frb.position
+        else:
+            test_coord = self.field.centre_coords
+        return test_coord
+
     def finalise(
             self,
             image_type: str = "final",
@@ -1291,7 +1434,13 @@ class ImagingEpoch(Epoch):
 
             nice_name = f"{self.field.name}_{inst_name}_{fil.replace('_', '-')}_{date}.fits"
 
-            img.estimate_depth(zeropoint_name="best", output_dir=output_path)
+            test_coord = self._get_test_coord()
+
+            img.estimate_depth(
+                zeropoint_name="best",
+                output_dir=output_path,
+                test_coord=test_coord
+            )
 
             img.select_depth()
             img.write_fits_file()
@@ -1318,8 +1467,11 @@ class ImagingEpoch(Epoch):
                 )
             )
 
+            refined_path = None
             if isinstance(self.field.survey, Survey):
                 refined_path = self.field.survey.refined_stage_path
+
+                nice_name = f"{self.field.name}_{inst_name}_{fil.replace('_', '-')}_{date}.fits"
 
                 if refined_path is not None:
                     img.copy_with_outputs(
@@ -1329,17 +1481,40 @@ class ImagingEpoch(Epoch):
                         )
                     )
 
+            self.field.add_image(img_final, epoch_name=self.name)
+            self.finalised[fil] = img_final
+
             deepest = image.deepest(deepest, img)
             if self.did_local_background_subtraction():
                 img_subbed = self.coadded_subtracted_patch[fil]
-                self.field.add_image(img_subbed)
-            else:
-                self.field.add_image(img_final)
+                nice_name = f"{self.field.name}_{inst_name}_{fil.replace('_', '-')}_back-subtracted-patch.fits"
+                img_final = img_subbed.copy_with_outputs(os.path.join(
+                    self.data_path,
+                    nice_name)
+                )
+                img.copy_with_outputs(
+                    os.path.join(
+                        staging_dir,
+                        nice_name
+                    )
+                )
+
+                if refined_path is not None:
+                    img.copy_with_outputs(
+                        os.path.join(
+                            refined_path,
+                            nice_name
+                        )
+                    )
+
+                self.field.add_image(img_final, epoch_name=self.name)
+                self.finalised[fil] = img_final
 
         self.deepest_filter = deepest.filter_name
         self.deepest = deepest
 
-        self.push_to_table()
+        if self.validation_copy_of is None:
+            self.push_to_table()
         return deepest
 
     def proc_get_photometry(
@@ -1350,7 +1525,7 @@ class ImagingEpoch(Epoch):
         if "image_type" in kwargs and isinstance(kwargs["image_type"], str):
             image_type = kwargs.pop("image_type")
         else:
-            image_type = "final"
+            image_type = "finalised"
         u.debug_print(2, f"{self}.proc_get_photometry(): image_type ==:", image_type)
         # Run PATH on imaging if we're doing FRB stuff
 
@@ -1372,7 +1547,10 @@ class ImagingEpoch(Epoch):
         #         image_type=image_type_path,
         #         **path_kwargs
         #     )
-        self.get_photometry(output_dir, image_type=image_type, **kwargs)
+        if not self.data_bad:
+            self.get_photometry(output_dir, image_type=image_type, **kwargs)
+        else:
+            print(f"Skipping 'get_photometry' due to data quality (data_bad==True in param file.)")
 
     def did_local_background_subtraction(self):
         if "subtract_background_frames" in self.do_param:
@@ -1439,7 +1617,7 @@ class ImagingEpoch(Epoch):
     def get_photometry(
             self,
             path: str,
-            image_type: str = "final",
+            image_type: str = "finalised",
             dual: bool = False,
             match_tolerance: units.Quantity = 1 * units.arcsec,
             **kwargs
@@ -1473,18 +1651,24 @@ class ImagingEpoch(Epoch):
         u.mkdir_check(path)
 
         # Loop through filters
-        for fil, img in image_dict.items():
+        for key, img in image_dict.items():
 
-            fil_output_path = os.path.join(path, fil)
+            fil = img.filter_name
+
+            fil_output_path = os.path.join(path, key)
             u.mkdir_check(fil_output_path)
 
             if "secure" not in img.depth:
-                img.estimate_depth()
+                img.estimate_depth(test_coord=self.target)
             if not self.quiet:
                 print("Getting photometry for", img)
 
             # Transform source extractor magnitudes using zeropoint.
             img.calibrate_magnitudes(zeropoint_name="best", dual=dual, force=True)
+
+            if self.validation_catalogue_path is not None:
+                self.validation_checks(img=img, output_dir=fil_output_path)
+                continue
 
             # Set up lists for matches to turn into a subset of the SE catalogue
             rows = []
@@ -1493,33 +1677,35 @@ class ImagingEpoch(Epoch):
             ra_target = []
             dec_target = []
 
-            if "SNR_PSF" in img.depth["secure"]:
-                depth = img.depth["secure"]["SNR_PSF"][f"5-sigma"]
-            else:
-                depth = img.depth["secure"]["SNR_AUTO"][f"5-sigma"]
+            depth, _ = img.select_depth()
 
             img.load_data()
 
             if not skip_plots:
-                ax, fig, vals = self.field.plot_host(
+                fig, ax, vals = self.field.plot_host(
                     img=img,
                     frame=10 * units.arcsec,
                     centre=self.field.frb.position,
+                    astm_crosshairs=True,
                 )
                 for obj_name, obj in self.field.objects.items():
-                    x, y = img.world_to_pixel(obj.position)
-                    plt.scatter(x, y, marker="x", label=obj_name)
+                    if obj.position is not None:
+                        x, y = img.world_to_pixel(obj.position)
+                        plt.scatter(x, y, marker="x", label=obj_name)
                 plt.legend(loc=(1.0, 0.))
                 fig.savefig(os.path.join(fil_output_path, "plot_quick.pdf"))
 
             # Get astrometric uncertainty from images
             img.extract_astrometry_err()
             # Add that to the matching tolerance in quadrature (seems like the right thing to do?)
+
+            print("Specified tolerance:", match_tolerance)
+            print("Image astrometric uncertainty:", img.astrometry_err)
             if img.astrometry_err is None:
                 tolerance_eff = match_tolerance
             else:
-                tolerance_eff = np.sqrt(match_tolerance ** 2 + img.astrometry_err ** 2)
-
+                tolerance_eff = match_tolerance + img.astrometry_err
+            print("Effective tolerance:", tolerance_eff)
             # Loop through this field's 'objects' dictionary and try to match them with the SE catalogue
             for obj_name, obj in self.field.objects.items():
                 # If the object is not expected to be visible in the optical/NIR, skip it.
@@ -1537,10 +1723,11 @@ class ImagingEpoch(Epoch):
                 ra_target.append(obj.position.ra)
                 dec_target.append(obj.position.dec)
 
-                if self.did_local_background_subtraction():
-                    good_image_path = self.coadded_subtracted[fil].path
-                else:
-                    good_image_path = self.coadded_unprojected[fil].path
+                # if self.did_local_background_subtraction():
+                #     good_image_path = self.coadded_subtracted[fil].path
+                # else:
+                #     good_image_path = self.coadded_unprojected[fil].path
+                good_image_path = self.finalised[fil].path
                 # If the nearest object is outside tolerance, declare that no match was found and send a dummy entry to
                 # the object's photometry table.
                 if separation > tolerance_eff:
@@ -1577,7 +1764,9 @@ class ImagingEpoch(Epoch):
                         do_mask=img.mask_nearby()
                     )
                     print(
-                        f"No object detected at position (nearest match at {nearest['RA']}, {nearest['DEC']}, separation {separation.to('arcsec')}).")
+                        f"No object detected at position (nearest match at {nearest['RA']}, {nearest['DEC']}, "
+                        f"separation {separation.to('arcsec').round(1)} > tolerance {tolerance_eff} = {match_tolerance} + {img.astrometry_err}, "
+                        f"with magnitude {nearest['MAG_AUTO_ZP_best']}).")
                     print()
                 # Otherwise,  send the match's information to the object's photometry table (and make plots).
                 else:
@@ -1640,7 +1829,9 @@ class ImagingEpoch(Epoch):
                         image_depth=depth,
                         image_path=img.path,
                         good_image_path=good_image_path,
-                        do_mask=img.mask_nearby()
+                        do_mask=img.mask_nearby(),
+                        flux_max=nearest["FLUX_MAX"],
+                        background_se=nearest["BACKGROUND"],
                     )
 
                     # Do more plots with FRB ellipses if this is an FRBField
@@ -1666,7 +1857,7 @@ class ImagingEpoch(Epoch):
                                 centre = obj.position_from_cat_row()
 
                                 fig = plt.figure(figsize=(6, 5))
-                                ax, fig, other = self.field.plot_host(
+                                fig, ax, other = self.field.plot_host(
                                     img=img,
                                     fig=fig,
                                     centre=centre,
@@ -1678,7 +1869,8 @@ class ImagingEpoch(Epoch):
                                     frb_kwargs={
                                         "edgecolor": "black"
                                     },
-                                    normalize_kwargs=normalize_kwargs
+                                    normalize_kwargs=normalize_kwargs,
+                                    astm_crosshairs=True,
                                 )
                                 output_path = os.path.join(
                                     fil_output_path,
@@ -1696,7 +1888,7 @@ class ImagingEpoch(Epoch):
                                 fig.clear()
                                 plt.close("all")
                                 pl.latex_off()
-                                del ax, fig, other
+                                del fig, ax, other
 
             # Make the subset SE table
             if len(rows) > 0:
@@ -1707,12 +1899,12 @@ class ImagingEpoch(Epoch):
                 tbl.add_column(dec_target, name="DEC_TARGET")
 
                 tbl.write(
-                    os.path.join(fil_output_path, f"{self.field.name}_{self.name}_{fil}.ecsv"),
+                    os.path.join(fil_output_path, f"{self.field.name}_{self.name}_{key}.ecsv"),
                     format="ascii.ecsv",
                     overwrite=True
                 )
                 tbl.write(
-                    os.path.join(fil_output_path, f"{self.field.name}_{self.name}_{fil}.csv"),
+                    os.path.join(fil_output_path, f"{self.field.name}_{self.name}_{key}.csv"),
                     format="ascii.csv",
                     overwrite=True
                 )
@@ -1743,6 +1935,100 @@ class ImagingEpoch(Epoch):
     #         u.mkdir_check(fil_output_path)
     #         img = image_dict[fil]
     #         img.push_source_cat(dual=dual)
+
+    def validation_checks(
+            self,
+            img: image.ImagingImage,
+            output_dir: str,
+            tolerance=0.5 * units.arcsec
+    ):
+        pl.latex_setup()
+        fil = img.filter_name
+        self.validation_catalogue = table.QTable.read(self.validation_catalogue_path)
+
+        idx, sep, _ = self.validation_catalogue["coord"].match_to_catalog_sky(img.source_cat["COORD"])
+        matches_se = img.source_cat[idx]
+        sep = sep.to("arcsec")
+        self.validation_catalogue[f"separation_{fil}"] = sep
+
+        fig, ax = plt.subplots()
+        x_synth, y_synth = img.world_to_pixel(self.validation_catalogue["coord"])
+        c = ax.scatter(x=x_synth, y=y_synth, marker="x", c=sep)
+        cbar = fig.colorbar(c)
+        ax.set_ylabel("x (inserted)")
+        ax.set_xlabel("y (inserted)")
+        cbar.set_label(r"Separation ($\prime\prime$)")
+        fig.savefig(os.path.join(output_dir, f"position_{fil}.pdf"))
+
+        values = {}
+        for mag_type in ("PSF", "AUTO"):
+            self.validation_catalogue[f"{fil}_mag_{mag_type}"] = matches_se[f"MAG_{mag_type}_ZP_best"]
+            self.validation_catalogue[f"{fil}_mag_{mag_type}_err"] = matches_se[f"MAGERR_{mag_type}_ZP_best"]
+            self.validation_catalogue[f"{fil}_mag_{mag_type}_delta"] = u.check_quantity(self.validation_catalogue["mag"], units.mag) - self.validation_catalogue[f"{fil}_mag_{mag_type}"]
+            cat = self.validation_catalogue[self.validation_catalogue[f"{fil}_mag_{mag_type}"] < 100 * units.mag]
+            cat = cat[cat[f"{fil}_mag_{mag_type}"] > -100 * units.mag]
+            cat = cat[cat[f"separation_{fil}"] < tolerance]
+            x = cat[f"mag"].value
+            y = cat[f"{fil}_mag_{mag_type}"].value
+            y_err = cat[f"{fil}_mag_{mag_type}_err"].value
+            fig, ax = plt.subplots()
+            ax.errorbar(x, y, yerr=y_err, c="black", ls="none")
+            c = ax.scatter(x, y, marker="x", c=cat[f"separation_{fil}"].value)
+            print(np.min(x), np.max(x))
+            ax.plot([np.min(x), np.max(x)], [np.min(x), np.max(x)], c="red")
+            ax.set_ylabel("Extracted object (mag)")
+            ax.set_xlabel("Inserted object (mag)")
+            cbar = fig.colorbar(c)
+            cbar.set_label(r"Separation ($\prime\prime$)")
+            fig.savefig(os.path.join(output_dir, f"validation_comparison_{mag_type}.pdf"))
+            fig.clear()
+            plt.close(fig)
+
+            fig, ax = plt.subplots()
+            ax.hist(cat[f"{fil}_mag_{mag_type}_delta"], bins="auto")
+            ax.set_xlabel(r"$m_\mathrm{inserted} - m_\mathrm{extracted}$")
+            fig.savefig(os.path.join(output_dir, f"delta-m_{mag_type}.pdf"))
+            fig.clear()
+            plt.close(fig)
+
+            values[mag_type] = {
+                "matches": len(cat)
+            }
+            cat = cat[cat[f"separation_{fil}"] <= 1 * units.arcsec]
+            values[mag_type]["matches_separation"] = len(cat)
+            cat = cat[cat[f"{fil}_mag_{mag_type}_delta"] < 1 * np.std(cat[f"{fil}_mag_{mag_type}_delta"])]
+            values[mag_type].update({
+                "scatter": np.sqrt(np.nanmean(cat[f"{fil}_mag_{mag_type}_delta"]**2)),
+                "median_delta": np.nanmedian(np.abs(cat[f"{fil}_mag_{mag_type}_delta"])),
+                "mean_delta": np.nanmean(np.abs(cat[f"{fil}_mag_{mag_type}_delta"])),
+                "min_delta": np.nanmin(np.abs(cat[f"{fil}_mag_{mag_type}_delta"])),
+                "max_delta": np.nanmax(np.abs(cat[f"{fil}_mag_{mag_type}_delta"])),
+                "matches_mag_clipped": len(cat)
+            })
+
+        # Class Star
+        self.validation_catalogue[f"{img.filter_name}_class_star"] = matches_se[f"CLASS_STAR"]
+        fig, ax = plt.subplots()
+        x = self.validation_catalogue[f"{img.filter_name}_class_star"]
+        ax.hist(x, bins="auto")
+        ax.set_xlabel("CLASS\_STAR")
+        fig.savefig(os.path.join(output_dir, f"validation_class_star.pdf"))
+        fig.clear()
+        plt.close(fig)
+
+        self.validation_catalogue[f"fwhm_{fil}"] = matches_se["FWHM_WORLD"].to("arcsec")
+        cat = self.validation_catalogue.copy()
+        cat_se = img.source_cat.table
+        fig, ax = plt.subplots()
+        ax.hist(cat[f"fwhm_{fil}"].value, density=True, bins="auto")
+        # ax.hist(cat_se[f"FWHM_WORLD"].to("arcsec").value, density=True, bins="auto", alpha=0.5)
+        ax.set_xlabel("FWHM (arcsec)")
+        fig.savefig(os.path.join(output_dir, f"validation_fwhm.pdf"))
+        fig.clear()
+        plt.close(fig)
+
+        self.validation_catalogue.write(self.validation_catalogue_path, overwrite=True)
+        p.save_params(os.path.join(output_dir, "values.yaml"), values)
 
     def astrometry_diagnostics(
             self,
@@ -1825,6 +2111,8 @@ class ImagingEpoch(Epoch):
             image_dict = self.coadded_subtracted_patch
         elif image_type in ["coadded_astrometry", "astrometry"]:
             image_dict = self.coadded_astrometry
+        elif image_type == "finalised":
+            image_dict = self.finalised
         else:
             raise ValueError(f"Images type '{image_type}' not recognised.")
         return image_dict
@@ -1894,6 +2182,7 @@ class ImagingEpoch(Epoch):
             "coadded_subtracted": _output_img_dict_single(self.coadded_subtracted),
             "coadded_subtracted_trimmed": _output_img_dict_single(self.coadded_subtracted_trimmed),
             "coadded_subtracted_patch": _output_img_dict_single(self.coadded_subtracted_patch),
+            "finalised": _output_img_dict_single(self.finalised),
             "deepest": deepest,
             "deepest_filter": self.deepest_filter,
             "exp_time_mean": self.exp_time_mean,
@@ -1909,6 +2198,7 @@ class ImagingEpoch(Epoch):
             "frames_diagnosed": _output_img_dict_list(self.frames_diagnosed),
             "psf_stats": self.psf_stats,
             "std_pointings": self.std_pointings,
+            "validation_catalogue_path": self.validation_catalogue_path
         })
         return output_dict
 
@@ -1945,6 +2235,8 @@ class ImagingEpoch(Epoch):
                 self.astrometry_successful = outputs["astrometry_successful"]
             if "astrometry_indices" in outputs:
                 self.astrometry_indices = outputs["astrometry_indices"]
+            if "validation_catalogue_path" in outputs:
+                self.validation_catalogue_path = outputs["validation_catalogue_path"]
             if "frames_raw" in outputs:
                 for frame in set(outputs["frames_raw"]):
                     if os.path.isfile(frame):
@@ -2025,6 +2317,15 @@ class ImagingEpoch(Epoch):
                     if outputs["coadded_astrometry"][fil] is not None:
                         u.debug_print(1, f"Attempting to load coadded_astrometry[{fil}]")
                         self.add_coadded_astrometry_image(img=outputs["coadded_astrometry"][fil], key=fil, **kwargs)
+            if "finalised" in outputs:
+                for name in outputs["finalised"]:
+                    if outputs["finalised"][name] is not None:
+                        u.debug_print(1, f"Attempting to load finalised[{name}]")
+                        self._add_coadded(img=outputs["finalised"][name], key=name, image_dict=self.finalised)
+            if "frames_final" in outputs:
+                self.frames_final = outputs["frames_final"]
+            if "coadded_final" in outputs:
+                self.coadded_final = outputs["coadded_final"]
             if "std_pointings" in outputs:
                 self.std_pointings = outputs["std_pointings"]
 
@@ -2320,7 +2621,7 @@ class ImagingEpoch(Epoch):
                 self.exp_time_mean[fil] = np.mean(exp_times) * units.s
             frame_exp_time = self.exp_time_mean[fil].round()
 
-            depth = img.select_depth()
+            depth, _ = img.select_depth()
 
             entry = {
                 "field_name": self.field.name,
@@ -2361,7 +2662,6 @@ class ImagingEpoch(Epoch):
             name: str,
             instrument: str,
             field: Union['fld.Field', str] = None,
-            quiet: bool = False
     ):
         if name in active_epochs:
             return active_epochs[name]
@@ -2371,7 +2671,8 @@ class ImagingEpoch(Epoch):
             instrument_name=instrument,
             field_name=field_name,
             epoch_name=name)
-        return cls.from_file(param_file=path, field=field, quiet=quiet)
+        print(cls)
+        return cls.from_file(param_file=path, field=field)
 
     @classmethod
     def build_param_path(cls, instrument_name: str, field_name: str, epoch_name: str):

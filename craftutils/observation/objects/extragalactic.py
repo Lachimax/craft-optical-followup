@@ -45,8 +45,11 @@ class Extragalactic(Object):
         self.mu = None
         self.set_z(z, **kwargs)
 
-    def set_z(self, z: float, **kwargs):
-        self.z = z
+    def set_z(self, z: float = None, **kwargs):
+        if z is None:
+            z = self.z
+        else:
+            self.z = z
         if "z_err" in kwargs:
             self.z_err = kwargs["z_err"]
         self.D_A = self.angular_size_distance()
@@ -92,21 +95,24 @@ class Extragalactic(Object):
                     self.photometry[instrument][fil][epoch]["abs_mag"] = abs_mag
         self.update_output_file()
 
-    def projected_size(self, angle: Union[units.Quantity, float]) -> Union[units.Quantity, None]:
-        """
-        When given an angular size, calculates the projected physical size at the redshift of the galaxy.
+    def projected_size(self, angle: Union[units.Quantity, float]) -> Union[units.Quantity[units.kpc], None]:
+        """When given an angular size, calculates the projected physical size at the redshift of the galaxy.
+
         :param angle: Angular size. If not provided as a quantity, must be in arcseconds.
         :return: Projected physical size, with units kpc
         """
+        self.set_z()
+
         if self.D_A is None:
             return None
         angle = u.check_quantity(angle, unit=units.arcsec).to(units.rad).value
         dist = angle * self.D_A
+        # print(dist.to(units.kpc))
         return dist.to(units.kpc)
 
     def angular_size(self, distance: Union[units.Quantity, float]):
-        """
-        Given a physical projected size at the redshift of the galaxy, calculates the angular size as seen from Earth.
+        """Given a physical projected size at the redshift of the galaxy, calculates the angular size as seen from Earth.
+
         :param distance: Physical projected size. If not provided as a quantity, must be in kiloparsecs.
         :return: Angular size, in arcseconds.
         """

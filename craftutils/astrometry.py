@@ -58,7 +58,21 @@ def generate_astrometry_indices(
         index_output_dir: str,
         fits_cat_output: str = None,
         add_path: bool = True,
-        p_lower: int = -2, p_upper: int = 2):
+        p_lower: int = -2, p_upper: int = 2
+):
+    """
+
+    :param cat_name:
+    :param cat:
+    :param output_file_prefix:
+    :param unique_id_prefix:
+    :param index_output_dir:
+    :param fits_cat_output:
+    :param add_path:
+    :param p_lower:
+    :param p_upper:
+    :return:
+    """
     u.mkdir_check(index_output_dir)
     if add_path:
         astrometry_net.add_index_directory(index_output_dir)
@@ -236,7 +250,6 @@ def offset_astrometry(hdu: fits.hdu, offset_ra: float, offset_dec: float, output
     :return:
     """
     hdu, path = ff.path_or_hdu(hdu)
-    print(offset_ra, offset_dec)
     print('Writing tweaked file to:')
     print('\t', output)
     print(hdu[0].header['CRVAL1'], hdu[0].header['CRVAL2'])
@@ -295,20 +308,49 @@ def match_catalogs(
 
     idx, distance, _ = coords_2.match_to_catalog_sky(coords_1)
     keep = distance < tolerance
-    idx = idx[keep]
-    matches_2 = cat_2[keep]
-    if keep_non_matches:
-        n_matches = len(matches_2)
-        matches_2 = table.vstack([matches_2, cat_2[np.invert(keep)]])
-        matches_2["matched"] = np.zeros(len(matches_2), dtype=bool)
-        matches_2["matched"][:n_matches] = True
-    distance = distance[keep]
+    cat_2["matched"] = keep
+    if not keep_non_matches:
+        cat_1 = cat_1[keep]
+        cat_2 = cat_2[keep]
+        distance = distance[keep]
 
+    idx = idx[keep]
     matches_1 = cat_1[idx]
+    matches_1["separation"] = distance[keep]
+    cat_1["separation"] = np.inf * units.arcsec
+    cat_2["separation"] = distance
+
     if keep_non_matches:
         n_matches = len(matches_1)
         matches_1 = table.vstack([matches_1, cat_1[[i for i in range(len(cat_1)) if i not in idx]]])
         matches_1["matched"] = np.zeros(len(matches_1), dtype=bool)
         matches_1["matched"][:n_matches] = True
 
-    return matches_1, matches_2, distance
+    return matches_1, cat_2, distance
+
+def construct_corners_table(
+    tbl: table.QTable,
+    padding=10 * units.arcsec,
+    ra_col: str = "ra",
+    dec_col: str = "dec"
+):
+    ra_max = tbl[ra_col].max() + padding
+    ra_min = tbl[ra_col].min() - padding
+    dec_max = tbl[dec_col].max() + padding
+    dec_min = tbl[dec_col].min() - padding
+
+    return construct_corners(
+        ra_min, ra_max, dec_min, dec_max
+    )
+
+def construct_corners(
+        ra_min: units.Quantity,
+        ra_max: units.Quantity,
+        dec_min: units.Quantity,
+        dec_max: units.Quantity,
+):
+
+    corner_1 = coordinates.SkyCoord(ra_max, dec_max)
+    corner_2 = coordinates.SkyCoord(ra_min, dec_min)
+
+    return corner_1, corner_2

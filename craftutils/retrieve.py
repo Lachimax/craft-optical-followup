@@ -346,13 +346,22 @@ eso_tap_url = "http://archive.eso.org/tap_obs"
 
 
 def login_eso():
+    """Attempts to log in to the ESO archive using the username and password stored in ``keys.yaml``.
+
+    :return:
+    """
     if "eso_auth_token" not in keys:
         print("Attempting login to ESO archive.")
         token_url = "https://www.eso.org/sso/oidc/token"
-        r = requests.get(token_url,
-                         params={"response_type": "id_token token", "grant_type": "password",
-                                 "client_id": "clientid",
-                                 "username": keys["eso_user"], "password": keys["eso_pwd"]})
+        r = requests.get(
+            token_url,
+            params={
+                "response_type": "id_token token",
+                "grant_type": "password",
+                "client_id": "clientid",
+                "username": keys["eso_user"],
+                "password": keys["eso_pwd"]
+            })
         try:
             token_response = r.json()
             token = token_response['id_token'] + '=='
@@ -457,7 +466,8 @@ def save_eso_raw_data_and_calibs(
         program_id: str = None,
         obj: str = None,
         coord_tol: units.Quantity = 1.0 * units.arcmin,
-        data_type: str = "science"
+        data_type: str = "science",
+        keep_previous: bool = False
 ):
     u.mkdir_check(output)
     instrument = instrument.lower()
@@ -645,9 +655,9 @@ def get_eso_associations(raw_frame: str, mode_requested: str = "raw2raw"):
 
 
 def retrieve_fors2_calib(fil: str = 'I_BESS', date_from: str = '2017-01-01', date_to: str = None):
-    """
-    Retrieves the full set of photometry parameters from the FORS2 quality control archive
+    """Retrieves the full set of photometry parameters from the FORS2 quality control archive
     (http://archive.eso.org/bin/qc1_cgi?action=qc1_browse_table&table=fors2_photometry), from date_from to date_to.
+
     :param fil: The filter for which the data is to be retrieved. Must be "I_BESS", "R_SPEC", "b_HIGH" or "v_HIGH".
     :param date_from: The date from which to begin.
     :param date_to: The date on which to end. If None, defaults to current date.
@@ -688,16 +698,20 @@ def retrieve_fors2_calib(fil: str = 'I_BESS', date_from: str = '2017-01-01', dat
     request = urllib.parse.urlencode(request)
     request = bytes(request, 'utf-8')
     print("Retrieving calibration parameters from FORS2 QC1 archive...")
-    page = urllib.request.urlopen("http://archive.eso.org/qc1/qc1_cgi", request)
-    return str(page.read().replace(b'!', b''), 'utf-8')
+    try:
+        page = urllib.request.urlopen("http://archive.eso.org/qc1/qc1_cgi", request)
+        return str(page.read().replace(b'!', b''), 'utf-8')
+    except urllib.error.URLError:
+        print("Calibration table could not be retrieved, likely due to website issues.")
+        return None
 
 
 @u.export
 def save_fors2_calib(output: str, fil: str = 'I_BESS', date_from: str = '2017-01-01', date_to: str = None):
-    """
-    Retrieves the full set of photometry parameters from the FORS2 quality control archive
+    """Retrieves the full set of photometry parameters from the FORS2 quality control archive
     (http://archive.eso.org/bin/qc1_cgi?action=qc1_browse_table&table=fors2_photometry), from date_from to date_to,
     formats them conveniently for numpy to read, and writes them to disk at the location given by output.
+
     :param output: The location on disk to which to write the file.
     :param fil: The filter for which the data is to be retrieved. Must be "I_BESS", "R_SPEC", "b_HIGH" or "v_HIGH".
     :param date_from: The date from which to begin.
@@ -706,6 +720,8 @@ def save_fors2_calib(output: str, fil: str = 'I_BESS', date_from: str = '2017-01
     """
     print(f"Updating ESO QC1 parameters for {fil} to {output}")
     string = retrieve_fors2_calib(fil=fil, date_from=date_from, date_to=date_to)
+    if string is None:
+        return string
     i = j = string.find('\n') + 1
     while string[j] == '-':
         j += 1
@@ -1106,14 +1122,18 @@ def login_des():
     Obtains an auth token using the username and password credentials for a given database.
     """
     # Login to obtain an auth token
-    r = requests.post(
-        f'{des_api_url}/login',
-        data={
-            'username': keys['des_user'],
-            'password': keys['des_pwd'],
-            'database': 'desdr'
-        }
-    )
+    try:
+        r = requests.post(
+            f'{des_api_url}/login',
+            data={
+                'username': keys['des_user'],
+                'password': keys['des_pwd'],
+                'database': 'desdr'
+            }
+        )
+    except requests.exceptions.SSLError:
+        print("DES login failed; server-side SSL error.")
+        return 'ERROR'
     # Store the JWT auth token
     try:
         js = r.json()
@@ -1121,7 +1141,7 @@ def login_des():
             raise PermissionError(js['message'])
         keys['des_auth_token'] = js['token']
     except JSONDecodeError:
-        print("Login failed; either credentials are invalid, or there was a server-side error; skipping DES tasks.")
+        print("DES login failed; either credentials are invalid, or there was a server-side error; skipping DES tasks.")
         return 'ERROR'
     return keys['des_auth_token']
 
@@ -1656,7 +1676,7 @@ def retrieve_mast_photometry(
         cat: str = "panstarrs1",
         data_release: int = None,
         table="stack",
-        radius: units.Quantity = 0.1 * units.deg
+        radius: units.Quantity = 1 * units.deg
 ):
     if data_release is None:
         data_release = default_data_release[cat]

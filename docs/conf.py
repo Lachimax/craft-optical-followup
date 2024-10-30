@@ -36,14 +36,22 @@ python_apigen_modules = {
     "craftutils.stats": "apigen/stats/",
     "craftutils.utils": "apigen/utils/",
     "craftutils.observation": "apigen/observation/",
+    "craftutils.observation.epoch": "apigen/observation/epoch/",
     "craftutils.observation.field": "apigen/observation/field/",
     "craftutils.observation.filters": "apigen/observation/filter/",
+    "craftutils.observation.generic": "apigen/observation/generic/",
     "craftutils.observation.image": "apigen/observation/image/",
     "craftutils.observation.instrument": "apigen/observation/instrument/",
     "craftutils.observation.log": "apigen/observation/log/",
     "craftutils.observation.objects": "apigen/observation/objects/",
     "craftutils.observation.survey": "apigen/observation/survey/",
     "craftutils.wrap.astrometry_net": "apigen/wrap/astrometry_net/",
+    "craftutils.wrap.esorex": "apigen/wrap/esorex/",
+    "craftutils.wrap.dragons": "apigen/wrap/dragons/",
+    "craftutils.wrap.galfit": "apigen/wrap/galfit/",
+    "craftutils.wrap.montage": "apigen/wrap/montage/",
+    "craftutils.wrap.psfex": "apigen/wrap/psfex/",
+    "craftutils.wrap.source_extractor": "apigen/wrap/source_extractor/",
 }
 
 python_apigen_default_groups = [
@@ -73,6 +81,7 @@ python_apigen_default_groups = [
     ("function:craftutils.observation.instrument.*", "Instrument functions"),
     ("class:craftutils.observation.filters.*", "Filter classes"),
     ("function:craftutils.observation.filters.*", "Filter functions"),
+    ("class:craftutils.observation.generic.*", "Generic classes"),
     ("class:craftutils.observation.log.*", "Log classes"),
     ("function:craftutils.observation.log.*", "Log functions"),
     ("class:craftutils.observation.objects.*", "Object classes"),
@@ -80,6 +89,7 @@ python_apigen_default_groups = [
     ("class:craftutils.observation.survey.*", "Survey classes"),
     ("function:craftutils.observation.survey.*", "Survey functions"),
     ("function:craftutils.wrap.astrometry_net.*", "Astrometry.net functions"),
+    ("function:craftutils.wrap.esorex.*", "Esorex functions"),
 ]
 
 # Create hyperlinks to other documentation
@@ -103,4 +113,7 @@ exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store']
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#options-for-html-output
 
 html_theme = 'sphinx_immaterial'
+html_theme_options = {
+    "toc_title_is_page_title": True
+}
 html_static_path = ['_static']
