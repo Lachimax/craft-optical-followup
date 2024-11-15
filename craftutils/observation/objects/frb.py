@@ -1239,7 +1239,7 @@ class FRB(ExtragalacticTransient):
             #     obj.load_output_file()
 
             # obj.select_deepest()
-            obj.position_photometry = None
+            # obj.position_photometry = None
 
             # print("\t\t Drawing position.")
 
@@ -1272,9 +1272,10 @@ class FRB(ExtragalacticTransient):
 
             halo_info["offset_angle"] = offset_angle = position_frb.separation(pos).to(units.arcsec)
 
-            halo_info["distance_angular_size"] = obj.angular_size_distance()
-            halo_info["distance_luminosity"] = obj.luminosity_distance()
-            halo_info["distance_comoving"] = obj.comoving_distance()
+            if not do_mc:
+                halo_info["distance_angular_size"] = obj.angular_size_distance()
+                halo_info["distance_luminosity"] = obj.luminosity_distance()
+                halo_info["distance_comoving"] = obj.comoving_distance()
             # if not do_mc:
             #     halo_info["offset_angle_err"] = offset_angle_err = np.sqrt(fg_pos_err ** 2 + frb_err_dec ** 2)
 
@@ -1314,7 +1315,6 @@ class FRB(ExtragalacticTransient):
             #     continue
             # print(fg_logm_star, "+", fg_logm_star_err_plus, "-", fg_logm_star_err_minus)
 
-            print("\t\tDrawing log(M_halo)")
             obj.halo_mass(relationship=smhm_relationship, do_mc=do_mc)
 
             halo_info["mass_halo"] = obj.mass_halo
@@ -1397,19 +1397,18 @@ class FRB(ExtragalacticTransient):
                     radius=halo_info["r_perp"]
                 )
 
-            m_low = 10 ** (np.floor(obj.log_mass_halo))
-            m_high = 10 ** (np.ceil(obj.log_mass_halo))
-            if m_low < 2e10:
-                m_high += 2e10 - m_low
-                m_low = 2e10
-
-            halo_info["mass_halo_partition_high"] = m_high * units.solMass
-            halo_info["mass_halo_partition_low"] = m_low * units.solMass
-
-            halo_info["log_mass_halo_partition_high"] = np.log10(m_high)
-            halo_info["log_mass_halo_partition_low"] = np.log10(m_low)
-
             if host.z is not None and do_incidence and not do_mc:
+                m_low = 10 ** (np.floor(obj.log_mass_halo))
+                m_high = 10 ** (np.ceil(obj.log_mass_halo))
+                if m_low < 2e10:
+                    m_high += 2e10 - m_low
+                    m_low = 2e10
+
+                halo_info["mass_halo_partition_high"] = m_high * units.solMass
+                halo_info["mass_halo_partition_low"] = m_low * units.solMass
+
+                halo_info["log_mass_halo_partition_high"] = np.log10(m_high)
+                halo_info["log_mass_halo_partition_low"] = np.log10(m_low)
                 halo_info["n_intersect_partition"] = halo_incidence(
                     Mlow=m_low,
                     Mhigh=m_high,

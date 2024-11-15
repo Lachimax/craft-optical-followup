@@ -1,4 +1,4 @@
-name: craft-optical-followup
+name: cof
 channels:
   - defaults
   - astropy

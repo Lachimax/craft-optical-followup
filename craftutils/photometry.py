@@ -7,7 +7,7 @@ from copy import deepcopy
 
 import numpy as np
 import photutils as ph
-from photutils.datasets import make_model_sources_image
+from photutils.datasets import make_model_image
 import matplotlib.pyplot as plt
 from scipy.ndimage import shift
 
@@ -1472,8 +1472,8 @@ def determine_zeropoint_sextractor(
 
 def single_aperture_photometry(
         data: np.ndarray,
-        aperture: ph.Aperture,
-        annulus: ph.Aperture,
+        aperture: ph.aperture.Aperture,
+        annulus: ph.aperture.Aperture,
         exp_time: float = 1.0,
         zeropoint: float = 0.0,
         extinction: float = 0.0,
@@ -1573,9 +1573,9 @@ def aperture_photometry(data: np.ndarray, x: float = None, y: float = None, fwhm
     positions = np.array([x, y]).transpose()
     if sky:
         coord = SkyCoord(ra=x, dec=y)
-        apertures = ph.SkyCircularAperture(positions=coord, r=r_ap)
+        apertures = ph.aperture.SkyCircularAperture(positions=coord, r=r_ap)
     else:
-        apertures = ph.CircularAperture(positions=positions, r=r_ap)
+        apertures = ph.aperture.CircularAperture(positions=positions, r=r_ap)
 
     # Calculate background median for each aperture using a concentric annulus.
     annuli = ph.CircularAnnulus(positions=positions, r_in=r_ann_in, r_out=r_ann_out)
@@ -2050,7 +2050,7 @@ def insert_synthetic_point_sources_gauss(
     sources['flux'] = u.dequantify(flux)
     print('Generating additive image...')
 
-    add = make_model_sources_image(shape=image.shape, model=gaussian_model, source_table=sources)
+    add = make_model_image(shape=image.shape, model=gaussian_model, params_table=sources)
     sources['x_inserted'] = sources['x_0']
     sources['y_inserted'] = sources['y_0']
     sources['flux_inserted'] = sources['flux']

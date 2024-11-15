@@ -977,7 +977,7 @@ def keys():
     else:
         raise FileNotFoundError(
             f"keys.json does not exist at param_path={param_dir}. "
-            f"Please make a copy from {os.path.join(get_project_path(), 'param', 'keys.json')}")
+            f"Please make a copy from {os.path.join(get_project_path(), 'craftutils', 'param', 'keys.json')}")
 
 
 def load_json(path: str):
