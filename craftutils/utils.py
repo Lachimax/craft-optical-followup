@@ -1201,7 +1201,7 @@ def uncertainty_string(
     value = float(dequantify(value, unit))
     if value in limit_vals or np.ma.is_masked(value) or np.isnan(value):
         return nan_string, value, uncertainty
-    if np.ma.is_masked(uncertainty):
+    if np.ma.is_masked(uncertainty) or np.isnan(uncertainty):
         uncertainty = 0.
 
     uncertainty = float(dequantify(uncertainty, unit))
@@ -1297,6 +1297,7 @@ def uncertainty_string(
         if float(value_str) == 0:
             value_str = "0"
         # print(uncertainty_str, oom + 1)
+
 
     oom = np.floor(np.log10(uncertainty_rnd))
 
@@ -1971,6 +1972,7 @@ def latexise_table(
     # Produce combined value(error) strings
     err_colnames = list(filter(lambda c: c.endswith(err_suffix), tbl.colnames))
     for err_col in err_colnames:
+        print(err_col)
         val_col = err_col[:-len(err_suffix)]
         if val_col in round_cols or val_col in exclude_from_unc:
             continue
@@ -2079,12 +2081,19 @@ def add_stats(
             sigma_dict[col] = np.round(np.nanstd(samp), round_n)
             # col_dict[col] =cxZ
             # print(col, ":\t\t", np.median(tbl[col]))
-        # elif col in cols_exclude and isinstance(tbl_[col][0], numbers.Number) or isinstance(tbl_[col][0], units.Quantity):
-        #     median_dict[col] = np.NaN
-        #     mean_dict[col] = np.NaN
-        #     max_dict[col] = np.NaN
-        #     min_dict[col] = np.NaN
-        #     sigma_dict[col] = np.NaN
+        elif col in cols_exclude:
+            if isinstance(tbl_[col][0], numbers.Number) or isinstance(tbl_[col][0], units.Quantity):
+                median_dict[col] = np.NaN
+                mean_dict[col] = np.NaN
+                max_dict[col] = np.NaN
+                min_dict[col] = np.NaN
+                sigma_dict[col] = np.NaN
+            # elif isinstance(tbl_[col][0], str):
+            #     median_dict[col] = "--"
+            #     mean_dict[col] = "--"
+            #     max_dict[col] = "--"
+            #     min_dict[col] = "--"
+            #     sigma_dict[col] = "--"
 
     tbl_.add_row(min_dict)
     tbl_.add_row(max_dict)
