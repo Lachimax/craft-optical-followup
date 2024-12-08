@@ -190,13 +190,14 @@ class Object(Generic):
 
     def surface_brightness_at_position(self, img):
         x, y = img.world_to_pixel(coord=self.position)
+        # self.position_err.
         x = int(x)
         y = int(y)
         pixels, err = img.surface_brightness()
-        p_xy = pixels[y, x]
-        err_xy = err[y, x]
-        ext = self.galactic_extinction(fil=img.filter) / units.arcsec ** 2
-        return p_xy - ext, err_xy
+        p_xy = float(pixels[y, x])
+        err_xy = float(err[y, x])
+        ext = float(self.galactic_extinction(fil=img.filter).value)
+        return (p_xy - ext) * units.mag / units.arcsec ** 2, err_xy * units.mag / units.arcsec ** 2
 
     def get_good_photometry(self):
 
