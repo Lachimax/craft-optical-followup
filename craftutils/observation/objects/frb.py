@@ -763,7 +763,7 @@ class FRB(ExtragalacticTransient):
                 raise ValueError(f"Supported halo models are {list(halo_models.keys())}, not {model}")
             else:
                 return self._dm_mw_halo(
-                    halo_model=halo_models[model](),
+                    halo_model=halo_models[model](**model_kwargs),
                     **kwargs
                 )
         else:
@@ -777,6 +777,7 @@ class FRB(ExtragalacticTransient):
             halo_model=None,
             distance: Union[units.Quantity, float] = 1.,
             zero_distance: units.Quantity = 10 * units.kpc,
+            **model_kwargs
     ):
         """
 
@@ -790,7 +791,7 @@ class FRB(ExtragalacticTransient):
         from ne2001 import density
         if halo_model is None:
             from frb.halos.models import MilkyWay
-            halo_model = MilkyWay()
+            halo_model = MilkyWay(**model_kwargs)
         if not isinstance(distance, units.Quantity):
             distance = halo_model.r200 * distance
         u.dequantify(distance, units.kpc)
