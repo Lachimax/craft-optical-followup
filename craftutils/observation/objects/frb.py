@@ -737,6 +737,7 @@ class FRB(ExtragalacticTransient):
     def dm_mw_halo(
             self,
             model: Union[str, "frb.halos.models.ModifiedNFW"] = "all",
+            model_kwargs: dict = {},
             **kwargs,
     ):
         import frb.halos.models as halos
