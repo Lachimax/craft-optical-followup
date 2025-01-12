@@ -487,6 +487,7 @@ params_b13 = {
 # Parameters from Kravtsov 2018
 params_k18 = {
     "M10": 11.35,
+    "epsilon_0": -1.618,
     "alpha_0": -1.779,
     "delta_0": 4.394,
     "gamma_0": 0.547
