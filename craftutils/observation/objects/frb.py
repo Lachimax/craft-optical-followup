@@ -743,6 +743,8 @@ class FRB(ExtragalacticTransient):
         import frb.halos.models as halos
         # from frb.mw import haloDM
 
+        print(kwargs)
+
         if isinstance(model, str):
             model = model.lower()
             halo_models = {
@@ -787,6 +789,8 @@ class FRB(ExtragalacticTransient):
         :param halo_model: Halo model to evaluate.
         :return:
         """
+
+        print(model_kwargs)
 
         from ne2001 import density
         if halo_model is None:
@@ -1065,6 +1069,8 @@ class FRB(ExtragalacticTransient):
         print("\t\tDM_MWISM_YMW16:", outputs["dm_ism_mw_ymw16"])
         print("\t\ttau_MWISM_YMW16:", outputs["tau_ism_mw_ymw16"])
 
+        outputs["dm_ism_mw_err"] = np.abs(outputs["dm_ism_mw_ne2001"] - outputs["dm_ism_mw_ymw16"])
+
         outputs["tau_ism_mw_c22"], outputs["tau_ism_mw_c22_err"] = self.tau_mw()
         print("\t\ttau_MWISM_C22:", outputs["tau_ism_mw_c22"], "+/-", outputs["tau_ism_mw_c22_err"])
 
@@ -1079,10 +1085,12 @@ class FRB(ExtragalacticTransient):
 
         print("\tDM_MW:")
         outputs["dm_mw"] = outputs["dm_halo_mw_pz19"] + outputs["dm_ism_mw_ne2001"]
+        outputs["dm_mw_err"] = outputs["dm_ism_mw_err"]
         print("\t", outputs["dm_mw"])
 
         print("DM_exgal:")
         outputs["dm_exgal"] = self.dm - outputs["dm_mw"]
+        outputs["dm_exgal_err"] = np.sqrt(self.dm_err**2 + outputs["dm_mw_err"]**2)
         print(outputs["dm_exgal"])
 
         if host.z is not None:
@@ -1257,8 +1265,13 @@ class FRB(ExtragalacticTransient):
                 "id": obj.name,
                 "z": obj.z,
                 "ra": pos.ra,
-                "dec": pos.dec
+                "dec": pos.dec,
             }
+
+            if not do_mc and load_objects:
+                obj.load_output_file()
+                props, _ = obj.assemble_row()
+                halo_info.update(props)
 
             if cat_search is not None:
                 # print("\t\t Searching catalogue.")
@@ -1320,7 +1333,9 @@ class FRB(ExtragalacticTransient):
             obj.halo_mass(relationship=smhm_relationship, do_mc=do_mc)
 
             halo_info["mass_halo"] = obj.mass_halo
+            # halo_info["mass_halo_err"] = obj.mass_halo_err
             halo_info["log_mass_halo"] = obj.log_mass_halo
+            halo_info["log_mass_halo_err"] = obj.log_mass_halo_err
 
             halo_info["h"] = obj.h()
             halo_info["c200"] = obj.halo_concentration_parameter()

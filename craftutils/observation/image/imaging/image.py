@@ -2747,8 +2747,7 @@ class ImagingImage(Image):
             frame: units.Quantity = 10 * units.pix,
     ):
         self.extract_pixel_scale()
-        u.debug_print(1, "ImagingImage.nice_frame(): row['KRON_RADIUS'], row['A_WORLD'] ==", row['KRON_RADIUS'],
-                      row['A_WORLD'].to(units.arcsec))
+        print(f"{row['KRON_RADIUS']=}, {row['A_WORLD']=}, {row['B_WORLD']=}")
         kron_a = row['KRON_RADIUS'] * row['A_WORLD']
         u.debug_print(1, "ImagingImage.nice_frame(): kron_a ==", kron_a)
         pix_scale = self.pixel_scale_y
