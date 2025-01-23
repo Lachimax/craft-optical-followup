@@ -2801,6 +2801,7 @@ class ImagingImage(Image):
             astm_crosshairs: bool = False,
             astm_kwargs={},
             save_kwargs={},
+            # rotate_to_north: bool = False,
             **kwargs,
     ) -> Tuple[plt.Figure, plt.Axes, dict]:
         if data == "image":
@@ -2927,6 +2928,15 @@ class ImagingImage(Image):
 
         if "cmap" not in imshow_kwargs and self.filter and self.filter.cmap:
             imshow_kwargs["cmap"] = self.filter.cmap
+        #
+        # if rotate_to_north:
+        #     from matplotlib.transforms import Affine2D
+        #     transform = Affine2D()
+        #     theta = self.extract_rotation_angle()
+        #     print(f"Rotating image by {theta}")
+        #     transform.rotate(-theta.to("radian").value)
+        # else:
+        #     transform = None
 
         mapping = ax.imshow(
             data,
@@ -2935,6 +2945,7 @@ class ImagingImage(Image):
                 **normalize_kwargs
             ),
             interpolation="none",
+            # transform=transform,
             **imshow_kwargs
         )
 

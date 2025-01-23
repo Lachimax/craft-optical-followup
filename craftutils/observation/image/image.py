@@ -36,7 +36,9 @@ quantity_support()
 instrument_header = {
     "FORS2": "vlt-fors2",
     "HAWKI": "vlt-hawki",
-    "PS1": "panstarrs1"
+    "PS1": "panstarrs1",
+    "WFC3_IR": "hst-wfc3_ir",
+    "WFC3_UVIS": "hst-wfc3_uvis",
 }
 
 active_images = {}
@@ -769,12 +771,15 @@ class Image:
         instrument = None
         i = 0
         # Will need to add cases to the below instruments as you deal with new instruments.
+
         while instrument is None and i < len(hdu_list):
-            header = hdu_list[i].header
-            if "INSTRUME" in header:
-                instrument = header["INSTRUME"]
-            elif "FPA.TELESCOPE" in header:
-                instrument = header["FPA.TELESCOPE"]
+            instrument = detect_instrument(path)
+            if instrument is None:
+                header = hdu_list[i].header
+                if "INSTRUME" in header:
+                    instrument = header["INSTRUME"]
+                elif "FPA.TELESCOPE" in header:
+                    instrument = header["FPA.TELESCOPE"]
             i += 1
 
         if instrument is None:
