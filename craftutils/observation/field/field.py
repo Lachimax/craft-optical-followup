@@ -1258,7 +1258,8 @@ class Field(Pipeline):
 
             dm = u.user_input(
                 "If you know the burst DM, please enter that now in units of pc / cm^3. Otherwise, leave blank.",
-                input_type=float
+                input_type=float,
+                default="0"
             )
             if dm in ["", " ", 'None']:
                 dm = 0 * dm_units

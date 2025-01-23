@@ -1609,7 +1609,7 @@ def user_input(message: str, input_type: type = str, default=None):
     print(message)
     while type(inp) is not input_type:
         inp = input()
-        if inp == "":
+        if inp == "" or inp is None:
             inp = default
         if type(inp) is not input_type:
             try:
