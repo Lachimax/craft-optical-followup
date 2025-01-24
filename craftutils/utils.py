@@ -1887,9 +1887,11 @@ def mod_latex_table(
             r"\end{landscape}" + "\n"
         )
 
+    print("Writing table to", path)
     with open(path, 'w') as f:
         f.writelines(file)
     if second_path is not None:
+        print("Writing table to", second_path)
         with open(second_path, 'w') as f:
             f.writelines(file)
     return file
@@ -1902,7 +1904,8 @@ def latexise_table(
         sub_colnames: dict = None,
         exclude_from_unc: list = (),
         round_cols: list = (),
-        round_digits: int = 1,
+        round_digits: float = 1,
+        round_dict: dict = None,
         ra_col: str = None,
         dec_col: str = None,
         ra_err_col: str = None,
@@ -1932,22 +1935,24 @@ def latexise_table(
         ra_strs = []
         dec_strs = []
         for row in tbl:
-            if row[ra_err_col] > 0:
-                ra_str, dec_str = uncertainty_str_coord(
-                    coord=SkyCoord(ra=row[ra_col], dec=row[dec_col], unit="deg"),
-                    uncertainty_ra=row[ra_err_col].to("arcsec"),
-                    uncertainty_dec=row[dec_err_col].to("arcsec"),
-                    **coord_kwargs
-                )
+            if ra_err_col in row and row[ra_err_col] > 0:
+                    ra_str, dec_str = uncertainty_str_coord(
+                        coord=SkyCoord(ra=row[ra_col], dec=row[dec_col], unit="deg"),
+                        uncertainty_ra=row[ra_err_col].to("arcsec"),
+                        uncertainty_dec=row[dec_err_col].to("arcsec"),
+                        **coord_kwargs
+                    )
             else:
-                ra_str = Longitude(row[ra_col]).to_string("h", format="latex")
-                dec_str = Latitude(row[dec_col]).to_string(format="latex")
+                ra_str = Longitude(row[ra_col]).to_string("h", format="latex", precision=round_digits)
+                dec_str = Latitude(row[dec_col]).to_string(format="latex", precision=round_digits)
             ra_strs.append(ra_str)
             dec_strs.append(dec_str)
         tbl[ra_col] = ra_strs
         tbl[dec_col] = dec_strs
-        tbl.remove_column(ra_err_col)
-        tbl.remove_column(dec_err_col)
+        if ra_err_col in tbl.colnames:
+            tbl.remove_column(ra_err_col)
+        if dec_err_col in tbl.colnames:
+            tbl.remove_column(dec_err_col)
 
     # Get rid of units
     def to_str(v):
@@ -1956,12 +1961,25 @@ def latexise_table(
         else:
             return str(v)
 
+    if round_dict is None:
+        round_dict = {}
+
+    round_cols = list(set(list(round_cols) + list(round_dict.keys())))
+
     for col in round_cols:
-        new_col = []
-        for row in tbl:
-            val = dequantify(row[col])
-            new_col.append(to_str(val.round(round_digits)))
-        tbl[col] = new_col
+        if col in tbl.colnames:
+            new_col = []
+            if col in round_dict:
+                round_digit = round_dict[col]
+            else:
+                round_digit = round_digits
+            for row in tbl:
+                val = dequantify(row[col])
+                val = np.round(val, round_digit)
+                if round_digit == 0:
+                    val = int(val)
+                new_col.append(to_str(val))
+            tbl[col] = new_col
 
     # Replace booleans with Y/N
     for col in tbl.colnames:
@@ -2039,7 +2057,7 @@ def latexise_table(
     # Add various other components to the .tex output
     if output_path is not None:
         tbl.write(output_path, format="ascii.latex", overwrite=True)
-        if set(kwargs.keys()).intersection({"caption", "short_caption", "label", "landscape"}):
+        if set(kwargs.keys()).intersection({"caption", "short_caption", "label", "landscape", "second_path"}):
             tbl = mod_latex_table(path=output_path, sub_colnames=under_list, **kwargs)
     return tbl
 
