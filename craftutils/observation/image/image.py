@@ -774,24 +774,25 @@ class Image:
 
         while instrument is None and i < len(hdu_list):
             instrument = detect_instrument(path)
+            # print("Detected instrument:", instrument)
             if instrument is None:
                 header = hdu_list[i].header
                 if "INSTRUME" in header:
                     instrument = header["INSTRUME"]
                 elif "FPA.TELESCOPE" in header:
                     instrument = header["FPA.TELESCOPE"]
-            i += 1
+                # print("Header instrument:", instrument)
 
+                if instrument in instrument_header:
+                    instrument = instrument_header[instrument]
+            i += 1
         if instrument is None:
-            print("Instrument could not be determined from header.")
+            # print("Instrument could not be determined from header.")
             child = ImagingImage
         else:
             # Look for standard instrument name in list
-            if instrument in instrument_header:
-                instrument = instrument_header[instrument]
-                child = cls.select_child_class(instrument_name=instrument, mode=mode)
-            else:
-                child = ImagingImage
+            child = cls.select_child_class(instrument_name=instrument, mode=mode)
+        # print("Selected class:", child)
         u.debug_print(2, "Image.from_fits(): instrument ==", instrument)
         img = child(path=path, instrument_name=instrument)
         img.instrument_name = instrument
