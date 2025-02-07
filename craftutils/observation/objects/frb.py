@@ -789,9 +789,6 @@ class FRB(ExtragalacticTransient):
         :param halo_model: Halo model to evaluate.
         :return:
         """
-
-        print(model_kwargs)
-
         from ne2001 import density
         if halo_model is None:
             from frb.halos.models import MilkyWay
@@ -1232,6 +1229,7 @@ class FRB(ExtragalacticTransient):
         dm_halo_cum = {}
         if not do_mc and cosmic_tbl is not None:
             cosmic_tbl["dm_halos_emp"] = cosmic_tbl["dm_halos_avg"] * 0
+            cosmic_tbl["dm_halos_emp_err"] = cosmic_tbl["dm_halos_emp"] * 1.
 
         if foreground_objects is None:
             foreground_objects = list(
