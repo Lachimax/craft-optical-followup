@@ -972,6 +972,7 @@ class FRB(ExtragalacticTransient):
             f,
             r_perp,
             nu: units.Quantity[units.MHz] = None,
+            dm_halo: units.Quantity[dm_units] = None,
             dm_kwargs: dict = {},
             a_t=1.,
     ):
@@ -982,6 +983,7 @@ class FRB(ExtragalacticTransient):
         :param f:
         :param r_perp:
         :param nu:
+        :param dm_halo: Should be in observer frame (will convert to lens frame).
         :param dm_kwargs:
         :param kwargs:
         :return:
@@ -993,10 +995,13 @@ class FRB(ExtragalacticTransient):
         d_sl = cosmology.angular_diameter_distance_z1z2(halo.z, self.z)
         d_lo = cosmology.angular_diameter_distance(halo.z)
         d_so = cosmology.angular_diameter_distance(self.z)
-        dm_halo = halo.Ne_Rperp(
-            r_perp,
-            **dm_kwargs
-        ).value / (1 + halo.z)
+        if dm_halo is None:
+            dm_halo = halo.Ne_Rperp(
+                r_perp,
+                **dm_kwargs
+            ).value
+
+        dm_halo /= (1 + halo.z)
 
         return u.tau_cosmological(
             a_t=a_t,
@@ -1413,6 +1418,7 @@ class FRB(ExtragalacticTransient):
                 )
 
             if host.z is not None and do_incidence and not do_mc:
+                print("\t\tCalculating intersection probabilities.")
                 m_low = 10 ** (np.floor(obj.log_mass_halo))
                 m_high = 10 ** (np.ceil(obj.log_mass_halo))
                 if m_low < 2e10:
@@ -1427,6 +1433,11 @@ class FRB(ExtragalacticTransient):
                 halo_info["n_intersect_partition"] = halo_incidence(
                     Mlow=m_low,
                     Mhigh=m_high,
+                    zFRB=host.z,
+                    radius=halo_info["r_perp"]
+                )
+                halo_info["n_intersect_greater"] = halo_incidence(
+                    Mlow=10 ** obj.log_mass_halo,
                     zFRB=host.z,
                     radius=halo_info["r_perp"]
                 )

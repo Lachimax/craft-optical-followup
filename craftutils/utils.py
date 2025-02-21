@@ -715,7 +715,9 @@ def inclination_table(
             row[cos_column] = inclination(axis_ratio=row[axis_ratio_column], q_0=q_0, uncos=False)
     return tbl
 
+
 dm_units = units.pc / (units.cm ** 3)
+
 
 def tau(
         a_t,
@@ -727,9 +729,18 @@ def tau(
     """
     Encodes equation 1 of Ocker+2021 (https://doi.org/10.3847/1538-4357/abeb6e)
     """
-    f = check_quantity(f, units.pc ** -(2/3) * units.km ** (-1/3)).value
+    f = check_quantity(f, units.pc ** -(2 / 3) * units.km ** (-1 / 3)).value
 
-    return (48.03 * units.ns * a_t * f * g_scatt * (dm / dm_units) ** 2 / (nu / units.GHz) ** 4).to("ms")
+    return f * tau_on_f(a_t=a_t, nu=nu, g_scatt=g_scatt, dm=dm)
+
+
+def tau_on_f(
+        a_t,
+        dm,
+        nu,
+        g_scatt,
+):
+    return (48.03 * units.ns * a_t * g_scatt * (dm / dm_units) ** 2 / (nu / units.GHz) ** 4).to("ms")
 
 
 def tau_cosmological(
@@ -748,7 +759,7 @@ def tau_cosmological(
     """
 
     g_scatt = d_sl * d_lo / (l * d_so)
-    return tau(a_t=a_t,f=f,dm=dm, g_scatt=g_scatt, nu=nu) / ((1 + z_l) ** 3)
+    return tau(a_t=a_t, f=f, dm=dm, g_scatt=g_scatt, nu=nu) / ((1 + z_l) ** 3)
 
 
 def deprojected_offset(
@@ -1297,7 +1308,6 @@ def uncertainty_string(
         if float(value_str) == 0:
             value_str = "0"
         # print(uncertainty_str, oom + 1)
-
 
     oom = np.floor(np.log10(uncertainty_rnd))
 
@@ -1936,12 +1946,12 @@ def latexise_table(
         dec_strs = []
         for row in tbl:
             if ra_err_col in row and row[ra_err_col] > 0:
-                    ra_str, dec_str = uncertainty_str_coord(
-                        coord=SkyCoord(ra=row[ra_col], dec=row[dec_col], unit="deg"),
-                        uncertainty_ra=row[ra_err_col].to("arcsec"),
-                        uncertainty_dec=row[dec_err_col].to("arcsec"),
-                        **coord_kwargs
-                    )
+                ra_str, dec_str = uncertainty_str_coord(
+                    coord=SkyCoord(ra=row[ra_col], dec=row[dec_col], unit="deg"),
+                    uncertainty_ra=row[ra_err_col].to("arcsec"),
+                    uncertainty_dec=row[dec_err_col].to("arcsec"),
+                    **coord_kwargs
+                )
             else:
                 ra_str = Longitude(row[ra_col]).to_string("h", format="latex", precision=round_digits)
                 dec_str = Latitude(row[dec_col]).to_string(format="latex", precision=round_digits)
