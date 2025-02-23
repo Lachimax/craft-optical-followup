@@ -1000,8 +1000,11 @@ class FRB(ExtragalacticTransient):
                 r_perp,
                 **dm_kwargs
             ).value
+        else:
+            dm_halo *= (1 + halo.z)
 
-            dm_halo /= (1 + halo.z)
+        l = 2 * np.sqrt(halo.r200**2 - r_perp**2)
+        print(f"\tL={l}")
 
         return u.tau_cosmological(
             a_t=a_t,
@@ -1012,7 +1015,7 @@ class FRB(ExtragalacticTransient):
             d_sl=d_sl,
             d_lo=d_lo,
             d_so=d_so,
-            l=2 * np.sqrt(halo.r200**2 - r_perp**2)
+            l=l
         )
 
     def z_from_dm(

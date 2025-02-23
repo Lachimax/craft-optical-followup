@@ -729,7 +729,7 @@ def tau(
     """
     Encodes equation 1 of Ocker+2021 (https://doi.org/10.3847/1538-4357/abeb6e)
     """
-    f = check_quantity(f, units.pc ** -(2 / 3) * units.km ** (-1 / 3)).value
+    f = check_quantity(f, (units.pc ** 2 * units.km) ** -(1 / 3)).value
 
     return f * tau_on_f(a_t=a_t, nu=nu, g_scatt=g_scatt, dm=dm)
 
@@ -741,6 +741,17 @@ def tau_on_f(
         g_scatt,
 ):
     return (48.03 * units.ns * a_t * g_scatt * (dm / dm_units) ** 2 / (nu / units.GHz) ** 4).to("ms")
+
+
+def g_scatt(
+        d_sl,
+        d_lo,
+        d_so,
+        l
+):
+    if d_lo == d_so:
+        return 1.
+    return (2 * d_sl * d_lo / (l * d_so)).decompose()
 
 
 def tau_cosmological(
@@ -755,12 +766,13 @@ def tau_cosmological(
         l
 ):
     """
-    Encodes equation 2 of Ocker+2021 (https://doi.org/10.3847/1538-4357/abeb6e)
+    Encodes equation 12 of Faber+2024 (https://arxiv.org/abs/2405.14182v1)
     """
 
-    g_scatt = d_sl * d_lo / (l * d_so)
-    nu = nu * (1 + z_l)
-    return tau(a_t=a_t, f=f, dm=dm, g_scatt=g_scatt, nu=nu) / ((1 + z_l) ** 3)
+    g = g_scatt(d_sl=d_sl, d_lo=d_lo, d_so=d_so, l=l)
+    print(f"\t{g=}")
+    # nu = nu * (1 + z_l)
+    return tau(a_t=a_t, f=f, dm=dm, g_scatt=g, nu=nu) / ((1 + z_l) ** 3)
 
 
 def deprojected_offset(
