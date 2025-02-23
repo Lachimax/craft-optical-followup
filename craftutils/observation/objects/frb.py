@@ -929,7 +929,7 @@ class FRB(ExtragalacticTransient):
         dm = self.dm_mw_ism_ne2001()
         nu = self.nu_scattering
 
-        tau_dm_mw = 1.9 * 10e-7 * units.ms * (nu / units.GHz) ** x_tau * (dm / dm_units) ** 1.5 * (
+        tau_dm_mw = 1.9 * 10e-7 * units.ms * (nu / units.GHz) ** -x_tau * (dm / dm_units) ** 1.5 * (
                 1 + 3.55e-5 * (dm / dm_units) ** 3)
         tau_dm_mw = tau_dm_mw.to(units.ms)
 
@@ -1001,7 +1001,7 @@ class FRB(ExtragalacticTransient):
                 **dm_kwargs
             ).value
 
-        dm_halo /= (1 + halo.z)
+            dm_halo /= (1 + halo.z)
 
         return u.tau_cosmological(
             a_t=a_t,

@@ -759,6 +759,7 @@ def tau_cosmological(
     """
 
     g_scatt = d_sl * d_lo / (l * d_so)
+    nu = nu * (1 + z_l)
     return tau(a_t=a_t, f=f, dm=dm, g_scatt=g_scatt, nu=nu) / ((1 + z_l) ** 3)
 
 
