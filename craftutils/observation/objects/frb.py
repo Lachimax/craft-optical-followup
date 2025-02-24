@@ -975,6 +975,7 @@ class FRB(ExtragalacticTransient):
             dm_halo: units.Quantity[dm_units] = None,
             dm_kwargs: dict = {},
             a_t=1.,
+            rmax: float = 1.,
     ):
         """
         Encodes equation 2 of Ocker+2021 (https://doi.org/10.3847/1538-4357/abeb6e)
@@ -1003,7 +1004,7 @@ class FRB(ExtragalacticTransient):
         else:
             dm_halo *= (1 + halo.z)
 
-        l = 2 * np.sqrt(halo.r200**2 - r_perp**2)
+        l = 2 * np.sqrt(rmax * halo.r200**2 - r_perp**2)
         print(f"\tL={l}")
 
         return u.tau_cosmological(
@@ -1017,6 +1018,8 @@ class FRB(ExtragalacticTransient):
             d_so=d_so,
             l=l
         )
+
+
 
     def z_from_dm(
             self,
@@ -1382,6 +1385,9 @@ class FRB(ExtragalacticTransient):
                 rmax=rmax,
                 step_size=step_size_halo
             ) / (1 + obj.z)
+            halo_info["path_length"] = 2 * np.sqrt(rmax * mnfw.r200**2 - offset**2)
+            if np.isnan(halo_info["path_length"]):
+                halo_info["path_length"] = 0 * units.kpc
 
             if not skip_other_models:
                 halo_info["dm_halo_yf17"] = yf17.Ne_Rperp(
