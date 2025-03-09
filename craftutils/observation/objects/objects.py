@@ -144,7 +144,11 @@ class Object(Generic):
         return self.name
 
     def __repr__(self):
-        return f"{str(type(self))} {self.name} at {self.position.to_string('hmsdms')}"
+        if self.position is not None:
+            position = self.position.to_string('hmsdms')
+        else:
+            position = self.position
+        return f"{str(type(self))} {self.name} at {position=}"
 
     def set_name(self, name: str = None):
         if name is None:
