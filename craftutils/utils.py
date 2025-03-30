@@ -1211,6 +1211,7 @@ def round_decimals_up(number: float, decimals: int = 2):
 def uncertainty_string(
         value: Union[float, units.Quantity],
         uncertainty: Union[float, units.Quantity],
+        uncertainty_minus: Union[float, units.Quantity] = None,
         n_digits_err: int = 1,
         n_digits_no_err: int = 1,
         n_digits_lim: int = None,
@@ -1221,19 +1222,98 @@ def uncertainty_string(
         nan_string: str = "--",
         include_uncertainty: bool = True
 ):
+    if uncertainty_minus is None or brackets:
+        value_str, value_rnd, uncertainty_rnd = _uncertainty_string(
+            value=value,
+            uncertainty=uncertainty,
+            n_digits_err=n_digits_err,
+            n_digits_no_err=n_digits_no_err,
+            n_digits_lim=n_digits_lim,
+            unit=unit,
+            brackets=brackets,
+            limit_val=limit_val,
+            limit_type=limit_type,
+            nan_string=nan_string,
+            include_uncertainty=include_uncertainty
+        )
+        return value_str, value_rnd, uncertainty_rnd
+    else:
+        value_str, value_rnd_plus, uncertainty_rnd_plus = _uncertainty_string(
+            value=value,
+            uncertainty=uncertainty,
+            n_digits_err=n_digits_err,
+            n_digits_no_err=n_digits_no_err,
+            n_digits_lim=n_digits_lim,
+            unit=unit,
+            brackets=brackets,
+            limit_val=limit_val,
+            limit_type=limit_type,
+            nan_string=nan_string,
+            include_uncertainty=False
+        )
+        uncertainty_str_plus, value_rnd_plus, uncertainty_rnd_plus = _uncertainty_string(
+            value=value,
+            uncertainty=uncertainty,
+            n_digits_err=n_digits_err,
+            n_digits_no_err=n_digits_no_err,
+            n_digits_lim=n_digits_lim,
+            unit=unit,
+            brackets=brackets,
+            limit_val=limit_val,
+            limit_type=limit_type,
+            nan_string=nan_string,
+            include_value=False
+        )
+        uncertainty_str_minus, value_rnd_minus, uncertainty_rnd_minus  = _uncertainty_string(
+            value=value,
+            uncertainty=uncertainty_minus,
+            n_digits_err=n_digits_err,
+            n_digits_no_err=n_digits_no_err,
+            n_digits_lim=n_digits_lim,
+            unit=unit,
+            brackets=brackets,
+            limit_val=limit_val,
+            limit_type=limit_type,
+            nan_string=nan_string,
+            include_value=False
+        )
+        if uncertainty_str_plus == uncertainty_str_minus:
+            final_str = f"${value_str}\\ \pm {uncertainty_str_plus}$"
+        else:
+            final_str = f"${value_str}^{{+{uncertainty_str_plus}}}_{{-{uncertainty_str_minus}}}$"
+        return final_str, value_rnd_plus, uncertainty_rnd_minus
+
+
+
+
+
+def _uncertainty_string(
+        value: Union[float, units.Quantity],
+        uncertainty: Union[float, units.Quantity],
+        n_digits_err: int = 1,
+        n_digits_no_err: int = 1,
+        n_digits_lim: int = None,
+        unit: units.Unit = None,
+        brackets: bool = True,
+        limit_val: int = None,
+        limit_type: str = "upper",
+        nan_string: str = "--",
+        include_uncertainty: bool = True,
+        include_value: bool = True
+):
     limit_vals = (limit_val, -99, -999, -999.)
     value = float(dequantify(value, unit))
-    if value in limit_vals or np.ma.is_masked(value) or not np.isfinite(value):
-        return nan_string, value, uncertainty
-    if np.ma.is_masked(uncertainty) or np.isnan(uncertainty):
-        uncertainty = 0.
-
-    uncertainty = float(dequantify(uncertainty, unit))
 
     if limit_type == "upper":
         limit_char = "<"
     else:
         limit_char = ">"
+
+    if value in limit_vals or np.ma.is_masked(value) or not np.isfinite(value):
+        return nan_string, value, uncertainty
+    if np.ma.is_masked(uncertainty) or np.isnan(uncertainty):
+        uncertainty = 0.
+    uncertainty = np.abs(float(dequantify(uncertainty, unit)))
 
     value_str = str(value)
     uncertainty_str = str(abs(uncertainty))
@@ -1326,6 +1406,8 @@ def uncertainty_string(
 
     if not include_uncertainty:
         value_str = value_str
+    elif not include_value:
+        value_str = uncertainty_str
     elif brackets:
         if uncertainty_rnd < 1.:
             # print(uncertainty_str)
@@ -2011,10 +2093,14 @@ def latexise_table(
             tbl[col] = [yn[b] for b in tbl[col]]
 
     # Produce combined value(error) strings
-    err_colnames = list(filter(lambda c: c.endswith(err_suffix), tbl.colnames))
+    err_colnames = list(
+        filter(
+            lambda c: c.endswith(err_suffix) or c.endswith(err_suffix + "_plus"),
+            tbl.colnames
+        )
+    )
     for err_col in err_colnames:
-        print(err_col)
-        val_col = err_col[:-len(err_suffix)]
+        val_col = err_col[:err_col.find(err_suffix)]
         if val_col in round_cols or val_col in exclude_from_unc:
             continue
         # print(colname, do_err_str, err_col, err_col in tbl.colnames)
@@ -2030,15 +2116,22 @@ def latexise_table(
         uncertainty_kwargs = default_unc_kwargs
         for row in tbl:
             # print(val_col, row[val_col])
+            if err_col.endswith("_plus"):
+                uncertainty_minus = row[err_col.replace("_plus", "_minus")]
+            else:
+                uncertainty_minus = None
             this_str, value, uncertainty = uncertainty_string(
                 value=row[val_col],
                 uncertainty=row[err_col],
+                uncertainty_minus=uncertainty_minus,
                 **uncertainty_kwargs
             )
             new_col.append(this_str)
 
         tbl[val_col] = new_col
         tbl.remove_column(err_col)
+        if err_col.replace("_plus", "_minus") in tbl.colnames:
+            tbl.remove_column(err_col.replace("_plus", "_minus"))
 
     val_cols = list(filter(lambda c: type(tbl[c][0]) in (int, float, np.float_), tbl.colnames))
 
