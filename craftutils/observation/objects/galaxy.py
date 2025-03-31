@@ -251,8 +251,11 @@ class Galaxy(Extragalactic):
         pass
 
     def halo_concentration_parameter(self):
-        if self.log_mass_halo is None:
-            self.halo_mass()
+        if self.mass_halo is None:
+            if self.log_mass_halo is None:
+                self.halo_mass()
+            else:
+                self.mass_halo = units.solMass * 10 ** self.log_mass_halo
         c = 4.67 * (self.mass_halo / (10 ** 14 * self.h() ** -1 * units.solMass)) ** (-0.11)
         return float(c)
 
