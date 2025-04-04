@@ -1313,7 +1313,7 @@ def _uncertainty_string(
         return nan_string, value, uncertainty
     if np.ma.is_masked(uncertainty) or np.isnan(uncertainty):
         uncertainty = 0.
-    uncertainty = np.abs(float(dequantify(uncertainty, unit)))
+    uncertainty = float(dequantify(uncertainty, unit))
 
     value_str = str(value)
     uncertainty_str = str(abs(uncertainty))
@@ -1335,6 +1335,8 @@ def _uncertainty_string(
             value_str = value_str[:n_digits_lim] + "0" * x
 
         return f"${limit_char} {value_str}$", value, uncertainty
+
+    uncertainty = np.abs(uncertainty)
 
     def deal_with_e(string, val):
         if "e" in string:
@@ -1926,11 +1928,16 @@ def mod_latex_table(
         landscape: bool = False,
         sub_colnames: list = None,
         second_path: str = None,
-        multicolumn=None
+        multicolumn=None,
+        lines_bracket: bool = True,
 ):
     with open(path, 'r') as f:
         file = f.readlines()
     tab_invoc = file[1]
+
+    if lines_bracket:
+        file[2] = r"\hline " + file[2]
+
     if coltypes is not None:
         tab_invoc = r"\begin{tabular}{" + coltypes + "}\n"
         file[1] = tab_invoc
@@ -1945,7 +1952,7 @@ def mod_latex_table(
         under_col_str += r"\\ \hline" + "\n"
         file.insert(3, under_col_str)
     else:
-        file[2] = file[2].replace("\n", r"\hline" + "\n")
+        file[2] = file[2].replace("\n", r" \hline" + "\n")
 
     if multicolumn is not None:
         multicol_str = ""
@@ -1991,6 +1998,9 @@ def mod_latex_table(
         file.append(
             r"\end{landscape}" + "\n"
         )
+
+    if lines_bracket:
+        file[-3] = file[-3].replace("\n", r"\hline" + "\n")
 
     print("Writing table to", path)
     with open(path, 'w') as f:

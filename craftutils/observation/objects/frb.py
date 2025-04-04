@@ -482,7 +482,13 @@ class FRB(ExtragalacticTransient):
                     if p_u not in self.host_candidate_tables:
                         self.host_candidate_tables[p_u] = {}
                     tables = outputs["host_candidate_tables"][p_u]
+                    # if isinstance(tables, str):
+                    #     key = tables.split("/")[-1]
+                    #     key = key.replace("PATH_table_", "")
+                    #
+                    #     tables = {}
                     for table_name in tables:
+                        print(table_name, tables)
                         tbl_path = tables[table_name]
                         tbl_path = p.join_data_dir(tbl_path)
                         if os.path.isfile(tbl_path):
