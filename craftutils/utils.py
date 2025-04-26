@@ -1278,7 +1278,7 @@ def uncertainty_string(
             include_value=False
         )
         if uncertainty_str_plus == uncertainty_str_minus:
-            final_str = f"${value_str}\\ \pm {uncertainty_str_plus}$"
+            final_str = f"${value_str} \pm {uncertainty_str_plus}$"
         else:
             final_str = f"${value_str}^{{+{uncertainty_str_plus}}}_{{-{uncertainty_str_minus}}}$"
         return final_str, value_rnd_plus, uncertainty_rnd_minus
@@ -1927,6 +1927,7 @@ def mod_latex_table(
         coltypes: str = None,
         landscape: bool = False,
         sub_colnames: list = None,
+        positioning: str = "t",
         second_path: str = None,
         multicolumn=None,
         lines_bracket: bool = True,
@@ -1935,8 +1936,14 @@ def mod_latex_table(
         file = f.readlines()
     tab_invoc = file[1]
 
+    if positioning is not None:
+        file[0] = f"\\begin{{table}}[{positioning}]\n"
+
+    top = 1
+
     if lines_bracket:
         file[2] = r"\hline " + file[2]
+        top += 1
 
     if coltypes is not None:
         tab_invoc = r"\begin{tabular}{" + coltypes + "}\n"
@@ -1959,7 +1966,7 @@ def mod_latex_table(
         for t in multicolumn:
             multicol_str += r"\multicolumn{" + str(t[0]) + "}{" + str(t[1]) + "}{" + str(t[2]) + "} & "
         multicol_str = multicol_str[:-2] + "\\\\ \n"
-        file.insert(2, multicol_str)
+        file.insert(top, multicol_str)
 
     if label is not None:
         if not label.startswith("tab:"):
