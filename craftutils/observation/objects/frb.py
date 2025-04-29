@@ -928,6 +928,7 @@ class FRB(ExtragalacticTransient):
         """
         Implements Equation 8 of
         Cordes et al 2022 (https://www.doi.org/10.3847/1538-4357/ac6873)
+        Which was derived from
 
         :param x_tau:
         :return:
@@ -1500,6 +1501,7 @@ class FRB(ExtragalacticTransient):
         outputs["halo_dm_cum"] = dm_halo_cum
 
         if do_mc:
+            # This stops the values that get assigned as object parameters from drifting
             self.field.gather_objects()
 
         return outputs, halo_tbl

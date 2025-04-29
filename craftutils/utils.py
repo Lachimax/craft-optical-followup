@@ -573,7 +573,7 @@ def directory_of(path: str):
 
 
 def uncertainty_product(value, *args: tuple):
-    """Each arg should be a tuple, in which the first entry is the measurement and the second entry is the uncertainty in
+    """Each arg should be a tuple (valu,e uncertainty), in which the first entry is the measurement and the second entry is the uncertainty in
     that measurement. These may be in the form of numpy arrays or table columns.
     """
     if None in args:
@@ -1264,7 +1264,7 @@ def uncertainty_string(
             nan_string=nan_string,
             include_value=False
         )
-        uncertainty_str_minus, value_rnd_minus, uncertainty_rnd_minus  = _uncertainty_string(
+        uncertainty_str_minus, value_rnd_minus, uncertainty_rnd_minus = _uncertainty_string(
             value=value,
             uncertainty=uncertainty_minus,
             n_digits_err=n_digits_err,
@@ -1284,7 +1284,18 @@ def uncertainty_string(
         return final_str, value_rnd_plus, uncertainty_rnd_minus
 
 
-
+def deal_with_e(string, val, precision: int = 2):
+    if "e" in string:
+        val = units.Quantity(val)
+        string = val.to_string(precision=precision)
+        return string
+        # if abs(val) < 1:
+        #     m = -int(np.log10(val) - 1)
+        # else:
+        #     m = 10
+        # return f"{val:.{m}f}"
+    else:
+        return string
 
 
 def _uncertainty_string(
@@ -1337,16 +1348,6 @@ def _uncertainty_string(
         return f"${limit_char} {value_str}$", value, uncertainty
 
     uncertainty = np.abs(uncertainty)
-
-    def deal_with_e(string, val):
-        if "e" in string:
-            if abs(val) < 1:
-                m = -int(np.log10(val) - 1)
-            else:
-                m = 10
-            return f"{val:.{m}f}"
-        else:
-            return string
 
     uncertainty_str = deal_with_e(uncertainty_str, uncertainty)
 
@@ -2077,11 +2078,15 @@ def latexise_table(
             tbl.remove_column(dec_err_col)
 
     # Get rid of units
-    def to_str(v):
+    def to_str(v, round_digit):
         if v in (None, -999., -99.) or not np.isfinite(v):
             return "--"
         else:
-            return str(v)
+            # v = deal_with_e(str(v), v, precision=round_digits)
+            v = dequantify(row[col])
+            v = units.Quantity(v)
+            string = v.to_string(precision=round_digit, format="latex")
+            return string
 
     if round_dict is None:
         round_dict = {}
@@ -2096,11 +2101,11 @@ def latexise_table(
             else:
                 round_digit = round_digits
             for row in tbl:
-                val = dequantify(row[col])
-                val = np.round(val, round_digit)
-                if round_digit == 0:
-                    val = int(val)
-                new_col.append(to_str(val))
+                # val = np.round(val, round_digit)
+                # if round_digit == 0:
+                #     val = int(val)
+                # new_col.append(to_str(val))
+                new_col.append(to_str(row[col], round_digit))
             tbl[col] = new_col
 
     # Replace booleans with Y/N
