@@ -2078,15 +2078,19 @@ def latexise_table(
             tbl.remove_column(dec_err_col)
 
     # Get rid of units
-    def to_str(v, round_digit):
+    def to_str(v, rd=None):
         if v in (None, -999., -99.) or not np.isfinite(v):
-            return "--"
-        else:
+            string = "--"
+        v = dequantify(row[col])
+        if v < 0 and rd is not None:
             # v = deal_with_e(str(v), v, precision=round_digits)
-            v = dequantify(row[col])
             v = units.Quantity(v)
-            string = v.to_string(precision=round_digit, format="latex")
-            return string
+            string = v.to_string(precision=rd, format="latex")
+        elif rd is not None:
+            string = str(np.round(v,rd))
+        else:
+            string = str(v)
+        return string
 
     if round_dict is None:
         round_dict = {}

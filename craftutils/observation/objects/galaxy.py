@@ -564,7 +564,7 @@ def halomass_from_stellarmass_b13(
     :return:
     """
 
-    default_kwargs = params_k18.copy()
+    default_kwargs = params_b13.copy()
     default_kwargs.update(kwargs)
 
     try:
