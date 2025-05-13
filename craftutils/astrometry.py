@@ -311,12 +311,13 @@ def match_catalogs(
 
     idx = idx[keep]
     matches_2 = cat_2[keep]
+    distance = distance[keep]
+    matches_2["distance"] = distance.to("arcsec")
     if keep_non_matches:
         n_matches = len(matches_2)
         matches_2 = table.vstack([matches_2, cat_2[np.invert(keep)]])
         matches_2["matched"] = np.zeros(len(matches_2), dtype=bool)
         matches_2["matched"][:n_matches] = True
-    distance = distance[keep]
 
     matches_1 = cat_1[idx]
 
