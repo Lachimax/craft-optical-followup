@@ -2313,3 +2313,14 @@ def latex_command_file(command_dict: dict, output_path: str = None) -> list:
         with open(output_path, "w") as f:
             f.writelines(lines)
     return lines
+
+from astropy import constants
+
+def dm_delay(
+        dm: units.Quantity[dm_units],
+        nu_upper: units.Quantity[units.Hz],
+        nu_lower: units.Quantity[units.Hz],
+):
+    prefactor = dm * (constants.e.gauss ** 2) / (2 * np.pi * constants.m_e * constants.c)
+    t_delay = prefactor * ((1 / nu_lower ** 2) - (1 / nu_upper ** 2))
+    return t_delay.to("ms")
