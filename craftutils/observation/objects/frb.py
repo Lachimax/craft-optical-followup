@@ -482,7 +482,13 @@ class FRB(ExtragalacticTransient):
                     if p_u not in self.host_candidate_tables:
                         self.host_candidate_tables[p_u] = {}
                     tables = outputs["host_candidate_tables"][p_u]
+                    # if isinstance(tables, str):
+                    #     key = tables.split("/")[-1]
+                    #     key = key.replace("PATH_table_", "")
+                    #
+                    #     tables = {}
                     for table_name in tables:
+                        print(table_name, tables)
                         tbl_path = tables[table_name]
                         tbl_path = p.join_data_dir(tbl_path)
                         if os.path.isfile(tbl_path):
@@ -737,10 +743,13 @@ class FRB(ExtragalacticTransient):
     def dm_mw_halo(
             self,
             model: Union[str, "frb.halos.models.ModifiedNFW"] = "all",
+            model_kwargs: dict = {},
             **kwargs,
     ):
         import frb.halos.models as halos
         # from frb.mw import haloDM
+
+        print(kwargs)
 
         if isinstance(model, str):
             model = model.lower()
@@ -762,7 +771,7 @@ class FRB(ExtragalacticTransient):
                 raise ValueError(f"Supported halo models are {list(halo_models.keys())}, not {model}")
             else:
                 return self._dm_mw_halo(
-                    halo_model=halo_models[model](),
+                    halo_model=halo_models[model](**model_kwargs),
                     **kwargs
                 )
         else:
@@ -776,6 +785,7 @@ class FRB(ExtragalacticTransient):
             halo_model=None,
             distance: Union[units.Quantity, float] = 1.,
             zero_distance: units.Quantity = 10 * units.kpc,
+            **model_kwargs
     ):
         """
 
@@ -785,11 +795,10 @@ class FRB(ExtragalacticTransient):
         :param halo_model: Halo model to evaluate.
         :return:
         """
-
         from ne2001 import density
         if halo_model is None:
             from frb.halos.models import MilkyWay
-            halo_model = MilkyWay()
+            halo_model = MilkyWay(**model_kwargs)
         if not isinstance(distance, units.Quantity):
             distance = halo_model.r200 * distance
         u.dequantify(distance, units.kpc)
@@ -919,6 +928,7 @@ class FRB(ExtragalacticTransient):
         """
         Implements Equation 8 of
         Cordes et al 2022 (https://www.doi.org/10.3847/1538-4357/ac6873)
+        Which was derived from
 
         :param x_tau:
         :return:
@@ -926,7 +936,7 @@ class FRB(ExtragalacticTransient):
         dm = self.dm_mw_ism_ne2001()
         nu = self.nu_scattering
 
-        tau_dm_mw = 1.9 * 10e-7 * units.ms * (nu / units.GHz) ** x_tau * (dm / dm_units) ** 1.5 * (
+        tau_dm_mw = 1.9 * 10e-7 * units.ms * (nu / units.GHz) ** -x_tau * (dm / dm_units) ** 1.5 * (
                 1 + 3.55e-5 * (dm / dm_units) ** 3)
         tau_dm_mw = tau_dm_mw.to(units.ms)
 
@@ -938,7 +948,7 @@ class FRB(ExtragalacticTransient):
 
     def tau_mw_halo(
             self,
-            f=0.03 * units.pc ** -(2/3) * units.km ** (-1/3),
+            f=0.03 * units.pc ** -(2 / 3) * units.km ** (-1 / 3),
             a_t=1.,
             nu: units.Quantity[units.MHz] = None,
             dm_mw_halo=40 * dm_units
@@ -959,7 +969,7 @@ class FRB(ExtragalacticTransient):
             a_t=a_t,
             f=f,
             nu=nu,
-            g_scatt=1, # For observer embedded in the medium and source distance >> l,
+            g_scatt=1,  # For observer embedded in the medium and source distance >> l,
             dm=dm_mw_halo
         )
 
@@ -969,8 +979,10 @@ class FRB(ExtragalacticTransient):
             f,
             r_perp,
             nu: units.Quantity[units.MHz] = None,
+            dm_halo: units.Quantity[dm_units] = None,
             dm_kwargs: dict = {},
             a_t=1.,
+            rmax: float = 1.,
     ):
         """
         Encodes equation 2 of Ocker+2021 (https://doi.org/10.3847/1538-4357/abeb6e)
@@ -979,6 +991,7 @@ class FRB(ExtragalacticTransient):
         :param f:
         :param r_perp:
         :param nu:
+        :param dm_halo: Should be in observer frame (will convert to lens frame).
         :param dm_kwargs:
         :param kwargs:
         :return:
@@ -990,10 +1003,16 @@ class FRB(ExtragalacticTransient):
         d_sl = cosmology.angular_diameter_distance_z1z2(halo.z, self.z)
         d_lo = cosmology.angular_diameter_distance(halo.z)
         d_so = cosmology.angular_diameter_distance(self.z)
-        dm_halo = halo.Ne_Rperp(
-            r_perp,
-            **dm_kwargs
-        ).value / (1 + halo.z)
+        if dm_halo is None:
+            dm_halo = halo.Ne_Rperp(
+                r_perp,
+                **dm_kwargs
+            ).value
+        else:
+            dm_halo *= (1 + halo.z)
+
+        l = 2 * np.sqrt(rmax * halo.r200 ** 2 - r_perp ** 2)
+        print(f"\tL={l}")
 
         return u.tau_cosmological(
             a_t=a_t,
@@ -1004,7 +1023,7 @@ class FRB(ExtragalacticTransient):
             d_sl=d_sl,
             d_lo=d_lo,
             d_so=d_so,
-            l=2 * np.sqrt(halo.r200**2 - r_perp**2)
+            l=l
         )
 
     def z_from_dm(
@@ -1063,6 +1082,8 @@ class FRB(ExtragalacticTransient):
         print("\t\tDM_MWISM_YMW16:", outputs["dm_ism_mw_ymw16"])
         print("\t\ttau_MWISM_YMW16:", outputs["tau_ism_mw_ymw16"])
 
+        outputs["dm_ism_mw_err"] = np.abs(outputs["dm_ism_mw_ne2001"] - outputs["dm_ism_mw_ymw16"])
+
         outputs["tau_ism_mw_c22"], outputs["tau_ism_mw_c22_err"] = self.tau_mw()
         print("\t\ttau_MWISM_C22:", outputs["tau_ism_mw_c22"], "+/-", outputs["tau_ism_mw_c22_err"])
 
@@ -1077,10 +1098,12 @@ class FRB(ExtragalacticTransient):
 
         print("\tDM_MW:")
         outputs["dm_mw"] = outputs["dm_halo_mw_pz19"] + outputs["dm_ism_mw_ne2001"]
+        outputs["dm_mw_err"] = outputs["dm_ism_mw_err"]
         print("\t", outputs["dm_mw"])
 
         print("DM_exgal:")
         outputs["dm_exgal"] = self.dm - outputs["dm_mw"]
+        outputs["dm_exgal_err"] = np.sqrt(self.dm_err ** 2 + outputs["dm_mw_err"] ** 2)
         print(outputs["dm_exgal"])
 
         if host.z is not None:
@@ -1222,6 +1245,7 @@ class FRB(ExtragalacticTransient):
         dm_halo_cum = {}
         if not do_mc and cosmic_tbl is not None:
             cosmic_tbl["dm_halos_emp"] = cosmic_tbl["dm_halos_avg"] * 0
+            cosmic_tbl["dm_halos_emp_err"] = cosmic_tbl["dm_halos_emp"] * 1.
 
         if foreground_objects is None:
             foreground_objects = list(
@@ -1239,7 +1263,7 @@ class FRB(ExtragalacticTransient):
             #     obj.load_output_file()
 
             # obj.select_deepest()
-            obj.position_photometry = None
+            # obj.position_photometry = None
 
             # print("\t\t Drawing position.")
 
@@ -1255,8 +1279,13 @@ class FRB(ExtragalacticTransient):
                 "id": obj.name,
                 "z": obj.z,
                 "ra": pos.ra,
-                "dec": pos.dec
+                "dec": pos.dec,
             }
+
+            if not do_mc and load_objects:
+                obj.load_output_file()
+                props, _ = obj.assemble_row()
+                halo_info.update(props)
 
             if cat_search is not None:
                 # print("\t\t Searching catalogue.")
@@ -1272,9 +1301,10 @@ class FRB(ExtragalacticTransient):
 
             halo_info["offset_angle"] = offset_angle = position_frb.separation(pos).to(units.arcsec)
 
-            halo_info["distance_angular_size"] = obj.angular_size_distance()
-            halo_info["distance_luminosity"] = obj.luminosity_distance()
-            halo_info["distance_comoving"] = obj.comoving_distance()
+            if not do_mc:
+                halo_info["distance_angular_size"] = obj.angular_size_distance()
+                halo_info["distance_luminosity"] = obj.luminosity_distance()
+                halo_info["distance_comoving"] = obj.comoving_distance()
             # if not do_mc:
             #     halo_info["offset_angle_err"] = offset_angle_err = np.sqrt(fg_pos_err ** 2 + frb_err_dec ** 2)
 
@@ -1317,7 +1347,9 @@ class FRB(ExtragalacticTransient):
             obj.halo_mass(relationship=smhm_relationship, do_mc=do_mc)
 
             halo_info["mass_halo"] = obj.mass_halo
+            # halo_info["mass_halo_err"] = obj.mass_halo_err
             halo_info["log_mass_halo"] = obj.log_mass_halo
+            halo_info["log_mass_halo_err"] = obj.log_mass_halo_err
 
             halo_info["h"] = obj.h()
             halo_info["c200"] = obj.halo_concentration_parameter()
@@ -1358,6 +1390,9 @@ class FRB(ExtragalacticTransient):
                 rmax=rmax,
                 step_size=step_size_halo
             ) / (1 + obj.z)
+            halo_info["path_length"] = 2 * np.sqrt(rmax * mnfw.r200 ** 2 - offset ** 2)
+            if np.isnan(halo_info["path_length"]):
+                halo_info["path_length"] = 0 * units.kpc
 
             if not skip_other_models:
                 halo_info["dm_halo_yf17"] = yf17.Ne_Rperp(
@@ -1380,6 +1415,7 @@ class FRB(ExtragalacticTransient):
             if obj.name.startswith("HG"):
                 halo_info["dm_halo"] = dm_halo_host = dm_halo / 2
                 halo_info["id_short"] = "HG"
+                halo_info["path_length"] /= 2
             else:
                 halo_info["id_short"] = obj.name[:obj.name.find("_")]
 
@@ -1390,28 +1426,27 @@ class FRB(ExtragalacticTransient):
             halo_inform.append(halo_info)
 
             if host.z is not None and do_incidence and not do_mc:
-                halo_info["n_intersect_greater"] = halo_incidence(
-                    Mlow=obj.mass_halo.value,
-                    zFRB=host.z,
-                    radius=halo_info["r_perp"]
-                )
 
-            m_low = 10 ** (np.floor(obj.log_mass_halo))
-            m_high = 10 ** (np.ceil(obj.log_mass_halo))
-            if m_low < 2e10:
-                m_high += 2e10 - m_low
-                m_low = 2e10
+                print("\t\tCalculating intersection probabilities.")
+                m_low = 10 ** (np.floor(obj.log_mass_halo))
+                m_high = 10 ** (np.ceil(obj.log_mass_halo))
+                if m_low < 2e10:
+                    m_high += 2e10 - m_low
+                    m_low = 2e10
 
-            halo_info["mass_halo_partition_high"] = m_high * units.solMass
-            halo_info["mass_halo_partition_low"] = m_low * units.solMass
+                halo_info["mass_halo_partition_high"] = m_high * units.solMass
+                halo_info["mass_halo_partition_low"] = m_low * units.solMass
 
-            halo_info["log_mass_halo_partition_high"] = np.log10(m_high)
-            halo_info["log_mass_halo_partition_low"] = np.log10(m_low)
-
-            if host.z is not None and do_incidence and not do_mc:
+                halo_info["log_mass_halo_partition_high"] = np.log10(m_high)
+                halo_info["log_mass_halo_partition_low"] = np.log10(m_low)
                 halo_info["n_intersect_partition"] = halo_incidence(
                     Mlow=m_low,
                     Mhigh=m_high,
+                    zFRB=host.z,
+                    radius=halo_info["r_perp"]
+                )
+                halo_info["n_intersect_greater"] = halo_incidence(
+                    Mlow=10 ** obj.log_mass_halo,
                     zFRB=host.z,
                     radius=halo_info["r_perp"]
                 )
@@ -1466,6 +1501,7 @@ class FRB(ExtragalacticTransient):
         outputs["halo_dm_cum"] = dm_halo_cum
 
         if do_mc:
+            # This stops the values that get assigned as object parameters from drifting
             self.field.gather_objects()
 
         return outputs, halo_tbl

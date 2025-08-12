@@ -39,6 +39,7 @@ quantity_support()
 textwidths = {
     "MNRAS": 7.03,
     "mqthesis": 6.1,
+    "mqthesis_sideways": 9.67897,
     "PASA": 7.13
 }
 

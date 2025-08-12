@@ -419,14 +419,18 @@ class Field(Pipeline):
             obj_params = list(
                 filter(lambda f: f.endswith(".yaml") and not f.endswith("backup.yaml") and not f == "None.yaml", os.listdir(obj_path)))
             obj_params.sort()
+            if not quiet:
+                print("\tFound:", obj_params)
+
             for obj_param in obj_params:
                 obj_name = obj_param[:obj_param.find(".yaml")]
+
                 param_path = os.path.join(obj_path, obj_param)
                 obj_dict = p.load_params(file=param_path)
                 obj_dict["param_path"] = param_path
                 if "name" not in obj_dict:
                     obj_dict["name"] = obj_name
-                self.add_object_from_dict(obj_dict=obj_dict)
+                self.add_object_from_dict(obj_dict=obj_dict, quiet=quiet)
 
     def _gather_epochs(
             self,
@@ -985,9 +989,11 @@ class Field(Pipeline):
         if name in self.objects:
             obj = self.objects.pop(name)
 
-    def add_object_from_dict(self, obj_dict: dict):
+    def add_object_from_dict(self, obj_dict: dict, quiet: bool = True):
         obj_dict["field"] = self
         obj = objects.Object.from_dict(obj_dict)
+        if not quiet:
+            print(obj)
         self.add_object(obj=obj)
         return obj
 
@@ -1258,7 +1264,8 @@ class Field(Pipeline):
 
             dm = u.user_input(
                 "If you know the burst DM, please enter that now in units of pc / cm^3. Otherwise, leave blank.",
-                input_type=float
+                input_type=float,
+                default="0"
             )
             if dm in ["", " ", 'None']:
                 dm = 0 * dm_units

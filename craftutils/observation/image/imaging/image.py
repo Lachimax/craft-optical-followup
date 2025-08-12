@@ -2747,8 +2747,7 @@ class ImagingImage(Image):
             frame: units.Quantity = 10 * units.pix,
     ):
         self.extract_pixel_scale()
-        u.debug_print(1, "ImagingImage.nice_frame(): row['KRON_RADIUS'], row['A_WORLD'] ==", row['KRON_RADIUS'],
-                      row['A_WORLD'].to(units.arcsec))
+        print(f"{row['KRON_RADIUS']=}, {row['A_WORLD']=}, {row['B_WORLD']=}")
         kron_a = row['KRON_RADIUS'] * row['A_WORLD']
         u.debug_print(1, "ImagingImage.nice_frame(): kron_a ==", kron_a)
         pix_scale = self.pixel_scale_y
@@ -2802,6 +2801,7 @@ class ImagingImage(Image):
             astm_crosshairs: bool = False,
             astm_kwargs={},
             save_kwargs={},
+            # rotate_to_north: bool = False,
             **kwargs,
     ) -> Tuple[plt.Figure, plt.Axes, dict]:
         if data == "image":
@@ -2928,6 +2928,15 @@ class ImagingImage(Image):
 
         if "cmap" not in imshow_kwargs and self.filter and self.filter.cmap:
             imshow_kwargs["cmap"] = self.filter.cmap
+        #
+        # if rotate_to_north:
+        #     from matplotlib.transforms import Affine2D
+        #     transform = Affine2D()
+        #     theta = self.extract_rotation_angle()
+        #     print(f"Rotating image by {theta}")
+        #     transform.rotate(-theta.to("radian").value)
+        # else:
+        #     transform = None
 
         mapping = ax.imshow(
             data,
@@ -2936,6 +2945,7 @@ class ImagingImage(Image):
                 **normalize_kwargs
             ),
             interpolation="none",
+            # transform=transform,
             **imshow_kwargs
         )
 

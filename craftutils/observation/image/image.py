@@ -36,7 +36,9 @@ quantity_support()
 instrument_header = {
     "FORS2": "vlt-fors2",
     "HAWKI": "vlt-hawki",
-    "PS1": "panstarrs1"
+    "PS1": "panstarrs1",
+    "WFC3_IR": "hst-wfc3_ir",
+    "WFC3_UVIS": "hst-wfc3_uvis",
 }
 
 active_images = {}
@@ -769,24 +771,28 @@ class Image:
         instrument = None
         i = 0
         # Will need to add cases to the below instruments as you deal with new instruments.
-        while instrument is None and i < len(hdu_list):
-            header = hdu_list[i].header
-            if "INSTRUME" in header:
-                instrument = header["INSTRUME"]
-            elif "FPA.TELESCOPE" in header:
-                instrument = header["FPA.TELESCOPE"]
-            i += 1
 
+        while instrument is None and i < len(hdu_list):
+            instrument = detect_instrument(path)
+            # print("Detected instrument:", instrument)
+            if instrument is None:
+                header = hdu_list[i].header
+                if "INSTRUME" in header:
+                    instrument = header["INSTRUME"]
+                elif "FPA.TELESCOPE" in header:
+                    instrument = header["FPA.TELESCOPE"]
+                # print("Header instrument:", instrument)
+
+                if instrument in instrument_header:
+                    instrument = instrument_header[instrument]
+            i += 1
         if instrument is None:
-            print("Instrument could not be determined from header.")
+            # print("Instrument could not be determined from header.")
             child = ImagingImage
         else:
             # Look for standard instrument name in list
-            if instrument in instrument_header:
-                instrument = instrument_header[instrument]
-                child = cls.select_child_class(instrument_name=instrument, mode=mode)
-            else:
-                child = ImagingImage
+            child = cls.select_child_class(instrument_name=instrument, mode=mode)
+        # print("Selected class:", child)
         u.debug_print(2, "Image.from_fits(): instrument ==", instrument)
         img = child(path=path, instrument_name=instrument)
         img.instrument_name = instrument
