@@ -276,16 +276,20 @@ class Field(Pipeline):
         self.load_imaging()
         # Build a list of (filters, instruments) using all available epochs
         all_filters = list(map(lambda i: (i["filter"], i["instrument"]), self.imaging.values()))
+        print(f"all_filters: {all_filters}")
         # Use a set to cull it to unique values
         fil_list = list(set(all_filters))
+        print(f"fil_list: {fil_list}")
         # Filter (no pun intended) out unwanted instruments
         if instrument is not None:
             fil_list = list(filter(lambda f, i: i["instrument"] == instrument, fil_list))
+        print(f"fil_list: {fil_list}")
         # Build a list of Filter objects from the strings
         fil_list_2 = []
         for fil, instr in fil_list:
             fil = filters.Filter.from_params(filter_name=fil, instrument_name=instr)
             fil_list_2.append(fil)
+        print(f"fil_list_2: {fil_list_2}")
         return fil_list_2
 
     def deepest_in_band(
@@ -924,6 +928,7 @@ class Field(Pipeline):
 
     def load_imaging(self, instrument: str = None):
         filter_list = []
+        print(f"{self.imaging=}")
         for img_name, img_dict in self.imaging.items():
             if instrument is not None and instrument != img_dict["instrument"]:
                 continue

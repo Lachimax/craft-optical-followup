@@ -198,8 +198,8 @@ class Object(Generic):
         x = int(x)
         y = int(y)
         pixels, err = img.surface_brightness()
-        p_xy = float(pixels[y, x])
-        err_xy = float(err[y, x])
+        p_xy = float(pixels[y, x].value)
+        err_xy = float(err[y, x].value)
         ext = float(self.galactic_extinction(fil=img.filter).value)
         return (p_xy - ext) * units.mag / units.arcsec ** 2, err_xy * units.mag / units.arcsec ** 2
 
