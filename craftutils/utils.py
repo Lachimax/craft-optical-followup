@@ -2081,7 +2081,7 @@ def latexise_table(
     def to_str(v, rd=None):
         if v in (None, -999., -99.) or not np.isfinite(v):
             string = "--"
-        v = dequantify(row[col])
+        v = dequantify(v)
         if v < 0 and rd is not None:
             # v = deal_with_e(str(v), v, precision=round_digits)
             v = units.Quantity(v)
