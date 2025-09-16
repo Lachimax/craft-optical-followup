@@ -573,7 +573,7 @@ def directory_of(path: str):
 
 
 def uncertainty_product(value, *args: tuple):
-    """Each arg should be a tuple, in which the first entry is the measurement and the second entry is the uncertainty in
+    """Each arg should be a tuple (valu,e uncertainty), in which the first entry is the measurement and the second entry is the uncertainty in
     that measurement. These may be in the form of numpy arrays or table columns.
     """
     if None in args:
@@ -715,7 +715,9 @@ def inclination_table(
             row[cos_column] = inclination(axis_ratio=row[axis_ratio_column], q_0=q_0, uncos=False)
     return tbl
 
+
 dm_units = units.pc / (units.cm ** 3)
+
 
 def tau(
         a_t,
@@ -727,9 +729,29 @@ def tau(
     """
     Encodes equation 1 of Ocker+2021 (https://doi.org/10.3847/1538-4357/abeb6e)
     """
-    f = check_quantity(f, units.pc ** -(2/3) * units.km ** (-1/3)).value
+    f = check_quantity(f, (units.pc ** 2 * units.km) ** -(1 / 3)).value
 
-    return (48.03 * units.ns * a_t * f * g_scatt * (dm / dm_units) ** 2 / (nu / units.GHz) ** 4).to("ms")
+    return f * tau_on_f(a_t=a_t, nu=nu, g_scatt=g_scatt, dm=dm)
+
+
+def tau_on_f(
+        a_t,
+        dm,
+        nu,
+        g_scatt,
+):
+    return (48.03 * units.ns * a_t * g_scatt * (dm / dm_units) ** 2 / (nu / units.GHz) ** 4).to("ms")
+
+
+def g_scatt(
+        d_sl,
+        d_lo,
+        d_so,
+        l
+):
+    if d_lo == d_so:
+        return 1.
+    return (2 * d_sl * d_lo / (l * d_so)).decompose()
 
 
 def tau_cosmological(
@@ -744,11 +766,13 @@ def tau_cosmological(
         l
 ):
     """
-    Encodes equation 2 of Ocker+2021 (https://doi.org/10.3847/1538-4357/abeb6e)
+    Encodes equation 12 of Faber+2024 (https://arxiv.org/abs/2405.14182v1)
     """
 
-    g_scatt = d_sl * d_lo / (l * d_so)
-    return tau(a_t=a_t,f=f,dm=dm, g_scatt=g_scatt, nu=nu) / ((1 + z_l) ** 3)
+    g = g_scatt(d_sl=d_sl, d_lo=d_lo, d_so=d_so, l=l)
+    print(f"\t{g=}")
+    # nu = nu * (1 + z_l)
+    return tau(a_t=a_t, f=f, dm=dm, g_scatt=g, nu=nu) / ((1 + z_l) ** 3)
 
 
 def deprojected_offset(
@@ -1187,6 +1211,7 @@ def round_decimals_up(number: float, decimals: int = 2):
 def uncertainty_string(
         value: Union[float, units.Quantity],
         uncertainty: Union[float, units.Quantity],
+        uncertainty_minus: Union[float, units.Quantity] = None,
         n_digits_err: int = 1,
         n_digits_no_err: int = 1,
         n_digits_lim: int = None,
@@ -1197,19 +1222,109 @@ def uncertainty_string(
         nan_string: str = "--",
         include_uncertainty: bool = True
 ):
+    if uncertainty_minus is None or brackets:
+        value_str, value_rnd, uncertainty_rnd = _uncertainty_string(
+            value=value,
+            uncertainty=uncertainty,
+            n_digits_err=n_digits_err,
+            n_digits_no_err=n_digits_no_err,
+            n_digits_lim=n_digits_lim,
+            unit=unit,
+            brackets=brackets,
+            limit_val=limit_val,
+            limit_type=limit_type,
+            nan_string=nan_string,
+            include_uncertainty=include_uncertainty
+        )
+        return value_str, value_rnd, uncertainty_rnd
+    else:
+        value_str, value_rnd_plus, uncertainty_rnd_plus = _uncertainty_string(
+            value=value,
+            uncertainty=uncertainty,
+            n_digits_err=n_digits_err,
+            n_digits_no_err=n_digits_no_err,
+            n_digits_lim=n_digits_lim,
+            unit=unit,
+            brackets=brackets,
+            limit_val=limit_val,
+            limit_type=limit_type,
+            nan_string=nan_string,
+            include_uncertainty=False
+        )
+        uncertainty_str_plus, value_rnd_plus, uncertainty_rnd_plus = _uncertainty_string(
+            value=value,
+            uncertainty=uncertainty,
+            n_digits_err=n_digits_err,
+            n_digits_no_err=n_digits_no_err,
+            n_digits_lim=n_digits_lim,
+            unit=unit,
+            brackets=brackets,
+            limit_val=limit_val,
+            limit_type=limit_type,
+            nan_string=nan_string,
+            include_value=False
+        )
+        uncertainty_str_minus, value_rnd_minus, uncertainty_rnd_minus = _uncertainty_string(
+            value=value,
+            uncertainty=uncertainty_minus,
+            n_digits_err=n_digits_err,
+            n_digits_no_err=n_digits_no_err,
+            n_digits_lim=n_digits_lim,
+            unit=unit,
+            brackets=brackets,
+            limit_val=limit_val,
+            limit_type=limit_type,
+            nan_string=nan_string,
+            include_value=False
+        )
+        if uncertainty_str_plus == uncertainty_str_minus:
+            final_str = f"${value_str} \pm {uncertainty_str_plus}$"
+        else:
+            final_str = f"${value_str}^{{+{uncertainty_str_plus}}}_{{-{uncertainty_str_minus}}}$"
+        return final_str, value_rnd_plus, uncertainty_rnd_minus
+
+
+def deal_with_e(string, val, precision: int = 2):
+    if "e" in string:
+        val = units.Quantity(val)
+        string = val.to_string(precision=precision)
+        return string
+        # if abs(val) < 1:
+        #     m = -int(np.log10(val) - 1)
+        # else:
+        #     m = 10
+        # return f"{val:.{m}f}"
+    else:
+        return string
+
+
+def _uncertainty_string(
+        value: Union[float, units.Quantity],
+        uncertainty: Union[float, units.Quantity],
+        n_digits_err: int = 1,
+        n_digits_no_err: int = 1,
+        n_digits_lim: int = None,
+        unit: units.Unit = None,
+        brackets: bool = True,
+        limit_val: int = None,
+        limit_type: str = "upper",
+        nan_string: str = "--",
+        include_uncertainty: bool = True,
+        include_value: bool = True
+):
     limit_vals = (limit_val, -99, -999, -999.)
     value = float(dequantify(value, unit))
-    if value in limit_vals or np.ma.is_masked(value) or np.isnan(value):
-        return nan_string, value, uncertainty
-    if np.ma.is_masked(uncertainty):
-        uncertainty = 0.
-
-    uncertainty = float(dequantify(uncertainty, unit))
 
     if limit_type == "upper":
         limit_char = "<"
     else:
         limit_char = ">"
+
+    if value in limit_vals or np.ma.is_masked(value) or not np.isfinite(value):
+        return nan_string, value, uncertainty
+    if np.ma.is_masked(uncertainty) or np.isnan(uncertainty):
+        uncertainty = 0.
+    uncertainty = float(dequantify(uncertainty, unit))
 
     value_str = str(value)
     uncertainty_str = str(abs(uncertainty))
@@ -1232,15 +1347,7 @@ def uncertainty_string(
 
         return f"${limit_char} {value_str}$", value, uncertainty
 
-    def deal_with_e(string, val):
-        if "e" in string:
-            if abs(val) < 1:
-                m = -int(np.log10(val) - 1)
-            else:
-                m = 10
-            return f"{val:.{m}f}"
-        else:
-            return string
+    uncertainty = np.abs(uncertainty)
 
     uncertainty_str = deal_with_e(uncertainty_str, uncertainty)
 
@@ -1302,6 +1409,8 @@ def uncertainty_string(
 
     if not include_uncertainty:
         value_str = value_str
+    elif not include_value:
+        value_str = uncertainty_str
     elif brackets:
         if uncertainty_rnd < 1.:
             # print(uncertainty_str)
@@ -1608,7 +1717,7 @@ def user_input(message: str, input_type: type = str, default=None):
     print(message)
     while type(inp) is not input_type:
         inp = input()
-        if inp == "":
+        if inp == "" or inp is None:
             inp = default
         if type(inp) is not input_type:
             try:
@@ -1819,12 +1928,24 @@ def mod_latex_table(
         coltypes: str = None,
         landscape: bool = False,
         sub_colnames: list = None,
+        positioning: str = "t",
         second_path: str = None,
-        multicolumn=None
+        multicolumn=None,
+        lines_bracket: bool = True,
 ):
     with open(path, 'r') as f:
         file = f.readlines()
     tab_invoc = file[1]
+
+    if positioning is not None:
+        file[0] = f"\\begin{{table}}[{positioning}]\n"
+
+    top = 1
+
+    if lines_bracket:
+        file[2] = r"\hline " + file[2]
+        top += 1
+
     if coltypes is not None:
         tab_invoc = r"\begin{tabular}{" + coltypes + "}\n"
         file[1] = tab_invoc
@@ -1839,14 +1960,14 @@ def mod_latex_table(
         under_col_str += r"\\ \hline" + "\n"
         file.insert(3, under_col_str)
     else:
-        file[2] = file[2].replace("\n", r"\hline" + "\n")
+        file[2] = file[2].replace("\n", r" \hline" + "\n")
 
     if multicolumn is not None:
         multicol_str = ""
         for t in multicolumn:
             multicol_str += r"\multicolumn{" + str(t[0]) + "}{" + str(t[1]) + "}{" + str(t[2]) + "} & "
         multicol_str = multicol_str[:-2] + "\\\\ \n"
-        file.insert(2, multicol_str)
+        file.insert(top, multicol_str)
 
     if label is not None:
         if not label.startswith("tab:"):
@@ -1886,9 +2007,14 @@ def mod_latex_table(
             r"\end{landscape}" + "\n"
         )
 
+    if lines_bracket:
+        file[-3] = file[-3].replace("\n", r"\hline" + "\n")
+
+    print("Writing table to", path)
     with open(path, 'w') as f:
         f.writelines(file)
     if second_path is not None:
+        print("Writing table to", second_path)
         with open(second_path, 'w') as f:
             f.writelines(file)
     return file
@@ -1901,7 +2027,8 @@ def latexise_table(
         sub_colnames: dict = None,
         exclude_from_unc: list = (),
         round_cols: list = (),
-        round_digits: int = 1,
+        round_digits: float = 1,
+        round_dict: dict = None,
         ra_col: str = None,
         dec_col: str = None,
         ra_err_col: str = None,
@@ -1931,7 +2058,7 @@ def latexise_table(
         ra_strs = []
         dec_strs = []
         for row in tbl:
-            if row[ra_err_col] > 0:
+            if ra_err_col in row and row[ra_err_col] > 0:
                 ra_str, dec_str = uncertainty_str_coord(
                     coord=SkyCoord(ra=row[ra_col], dec=row[dec_col], unit="deg"),
                     uncertainty_ra=row[ra_err_col].to("arcsec"),
@@ -1939,28 +2066,51 @@ def latexise_table(
                     **coord_kwargs
                 )
             else:
-                ra_str = Longitude(row[ra_col]).to_string("h", format="latex")
-                dec_str = Latitude(row[dec_col]).to_string(format="latex")
+                ra_str = Longitude(row[ra_col]).to_string("h", format="latex", precision=round_digits)
+                dec_str = Latitude(row[dec_col]).to_string(format="latex", precision=round_digits)
             ra_strs.append(ra_str)
             dec_strs.append(dec_str)
         tbl[ra_col] = ra_strs
         tbl[dec_col] = dec_strs
-        tbl.remove_column(ra_err_col)
-        tbl.remove_column(dec_err_col)
+        if ra_err_col in tbl.colnames:
+            tbl.remove_column(ra_err_col)
+        if dec_err_col in tbl.colnames:
+            tbl.remove_column(dec_err_col)
 
     # Get rid of units
-    def to_str(v):
+    def to_str(v, rd=None):
         if v in (None, -999., -99.) or not np.isfinite(v):
-            return "--"
+            string = "--"
+        v = dequantify(v)
+        if v < 0 and rd is not None:
+            # v = deal_with_e(str(v), v, precision=round_digits)
+            v = units.Quantity(v)
+            string = v.to_string(precision=rd, format="latex")
+        elif rd is not None:
+            string = str(np.round(v,rd))
         else:
-            return str(v)
+            string = str(v)
+        return string
+
+    if round_dict is None:
+        round_dict = {}
+
+    round_cols = list(set(list(round_cols) + list(round_dict.keys())))
 
     for col in round_cols:
-        new_col = []
-        for row in tbl:
-            val = dequantify(row[col])
-            new_col.append(to_str(val.round(round_digits)))
-        tbl[col] = new_col
+        if col in tbl.colnames:
+            new_col = []
+            if col in round_dict:
+                round_digit = round_dict[col]
+            else:
+                round_digit = round_digits
+            for row in tbl:
+                # val = np.round(val, round_digit)
+                # if round_digit == 0:
+                #     val = int(val)
+                # new_col.append(to_str(val))
+                new_col.append(to_str(row[col], round_digit))
+            tbl[col] = new_col
 
     # Replace booleans with Y/N
     for col in tbl.colnames:
@@ -1969,9 +2119,14 @@ def latexise_table(
             tbl[col] = [yn[b] for b in tbl[col]]
 
     # Produce combined value(error) strings
-    err_colnames = list(filter(lambda c: c.endswith(err_suffix), tbl.colnames))
+    err_colnames = list(
+        filter(
+            lambda c: c.endswith(err_suffix) or c.endswith(err_suffix + "_plus"),
+            tbl.colnames
+        )
+    )
     for err_col in err_colnames:
-        val_col = err_col[:-len(err_suffix)]
+        val_col = err_col[:err_col.find(err_suffix)]
         if val_col in round_cols or val_col in exclude_from_unc:
             continue
         # print(colname, do_err_str, err_col, err_col in tbl.colnames)
@@ -1987,15 +2142,22 @@ def latexise_table(
         uncertainty_kwargs = default_unc_kwargs
         for row in tbl:
             # print(val_col, row[val_col])
+            if err_col.endswith("_plus"):
+                uncertainty_minus = row[err_col.replace("_plus", "_minus")]
+            else:
+                uncertainty_minus = None
             this_str, value, uncertainty = uncertainty_string(
                 value=row[val_col],
                 uncertainty=row[err_col],
+                uncertainty_minus=uncertainty_minus,
                 **uncertainty_kwargs
             )
             new_col.append(this_str)
 
         tbl[val_col] = new_col
         tbl.remove_column(err_col)
+        if err_col.replace("_plus", "_minus") in tbl.colnames:
+            tbl.remove_column(err_col.replace("_plus", "_minus"))
 
     val_cols = list(filter(lambda c: type(tbl[c][0]) in (int, float, np.float_), tbl.colnames))
 
@@ -2037,7 +2199,7 @@ def latexise_table(
     # Add various other components to the .tex output
     if output_path is not None:
         tbl.write(output_path, format="ascii.latex", overwrite=True)
-        if set(kwargs.keys()).intersection({"caption", "short_caption", "label", "landscape"}):
+        if set(kwargs.keys()).intersection({"caption", "short_caption", "label", "landscape", "second_path"}):
             tbl = mod_latex_table(path=output_path, sub_colnames=under_list, **kwargs)
     return tbl
 
@@ -2079,12 +2241,19 @@ def add_stats(
             sigma_dict[col] = np.round(np.nanstd(samp), round_n)
             # col_dict[col] =cxZ
             # print(col, ":\t\t", np.median(tbl[col]))
-        # elif col in cols_exclude and isinstance(tbl_[col][0], numbers.Number) or isinstance(tbl_[col][0], units.Quantity):
-        #     median_dict[col] = np.NaN
-        #     mean_dict[col] = np.NaN
-        #     max_dict[col] = np.NaN
-        #     min_dict[col] = np.NaN
-        #     sigma_dict[col] = np.NaN
+        elif col in cols_exclude:
+            if isinstance(tbl_[col][0], numbers.Number) or isinstance(tbl_[col][0], units.Quantity):
+                median_dict[col] = np.NaN
+                mean_dict[col] = np.NaN
+                max_dict[col] = np.NaN
+                min_dict[col] = np.NaN
+                sigma_dict[col] = np.NaN
+            # elif isinstance(tbl_[col][0], str):
+            #     median_dict[col] = "--"
+            #     mean_dict[col] = "--"
+            #     max_dict[col] = "--"
+            #     min_dict[col] = "--"
+            #     sigma_dict[col] = "--"
 
     tbl_.add_row(min_dict)
     tbl_.add_row(max_dict)
@@ -2144,3 +2313,14 @@ def latex_command_file(command_dict: dict, output_path: str = None) -> list:
         with open(output_path, "w") as f:
             f.writelines(lines)
     return lines
+
+from astropy import constants
+
+def dm_delay(
+        dm: units.Quantity[dm_units],
+        nu_upper: units.Quantity[units.Hz],
+        nu_lower: units.Quantity[units.Hz],
+):
+    prefactor = dm * (constants.e.gauss ** 2) / (2 * np.pi * constants.m_e * constants.c)
+    t_delay = prefactor * ((1 / nu_lower ** 2) - (1 / nu_upper ** 2))
+    return t_delay.to("ms")

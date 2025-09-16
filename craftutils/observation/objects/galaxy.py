@@ -251,8 +251,11 @@ class Galaxy(Extragalactic):
         pass
 
     def halo_concentration_parameter(self):
-        if self.log_mass_halo is None:
-            self.halo_mass()
+        if self.mass_halo is None:
+            if self.log_mass_halo is None:
+                self.halo_mass()
+            else:
+                self.mass_halo = units.solMass * 10 ** self.log_mass_halo
         c = 4.67 * (self.mass_halo / (10 ** 14 * self.h() ** -1 * units.solMass)) ** (-0.11)
         return float(c)
 
@@ -486,6 +489,8 @@ params_b13 = {
 
 # Parameters from Kravtsov 2018
 params_k18 = {
+    "M10": 11.35,
+    "epsilon_0": -1.618,
     "alpha_0": -1.779,
     "delta_0": 4.394,
     "gamma_0": 0.547

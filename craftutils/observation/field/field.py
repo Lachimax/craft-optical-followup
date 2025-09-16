@@ -276,16 +276,20 @@ class Field(Pipeline):
         self.load_imaging()
         # Build a list of (filters, instruments) using all available epochs
         all_filters = list(map(lambda i: (i["filter"], i["instrument"]), self.imaging.values()))
+        print(f"all_filters: {all_filters}")
         # Use a set to cull it to unique values
         fil_list = list(set(all_filters))
+        print(f"fil_list: {fil_list}")
         # Filter (no pun intended) out unwanted instruments
         if instrument is not None:
             fil_list = list(filter(lambda f, i: i["instrument"] == instrument, fil_list))
+        print(f"fil_list: {fil_list}")
         # Build a list of Filter objects from the strings
         fil_list_2 = []
         for fil, instr in fil_list:
             fil = filters.Filter.from_params(filter_name=fil, instrument_name=instr)
             fil_list_2.append(fil)
+        print(f"fil_list_2: {fil_list_2}")
         return fil_list_2
 
     def deepest_in_band(
@@ -419,14 +423,18 @@ class Field(Pipeline):
             obj_params = list(
                 filter(lambda f: f.endswith(".yaml") and not f.endswith("backup.yaml") and not f == "None.yaml", os.listdir(obj_path)))
             obj_params.sort()
+            if not quiet:
+                print("\tFound:", obj_params)
+
             for obj_param in obj_params:
                 obj_name = obj_param[:obj_param.find(".yaml")]
+
                 param_path = os.path.join(obj_path, obj_param)
                 obj_dict = p.load_params(file=param_path)
                 obj_dict["param_path"] = param_path
                 if "name" not in obj_dict:
                     obj_dict["name"] = obj_name
-                self.add_object_from_dict(obj_dict=obj_dict)
+                self.add_object_from_dict(obj_dict=obj_dict, quiet=quiet)
 
     def _gather_epochs(
             self,
@@ -920,6 +928,7 @@ class Field(Pipeline):
 
     def load_imaging(self, instrument: str = None):
         filter_list = []
+        print(f"{self.imaging=}")
         for img_name, img_dict in self.imaging.items():
             if instrument is not None and instrument != img_dict["instrument"]:
                 continue
@@ -985,9 +994,11 @@ class Field(Pipeline):
         if name in self.objects:
             obj = self.objects.pop(name)
 
-    def add_object_from_dict(self, obj_dict: dict):
+    def add_object_from_dict(self, obj_dict: dict, quiet: bool = True):
         obj_dict["field"] = self
         obj = objects.Object.from_dict(obj_dict)
+        if not quiet:
+            print(obj)
         self.add_object(obj=obj)
         return obj
 
@@ -1258,7 +1269,8 @@ class Field(Pipeline):
 
             dm = u.user_input(
                 "If you know the burst DM, please enter that now in units of pc / cm^3. Otherwise, leave blank.",
-                input_type=float
+                input_type=float,
+                default="0"
             )
             if dm in ["", " ", 'None']:
                 dm = 0 * dm_units

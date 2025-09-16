@@ -308,17 +308,18 @@ def match_catalogs(
 
     idx, distance, _ = coords_2.match_to_catalog_sky(coords_1)
     keep = distance < tolerance
-    cat_2["matched"] = keep
-    if not keep_non_matches:
-        cat_1 = cat_1[keep]
-        cat_2 = cat_2[keep]
-        distance = distance[keep]
 
     idx = idx[keep]
+    matches_2 = cat_2[keep]
+    distance = distance[keep]
+    matches_2["distance"] = distance.to("arcsec")
+    if keep_non_matches:
+        n_matches = len(matches_2)
+        matches_2 = table.vstack([matches_2, cat_2[np.invert(keep)]])
+        matches_2["matched"] = np.zeros(len(matches_2), dtype=bool)
+        matches_2["matched"][:n_matches] = True
+
     matches_1 = cat_1[idx]
-    matches_1["separation"] = distance[keep]
-    cat_1["separation"] = np.inf * units.arcsec
-    cat_2["separation"] = distance
 
     if keep_non_matches:
         n_matches = len(matches_1)
@@ -326,7 +327,7 @@ def match_catalogs(
         matches_1["matched"] = np.zeros(len(matches_1), dtype=bool)
         matches_1["matched"][:n_matches] = True
 
-    return matches_1, cat_2, distance
+    return matches_1, matches_2, distance
 
 def construct_corners_table(
     tbl: table.QTable,

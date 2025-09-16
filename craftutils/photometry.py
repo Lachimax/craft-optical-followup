@@ -7,7 +7,10 @@ from copy import deepcopy
 
 import numpy as np
 import photutils as ph
-from photutils.datasets import make_model_image
+try:
+    from photutils.datasets import make_model_sources_image as make_model_image
+except ImportError:
+    from photutils.datasets import make_model_image
 import matplotlib.pyplot as plt
 from scipy.ndimage import shift
 

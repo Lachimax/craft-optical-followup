@@ -53,6 +53,7 @@ class OutputCatalogue(Generic):
         if self.table_dir is None:
             self.table_dir = config["table_dir"]
         self.table_path = self.build_table_path()
+        print(self.table_path)
         os.makedirs(self.table_dir, exist_ok=True)
         self.colnames = None
         self.dtypes = None

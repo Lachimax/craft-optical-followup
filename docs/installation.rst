@@ -1,13 +1,6 @@
 Installation
 ============
 
-
-
-
-
-Installing
-----------
-
 Currently, the best way to install this package is to clone it from GitHub and then use
 ``pip`` to install it.
 

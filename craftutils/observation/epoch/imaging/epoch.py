@@ -1622,7 +1622,8 @@ class ImagingEpoch(Epoch):
             match_tolerance: units.Quantity = 1 * units.arcsec,
             **kwargs
     ):
-        """Retrieve photometric properties of key objects and write to disk.
+        """
+        Retrieve photometric properties of key objects and write to disk.
 
         :param path: Path to which to write the data products.
         :param image_type:
@@ -1634,10 +1635,10 @@ class ImagingEpoch(Epoch):
 
         from craftutils.observation.output.epoch import imaging_table
 
-        print(self.field.objects.keys())
-
         if not self.quiet:
             print(f"Getting finalised photometry for key objects, in {image_type}.")
+            print("Objects in field:", self.field.objects.keys())
+
 
         match_tolerance = u.check_quantity(match_tolerance, unit=units.arcsec)
 
@@ -1708,8 +1709,16 @@ class ImagingEpoch(Epoch):
             print("Effective tolerance:", tolerance_eff)
             # Loop through this field's 'objects' dictionary and try to match them with the SE catalogue
             for obj_name, obj in self.field.objects.items():
+                print("\t", obj_name)
                 # If the object is not expected to be visible in the optical/NIR, skip it.
-                if obj is None or obj.position is None or not obj.optical:
+                if obj is None:
+                    print("\t\tSkipping (object is None).")
+                    continue
+                if obj.position is None:
+                    print("\t\tSkipping (no position provided).")
+                    continue
+                if not obj.optical:
+                    print("\t\tSkipping (not an optical object).")
                     continue
                 print(f"Looking for matches to {obj_name} ({obj.position.to_string('hmsdms')})")
                 # obj.load_output_file()
