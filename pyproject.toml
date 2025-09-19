@@ -5,7 +5,7 @@
 [project]
 name = "craft-optical-followup"
 authors = [{ name = "Lachlan Marnoch", email = "lachlan.marnoch@gmail.com" }]
-version = "0.3.1"
+version = "0.5"
 requires-python = ">=3.8"
 dependencies = [
     "astroalign",
@@ -22,8 +22,10 @@ dependencies = [
     "sep",
     "tqdm"
 ]
-license = { file = "LICENSE.md" }
+license-files = ["LICENSE.md"]
 description = "Pipelines and other tools, initially intended for conducting optical followup of fast radio bursts."
 readme = "README.md"
+[tool.setuptools]
+packages = ["craftutils"]
 [project.scripts]
 craft_optical_followup = "craftutils.craft_optical_pipeline:parse_args"
