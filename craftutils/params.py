@@ -3,6 +3,7 @@
 import json
 import os
 import shutil
+import sys
 import warnings
 from datetime import date
 from typing import Union
@@ -133,7 +134,7 @@ def check_for_config():
     return config_dict
 
 
-def load_params(file: str):
+def load_params(file: str) -> dict:
     file = u.sanitise_file_ext(file, '.yaml')
 
     u.debug_print(2, 'Loading parameter file from ' + str(file))
@@ -975,6 +976,12 @@ def keys():
     if os.path.isfile(key_path):
         return load_json(key_path)
     else:
+
+        print(f"No keys.json found in param_path={param_dir}. Creating a template now.")
+        shutil.copyfile(
+            os.path.join(get_project_path(), 'craftutils', 'param', 'keys.json'),
+            os.path.join(param_dir, "keys.json")
+        )
         raise FileNotFoundError(
             f"keys.json does not exist at param_path={param_dir}. "
             f"Please make a copy from {os.path.join(get_project_path(), 'craftutils', 'param', 'keys.json')}")

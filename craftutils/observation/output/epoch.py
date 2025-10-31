@@ -1,6 +1,9 @@
+import os
+
 import astropy.units as units
 
 from .output import OutputCatalogue
+import craftutils.params as p
 
 
 class EpochCatalogue(OutputCatalogue):
@@ -59,6 +62,6 @@ class EpochCatalogue(OutputCatalogue):
         return required
 
 
-# if "table_dir" in p.config and isinstance(p.config["table_dir"], str):
-#     os.makedirs(p.config["table_dir"], exist_ok=True)
-imaging_table = EpochCatalogue(name="master_imaging_table")
+if "table_dir" in p.config and isinstance(p.config["table_dir"], str):
+    os.makedirs(p.config["table_dir"], exist_ok=True)
+    imaging_table = EpochCatalogue(name="master_imaging_table")
