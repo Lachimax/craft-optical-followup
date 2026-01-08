@@ -9,6 +9,6 @@ photutils>=1.5
 PyYAML>=5.3
 reproject>=0.9.1
 requests
-urllib3==2.5.0
+urllib3==2.6.3
 sep>=1.0
 tqdm>=4.62
