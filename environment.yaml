@@ -12,7 +12,9 @@ dependencies:
   - astropy
   - astroquery
   - ccdproc
+  - cgi
   - cmasher
+  - legacy-cgi
 #  - libgsl>=2.7
   - matplotlib
   - numpy
