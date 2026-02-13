@@ -7,3 +7,4 @@ Pipelines and other tools for conducting optical followup of fast radio bursts.
 ![travis](https://app.travis-ci.com/Lachimax/craft-optical-followup.svg?branch=master)\
 [![Test Coverage](https://api.codeclimate.com/v1/badges/59710ece66a25de958cc/test_coverage)](https://codeclimate.com/github/Lachimax/craft-optical-followup/test_coverage)\
 [![cc-sa-4.0](https://i.creativecommons.org/l/by-sa/4.0/88x31.png)](http://creativecommons.org/licenses/by-sa/4.0/)
+

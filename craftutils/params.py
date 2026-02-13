@@ -978,14 +978,13 @@ def keys():
     else:
 
         print(f"No keys.json found in param_path={param_dir}. Creating a template now.")
+        template_path = os.path.join(get_project_path(), 'craftutils', 'param', 'keys.json')
+        print(template_path)
+        print(param_dir)
         shutil.copyfile(
-            os.path.join(get_project_path(), 'craftutils', 'param', 'keys.json'),
-            os.path.join(param_dir, "keys.json")
+            template_path, param_dir
         )
-        raise FileNotFoundError(
-            f"keys.json does not exist at param_path={param_dir}. "
-            f"Please make a copy from {os.path.join(get_project_path(), 'craftutils', 'param', 'keys.json')}")
-
+        return load_json(key_path)
 
 def load_json(path: str):
     with open(path) as fp:
