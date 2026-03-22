@@ -2200,6 +2200,7 @@ def latexise_table(
 
     # Add various other components to the .tex output
     if output_path is not None:
+        print("Writing latex table to", output_path)
         tbl.write(output_path, format="ascii.latex", overwrite=True)
         if set(kwargs.keys()).intersection({"caption", "short_caption", "label", "landscape", "second_path"}):
             tbl = mod_latex_table(path=output_path, sub_colnames=under_list, **kwargs)
