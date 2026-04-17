@@ -60,3 +60,10 @@ Some packages are not required for primary functionality but are necessary for c
 
 * The `FRB repository <https://github.com/FRBs/FRB>`_ is used by :class:`craftutils.observation.objects.FRB` for some modelling to do with FRB propagation. This package by itself has quite a tangled web of dependencies that can be a bit tricky to satisfy, so I leave it to the advanced user to decide if they need it. It is not used in any image processing.
 * `ESOReflex <https://www.eso.org/sci/software/esoreflex/>`_ is still required by the FORS2 pipeline, for the initial reduction.
+
+For Latex-rendered text in figures, you will also need:
+
+```bash
+sudo apt install texlive-late
+sudo apt install cm-super
+```

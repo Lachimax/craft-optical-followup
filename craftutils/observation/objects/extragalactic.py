@@ -59,15 +59,15 @@ class Extragalactic(Object):
 
     def angular_size_distance(self):
         if self.z is not None:
-            return cosmology.angular_diameter_distance(z=self.z)
+            return cosmology.angular_diameter_distance(self.z)
 
     def luminosity_distance(self):
         if self.z is not None:
-            return cosmology.luminosity_distance(z=self.z)
+            return cosmology.luminosity_distance(self.z)
 
     def comoving_distance(self):
         if self.z is not None:
-            return cosmology.comoving_distance(z=self.z)
+            return cosmology.comoving_distance(self.z)
 
     def distance_modulus(self):
         d = self.luminosity_distance()

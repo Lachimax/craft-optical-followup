@@ -245,7 +245,7 @@ class FRBField(Field):
                 frb_kwargs=frb_kwargs,
                 img=img,
                 ax=ax,
-                include_img_err=include_img_err
+                include_img_err=include_img_err,
             )
             if show_legend:
                 ax.legend()
@@ -263,7 +263,7 @@ class FRBField(Field):
             colour: str = None,
             frb_kwargs: dict = None,
             plot_centre: bool = False,
-            include_img_err: bool = True
+            include_img_err: bool = True,
     ):
         if frb_kwargs is None:
             frb_kwargs = {}
@@ -285,12 +285,16 @@ class FRBField(Field):
             frb_kwargs["edgecolor"] = colour
         if "facecolor" not in frb_kwargs:
             frb_kwargs["facecolor"] = "none"
+        if "resize_factor" in frb_kwargs:
+            resize_factor = frb_kwargs.pop("resize_factor")
+        else:
+            resize_factor = 1.
         img_err = None
         if include_img_err:
             img_err = img.extract_astrometry_err()
         if img_err is not None:
-            a = np.sqrt(a ** 2 + img_err ** 2)
-            b = np.sqrt(b ** 2 + img_err ** 2)
+            a = resize_factor * np.sqrt(a ** 2 + img_err ** 2)
+            b = resize_factor * np.sqrt(b ** 2 + img_err ** 2)
         ax = img.plot_ellipse(
             ax=ax,
             coord=frb,

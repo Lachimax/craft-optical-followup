@@ -929,7 +929,8 @@ def imgblock_plot(
         img_block: Union[fits.HDUList, str],
         output: str = None,
         fig: plt.Figure = None,
-        frame: float = None
+        frame: float = None,
+        cmap: str = "cmr.bubblegum"
 ):
     if isinstance(img_block, str):
         img_block = fits.open(img_block)
@@ -1001,7 +1002,7 @@ def imgblock_plot(
             ax = fig.add_subplot(1, len(img_block), i + 1)
             ax.set_title(names[i], fontsize=7.5)
             # print("\t\t", i, names[i], "VMAX:", vmax)
-            ax.imshow(
+            c = ax.imshow(
                 im.data,
                 # (im.data - np.median(im.data))[f_bottom:f_top, f_left:f_right],
                 origin="lower",
@@ -1010,7 +1011,7 @@ def imgblock_plot(
                     vmin=vmin,
                     stretch=SqrtStretch()
                 ),
-                cmap="cmr.bubblegum",
+                cmap=cmap,
                 interpolation="none",
             )
             ax.errorbar(
@@ -1033,6 +1034,7 @@ def imgblock_plot(
             ax.set_ylim(f_bottom, f_top)
             ax.set_xticks([])
             ax.set_yticks([])
+            plt.colorbar(c, ax=ax, location="bottom", fraction=0.1, shrink=0.7, pad=0.02)
 
             # ax.grid(False)
 

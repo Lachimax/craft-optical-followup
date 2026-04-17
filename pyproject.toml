@@ -20,7 +20,8 @@ dependencies = [
     "PyYAML",
     "scipy",
     "sep",
-    "tqdm"
+    "tqdm",
+    "importlib_resources"
 ]
 license = { file = "LICENSE.md" }
 description = "Pipelines and other tools, initially intended for conducting optical followup of fast radio bursts."

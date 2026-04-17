@@ -2087,6 +2087,8 @@ def latexise_table(
             v = units.Quantity(v)
             string = v.to_string(precision=rd, format="latex")
         elif rd is not None:
+            if rd == 0:
+                v = int(v)
             string = str(np.round(v,rd))
         else:
             string = str(v)
@@ -2159,7 +2161,7 @@ def latexise_table(
         if err_col.replace("_plus", "_minus") in tbl.colnames:
             tbl.remove_column(err_col.replace("_plus", "_minus"))
 
-    val_cols = list(filter(lambda c: type(tbl[c][0]) in (int, float, np.float_), tbl.colnames))
+    val_cols = list(filter(lambda c: type(tbl[c][0]) in (int, float, np.float64), tbl.colnames))
 
     for col in val_cols:
         tbl[col] = [to_str(v) for v in tbl[col]]
@@ -2198,6 +2200,7 @@ def latexise_table(
 
     # Add various other components to the .tex output
     if output_path is not None:
+        print("Writing latex table to", output_path)
         tbl.write(output_path, format="ascii.latex", overwrite=True)
         if set(kwargs.keys()).intersection({"caption", "short_caption", "label", "landscape", "second_path"}):
             tbl = mod_latex_table(path=output_path, sub_colnames=under_list, **kwargs)

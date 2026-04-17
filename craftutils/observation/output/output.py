@@ -39,8 +39,9 @@ class OutputCatalogue(Generic):
             **kwargs
     ):
         if data_path is None:
-            data_dir = os.path.dirname(config["table_dir"])
-            data_path = os.path.join(data_dir, "table_outputs")
+            if config["table_dir"] is not None:
+                data_dir = os.path.dirname(config["table_dir"])
+                data_path = os.path.join(data_dir, "table_outputs")
 
         super().__init__(
             data_path=data_path,
