@@ -12,7 +12,7 @@ from shutil import copy
 import astropy.io.misc.yaml as yaml
 import astropy.units as units
 import numpy as np
-import pkg_resources
+import importlib_resources
 from astropy.table import Table, QTable
 
 from craftutils import utils as u
@@ -82,38 +82,14 @@ def check_for_config():
     if config_dict is None:
         # Copy template config file from project directory.
         # try:
-        shutil.copy(
-            pkg_resources.resource_filename(
-                __name__,
-                os.path.join("param", "config_template.yaml")
-            ),
-            config_file
-        )
+        ref = importlib_resources.files(__name__) / os.path.join("param", "config_template.yaml")
+        with importlib_resources.as_file(ref) as path:
+            shutil.copy(
+                path,
+                config_file
+            )
         print(f"No config file was detected at {config_file}.")
         print(f"A fresh config file will been created at '{config_file}'.")
-        # print("I will now ask you for some directories that will go into this file, but it may be edited at any time.")
-        # top_data_dir = u.user_input(
-        #     "\nPlease enter a directory in which to store all data products of this package "
-        #     "(This may require a large amount of space.). If the directory does not exist, "
-        #     "I will attempt to create it.",
-        #     default=config_template["top_data_dir"]
-        # )
-        # os.makedirs(top_data_dir, exist_ok=True)
-        # config_dict["top_data_dir"] = top_data_dir
-        #
-        # param_dir_n = u.user_input(
-        #     "\nEnter a directory in which parameter files will be written and loaded from; leave as default to use this"
-        #     "repository's param directory.",
-        #     default=config_template["param_dir"]
-        # )
-        # os.makedirs(param_dir_n, exist_ok=True)
-        # config_dict["param_dir"] = param_dir_n
-        # if param_dir_n != config_template["param_dir"]:
-        #     print("Copying included param files to param directory.")
-        #     shutil.copytree(config_template["param_dir"], param_dir_n)
-
-        # if u.select_yn(message="Do you have ESO Reflex installed?"):
-        #     if os.path.isdir()
 
         config_dict = load_params(config_file)
 

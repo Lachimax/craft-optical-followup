@@ -2788,7 +2788,6 @@ class ImagingImage(Image):
             fig: plt.Figure = None,
             ax: plt.Axes = None,
             n: int = 1, n_x: int = 1, n_y: int = 1,
-            show_grid: bool = False,
             show_coords: bool = True,
             imshow_kwargs: dict = None,  # Can include cmap
             normalize_kwargs: dict = None,  # Can include vmin, vmax

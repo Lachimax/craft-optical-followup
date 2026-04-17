@@ -13,3 +13,4 @@ requests
 urllib3==1.26.18
 sep>=1.0
 tqdm>=4.62
+importlib_resources>=7
