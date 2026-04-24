@@ -930,7 +930,7 @@ def imgblock_plot(
         output: str = None,
         fig: plt.Figure = None,
         frame: float = None,
-        cmap: str = "cmr.bubblegum"
+        cmap: str = "cmr.wildfire"
 ):
     if isinstance(img_block, str):
         img_block = fits.open(img_block)
@@ -1014,22 +1014,24 @@ def imgblock_plot(
                 cmap=cmap,
                 interpolation="none",
             )
-            ax.errorbar(
-                x, y,
-                marker="x",
-                xerr=params["x_err"].value,
-                yerr=params["y_err"].value,
-                c="black"
-            )
-            e = Ellipse(
-                xy=(x, y),
-                width=a,
-                height=b,
-                angle=theta + 90,
-                edgecolor="white",
-                facecolor="none",
-            )
-            ax.add_artist(e)
+
+            if i == 2:
+                ax.errorbar(
+                    x, y,
+                    marker="x",
+                    xerr=params["x_err"].value,
+                    yerr=params["y_err"].value,
+                    c="black"
+                )
+                e = Ellipse(
+                    xy=(x, y),
+                    width=a,
+                    height=b,
+                    angle=theta + 90,
+                    edgecolor="white",
+                    facecolor="none",
+                )
+                ax.add_artist(e)
             ax.set_xlim(f_left, f_right)
             ax.set_ylim(f_bottom, f_top)
             ax.set_xticks([])
