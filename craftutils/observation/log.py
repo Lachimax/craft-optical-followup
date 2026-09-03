@@ -65,7 +65,7 @@ class Log:
         module_versions = {}
         for key in sys.modules:
             try:
-                module_versions[key] = sys.modules[key].__version__
+                module_versions[key] = str(sys.modules[key].__version__)
             except AttributeError:
                 pass
 
