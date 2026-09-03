@@ -6,7 +6,7 @@ from typing import Union
 import matplotlib.pyplot as plt
 import matplotlib
 import numpy as np
-import photutils
+import photutils.aperture as photutils
 
 import astropy.io.fits as fits
 import astropy.units as units

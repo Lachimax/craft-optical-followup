@@ -6,7 +6,8 @@ from typing import Union, List, Iterable
 from copy import deepcopy
 
 import numpy as np
-import photutils as ph
+import photutils.aperture as ph
+
 try:
     from photutils.datasets import make_model_sources_image as make_model_image
 except ImportError:
@@ -1475,8 +1476,8 @@ def determine_zeropoint_sextractor(
 
 def single_aperture_photometry(
         data: np.ndarray,
-        aperture: ph.aperture.Aperture,
-        annulus: ph.aperture.Aperture,
+        aperture: ph.Aperture,
+        annulus: ph.Aperture,
         exp_time: float = 1.0,
         zeropoint: float = 0.0,
         extinction: float = 0.0,
@@ -1507,18 +1508,20 @@ def single_aperture_photometry(
 
 # TODO: Implement error properly here. Not needed right this minute because I'm currently relying on SExtractor.
 #  There are some multiplications in this function that might need erroring.
-def aperture_photometry(data: np.ndarray, x: float = None, y: float = None, fwhm: float = 2.,
-                        exp_time: float = 1., exp_time_err: float = 0.0,
-                        zeropoint: float = 0.0, zeropoint_err: float = 0.0,
-                        ext: float = 0.0, ext_err: float = 0.0,
-                        airmass: float = 0.0, airmass_err: float = 0.0,
-                        colour_term: float = 0.0, colour_term_err: float = 0.0,
-                        colours=0.0, colours_err: float = 0.0,
-                        plot: bool = False,
-                        r_ap: float = None,
-                        r_ann_in: float = None,
-                        r_ann_out: float = None,
-                        r_type='fwhm', sky: bool = False, wcs_obj: wcs.WCS = None):
+def aperture_photometry(
+        data: np.ndarray, x: float = None, y: float = None, fwhm: float = 2.,
+        exp_time: float = 1., exp_time_err: float = 0.0,
+        zeropoint: float = 0.0, zeropoint_err: float = 0.0,
+        ext: float = 0.0, ext_err: float = 0.0,
+        airmass: float = 0.0, airmass_err: float = 0.0,
+        colour_term: float = 0.0, colour_term_err: float = 0.0,
+        colours=0.0, colours_err: float = 0.0,
+        plot: bool = False,
+        r_ap: float = None,
+        r_ann_in: float = None,
+        r_ann_out: float = None,
+        r_type='fwhm', sky: bool = False, wcs_obj: wcs.WCS = None
+):
     """
     Constructed using this tutorial: https://photutils.readthedocs.io/en/latest/aperture.html
     :param data:
@@ -1576,9 +1579,9 @@ def aperture_photometry(data: np.ndarray, x: float = None, y: float = None, fwhm
     positions = np.array([x, y]).transpose()
     if sky:
         coord = SkyCoord(ra=x, dec=y)
-        apertures = ph.aperture.SkyCircularAperture(positions=coord, r=r_ap)
+        apertures = ph.SkyCircularAperture(positions=coord, r=r_ap)
     else:
-        apertures = ph.aperture.CircularAperture(positions=positions, r=r_ap)
+        apertures = ph.CircularAperture(positions=positions, r=r_ap)
 
     # Calculate background median for each aperture using a concentric annulus.
     annuli = ph.CircularAnnulus(positions=positions, r_in=r_ann_in, r_out=r_ann_out)
@@ -1598,18 +1601,19 @@ def aperture_photometry(data: np.ndarray, x: float = None, y: float = None, fwhm
     # 'flux' is then the corrected flux of the aperture.
     cat['flux'] = cat['aperture_sum'] - cat['subtract']
     # 'mag' is the aperture magnitude.
-    cat['mag'], cat['mag_err'] = magnitude_instrumental(flux=cat['flux'],
-                                                        # flux_err=cat['aperture_sum_err'],
-                                                        exp_time=exp_time,
-                                                        exp_time_err=exp_time_err,
-                                                        zeropoint=zeropoint,
-                                                        zeropoint_err=zeropoint_err,
-                                                        ext=ext, ext_err=ext_err,
-                                                        airmass=airmass,
-                                                        airmass_err=airmass_err,
-                                                        colour_term=colour_term,
-                                                        colour_term_err=colour_term_err,
-                                                        colour=colours, colour_err=colours_err)
+    cat['mag'], cat['mag_err'] = magnitude_instrumental(
+        flux=cat['flux'],
+        # flux_err=cat['aperture_sum_err'],
+        exp_time=exp_time,
+        exp_time_err=exp_time_err,
+        zeropoint=zeropoint,
+        zeropoint_err=zeropoint_err,
+        ext=ext, ext_err=ext_err,
+        airmass=airmass,
+        airmass_err=airmass_err,
+        colour_term=colour_term,
+        colour_term_err=colour_term_err,
+        colour=colours, colour_err=colours_err)
     # If selected, plot the apertures and annuli against the image.
     if plot:
         plt.imshow(data, origin='lower')
@@ -1735,10 +1739,12 @@ def source_table(file: Union[fits.HDUList, str],
         fwhm = np.mean(sources['fwhm'])
 
     # Feed locations to our aperture photometry function.
-    phot, _, _ = aperture_photometry(data=data, x=x, y=y, fwhm=fwhm, exp_time=exp_time, plot=plot,
-                                     zeropoint=zeropoint, ext=ext, airmass=airmass, colour_term=colour_coeff,
-                                     colours=colours,
-                                     r_ap=r_ap, r_ann_in=r_ann_in, r_ann_out=r_ann_out, r_type=r_type)
+    phot, _, _ = aperture_photometry(
+        data=data, x=x, y=y, fwhm=fwhm, exp_time=exp_time, plot=plot,
+        zeropoint=zeropoint, ext=ext, airmass=airmass, colour_term=colour_coeff,
+        colours=colours,
+        r_ap=r_ap, r_ann_in=r_ann_in, r_ann_out=r_ann_out, r_type=r_type
+    )
     sources['mag'] = phot['mag']
     sources['flux'] = phot['flux']
 
@@ -1760,12 +1766,15 @@ def source_table(file: Union[fits.HDUList, str],
     return sources
 
 
-def find_sources(data: np.ndarray,
-                 mask: np.ndarray = None,
-                 algorithm: str = 'DAO',
-                 fwhm: float = 2.0,
-                 bg: float = None,
-                 threshold: float = 5):
+def find_sources(
+        data: np.ndarray,
+        mask: np.ndarray = None,
+        algorithm: str = 'DAO',
+        fwhm: float = 2.0,
+        bg: float = None,
+        threshold: float = 5
+):
+    import photutils.detection as det
     if algorithm not in ['DAO', 'IRAF']:
         raise ValueError(str(algorithm) + " is not a recognised algorithm.")
 
@@ -1780,9 +1789,9 @@ def find_sources(data: np.ndarray,
 
     # Find star locations using photutils StarFinder
     if algorithm == 'DAO':
-        find = ph.DAOStarFinder(fwhm=fwhm, threshold=threshold * std)
+        find = det.DAOStarFinder(fwhm=fwhm, threshold=threshold * std)
     elif algorithm == 'IRAF':
-        find = ph.IRAFStarFinder(fwhm=fwhm, threshold=threshold * std)
+        find = det.IRAFStarFinder(fwhm=fwhm, threshold=threshold * std)
 
     if mask is None:
         mask = np.zeros(data.shape, dtype=bool)
@@ -1792,10 +1801,12 @@ def find_sources(data: np.ndarray,
     return sources
 
 
-def match_sources_filters(file_1: 'str', file_2: 'str', path: 'str' = "", tolerance: 'float' = 1.,
-                          output: 'str' = "match_table", plot: 'bool' = True, filter_1: 'str' = 'A',
-                          filter_2: 'str' = 'B',
-                          algorithm: 'str' = 'DAO'):
+def match_sources_filters(
+        file_1: 'str', file_2: 'str', path: 'str' = "", tolerance: 'float' = 1.,
+        output: 'str' = "match_table", plot: 'bool' = True, filter_1: 'str' = 'A',
+        filter_2: 'str' = 'B',
+        algorithm: 'str' = 'DAO'
+):
     """
     Tries to match sources between fits files using their sky coordinates, and writes to disk a table of sources in both
      - including their magnitudes. Returns a numpy array with the same information.

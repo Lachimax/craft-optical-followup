@@ -9,7 +9,7 @@ dependencies:
   - astromatic-source-extractor
   - astromatic-psfex
   - astrometry
-  - astropy
+  - astropy>=8
   - astroquery
   - ccdproc
   - cgi
@@ -19,6 +19,7 @@ dependencies:
   - matplotlib
   - numpy
   - photutils
+  - psfex
   - PyYAML
   - reproject
   - requests

@@ -1692,7 +1692,12 @@ class ImagingEpoch(Epoch):
                 for obj_name, obj in self.field.objects.items():
                     if obj.position is not None:
                         x, y = img.world_to_pixel(obj.position)
-                        plt.scatter(x, y, marker="x", label=obj_name)
+                        plt.scatter(
+                            x,
+                            y,
+                            marker="x",
+                            label=obj_name
+                        )
                 plt.legend(loc=(1.0, 0.))
                 fig.savefig(os.path.join(fil_output_path, "plot_quick.pdf"))
 
@@ -2020,7 +2025,7 @@ class ImagingEpoch(Epoch):
         fig, ax = plt.subplots()
         x = self.validation_catalogue[f"{img.filter_name}_class_star"]
         ax.hist(x, bins="auto")
-        ax.set_xlabel("CLASS\_STAR")
+        ax.set_xlabel(r"CLASS\_STAR")
         fig.savefig(os.path.join(output_dir, f"validation_class_star.pdf"))
         fig.clear()
         plt.close(fig)

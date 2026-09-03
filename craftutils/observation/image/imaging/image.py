@@ -640,7 +640,8 @@ class ImagingImage(Image):
         :return: xp, yp: numpy.ndarray, the pixel coordinates.
         """
         self.load_wcs()
-        return coord.to_pixel(self.wcs[ext], origin=origin)
+        x, y = coord.to_pixel(self.wcs[ext], origin=origin)
+        return float(x), float(y)
 
     def pixel_to_world(
             self,
@@ -1984,7 +1985,7 @@ class ImagingImage(Image):
             del ax, fig
 
             fig, ax = plt.subplots()
-            c = ax.scatter(matches_ext_cat[ra_col], matches_ext_cat[dec_col], c=distance.to(units.arcsec), marker='x')
+            c = ax.scatter(matches_ext_cat[ra_col], matches_ext_cat[dec_col], c=distance.to(units.arcsec).value, marker='x')
             ax.set_xlabel("Right Ascension (Catalogue)")
             ax.set_ylabel("Declination (Catalogue)")
             fig.colorbar(c, label="Offset of measured position from catalogue (\")")
