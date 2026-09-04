@@ -465,7 +465,7 @@ def save_eso_raw_data_and_calibs(
         fil: str = None,
         program_id: str = None,
         obj: str = None,
-        coord_tol: units.Quantity = 1.0 * units.arcmin,
+        coord_tol: units.Quantity = 5.0 * units.arcmin,
         data_type: str = "science",
         keep_previous: bool = False
 ):
@@ -554,7 +554,7 @@ def query_eso_raw(
         program_id: str = None,
         date_obs: Union[str, Time] = None,
         obj: Union[str, SkyCoord] = None,
-        coord_tol: units.Quantity = 1.0 * units.arcmin,
+        coord_tol: units.Quantity = 5.0 * units.arcmin,
         instrument: str = "fors2",
         mode: str = "imaging",
         dp_cat: str = "science",

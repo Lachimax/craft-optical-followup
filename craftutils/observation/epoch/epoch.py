@@ -660,7 +660,7 @@ def _retrieve_eso_epoch(
         instrument=instrument,
         mode=mode,
         obj=obj,
-        coord_tol=3.0 * units.arcmin
+        coord_tol=6.0 * units.arcmin
     )
 
     if r:
