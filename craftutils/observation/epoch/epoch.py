@@ -462,14 +462,14 @@ class Epoch(Pipeline):
         return p_dict
 
     @classmethod
-    def sort_by_chip(cls, images: list):
+    def sort_by_chip(cls, images: list, ext: int = 1):
         chips = {}
 
         images.sort(key=lambda f: f.name)
 
         for img in images:
             chip_this = img.extract_chip_number()
-            img.extract_n_pix()
+            img.extract_n_pix(ext=ext)
             if chip_this is None:
                 print(f"The chip number for {img.name} could not be determined.")
             else:

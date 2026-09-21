@@ -1036,8 +1036,8 @@ def imgblock_plot(
             ax.set_ylim(f_bottom, f_top)
             ax.set_xticks([])
             ax.set_yticks([])
-            plt.colorbar(c, ax=ax, location="bottom", fraction=0.1, shrink=0.7, pad=0.02)
-
+            cbar = plt.colorbar(c, ax=ax, location="bottom", fraction=0.1, shrink=0.7, pad=0.02)
+            # cbar.set_label("Flux (arb. units)", size=6)
             # ax.grid(False)
 
 

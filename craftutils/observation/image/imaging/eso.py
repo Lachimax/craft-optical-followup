@@ -56,7 +56,7 @@ class HAWKIImage(ESOImagingImage):
         })
         return header_keys
 
-    def extract_chip_number(self, ext: int = 0):
+    def extract_chip_number(self, ext: int = 1):
         return int(self.extract_header_item("HIERARCH ESO DET CHIP NO", ext=ext))
 
 
@@ -64,7 +64,7 @@ class HAWKICoaddedImage(CoaddedImage):
     num_chips = 4
     instrument_name = "vlt-hawki"
 
-    def extract_chip_number(self, ext: int = 0):
+    def extract_chip_number(self, ext: int = 1):
         return 0
 
     def extract_exposure_time(self):
@@ -135,7 +135,7 @@ class FORS2Image(ESOImagingImage):
         self.other_chip = None
         self.chip_number = None
 
-    def extract_chip_number(self, ext: int = 0):
+    def extract_chip_number(self, ext: int = 1):
         chip_string = self.extract_header_item(key='HIERARCH ESO DET CHIP1 ID', ext=ext)
         chip = 0
         if chip_string == 'CCID20-14-5-3':

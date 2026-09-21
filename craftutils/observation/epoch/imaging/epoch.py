@@ -1455,6 +1455,9 @@ class ImagingEpoch(Epoch):
             if isinstance(self.coadded_subtracted_patch[fil], image.CoaddedImage):
                 self.coadded_subtracted_patch[fil].clone_diagnostics(img_prime)
 
+            if "INTTIME" not in img.headers[0]:
+                img.headers[0]["INTTIME"] = img.headers[0]["TEXPTIME"]
+
             img_final = img.copy_with_outputs(os.path.join(
                 self.data_path,
                 nice_name)

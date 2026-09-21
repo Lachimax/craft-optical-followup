@@ -259,7 +259,7 @@ class FRBField(Field):
             self,
             ax,
             img: image.ImagingImage,
-            ext: int = 0,
+            ext: int = 1,
             colour: str = None,
             frb_kwargs: dict = None,
             plot_centre: bool = False,

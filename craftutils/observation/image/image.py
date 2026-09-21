@@ -518,6 +518,7 @@ class Image:
             u.debug_print(2, "Headers already loaded.")
         return self.headers
 
+
     def load_data(self, force: bool = False):
         if force or not self.data:
             unit = self.extract_units()
@@ -561,7 +562,7 @@ class Image:
     def get_id(self):
         return self.filename[:self.filename.find(".fits")]
 
-    def set_header_items(self, items: dict, ext: int = 0, write: bool = True):
+    def set_header_items(self, items: dict, ext: int = 1, write: bool = True):
         for key in items:
             self.set_header_item(
                 key=key,
@@ -627,7 +628,7 @@ class Image:
         unit = self.extract_header_item(key)
         if astropy:
             if unit is not None:
-                unit = units.Unit(unit)
+                unit = units.Unit(unit.lower())
             else:
                 unit = units.ct
         return unit
@@ -673,6 +674,7 @@ class Image:
         self.exposure_time = self.extract_header_item(key) * units.second
         return self.exposure_time
 
+
     def extract_noise_read(self):
         key = self.header_keys()["noise_read"]
         noise = self.extract_header_item(key)
@@ -688,7 +690,7 @@ class Image:
 
         return self.object
 
-    def extract_n_pix(self, ext: int = 0):
+    def extract_n_pix(self, ext: int = 1):
         self.load_data()
         self.n_y, self.n_x = self.data[ext].shape
         self.n_pix = self.n_y * self.n_x
@@ -702,7 +704,7 @@ class Image:
         self.extract_n_pix()
         return 1, self.n_x, 1, self.n_y
 
-    def extract_saturate(self, data_ext: int = 0):
+    def extract_saturate(self, data_ext: int = 1):
         key = self.header_keys()["saturate"]
         saturate = self.extract_header_item(key)
         if saturate is None:
@@ -711,7 +713,7 @@ class Image:
         self.saturate = saturate * unit
         return self.saturate
 
-    def remove_extra_extensions(self, ext: int = 0):
+    def remove_extra_extensions(self, ext: int = 1):
         self.load_headers()
         self.load_data()
         self.headers = [self.headers[ext]]

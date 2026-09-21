@@ -98,12 +98,13 @@ def check_for_config():
             config_dict[param] = config_template[param]
 
     for path_name in config_dict:
-        path = config_dict[path_name]
-        if path is not None:
-            config_dict[path_name] = os.path.abspath(path)
+        if path_name.endswith("dir") or path_name.endswith("path"):
+            path = config_dict[path_name]
+            if path is not None:
+                config_dict[path_name] = os.path.abspath(path)
     else:
         for param in config_dict:
-            if config_dict[param] is not None:
+            if config_dict[param] is not None and (param.endswith("dir") or param.endswith("path")):
                 config_dict[param] = u.check_trailing_slash(config_dict[param])
         save_params(config_file, config_dict)
         yaml_to_json(config_file)
@@ -254,7 +255,7 @@ param_dir = config['param_dir']
 
 def write_config():
     for param in config:
-        if config[param] is not None:
+        if config[param] is not None and (param.endswith("dir") or param.endswith("path")):
             config[param] = u.check_trailing_slash(config[param])
     save_params(config_file, config)
     yaml_to_json(config_file)

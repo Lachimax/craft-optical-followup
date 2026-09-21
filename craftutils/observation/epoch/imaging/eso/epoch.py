@@ -80,7 +80,8 @@ class ESOImagingEpoch(ImagingEpoch):
                 "default": True,
                 "keywords": {
                     "alternate_dir": None,  # alternate directory to pull reduced files from.
-                    "delete_eso_output": False
+                    "delete_eso_output": False,
+                    # "get_non_wcs": True
                 }
             },
             "trim_reduced": {
@@ -282,9 +283,13 @@ class ESOImagingEpoch(ImagingEpoch):
             expect_sorted = True
             if "expect_sorted" in kwargs and isinstance(kwargs["expect_sorted"], bool):
                 expect_sorted = kwargs["expect_sorted"]
+            if not expect_sorted:
+                one_layer = True
         else:
             eso_dir = os.path.join(p.config['esoreflex_output_dir'], "reflex_end_products")
             expect_sorted = False
+
+
 
         if "delete_eso_output" in kwargs:
             delete_output = kwargs["delete_eso_output"]
@@ -338,35 +343,56 @@ class ESOImagingEpoch(ImagingEpoch):
                     print(f"Looking for data with object '{obj}' and MJD of observation {mjd} inside {eso_dir}")
                 # Look for files with the appropriate object and MJD, as recorded in output_values
 
-                # List directories in eso_output_dir; these are dates on which data was reduced using ESOReflex.
-                date_dirs = filter(
-                    lambda d: os.path.isdir(os.path.join(eso_dir, d)),
-                    os.listdir(eso_dir)
-                )
-                date_dirs = map(lambda d: os.path.join(eso_dir, d), date_dirs)
-                for date_dir in date_dirs:
-                    if not self.quiet:
-                        print(f"Searching {date_dir}")
-                    eso_subdirs = filter(
-                        lambda d: os.path.isdir(os.path.join(date_dir, d)) and self.eso_name in d,
-                        os.listdir(date_dir)
-                    )
+
+                if one_layer:
                     eso_subdirs = list(map(
-                        lambda d: os.path.join(os.path.join(date_dir, d)),
-                        eso_subdirs
+                        lambda d: os.path.join(os.path.join(eso_dir, d)),
+                        os.listdir(eso_dir)
                     ))
                     for subpath in eso_subdirs:
                         if not self.quiet:
                             print(f"\tSearching {subpath}")
                         self._sort_after_esoreflex(
                             output_dir=output_dir,
-                            date_dir=date_dir,
+                            date_dir=eso_dir,
                             obj=obj,
                             mjd=mjd,
                             delete_output=delete_output,
                             subpath=subpath,
                             **kwargs
                         )
+
+                else:
+                    # List directories in eso_output_dir; these are dates on which data was reduced using ESOReflex.
+                    date_dirs = filter(
+                        lambda d: os.path.isdir(os.path.join(eso_dir, d)),
+                        os.listdir(eso_dir)
+                    )
+                    date_dirs = map(lambda d: os.path.join(eso_dir, d), date_dirs)
+
+                    for date_dir in date_dirs:
+                        if not self.quiet:
+                            print(f"Searching {date_dir}")
+                        eso_subdirs = filter(
+                            lambda d: os.path.isdir(os.path.join(date_dir, d)) and self.eso_name in d,
+                            os.listdir(date_dir)
+                        )
+                        eso_subdirs = list(map(
+                            lambda d: os.path.join(os.path.join(date_dir, d)),
+                            eso_subdirs
+                        ))
+                        for subpath in eso_subdirs:
+                            if not self.quiet:
+                                print(f"\tSearching {subpath}")
+                            self._sort_after_esoreflex(
+                                output_dir=output_dir,
+                                date_dir=date_dir,
+                                obj=obj,
+                                mjd=mjd,
+                                delete_output=delete_output,
+                                subpath=subpath,
+                                **kwargs
+                            )
 
         else:
             raise IOError(f"ESO output directory '{eso_dir}' not found.")
@@ -437,29 +463,42 @@ class ESOImagingEpoch(ImagingEpoch):
             u.mkdir_check(fil_path_back)
             u.mkdir_check(fil_path_science)
 
-            if not edged:
-                # Find borders of noise frame using backgrounds.
-                # First, make sure that the background we're using is for the top chip.
-                i = 0
-                img = self.frames_esoreflex_backgrounds[fil][i]
-                while img.extract_chip_number() != 1:
-                    u.debug_print(1, i, img.extract_chip_number())
-                    i += 1
+            if self.old_pipeline():
+                if not edged:
+                    # Find borders of noise frame using backgrounds.
+                    # First, make sure that the background we're using is for the top chip.
+                    i = 0
                     img = self.frames_esoreflex_backgrounds[fil][i]
-                up_left, up_right, up_bottom, up_top = detect_edges(img.path)
-                # Ditto for the bottom chip.
-                i = 0
-                img = self.frames_esoreflex_backgrounds[fil][i]
-                while img.extract_chip_number() != 2:
-                    i += 1
+                    while img.extract_chip_number() != 1:
+                        u.debug_print(1, i, img.extract_chip_number())
+                        i += 1
+                        img = self.frames_esoreflex_backgrounds[fil][i]
+                    up_left, up_right, up_bottom, up_top = detect_edges(img.path)
+                    # Ditto for the bottom chip.
+                    i = 0
                     img = self.frames_esoreflex_backgrounds[fil][i]
-                dn_left, dn_right, dn_bottom, dn_top = detect_edges(img.path)
-                up_left = up_left + 5
-                up_right = up_right - 5
-                up_top = up_top - 5
-                dn_left = dn_left + 5
-                dn_right = dn_right - 5
-                dn_bottom = dn_bottom + 5
+                    while img.extract_chip_number() != 2:
+                        i += 1
+                        img = self.frames_esoreflex_backgrounds[fil][i]
+                    dn_left, dn_right, dn_bottom, dn_top = detect_edges(img.path)
+                    up_left = up_left + 5
+                    up_right = up_right - 5
+                    up_top = up_top - 5
+                    dn_left = dn_left + 5
+                    dn_right = dn_right - 5
+                    dn_bottom = dn_bottom + 5
+
+                    edged = True
+            else:
+                up_left = 191
+                up_right = 1853
+                up_bottom = 0
+                up_top = 950
+
+                dn_left = 194
+                dn_right = 1858
+                dn_bottom = 320
+                dn_top = 1024
 
                 edged = True
 
@@ -508,7 +547,9 @@ class ESOImagingEpoch(ImagingEpoch):
                         right=up_right,
                         top=up_top,
                         bottom=up_bottom,
-                        output_path=new_path)
+                        output_path=new_path,
+                        ext=1
+                    )
                     self.add_frame_trimmed(trimmed)
 
                 elif frame.extract_chip_number() == 2:
@@ -517,7 +558,9 @@ class ESOImagingEpoch(ImagingEpoch):
                         right=dn_right,
                         top=dn_top,
                         bottom=dn_bottom,
-                        output_path=new_path)
+                        output_path=new_path,
+                        ext=1
+                    )
                     self.add_frame_trimmed(trimmed)
 
     def proc_convert_to_cs(self, output_dir: str, **kwargs):
@@ -526,9 +569,15 @@ class ESOImagingEpoch(ImagingEpoch):
             **kwargs
         )
 
+    @staticmethod
+    def old_pipeline(self):
+        return False
+
     def convert_to_cs(self, output_dir: str, **kwargs):
 
         self.frames_normalised = {}
+
+        do_backgrounds = self.old_pipeline()
 
         if "upper_only" in kwargs:
             upper_only = kwargs["upper_only"]
@@ -537,14 +586,20 @@ class ESOImagingEpoch(ImagingEpoch):
 
         u.mkdir_check(output_dir)
         u.mkdir_check(os.path.join(output_dir, "science"))
-        u.mkdir_check(os.path.join(output_dir, "backgrounds"))
+        if do_backgrounds:
+            u.mkdir_check(os.path.join(output_dir, "backgrounds"))
 
         for fil in self.filters:
+            print("Processing images in filter", fil)
             fil_path_science = os.path.join(output_dir, "science", fil)
-            fil_path_back = os.path.join(output_dir, "backgrounds", fil)
             u.mkdir_check(fil_path_science)
-            u.mkdir_check(fil_path_back)
+
+            if do_backgrounds:
+                fil_path_back = os.path.join(output_dir, "backgrounds", fil)
+                u.mkdir_check(fil_path_back)
+
             for frame in self.frames_trimmed[fil]:
+                print("\tProcessing frame", frame.filename)
                 if self.is_excluded(frame):
                     continue
                 do = True
@@ -560,7 +615,11 @@ class ESOImagingEpoch(ImagingEpoch):
                         frame.filename.replace("trim", "norm"))
 
                     # Divide by exposure time to get an image in counts/second.
-                    normed = frame.convert_to_cs(output_path=science_destination)
+                    if self.old_pipeline():
+                        ext_num = 0
+                    else:
+                        ext_num = 1
+                    normed = frame.convert_to_cs(output_path=science_destination, ext=ext_num)
                     self.add_frame_normalised(normed)
 
     def add_frame_background(self, background_frame: Union[image.ImagingImage, str]):

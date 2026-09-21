@@ -77,7 +77,7 @@ class CoaddedImage(ImagingImage):
             self,
             target: 'ImagingImage',
             output_path: str,
-            ext: int = 0,
+            ext: int = 1,
             trim: bool = True,
             **kwargs
     ):

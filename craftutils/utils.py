@@ -219,7 +219,10 @@ def sanitise_endianness(array: np.ndarray):
     :return: A little-endian version of the input array.
     """
     if array.dtype.byteorder == '>':
-        array = array.byteswap().newbyteorder()
+        new_array = array.byteswap()
+        array = new_array
+        new_array = array.view(array.dtype.newbyteorder("<"))
+        array = new_array
     return array
 
 

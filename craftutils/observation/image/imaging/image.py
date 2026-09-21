@@ -397,7 +397,7 @@ class ImagingImage(Image):
     def clone_diagnostics(
             self,
             other: 'ImagingImage',
-            ext: int = 0
+            ext: int = 1
     ):
         """
         The intent behind this function is to use it when it is a derived image that should have the same
@@ -422,7 +422,7 @@ class ImagingImage(Image):
     def clone_depth(
             self,
             other: 'ImagingImage',
-            ext: int = 0
+            ext: int = 1
     ):
         self.depth = other.depth
         self.select_depth(ext=ext)
@@ -443,7 +443,7 @@ class ImagingImage(Image):
     def clone_astrometry_info(
             self,
             other: 'ImagingImage',
-            ext: int = 0
+            ext: int = 1
     ):
         self.astrometry_stats = other.astrometry_stats
         self.astrometry_err = other.astrometry_err
@@ -474,7 +474,7 @@ class ImagingImage(Image):
     def clone_zeropoints(
             self,
             other: 'ImagingImage',
-            ext: int = 0
+            ext: int = 1
     ):
         self.zeropoints = other.zeropoints.copy()
         self.zeropoint_best = other.zeropoint_best
@@ -503,7 +503,7 @@ class ImagingImage(Image):
     def clone_psf(
             self,
             other: 'ImagingImage',
-            ext: int = 0
+            ext: int = 1
     ):
         self.load_headers()
 
@@ -648,7 +648,7 @@ class ImagingImage(Image):
             x: Union[float, np.ndarray, units.Quantity],
             y: Union[float, np.ndarray, units.Quantity],
             origin: int = 0,
-            ext: int = 0
+            ext: int = 1
     ) -> SkyCoord:
         """
         Uses the image's wcs to turn pixel coordinates into sky; essentially a wrapper for SkyCoord.from_pixel().
@@ -822,18 +822,18 @@ class ImagingImage(Image):
             psf = psf * units.arcsec
         return psf
 
-    def extract_rotation_angle(self, ext: int = 0):
+    def extract_rotation_angle(self, ext: int = 1):
         self.load_wcs()
         matrix = self.wcs[ext].pixel_scale_matrix
         theta = np.arctan2(matrix[1, 1], matrix[1, 0]) * 180 / np.pi - 90
         return theta * units.deg
 
-    def extract_y_sense(self, ext: int = 0):
+    def extract_y_sense(self, ext: int = 1):
         self.load_wcs()
         matrix = self.wcs[ext].pixel_scale_matrix
         return np.sign(matrix[1, 1])
 
-    def extract_wcs_footprint(self, ext: int = 0):
+    def extract_wcs_footprint(self, ext: int = 1):
         """
         Returns the RA & Dec of the corners of the image.
         :return: tuple of SkyCoords, (top_left, top_right, bottom_left, bottom_right)
@@ -858,11 +858,11 @@ class ImagingImage(Image):
 
         return self.pixel_scale_x, self.pixel_scale_y
 
-    def pixel_area(self, ext: int = 0):
+    def pixel_area(self, ext: int = 1):
         x_scale, y_scale = self._pixel_scale(ext=ext)
         return x_scale.to("arcsec") * y_scale.to("arcsec")
 
-    def extract_world_scale(self, ext: int = 0, force: bool = False):
+    def extract_world_scale(self, ext: int = 1, force: bool = False):
         x, y = self._pixel_scale(ext=ext)
         dec = self.extract_pointing().dec.to(units.rad)
         ra_scale = units.pixel_scale((x / np.cos(dec)) / units.pix)
@@ -1550,8 +1550,8 @@ class ImagingImage(Image):
             self,
             target: 'ImagingImage',
             output_path: str,
-            ext: int = 0,
-            ext_target: int = 0,
+            ext: int = 1,
+            ext_target: int = 1,
             trim: bool = True,
             **kwargs
     ):
@@ -1559,11 +1559,23 @@ class ImagingImage(Image):
         target.load_data()
 
         data_source = self.data[ext]
+        print(type(data_source), data_source.shape, ext)
+        if isinstance(data_source, units.Quantity):
+            unit_source = data_source.unit
+            data_source = data_source.value
         data_source = u.sanitise_endianness(data_source)
+        print(type(data_source), data_source.shape, ext, "\n")
+
+
         data_target = target.data[ext_target]
+        print(type(data_target), data_target.shape, ext_target)
+        if isinstance(data_source, units.Quantity):
+            unit_target = data_target.unit
+            data_target = data_target.value
         data_target = u.sanitise_endianness(data_target)
         u.debug_print(0,
                       f"Attempting registration of {self.name} (Chip {self.extract_chip_number()}) against {target.name} (Chip {target.extract_chip_number()})")
+        print(type(data_target), data_target.shape, ext_target)
         registered, footprint = register(data_source, data_target, **kwargs)
 
         self.copy(output_path)
@@ -1589,13 +1601,13 @@ class ImagingImage(Image):
         new_image.update_output_file()
         return new_image
 
-    def detect_frame_value(self, ext: int = 0):
+    def detect_frame_value(self, ext: int = 1):
         self.open()
         frame_value = ff.detect_frame_value(file=self.hdu_list, ext=ext)
         self.close()
         return frame_value
 
-    def detect_edges(self, frame_value: float, ext: int = 0):
+    def detect_edges(self, frame_value: float, ext: int = 1):
         self.open()
         left, right, bottom, top = ff.detect_edges(file=self.hdu_list, value=frame_value, ext=ext)
         self.close()
@@ -1673,7 +1685,7 @@ class ImagingImage(Image):
             self,
             output_dir: str = None,
             cat: table.Table = None,
-            ext: int = 0,
+            ext: int = 1,
             cat_name: str = None,
             **diag_kwargs
     ):
@@ -1721,7 +1733,7 @@ class ImagingImage(Image):
             u.rm_check(new_path)
             return None
 
-    def shift_wcs(self, delta_ra: units.Quantity, delta_dec: units.Quantity, ext: int = 0):
+    def shift_wcs(self, delta_ra: units.Quantity, delta_dec: units.Quantity, ext: int = 1):
         delta_ra = u.dequantify(delta_ra, unit=units.deg)
         delta_dec = u.dequantify(delta_dec, unit=units.deg)
         self.headers[ext]["CRVAL1"] += delta_ra
@@ -2001,7 +2013,8 @@ class ImagingImage(Image):
                 ra_col=ra_col, dec_col=dec_col,
                 fig=fig,
                 colour_column=mag_col,
-                cbar_label=mag_col)
+                cbar_label=mag_col
+            )
             fig.savefig(os.path.join(output_path, f"{self.name}_astrometry_overplot.pdf"))
             plt.close(fig)
             del fig
@@ -2225,7 +2238,7 @@ class ImagingImage(Image):
 
         return image
 
-    # def convert_from_cs(self, output_path: str, ext: int = 0):
+    # def convert_from_cs(self, output_path: str, ext: int = 1):
     #     """
     #     NOT IMPLEMENTED.
     #     Assuming units of counts / second, converts the image back to total counts.
@@ -2235,7 +2248,7 @@ class ImagingImage(Image):
     #     """
     #     pass
 
-    def convert_to_cs(self, output_path: str, ext: int = 0):
+    def convert_to_cs(self, output_path: str, ext: int = 1):
         """
         Converts the image to flux (units of counts per second) and writes to a new file.
         :param output_path: Path to write converted file to.
@@ -2251,6 +2264,7 @@ class ImagingImage(Image):
         new.load_data()
         new_data = new.data[ext]
         # new_data *= gain
+        print(exp_time)
         new_data /= exp_time
         new.data[ext] = new_data
 
@@ -2284,7 +2298,7 @@ class ImagingImage(Image):
         new.update_output_file()
         return new
 
-    def clean_cosmic_rays(self, output_path: str, ext: int = 0):
+    def clean_cosmic_rays(self, output_path: str, ext: int = 1):
         from ccdproc import cosmicray_lacosmic
         cleaned = self.copy(output_path)
         cleaned.load_data()
@@ -2312,7 +2326,7 @@ class ImagingImage(Image):
 
     def scale_to_jansky(
             self,
-            ext: int = 0,
+            ext: int = 1,
             *args
     ):
         self.load_data()
@@ -2336,7 +2350,7 @@ class ImagingImage(Image):
 
     def pixel_magnitudes(
             self,
-            ext: int = 0,
+            ext: int = 1,
             sub_back: bool = False,
             back_kwargs: dict = {},
             **kwargs
@@ -2354,7 +2368,7 @@ class ImagingImage(Image):
 
     def surface_brightness(
             self,
-            ext: int = 0
+            ext: int = 1
     ):
         self.load_data()
         self.load_output_file()
@@ -2436,7 +2450,7 @@ class ImagingImage(Image):
     def flip_horizontal(
             self,
             output_path: str,
-            ext: int = 0
+            ext: int = 1
     ):
         """
         Flips the pixels of an image horizontally, and corrects the WCS to reflect this.
@@ -2456,7 +2470,7 @@ class ImagingImage(Image):
             self,
             bottom_left: SkyCoord,
             top_right: SkyCoord,
-            output_path: str = None, ext: int = 0
+            output_path: str = None, ext: int = 1
     ) -> 'ImagingImage':
         """
         Trims the image to a footprint defined by two RA/DEC coordinates
@@ -2624,7 +2638,7 @@ class ImagingImage(Image):
         )
         self.update_output_file()
 
-    def estimate_sky_background(self, ext: int = 0, force: bool = False):
+    def estimate_sky_background(self, ext: int = 1, force: bool = False):
         """
         Estimates background as a global median. VERY loose estimate.
         :param ext:
@@ -2663,7 +2677,7 @@ class ImagingImage(Image):
             value: Union[float, int, units.Quantity],
             z: float = None,
             obj: objects.Extragalactic = None,
-            ext: int = 0
+            ext: int = 1
     ):
         value = u.check_quantity(
             number=value,
@@ -2691,7 +2705,7 @@ class ImagingImage(Image):
             self,
             frame: units.Quantity,
             centre: SkyCoord,
-            ext: int = 0,
+            ext: int = 1,
 
     ):
         frame = self.pixel(frame, ext=ext)
@@ -2706,7 +2720,7 @@ class ImagingImage(Image):
             centre: SkyCoord = None,
             vmax: float = None,
             vmin: float = None,
-            ext: int = 0,
+            ext: int = 1,
             scale_to_jansky: bool = False
     ):
         left, right, bottom, top = self.frame_from_coord(
@@ -3016,7 +3030,7 @@ class ImagingImage(Image):
             y_ax: float = 0.1,
             line_kwargs: dict = None,
             text_kwargs: dict = None,
-            ext: int = 0,
+            ext: int = 1,
             extra_height_top_factor: float = 2.,
             bold: bool = False,
             precision_ang: int = 1,
@@ -3149,7 +3163,7 @@ class ImagingImage(Image):
     def plot_source_extractor_object(
             self,
             row: table.Row,
-            ext: int = 0,
+            ext: int = 1,
             frame: units.Quantity = 10 * units.pix,
             output: str = None,
             show: bool = False,
@@ -3238,7 +3252,11 @@ class ImagingImage(Image):
         )
         return fig, ax
 
-    def wcs_axes(self, fig: plt.Figure = None, ext: int = 0):
+    def wcs_axes(
+            self,
+            fig: plt.Figure = None,
+            ext: int = 0
+    ):
         if fig is None:
             fig = plt.figure(figsize=(12, 12), dpi=1000)
         ax = fig.add_subplot(
@@ -3558,7 +3576,7 @@ class ImagingImage(Image):
                 ap_radius = 2 * psf * units.arcsec
 
         self.load_wcs()
-        _, pix_scale = self.extract_pixel_scale()
+        _, pix_scale = self.extract_pixel_scale(ext=ext)
         x, y = self.wcs[ext].all_world2pix(coord.ra, coord.dec, 0)
         ap_radius_pix = ap_radius.to(units.pix, pix_scale).value
 
@@ -3603,7 +3621,7 @@ class ImagingImage(Image):
             mag_min: units.Quantity = 20.0 * units.mag,
             mag_max: units.Quantity = 30.0 * units.mag,
             interval: units.Quantity = 0.1 * units.mag,
-            ext: int = 0
+            ext: int = 1
     ):
 
         if output_dir is None:
@@ -3732,7 +3750,7 @@ class ImagingImage(Image):
             self,
             centre: SkyCoord,
             frame: units.Quantity,
-            ext: int = 0,
+            ext: int = 1,
             model_type: models = models.Polynomial2D,
             fitter_type: fitting.Fitter = fitting.LevMarLSQFitter,
             init_params: dict = {"degree": 3},
@@ -3909,7 +3927,7 @@ class ImagingImage(Image):
         return model, model_eval, data, subbed, mask, weights
 
     def model_background_photometry(
-            self, ext: int = 0,
+            self, ext: int = 1,
             box_size: int = 64,
             filter_size: int = 3,
             method: str = "sep",
@@ -3991,7 +4009,7 @@ class ImagingImage(Image):
 
     def generate_segmap(
             self,
-            ext: int = 0,
+            ext: int = 1,
             threshold: float = 4.,
             method="sep",
             margins: tuple = (None, None, None, None),
@@ -4135,7 +4153,7 @@ class ImagingImage(Image):
     def masked_data(
             self,
             mask: np.ndarray = None,
-            ext: int = 0,
+            ext: int = 1,
             **generate_mask_kwargs
     ):
         self.load_data()
@@ -4149,7 +4167,7 @@ class ImagingImage(Image):
     def write_mask(
             self,
             output_path: str,
-            ext: int = 0,
+            ext: int = 1,
             **mask_kwargs
     ) -> 'ImagingImage':
         """Generates and writes a source mask to a FITS file.
@@ -4191,7 +4209,7 @@ class ImagingImage(Image):
             self,
             x: float, y: float,
             aperture_radius: units.Quantity = 2.0 * units.arcsec,
-            ext: int = 0,
+            ext: int = 1,
             sub_background: bool = True
     ):
         self.extract_pixel_scale()
@@ -4217,7 +4235,7 @@ class ImagingImage(Image):
             b_world: units.Quantity,
             theta_world: units.Quantity,
             kron_radius: float = 1.,
-            ext: int = 0,
+            ext: int = 1,
             output: str = None,
             mask_nearby=True,
             subtract_background: bool = True,
@@ -4395,7 +4413,7 @@ class ImagingImage(Image):
             b_world: units.Quantity,
             theta_world: units.Quantity,
             kron_radius: float = 1.,
-            ext: int = 0,
+            ext: int = 1,
             output: str = None,
             mask_nearby=True,
             detection_threshold: float = None,
@@ -4475,7 +4493,7 @@ class ImagingImage(Image):
     def make_galfit_version(
             self,
             output_path: str = None,
-            ext: int = 0,
+            ext: int = 1,
             force: bool = False
     ):
         """
@@ -4600,7 +4618,7 @@ class ImagingImage(Image):
             output_prefix: str = None,
             frame_lower: int = 30,
             frame_upper: int = 100,
-            ext: int = 0,
+            ext: int = 1,
             model_guesses: Union[dict, List[dict]] = None,
             psf_path: str = None,
             use_frb_galfit: bool = False,

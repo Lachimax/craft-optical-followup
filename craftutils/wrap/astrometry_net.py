@@ -20,7 +20,10 @@ def add_index_directory(path: str):
     :param path:
     :return:
     """
-    bin_path = os.path.dirname(find_executable("astrometry-engine"))
+    try:
+        bin_path = os.path.dirname(find_executable("astrometry-engine"))
+    except TypeError:
+        raise FileNotFoundError("astrometry-engine is not installed")
     cfg_path = os.path.abspath(os.path.join(bin_path, "..", "etc", "astrometry.cfg"))
     line = f"add_path {path}\n"
     with open(cfg_path, 'r') as cfg:
@@ -85,6 +88,7 @@ def solve_field(
         odds_to_solve: float = 1e5,
         am_flags: list = None,
         am_params: dict = None,
+        ext: int = 1,
         **kwargs
 ):
     """
@@ -133,6 +137,7 @@ def solve_field(
         error_on_exit_code=True,
         force_single_dash=False,
         flags=flags,
+        extension=ext,
         **am_params
     )
     if isinstance(image_files, list):

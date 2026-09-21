@@ -43,7 +43,9 @@ def make_header(table_path: str, output_path: str):
 def check_input_images(input_directory: str,
                        **kwargs):
     table = image.fits_table_all(
-        input_directory, science_only=False)
+        input_directory,
+        science_only=False
+    )
     if len(table) == 0:
         raise FileNotFoundError(f"There appear to be no files in the input directory {input_directory}")
 
@@ -88,6 +90,10 @@ def inject_header(
     table.sort("FILENAME")
 
     template = image.ImagingImage.from_fits(table[0]["PATH"])
+
+    if len(template.headers) > 1:
+        template.headers[0].update(template.headers[1])
+
     cls = type(template)
 
     important_keys = template.header_keys()
@@ -384,17 +390,20 @@ def standard_script(
             output_file_name = "coadded.fits"
         output_file_name_coadd = output_file_name.replace(".fits", f"_{coadd_type}.fits")
 
-        add(input_directory=corr_dir,
+        add(
+            input_directory=corr_dir,
             coadd_type=coadd_type,
             table_path=reprojected_table_path,
             header_path=header_path,
-            output_path=output_file_name_coadd)
+            output_path=output_file_name_coadd
+        )
 
         if do_inject_header:
             inject_header(
                 file_path=output_file_name_coadd,
                 input_directory=input_directory,
-                coadd_type=coadd_type)
+                coadd_type=coadd_type
+            )
 
         file_paths.append(os.path.join(output_directory, output_file_name_coadd))
 

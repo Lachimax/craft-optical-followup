@@ -1289,7 +1289,7 @@ class Object(Generic):
     #         self,
     #         plot,
     #         img,
-    #         ext: int = 0,
+    #         ext: int = 1,
     #         colour: str = "white",
     # ):
 

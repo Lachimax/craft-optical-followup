@@ -134,7 +134,7 @@ def wcs_transfer(header_template: Union[dict, fits.Header], header_update: dict)
     return header_update
 
 
-def divide_by_exp_time(file: Union['fits.hdu_list.hdulist.HDUList', str], output: 'str' = None, ext: int = 0):
+def divide_by_exp_time(file: Union['fits.hdu_list.hdulist.HDUList', str], output: 'str' = None, ext: int = 1):
     """
     Convert a fits file from total counts to counts/second.
     :param file: Path or HDU object of the file.
@@ -226,7 +226,7 @@ def subtract_file(file: Union[str, fits.HDUList], sub_file: Union[str, fits.HDUL
     return subbed
 
 
-def detect_frame_value(file: Union['fits.HDUList', 'str'], ext: int = 0):
+def detect_frame_value(file: Union['fits.HDUList', 'str'], ext: int = 1):
     """
     For images that have
     :param file:
@@ -249,8 +249,9 @@ def detect_frame_value(file: Union['fits.HDUList', 'str'], ext: int = 0):
 
     return value
 
+
 @u.export
-def detect_edges(file: Union['fits.HDUList', 'str'], value: float = 0.0, ext: int = 0):
+def detect_edges(file: Union['fits.HDUList', 'str'], value: float = 0.0, ext: int = 1):
     """
     Detects the edges of a rectangular non-zero block, where the frame consists of a single value. For use with
     background files with an obvious frame.
@@ -499,7 +500,7 @@ def add_log(file: Union[fits.hdu.hdulist.HDUList, str], action: str):
     change_header(file, key='history', value=action)
 
 
-def change_header(file: Union[fits.hdu.hdulist.HDUList, str], key: str, value, ext: int = 0):
+def change_header(file: Union[fits.hdu.hdulist.HDUList, str], key: str, value, ext: int = 1):
     """
     Changes the value of a header entry, if it already exists; if not, adds an entry to the bottom of a given fits
     header. Format is NAME: 'entry'
@@ -531,10 +532,16 @@ def world_to_pix(ra: "float", dec: "float", header: "fits.header.Header"):
     return x, y
 
 
-def trim(hdu: fits.hdu.hdulist.HDUList,
-         left: Union[int, units.Quantity] = None, right: Union[int, units.Quantity] = None,
-         bottom: Union[int, units.Quantity] = None, top: Union[int, units.Quantity] = None,
-         update_wcs: bool = True, in_place: bool = False, ext: int = 0):
+def trim(
+        hdu: fits.hdu.hdulist.HDUList,
+        left: Union[int, units.Quantity] = None,
+        right: Union[int, units.Quantity] = None,
+        bottom: Union[int, units.Quantity] = None,
+        top: Union[int, units.Quantity] = None,
+        update_wcs: bool = True,
+        in_place: bool = False,
+        ext: int = 0
+):
     """
 
     :param hdu:
@@ -586,7 +593,7 @@ def check_subimage_edges(data: np.ndarray, bottom, top, left, right):
 
 
 def trim_frame_point(hdu: fits.hdu.hdulist.HDUList, ra: float, dec: float,
-                     frame: Union[int, float], world_frame: bool = False, ext: int = 0):
+                     frame: Union[int, float], world_frame: bool = False, ext: int = 1):
     """
     Trims a fits file to frame a single point.
     :param hdu:

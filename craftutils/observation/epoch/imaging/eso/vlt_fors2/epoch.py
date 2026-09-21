@@ -63,6 +63,9 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
             # "get_photometry_all": ie_stages["get_photometry_all"]
         }
 
+        if cls.old_pipeline():
+            stages["trim_coadded"]["default"] = True
+
         # stages["defringe"]["default"] = True
         stages["photometric_calibration"]["keywords"]["skip_retrievable"] = True
 
@@ -112,6 +115,14 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
     #                     os.path.join(output_dir, frame.filename.replace("_norm.fits", "_registered.fits")))
     #                 self.add_frame_registered(registered)
 
+    @staticmethod
+    def old_pipeline():
+        from packaging.version import parse
+        if p.config["fors2_pipeline_ver"] and parse(p.config["fors2_pipeline_ver"]) < parse("5.8"):
+            return True
+        else:
+            return False
+
     def _sort_after_esoreflex(
             self,
             output_dir: str,
@@ -125,6 +136,9 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
         # List directories within 'reduction date' directories.
         # These should represent individual images reduced.
 
+
+        old_pipeline = self.old_pipeline()
+
         _, subdirectory = os.path.split(subpath)
 
         # Get the files within the image directory.
@@ -132,7 +146,9 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
             lambda d: os.path.isfile(os.path.join(subpath, d)),
             os.listdir(subpath)
         )
+
         for file_name in files:
+            print("\t\t", file_name)
             # Retrieve the target object name from the fits file.
             file_path = os.path.join(subpath, file_name)
             inst_file = image.detect_instrument(file_path, fail_quietly=True)
@@ -143,52 +159,87 @@ class FORS2ImagingEpoch(ESOImagingEpoch):
                 cls=image.FORS2Image
             )
             file_obj = file.extract_object().lower()
+            name = file.extract_header_item('ARCFILE').replace(':','_')
+            print(f"\t\t Searching for {obj}; ", file_obj, obj==file_obj)
             file_mjd = int(file.extract_header_item('MJD-OBS'))
+            print(f"\t\t Searching for {file_mjd};", mjd, mjd==mjd)
             file_filter = file.extract_filter()
             # Check the object name and observation date against those of the epoch we're concerned with.
             if file_obj == obj and file_mjd == mjd:
-                # Check which type of file we have.
-                if file_name.endswith("PHOT_BACKGROUND_SCI_IMG.fits"):
-                    file_destination = os.path.join(output_dir, "backgrounds")
-                    suffix = "PHOT_BACKGROUND_SCI_IMG.fits"
-                    file_type = "background"
-                elif file_name.endswith("OBJECT_TABLE_SCI_IMG.fits"):
-                    file_destination = os.path.join(output_dir, "obj_tbls")
-                    suffix = "OBJECT_TABLE_SCI_IMG.fits"
-                    file_type = "object_table"
-                elif file_name.endswith("SCIENCE_REDUCED_IMG.fits"):
-                    file_destination = os.path.join(output_dir, "science")
-                    suffix = "SCIENCE_REDUCED_IMG.fits"
-                    file_type = "science"
+                file_destination = ""
+                print(f"\t\t{old_pipeline=}")
+                if old_pipeline:
+                    # Check which type of file we have.
+                    if file_name.endswith("PHOT_BACKGROUND_SCI_IMG.fits"):
+                        file_destination = os.path.join(output_dir, "backgrounds")
+                        suffix = "PHOT_BACKGROUND_SCI_IMG.fits"
+                        file_type = "background"
+                    elif file_name.endswith("OBJECT_TABLE_SCI_IMG.fits"):
+                        file_destination = os.path.join(output_dir, "obj_tbls")
+                        suffix = "OBJECT_TABLE_SCI_IMG.fits"
+                        file_type = "object_table"
+                    elif file_name.upper().endswith("SCIENCE_REDUCED_IMG.fits"):
+                        file_destination = os.path.join(output_dir, "science")
+                        suffix = "SCIENCE_REDUCED_IMG.fits"
+                        file_type = "science"
+                    else:
+                        file_destination = os.path.join(output_dir, "sources")
+                        suffix = "SOURCES_SCI_IMG.fits"
+                        file_type = "sources"
                 else:
-                    file_destination = os.path.join(output_dir, "sources")
-                    suffix = "SOURCES_SCI_IMG.fits"
-                    file_type = "sources"
-                # Make this directory, if it doesn't already exist.
-                u.mkdir_check(file_destination)
-                # Make a subdirectory by filter.
-                file_destination = os.path.join(file_destination, file_filter)
-                u.mkdir_check(file_destination)
-                # Title new file.
-                file_destination = os.path.join(
-                    file_destination,
-                    f"{self.name}_{subdirectory}_{suffix}"
-                )
-                # Copy file to new location.
-                if not self.quiet:
-                    print(f"Copying: {file_path} to \n\t {file_destination}")
-                file.copy(file_destination)
-                if delete_output and os.path.isfile(file_destination):
-                    os.remove(file_path)
-                img = image.from_path(
-                    path=file_destination,
-                    cls=image.FORS2Image
-                )
-                u.debug_print(2, "ESOImagingEpoch._sort_after_esoreflex(): file_type ==", file_type)
-                if file_type == "science":
-                    self.add_frame_reduced(img)
-                elif file_type == "background":
-                    self.add_frame_background(img)
+                    if file_name.endswith("PHOT_STARS_PHOTOM.fits"):
+                        file_destination = os.path.join(output_dir, "sources")
+                        suffix = "SOURCES_SCI_IMG.fits"
+                        file_type = "sources"
+                    elif file_name.endswith("REDUCED_IMG_WCS_PHOTOM.fits") or file_name.endswith("science_reduced_img.fits"):
+                        file_destination = os.path.join(output_dir, "science")
+                        suffix = "SCIENCE_REDUCED_IMG.fits"
+                        file_type = "science"
+                    elif file_name.endswith("FRB20240711-IMG_PHOT_STD_PHOTOM.fits"):
+                        file_destination = os.path.join(output_dir, "sources")
+                        suffix = "PHOT_STD_PHOTOM.fits"
+                        file_type = "std_cat"
+                if file_destination:
+                    # Make this directory, if it doesn't already exist.
+                    u.mkdir_check(file_destination)
+                    # Make a subdirectory by filter.
+                    file_destination = os.path.join(file_destination, file_filter)
+                    u.mkdir_check(file_destination)
+                    # Title new file.
+                    file_destination = os.path.join(
+                        file_destination,
+                        f"{self.name}_{name}_{suffix}"
+                    )
+                    # Copy file to new location.
+                    if not self.quiet:
+                        print(f"Copying: {file_path} to \n\t {file_destination}")
+                    file.copy(file_destination)
+                    if delete_output and os.path.isfile(file_destination):
+                        os.remove(file_path)
+
+                    # if not old_pipeline:
+                    #     f = fits.open(file_destination)
+                    #     new_header = f[1].header.copy()
+                    #     new_header.update(f[0].header)
+                    #     # new_header["EXTEND"] = "T"
+                    #     f[0] = fits.PrimaryHDU(data=f[1].data.copy(), header=new_header)
+                    #     del f[1]
+                    #     print(f[0].header)
+                    #     f[0].header["EXTEND"] = True
+                    #     f.writeto(file_destination, overwrite=True)
+                    #     f.close()
+
+                    img = image.from_path(
+                        path=file_destination,
+                        cls=image.FORS2Image
+                    )
+                    u.debug_print(2, "ESOImagingEpoch._sort_after_esoreflex(): file_type ==", file_type)
+                    if file_type == "science":
+                        self.add_frame_reduced(img)
+                        if not old_pipeline:
+                            self.add_frame_trimmed(img)
+                    elif file_type == "background":
+                        self.add_frame_background(img)
         # With the FORS2 substructure we want to search every subdirectory
         return False
 
