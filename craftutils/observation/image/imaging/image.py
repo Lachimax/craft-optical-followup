@@ -2677,7 +2677,7 @@ class ImagingImage(Image):
             value: Union[float, int, units.Quantity],
             z: float = None,
             obj: objects.Extragalactic = None,
-            ext: int = 1
+            ext: int = 0
     ):
         value = u.check_quantity(
             number=value,
